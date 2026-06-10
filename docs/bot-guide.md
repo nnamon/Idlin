@@ -99,7 +99,8 @@ same bytecode (the assembler below remains as the escape hatch). Brains in
 
 ```c
 // the default brain, in its entirety
-build [ "vit1", "socket_a", "socket_a1", "str1" ];   // the whole plan, up front
+const N_VIGOR = 30;                      // node numbers: see the tree map page
+build [ N_VIGOR, 2, 3, 10 ];             // the whole plan, up front
 
 const SELF = 0xE000;
 const ENTS = 0xE100;
@@ -158,10 +159,10 @@ fn main() {                            // main() runs once per tick
 **The `build` declaration — your passive tree, up front**
 
 A bot declares its ENTIRE passive plan at the top of the program: up to 99
-node ids in allocation order. The strings exist only in source — the
-compiler hashes each id to a stable 4-byte ref and embeds a packed table
-(99 nodes = 396 bytes max), then emits one `SetBuild` syscall during
-initialization. SetBuild validates the WHOLE plan up front: every entry
+node references in allocation order. Each node has a stable numeric id
+(`num` in content, shown as `#N` on the tree map page) — use literals or
+named `const`s. The compiler embeds a packed u16 table (99 nodes = 198
+bytes max) and emits one `SetBuild` syscall during initialization. SetBuild validates the WHOLE plan up front: every entry
 must resolve and be connected to the start node, your allocated set, or an
 earlier entry — a bad plan is rejected loudly (BuildRejected on the
 ticker) rather than silently sticking mid-build; from then on the sim allocates
@@ -215,7 +216,7 @@ address you supply and return a count/status.
 | 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **-1** unknown slot / on cooldown |
 | 8 | `PickUp` | loot_id | 0 |
 | 12 | `EquipBest` | — | number of swaps made |
-| 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; node refs are FNV-1a hashes of node ids) |
+| 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; the table is packed u16 name-hash refs) |
 | 15 | `Random` | — | a value from your private RNG stream |
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |

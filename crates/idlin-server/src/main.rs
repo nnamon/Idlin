@@ -137,6 +137,7 @@ fn tree_to_json(content: &ContentDb) -> String {
         .map(|n| {
             serde_json::json!({
                 "id": n.id,
+                "num": n.num,
                 "name": n.name,
                 "kind": n.kind,
                 "x": n.pos.0,

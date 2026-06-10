@@ -22,17 +22,6 @@ mod templates;
 pub use lang::{CompileError, compile};
 pub use templates::{TEMPLATE_GRINDER, template_grinder};
 
-/// Stable 32-bit reference for a passive tree node id (FNV-1a). Compiled
-/// bots reference nodes by this hash, so content edits never break them.
-pub fn node_ref(id: &str) -> u32 {
-    let mut h: u32 = 0x811c9dc5;
-    for b in id.as_bytes() {
-        h ^= *b as u32;
-        h = h.wrapping_mul(0x01000193);
-    }
-    h
-}
-
 use idlin_vm::Op;
 use std::collections::BTreeMap;
 

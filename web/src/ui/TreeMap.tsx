@@ -8,6 +8,7 @@ interface Grant {
 
 interface TreeNode {
   id: string;
+  num: number;
   name: string;
   kind: string;
   x: number;
@@ -221,7 +222,7 @@ export function TreeMap({ onClose }: { onClose: () => void }) {
           <div style={{ color: "#e8e8ff", fontWeight: 700 }}>
             {hover.name}
             <span style={{ color: "#55556a", fontWeight: 400, marginLeft: 8 }}>
-              {hover.id} · {hover.kind.replace("_", " ")}
+              #{hover.num} · {hover.id} · {hover.kind.replace("_", " ")}
             </span>
           </div>
           {hover.grants.length === 0 ? (

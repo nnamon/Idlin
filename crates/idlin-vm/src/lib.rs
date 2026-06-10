@@ -307,6 +307,16 @@ impl Vm {
         self.mem[addr as usize] = val;
     }
 
+    pub fn load_u16(&self, addr: u16) -> u16 {
+        u16::from_le_bytes([self.load_u8(addr), self.load_u8(addr.wrapping_add(1))])
+    }
+
+    pub fn store_u16(&mut self, addr: u16, val: u16) {
+        for (i, b) in val.to_le_bytes().into_iter().enumerate() {
+            self.store_u8(addr.wrapping_add(i as u16), b);
+        }
+    }
+
     pub fn load_u32(&self, addr: u16) -> u32 {
         u32::from_le_bytes([
             self.load_u8(addr),

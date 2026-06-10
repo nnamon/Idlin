@@ -1388,7 +1388,7 @@ impl World {
     pub(crate) fn set_build(
         &mut self,
         slot: usize,
-        refs: &[u32],
+        refs: &[u16],
         events: &mut Vec<SimEvent>,
     ) -> i32 {
         let Some(e) = self.zone.get(slot) else {
@@ -1409,7 +1409,7 @@ impl World {
                 events.push(SimEvent::BuildRejected {
                     id: net_id,
                     owner,
-                    reason: format!("entry {k}: unknown node ref {r:#010x}"),
+                    reason: format!("entry {k}: unknown node ref {r:#06x}"),
                 });
                 return -1;
             };

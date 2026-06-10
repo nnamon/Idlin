@@ -9,12 +9,40 @@
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
 
+// Node numbers from the tree map page (content/tree/core.ron `num`).
+const N_VIGOR = 30;        // v1
+const N_SOCKET_A = 2;      // First Spark (skill socket)
+const N_SOCKET_A1 = 3;     // First Spark support
+const N_BRAWN = 10;        // s1..s4: the Slaughter road to Butcher
+const N_HEFT = 11;
+const N_CLEAVING = 12;
+const N_BUTCHER = 13;
+const N_SOCKET_WAR = 19;   // War socket cluster
+const N_WAR_SUP_A = 20;
+const N_THICK_SKIN = 31;   // v2..v4: Vitality to Oak Heart
+const N_HARDY = 32;
+const N_OAK_HEART = 33;
+const N_SURE_HANDS = 14;   // s5..s7: on to Executioner
+const N_RHYTHM = 15;
+const N_EXECUTIONER = 16;
+const N_BULWARK = 34;      // v5..v7: Vitality to Colossus
+const N_STALWART = 35;
+const N_COLOSSUS = 36;
+const N_GRIT = 90;         // rim
+const N_POISE = 50;        // z1..z4: Zephyr splash
+const N_FLEET = 51;
+const N_TEMPO = 52;
+const N_WINDRUNNER = 53;
+const N_SOCKET_WIND = 58;
+
 // The declared build: allocated automatically as we level. The whole
 // plan is fixed at deploy — changing it means deploying a new bot.
 build [
-    "v1", "socket_a", "socket_a1", "s1", "s2", "s3", "s4",
-    "socket_war", "socket_war_a", "v2", "v3", "v4", "s5", "s6", "s7",
-    "v5", "v6", "v7", "grit", "z1", "z2", "z3", "z4", "socket_wind",
+    N_VIGOR, N_SOCKET_A, N_SOCKET_A1, N_BRAWN, N_HEFT, N_CLEAVING,
+    N_BUTCHER, N_SOCKET_WAR, N_WAR_SUP_A, N_THICK_SKIN, N_HARDY,
+    N_OAK_HEART, N_SURE_HANDS, N_RHYTHM, N_EXECUTIONER, N_BULWARK,
+    N_STALWART, N_COLOSSUS, N_GRIT, N_POISE, N_FLEET, N_TEMPO,
+    N_WINDRUNNER, N_SOCKET_WIND,
 ];
 
 const SELF = 0xE000;       // SelfStatus buffer

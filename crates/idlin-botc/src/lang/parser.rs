@@ -72,11 +72,16 @@ impl Parser {
                     while self.peek() != Some(&Tok::RBracket) {
                         let entry_line = self.line();
                         match self.next() {
-                            Some(Tok::Str(id)) => program.build.push((id, entry_line)),
+                            Some(Tok::Num(n)) => {
+                                program.build.push((BuildEntry::Num(n), entry_line))
+                            }
+                            Some(Tok::Ident(name)) => {
+                                program.build.push((BuildEntry::Name(name), entry_line))
+                            }
                             other => {
                                 return Err(CompileError::new(
                                     entry_line,
-                                    format!("expected a node id string, found {other:?}"),
+                                    format!("expected a node number or constant, found {other:?}"),
                                 ));
                             }
                         }

@@ -159,12 +159,12 @@ either side.
 ```ron
 TreeDef(
     nodes: [
-        NodeDef(id: "start", name: "Awakening", pos: (0, 0), kind: travel,
-                links: ["str1", "dex1", "vit1"], grants: []),
-        NodeDef(id: "vit3", name: "Oak Heart", pos: (0, 6), kind: notable,
-                links: ["vit2"],
-                grants: [ (stat: life, layer: increased, value: 800) ]),
-        NodeDef(id: "socket_a", name: "Skill Socket", pos: (3, 3),
+        NodeDef(id: "start", num: 1, name: "Awakening", pos: (0, 0), kind: travel,
+                links: ["s1", "v1"], grants: []),
+        NodeDef(id: "v4", num: 33, name: "Oak Heart", pos: (0, 12), kind: notable,
+                links: ["v3"],
+                grants: [ (stat: life, layer: increased, value: 1200) ]),
+        NodeDef(id: "socket_a", num: 2, name: "First Spark", pos: (2, 2),
                 kind: socket_skill, links: ["start"], grants: []),
     ],
 )
@@ -174,3 +174,7 @@ Node kinds: `travel` (small), `notable` (chunky), `keystone` (reserved for
 more-multipliers/behavior flags), `socket_skill` / `socket_support` (gem
 slots). Characters get one point per level past 1; tree grants are affixes,
 evaluated identically to gear.
+
+`num` is the stable u16 reference compiled bots use in `build [...]`
+declarations: unique, and **never reuse a number for a different node** —
+deployed bots may still reference it.

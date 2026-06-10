@@ -192,9 +192,17 @@ impl Gen {
         if let Some(fix) = build_table_fix {
             let table_addr = self.out.len() as i32;
             self.out[fix..fix + 4].copy_from_slice(&table_addr.to_le_bytes());
-            for (id, _) in &program.build {
-                let r = crate::node_ref(id);
-                self.out.extend_from_slice(&r.to_le_bytes());
+            for (entry, line) in &program.build {
+                let value = match entry {
+                    BuildEntry::Num(n) => *n,
+                    BuildEntry::Name(name) => *self.consts.get(name).ok_or_else(|| {
+                        CompileError::new(*line, format!("unknown constant `{name}` in build"))
+                    })?,
+                };
+                let r = u16::try_from(value).map_err(|_| {
+                    CompileError::new(*line, format!("node ref {value} out of u16 range"))
+                })?;
+                self.out.extend_from_slice(&r.to_le_bytes()); // u16 LE per entry
             }
         }
 
