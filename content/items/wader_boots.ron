@@ -3,6 +3,8 @@ ItemDef(
     id: "wader_boots",
     name: "Wader's Boots",
     slot: boots,
-    life: 15,
+    w: 2,
+    h: 2,
+    evasion: 40,
     weight: 90,
 )

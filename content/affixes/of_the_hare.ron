@@ -1,0 +1,14 @@
+// "... of the Hare" — movement speed on boots.
+AffixDef(
+    id: "of_the_hare",
+    name: "of the Hare",
+    kind: suffix,
+    slots: [boots],
+    weight: 70,
+    stat: move_speed,
+    layer: increased,
+    tiers: [
+        (ilvl: 1, min: 500, max: 900),
+        (ilvl: 4, min: 1000, max: 1500),
+    ],
+)

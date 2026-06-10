@@ -202,10 +202,9 @@ fn to_state(v: &EntityView) -> EntityState {
 
 fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
     Some(match ev {
-        SimEvent::CharacterJoined { id, name, class } => GameEvent::CharacterJoined {
+        SimEvent::CharacterJoined { id, name } => GameEvent::CharacterJoined {
             id: *id,
             name: name.clone(),
-            class: class.as_str().to_string(),
         },
         SimEvent::CharacterDied { id, name, killer } => GameEvent::CharacterDied {
             id: *id,
@@ -261,6 +260,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             rarity: *rarity as u8,
             item: item.clone(),
+        },
+        SimEvent::PassiveAllocated { id, owner, node } => GameEvent::PassiveAllocated {
+            id: *id,
+            owner: owner.clone(),
+            node: node.clone(),
         },
         SimEvent::Hit { .. } | SimEvent::BotDebug { .. } | SimEvent::JoinRejected { .. } => {
             return None;

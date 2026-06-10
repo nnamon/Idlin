@@ -24,7 +24,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use idlin_content::ContentDb;
 use idlin_protocol::{C2S, PROTO_VERSION, Role, S2C};
-use idlin_sim::{Class, JoinRequest, TickInputs, World};
+use idlin_sim::{JoinRequest, TickInputs, World};
 use tokio::sync::{broadcast, mpsc, watch};
 use tower_http::services::ServeDir;
 use tracing::{info, warn};
@@ -42,19 +42,13 @@ struct AppState {
 fn builtin_joins() -> anyhow::Result<TickInputs> {
     let program = idlin_botc::template_grinder()
         .map_err(|e| anyhow::anyhow!("grinder template failed to assemble: {e}"))?;
-    let joins = [
-        ("Kargan", Class::Brute),
-        ("Veles", Class::Hunter),
-        ("Mirra", Class::Brute),
-        ("Thane", Class::Hunter),
-    ]
-    .into_iter()
-    .map(|(name, class)| JoinRequest {
-        name: name.into(),
-        class,
-        program: program.clone(),
-    })
-    .collect();
+    let joins = ["Kargan", "Veles", "Mirra", "Thane"]
+        .into_iter()
+        .map(|name| JoinRequest {
+            name: name.into(),
+            program: program.clone(),
+        })
+        .collect();
     Ok(TickInputs { joins })
 }
 

@@ -1,6 +1,9 @@
 //! Entity model. Entities live in slot storage inside a zone; every external
 //! reference (protocol, syscalls, AI targets) uses the `net_id` — a monotonic
 //! never-reused u32 — so slot reuse can never alias a stale reference.
+//!
+//! Characters are classless: identity comes from gear, the passive tree, and
+//! (later) gems — all expressed as affix grants over universal bases.
 
 use crate::fixed::{Fx, FxV2};
 use serde::{Deserialize, Serialize};
@@ -12,23 +15,6 @@ pub enum Rarity {
     Magic = 1,
     Rare = 2,
     Unique = 3,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Class {
-    Brute,
-    Hunter,
-    Arcanist,
-}
-
-impl Class {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Class::Brute => "brute",
-            Class::Hunter => "hunter",
-            Class::Arcanist => "arcanist",
-        }
-    }
 }
 
 /// Who fights whom. Attacks are only legal across the Player↔Hostile pair;
@@ -49,12 +35,27 @@ impl Faction {
     }
 }
 
-/// Shared combat numbers for characters and monsters. All integer/fixed.
+/// Damage type indices into `CombatStats::damage`.
+pub const DMG_PHYS: usize = 0;
+pub const DMG_ELE: usize = 1;
+pub const DMG_CHAOS: usize = 2;
+
+/// Derived combat numbers, cached on the entity. For characters these are
+/// recomputed from (level, gear, tree) by the stat engine; for monsters they
+/// come straight from content. All integer/fixed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CombatStats {
     pub life: i64,
     pub life_max: i64,
-    pub damage: i64,
+    /// Per-type attack damage: phys, elemental, chaos.
+    pub damage: [i64; 3],
+    pub accuracy: i64,
+    pub evasion: i64,
+    /// Attenuates physical damage taken.
+    pub armour: i64,
+    /// Resistances in basis points (capped at use).
+    pub resist_ele: i64,
+    pub resist_chaos: i64,
     pub range: Fx,
     pub cooldown_ticks: u32,
     pub cooldown_left: u32,
@@ -89,24 +90,42 @@ pub struct Intents {
     pub pickup: Option<u32>,
 }
 
-/// A concrete item instance. Affixes arrive with the full gearing system;
-/// until then rarity acts as a flat quality multiplier on the base stat.
+/// One rolled affix on a concrete item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RolledAffix {
+    /// Index into ContentDb::affixes.
+    pub affix_idx: u32,
+    /// The rolled value (flat units or basis points per the affix layer).
+    pub value: i64,
+}
+
+/// A concrete item instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Item {
     /// Index into ContentDb::items.
     pub base_idx: u32,
     pub rarity: Rarity,
-    /// Monster level at drop time (feeds affix tiers later).
+    /// Monster level at drop time; gates affix tiers.
     pub item_level: u32,
+    pub affixes: Vec<RolledAffix>,
 }
 
-pub const INVENTORY_CAP: usize = 24;
+/// An item sitting in the bag grid at (x, y); footprint comes from its base.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlacedItem {
+    pub item: Item,
+    pub x: u8,
+    pub y: u8,
+}
+
+/// Bag grid dimensions (PoE proportions; item footprints are content).
+pub const BAG_W: u8 = 12;
+pub const BAG_H: u8 = 5;
 pub const GEAR_SLOTS: usize = idlin_content::GearSlot::COUNT;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterState {
     pub name: String,
-    pub class: Class,
     pub level: u32,
     pub xp: i64,
     /// Set while dead; tick at which the character respawns.
@@ -114,9 +133,20 @@ pub struct CharacterState {
     pub kills: u64,
     /// Lifetime pickups (display stat); the bag is `inventory`.
     pub items: u64,
-    pub inventory: Vec<Item>,
+    /// Grid-placed bag contents.
+    pub inventory: Vec<PlacedItem>,
     /// Indexed by GearSlot::idx().
     pub equipment: [Option<Item>; GEAR_SLOTS],
+    /// Allocated passive tree node indices (sorted). The start node is
+    /// implicit and free.
+    pub allocated: Vec<u32>,
+}
+
+impl CharacterState {
+    /// Unspent passive points: one per level past 1, minus allocations.
+    pub fn passive_points(&self) -> u32 {
+        (self.level - 1).saturating_sub(self.allocated.len() as u32)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

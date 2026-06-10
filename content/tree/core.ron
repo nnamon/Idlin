@@ -1,0 +1,51 @@
+// The shared passive tree — minimal testing scaffold. Everyone (classless)
+// starts at `start`; nodes grant affixes exactly like gear does. Socket
+// nodes reserve gem slots for the upcoming gem system.
+TreeDef(
+    nodes: [
+        NodeDef(id: "start", name: "Awakening", pos: (0, 0), kind: travel,
+             links: ["str1", "dex1", "vit1"], grants: []),
+
+        // --- strength branch: damage ---
+        NodeDef(id: "str1", name: "Brawn", pos: (-2, -1), kind: travel,
+             grants: [(stat: damage_phys, layer: added, value: 2)]),
+        NodeDef(id: "str2", name: "Heft", pos: (-4, -2), kind: travel,
+             links: ["str1"],
+             grants: [(stat: damage_phys, layer: increased, value: 600)]),
+        NodeDef(id: "str3", name: "Butcher", pos: (-6, -3), kind: notable,
+             links: ["str2"],
+             grants: [
+                 (stat: damage_phys, layer: increased, value: 1500),
+                 (stat: life, layer: added, value: 10),
+             ]),
+
+        // --- dexterity branch: speed/evasion ---
+        NodeDef(id: "dex1", name: "Poise", pos: (2, -1), kind: travel,
+             grants: [(stat: evasion, layer: added, value: 15)]),
+        NodeDef(id: "dex2", name: "Tempo", pos: (4, -2), kind: travel,
+             links: ["dex1"],
+             grants: [(stat: attack_speed, layer: increased, value: 400)]),
+        NodeDef(id: "dex3", name: "Windrunner", pos: (6, -3), kind: notable,
+             links: ["dex2"],
+             grants: [
+                 (stat: move_speed, layer: increased, value: 800),
+                 (stat: attack_speed, layer: increased, value: 600),
+             ]),
+
+        // --- vitality branch: life/armour ---
+        NodeDef(id: "vit1", name: "Vigor", pos: (0, 2), kind: travel,
+             grants: [(stat: life, layer: added, value: 10)]),
+        NodeDef(id: "vit2", name: "Bulwark", pos: (0, 4), kind: travel,
+             links: ["vit1"],
+             grants: [(stat: armour, layer: added, value: 20)]),
+        NodeDef(id: "vit3", name: "Oak Heart", pos: (0, 6), kind: notable,
+             links: ["vit2"],
+             grants: [(stat: life, layer: increased, value: 800)]),
+
+        // --- first gem socket cluster (gems are the next system) ---
+        NodeDef(id: "socket_a", name: "Skill Socket", pos: (3, 3), kind: socket_skill,
+             links: ["vit1", "dex1"], grants: []),
+        NodeDef(id: "socket_a1", name: "Support Socket", pos: (5, 4), kind: socket_support,
+             links: ["socket_a"], grants: []),
+    ],
+)

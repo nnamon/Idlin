@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 2;
+pub const PROTO_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -83,7 +83,6 @@ pub enum GameEvent {
     CharacterJoined {
         id: u32,
         name: String,
-        class: String,
     },
     CharacterDied {
         id: u32,
@@ -121,6 +120,11 @@ pub enum GameEvent {
         owner: String,
         rarity: u8,
         item: String,
+    },
+    PassiveAllocated {
+        id: u32,
+        owner: String,
+        node: String,
     },
 }
 

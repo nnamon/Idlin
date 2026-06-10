@@ -1,0 +1,14 @@
+// "... of the Wind" — flat evasion.
+AffixDef(
+    id: "of_wind",
+    name: "of the Wind",
+    kind: suffix,
+    slots: [helm, chest, boots],
+    weight: 90,
+    stat: evasion,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 12, max: 25),
+        (ilvl: 4, min: 26, max: 50),
+    ],
+)

@@ -37,10 +37,16 @@ pub const SYS_MOVE_TO: i32 = 6;
 pub const SYS_USE_SKILL: i32 = 7;
 pub const SYS_PICK_UP: i32 = 8;
 pub const SYS_EQUIP_BEST: i32 = 12;
+pub const SYS_ALLOC_PASSIVE: i32 = 13;
 pub const SYS_RANDOM: i32 = 15;
+pub const SYS_MOVE_ITEM: i32 = 16;
+pub const SYS_DROP_ITEM: i32 = 17;
 
-/// Size of one ReadInventory record in bytes.
-pub const INVENTORY_RECORD_SIZE: u16 = 16;
+/// Size of one ReadInventory record in bytes:
+/// base_idx, slot, rarity, item_level, x, y, w, h.
+pub const INVENTORY_RECORD_SIZE: u16 = 32;
+/// Hard cap on inventory query results (a 12×5 bag of 1×1s caps at 60).
+pub const MAX_INVENTORY_RESULTS: usize = 60;
 
 /// ReadEntities filters. "Enemies" is faction-relative: a player bot sees
 /// hostiles, a hostile NPC brain sees players — the same brain logic works
@@ -60,6 +66,21 @@ pub struct Bot {
     pub program_hash: u64,
     /// Deployment version, bumped on every program swap.
     pub version: u32,
+}
+
+impl Bot {
+    /// Swap the bot's program for a new one. VM memory and registers reset,
+    /// but the persistent block survives — bot-learned state outlives code
+    /// (and, later, zone transfers). Params are host-owned and survive too.
+    pub fn redeploy(&mut self, program: &[u8]) -> Result<(), idlin_vm::VmError> {
+        let persist = self.vm.read_persist_block();
+        let mut vm = Vm::new(program)?;
+        vm.write_persist_block(&persist);
+        self.vm = vm;
+        self.program_hash = program_hash(program);
+        self.version += 1;
+        Ok(())
+    }
 }
 
 /// Slot arena for bots. Monsters churn constantly in a forever-world, so
@@ -307,23 +328,27 @@ impl World {
             }
             SYS_READ_INVENTORY => {
                 let out = bot.vm.pop() as u16;
-                let max = bot.vm.pop().clamp(0, crate::entity::INVENTORY_CAP as i32) as usize;
+                let max = bot.vm.pop().clamp(0, MAX_INVENTORY_RESULTS as i32) as usize;
                 let Some(e) = self.zone.get(slot) else {
                     return -1;
                 };
                 let Some(ch) = &e.character else { return -1 };
-                // Record: base_idx, gear slot code, rarity, item_level.
-                let records: Vec<[i32; 4]> = ch
+                // Record: base_idx, slot, rarity, item_level, x, y, w, h.
+                let records: Vec<[i32; 8]> = ch
                     .inventory
                     .iter()
                     .take(max)
-                    .map(|item| {
-                        let def = &self.content_items()[item.base_idx as usize];
+                    .map(|placed| {
+                        let def = &self.content_items()[placed.item.base_idx as usize];
                         [
-                            item.base_idx as i32,
+                            placed.item.base_idx as i32,
                             def.slot.idx() as i32,
-                            item.rarity as i32,
-                            item.item_level as i32,
+                            placed.item.rarity as i32,
+                            placed.item.item_level as i32,
+                            placed.x as i32,
+                            placed.y as i32,
+                            def.w as i32,
+                            def.h as i32,
                         ]
                     })
                     .collect();
@@ -336,6 +361,26 @@ impl World {
                 records.len() as i32
             }
             SYS_EQUIP_BEST => self.equip_best(slot, events),
+            SYS_ALLOC_PASSIVE => {
+                let node = bot.vm.pop();
+                self.alloc_passive(slot, node, events)
+            }
+            SYS_MOVE_ITEM => {
+                let inv_idx = bot.vm.pop();
+                let x = bot.vm.pop();
+                let y = bot.vm.pop();
+                if inv_idx < 0 || !(0..=255).contains(&x) || !(0..=255).contains(&y) {
+                    return -1;
+                }
+                self.move_item(slot, inv_idx as usize, x as u8, y as u8)
+            }
+            SYS_DROP_ITEM => {
+                let inv_idx = bot.vm.pop();
+                if inv_idx < 0 {
+                    return -1;
+                }
+                self.drop_item(slot, inv_idx as usize)
+            }
             SYS_RANDOM => bot.rng.next_u32() as i32,
             _ => -1,
         }

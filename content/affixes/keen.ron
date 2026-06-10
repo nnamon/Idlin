@@ -1,0 +1,14 @@
+// "Keen ..." — flat accuracy on weapons.
+AffixDef(
+    id: "keen",
+    name: "Keen",
+    kind: prefix,
+    slots: [weapon],
+    weight: 70,
+    stat: accuracy,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 15, max: 30),
+        (ilvl: 4, min: 31, max: 60),
+    ],
+)

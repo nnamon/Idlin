@@ -1,0 +1,14 @@
+// "... of Venom" — flat chaos damage on weapons.
+AffixDef(
+    id: "of_venom",
+    name: "of Venom",
+    kind: suffix,
+    slots: [weapon],
+    weight: 50,
+    stat: damage_chaos,
+    layer: added,
+    tiers: [
+        (ilvl: 2, min: 2, max: 4),
+        (ilvl: 5, min: 5, max: 9),
+    ],
+)

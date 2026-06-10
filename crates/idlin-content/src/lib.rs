@@ -13,7 +13,10 @@
 //! Every load computes a content hash embedded in snapshots and replays: a
 //! replay is only meaningful against the exact content it was recorded with.
 
+pub mod stats;
+
 use serde::{Deserialize, Serialize};
+use stats::{Grant, Layer, Stat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -41,6 +44,10 @@ pub enum ContentError {
     },
     #[error("monster `{monster}` references unknown brain `{brain}`")]
     UnknownBrain { monster: String, brain: String },
+    #[error("tree node `{node}` links to unknown node `{link}`")]
+    UnknownTreeNode { node: String, link: String },
+    #[error("the passive tree has nodes but no `start` node")]
+    NoStartNode,
     #[error("duplicate id `{id}` in {path}")]
     DuplicateId { path: String, id: String },
 }
@@ -68,7 +75,25 @@ pub struct MonsterDef {
     pub hostile: bool,
     pub level: u32,
     pub life: i64,
+    /// Physical attack damage.
     pub damage: i64,
+    /// Elemental / chaos attack damage components.
+    #[serde(default)]
+    pub damage_ele: i64,
+    #[serde(default)]
+    pub damage_chaos: i64,
+    /// Defenses. Accuracy 0 means "derive from level" (60 + 15·level).
+    #[serde(default)]
+    pub armour: i64,
+    #[serde(default)]
+    pub evasion: i64,
+    #[serde(default)]
+    pub accuracy: i64,
+    /// Resistances in basis points.
+    #[serde(default)]
+    pub resist_ele: i64,
+    #[serde(default)]
+    pub resist_chaos: i64,
     /// Movement speed in centi-units per second.
     pub speed_cps: i32,
     /// Body radius in centi-units (collision/separation).
@@ -113,16 +138,24 @@ impl GearSlot {
     }
 }
 
-/// An item base type. Affixes arrive with the full gearing system; until
-/// then rarity scales the base stat.
+/// An item base type. Rolled affixes provide everything beyond these bases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemDef {
     pub id: String,
     pub name: String,
     pub slot: GearSlot,
-    /// Weapon: attack damage (replaces unarmed).
+    /// Bag footprint (the inventory is a grid).
+    #[serde(default = "default_dim")]
+    pub w: u8,
+    #[serde(default = "default_dim")]
+    pub h: u8,
+    /// Weapon: base attack damage by type (replaces unarmed).
     #[serde(default)]
-    pub damage: i64,
+    pub damage_phys: i64,
+    #[serde(default)]
+    pub damage_ele: i64,
+    #[serde(default)]
+    pub damage_chaos: i64,
     /// Weapon: attack range in centi-units.
     #[serde(default)]
     pub range_cu: i32,
@@ -132,9 +165,12 @@ pub struct ItemDef {
     /// Weapon: ranged attack.
     #[serde(default)]
     pub projectile: bool,
-    /// Armor: flat life.
+    /// Armor: base mitigation/avoidance (armour attenuates physical damage;
+    /// evasion makes hits miss).
     #[serde(default)]
-    pub life: i64,
+    pub armour: i64,
+    #[serde(default)]
+    pub evasion: i64,
     /// Relative drop weight.
     #[serde(default = "default_weight")]
     pub weight: u32,
@@ -142,6 +178,76 @@ pub struct ItemDef {
 
 fn default_weight() -> u32 {
     100
+}
+
+fn default_dim() -> u8 {
+    1
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AffixKind {
+    Prefix,
+    Suffix,
+}
+
+/// One rollable tier: eligible from `ilvl`, value rolled in `min..=max`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct AffixTier {
+    pub ilvl: u32,
+    pub min: i64,
+    pub max: i64,
+}
+
+/// A rollable item affix: a (stat, layer) grant whose value comes from the
+/// highest tier the item level allows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffixDef {
+    pub id: String,
+    /// Display: prefixes prepend ("Heavy ..."), suffixes append ("... of X").
+    pub name: String,
+    pub kind: AffixKind,
+    /// Gear slots this affix can appear on.
+    pub slots: Vec<GearSlot>,
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    pub stat: Stat,
+    pub layer: Layer,
+    /// Must be sorted by ilvl ascending.
+    pub tiers: Vec<AffixTier>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeKind {
+    Travel,
+    Notable,
+    Keystone,
+    /// Unlocks a skill gem slot (gems are a later system; the slot is real).
+    SocketSkill,
+    /// Unlocks a support gem slot attached to its cluster's skill socket.
+    SocketSupport,
+}
+
+/// A passive tree node: grants affixes exactly like gear does.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeDef {
+    pub id: String,
+    pub name: String,
+    /// Layout position for the client (abstract units).
+    pub pos: (i32, i32),
+    /// Undirected edges (either side may declare them).
+    #[serde(default)]
+    pub links: Vec<String>,
+    pub kind: NodeKind,
+    #[serde(default)]
+    pub grants: Vec<Grant>,
+}
+
+/// A tree file: nodes merge across files into one graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TreeDef {
+    pub nodes: Vec<NodeDef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +289,13 @@ pub struct ContentDb {
     pub brains: Vec<BrainDef>,
     /// Sorted by id.
     pub items: Vec<ItemDef>,
+    /// Sorted by id.
+    pub affixes: Vec<AffixDef>,
+    /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
+    pub tree: Vec<NodeDef>,
+    pub tree_adj: Vec<Vec<u32>>,
+    /// Index of the shared "start" node everyone begins at.
+    pub tree_start: u32,
 }
 
 impl ContentDb {
@@ -203,6 +316,10 @@ impl ContentDb {
 
     pub fn item_idx(&self, id: &str) -> Option<usize> {
         self.items.binary_search_by(|i| i.id.as_str().cmp(id)).ok()
+    }
+
+    pub fn tree_node_idx(&self, id: &str) -> Option<usize> {
+        self.tree.binary_search_by(|n| n.id.as_str().cmp(id)).ok()
     }
 
     pub fn zone(&self, id: &str) -> Option<&ZoneDef> {
@@ -249,6 +366,12 @@ impl ContentDb {
             } else if rel_str.starts_with("items/") {
                 db.items
                     .push(ron::from_str::<ItemDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("affixes/") {
+                db.affixes
+                    .push(ron::from_str::<AffixDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("tree/") {
+                let tree = ron::from_str::<TreeDef>(&text).map_err(parse_err)?;
+                db.tree.extend(tree.nodes);
             } else if rel_str.starts_with("brains/") && rel_str.ends_with(".asm") {
                 let id = Path::new(&rel_str)
                     .file_stem()
@@ -278,6 +401,16 @@ impl ContentDb {
                 });
             }
         }
+        db.affixes.sort_by(|a, b| a.id.cmp(&b.id));
+        for w in db.affixes.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "affixes/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
+        db.build_tree()?;
         for w in db.monsters.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
@@ -314,6 +447,47 @@ impl ContentDb {
             }
         }
         Ok(db)
+    }
+
+    /// Sort nodes, resolve links into a symmetric adjacency list, find start.
+    fn build_tree(&mut self) -> Result<(), ContentError> {
+        self.tree.sort_by(|a, b| a.id.cmp(&b.id));
+        for w in self.tree.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "tree/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
+        let mut adj: Vec<Vec<u32>> = vec![Vec::new(); self.tree.len()];
+        for (i, node) in self.tree.iter().enumerate() {
+            for link in &node.links {
+                let Some(j) = self.tree_node_idx(link) else {
+                    return Err(ContentError::UnknownTreeNode {
+                        node: node.id.clone(),
+                        link: link.clone(),
+                    });
+                };
+                // Undirected: either side may declare the edge.
+                if !adj[i].contains(&(j as u32)) {
+                    adj[i].push(j as u32);
+                }
+                if !adj[j].contains(&(i as u32)) {
+                    adj[j].push(i as u32);
+                }
+            }
+        }
+        for edges in &mut adj {
+            edges.sort_unstable();
+        }
+        self.tree_adj = adj;
+        self.tree_start = match self.tree_node_idx("start") {
+            Some(i) => i as u32,
+            None if self.tree.is_empty() => 0,
+            None => return Err(ContentError::NoStartNode),
+        };
+        Ok(())
     }
 }
 

@@ -178,7 +178,7 @@ export class WorldStore {
     };
     switch (ev.type) {
       case "CharacterJoined":
-        push(`⚔ ${ev.data.name} the ${ev.data.class} arrives`, "#9a7bff");
+        push(`⚔ ${ev.data.name} arrives on the shore`, "#9a7bff");
         break;
       case "CharacterDied":
         push(`☠ ${ev.data.name} was slain by ${ev.data.killer}`, "#ff6a6a");
@@ -209,6 +209,9 @@ export class WorldStore {
             RARITY_COLORS[ev.data.rarity],
           );
         }
+        break;
+      case "PassiveAllocated":
+        push(`◈ ${ev.data.owner} learns ${ev.data.node}`, "#9a7bff");
         break;
       case "ItemEquipped":
         push(

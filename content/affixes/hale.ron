@@ -1,0 +1,15 @@
+// "Hale ..." — flat life on armor.
+AffixDef(
+    id: "hale",
+    name: "Hale",
+    kind: prefix,
+    slots: [helm, chest, boots],
+    weight: 100,
+    stat: life,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 8, max: 15),
+        (ilvl: 3, min: 16, max: 28),
+        (ilvl: 6, min: 29, max: 45),
+    ],
+)

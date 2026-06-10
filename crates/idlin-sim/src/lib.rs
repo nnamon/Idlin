@@ -18,13 +18,14 @@ pub mod entity;
 pub mod fixed;
 pub mod hash;
 pub mod rng;
+pub mod stats;
 pub mod world;
 pub mod zone;
 
-pub use entity::{Class, Rarity};
+pub use entity::Rarity;
 pub use world::{
     EntityView, JoinRequest, LOOT_DESPAWN_TICKS, RESPAWN_TICKS, SimEvent, TICK_HZ, TickInputs,
-    World, class_stats,
+    World, universal_stats,
 };
 
 #[cfg(test)]

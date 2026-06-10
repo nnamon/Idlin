@@ -3,7 +3,7 @@
 //! cover hours of gameplay in seconds.
 
 use idlin_content::ContentDb;
-use idlin_sim::{Class, JoinRequest, SimEvent, TickInputs, World};
+use idlin_sim::{JoinRequest, SimEvent, TickInputs, World};
 use std::path::Path;
 
 fn content() -> ContentDb {
@@ -12,19 +12,13 @@ fn content() -> ContentDb {
 
 fn join_inputs() -> TickInputs {
     let program = idlin_botc::template_grinder().expect("template assembles");
-    let joins = [
-        ("Kargan", Class::Brute),
-        ("Veles", Class::Hunter),
-        ("Mirra", Class::Brute),
-        ("Thane", Class::Hunter),
-    ]
-    .into_iter()
-    .map(|(name, class)| JoinRequest {
-        name: name.into(),
-        class,
-        program: program.clone(),
-    })
-    .collect();
+    let joins = ["Kargan", "Veles", "Mirra", "Thane"]
+        .into_iter()
+        .map(|name| JoinRequest {
+            name: name.into(),
+            program: program.clone(),
+        })
+        .collect();
     TickInputs { joins }
 }
 
@@ -38,6 +32,7 @@ fn bots_grind_the_shore() {
     let mut deaths = 0u64;
     let mut pickups = 0u64;
     let mut equips = 0u64;
+    let mut passives = 0u64;
 
     let mut events = world.tick(&join_inputs());
     // 6000 ticks = 10 minutes of game time.
@@ -51,6 +46,7 @@ fn bots_grind_the_shore() {
             SimEvent::CharacterDied { .. } => deaths += 1,
             SimEvent::ItemPickedUp { .. } => pickups += 1,
             SimEvent::ItemEquipped { .. } => equips += 1,
+            SimEvent::PassiveAllocated { .. } => passives += 1,
             _ => {}
         }
     }
@@ -62,6 +58,10 @@ fn bots_grind_the_shore() {
     );
     assert!(pickups >= 1, "bots should pick up loot; got {pickups}");
     assert!(equips >= 1, "bots should equip upgrades; got {equips}");
+    assert!(
+        passives >= 1,
+        "bots should allocate passives; got {passives}"
+    );
     // Deaths are possible (tide husks hit hard) but not required.
     let _ = deaths;
 
@@ -135,7 +135,6 @@ fn same_faction_spawn_stack_drifts_apart() {
             .into_iter()
             .map(|name| JoinRequest {
                 name: name.into(),
-                class: Class::Brute,
                 program: halt.clone(),
             })
             .collect(),
@@ -162,4 +161,39 @@ fn same_faction_spawn_stack_drifts_apart() {
             );
         }
     }
+}
+
+#[test]
+fn persist_block_survives_redeploy() {
+    use idlin_sim::bots::{Bot, program_hash};
+    use idlin_sim::rng::{Domain, Pcg32};
+
+    // Program A: write a magic value into the persist block, then halt.
+    let writer = idlin_botc::assemble("push 0x1D71BEEF\npush 0xF200\nstore\nhalt\n").unwrap();
+    // Program B: read it back onto the stack via Debug (no-op here).
+    let reader = idlin_botc::assemble("halt\n").unwrap();
+
+    let mut bot = Bot {
+        vm: idlin_vm::Vm::new(&writer).unwrap(),
+        rng: Pcg32::stream(1, Domain::Bot, 1),
+        params: vec![0; idlin_vm::PARAM_BLOCK_LEN],
+        program_hash: program_hash(&writer),
+        version: 1,
+    };
+    let mut budget = 1000;
+    assert_eq!(bot.vm.run(&mut budget), idlin_vm::RunExit::Halted);
+    assert_eq!(bot.vm.load_u32(0xF200), 0x1D71BEEF);
+
+    // Redeploy with new code: memory resets, persist block survives,
+    // version bumps.
+    bot.redeploy(&reader).unwrap();
+    assert_eq!(bot.version, 2);
+    assert_eq!(bot.vm.pc(), 0);
+    assert_eq!(
+        bot.vm.load_u32(0xF200),
+        0x1D71BEEF,
+        "persist block must survive a code swap"
+    );
+    // Ordinary memory did NOT survive.
+    assert_eq!(bot.vm.load_u32(0xC000), 0);
 }

@@ -116,26 +116,25 @@ export class ZoneRenderer {
     this.zoneBuilt = true;
   }
 
-  private bodyFor(model: string, rarity: number): { mesh: THREE.Mesh; height: number } {
+  private bodyFor(
+    model: string,
+    rarity: number,
+    name: string,
+  ): { mesh: THREE.Mesh; height: number } {
     let geo: THREE.BufferGeometry;
     let color: number;
     let height: number;
     switch (model) {
-      case "brute":
+      case "hero": {
         geo = new THREE.CapsuleGeometry(0.45, 0.9, 4, 12);
-        color = 0xc0504a;
+        // Classless heroes: a stable hue from the character name.
+        let hash = 0;
+        for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+        const col = new THREE.Color().setHSL((hash % 360) / 360, 0.55, 0.55);
+        color = col.getHex();
         height = 1.8;
         break;
-      case "hunter":
-        geo = new THREE.CapsuleGeometry(0.4, 0.9, 4, 12);
-        color = 0x5aa05a;
-        height = 1.7;
-        break;
-      case "arcanist":
-        geo = new THREE.CapsuleGeometry(0.4, 0.9, 4, 12);
-        color = 0x5a6ac0;
-        height = 1.7;
-        break;
+      }
       case "shambler":
         geo = new THREE.BoxGeometry(0.8, 1.2, 0.8);
         color = 0x4a6b4a;
@@ -207,7 +206,7 @@ export class ZoneRenderer {
   private createVisual(er: EntityRender): Visual {
     const { state } = er;
     const isLoot = state.kind === "Loot";
-    const { mesh, height } = this.bodyFor(state.model, state.rarity);
+    const { mesh, height } = this.bodyFor(state.model, state.rarity, state.name);
     const group = new THREE.Group();
     group.add(mesh);
 

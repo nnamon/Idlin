@@ -13,6 +13,7 @@ MonsterDef(
     range_cu: 750,          // 7.5 u ranged
     cooldown_ticks: 14,
     aggro_radius_cu: 1100,
+    evasion: 40,
     xp: 35,
     projectile: true,
 )

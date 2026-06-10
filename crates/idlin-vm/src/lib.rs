@@ -47,6 +47,11 @@ pub const STACK_BASE: u16 = 0x8000;
 /// Host-written parameter block (the chat-command → bot channel).
 pub const PARAM_BLOCK_ADDR: u16 = 0xF000;
 pub const PARAM_BLOCK_LEN: usize = 0x100;
+/// Bot-owned persistent storage: the host carries this region across program
+/// redeployments and zone transfers. Only the bot's own code writes here —
+/// players have no channel into it (params are the only host→bot input).
+pub const PERSIST_BLOCK_ADDR: u16 = 0xF200;
+pub const PERSIST_BLOCK_LEN: usize = 0x400;
 /// Default per-tick instruction budget.
 pub const DEFAULT_TICK_BUDGET: u32 = 5_000;
 
@@ -264,6 +269,21 @@ impl Vm {
         let len = block.len().min(PARAM_BLOCK_LEN);
         for (i, &b) in block[..len].iter().enumerate() {
             self.store_u8(PARAM_BLOCK_ADDR.wrapping_add(i as u16), b);
+        }
+    }
+
+    /// Host-side snapshot of the persistent block (taken before teardown).
+    pub fn read_persist_block(&self) -> Vec<u8> {
+        (0..PERSIST_BLOCK_LEN)
+            .map(|i| self.load_u8(PERSIST_BLOCK_ADDR.wrapping_add(i as u16)))
+            .collect()
+    }
+
+    /// Host-side restore of the persistent block into a fresh instance.
+    pub fn write_persist_block(&mut self, block: &[u8]) {
+        let len = block.len().min(PERSIST_BLOCK_LEN);
+        for (i, &b) in block[..len].iter().enumerate() {
+            self.store_u8(PERSIST_BLOCK_ADDR.wrapping_add(i as u16), b);
         }
     }
 

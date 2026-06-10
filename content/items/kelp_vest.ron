@@ -3,6 +3,9 @@ ItemDef(
     id: "kelp_vest",
     name: "Kelp-Woven Vest",
     slot: chest,
-    life: 30,
+    w: 2,
+    h: 3,
+    armour: 60,
+    evasion: 30,
     weight: 100,
 )

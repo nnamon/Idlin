@@ -1,0 +1,14 @@
+// "... of Embers" — flat elemental damage on weapons.
+AffixDef(
+    id: "of_embers",
+    name: "of Embers",
+    kind: suffix,
+    slots: [weapon],
+    weight: 80,
+    stat: damage_ele,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 2, max: 5),
+        (ilvl: 4, min: 6, max: 11),
+    ],
+)

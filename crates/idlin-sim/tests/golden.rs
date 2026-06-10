@@ -4,13 +4,13 @@
 //! say so in the commit) or — much worse — a determinism leak.
 
 use idlin_content::ContentDb;
-use idlin_sim::{Class, JoinRequest, TickInputs, World};
+use idlin_sim::{JoinRequest, TickInputs, World};
 use std::path::Path;
 
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0xDC0E3CA9B3DE0620;
+const GOLDEN_HASH: u64 = 0xFAAFF5220A7803FF;
 
 #[test]
 fn golden_replay() {
@@ -22,12 +22,10 @@ fn golden_replay() {
         joins: vec![
             JoinRequest {
                 name: "Golden".into(),
-                class: Class::Brute,
                 program: program.clone(),
             },
             JoinRequest {
                 name: "Replay".into(),
-                class: Class::Hunter,
                 program,
             },
         ],

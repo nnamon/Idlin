@@ -1,0 +1,14 @@
+// "Swift ..." — increased attack speed.
+AffixDef(
+    id: "swift",
+    name: "Swift",
+    kind: prefix,
+    slots: [weapon],
+    weight: 70,
+    stat: attack_speed,
+    layer: increased,
+    tiers: [
+        (ilvl: 1, min: 500, max: 900),
+        (ilvl: 4, min: 1000, max: 1600),
+    ],
+)

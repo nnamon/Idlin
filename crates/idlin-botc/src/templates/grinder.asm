@@ -46,6 +46,11 @@ no_loot:
     sys 12 0           ; EquipBest()
     pop
 
+    ; --- spend any pending passive point (host auto-picks a node) ---
+    pushs -1
+    sys 13 1           ; AllocPassive(-1)
+    pop
+
     ; --- combat: nearest monster, or wander if none ---
     pushs F_MON
     pushs 8

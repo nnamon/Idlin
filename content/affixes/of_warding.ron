@@ -1,0 +1,14 @@
+// "... of Warding" — elemental resistance.
+AffixDef(
+    id: "of_warding",
+    name: "of Warding",
+    kind: suffix,
+    slots: [helm, chest, boots],
+    weight: 80,
+    stat: resist_ele,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 500, max: 1200),   // 5-12%
+        (ilvl: 4, min: 1300, max: 2200),
+    ],
+)
