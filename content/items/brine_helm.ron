@@ -2,6 +2,7 @@
 ItemDef(
     id: "brine_helm",
     name: "Brinescoured Helm",
+    model: "ranger_hood",
     slot: helm,
     w: 2,
     h: 2,

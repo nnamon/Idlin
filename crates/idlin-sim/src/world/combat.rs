@@ -283,6 +283,7 @@ impl World {
         let hit = (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(accuracy, t_evasion);
 
         let mut amount = 0i64;
+        let mut dmg_type = 0u8;
         if hit {
             // One variance roll (75%..=125%) applied to every component, then
             // per-type mitigation: armour curve for phys, capped resistances
@@ -292,6 +293,14 @@ impl World {
             let ele = apply_resist(damage[DMG_ELE] * variance / 100, t_res_ele);
             let chaos = apply_resist(damage[DMG_CHAOS] * variance / 100, t_res_chaos);
             amount = (phys + ele + chaos).max(1);
+            // Dominant component drives the client's damage-number color.
+            dmg_type = if chaos > phys && chaos > ele {
+                2
+            } else if ele > phys {
+                1
+            } else {
+                0
+            };
         }
 
         let t = self.zone.get_mut(target_slot).unwrap();
@@ -303,6 +312,7 @@ impl World {
             attacker: attacker_net,
             target: target_net,
             amount,
+            dmg_type,
             projectile,
             killed,
         });

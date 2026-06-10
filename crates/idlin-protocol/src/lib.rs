@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 3;
+pub const PROTO_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -43,6 +43,11 @@ pub struct EntityState {
     pub model: String,
     /// 0 normal, 1 magic, 2 rare, 3 unique (loot only).
     pub rarity: u8,
+    /// Equipped weapon visual key ("" = unarmed; characters only).
+    pub weapon: String,
+    /// Visual part keys from equipped armor, in gear-slot order. The client
+    /// composes the character model from these (modular paper-doll).
+    pub gear: Vec<String>,
     pub dead: bool,
     pub kills: u32,
     pub items: u32,
@@ -63,6 +68,10 @@ pub struct EntityPatch {
     pub dead: bool,
     pub kills: u32,
     pub items: u32,
+    /// Equipped weapon visual key; patched so swaps show up mid-stream.
+    pub weapon: String,
+    /// Armor visual part keys; patched so upgrades show up mid-stream.
+    pub gear: Vec<String>,
 }
 
 /// A landed hit, for client-side effects (tracers, impact flashes).
@@ -71,6 +80,8 @@ pub struct HitFx {
     pub attacker: u32,
     pub target: u32,
     pub amount: i32,
+    /// Dominant damage component: 0 phys, 1 elemental, 2 chaos.
+    pub dmg_type: u8,
     pub projectile: bool,
     pub killed: bool,
 }
@@ -246,6 +257,7 @@ mod tests {
                 attacker: 1,
                 target: 2,
                 amount: 13,
+                dmg_type: 1,
                 projectile: true,
                 killed: false,
             }],

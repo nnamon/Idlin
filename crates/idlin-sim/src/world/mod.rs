@@ -134,6 +134,8 @@ pub enum SimEvent {
         attacker: u32,
         target: u32,
         amount: i64,
+        /// Dominant damage component: 0 phys, 1 elemental, 2 chaos.
+        dmg_type: u8,
         projectile: bool,
         killed: bool,
     },
@@ -156,6 +158,10 @@ pub struct EntityView {
     pub name: String,
     /// Client-side visual key (monster archetype model; characters: "hero").
     pub model: String,
+    /// Equipped weapon visual key (characters; "" when unarmed).
+    pub weapon: String,
+    /// Visual part keys from equipped armor (characters), gear-slot order.
+    pub gear: Vec<String>,
     pub rarity: u8,
     pub dead: bool,
     pub kills: u64,

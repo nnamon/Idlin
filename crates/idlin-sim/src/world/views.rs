@@ -4,6 +4,7 @@
 use super::{EntityView, World};
 use crate::entity::{Item, LootPayload};
 use crate::hash::Fnv1a64;
+use idlin_content::GearSlot;
 
 impl World {
     /// Flat per-entity views for replication.
@@ -12,11 +13,30 @@ impl World {
             .iter()
             .map(|(_, e)| {
                 let combat = e.combat.as_ref();
-                let (name, model, level, rarity, dead, kills, items) =
+                let (name, model, weapon, gear, level, rarity, dead, kills, items) =
                     if let Some(ch) = &e.character {
+                        // The equipped weapon's visual key, for the client's
+                        // hand-attachment mesh ("" = unarmed).
+                        let weapon = ch.equipment[GearSlot::Weapon.idx()]
+                            .as_ref()
+                            .map(|item| self.content.items[item.base_idx as usize].model.clone())
+                            .unwrap_or_default();
+                        // Armor visual part keys in gear-slot order: the
+                        // client's paper-doll composes the model from these.
+                        let gear: Vec<String> = ch
+                            .equipment
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i != GearSlot::Weapon.idx())
+                            .filter_map(|(_, slot)| slot.as_ref())
+                            .map(|item| self.content.items[item.base_idx as usize].model.clone())
+                            .filter(|m| !m.is_empty())
+                            .collect();
                         (
                             ch.name.clone(),
                             "hero".to_string(),
+                            weapon,
+                            gear,
                             ch.level,
                             0,
                             !e.alive(),
@@ -28,6 +48,8 @@ impl World {
                         (
                             def.name.clone(),
                             def.model.clone(),
+                            String::new(),
+                            Vec::new(),
                             def.level,
                             0,
                             false,
@@ -39,6 +61,8 @@ impl World {
                         (
                             String::new(),
                             "loot".to_string(),
+                            String::new(),
+                            Vec::new(),
                             0,
                             l.rarity as u8,
                             false,
@@ -55,6 +79,8 @@ impl World {
                     level,
                     name,
                     model,
+                    weapon,
+                    gear,
                     rarity,
                     dead,
                     kills,

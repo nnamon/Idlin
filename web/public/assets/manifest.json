@@ -1,0 +1,82 @@
+{
+  "models": {
+    "hero": {
+      "file": "models/body.glb",
+      "scale": 1.0,
+      "clips": {
+        "idle": "Idle_Loop",
+        "run": "Jog_Fwd_Loop",
+        "attack": "Punch_Cross",
+        "death": "Death01",
+        "pickup": "PickUp_Table"
+      },
+      "attackClips": {
+        "cleaver": "Sword_Attack",
+        "bow": "Pistol_Shoot",
+        "wand": "Spell_Simple_Shoot"
+      },
+      "handSlot": "hand_r",
+      "defaultParts": ["peasant_body", "peasant_legs", "peasant_feet"],
+      "nameTintParts": ["peasant_body", "ranger_body", "ranger_hood"]
+    },
+    "shambler": {
+      "file": "models/body.glb",
+      "scale": 0.98,
+      "tint": "#86a47e",
+      "clips": {
+        "idle": "Zombie_Idle_Loop",
+        "run": "Zombie_Walk_Fwd_Loop",
+        "attack": "Zombie_Scratch",
+        "death": "Death01"
+      },
+      "defaultParts": ["peasant_body", "peasant_legs"]
+    },
+    "husk": {
+      "file": "models/body.glb",
+      "scale": 1.28,
+      "tint": "#5f8398",
+      "clips": {
+        "idle": "Zombie_Idle_Loop",
+        "run": "Walk_Loop",
+        "attack": "Melee_Hook",
+        "death": "Death01"
+      },
+      "defaultParts": ["peasant_legs"]
+    },
+    "stalker": {
+      "file": "models/stalker.glb",
+      "scale": 1.0,
+      "clips": {
+        "idle": "SkeletonArmature|Skeleton_Idle",
+        "run": "SkeletonArmature|Skeleton_Running",
+        "attack": "SkeletonArmature|Skeleton_Attack",
+        "death": "SkeletonArmature|Skeleton_Death",
+        "spawn": "SkeletonArmature|Skeleton_Spawn"
+      }
+    }
+  },
+  "parts": {
+    "peasant_body": {
+      "region": "body",
+      "files": ["models/parts/male_peasant_body.glb", "models/parts/male_peasant_arms.glb"]
+    },
+    "peasant_legs": { "region": "legs", "files": ["models/parts/male_peasant_legs.glb"] },
+    "peasant_feet": { "region": "feet", "files": ["models/parts/male_peasant_feet.glb"] },
+    "ranger_body": {
+      "region": "body",
+      "files": [
+        "models/parts/male_ranger_body.glb",
+        "models/parts/male_ranger_arms.glb",
+        "models/parts/male_ranger_acc_pauldron.glb"
+      ]
+    },
+    "ranger_legs": { "region": "legs", "files": ["models/parts/male_ranger_legs.glb"] },
+    "ranger_feet": { "region": "feet", "files": ["models/parts/male_ranger_feet_boots.glb"] },
+    "ranger_hood": { "region": "head", "files": ["models/parts/male_ranger_head_hood.glb"] }
+  },
+  "weapons": {
+    "cleaver": { "file": "models/cleaver.glb" },
+    "bow": { "file": "models/bow.glb" },
+    "wand": { "file": "models/wand.glb" }
+  }
+}

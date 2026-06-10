@@ -2,6 +2,7 @@
 ItemDef(
     id: "driftwood_bow",
     name: "Driftwood Bow",
+    model: "bow",
     slot: weapon,
     w: 2,
     h: 4,

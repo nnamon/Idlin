@@ -1,0 +1,431 @@
+import * as THREE from "three";
+import type { EntityRender } from "../world/store";
+import type { AssetLibrary, ModelDef } from "./Assets";
+
+const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
+const FADE_S = 0.18;
+
+/** Stable hue from a character name — same everywhere it appears. */
+export function nameColor(name: string): THREE.Color {
+  let hash = 0;
+  for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return new THREE.Color().setHSL((hash % 360) / 360, 0.65, 0.55);
+}
+
+interface WornPart {
+  key: string;
+  meshes: THREE.SkinnedMesh[];
+  /** Per-entity cloned materials (name tint) that we must dispose. */
+  ownedMaterials: THREE.Material[];
+}
+
+/**
+ * One entity's renderable. Characters and monsters are MODULAR: a shared
+ * rigged body plus outfit parts bound to its skeleton, composed from the
+ * replicated `gear` list (region overrides: equipping a vest swaps the
+ * torso). Loot is a shared-geometry glowing pickup. Owns its per-instance
+ * GPU resources and releases them in dispose() — a broadcast runs for days.
+ */
+export class EntityVisual {
+  readonly group = new THREE.Group();
+  height = 1.8;
+
+  // Animation
+  private mixer: THREE.AnimationMixer | null = null;
+  private actions = new Map<string, THREE.AnimationAction>();
+  private baseRole = "";
+  private attacking = false;
+  private wasDead = false;
+
+  // Modular body
+  private def: ModelDef | null = null;
+  private modelRoot: THREE.Object3D | null = null;
+  private boneByName = new Map<string, THREE.Bone>();
+  private worn = new Map<string, WornPart>(); // region → part
+  private gearKey = "<unset>";
+  private myName = "";
+
+  // Movement/facing
+  private lastX = NaN;
+  private lastZ = NaN;
+  private targetAngle = 0;
+
+  // Parts
+  private lootMesh: THREE.Mesh | null = null;
+  private hpBg: THREE.Sprite | null = null;
+  private hpFg: THREE.Sprite | null = null;
+  private label: THREE.Sprite | null = null;
+  private weaponKey = "";
+  private weaponObj: THREE.Object3D | null = null;
+  private handBone: THREE.Object3D | null = null;
+
+  constructor(
+    private readonly id: number,
+    er: EntityRender,
+    private readonly assets: AssetLibrary,
+    private readonly shared: SharedResources,
+  ) {
+    const { state } = er;
+    this.myName = state.name;
+    if (state.kind === "Loot") {
+      this.buildLoot(state.model, state.rarity);
+    } else {
+      this.buildModel(state.model, state.kind === "Monster");
+      this.buildBars();
+      if (state.kind === "Character") this.buildLabel(state.name);
+      this.composeGear(state.gear);
+      this.setWeapon(state.weapon);
+    }
+  }
+
+  private buildModel(model: string, isMonster: boolean): void {
+    const inst = this.assets.instantiateModel(model);
+    if (!inst) {
+      // Unknown key: visible placeholder beats an invisible entity.
+      const mesh = new THREE.Mesh(this.shared.fallbackGeo, this.shared.fallbackMat);
+      mesh.position.y = 0.5;
+      this.group.add(mesh);
+      this.height = 1.0;
+      return;
+    }
+    this.def = inst.def;
+    this.modelRoot = inst.root;
+    this.height = 1.85 * inst.def.scale;
+    this.group.add(inst.root);
+
+    inst.root.traverse((o) => {
+      if (o instanceof THREE.Bone) this.boneByName.set(o.name, o);
+      // Fixed monster tint applies to the body skin too (shared cache).
+      if (inst.def.tint && o instanceof THREE.Mesh && !Array.isArray(o.material)) {
+        o.material = this.assets.tintedMaterial(o.material, inst.def.tint);
+      }
+    });
+
+    this.mixer = new THREE.AnimationMixer(inst.root);
+    for (const [role, clipName] of Object.entries(inst.def.clips)) {
+      const clip = THREE.AnimationClip.findByName(inst.clips, clipName);
+      if (clip) this.actions.set(role, this.mixer.clipAction(clip));
+    }
+    for (const [weapon, clipName] of Object.entries(inst.def.attackClips ?? {})) {
+      const clip = THREE.AnimationClip.findByName(inst.clips, clipName);
+      if (clip) this.actions.set(`attack:${weapon}`, this.mixer.clipAction(clip));
+    }
+    this.mixer.addEventListener("finished", () => this.onClipFinished());
+
+    if (inst.def.handSlot) {
+      this.handBone = inst.root.getObjectByName(inst.def.handSlot) ?? null;
+    }
+
+    // Monsters with a spawn clip rise out of the ground; everyone else
+    // idles, phase-shifted so packs don't move in lockstep.
+    const spawn = this.actions.get("spawn");
+    if (isMonster && spawn) {
+      spawn.setLoop(THREE.LoopOnce, 1);
+      spawn.play();
+      this.attacking = true; // blocks the base state until "finished"
+      this.baseRole = "idle";
+    } else {
+      this.playBase("idle");
+      const idle = this.actions.get("idle");
+      if (idle) idle.time = Math.random() * idle.getClip().duration;
+    }
+  }
+
+  /**
+   * The paper-doll: defaults fill each region, replicated gear overrides by
+   * region. Bound to this body's skeleton — same rig, shared bind pose.
+   */
+  private composeGear(gear: string[]): void {
+    const key = gear.join("|");
+    if (key === this.gearKey || !this.def || !this.modelRoot) return;
+    this.gearKey = key;
+
+    const desired = new Map<string, string>(); // region → part key
+    for (const part of this.def.defaultParts ?? []) {
+      const def = this.assets.partDef(part);
+      if (def) desired.set(def.region, part);
+    }
+    for (const part of gear) {
+      const def = this.assets.partDef(part);
+      if (def) desired.set(def.region, part);
+    }
+
+    // Remove parts whose region changed…
+    for (const [region, worn] of this.worn) {
+      if (desired.get(region) === worn.key) continue;
+      for (const mesh of worn.meshes) mesh.removeFromParent();
+      for (const mat of worn.ownedMaterials) mat.dispose();
+      this.worn.delete(region);
+    }
+    // …and attach the new ones.
+    for (const [region, partKey] of desired) {
+      if (this.worn.has(region)) continue;
+      const tintByName = this.def.nameTintParts?.includes(partKey) ?? false;
+      const worn: WornPart = { key: partKey, meshes: [], ownedMaterials: [] };
+      for (const src of this.assets.partMeshes(partKey)) {
+        const mesh = src.clone();
+        const bones = src.skeleton.bones.map(
+          (b) => this.boneByName.get(b.name) ?? (b as THREE.Bone),
+        );
+        mesh.bind(new THREE.Skeleton(bones, src.skeleton.boneInverses), mesh.bindMatrix);
+        mesh.frustumCulled = false;
+        mesh.castShadow = true;
+        if (!Array.isArray(mesh.material)) {
+          if (this.def.tint) {
+            mesh.material = this.assets.tintedMaterial(mesh.material, this.def.tint);
+          } else if (tintByName) {
+            const mat = mesh.material.clone() as THREE.MeshStandardMaterial;
+            mat.color?.lerp(nameColor(this.myName), 0.55);
+            mesh.material = mat;
+            worn.ownedMaterials.push(mat);
+          }
+        }
+        this.modelRoot.add(mesh);
+        worn.meshes.push(mesh);
+      }
+      this.worn.set(region, worn);
+    }
+  }
+
+  private buildLoot(model: string, rarity: number): void {
+    const geo = model === "gem" ? this.shared.gemGeo : this.shared.lootGeo;
+    const mat =
+      model === "gem"
+        ? this.shared.gemMat
+        : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
+    this.lootMesh = new THREE.Mesh(geo, mat);
+    this.lootMesh.position.y = 0.55;
+    this.group.add(this.lootMesh);
+    this.height = 0.7;
+  }
+
+  private buildBars(): void {
+    this.hpBg = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.shared.whiteTex,
+        color: 0x331111,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+      }),
+    );
+    this.hpBg.scale.set(1.2, 0.14, 1);
+    this.hpBg.position.y = this.height + 0.45;
+    this.hpFg = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.shared.whiteTex,
+        color: 0x44dd66,
+        transparent: true,
+        depthTest: false,
+      }),
+    );
+    this.hpFg.scale.set(1.16, 0.1, 1);
+    this.hpFg.position.y = this.height + 0.45;
+    this.hpFg.renderOrder = 1;
+    this.group.add(this.hpBg, this.hpFg);
+  }
+
+  private buildLabel(text: string): void {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = "bold 36px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "#000";
+    ctx.strokeText(text, 128, 44);
+    ctx.fillStyle = `#${nameColor(text).clone().offsetHSL(0, -0.15, 0.25).getHexString()}`;
+    ctx.fillText(text, 128, 44);
+    const tex = new THREE.CanvasTexture(canvas);
+    this.label = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
+    );
+    this.label.scale.set(3.2, 0.8, 1);
+    this.label.position.y = this.height + 0.95;
+    this.group.add(this.label);
+  }
+
+  /** Swap the visible weapon when the replicated key changes. */
+  private setWeapon(key: string): void {
+    if (key === this.weaponKey) return;
+    this.weaponKey = key;
+    if (this.weaponObj) {
+      this.weaponObj.removeFromParent(); // clone shares GPU resources; no dispose
+      this.weaponObj = null;
+    }
+    if (key && this.handBone) {
+      this.weaponObj = this.assets.instantiateWeapon(key);
+      if (this.weaponObj) this.handBone.add(this.weaponObj);
+    }
+  }
+
+  // ---- animation state machine ----
+
+  private playBase(role: string): void {
+    if (this.baseRole === role) return;
+    const next = this.actions.get(role);
+    if (!next) return;
+    const prev = this.actions.get(this.baseRole);
+    this.baseRole = role;
+    next.reset().fadeIn(FADE_S).play();
+    prev?.fadeOut(FADE_S);
+  }
+
+  private onClipFinished(): void {
+    if (!this.attacking) return;
+    this.attacking = false;
+    // Resume whatever the base state is; update() keeps steering it.
+    const base = this.actions.get(this.baseRole);
+    base?.reset().fadeIn(FADE_S).play();
+  }
+
+  /** Swing at a target: weapon-specific clip when we have one. */
+  playAttack(targetPos: THREE.Vector3): void {
+    if (this.attacking || this.wasDead || !this.mixer) return;
+    const action =
+      this.actions.get(`attack:${this.weaponKey}`) ?? this.actions.get("attack");
+    if (!action) return;
+    this.attacking = true;
+    const dx = targetPos.x - this.group.position.x;
+    const dz = targetPos.z - this.group.position.z;
+    if (dx * dx + dz * dz > 1e-6) this.targetAngle = Math.atan2(dx, dz);
+    const base = this.actions.get(this.baseRole);
+    base?.fadeOut(FADE_S * 0.5);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.reset().fadeIn(FADE_S * 0.5).play();
+  }
+
+  update(er: EntityRender, pos: { x: number; y: number }, dt: number, t: number): void {
+    this.group.position.set(pos.x, 0, pos.y);
+
+    if (this.lootMesh) {
+      this.lootMesh.rotation.y += dt * 1.5;
+      this.lootMesh.position.y = 0.55 + Math.sin(t * 2 + this.id) * 0.08;
+      return;
+    }
+
+    // -- health bar --
+    const pct = er.state.life_pct / 100;
+    if (this.hpFg && this.hpBg) {
+      this.hpFg.scale.x = Math.max(0.02, 1.16 * pct);
+      this.hpFg.position.x = -(1.16 * (1 - pct)) / 2;
+      (this.hpFg.material as THREE.SpriteMaterial).color.setHex(
+        pct > 0.5 ? 0x44dd66 : pct > 0.25 ? 0xffd75a : 0xff5a5a,
+      );
+      const hide = er.state.dead || (er.state.kind === "Monster" && er.state.life_pct >= 100);
+      this.hpBg.visible = !hide;
+      this.hpFg.visible = !hide;
+    }
+
+    // -- death / respawn --
+    if (er.state.dead !== this.wasDead) {
+      this.wasDead = er.state.dead;
+      if (er.state.dead) {
+        this.attacking = false;
+        const death = this.actions.get("death");
+        if (death) {
+          for (const a of this.actions.values()) a.fadeOut(FADE_S);
+          death.setLoop(THREE.LoopOnce, 1);
+          death.clampWhenFinished = true;
+          death.reset().fadeIn(FADE_S).play();
+        }
+      } else {
+        const death = this.actions.get("death");
+        death?.stop();
+        this.baseRole = "";
+        this.playBase("idle");
+        this.lastX = NaN; // don't sprint-face across the respawn teleport
+      }
+    }
+    if (this.wasDead) {
+      this.mixer?.update(dt);
+      return;
+    }
+
+    // -- locomotion + facing --
+    const moved =
+      !Number.isNaN(this.lastX) &&
+      Math.hypot(pos.x - this.lastX, pos.y - this.lastZ) > dt * 0.35;
+    if (moved) {
+      this.targetAngle = Math.atan2(pos.x - this.lastX, pos.y - this.lastZ);
+    }
+    this.lastX = pos.x;
+    this.lastZ = pos.y;
+    if (!this.attacking) this.playBase(moved ? "run" : "idle");
+
+    // Shortest-arc turn toward where we're going (or who we're hitting).
+    let delta = this.targetAngle - this.group.rotation.y;
+    delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    this.group.rotation.y += delta * Math.min(1, dt * 12);
+
+    this.composeGear(er.state.gear);
+    this.setWeapon(er.state.weapon);
+    this.mixer?.update(dt);
+  }
+
+  dispose(): void {
+    this.mixer?.stopAllAction();
+    this.group.removeFromParent();
+    // Per-instance GPU resources only; cloned model geometry/materials are
+    // shared with the AssetLibrary and live for the whole session.
+    for (const worn of this.worn.values()) {
+      for (const mat of worn.ownedMaterials) mat.dispose();
+    }
+    this.worn.clear();
+    if (this.label) {
+      const mat = this.label.material as THREE.SpriteMaterial;
+      mat.map?.dispose();
+      mat.dispose();
+    }
+    (this.hpBg?.material as THREE.Material | undefined)?.dispose();
+    (this.hpFg?.material as THREE.Material | undefined)?.dispose();
+  }
+}
+
+/** Session-lifetime resources shared by every visual (never disposed). */
+export class SharedResources {
+  readonly whiteTex: THREE.Texture;
+  readonly glowTex: THREE.Texture;
+  readonly lootGeo = new THREE.OctahedronGeometry(0.32);
+  readonly gemGeo = new THREE.TetrahedronGeometry(0.3);
+  readonly lootMats: THREE.MeshStandardMaterial[];
+  readonly gemMat: THREE.MeshStandardMaterial;
+  readonly fallbackGeo = new THREE.SphereGeometry(0.5, 12, 8);
+  readonly fallbackMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+
+  constructor() {
+    const data = new Uint8Array([255, 255, 255, 255]);
+    this.whiteTex = new THREE.DataTexture(data, 1, 1);
+    this.whiteTex.needsUpdate = true;
+    // Soft radial falloff for flashes/tracers — a flat white texture on a
+    // sprite reads as a literal square.
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext("2d")!;
+    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.45, "rgba(255,255,255,0.55)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    this.glowTex = new THREE.CanvasTexture(c);
+    this.lootMats = RARITY_COLORS.map(
+      (c) =>
+        new THREE.MeshStandardMaterial({
+          color: c,
+          emissive: c,
+          emissiveIntensity: 0.9,
+          roughness: 0.4,
+        }),
+    );
+    this.gemMat = new THREE.MeshStandardMaterial({
+      color: 0x5adfdf,
+      emissive: 0x5adfdf,
+      emissiveIntensity: 1.0,
+      roughness: 0.4,
+    });
+  }
+}

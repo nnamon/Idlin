@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const FOLLOW_OFFSET = new THREE.Vector3(9, 11, 9);
+const FOLLOW_OFFSET = new THREE.Vector3(7, 8, 7);
 
 /**
  * Smooth camera rig: follows the director's focus with damped motion, or
@@ -20,8 +20,8 @@ export class DirectorCamera {
     this.lookTarget.copy(this.center);
   }
 
-  follow(target: THREE.Vector3, dt: number): void {
-    const desired = target.clone().add(FOLLOW_OFFSET);
+  follow(target: THREE.Vector3, dt: number, zoom = 1): void {
+    const desired = target.clone().addScaledVector(FOLLOW_OFFSET, zoom);
     const k = 1 - Math.exp(-dt * 2.2);
     this.camera.position.lerp(desired, k);
     this.lookTarget.lerp(target.clone().setY(1), 1 - Math.exp(-dt * 3.5));

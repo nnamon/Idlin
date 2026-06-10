@@ -20,4 +20,13 @@ model: string,
 /**
  * 0 normal, 1 magic, 2 rare, 3 unique (loot only).
  */
-rarity: number, dead: boolean, kills: number, items: number, };
+rarity: number, 
+/**
+ * Equipped weapon visual key ("" = unarmed; characters only).
+ */
+weapon: string, 
+/**
+ * Visual part keys from equipped armor, in gear-slot order. The client
+ * composes the character model from these (modular paper-doll).
+ */
+gear: Array<string>, dead: boolean, kills: number, items: number, };

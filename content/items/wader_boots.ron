@@ -2,6 +2,7 @@
 ItemDef(
     id: "wader_boots",
     name: "Wader's Boots",
+    model: "ranger_feet",
     slot: boots,
     w: 2,
     h: 2,

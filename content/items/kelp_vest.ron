@@ -2,6 +2,7 @@
 ItemDef(
     id: "kelp_vest",
     name: "Kelp-Woven Vest",
+    model: "ranger_body",
     slot: chest,
     w: 2,
     h: 3,

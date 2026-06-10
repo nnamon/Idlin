@@ -2,6 +2,7 @@
 ItemDef(
     id: "barnacle_wand",
     name: "Barnacle Wand",
+    model: "wand",
     slot: weapon,
     w: 1,
     h: 3,

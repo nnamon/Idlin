@@ -2,6 +2,7 @@
 ItemDef(
     id: "rusted_cleaver",
     name: "Rusted Cleaver",
+    model: "cleaver",
     slot: weapon,
     w: 2,
     h: 3,

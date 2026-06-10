@@ -174,6 +174,9 @@ pub struct ItemDef {
     /// Relative drop weight.
     #[serde(default = "default_weight")]
     pub weight: u32,
+    /// Client-side visual key for the equipped mesh (weapons; "" = none).
+    #[serde(default)]
+    pub model: String,
 }
 
 fn default_weight() -> u32 {

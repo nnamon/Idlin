@@ -65,12 +65,14 @@ pub fn spawn_replication(
                         attacker,
                         target,
                         amount,
+                        dmg_type,
                         projectile,
                         killed,
                     } => Some(HitFx {
                         attacker: *attacker,
                         target: *target,
                         amount: (*amount).clamp(0, i32::MAX as i64) as i32,
+                        dmg_type: *dmg_type,
                         projectile: *projectile,
                         killed: *killed,
                     }),
@@ -168,6 +170,8 @@ fn diff(
                     || old.dead != state.dead
                     || old.kills != state.kills
                     || old.items != state.items
+                    || old.weapon != state.weapon
+                    || old.gear != state.gear
                 {
                     updated.push(EntityPatch {
                         id: *id,
@@ -176,6 +180,8 @@ fn diff(
                         dead: state.dead,
                         kills: state.kills,
                         items: state.items,
+                        weapon: state.weapon.clone(),
+                        gear: state.gear.clone(),
                     });
                 }
             }
@@ -223,6 +229,8 @@ fn to_state(v: &EntityView) -> EntityState {
         name: v.name.clone(),
         model: v.model.clone(),
         rarity: v.rarity,
+        weapon: v.weapon.clone(),
+        gear: v.gear.clone(),
         dead: v.dead,
         kills: v.kills.min(u32::MAX as u64) as u32,
         items: v.items.min(u32::MAX as u64) as u32,
@@ -342,6 +350,8 @@ mod tests {
             name: format!("e{id}"),
             model: "hero".into(),
             rarity: 0,
+            weapon: String::new(),
+            gear: vec![],
             dead: false,
             kills: 0,
             items: 0,

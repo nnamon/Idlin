@@ -3,4 +3,8 @@
 /**
  * A landed hit, for client-side effects (tracers, impact flashes).
  */
-export type HitFx = { attacker: number, target: number, amount: number, projectile: boolean, killed: boolean, };
+export type HitFx = { attacker: number, target: number, amount: number, 
+/**
+ * Dominant damage component: 0 phys, 1 elemental, 2 chaos.
+ */
+dmg_type: number, projectile: boolean, killed: boolean, };

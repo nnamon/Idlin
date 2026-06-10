@@ -23,6 +23,9 @@ export interface TickerItem {
 export interface ActiveHit {
   attacker: number;
   target: number;
+  amount: number;
+  /** Dominant damage component: 0 phys, 1 elemental, 2 chaos. */
+  dmgType: number;
   projectile: boolean;
   killed: boolean;
   at: number;
@@ -92,12 +95,16 @@ export class WorldStore {
           er.state.dead = u.dead;
           er.state.kills = u.kills;
           er.state.items = u.items;
+          er.state.weapon = u.weapon;
+          er.state.gear = u.gear;
         }
         for (const id of d.removed) this.entities.delete(id);
         for (const h of d.hits) {
           this.pendingHits.push({
             attacker: h.attacker,
             target: h.target,
+            amount: h.amount,
+            dmgType: h.dmg_type,
             projectile: h.projectile,
             killed: h.killed,
             at: now,
