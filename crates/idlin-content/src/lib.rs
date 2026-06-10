@@ -219,6 +219,71 @@ pub struct AffixDef {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum GemKind {
+    Skill,
+    Support,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillShape {
+    /// Single-target strike at the chosen enemy.
+    Target,
+    /// Hits everything hostile around the user.
+    Nova,
+}
+
+fn shape_target() -> SkillShape {
+    SkillShape::Target
+}
+
+fn default_max_targets() -> u32 {
+    1
+}
+
+/// A gem: a skill (an active attack the bot can use) or a support (affix
+/// grants applied to the skill socketed in its tree cluster). Gems gain XP
+/// from kills; levels scale their numbers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GemDef {
+    pub id: String,
+    pub name: String,
+    pub kind: GemKind,
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    // -- skill fields --
+    /// Percent of weapon damage (basis points; 10000 = 100%).
+    #[serde(default)]
+    pub coeff_bp: i64,
+    /// Flat damage the skill itself contributes.
+    #[serde(default)]
+    pub added_phys: i64,
+    #[serde(default)]
+    pub added_ele: i64,
+    #[serde(default)]
+    pub added_chaos: i64,
+    #[serde(default = "shape_target")]
+    pub shape: SkillShape,
+    #[serde(default)]
+    pub projectile: bool,
+    /// 0 = use the weapon's range.
+    #[serde(default)]
+    pub range_cu: i32,
+    /// Nova radius.
+    #[serde(default)]
+    pub radius_cu: i32,
+    #[serde(default = "default_max_targets")]
+    pub max_targets: u32,
+    #[serde(default)]
+    pub cooldown_ticks: u32,
+    // -- support fields --
+    /// Grants applied to the cluster's skill (scaled by gem level).
+    #[serde(default)]
+    pub grants: Vec<Grant>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NodeKind {
     Travel,
     Notable,
@@ -291,6 +356,8 @@ pub struct ContentDb {
     pub items: Vec<ItemDef>,
     /// Sorted by id.
     pub affixes: Vec<AffixDef>,
+    /// Sorted by id.
+    pub gems: Vec<GemDef>,
     /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
     pub tree: Vec<NodeDef>,
     pub tree_adj: Vec<Vec<u32>>,
@@ -369,6 +436,9 @@ impl ContentDb {
             } else if rel_str.starts_with("affixes/") {
                 db.affixes
                     .push(ron::from_str::<AffixDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("gems/") {
+                db.gems
+                    .push(ron::from_str::<GemDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("tree/") {
                 let tree = ron::from_str::<TreeDef>(&text).map_err(parse_err)?;
                 db.tree.extend(tree.nodes);
@@ -406,6 +476,15 @@ impl ContentDb {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
                     path: "affixes/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
+        db.gems.sort_by(|a, b| a.id.cmp(&b.id));
+        for w in db.gems.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "gems/".into(),
                     id: w[0].id.clone(),
                 });
             }

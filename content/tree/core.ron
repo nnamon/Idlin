@@ -44,7 +44,7 @@ TreeDef(
 
         // --- first gem socket cluster (gems are the next system) ---
         NodeDef(id: "socket_a", name: "Skill Socket", pos: (3, 3), kind: socket_skill,
-             links: ["vit1", "dex1"], grants: []),
+             links: ["start", "vit1", "dex1"], grants: []),
         NodeDef(id: "socket_a1", name: "Support Socket", pos: (5, 4), kind: socket_support,
              links: ["socket_a"], grants: []),
     ],

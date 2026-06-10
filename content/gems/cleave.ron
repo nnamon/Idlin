@@ -1,0 +1,12 @@
+// Skill: a sweeping melee arc around the wielder.
+GemDef(
+    id: "cleave",
+    name: "Cleave",
+    kind: skill,
+    weight: 100,
+    coeff_bp: 11000,        // 110% of weapon damage
+    shape: nova,
+    radius_cu: 320,         // 3.2 u around self
+    max_targets: 5,
+    cooldown_ticks: 14,
+)

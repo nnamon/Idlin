@@ -80,13 +80,21 @@ impl CombatStats {
     }
 }
 
+/// An attack intent: which enemy, with what. `skill: None` is the basic
+/// weapon attack; `Some(node)` names the tree socket whose gem fires.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct AttackIntent {
+    pub target: u32,
+    pub skill: Option<u32>,
+}
+
 /// Per-tick action intents. `attack`/`pickup` are cleared every tick (bots
 /// and AI re-issue); `move_to` persists until arrival so a budget-starved
 /// bot keeps walking.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Intents {
     pub move_to: Option<FxV2>,
-    pub attack: Option<u32>,
+    pub attack: Option<AttackIntent>,
     pub pickup: Option<u32>,
 }
 
@@ -118,6 +126,45 @@ pub struct PlacedItem {
     pub y: u8,
 }
 
+/// A concrete gem. Gems gain XP from their owner's kills; level scales
+/// their numbers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GemInstance {
+    /// Index into ContentDb::gems.
+    pub gem_idx: u32,
+    pub level: u32,
+    pub xp: i64,
+}
+
+/// A gem sitting in an allocated tree socket node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocketedGem {
+    pub gem: GemInstance,
+    /// Per-skill cooldown (skill gems only).
+    pub cooldown_left: u32,
+}
+
+/// What a piece of ground loot actually is.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LootPayload {
+    Gear(Item),
+    Gem(GemInstance),
+}
+
+/// Gems live in a small pouch, not the bag grid (they're small).
+pub const POUCH_CAP: usize = 12;
+pub const GEM_LEVEL_CAP: u32 = 20;
+
+/// Gem level scaling: +4% to the gem's numbers per level.
+pub fn gem_scale_bp(level: u32) -> i64 {
+    10000 + 400 * (level as i64 - 1)
+}
+
+pub fn gem_xp_to_next(level: u32) -> i64 {
+    let l = level as i64;
+    60 + 30 * l * l
+}
+
 /// Bag grid dimensions (PoE proportions; item footprints are content).
 pub const BAG_W: u8 = 12;
 pub const BAG_H: u8 = 5;
@@ -140,6 +187,11 @@ pub struct CharacterState {
     /// Allocated passive tree node indices (sorted). The start node is
     /// implicit and free.
     pub allocated: Vec<u32>,
+    /// Unsocketed gems.
+    pub pouch: Vec<GemInstance>,
+    /// Gems socketed into allocated tree socket nodes (keyed by node index;
+    /// BTreeMap for deterministic iteration).
+    pub sockets: std::collections::BTreeMap<u32, SocketedGem>,
 }
 
 impl CharacterState {
@@ -163,8 +215,8 @@ pub struct MonsterState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LootState {
-    /// The actual dropped item.
-    pub item: Item,
+    /// The actual dropped thing (gear or gem).
+    pub payload: LootPayload,
     pub rarity: Rarity,
     /// Personal loot: only this character's net_id can see or take it.
     pub owner: u32,

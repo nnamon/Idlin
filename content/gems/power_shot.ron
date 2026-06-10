@@ -1,0 +1,12 @@
+// Skill: a single heavy ranged attack.
+GemDef(
+    id: "power_shot",
+    name: "Power Shot",
+    kind: skill,
+    weight: 80,
+    coeff_bp: 17000,        // 170% of weapon damage
+    shape: target,
+    projectile: true,
+    range_cu: 1100,
+    cooldown_ticks: 22,
+)

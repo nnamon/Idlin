@@ -1,0 +1,10 @@
+// Support: the cluster's skill carries fire.
+GemDef(
+    id: "added_embers",
+    name: "Added Embers",
+    kind: support,
+    weight: 80,
+    grants: [
+        (stat: damage_ele, layer: added, value: 5),
+    ],
+)

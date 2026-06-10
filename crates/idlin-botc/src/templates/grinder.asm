@@ -51,6 +51,12 @@ no_loot:
     sys 13 1           ; AllocPassive(-1)
     pop
 
+    ; --- socket any pouch gems into empty allocated sockets ---
+    pushs -1
+    pushs -1
+    sys 19 2           ; SocketGem(auto, auto)
+    pop
+
     ; --- combat: nearest monster, or wander if none ---
     pushs F_MON
     pushs 8
@@ -58,14 +64,26 @@ no_loot:
     sys 2 3            ; count = ReadEntities(ENTS, 8, F_MON)
     jmpifz wander
 
+    ; try skill slot 1 first (-1 if absent or on cooldown), else basic
     pushz              ; y = 0 (unused for targeted skills)
     pushz              ; x = 0
     push ENTS
     load               ; target id (records are distance-sorted)
+    pushs 1            ; slot 1 = first socketed skill gem
+    sys 7 4            ; UseSkill(1, id, 0, 0)
+    pushz
+    eq
+    jmpif chase        ; accepted (result == 0)
+
+    pushz              ; y
+    pushz              ; x
+    push ENTS
+    load
     pushz              ; slot 0 = basic attack
     sys 7 4            ; UseSkill(0, id, 0, 0)
     pop
 
+chase:
     push ENTS+12
     load               ; target y
     push ENTS+8

@@ -33,6 +33,7 @@ fn bots_grind_the_shore() {
     let mut pickups = 0u64;
     let mut equips = 0u64;
     let mut passives = 0u64;
+    let mut gems_socketed = 0u64;
 
     let mut events = world.tick(&join_inputs());
     // 6000 ticks = 10 minutes of game time.
@@ -47,6 +48,7 @@ fn bots_grind_the_shore() {
             SimEvent::ItemPickedUp { .. } => pickups += 1,
             SimEvent::ItemEquipped { .. } => equips += 1,
             SimEvent::PassiveAllocated { .. } => passives += 1,
+            SimEvent::GemSocketed { .. } => gems_socketed += 1,
             _ => {}
         }
     }
@@ -61,6 +63,10 @@ fn bots_grind_the_shore() {
     assert!(
         passives >= 1,
         "bots should allocate passives; got {passives}"
+    );
+    assert!(
+        gems_socketed >= 1,
+        "bots should socket gems; got {gems_socketed}"
     );
     // Deaths are possible (tide husks hit hard) but not required.
     let _ = deaths;

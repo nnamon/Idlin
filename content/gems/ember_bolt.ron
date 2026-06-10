@@ -1,0 +1,13 @@
+// Skill: a mote of stolen fire. Scales mostly from its own ember.
+GemDef(
+    id: "ember_bolt",
+    name: "Ember Bolt",
+    kind: skill,
+    weight: 60,
+    coeff_bp: 7000,         // 70% of weapon damage...
+    added_ele: 7,           // ...plus its own elemental payload
+    shape: target,
+    projectile: true,
+    range_cu: 900,
+    cooldown_ticks: 9,
+)

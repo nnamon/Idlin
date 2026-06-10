@@ -1,0 +1,10 @@
+// Support: the cluster's skill hits like a falling mast.
+GemDef(
+    id: "heavier_blows",
+    name: "Heavier Blows",
+    kind: support,
+    weight: 80,
+    grants: [
+        (stat: damage_phys, layer: more, value: 2000),  // 20% MORE phys
+    ],
+)

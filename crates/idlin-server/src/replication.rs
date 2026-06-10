@@ -266,6 +266,22 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             node: node.clone(),
         },
+        SimEvent::GemSocketed { id, owner, gem } => GameEvent::GemSocketed {
+            id: *id,
+            owner: owner.clone(),
+            gem: gem.clone(),
+        },
+        SimEvent::GemLevelUp {
+            id,
+            owner,
+            gem,
+            level,
+        } => GameEvent::GemLevelUp {
+            id: *id,
+            owner: owner.clone(),
+            gem: gem.clone(),
+            level: *level,
+        },
         SimEvent::Hit { .. } | SimEvent::BotDebug { .. } | SimEvent::JoinRejected { .. } => {
             return None;
         }

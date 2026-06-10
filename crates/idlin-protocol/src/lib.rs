@@ -126,6 +126,17 @@ pub enum GameEvent {
         owner: String,
         node: String,
     },
+    GemSocketed {
+        id: u32,
+        owner: String,
+        gem: String,
+    },
+    GemLevelUp {
+        id: u32,
+        owner: String,
+        gem: String,
+        level: u32,
+    },
 }
 
 /// Client → server.

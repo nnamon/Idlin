@@ -213,6 +213,12 @@ export class WorldStore {
       case "PassiveAllocated":
         push(`◈ ${ev.data.owner} learns ${ev.data.node}`, "#9a7bff");
         break;
+      case "GemSocketed":
+        push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#5adfdf");
+        break;
+      case "GemLevelUp":
+        push(`◆ ${ev.data.owner}'s ${ev.data.gem} is now level ${ev.data.level}`, "#5adfdf");
+        break;
       case "ItemEquipped":
         push(
           `⚙ ${ev.data.owner} equips ${ev.data.item}${ev.data.rarity >= 1 ? ` (${RARITY_NAMES[ev.data.rarity]})` : ""}`,

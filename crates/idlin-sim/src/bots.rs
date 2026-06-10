@@ -41,6 +41,12 @@ pub const SYS_ALLOC_PASSIVE: i32 = 13;
 pub const SYS_RANDOM: i32 = 15;
 pub const SYS_MOVE_ITEM: i32 = 16;
 pub const SYS_DROP_ITEM: i32 = 17;
+pub const SYS_READ_SKILLS: i32 = 18;
+pub const SYS_SOCKET_GEM: i32 = 19;
+
+/// Size of one ReadSkills record in bytes:
+/// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
+pub const SKILL_RECORD_SIZE: u16 = 28;
 
 /// Size of one ReadInventory record in bytes:
 /// base_idx, slot, rarity, item_level, x, y, w, h.
@@ -306,12 +312,34 @@ impl World {
                 }
             }
             SYS_USE_SKILL => {
-                let _skill_slot = bot.vm.pop(); // slot 0 = basic attack (Phase 1)
+                // Slot 0 = basic weapon attack; 1..N = socketed skill gems in
+                // tree-node order. Returns -1 for an unknown slot or a skill
+                // still on cooldown, so bots can fall back to slot 0.
+                let skill_slot = bot.vm.pop();
                 let target = bot.vm.pop();
                 let _x = bot.vm.pop();
                 let _y = bot.vm.pop();
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let skill = if skill_slot <= 0 {
+                    None
+                } else {
+                    let Some(ch) = &e.character else { return -1 };
+                    let nodes = self.skill_nodes(ch);
+                    let Some(&node) = nodes.get(skill_slot as usize - 1) else {
+                        return -1;
+                    };
+                    if ch.sockets[&node].cooldown_left > 0 {
+                        return -1;
+                    }
+                    Some(node)
+                };
                 if let Some(e) = self.zone.get_mut(slot) {
-                    e.intents.attack = Some(target as u32);
+                    e.intents.attack = Some(crate::entity::AttackIntent {
+                        target: target as u32,
+                        skill,
+                    });
                     0
                 } else {
                     -1
@@ -363,7 +391,7 @@ impl World {
             SYS_EQUIP_BEST => self.equip_best(slot, events),
             SYS_ALLOC_PASSIVE => {
                 let node = bot.vm.pop();
-                self.alloc_passive(slot, node, events)
+                self.alloc_passive(slot, node, &mut bot.rng, events)
             }
             SYS_MOVE_ITEM => {
                 let inv_idx = bot.vm.pop();
@@ -380,6 +408,54 @@ impl World {
                     return -1;
                 }
                 self.drop_item(slot, inv_idx as usize)
+            }
+            SYS_READ_SKILLS => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, 8) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let Some(ch) = &e.character else { return -1 };
+                let nodes = self.skill_nodes(ch);
+                let records: Vec<[i32; 7]> = nodes
+                    .iter()
+                    .take(max)
+                    .enumerate()
+                    .map(|(i, node)| {
+                        let sg = &ch.sockets[node];
+                        let def = &self.content_gems()[sg.gem.gem_idx as usize];
+                        let range = if def.range_cu > 0 {
+                            crate::world::fx_from_cu(def.range_cu).raw()
+                        } else {
+                            e.combat.as_ref().map(|c| c.range.raw()).unwrap_or(0)
+                        };
+                        let shape = match def.shape {
+                            idlin_content::SkillShape::Target => 0,
+                            idlin_content::SkillShape::Nova => 1,
+                        };
+                        [
+                            (i + 1) as i32,
+                            sg.gem.gem_idx as i32,
+                            sg.gem.level as i32,
+                            sg.cooldown_left as i32,
+                            range,
+                            shape,
+                            crate::world::fx_from_cu(def.radius_cu).raw(),
+                        ]
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * SKILL_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_SOCKET_GEM => {
+                let socket_sel = bot.vm.pop();
+                let pouch_sel = bot.vm.pop();
+                self.socket_gem(slot, socket_sel, pouch_sel, events)
             }
             SYS_RANDOM => bot.rng.next_u32() as i32,
             _ => -1,

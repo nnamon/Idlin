@@ -6,15 +6,16 @@
 
 use crate::bots::{Bot, BotArena, program_hash};
 use crate::entity::{
-    BAG_H, BAG_W, CharacterState, CombatStats, DMG_CHAOS, DMG_ELE, DMG_PHYS, Entity, GEAR_SLOTS,
-    Item, LootState, MonsterState, PlacedItem, Rarity, RolledAffix,
+    AttackIntent, BAG_H, BAG_W, CharacterState, CombatStats, DMG_CHAOS, DMG_ELE, DMG_PHYS, Entity,
+    GEAR_SLOTS, GEM_LEVEL_CAP, GemInstance, Item, LootPayload, LootState, MonsterState, POUCH_CAP,
+    PlacedItem, Rarity, RolledAffix, SocketedGem, gem_scale_bp, gem_xp_to_next,
 };
 use crate::fixed::{Fx, FxV2};
 use crate::hash::Fnv1a64;
 use crate::rng::{Domain, Pcg32};
 use crate::stats::{Grant, Stat, StatSheet, apply_resist, hit_chance_bp, mitigate_phys};
 use crate::zone::{PackState, Zone};
-use idlin_content::{ContentDb, GearSlot, ItemDef, MonsterDef};
+use idlin_content::{ContentDb, GearSlot, GemKind, ItemDef, MonsterDef, NodeKind, SkillShape};
 use idlin_vm::Vm;
 use serde::{Deserialize, Serialize};
 
@@ -99,6 +100,17 @@ pub enum SimEvent {
         id: u32,
         owner: String,
         node: String,
+    },
+    GemSocketed {
+        id: u32,
+        owner: String,
+        gem: String,
+    },
+    GemLevelUp {
+        id: u32,
+        owner: String,
+        gem: String,
+        level: u32,
     },
     Hit {
         attacker: u32,
@@ -274,6 +286,10 @@ impl World {
         &self.content.items
     }
 
+    pub(crate) fn content_gems(&self) -> &[idlin_content::GemDef] {
+        &self.content.gems
+    }
+
     pub fn tick_count(&self) -> u64 {
         self.tick
     }
@@ -370,6 +386,8 @@ impl World {
                     inventory: Vec::new(),
                     equipment: Default::default(),
                     allocated: Vec::new(),
+                    pouch: Vec::new(),
+                    sockets: std::collections::BTreeMap::new(),
                 }),
                 monster: None,
                 loot: None,
@@ -401,7 +419,7 @@ impl World {
 
             // Stop to fight: if the attack target is already in range, hold.
             if let Some(att) = e.intents.attack
-                && let Some(t) = self.zone.get_net(att)
+                && let Some(t) = self.zone.get_net(att.target)
                 && t.alive()
                 && pos.dist(t.pos) <= range
             {
@@ -493,19 +511,24 @@ impl World {
     }
 
     fn attacks(&mut self, events: &mut Vec<SimEvent>) {
-        // Cooldowns tick down first, for everyone, in slot order.
+        // Cooldowns tick down first (weapon and every socketed skill).
         for slot in 0..self.zone.slot_count() {
-            if let Some(e) = self.zone.get_mut(slot)
-                && let Some(c) = e.combat.as_mut()
-            {
-                c.cooldown_left = c.cooldown_left.saturating_sub(1);
+            if let Some(e) = self.zone.get_mut(slot) {
+                if let Some(c) = e.combat.as_mut() {
+                    c.cooldown_left = c.cooldown_left.saturating_sub(1);
+                }
+                if let Some(ch) = e.character.as_mut() {
+                    for sg in ch.sockets.values_mut() {
+                        sg.cooldown_left = sg.cooldown_left.saturating_sub(1);
+                    }
+                }
             }
         }
 
         // Sequential resolution in slot order: earlier attackers can kill a
         // target before later ones swing. Deterministic and simple.
         let mut dead_monsters: Vec<(usize, u32)> = Vec::new(); // (slot, bot idx)
-        let mut loot_spawns: Vec<(FxV2, Item, u32, String)> = Vec::new();
+        let mut loot_spawns: Vec<(FxV2, LootPayload, u32, String)> = Vec::new();
         let now = self.tick;
 
         for slot in 0..self.zone.slot_count() {
@@ -515,13 +538,10 @@ impl World {
             if !e.alive() {
                 continue;
             }
-            let Some(target_net) = e.intents.attack else {
+            let Some(AttackIntent { target, skill }) = e.intents.attack else {
                 continue;
             };
             let Some(combat) = &e.combat else { continue };
-            if combat.cooldown_left > 0 {
-                continue;
-            }
             let attacker_net = e.net_id;
             let attacker_faction = e.faction();
             let attacker_name = match (&e.character, &e.monster) {
@@ -530,7 +550,7 @@ impl World {
                 _ => continue,
             };
             let attacker_is_char = e.character.is_some();
-            let (pos, damage, accuracy, range, projectile, cooldown) = (
+            let (pos, char_damage, accuracy, weapon_range, weapon_projectile, weapon_cd) = (
                 e.pos,
                 combat.damage,
                 combat.accuracy,
@@ -539,106 +559,178 @@ impl World {
                 combat.cooldown_ticks,
             );
 
-            // Validate the target now (it may have died earlier this phase).
-            // Friendly fire is impossible: factions must oppose.
-            let Some(target_slot) = self.zone.slot_of(target_net) else {
-                continue;
-            };
-            let Some(t) = self.zone.get(target_slot) else {
-                continue;
-            };
-            if !t.alive() || !attacker_faction.is_enemy_of(t.faction()) || pos.dist(t.pos) > range {
-                continue;
-            }
-            let tc_ro = t.combat.as_ref().unwrap();
-            let (t_evasion, t_armour, t_res_ele, t_res_chaos) = (
-                tc_ro.evasion,
-                tc_ro.armour,
-                tc_ro.resist_ele,
-                tc_ro.resist_chaos,
-            );
-
-            // Hit roll: accuracy vs evasion. A miss still swings (cooldown
-            // resets) and still marks combat.
-            let hit =
-                (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(accuracy, t_evasion);
-
-            let mut amount = 0i64;
-            if hit {
-                // One variance roll (75%..=125%) applied to every component,
-                // then per-type mitigation: armour curve for phys, capped
-                // resistance for elemental/chaos.
-                let variance = 75 + self.rng_combat.next_range(51) as i64;
-                let phys = mitigate_phys(damage[DMG_PHYS] * variance / 100, t_armour);
-                let ele = apply_resist(damage[DMG_ELE] * variance / 100, t_res_ele);
-                let chaos = apply_resist(damage[DMG_CHAOS] * variance / 100, t_res_chaos);
-                amount = (phys + ele + chaos).max(1);
-            }
-
-            let t = self.zone.get_mut(target_slot).unwrap();
-            let tc = t.combat.as_mut().unwrap();
-            tc.life -= amount;
-            tc.last_combat_tick = now;
-            let killed = tc.life <= 0;
-            events.push(SimEvent::Hit {
-                attacker: attacker_net,
-                target: target_net,
-                amount,
-                projectile,
-                killed,
-            });
-
-            if killed {
-                let target_pos = t.pos;
-                if let Some(m) = &t.monster {
-                    let (def_idx, pack_idx) = (m.def_idx, m.pack_idx);
-                    let target_bot = t.bot;
-                    let def = self.monster_def(def_idx);
-                    let (monster_name, monster_level, xp) = (def.name.clone(), def.level, def.xp);
-                    dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
-                    let pack = &mut self.zone.packs[pack_idx as usize];
-                    pack.alive = pack.alive.saturating_sub(1);
-                    if pack.respawn_timer == 0 {
-                        pack.respawn_timer = pack.def.respawn_ticks;
+            match skill {
+                None => {
+                    // Basic weapon attack.
+                    if combat.cooldown_left > 0 {
+                        continue;
                     }
-                    if attacker_is_char {
-                        events.push(SimEvent::MonsterKilled {
-                            killer_id: attacker_net,
-                            killer: attacker_name.clone(),
-                            monster: monster_name,
-                            level: monster_level,
-                        });
-                        // Loot roll (personal: owned by the killer).
-                        if self.rng_loot.next_range(100) < 35
-                            && let Some(item) = self.roll_item(monster_level)
-                        {
-                            loot_spawns.push((
-                                target_pos,
-                                item,
-                                attacker_net,
-                                attacker_name.clone(),
-                            ));
-                        }
-                        self.grant_xp(slot, xp, events);
+                    let Some(target_slot) = self.zone.slot_of(target) else {
+                        continue;
+                    };
+                    let Some(t) = self.zone.get(target_slot) else {
+                        continue;
+                    };
+                    if !t.alive()
+                        || !attacker_faction.is_enemy_of(t.faction())
+                        || pos.dist(t.pos) > weapon_range
+                    {
+                        continue;
                     }
-                } else if let Some(ch) = &mut t.character {
-                    ch.respawn_at = Some(now + RESPAWN_TICKS);
-                    let (id, name) = (t.net_id, ch.name.clone());
-                    t.intents = Default::default();
-                    events.push(SimEvent::CharacterDied {
-                        id,
-                        name,
-                        killer: attacker_name.clone(),
-                    });
+                    self.strike(
+                        slot,
+                        attacker_net,
+                        &attacker_name,
+                        attacker_is_char,
+                        accuracy,
+                        char_damage,
+                        weapon_projectile,
+                        target_slot,
+                        now,
+                        events,
+                        &mut dead_monsters,
+                        &mut loot_spawns,
+                    );
+                    if let Some(me) = self.zone.get_mut(slot)
+                        && let Some(c) = me.combat.as_mut()
+                    {
+                        c.cooldown_left = weapon_cd;
+                        c.last_combat_tick = now;
+                    }
                 }
-            }
+                Some(node) => {
+                    // Socketed skill gem.
+                    let Some(ch) = &e.character else { continue };
+                    let Some(sg) = ch.sockets.get(&node) else {
+                        continue;
+                    };
+                    if sg.cooldown_left > 0 {
+                        continue;
+                    }
+                    let gem_def = &self.content.gems[sg.gem.gem_idx as usize];
+                    if gem_def.kind != GemKind::Skill {
+                        continue;
+                    }
+                    let scale = gem_scale_bp(sg.gem.level);
 
-            // Reset the attacker's cooldown and mark it in combat.
-            if let Some(me) = self.zone.get_mut(slot)
-                && let Some(c) = me.combat.as_mut()
-            {
-                c.cooldown_left = cooldown;
-                c.last_combat_tick = now;
+                    // Supports in this cluster: adjacent socketed support gems
+                    // apply their grants (scaled by their own level).
+                    let mut sheet = StatSheet::new();
+                    for &adj in &self.content.tree_adj[node as usize] {
+                        let Some(asg) = ch.sockets.get(&adj) else {
+                            continue;
+                        };
+                        let adef = &self.content.gems[asg.gem.gem_idx as usize];
+                        if adef.kind != GemKind::Support {
+                            continue;
+                        }
+                        let ascale = gem_scale_bp(asg.gem.level);
+                        for g in &adef.grants {
+                            sheet.apply(&Grant {
+                                stat: g.stat,
+                                layer: g.layer,
+                                value: g.value * ascale / 10000,
+                            });
+                        }
+                    }
+
+                    let added = [gem_def.added_phys, gem_def.added_ele, gem_def.added_chaos];
+                    let mut damage = [0i64; 3];
+                    let stats = [Stat::DamagePhys, Stat::DamageEle, Stat::DamageChaos];
+                    for i in 0..3 {
+                        let base =
+                            char_damage[i] * gem_def.coeff_bp / 10000 + added[i] * scale / 10000;
+                        damage[i] = sheet.value(stats[i], base);
+                    }
+                    let range = if gem_def.range_cu > 0 {
+                        fx_from_cu(gem_def.range_cu)
+                    } else {
+                        weapon_range
+                    };
+                    let speed_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
+                    let cooldown =
+                        ((gem_def.cooldown_ticks as i64 * 10000 / speed_factor).max(2)) as u32;
+                    let projectile = gem_def.projectile || weapon_projectile;
+                    let (shape, radius, max_targets) = (
+                        gem_def.shape,
+                        fx_from_cu(gem_def.radius_cu),
+                        gem_def.max_targets,
+                    );
+
+                    let mut swung = false;
+                    match shape {
+                        SkillShape::Target => {
+                            if let Some(target_slot) = self.zone.slot_of(target)
+                                && let Some(t) = self.zone.get(target_slot)
+                                && t.alive()
+                                && attacker_faction.is_enemy_of(t.faction())
+                                && pos.dist(t.pos) <= range
+                            {
+                                self.strike(
+                                    slot,
+                                    attacker_net,
+                                    &attacker_name,
+                                    attacker_is_char,
+                                    accuracy,
+                                    damage,
+                                    projectile,
+                                    target_slot,
+                                    now,
+                                    events,
+                                    &mut dead_monsters,
+                                    &mut loot_spawns,
+                                );
+                                swung = true;
+                            }
+                        }
+                        SkillShape::Nova => {
+                            // Everything hostile around the attacker, nearest
+                            // first, capped — deterministic (d², net id) order.
+                            let rr = radius.raw() as i64 * radius.raw() as i64;
+                            let mut victims: Vec<(i64, u32, usize)> = Vec::new();
+                            for (ts, te) in self.zone.iter() {
+                                if !te.alive() || !attacker_faction.is_enemy_of(te.faction()) {
+                                    continue;
+                                }
+                                let dx = (te.pos.x - pos.x).raw() as i64;
+                                let dy = (te.pos.y - pos.y).raw() as i64;
+                                let d2 = dx * dx + dy * dy;
+                                if d2 <= rr {
+                                    victims.push((d2, te.net_id, ts));
+                                }
+                            }
+                            victims.sort_unstable();
+                            for &(_, _, target_slot) in victims.iter().take(max_targets as usize) {
+                                self.strike(
+                                    slot,
+                                    attacker_net,
+                                    &attacker_name,
+                                    attacker_is_char,
+                                    accuracy,
+                                    damage,
+                                    false,
+                                    target_slot,
+                                    now,
+                                    events,
+                                    &mut dead_monsters,
+                                    &mut loot_spawns,
+                                );
+                                swung = true;
+                            }
+                        }
+                    }
+
+                    if swung && let Some(me) = self.zone.get_mut(slot) {
+                        if let Some(ch) = me.character.as_mut()
+                            && let Some(sg) = ch.sockets.get_mut(&node)
+                        {
+                            sg.cooldown_left = cooldown;
+                        }
+                        if let Some(c) = me.combat.as_mut() {
+                            c.last_combat_tick = now;
+                        }
+                    }
+                }
             }
         }
 
@@ -648,22 +740,141 @@ impl World {
                 self.bots.remove(bot_idx);
             }
         }
-        for (pos, item, owner, owner_name) in loot_spawns {
-            let rarity = item.rarity;
-            let item_name = self.content.items[item.base_idx as usize].name.clone();
-            self.spawn_loot(pos, item, owner);
+        for (pos, payload, owner, owner_name) in loot_spawns {
+            let (rarity, name) = self.payload_display(&payload);
+            self.spawn_loot(pos, payload, owner);
             events.push(SimEvent::LootDropped {
                 owner_id: owner,
                 owner: owner_name,
                 rarity,
-                item: item_name,
+                item: name,
             });
         }
     }
 
-    fn spawn_loot(&mut self, pos: FxV2, item: Item, owner: u32) {
+    /// One attack landing on one target: hit roll, variance, per-type
+    /// mitigation, death handling (XP, loot roll, pack bookkeeping).
+    #[allow(clippy::too_many_arguments)]
+    fn strike(
+        &mut self,
+        attacker_slot: usize,
+        attacker_net: u32,
+        attacker_name: &str,
+        attacker_is_char: bool,
+        accuracy: i64,
+        damage: [i64; 3],
+        projectile: bool,
+        target_slot: usize,
+        now: u64,
+        events: &mut Vec<SimEvent>,
+        dead_monsters: &mut Vec<(usize, u32)>,
+        loot_spawns: &mut Vec<(FxV2, LootPayload, u32, String)>,
+    ) {
+        let Some(t) = self.zone.get(target_slot) else {
+            return;
+        };
+        if !t.alive() {
+            return; // an earlier strike this phase may have killed it
+        }
+        let target_net = t.net_id;
+        let tc_ro = t.combat.as_ref().unwrap();
+        let (t_evasion, t_armour, t_res_ele, t_res_chaos) = (
+            tc_ro.evasion,
+            tc_ro.armour,
+            tc_ro.resist_ele,
+            tc_ro.resist_chaos,
+        );
+
+        // Hit roll: accuracy vs evasion. A miss still marks combat.
+        let hit = (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(accuracy, t_evasion);
+
+        let mut amount = 0i64;
+        if hit {
+            // One variance roll (75%..=125%) applied to every component, then
+            // per-type mitigation: armour curve for phys, capped resistances
+            // for elemental/chaos.
+            let variance = 75 + self.rng_combat.next_range(51) as i64;
+            let phys = mitigate_phys(damage[DMG_PHYS] * variance / 100, t_armour);
+            let ele = apply_resist(damage[DMG_ELE] * variance / 100, t_res_ele);
+            let chaos = apply_resist(damage[DMG_CHAOS] * variance / 100, t_res_chaos);
+            amount = (phys + ele + chaos).max(1);
+        }
+
+        let t = self.zone.get_mut(target_slot).unwrap();
+        let tc = t.combat.as_mut().unwrap();
+        tc.life -= amount;
+        tc.last_combat_tick = now;
+        let killed = tc.life <= 0;
+        events.push(SimEvent::Hit {
+            attacker: attacker_net,
+            target: target_net,
+            amount,
+            projectile,
+            killed,
+        });
+
+        if killed {
+            let target_pos = t.pos;
+            if let Some(m) = &t.monster {
+                let (def_idx, pack_idx) = (m.def_idx, m.pack_idx);
+                let target_bot = t.bot;
+                let def = self.monster_def(def_idx);
+                let (monster_name, monster_level, xp) = (def.name.clone(), def.level, def.xp);
+                dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
+                let pack = &mut self.zone.packs[pack_idx as usize];
+                pack.alive = pack.alive.saturating_sub(1);
+                if pack.respawn_timer == 0 {
+                    pack.respawn_timer = pack.def.respawn_ticks;
+                }
+                if attacker_is_char {
+                    events.push(SimEvent::MonsterKilled {
+                        killer_id: attacker_net,
+                        killer: attacker_name.to_string(),
+                        monster: monster_name,
+                        level: monster_level,
+                    });
+                    // Loot roll (personal: owned by the killer).
+                    if self.rng_loot.next_range(100) < 35
+                        && let Some(payload) = self.roll_drop(monster_level)
+                    {
+                        loot_spawns.push((
+                            target_pos,
+                            payload,
+                            attacker_net,
+                            attacker_name.to_string(),
+                        ));
+                    }
+                    self.grant_xp(attacker_slot, xp, events);
+                }
+            } else if let Some(ch) = &mut t.character {
+                ch.respawn_at = Some(now + RESPAWN_TICKS);
+                let (id, name) = (t.net_id, ch.name.clone());
+                t.intents = Default::default();
+                events.push(SimEvent::CharacterDied {
+                    id,
+                    name,
+                    killer: attacker_name.to_string(),
+                });
+            }
+        }
+    }
+
+    fn payload_display(&self, payload: &LootPayload) -> (Rarity, String) {
+        match payload {
+            LootPayload::Gear(item) => (
+                item.rarity,
+                self.content.items[item.base_idx as usize].name.clone(),
+            ),
+            LootPayload::Gem(gem) => (
+                Rarity::Normal,
+                self.content.gems[gem.gem_idx as usize].name.clone(),
+            ),
+        }
+    }
+
+    fn spawn_loot(&mut self, pos: FxV2, payload: LootPayload, owner: u32) {
         let net_id = self.alloc_net();
-        let rarity = item.rarity;
+        let (rarity, _) = self.payload_display(&payload);
         self.zone.insert(Entity {
             net_id,
             pos,
@@ -673,12 +884,36 @@ impl World {
             character: None,
             monster: None,
             loot: Some(LootState {
-                item,
+                payload,
                 rarity,
                 owner,
                 despawn_at: self.tick + LOOT_DESPAWN_TICKS,
             }),
         });
+    }
+
+    /// What falls out of a monster: usually gear, sometimes a gem.
+    fn roll_drop(&mut self, monster_level: u32) -> Option<LootPayload> {
+        if !self.content.gems.is_empty() && self.rng_loot.next_range(100) < 12 {
+            let total: u32 = self.content.gems.iter().map(|g| g.weight).sum();
+            if total > 0 {
+                let mut roll = self.rng_loot.next_range(total);
+                let mut gem_idx = 0u32;
+                for (i, def) in self.content.gems.iter().enumerate() {
+                    if roll < def.weight {
+                        gem_idx = i as u32;
+                        break;
+                    }
+                    roll -= def.weight;
+                }
+                return Some(LootPayload::Gem(GemInstance {
+                    gem_idx,
+                    level: 1,
+                    xp: 0,
+                }));
+            }
+        }
+        self.roll_item(monster_level).map(LootPayload::Gear)
     }
 
     /// Roll a concrete item: weighted base pick, rarity, then affixes from
@@ -778,8 +1013,32 @@ impl World {
             ch.level += 1;
             leveled = true;
         }
+        // Socketed gems learn from kills too (half share, each).
+        let mut gem_levelups: Vec<(u32, u32)> = Vec::new();
+        for sg in ch.sockets.values_mut() {
+            sg.gem.xp += xp / 2;
+            while sg.gem.level < GEM_LEVEL_CAP && sg.gem.xp >= gem_xp_to_next(sg.gem.level) {
+                sg.gem.xp -= gem_xp_to_next(sg.gem.level);
+                sg.gem.level += 1;
+                gem_levelups.push((sg.gem.gem_idx, sg.gem.level));
+            }
+        }
+        let owner_name = ch.name.clone();
+        for (gem_idx, glevel) in gem_levelups {
+            events.push(SimEvent::GemLevelUp {
+                id: net_id,
+                owner: owner_name.clone(),
+                gem: self.content.gems[gem_idx as usize].name.clone(),
+                level: glevel,
+            });
+        }
+
         if leveled {
-            let (name, level) = (ch.name.clone(), ch.level);
+            let name = owner_name;
+            let level = {
+                let e = self.zone.get(slot).unwrap();
+                e.character.as_ref().unwrap().level
+            };
             self.refresh_derived_stats(slot);
             if let Some(me) = self.zone.get_mut(slot)
                 && let Some(c) = me.combat.as_mut()
@@ -975,7 +1234,7 @@ impl World {
                 .remove(inv_idx)
                 .item
         };
-        self.spawn_loot(pos, item, owner);
+        self.spawn_loot(pos, LootPayload::Gear(item), owner);
         0
     }
 
@@ -1041,7 +1300,7 @@ impl World {
                             let e = self.zone.get(slot).unwrap();
                             (e.pos, e.net_id)
                         };
-                        self.spawn_loot(pos, old_item, owner_net);
+                        self.spawn_loot(pos, LootPayload::Gear(old_item), owner_net);
                     }
                 }
             }
@@ -1095,6 +1354,7 @@ impl World {
         &mut self,
         slot: usize,
         node: i32,
+        rng: &mut Pcg32,
         events: &mut Vec<SimEvent>,
     ) -> i32 {
         if self.content.tree.is_empty() {
@@ -1123,7 +1383,16 @@ impl World {
             let idx = node as u32;
             ((idx as usize) < self.content.tree.len() && is_open(idx)).then_some(idx)
         } else {
-            (0..self.content.tree.len() as u32).find(|&i| is_open(i))
+            // Auto: a random eligible node from the bot's own stream — every
+            // hero walks a different path, deterministically.
+            let eligible: Vec<u32> = (0..self.content.tree.len() as u32)
+                .filter(|&i| is_open(i))
+                .collect();
+            if eligible.is_empty() {
+                None
+            } else {
+                Some(eligible[rng.next_range(eligible.len() as u32) as usize])
+            }
         };
         let Some(idx) = chosen else { return -1 };
 
@@ -1140,6 +1409,127 @@ impl World {
             node: node_name,
         });
         idx as i32
+    }
+
+    /// Socketed skill slots in deterministic order (ascending node index).
+    /// Slot numbers for UseSkill/ReadSkills are 1-based into this list.
+    pub(crate) fn skill_nodes(&self, ch: &CharacterState) -> Vec<u32> {
+        ch.sockets
+            .iter()
+            .filter(|(node, sg)| {
+                self.content.tree[**node as usize].kind == NodeKind::SocketSkill
+                    && self.content.gems[sg.gem.gem_idx as usize].kind == GemKind::Skill
+            })
+            .map(|(node, _)| *node)
+            .collect()
+    }
+
+    /// Socket a gem from the pouch into an allocated tree socket node.
+    /// `socket_sel < 0` and/or `pouch_sel < 0` = auto: fill empty allocated
+    /// sockets with kind-matching pouch gems (skill gems into skill sockets,
+    /// supports into support sockets), lowest indices first. Returns the
+    /// number of gems socketed, or -1.
+    pub(crate) fn socket_gem(
+        &mut self,
+        slot: usize,
+        socket_sel: i32,
+        pouch_sel: i32,
+        events: &mut Vec<SimEvent>,
+    ) -> i32 {
+        let Some(e) = self.zone.get(slot) else {
+            return -1;
+        };
+        let Some(ch) = &e.character else { return -1 };
+        let (net_id, owner) = (e.net_id, ch.name.clone());
+
+        // Build the work list: (socket node, pouch index) pairs to apply.
+        let mut plans: Vec<(u32, usize)> = Vec::new();
+        let socket_kind_of = |node: u32| self.content.tree[node as usize].kind;
+        let gem_kind_of = |gem: &GemInstance| self.content.gems[gem.gem_idx as usize].kind;
+
+        if socket_sel >= 0 {
+            // Manual: explicit socket node + pouch index.
+            let node = socket_sel as u32;
+            let pouch_idx = pouch_sel.max(0) as usize;
+            if !ch.allocated.contains(&node)
+                || ch.sockets.contains_key(&node)
+                || pouch_idx >= ch.pouch.len()
+            {
+                return -1;
+            }
+            let want = match socket_kind_of(node) {
+                NodeKind::SocketSkill => GemKind::Skill,
+                NodeKind::SocketSupport => GemKind::Support,
+                _ => return -1,
+            };
+            if gem_kind_of(&ch.pouch[pouch_idx]) != want {
+                return -1;
+            }
+            plans.push((node, pouch_idx));
+        } else {
+            // Auto: fill every empty allocated socket with the first
+            // kind-matching pouch gem. Track used pouch indices.
+            let mut used: Vec<usize> = Vec::new();
+            for &node in &ch.allocated {
+                let want = match socket_kind_of(node) {
+                    NodeKind::SocketSkill => GemKind::Skill,
+                    NodeKind::SocketSupport => GemKind::Support,
+                    _ => continue,
+                };
+                if ch.sockets.contains_key(&node) {
+                    continue;
+                }
+                let found = ch
+                    .pouch
+                    .iter()
+                    .enumerate()
+                    .find(|(i, g)| !used.contains(i) && gem_kind_of(g) == want);
+                if let Some((i, _)) = found {
+                    used.push(i);
+                    plans.push((node, i));
+                }
+            }
+        }
+        if plans.is_empty() {
+            return 0;
+        }
+
+        // Apply: remove pouch gems (highest index first so indices hold).
+        let mut names: Vec<String> = Vec::new();
+        {
+            let me = self.zone.get_mut(slot).unwrap();
+            let ch = me.character.as_mut().unwrap();
+            let mut by_pouch = plans.clone();
+            by_pouch.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+            for (node, pouch_idx) in by_pouch {
+                let gem = ch.pouch.remove(pouch_idx);
+                names.push(gem.gem_idx.to_string()); // placeholder, fixed below
+                ch.sockets.insert(
+                    node,
+                    SocketedGem {
+                        gem,
+                        cooldown_left: 0,
+                    },
+                );
+            }
+        }
+        // Names for events (content lookup after the mutable borrow ends).
+        let socketed: Vec<u32> = {
+            let e = self.zone.get(slot).unwrap();
+            let ch = e.character.as_ref().unwrap();
+            plans
+                .iter()
+                .map(|(node, _)| ch.sockets[node].gem.gem_idx)
+                .collect()
+        };
+        for gem_idx in &socketed {
+            events.push(SimEvent::GemSocketed {
+                id: net_id,
+                owner: owner.clone(),
+                gem: self.content.gems[*gem_idx as usize].name.clone(),
+            });
+        }
+        socketed.len() as i32
     }
 
     fn pickups(&mut self, events: &mut Vec<SimEvent>) {
@@ -1165,25 +1555,40 @@ impl World {
             if loot.owner != my_net || my_pos.dist(l.pos) > PICKUP_RANGE {
                 continue;
             }
-            // The grid must have room (bots juggle space; that's the game).
-            let def = &self.content.items[loot.item.base_idx as usize];
-            let Some((x, y)) = self.first_fit(ch, def.w, def.h) else {
-                continue;
-            };
-            let rarity = loot.rarity;
-            let item = loot.item.clone();
-            let item_name = def.name.clone();
-            self.zone.remove(loot_slot);
-            if let Some(me) = self.zone.get_mut(slot) {
-                let ch = me.character.as_mut().unwrap();
-                ch.items += 1;
-                ch.inventory.push(PlacedItem { item, x, y });
+            let (rarity, name) = self.payload_display(&loot.payload);
+            match &loot.payload {
+                LootPayload::Gear(item) => {
+                    // The grid must have room (bots juggle space; that's the game).
+                    let def = &self.content.items[item.base_idx as usize];
+                    let Some((x, y)) = self.first_fit(ch, def.w, def.h) else {
+                        continue;
+                    };
+                    let item = item.clone();
+                    self.zone.remove(loot_slot);
+                    if let Some(me) = self.zone.get_mut(slot) {
+                        let ch = me.character.as_mut().unwrap();
+                        ch.items += 1;
+                        ch.inventory.push(PlacedItem { item, x, y });
+                    }
+                }
+                LootPayload::Gem(gem) => {
+                    if ch.pouch.len() >= POUCH_CAP {
+                        continue;
+                    }
+                    let gem = gem.clone();
+                    self.zone.remove(loot_slot);
+                    if let Some(me) = self.zone.get_mut(slot) {
+                        let ch = me.character.as_mut().unwrap();
+                        ch.items += 1;
+                        ch.pouch.push(gem);
+                    }
+                }
             }
             events.push(SimEvent::ItemPickedUp {
                 owner_id: my_net,
                 owner: my_name,
                 rarity,
-                item: item_name,
+                item: name,
             });
         }
     }
@@ -1464,6 +1869,19 @@ impl World {
                 for &n in &ch.allocated {
                     h.write_u32(n);
                 }
+                h.write_u64(ch.pouch.len() as u64);
+                for gem in &ch.pouch {
+                    h.write_u32(gem.gem_idx);
+                    h.write_u32(gem.level);
+                    h.write_i64(gem.xp);
+                }
+                for (node, sg) in &ch.sockets {
+                    h.write_u32(*node);
+                    h.write_u32(sg.gem.gem_idx);
+                    h.write_u32(sg.gem.level);
+                    h.write_i64(sg.gem.xp);
+                    h.write_u32(sg.cooldown_left);
+                }
             }
             if let Some(m) = &e.monster {
                 h.write_u32(m.def_idx);
@@ -1475,7 +1893,18 @@ impl World {
                 h.write_u8(l.rarity as u8);
                 h.write_u32(l.owner);
                 h.write_u64(l.despawn_at);
-                fold_item(&mut h, &l.item);
+                match &l.payload {
+                    LootPayload::Gear(item) => {
+                        h.write_u8(1);
+                        fold_item(&mut h, item);
+                    }
+                    LootPayload::Gem(gem) => {
+                        h.write_u8(2);
+                        h.write_u32(gem.gem_idx);
+                        h.write_u32(gem.level);
+                        h.write_i64(gem.xp);
+                    }
+                }
             }
         }
         for pack in &self.zone.packs {

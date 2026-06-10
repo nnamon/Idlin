@@ -155,6 +155,11 @@ export class ZoneRenderer {
         color = RARITY_COLORS[rarity] ?? 0xbfbfbf;
         height = 0.7;
         break;
+      case "gem":
+        geo = new THREE.TetrahedronGeometry(0.32);
+        color = 0x5adfdf;
+        height = 0.6;
+        break;
       default:
         geo = new THREE.SphereGeometry(0.5, 12, 8);
         color = 0x888888;
