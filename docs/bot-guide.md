@@ -1,0 +1,263 @@
+# Idlin Bot Programming Guide
+
+Everything that acts in Idlin — player characters and monsters alike — is a
+**bot**: a program running in a constrained virtual machine, observing the
+world and acting on it exclusively through syscalls. This guide is the
+complete reference for writing one.
+
+Writing a good bot is a game of constraints: you get 64 KiB of memory, 5,000
+instructions per tick, and a syscall window into the world. Everything else
+is up to you.
+
+## The machine
+
+- **Stack machine, 32-bit signed words.** There are no registers; operands
+  are pushed onto a stack and opcodes pop them (RPN style: `push 5; push 3;
+  add` leaves 8).
+- **Flat 64 KiB memory, all accesses wrap.** Address 0x10000 is address
+  0x0000. Out-of-bounds access is impossible by construction; reading
+  garbage is your bug, never a crash.
+- **Every state is defined.** Bad opcode → halts your tick. Division by
+  zero → 0. Stack underflow → wraps. Your bot can be wrong; it cannot crash
+  the world or break determinism.
+
+### Memory map
+
+| Region | Address | Who writes it |
+|---|---|---|
+| Code | `0x0000`–`0x7FFF` (32 KiB max) | loaded from your program |
+| Stack | grows **up** from `0x8000` | your pushes/pops |
+| Free RAM | anywhere you like (convention: `0xC000`–`0xEFFF` for buffers) | you |
+| **Param block** | `0xF000`–`0xF0FF` (256 B) | **the host**, rewritten every tick — chat commands and host-set parameters arrive here. Read-only in spirit: anything you write is overwritten next tick. |
+| **Persist block** | `0xF200`–`0xF5FF` (1 KiB) | **you** — and the host preserves it across program redeployments and zone transfers. Your bot's long-term memory. Nothing outside your own code can write it. |
+
+### Execution model
+
+- The world ticks at **10 Hz**. Each tick, every living bot runs with a
+  budget of **5,000 instructions**. Each syscall costs its instruction
+  **plus 20** extra budget.
+- `halt` ends your turn voluntarily. Running out of budget just pauses you:
+  **PC and stack persist**, and you resume exactly where you stopped next
+  tick. A typical bot is a loop ending in `halt; jmp main`.
+- Dead characters don't run; you resume after respawn (50 ticks).
+- Your program ships in a versioned `ILBC` container (the assembler adds
+  it). A server whose bytecode format moved on will reject outdated
+  programs at deploy time with a clear error — never misbehave silently.
+
+## Instruction set
+
+Operands are fetched after the opcode byte; rel16 offsets are relative to
+the PC *after* the operand.
+
+| Mnemonic | Hex | Operand | Effect |
+|---|---|---|---|
+| `halt` | 00 | | end this tick |
+| `nop` | 01 | | nothing |
+| `push N` | 02 | imm32 | push N |
+| `pushs N` | 03 | imm16 | push N (sign-extended) |
+| `pushz` | 04 | | push 0 |
+| `pop` | 05 | | discard top |
+| `dup` | 06 | | duplicate top |
+| `swap` | 07 | | swap top two |
+| `load` | 10 | | pop addr, push mem[addr] (32-bit LE) |
+| `store` | 11 | | pop addr, pop value, mem[addr] = value |
+| `loadsp N` | 12 | off16 | push mem[sp+N] (N in bytes, signed) |
+| `storesp N` | 13 | off16 | pop value, mem[sp+N] = value (sp after the pop) |
+| `jmp L` | 20 | rel16 | jump to label |
+| `jmpif L` | 21 | rel16 | pop c; jump if c ≠ 0 |
+| `jmpifz L` | 22 | rel16 | pop c; jump if c = 0 |
+| `call L` | 23 | rel16 | push return address; jump |
+| `callabs` | 24 | | pop target; push return address; jump |
+| `ret` | 25 | | pop address; jump to it |
+| `lt le gt ge eq ne` | 30–35 | | pop b, pop a; push (a OP b) as 0/1 (signed) |
+| `add sub mul` | 40–42 | | pop b, pop a; push a OP b (wrapping) |
+| `mulfx` | 43 | | Q16.16 multiply (for fixed-point positions) |
+| `div` | 44 | | a / b, truncating; **b = 0 → 0** |
+| `divfx` | 45 | | Q16.16 divide; b = 0 → 0 |
+| `mod` | 46 | | a % b; b = 0 → 0 |
+| `and or xor` | 47–49 | | bitwise |
+| `shl` | 4a | | a << (b & 31) |
+| `shr` | 4b | | a >> (b & 31), arithmetic |
+| `neg` | 4c | | -a (wrapping) |
+| `not` | 4d | | bitwise !a |
+| `syscall` | 50 | | see ABI below |
+| `abs` | 60 | | |a| (wrapping: i32::MIN stays) |
+| `min` / `max` | 61/62 | | pop b, pop a; push min/max |
+
+### Fixed-point positions
+
+All world coordinates are **Q16.16 fixed point** in a 32-bit word: the top
+16 bits are the integer part, the bottom 16 the fraction. `0x10000` = 1.0
+world units. Use `mulfx`/`divfx` for fixed-point math, plain `add`/`sub`
+work as-is. A zone is typically 60×60 units.
+
+## Assembly syntax
+
+```asm
+; comments run to end of line
+.equ BUF 0xC000           ; named constant
+.equ HALF 0x8000          ; 0.5 in Q16.16
+
+main:                     ; label
+    push BUF+8            ; constants/labels allow a +/- literal offset
+    load
+    pushs 10
+    lt
+    jmpif low_branch
+    halt
+    jmp main
+low_branch:
+    ; ...
+.word 1, 0xFF             ; raw 32-bit data words
+```
+
+The `sys N A` macro expands to `pushs A; pushs N; syscall` — syscall number
+N with A args (you must have pushed the args first).
+
+## Syscall ABI
+
+Convention for `Syscall(arg1, arg2, ... argN)`:
+
+1. Push the args in **reverse** order (argN first, arg1 last).
+2. `sys <number> <argc>`.
+3. The host consumes everything and pushes exactly **one result word**.
+
+Unknown syscall numbers return -1. Queries write fixed-layout structs to an
+address you supply and return a count/status.
+
+| # | Syscall | Args (in order) | Returns |
+|---|---|---|---|
+| 0 | `Debug` | up to 8 values | 0 (values logged host-side) |
+| 1 | `SelfStatus` | out_addr | 0; writes the status struct |
+| 2 | `ReadEntities` | out_addr, max (≤16), filter | count; sorted by distance |
+| 5 | `ReadInventory` | out_addr, max (≤60) | count |
+| 6 | `MoveTo` | x, y (Q16.16) | 0 |
+| 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **-1** unknown slot / on cooldown |
+| 8 | `PickUp` | loot_id | 0 |
+| 12 | `EquipBest` | — | number of swaps made |
+| 13 | `AllocPassive` | node (−1 = auto) | node index allocated, or −1 |
+| 15 | `Random` | — | a value from your private RNG stream |
+| 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
+| 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
+| 18 | `ReadSkills` | out_addr, max (≤8) | count |
+| 19 | `SocketGem` | socket_sel, pouch_sel (−1,−1 = auto) | gems socketed, or −1 |
+
+### Intents, not actions
+
+Movement, attacks, and pickups are **intents**: the sim validates and
+resolves them in its pipeline after all bots run. One movement + one attack
++ one pickup per tick; last write wins. Attack/pickup intents clear every
+tick (re-issue them); a movement intent **persists** until you arrive, so a
+budget-starved bot keeps walking.
+
+The sim is the sole authority: `UseSkill` on a corpse whiffs, `PickUp` on
+someone else's loot does nothing, walking stops at the zone edge, and you
+can never hit your own faction.
+
+### Struct layouts
+
+**SelfStatus** (13 words, 52 bytes):
+
+| Offset | Field |
+|---|---|
+| +0 / +4 | x, y (Q16.16) |
+| +8 / +12 | life, life_max |
+| +16 / +20 | level, xp |
+| +24 / +28 | map_w, map_h (Q16.16) |
+| +32 | flags (bit 0 = dead) |
+| +36 / +40 | anchor x, y (monsters: home; characters: zone spawn) |
+| +44 | aggro radius (Q16.16; 0 for characters) |
+| +48 | attack range (Q16.16) |
+
+**ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
+monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
+(faction-relative — the same brain works as a player or a monster!), 2 =
+characters, 3 = your own ground loot. Vision radius 50 units.
+
+**ReadInventory record** (8 words, 32 bytes): `base_idx, slot (0 weapon / 1
+helm / 2 chest / 3 boots), rarity, item_level, x, y, w, h`. The bag is a
+**12×5 grid**; items have footprints; pickups fail when nothing fits —
+managing space (`MoveItem`, `DropItem`, vendoring later) is your job.
+
+**ReadSkills record** (7 words, 28 bytes): `slot_no, gem_idx, level,
+cooldown_left, range (Q16.16), shape (0 target / 1 nova), radius (Q16.16)`.
+Skill slots are 1..N in tree-socket order; slot 0 is always the basic
+weapon attack.
+
+## The param block (how chat reaches you)
+
+Chat commands and host configuration are written into `0xF000`–`0xF0FF`
+every tick. Treat it as read-only input. Layout is per-template (you define
+what your parameters mean); the default template reserves the first words
+for strategy/skill/tier preferences.
+
+## The persist block (your long-term memory)
+
+`0xF200`–`0xF5FF` survives **program redeployments and zone transfers** —
+ordinary memory does not (a redeploy zeroes RAM and restarts at PC 0).
+Store learned state there: kill counts per spot, item valuations, a phase
+flag for multi-stage plans. Players have no channel into it; only your code
+writes it.
+
+## Budget arithmetic
+
+5,000 instructions/tick, syscalls cost +20. A typical sense-decide-act loop
+(SelfStatus + ReadEntities + UseSkill + MoveTo + logic) spends well under
+300 — you have headroom for real algorithms (pathing heuristics, bag
+packing, target scoring). If you blow the budget, you simply continue next
+tick — design loops so partial progress is safe.
+
+## Worked example
+
+The default player template (`crates/idlin-botc/src/templates/grinder.asm`)
+is the canonical example: status check → loot pickup → gear/passive/gem
+upkeep → fight nearest enemy preferring skill 1 with basic-attack fallback
+→ wander when bored. The hostile monster brain
+(`content/brains/hostile_melee.asm`) shows the same ABI from the other
+side: leash, aggro, wander — entirely in bot code, no engine AI.
+
+A minimal complete bot:
+
+```asm
+; chase-and-hit: the smallest useful brain
+.equ SELF 0xE000
+.equ ENTS 0xE100
+
+main:
+    push SELF
+    sys 1 1            ; SelfStatus(SELF)
+    pop
+
+    pushs 1            ; filter: enemies
+    pushs 1            ; max: 1
+    push ENTS
+    sys 2 3            ; ReadEntities(ENTS, 1, enemies)
+    jmpifz rest        ; nothing visible
+
+    pushz              ; y
+    pushz              ; x
+    push ENTS          ; record +0 = target id
+    load
+    pushz              ; slot 0 = basic attack
+    sys 7 4            ; UseSkill(0, id, 0, 0)
+    pop
+
+    push ENTS+12       ; record +12 = target y
+    load
+    push ENTS+8        ; record +8 = target x
+    load
+    sys 6 2            ; MoveTo(x, y)
+    pop
+rest:
+    halt
+    jmp main
+```
+
+## Determinism rules (why some things look odd)
+
+The whole world is bit-exact reproducible. For bot authors this means:
+
+- `Random` (syscall 15) is your **own** seeded stream — same world seed,
+  same history, same numbers. There is no wall clock; count ticks instead.
+- Query results are sorted deterministically (distance, then id).
+- All math is integer/fixed-point. There are no floats anywhere.

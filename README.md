@@ -1,60 +1,92 @@
 # Idlin
 
 A stream-first idle ARPG. Viewers' characters play autonomously in a shared,
-persistent world that is broadcast on stream, with the camera cycling between
-interesting events — Ravenfall's presentation, Path of Exile's substance:
-a tutorial campaign, an endgame of randomized maps, affix-based loot.
+persistent world that is broadcast on stream, with an auto-director cutting
+between fights, deaths, drops, and level-ups — Ravenfall's presentation,
+Path of Exile's substance.
 
-Characters are driven by **bots running in a constrained opcode VM** (64 KiB
-memory, a per-tick instruction budget, syscalls as the only world interface).
-Viewers control their character with chat commands that configure template
-bots; eventually, players can write and submit their own bots — the resource
-constraints are part of the sport.
+The twist: **everything that acts is a bot.** Player characters and monsters
+alike run programs in a constrained virtual machine — 64 KiB of memory, an
+instruction budget per tick, syscalls as the only window into the world.
+Players start out steering template bots with chat commands; eventually they
+write and submit their own brains, and the resource constraints are part of
+the sport. Monster behavior is bot code too, shipped as content.
 
-## Architecture
+## What works today
 
-- `crates/idlin-sim` — the **pure deterministic world sim**. No I/O, no
-  threads, no wall clock, no floats (Q16.16 fixed-point + hand-rolled PCG32).
-  Inputs in, events out; bit-exact across platforms.
-- `crates/idlin-vm` — the bot VM: 32-bit stack machine, wrapping 64 KiB
-  memory, budget-bounded, every state defined. Untrusted code runs here.
-- `crates/idlin-botc` — bot assembler/compiler + built-in chat templates.
-- `crates/idlin-content` — RON game content loader (zones, monsters, items).
-- `crates/idlin-protocol` — WebSocket message types; TypeScript bindings
-  generated into `web/src/gen/` via ts-rs.
-- `crates/idlin-chat` — platform-agnostic chat adapters (Twitch, mock).
-- `crates/idlin-server` — the impure shell: tick loop, persistence,
-  replication, auto-director, chat command parsing.
-- `web/` — Three.js + TypeScript spectator client (React for the overlay).
+- **Deterministic world sim** (10 Hz, integer/fixed-point only): identical
+  seed + content + inputs reproduce the world bit-exactly on any platform.
+  Snapshot + determinism = exact resume after restart.
+- **The bot VM**: ~40 opcodes, wrapping memory, defined behavior for every
+  state, versioned `ILBC` bytecode (outdated bots rejected at deploy), a
+  1 KiB persist block that survives program redeployments, and a param
+  block as the chat→bot channel. Assembler with templates; a C-like
+  compiler is next.
+- **NPCs are bots**: monsters run the same VM and syscalls; hostility is a
+  content flag → faction (friendly NPCs need zero engine changes);
+  `ReadEntities` is faction-relative so one brain works from either side.
+- **Classless characters over one stat engine**: every point of power is an
+  affix grant (added / increased / more, integer basis points) from gear,
+  the passive tree, or gems — one evaluator for everything.
+- **Full hit pipeline**: accuracy vs evasion, armour *attenuation* for
+  physical (not flat life), capped resistances for elemental/chaos, three
+  damage types.
+- **Items with rolled affixes** (content pools, ilvl-gated tiers) in a
+  **12×5 bag grid** with footprints — pickups fail when nothing fits, and
+  bag management is a genuine bot skill.
+- **Skill & support gems** in tree-unlocked sockets: skills are gems,
+  supports modify their tree cluster's skill, gems gain XP from kills.
+- **Faction-aware collision**: allies pass through with a soft nudge,
+  enemies body-block.
+- **The broadcast view**: Three.js spectator client with snapshot/delta
+  replication, an auto-director camera, event ticker, and hero leaderboard.
+
+## Run it
+
+Requires Rust (rustup), Node 22 + pnpm, and [just](https://github.com/casey/just).
+
+```sh
+just dev      # game server on :7777 + Vite dev server on :5173
+just serve    # production-style: build the frontend, serve from the server
+just demo     # wipe snapshots and boot a fresh world (4 built-in heroes)
+just check    # everything CI runs: fmt, clippy, tests, bindings, typecheck
+just replay   # verify the golden determinism fixture
+```
+
+Environment: `IDLIN_SEED` (world seed), `IDLIN_PORT` (default 7777),
+`IDLIN_DATA` (snapshot dir, default `data/snapshots`).
+
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [docs/bot-guide.md](docs/bot-guide.md) | **Bot programming guide**: machine model, memory map, instruction set, assembly syntax, the full syscall ABI with struct layouts, worked examples |
+| [docs/content-guide.md](docs/content-guide.md) | Authoring zones, monsters, brains, items, affixes, gems, and the passive tree |
+| [docs/mechanics.md](docs/mechanics.md) | Game math: the stat pipeline, hit resolution, gems, loot, death rules |
+| [docs/architecture.md](docs/architecture.md) | Crate map, tick pipeline, replication, persistence, versioning |
 
 ## Design principles
 
-- **The engine runs content.** Zones, monsters, items — and *behavior* — are
-  data in `content/`. NPC brains are bot assembly (`content/brains/*.asm`)
-  compiled at load; monsters run on the exact same VM and syscalls as player
-  bots. Hostility is data (`hostile: true` → faction), so friendly NPCs are
-  just content too.
-- **Determinism is law.** The sim is integer/fixed-point only; identical
-  (seed, content, input history) reproduces the world bit-exactly on any
-  platform. Snapshots + determinism = exact resume after restart.
-- **Every state is defined.** Untrusted bytecode can be wrong, but it cannot
-  crash, stall, or desync the world: wrapping memory, instruction budgets,
-  defined div-by-zero, validated syscalls.
+- **The engine runs content.** Stats, layout, items, *and behavior* live in
+  `content/`; novel mechanics should be new content vocabulary, not new
+  engine code paths.
+- **Determinism is law.** No floats, no wall clock, no nondeterministic
+  iteration anywhere in the sim — lint-enforced, replay-tested in CI.
+- **Every state is defined.** Untrusted bytecode can be wrong, but it
+  cannot crash, stall, or desync the world.
+- **Viewers watch the stream.** Only the owner's broadcast client and
+  individual player views hold connections; the world scales with the sim,
+  not the audience.
 
 ## Versioning
 
-- **Project**: semver (workspace version, tagged releases).
-- **Wire protocol**: `PROTO_VERSION` integer, checked at Hello.
-- **Bytecode format**: `ILBC` container with a u16 format version, checked at
-  deploy time — outdated bots are rejected with a typed error before they run.
-- **Bot deployments**: monotonic integer per character, bumped on every swap.
+Project releases follow **semver**. The wire protocol, the bytecode format
+(`ILBC` container), and individual bot deployments carry integer versions —
+each checked at its boundary so incompatibilities fail fast and loudly.
 
-## Development
+## Status
 
-Requires Rust (via rustup), Node 22 + pnpm, and [just](https://github.com/casey/just).
-
-```sh
-just dev      # server on :7777 + Vite dev server on :5173
-just check    # everything CI runs: fmt, clippy, tests, TS bindings freshness, typecheck
-just serve    # production-style: build frontend, serve it from the server
-```
+Phases 0–1 of the [roadmap](docs/architecture.md) are complete plus the
+gearing arc (stats, inventory, affixes, tree, gems). Next: the `.bot`
+compiler, the real passive tree, then chat integration (Twitch first) with
+player-scoped views.
