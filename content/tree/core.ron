@@ -1,6 +1,6 @@
 // The shared passive tree. Everyone (classless) starts at `start`; nodes
-// grant affixes exactly like gear. Socket nodes hold gems: socket_skill =
-// an active skill slot, adjacent socket_support nodes modify that skill.
+// grant affixes exactly like gear. Socket nodes hold one skill gem each;
+// support gems socket into the skill gem itself (its support_slots).
 //
 // Layout (pos is abstract client units):
 //                 EMBERS (elemental/chaos)
@@ -17,10 +17,8 @@ TreeDef(
                 links: ["s1", "v1", "z1", "e1", "socket_a"], grants: []),
 
         // --- the first socket cluster, right at the start ---
-        NodeDef(id: "socket_a", num: 2, name: "First Spark", pos: (2, 2), kind: socket_skill,
+        NodeDef(id: "socket_a", num: 2, name: "First Spark", pos: (2, 2), kind: socket,
                 grants: []),
-        NodeDef(id: "socket_a1", num: 3, name: "First Spark Support", pos: (4, 3), kind: socket_support,
-                links: ["socket_a"], grants: []),
 
         // ===================== SLAUGHTER (west): physical =====================
         NodeDef(id: "s1", num: 10, name: "Brawn", pos: (-3, 0), kind: travel,
@@ -54,12 +52,8 @@ TreeDef(
                     (stat: attack_speed, layer: more, value: -1000), // 10% LESS attack speed
                 ]),
         // war socket cluster off Butcher
-        NodeDef(id: "socket_war", num: 19, name: "War Socket", pos: (-12, -3), kind: socket_skill,
+        NodeDef(id: "socket_war", num: 19, name: "War Socket", pos: (-12, -3), kind: socket,
                 links: ["s4"], grants: []),
-        NodeDef(id: "socket_war_a", num: 20, name: "War Support I", pos: (-14, -5), kind: socket_support,
-                links: ["socket_war"], grants: []),
-        NodeDef(id: "socket_war_b", num: 21, name: "War Support II", pos: (-10, -5), kind: socket_support,
-                links: ["socket_war_a"], grants: []),
 
         // ===================== VITALITY (south): life/armour ==================
         NodeDef(id: "v1", num: 30, name: "Vigor", pos: (0, 3), kind: travel,
@@ -85,10 +79,8 @@ TreeDef(
         NodeDef(id: "v8", num: 37, name: "Iron Will", pos: (0, 24), kind: travel, links: ["v7"],
                 grants: [(stat: life, layer: added, value: 15)]),
         // root socket cluster off Oak Heart
-        NodeDef(id: "socket_root", num: 38, name: "Root Socket", pos: (3, 12), kind: socket_skill,
+        NodeDef(id: "socket_root", num: 38, name: "Root Socket", pos: (3, 12), kind: socket,
                 links: ["v4"], grants: []),
-        NodeDef(id: "socket_root_a", num: 39, name: "Root Support", pos: (5, 14), kind: socket_support,
-                links: ["socket_root"], grants: []),
 
         // ===================== ZEPHYR (east): speed/evasion ===================
         NodeDef(id: "z1", num: 50, name: "Poise", pos: (3, 0), kind: travel,
@@ -117,10 +109,8 @@ TreeDef(
                     (stat: life, layer: more, value: -1200),   // 12% LESS life
                 ]),
         // wind socket cluster off Windrunner
-        NodeDef(id: "socket_wind", num: 58, name: "Wind Socket", pos: (12, -3), kind: socket_skill,
+        NodeDef(id: "socket_wind", num: 58, name: "Wind Socket", pos: (12, -3), kind: socket,
                 links: ["z4"], grants: []),
-        NodeDef(id: "socket_wind_a", num: 59, name: "Wind Support", pos: (14, -5), kind: socket_support,
-                links: ["socket_wind"], grants: []),
 
         // ===================== EMBERS (north): elemental/chaos ================
         NodeDef(id: "e1", num: 70, name: "Spark", pos: (0, -3), kind: travel,
@@ -146,12 +136,8 @@ TreeDef(
         NodeDef(id: "e8", num: 77, name: "Attunement", pos: (0, -24), kind: travel, links: ["e7"],
                 grants: [(stat: resist_ele, layer: added, value: 1000)]),
         // flame socket cluster off Emberheart
-        NodeDef(id: "socket_flame", num: 78, name: "Flame Socket", pos: (3, -12), kind: socket_skill,
+        NodeDef(id: "socket_flame", num: 78, name: "Flame Socket", pos: (3, -12), kind: socket,
                 links: ["e4"], grants: []),
-        NodeDef(id: "socket_flame_a", num: 79, name: "Flame Support I", pos: (5, -14), kind: socket_support,
-                links: ["socket_flame"], grants: []),
-        NodeDef(id: "socket_flame_b", num: 80, name: "Flame Support II", pos: (7, -12), kind: socket_support,
-                links: ["socket_flame_a"], grants: []),
 
         // ===================== the rim: cross-branch travel ===================
         NodeDef(id: "grit", num: 90, name: "Grit", pos: (-14, 14), kind: travel,

@@ -55,8 +55,8 @@ Player↔Hostile faction pair; Neutral entities can't hit or be hit.
 
 - Skill damage base = `character damage per type × coeff_bp/10000 +
   gem added × gem_scale`, then support grants apply as a stat sheet on top.
-- Supports apply only to the skill socketed in their tree cluster
-  (adjacent socket nodes).
+- Supports socket into the skill gem itself (up to its `support_slots`,
+  PoE2-style) and apply only to that skill.
 - Gem scale: `1 + 4%·(gem level − 1)`; gems gain **half** of each kill's
   XP individually; gem XP to next = 60 + 30·L²; cap 20.
 - Nova skills hit up to `max_targets` nearest enemies within the radius,

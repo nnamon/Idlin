@@ -11,14 +11,12 @@
 
 // Node numbers from the tree map page (content/tree/core.ron `num`).
 const N_VIGOR = 30;        // v1
-const N_SOCKET_A = 2;      // First Spark (skill socket)
-const N_SOCKET_A1 = 3;     // First Spark support
+const N_SOCKET_A = 2;      // First Spark (gem socket)
 const N_BRAWN = 10;        // s1..s4: the Slaughter road to Butcher
 const N_HEFT = 11;
 const N_CLEAVING = 12;
 const N_BUTCHER = 13;
-const N_SOCKET_WAR = 19;   // War socket cluster
-const N_WAR_SUP_A = 20;
+const N_SOCKET_WAR = 19;   // War socket
 const N_THICK_SKIN = 31;   // v2..v4: Vitality to Oak Heart
 const N_HARDY = 32;
 const N_OAK_HEART = 33;
@@ -38,8 +36,8 @@ const N_SOCKET_WIND = 58;
 // The declared build: allocated automatically as we level. The whole
 // plan is fixed at deploy — changing it means deploying a new bot.
 build [
-    N_VIGOR, N_SOCKET_A, N_SOCKET_A1, N_BRAWN, N_HEFT, N_CLEAVING,
-    N_BUTCHER, N_SOCKET_WAR, N_WAR_SUP_A, N_THICK_SKIN, N_HARDY,
+    N_VIGOR, N_SOCKET_A, N_BRAWN, N_HEFT, N_CLEAVING,
+    N_BUTCHER, N_SOCKET_WAR, N_THICK_SKIN, N_HARDY,
     N_OAK_HEART, N_SURE_HANDS, N_RHYTHM, N_EXECUTIONER, N_BULWARK,
     N_STALWART, N_COLOSSUS, N_GRIT, N_POISE, N_FLEET, N_TEMPO,
     N_WINDRUNNER, N_SOCKET_WIND,

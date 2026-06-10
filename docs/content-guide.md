@@ -134,6 +134,7 @@ GemDef(
     range_cu: 0,              // 0 = weapon range
     radius_cu: 320,           // nova radius
     max_targets: 5,
+    support_slots: 2,         // supports socket INTO the gem (PoE2-style)
     cooldown_ticks: 14,
 )
 
@@ -171,8 +172,8 @@ TreeDef(
 ```
 
 Node kinds: `travel` (small), `notable` (chunky), `keystone` (reserved for
-more-multipliers/behavior flags), `socket_skill` / `socket_support` (gem
-slots). Characters get one point per level past 1; tree grants are affixes,
+more-multipliers/behavior flags), `socket` (holds one skill gem; supports
+live on the gem). Characters get one point per level past 1; tree grants are affixes,
 evaluated identically to gear.
 
 `num` is the stable u16 reference compiled bots use in `build [...]`

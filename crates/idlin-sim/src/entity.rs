@@ -136,12 +136,14 @@ pub struct GemInstance {
     pub xp: i64,
 }
 
-/// A gem sitting in an allocated tree socket node.
+/// A skill gem sitting in an allocated tree socket node, carrying its own
+/// support gems (capacity = the gem's support_slots).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocketedGem {
     pub gem: GemInstance,
-    /// Per-skill cooldown (skill gems only).
     pub cooldown_left: u32,
+    #[serde(default)]
+    pub supports: Vec<GemInstance>,
 }
 
 /// What a piece of ground loot actually is.

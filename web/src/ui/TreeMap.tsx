@@ -55,8 +55,7 @@ const KIND_STYLE: Record<string, { r: number; fill: string; label: boolean }> = 
   travel: { r: 5, fill: "#8a8aa0", label: false },
   notable: { r: 10, fill: "#ffd75a", label: true },
   keystone: { r: 12, fill: "#ff6a6a", label: true },
-  socket_skill: { r: 9, fill: "#5adfdf", label: true },
-  socket_support: { r: 7, fill: "#3a9f9f", label: false },
+  socket: { r: 9, fill: "#5adfdf", label: true },
 };
 
 const SCALE = 16;
@@ -116,8 +115,7 @@ export function TreeMap({ onClose }: { onClose: () => void }) {
           <Legend color="#8a8aa0" label="travel" />
           <Legend color="#ffd75a" label="notable" />
           <Legend color="#ff6a6a" label="keystone" />
-          <Legend color="#5adfdf" label="skill socket" />
-          <Legend color="#3a9f9f" label="support socket" />
+          <Legend color="#5adfdf" label="gem socket" />
           <button
             onClick={onClose}
             style={{
@@ -227,8 +225,8 @@ export function TreeMap({ onClose }: { onClose: () => void }) {
           </div>
           {hover.grants.length === 0 ? (
             <div style={{ color: "#8a8aa0" }}>
-              {hover.kind.startsWith("socket")
-                ? "Holds a gem once allocated."
+              {hover.kind === "socket"
+                ? "Holds a skill gem (supports socket into the gem itself)."
                 : "No grants."}
             </div>
           ) : (

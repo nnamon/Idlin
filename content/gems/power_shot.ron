@@ -8,5 +8,6 @@ GemDef(
     shape: target,
     projectile: true,
     range_cu: 1100,
+    support_slots: 1,
     cooldown_ticks: 22,
 )

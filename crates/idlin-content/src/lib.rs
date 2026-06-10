@@ -274,6 +274,9 @@ pub struct GemDef {
     pub max_targets: u32,
     #[serde(default)]
     pub cooldown_ticks: u32,
+    /// Skill gems: how many support gems can be socketed INTO this gem.
+    #[serde(default)]
+    pub support_slots: u32,
     // -- support fields --
     /// Grants applied to the cluster's skill (scaled by gem level).
     #[serde(default)]
@@ -286,10 +289,9 @@ pub enum NodeKind {
     Travel,
     Notable,
     Keystone,
-    /// Unlocks a skill gem slot (gems are a later system; the slot is real).
-    SocketSkill,
-    /// Unlocks a support gem slot attached to its cluster's skill socket.
-    SocketSupport,
+    /// A gem socket: holds one skill gem, which brings its own support
+    /// slots (PoE2-style — support capacity lives on the gem, not the tree).
+    Socket,
 }
 
 /// A passive tree node: grants affixes exactly like gear does.

@@ -8,5 +8,6 @@ GemDef(
     shape: nova,
     radius_cu: 320,         // 3.2 u around self
     max_targets: 5,
+    support_slots: 2,
     cooldown_ticks: 14,
 )
