@@ -1,51 +1,182 @@
-// The shared passive tree — minimal testing scaffold. Everyone (classless)
-// starts at `start`; nodes grant affixes exactly like gear does. Socket
-// nodes reserve gem slots for the upcoming gem system.
+// The shared passive tree. Everyone (classless) starts at `start`; nodes
+// grant affixes exactly like gear. Socket nodes hold gems: socket_skill =
+// an active skill slot, adjacent socket_support nodes modify that skill.
+//
+// Layout (pos is abstract client units):
+//                 EMBERS (elemental/chaos)
+//                        |
+//   SLAUGHTER (phys) — START — ZEPHYR (speed/evasion)
+//                        |
+//                 VITALITY (life/armour)
+//
+// Branch shape: 3 travels → notable → 3 travels → notable → keystone/rim.
+// Values: travels small, notables chunky, keystones trade-offs (more-layer).
 TreeDef(
     nodes: [
         NodeDef(id: "start", name: "Awakening", pos: (0, 0), kind: travel,
-             links: ["str1", "dex1", "vit1"], grants: []),
+                links: ["s1", "v1", "z1", "e1", "socket_a"], grants: []),
 
-        // --- strength branch: damage ---
-        NodeDef(id: "str1", name: "Brawn", pos: (-2, -1), kind: travel,
-             grants: [(stat: damage_phys, layer: added, value: 2)]),
-        NodeDef(id: "str2", name: "Heft", pos: (-4, -2), kind: travel,
-             links: ["str1"],
-             grants: [(stat: damage_phys, layer: increased, value: 600)]),
-        NodeDef(id: "str3", name: "Butcher", pos: (-6, -3), kind: notable,
-             links: ["str2"],
-             grants: [
-                 (stat: damage_phys, layer: increased, value: 1500),
-                 (stat: life, layer: added, value: 10),
-             ]),
+        // --- the first socket cluster, right at the start ---
+        NodeDef(id: "socket_a", name: "First Spark", pos: (2, 2), kind: socket_skill,
+                grants: []),
+        NodeDef(id: "socket_a1", name: "First Spark Support", pos: (4, 3), kind: socket_support,
+                links: ["socket_a"], grants: []),
 
-        // --- dexterity branch: speed/evasion ---
-        NodeDef(id: "dex1", name: "Poise", pos: (2, -1), kind: travel,
-             grants: [(stat: evasion, layer: added, value: 15)]),
-        NodeDef(id: "dex2", name: "Tempo", pos: (4, -2), kind: travel,
-             links: ["dex1"],
-             grants: [(stat: attack_speed, layer: increased, value: 400)]),
-        NodeDef(id: "dex3", name: "Windrunner", pos: (6, -3), kind: notable,
-             links: ["dex2"],
-             grants: [
-                 (stat: move_speed, layer: increased, value: 800),
-                 (stat: attack_speed, layer: increased, value: 600),
-             ]),
+        // ===================== SLAUGHTER (west): physical =====================
+        NodeDef(id: "s1", name: "Brawn", pos: (-3, 0), kind: travel,
+                grants: [(stat: damage_phys, layer: added, value: 3)]),
+        NodeDef(id: "s2", name: "Heft", pos: (-6, 0), kind: travel, links: ["s1"],
+                grants: [(stat: damage_phys, layer: increased, value: 800)]),
+        NodeDef(id: "s3", name: "Cleaving Steps", pos: (-9, 0), kind: travel, links: ["s2"],
+                grants: [
+                    (stat: damage_phys, layer: increased, value: 500),
+                    (stat: accuracy, layer: added, value: 10),
+                ]),
+        NodeDef(id: "s4", name: "Butcher", pos: (-12, 0), kind: notable, links: ["s3"],
+                grants: [
+                    (stat: damage_phys, layer: increased, value: 1800),
+                    (stat: life, layer: added, value: 15),
+                ]),
+        NodeDef(id: "s5", name: "Sure Hands", pos: (-15, 0), kind: travel, links: ["s4"],
+                grants: [(stat: accuracy, layer: added, value: 25)]),
+        NodeDef(id: "s6", name: "Brutal Rhythm", pos: (-18, 0), kind: travel, links: ["s5"],
+                grants: [(stat: attack_speed, layer: increased, value: 600)]),
+        NodeDef(id: "s7", name: "Executioner", pos: (-21, 0), kind: notable, links: ["s6"],
+                grants: [
+                    (stat: damage_phys, layer: increased, value: 2500),
+                    (stat: attack_speed, layer: increased, value: 500),
+                ]),
+        NodeDef(id: "s8", name: "Overwhelm", pos: (-24, 0), kind: travel, links: ["s7"],
+                grants: [(stat: damage_phys, layer: increased, value: 1000)]),
+        NodeDef(id: "s9", name: "Juggernaut", pos: (-27, 0), kind: keystone, links: ["s8"],
+                grants: [
+                    (stat: armour, layer: more, value: 4000),        // 40% MORE armour
+                    (stat: attack_speed, layer: more, value: -1000), // 10% LESS attack speed
+                ]),
+        // war socket cluster off Butcher
+        NodeDef(id: "socket_war", name: "War Socket", pos: (-12, -3), kind: socket_skill,
+                links: ["s4"], grants: []),
+        NodeDef(id: "socket_war_a", name: "War Support I", pos: (-14, -5), kind: socket_support,
+                links: ["socket_war"], grants: []),
+        NodeDef(id: "socket_war_b", name: "War Support II", pos: (-10, -5), kind: socket_support,
+                links: ["socket_war_a"], grants: []),
 
-        // --- vitality branch: life/armour ---
-        NodeDef(id: "vit1", name: "Vigor", pos: (0, 2), kind: travel,
-             grants: [(stat: life, layer: added, value: 10)]),
-        NodeDef(id: "vit2", name: "Bulwark", pos: (0, 4), kind: travel,
-             links: ["vit1"],
-             grants: [(stat: armour, layer: added, value: 20)]),
-        NodeDef(id: "vit3", name: "Oak Heart", pos: (0, 6), kind: notable,
-             links: ["vit2"],
-             grants: [(stat: life, layer: increased, value: 800)]),
+        // ===================== VITALITY (south): life/armour ==================
+        NodeDef(id: "v1", name: "Vigor", pos: (0, 3), kind: travel,
+                grants: [(stat: life, layer: added, value: 12)]),
+        NodeDef(id: "v2", name: "Thick Skin", pos: (0, 6), kind: travel, links: ["v1"],
+                grants: [(stat: armour, layer: added, value: 25)]),
+        NodeDef(id: "v3", name: "Hardy", pos: (0, 9), kind: travel, links: ["v2"],
+                grants: [(stat: life, layer: increased, value: 800)]),
+        NodeDef(id: "v4", name: "Oak Heart", pos: (0, 12), kind: notable, links: ["v3"],
+                grants: [
+                    (stat: life, layer: increased, value: 1200),
+                    (stat: life, layer: added, value: 10),
+                ]),
+        NodeDef(id: "v5", name: "Bulwark", pos: (0, 15), kind: travel, links: ["v4"],
+                grants: [(stat: armour, layer: added, value: 40)]),
+        NodeDef(id: "v6", name: "Stalwart", pos: (0, 18), kind: travel, links: ["v5"],
+                grants: [(stat: armour, layer: increased, value: 800)]),
+        NodeDef(id: "v7", name: "Colossus", pos: (0, 21), kind: notable, links: ["v6"],
+                grants: [
+                    (stat: armour, layer: increased, value: 2000),
+                    (stat: life, layer: added, value: 20),
+                ]),
+        NodeDef(id: "v8", name: "Iron Will", pos: (0, 24), kind: travel, links: ["v7"],
+                grants: [(stat: life, layer: added, value: 15)]),
+        // root socket cluster off Oak Heart
+        NodeDef(id: "socket_root", name: "Root Socket", pos: (3, 12), kind: socket_skill,
+                links: ["v4"], grants: []),
+        NodeDef(id: "socket_root_a", name: "Root Support", pos: (5, 14), kind: socket_support,
+                links: ["socket_root"], grants: []),
 
-        // --- first gem socket cluster (gems are the next system) ---
-        NodeDef(id: "socket_a", name: "Skill Socket", pos: (3, 3), kind: socket_skill,
-             links: ["start", "vit1", "dex1"], grants: []),
-        NodeDef(id: "socket_a1", name: "Support Socket", pos: (5, 4), kind: socket_support,
-             links: ["socket_a"], grants: []),
+        // ===================== ZEPHYR (east): speed/evasion ===================
+        NodeDef(id: "z1", name: "Poise", pos: (3, 0), kind: travel,
+                grants: [(stat: evasion, layer: added, value: 18)]),
+        NodeDef(id: "z2", name: "Fleet", pos: (6, 0), kind: travel, links: ["z1"],
+                grants: [(stat: move_speed, layer: increased, value: 600)]),
+        NodeDef(id: "z3", name: "Tempo", pos: (9, 0), kind: travel, links: ["z2"],
+                grants: [(stat: attack_speed, layer: increased, value: 600)]),
+        NodeDef(id: "z4", name: "Windrunner", pos: (12, 0), kind: notable, links: ["z3"],
+                grants: [
+                    (stat: move_speed, layer: increased, value: 1000),
+                    (stat: attack_speed, layer: increased, value: 800),
+                ]),
+        NodeDef(id: "z5", name: "Slippery", pos: (15, 0), kind: travel, links: ["z4"],
+                grants: [(stat: evasion, layer: added, value: 30)]),
+        NodeDef(id: "z6", name: "Dancer", pos: (18, 0), kind: travel, links: ["z5"],
+                grants: [(stat: evasion, layer: increased, value: 800)]),
+        NodeDef(id: "z7", name: "Ghoststep", pos: (21, 0), kind: notable, links: ["z6"],
+                grants: [
+                    (stat: evasion, layer: increased, value: 2000),
+                    (stat: move_speed, layer: increased, value: 500),
+                ]),
+        NodeDef(id: "z8", name: "Phantom Grace", pos: (24, 0), kind: keystone, links: ["z7"],
+                grants: [
+                    (stat: evasion, layer: more, value: 3500), // 35% MORE evasion
+                    (stat: life, layer: more, value: -1200),   // 12% LESS life
+                ]),
+        // wind socket cluster off Windrunner
+        NodeDef(id: "socket_wind", name: "Wind Socket", pos: (12, -3), kind: socket_skill,
+                links: ["z4"], grants: []),
+        NodeDef(id: "socket_wind_a", name: "Wind Support", pos: (14, -5), kind: socket_support,
+                links: ["socket_wind"], grants: []),
+
+        // ===================== EMBERS (north): elemental/chaos ================
+        NodeDef(id: "e1", name: "Spark", pos: (0, -3), kind: travel,
+                grants: [(stat: damage_ele, layer: added, value: 2)]),
+        NodeDef(id: "e2", name: "Kindle", pos: (0, -6), kind: travel, links: ["e1"],
+                grants: [(stat: damage_ele, layer: increased, value: 1000)]),
+        NodeDef(id: "e3", name: "Soot-Veined", pos: (0, -9), kind: travel, links: ["e2"],
+                grants: [(stat: resist_ele, layer: added, value: 800)]),
+        NodeDef(id: "e4", name: "Emberheart", pos: (0, -12), kind: notable, links: ["e3"],
+                grants: [
+                    (stat: damage_ele, layer: increased, value: 2000),
+                    (stat: damage_ele, layer: added, value: 3),
+                ]),
+        NodeDef(id: "e5", name: "Venom", pos: (0, -15), kind: travel, links: ["e4"],
+                grants: [(stat: damage_chaos, layer: added, value: 2)]),
+        NodeDef(id: "e6", name: "Fester", pos: (0, -18), kind: travel, links: ["e5"],
+                grants: [(stat: damage_chaos, layer: increased, value: 1200)]),
+        NodeDef(id: "e7", name: "Plagueborn", pos: (0, -21), kind: notable, links: ["e6"],
+                grants: [
+                    (stat: damage_chaos, layer: increased, value: 2000),
+                    (stat: resist_chaos, layer: added, value: 1000),
+                ]),
+        NodeDef(id: "e8", name: "Attunement", pos: (0, -24), kind: travel, links: ["e7"],
+                grants: [(stat: resist_ele, layer: added, value: 1000)]),
+        // flame socket cluster off Emberheart
+        NodeDef(id: "socket_flame", name: "Flame Socket", pos: (3, -12), kind: socket_skill,
+                links: ["e4"], grants: []),
+        NodeDef(id: "socket_flame_a", name: "Flame Support I", pos: (5, -14), kind: socket_support,
+                links: ["socket_flame"], grants: []),
+        NodeDef(id: "socket_flame_b", name: "Flame Support II", pos: (7, -12), kind: socket_support,
+                links: ["socket_flame_a"], grants: []),
+
+        // ===================== the rim: cross-branch travel ===================
+        NodeDef(id: "grit", name: "Grit", pos: (-14, 14), kind: travel,
+                links: ["s7", "v7"],
+                grants: [
+                    (stat: life, layer: added, value: 8),
+                    (stat: damage_phys, layer: increased, value: 400),
+                ]),
+        NodeDef(id: "surefoot", name: "Surefoot", pos: (14, 14), kind: travel,
+                links: ["v7", "z7"],
+                grants: [
+                    (stat: evasion, layer: added, value: 10),
+                    (stat: life, layer: added, value: 8),
+                ]),
+        NodeDef(id: "stormdance", name: "Stormdance", pos: (14, -14), kind: travel,
+                links: ["z7", "e7"],
+                grants: [
+                    (stat: attack_speed, layer: increased, value: 400),
+                    (stat: damage_ele, layer: added, value: 2),
+                ]),
+        NodeDef(id: "scorched_edge", name: "Scorched Edge", pos: (-14, -14), kind: travel,
+                links: ["e7", "s7"],
+                grants: [
+                    (stat: damage_phys, layer: added, value: 2),
+                    (stat: damage_ele, layer: added, value: 2),
+                ]),
     ],
 )

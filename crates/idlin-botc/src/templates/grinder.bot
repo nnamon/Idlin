@@ -12,8 +12,9 @@
 // The declared build: allocated automatically as we level. The whole
 // plan is fixed at deploy — changing it means deploying a new bot.
 build [
-    "vit1", "socket_a", "socket_a1", "str1", "str2", "str3",
-    "dex1", "dex2", "dex3", "vit2", "vit3",
+    "v1", "socket_a", "socket_a1", "s1", "s2", "s3", "s4",
+    "socket_war", "socket_war_a", "v2", "v3", "v4", "s5", "s6", "s7",
+    "v5", "v6", "v7", "grit", "z1", "z2", "z3", "z4", "socket_wind",
 ];
 
 const SELF = 0xE000;       // SelfStatus buffer
