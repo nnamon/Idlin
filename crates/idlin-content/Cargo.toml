@@ -1,0 +1,9 @@
+[package]
+name = "idlin-content"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ron = "0.12.1"
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true

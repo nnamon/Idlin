@@ -1,0 +1,4 @@
+[toolchain]
+# Pinned for determinism hygiene and CI parity. Bump deliberately.
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]

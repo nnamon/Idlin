@@ -1,0 +1,13 @@
+# Rust
+/target
+
+# Node
+node_modules/
+web/dist/
+
+# Runtime state (world DB, snapshots)
+/data/
+
+# OS / editor
+.DS_Store
+*.swp

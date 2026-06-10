@@ -1,0 +1,8 @@
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "nondeterministic iteration order; use BTreeMap or Vec" },
+    { path = "std::collections::HashSet", reason = "nondeterministic iteration order; use BTreeSet or Vec" },
+]
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "no wall clock in the pure sim" },
+    { path = "std::time::SystemTime::now", reason = "no wall clock in the pure sim" },
+]

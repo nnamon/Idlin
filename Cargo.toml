@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nnamon/Idlin"
+
+[workspace.dependencies]
+idlin-sim = { path = "crates/idlin-sim" }
+idlin-vm = { path = "crates/idlin-vm" }
+idlin-botc = { path = "crates/idlin-botc" }
+idlin-content = { path = "crates/idlin-content" }
+idlin-protocol = { path = "crates/idlin-protocol" }
+idlin-chat = { path = "crates/idlin-chat" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+
+[profile.release]
+lto = "thin"
+
+# Fast-ish dev sim: the sim must fast-forward thousands of ticks/sec in tests.
+[profile.dev.package."idlin-sim"]
+opt-level = 1
+[profile.dev.package."idlin-vm"]
+opt-level = 1

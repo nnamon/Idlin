@@ -1,0 +1,9 @@
+[package]
+name = "idlin-sim"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+idlin-content = { version = "0.1.0", path = "../idlin-content" }
+idlin-vm = { version = "0.1.0", path = "../idlin-vm" }
+serde = { workspace = true, features = ["derive"] }
