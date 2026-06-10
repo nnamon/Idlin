@@ -9,6 +9,7 @@ MonsterDef(
     life: 60,
     damage: 6,
     speed_cps: 200,        // 2.0 u/s — slower than any character
+    radius_cu: 45,
     range_cu: 180,         // melee
     cooldown_ticks: 12,
     aggro_radius_cu: 900,  // 9 u

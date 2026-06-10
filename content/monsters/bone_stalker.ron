@@ -9,6 +9,7 @@ MonsterDef(
     life: 40,
     damage: 8,
     speed_cps: 260,
+    radius_cu: 40,
     range_cu: 750,          // 7.5 u ranged
     cooldown_ticks: 14,
     aggro_radius_cu: 1100,

@@ -117,3 +117,46 @@ fn snapshot_roundtrip_resumes_identically() {
     }
     assert_eq!(a.state_hash(), b.state_hash(), "snapshot clone diverged");
 }
+
+#[test]
+fn same_faction_spawn_stack_drifts_apart() {
+    // All four characters spawn on the same point with inert brains (halt
+    // only), so the ONLY force on them is soft same-faction separation —
+    // they must spread out within a few seconds. (Bots in motion may still
+    // overlap transiently; pass-through is the intended behavior.)
+    let content = ContentDb::empty();
+    let mut world = World::new(5, &content);
+    let halt = idlin_botc::assemble("halt\n").unwrap();
+    let joins = TickInputs {
+        joins: ["A", "B", "C", "D"]
+            .into_iter()
+            .map(|name| JoinRequest {
+                name: name.into(),
+                class: Class::Brute,
+                program: halt.clone(),
+            })
+            .collect(),
+    };
+    world.tick(&joins);
+    for _ in 0..100 {
+        world.tick(&TickInputs::default());
+    }
+    let views = world.views();
+    let chars: Vec<_> = views.iter().filter(|v| v.kind == 1).collect();
+    assert_eq!(chars.len(), 4);
+    for (i, a) in chars.iter().enumerate() {
+        for b in chars.iter().skip(i + 1) {
+            let dx = (a.x_raw - b.x_raw) as i64;
+            let dy = (a.y_raw - b.y_raw) as i64;
+            let dist_sq = dx * dx + dy * dy;
+            // Combined radii ≈ 0.9–1.0u ⇒ require at least ~0.8u apart.
+            let min = (0.8f64 * 65536.0) as i64; // test-side float is fine
+            assert!(
+                dist_sq >= min * min,
+                "characters {} and {} still stacked (dist_sq {dist_sq})",
+                a.id,
+                b.id
+            );
+        }
+    }
+}

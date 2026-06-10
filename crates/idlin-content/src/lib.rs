@@ -71,6 +71,9 @@ pub struct MonsterDef {
     pub damage: i64,
     /// Movement speed in centi-units per second.
     pub speed_cps: i32,
+    /// Body radius in centi-units (collision/separation).
+    #[serde(default = "default_radius_cu")]
+    pub radius_cu: i32,
     /// Attack range in centi-units.
     pub range_cu: i32,
     /// Ticks between attacks.
@@ -81,6 +84,10 @@ pub struct MonsterDef {
     pub xp: i64,
     /// Ranged attack (client renders a projectile tracer).
     pub projectile: bool,
+}
+
+fn default_radius_cu() -> i32 {
+    45
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

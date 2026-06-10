@@ -133,10 +133,10 @@ pub struct World {
 }
 
 pub fn class_stats(class: Class) -> CombatStats {
-    let (life, damage, range_cu, cooldown, speed_cps) = match class {
-        Class::Brute => (120, 12, 200, 8, 320),
-        Class::Hunter => (90, 9, 900, 7, 350),
-        Class::Arcanist => (80, 11, 800, 9, 300),
+    let (life, damage, range_cu, cooldown, speed_cps, radius_cu) = match class {
+        Class::Brute => (120, 12, 200, 8, 320, 50),
+        Class::Hunter => (90, 9, 900, 7, 350, 45),
+        Class::Arcanist => (80, 11, 800, 9, 300, 45),
     };
     CombatStats {
         life,
@@ -146,6 +146,7 @@ pub fn class_stats(class: Class) -> CombatStats {
         cooldown_ticks: cooldown,
         cooldown_left: 0,
         speed_per_tick: speed_from_cps(speed_cps),
+        radius: fx_from_cu(radius_cu),
         projectile: matches!(class, Class::Hunter | Class::Arcanist),
         last_combat_tick: 0,
     }
@@ -265,6 +266,7 @@ impl World {
         self.apply_joins(inputs, &mut events);
         self.run_bots(&mut events);
         self.movement();
+        self.separation();
         self.attacks(&mut events);
         self.pickups(&mut events);
         self.regen();
@@ -375,6 +377,72 @@ impl World {
                 me.pos = new_pos;
                 if dist <= speed {
                     me.intents.move_to = None;
+                }
+            }
+        }
+    }
+
+    /// Collision as separation, resolved pairwise in ascending slot order.
+    /// Same-faction (and neutral) pairs pass through with a very soft nudge;
+    /// opposing factions push hard enough to dominate movement speed —
+    /// effective body-blocking without a pathfinding-aware solver.
+    fn separation(&mut self) {
+        /// Max push per tick between allies: a drift, never a wall.
+        const SOFT_PUSH: Fx = Fx::from_raw(0x0CCC); // 0.05 u
+        /// Max push per tick between enemies: outruns any move speed.
+        const FIRM_PUSH: Fx = Fx::from_raw(0x6666); // 0.4 u
+
+        let n = self.zone.slot_count();
+        for a in 0..n {
+            for b in (a + 1)..n {
+                // Positions are re-read per pair: earlier pairs may have
+                // already pushed either party this tick.
+                let Some(ea) = self.zone.get(a) else { break };
+                if !ea.alive() {
+                    break;
+                }
+                let Some(ca) = &ea.combat else { break };
+                let (pos_a, r_a, fac_a, net_a) = (ea.pos, ca.radius, ea.faction(), ea.net_id);
+                let Some(eb) = self.zone.get(b) else { continue };
+                if !eb.alive() {
+                    continue;
+                }
+                let Some(cb) = &eb.combat else { continue };
+                let (pos_b, r_b, fac_b) = (eb.pos, cb.radius, eb.faction());
+
+                let min_dist = r_a + r_b;
+                let dist = pos_a.dist(pos_b);
+                if dist >= min_dist {
+                    continue;
+                }
+                let cap = if fac_a.is_enemy_of(fac_b) {
+                    FIRM_PUSH
+                } else {
+                    SOFT_PUSH
+                };
+                let push = ((min_dist - dist) / Fx::from_int(2)).min(cap);
+                // Direction b←a; for exact overlap, derive a deterministic
+                // pseudo-direction from the pair's net ids.
+                let dir = if dist > Fx::from_raw(0x100) {
+                    let d = pos_b - pos_a;
+                    let f = Fx::ONE / dist;
+                    FxV2::new(d.x * f, d.y * f)
+                } else {
+                    match (net_a ^ eb.net_id) & 3 {
+                        0 => FxV2::new(Fx::ONE, Fx::ZERO),
+                        1 => FxV2::new(-Fx::ONE, Fx::ZERO),
+                        2 => FxV2::new(Fx::ZERO, Fx::ONE),
+                        _ => FxV2::new(Fx::ZERO, -Fx::ONE),
+                    }
+                };
+                let shift = FxV2::new(dir.x * push, dir.y * push);
+                let new_a = self.zone.clamp_pos(pos_a - shift);
+                let new_b = self.zone.clamp_pos(pos_b + shift);
+                if let Some(ma) = self.zone.get_mut(a) {
+                    ma.pos = new_a;
+                }
+                if let Some(mb) = self.zone.get_mut(b) {
+                    mb.pos = new_b;
                 }
             }
         }
@@ -712,6 +780,7 @@ impl World {
             cooldown_ticks: def.cooldown_ticks,
             cooldown_left: 0,
             speed_per_tick: speed_from_cps(def.speed_cps),
+            radius: fx_from_cu(def.radius_cu),
             projectile: def.projectile,
             last_combat_tick: 0,
         };
@@ -833,6 +902,7 @@ impl World {
                 h.write_i64(c.damage);
                 h.write_u32(c.cooldown_left);
                 h.write_u64(c.last_combat_tick);
+                h.write_i32(c.radius.raw());
             }
             if let Some(ch) = &e.character {
                 h.write_bytes(ch.name.as_bytes());

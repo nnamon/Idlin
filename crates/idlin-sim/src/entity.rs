@@ -59,6 +59,8 @@ pub struct CombatStats {
     pub cooldown_ticks: u32,
     pub cooldown_left: u32,
     pub speed_per_tick: Fx,
+    /// Body radius for collision/separation.
+    pub radius: Fx,
     pub projectile: bool,
     /// Last tick this entity dealt or took damage (drives out-of-combat regen).
     pub last_combat_tick: u64,
