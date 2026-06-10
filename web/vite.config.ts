@@ -7,6 +7,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "0.0.0.0",
+    // Allow access via Tailscale MagicDNS names (dev only).
+    allowedHosts: [".ts.net"],
     proxy: {
       "/ws": {
         target: "ws://localhost:7777",
