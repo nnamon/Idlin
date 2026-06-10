@@ -203,3 +203,44 @@ fn persist_block_survives_redeploy() {
     // Ordinary memory did NOT survive.
     assert_eq!(bot.vm.load_u32(0xC000), 0);
 }
+
+#[test]
+fn disconnected_builds_are_rejected_at_declaration() {
+    let content = content();
+    let mut world = World::new(11, &content);
+
+    // A plan that jumps straight to a deep node (v4 without v1-v3) must be
+    // rejected outright; a connected plan must be accepted.
+    let bad = idlin_botc::compile("build [\"v4\"]; fn main() {}").unwrap();
+    let good = idlin_botc::compile("build [\"v1\", \"v2\", \"v3\", \"v4\"]; fn main() {}").unwrap();
+    let joins = TickInputs {
+        joins: vec![
+            JoinRequest {
+                name: "Bad".into(),
+                program: bad,
+            },
+            JoinRequest {
+                name: "Good".into(),
+                program: good,
+            },
+        ],
+    };
+    let events = world.tick(&joins);
+    let mut rejected = None;
+    let mut declared = None;
+    for ev in &events {
+        match ev {
+            SimEvent::BuildRejected { owner, reason, .. } => {
+                rejected = Some((owner.clone(), reason.clone()));
+            }
+            SimEvent::BuildDeclared { owner, nodes, .. } => {
+                declared = Some((owner.clone(), *nodes));
+            }
+            _ => {}
+        }
+    }
+    let (who, why) = rejected.expect("bad build must be rejected");
+    assert_eq!(who, "Bad");
+    assert!(why.contains("not connected"), "reason: {why}");
+    assert_eq!(declared, Some(("Good".into(), 4)));
+}

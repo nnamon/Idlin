@@ -276,6 +276,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             nodes: *nodes,
         },
+        SimEvent::BuildRejected { id, owner, reason } => GameEvent::BuildRejected {
+            id: *id,
+            owner: owner.clone(),
+            reason: reason.clone(),
+        },
         SimEvent::GemLevelUp {
             id,
             owner,

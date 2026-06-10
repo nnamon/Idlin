@@ -36,6 +36,8 @@ struct AppState {
     server_tick: Arc<AtomicU64>,
     broadcast: broadcast::Sender<replication::Frame>,
     snapshot: watch::Receiver<replication::Frame>,
+    /// Pre-serialized passive tree for the map page.
+    tree_json: Arc<str>,
 }
 
 /// The four built-in characters a fresh world starts with.
@@ -106,13 +108,16 @@ async fn main() -> anyhow::Result<()> {
     );
     let handles = replication::spawn_replication(frame_rx, zone_name, zone_w, zone_h);
 
+    let tree_json: Arc<str> = Arc::from(tree_to_json(&content));
     let state = AppState {
         server_tick,
         broadcast: handles.broadcast,
         snapshot: handles.snapshot,
+        tree_json,
     };
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/api/tree", get(tree_handler))
         .route("/healthz", get(|| async { "ok" }))
         .fallback_service(ServeDir::new("web/dist"))
         .with_state(state);
@@ -122,6 +127,40 @@ async fn main() -> anyhow::Result<()> {
     info!("idlin-server v{SERVER_VERSION} listening on http://{addr} (ws at /ws)");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// The passive tree as JSON for the map page: nodes + resolved edges.
+fn tree_to_json(content: &ContentDb) -> String {
+    let nodes: Vec<serde_json::Value> = content
+        .tree
+        .iter()
+        .map(|n| {
+            serde_json::json!({
+                "id": n.id,
+                "name": n.name,
+                "kind": n.kind,
+                "x": n.pos.0,
+                "y": n.pos.1,
+                "grants": n.grants,
+            })
+        })
+        .collect();
+    let mut edges: Vec<[u32; 2]> = Vec::new();
+    for (i, adj) in content.tree_adj.iter().enumerate() {
+        for &j in adj {
+            if (i as u32) < j {
+                edges.push([i as u32, j]);
+            }
+        }
+    }
+    serde_json::json!({ "nodes": nodes, "edges": edges }).to_string()
+}
+
+async fn tree_handler(State(state): State<AppState>) -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        state.tree_json.to_string(),
+    )
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {

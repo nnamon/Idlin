@@ -108,6 +108,11 @@ pub enum SimEvent {
         owner: String,
         nodes: u32,
     },
+    BuildRejected {
+        id: u32,
+        owner: String,
+        reason: String,
+    },
     GemSocketed {
         id: u32,
         owner: String,
@@ -1391,15 +1396,49 @@ impl World {
         };
         let Some(ch) = &e.character else { return -1 };
         let (net_id, owner) = (e.net_id, ch.name.clone());
+        let start = self.content.tree_start;
 
+        // Resolve and validate the WHOLE plan before storing anything:
+        // every entry must resolve, and must be connected to the start node,
+        // the already-allocated set, or an earlier plan entry. A bad plan is
+        // rejected outright (loudly) — better a visible authoring error than
+        // a bot silently stuck mid-build.
         let mut plan: Vec<u32> = Vec::with_capacity(refs.len());
-        for r in refs.iter().take(99) {
-            // Unknown refs (stale content) terminate the plan: the prefix
-            // that still resolves remains useful.
-            match self.content.tree_refs.iter().position(|tr| tr == r) {
-                Some(idx) => plan.push(idx as u32),
-                None => break,
+        for (k, r) in refs.iter().take(99).enumerate() {
+            let Some(idx) = self.content.tree_refs.iter().position(|tr| tr == r) else {
+                events.push(SimEvent::BuildRejected {
+                    id: net_id,
+                    owner,
+                    reason: format!("entry {k}: unknown node ref {r:#010x}"),
+                });
+                return -1;
+            };
+            let idx = idx as u32;
+            if idx == start {
+                events.push(SimEvent::BuildRejected {
+                    id: net_id,
+                    owner,
+                    reason: format!("entry {k}: the start node is implicit"),
+                });
+                return -1;
             }
+            let connected = ch.allocated.contains(&idx)
+                || plan.contains(&idx)
+                || self.content.tree_adj[idx as usize]
+                    .iter()
+                    .any(|n| *n == start || ch.allocated.contains(n) || plan.contains(n));
+            if !connected {
+                events.push(SimEvent::BuildRejected {
+                    id: net_id,
+                    owner,
+                    reason: format!(
+                        "entry {k}: `{}` is not connected to the path",
+                        self.content.tree[idx as usize].id
+                    ),
+                });
+                return -1;
+            }
+            plan.push(idx);
         }
         let declared = plan.len() as u32;
         if let Some(me) = self.zone.get_mut(slot) {

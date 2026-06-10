@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
+import { TreeMap } from "./TreeMap";
 
 const TICK_HZ = 10;
 
@@ -16,6 +17,7 @@ const panelStyle: React.CSSProperties = {
 
 export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
   const [status, setStatus] = useState<NetStatus | null>(null);
+  const [showTree, setShowTree] = useState(false);
   const [, setVersion] = useState(0);
 
   useEffect(() => client.onStatus(setStatus), [client]);
@@ -47,7 +49,26 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
         <div style={{ color: "#8a8aa0" }}>
           tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
         </div>
+        <button
+          onClick={() => setShowTree(true)}
+          style={{
+            marginTop: 6,
+            background: "#26263a",
+            color: "#9a7bff",
+            border: "1px solid #44445a",
+            borderRadius: 4,
+            padding: "3px 10px",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: 12,
+            pointerEvents: "auto",
+          }}
+        >
+          ◈ tree map
+        </button>
       </div>
+
+      {showTree && <TreeMap onClose={() => setShowTree(false)} />}
 
       {/* top-right: focus + leaderboard */}
       <div style={{ position: "absolute", top: 12, right: 12, width: 230 }}>

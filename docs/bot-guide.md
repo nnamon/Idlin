@@ -158,8 +158,13 @@ fn main() {                            // main() runs once per tick
 **The `build` declaration — your passive tree, up front**
 
 A bot declares its ENTIRE passive plan at the top of the program: up to 99
-node ids in allocation order. The compiler embeds the list and emits one
-`SetBuild` syscall during initialization; from then on the sim allocates
+node ids in allocation order. The strings exist only in source — the
+compiler hashes each id to a stable 4-byte ref and embeds a packed table
+(99 nodes = 396 bytes max), then emits one `SetBuild` syscall during
+initialization. SetBuild validates the WHOLE plan up front: every entry
+must resolve and be connected to the start node, your allocated set, or an
+earlier entry — a bad plan is rejected loudly (BuildRejected on the
+ticker) rather than silently sticking mid-build; from then on the sim allocates
 the next connected entry automatically every time you level. Allocation is
 append-only — sockets you've unlocked (and the gems in them) can never be
 invalidated. Changing your build means deploying a new bot program, which

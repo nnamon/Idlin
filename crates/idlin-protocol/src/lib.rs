@@ -136,6 +136,11 @@ pub enum GameEvent {
         owner: String,
         nodes: u32,
     },
+    BuildRejected {
+        id: u32,
+        owner: String,
+        reason: String,
+    },
     GemLevelUp {
         id: u32,
         owner: String,
