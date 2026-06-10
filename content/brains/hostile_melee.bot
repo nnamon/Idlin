@@ -1,0 +1,46 @@
+// Hostile NPC brain: leash to home, chase and attack the nearest
+// enemy within aggro range, wander when idle.
+//
+// NPCs run the exact same VM and syscalls as player bots —
+// behavior is content, not engine code. ReadEntities filter 1 is
+// "enemies of me", so this brain hunts players automatically.
+
+const SELF = 0xE000;
+const ENTS = 0xE100;
+const F_ENEMY = 1;
+const LEASH = 0x190000;    // 25 units (Q16.16) manhattan from home
+
+var wander_timer;          // persists across ticks (plain RAM)
+
+fn dist_manhattan(x1, y1, x2, y2) {
+    return abs(x1 - x2) + abs(y1 - y2);
+}
+
+fn main() {
+    self_status(SELF);
+
+    // Too far from home? Walk back (out-of-combat regen heals us).
+    if (dist_manhattan(mem[SELF], mem[SELF + 4],
+                       mem[SELF + 36], mem[SELF + 40]) > LEASH) {
+        move_to(mem[SELF + 36], mem[SELF + 40]);
+        return;
+    }
+
+    // Chase and hit anything inside our aggro radius.
+    if (read_entities(ENTS, 4, F_ENEMY) > 0) {
+        if (dist_manhattan(mem[ENTS + 8], mem[ENTS + 12],
+                           mem[SELF], mem[SELF + 4]) <= mem[SELF + 44]) {
+            use_skill(0, mem[ENTS], 0, 0);
+            move_to(mem[ENTS + 8], mem[ENTS + 12]);
+            return;
+        }
+    }
+
+    // Idle: pick a fresh wander point near home every 3-9 seconds.
+    wander_timer = wander_timer - 1;
+    if (wander_timer <= 0) {
+        move_to(mem[SELF + 36] + (random() & 0x7FFFFFFF) % 0x80000 - 0x40000,
+                mem[SELF + 40] + (random() & 0x7FFFFFFF) % 0x80000 - 0x40000);
+        wander_timer = 30 + (random() & 0x7FFFFFFF) % 60;
+    }
+}

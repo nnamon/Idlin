@@ -1,11 +1,12 @@
-//! Game content loaded from `content/`: zones and monsters as RON, NPC
-//! brains as bot assembly (items/skills/affixes arrive in later phases).
+//! Game content loaded from `content/`: zones/monsters/items/affixes/gems/
+//! tree as RON, NPC brains as `.bot` programs (or assembly).
 //! The engine just runs this content — behavior, stats, and layout all live
 //! here, not in Rust. The sim receives a validated `ContentDb` by value and
 //! never touches the filesystem itself.
 //!
-//! Brains (`content/brains/*.asm`) are assembled to versioned VM bytecode at
-//! load time, so a content error surfaces at server start, never mid-game.
+//! Brains (`content/brains/*.bot`, or `.asm`) are compiled to versioned VM
+//! bytecode at load time, so a content error surfaces at server start,
+//! never mid-game.
 //!
 //! Distances/speeds use integer centi-units (250 = 2.5 world units) so the
 //! files stay human-editable without floats; the sim converts to Q16.16.
@@ -30,12 +31,8 @@ pub enum ContentError {
         #[source]
         source: Box<ron::error::SpannedError>,
     },
-    #[error("brain {path} failed to assemble: {source}")]
-    Brain {
-        path: String,
-        #[source]
-        source: idlin_botc::AsmError,
-    },
+    #[error("brain {path} failed to build: {msg}")]
+    Brain { path: String, msg: String },
     #[error("{path}: zone `{zone}` references unknown monster `{monster}`")]
     UnknownMonster {
         path: String,
@@ -52,11 +49,12 @@ pub enum ContentError {
     DuplicateId { path: String, id: String },
 }
 
-/// An NPC brain: bot assembly compiled to versioned VM bytecode. NPCs run on
-/// the exact same VM and syscalls as player bots — behavior is content.
+/// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
+/// bytecode. NPCs run the exact same VM and syscalls as player bots —
+/// behavior is content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrainDef {
-    /// File stem of the .asm source.
+    /// File stem of the source file.
     pub id: String,
     /// Assembled, versioned bytecode container.
     pub program: Vec<u8>,
@@ -442,16 +440,24 @@ impl ContentDb {
             } else if rel_str.starts_with("tree/") {
                 let tree = ron::from_str::<TreeDef>(&text).map_err(parse_err)?;
                 db.tree.extend(tree.nodes);
-            } else if rel_str.starts_with("brains/") && rel_str.ends_with(".asm") {
+            } else if rel_str.starts_with("brains/") {
                 let id = Path::new(&rel_str)
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let program =
-                    idlin_botc::assemble(&text).map_err(|source| ContentError::Brain {
+                let program = if rel_str.ends_with(".bot") {
+                    idlin_botc::compile(&text).map_err(|e| ContentError::Brain {
                         path: rel_str.clone(),
-                        source,
-                    })?;
+                        msg: e.to_string(),
+                    })?
+                } else if rel_str.ends_with(".asm") {
+                    idlin_botc::assemble(&text).map_err(|e| ContentError::Brain {
+                        path: rel_str.clone(),
+                        msg: e.to_string(),
+                    })?
+                } else {
+                    continue;
+                };
                 db.brains.push(BrainDef { id, program });
             }
             // Other directories (items/, skills/, ...) come with later phases;
@@ -579,7 +585,10 @@ fn collect_ron_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> 
         let path = entry.path();
         if path.is_dir() {
             collect_ron_files(&path, out)?;
-        } else if path.extension().is_some_and(|e| e == "ron" || e == "asm") {
+        } else if path
+            .extension()
+            .is_some_and(|e| e == "ron" || e == "asm" || e == "bot")
+        {
             out.push(path);
         }
     }

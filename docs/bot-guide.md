@@ -91,6 +91,69 @@ All world coordinates are **Q16.16 fixed point** in a 32-bit word: the top
 world units. Use `mulfx`/`divfx` for fixed-point math, plain `add`/`sub`
 work as-is. A zone is typically 60×60 units.
 
+## The `.bot` language
+
+The primary way to write a bot: a small C-like language compiled to the
+same bytecode (the assembler below remains as the escape hatch). Brains in
+`content/brains/*.bot` and the built-in templates are written in it.
+
+```c
+// the default brain, in its entirety
+const SELF = 0xE000;
+const ENTS = 0xE100;
+
+fn main() {                            // main() runs once per tick
+    self_status(SELF);
+    if (mem[SELF + 32] & 1) { return; }     // dead
+
+    if (read_entities(ENTS, 4, 3) > 0) { pick_up(mem[ENTS]); }
+    equip_best();
+    alloc_passive(-1);
+    socket_gem(-1, -1);
+
+    if (read_entities(ENTS, 8, 1) > 0) {
+        var target = mem[ENTS];
+        if (use_skill(1, target, 0, 0) != 0) { use_skill(0, target, 0, 0); }
+        move_to(mem[ENTS + 8], mem[ENTS + 12]);
+        return;
+    }
+    move_to((random() & 0x7FFFFFFF) % mem[SELF + 24],
+            (random() & 0x7FFFFFFF) % mem[SELF + 28]);
+}
+```
+
+**Language summary**
+
+- Top level: `const NAME = literal;`, `var name;` / `var name = expr;` /
+  `var buf[N];` (word arrays), `fn name(params) { ... }`. A `fn main()` is
+  required.
+- Statements: assignment (`x = e;`, `mem[e] = e;`, `arr[i] = e;`),
+  `if`/`else` (and `else if`), `while`, `break`, `continue`, `return e;`,
+  call statements. Semicolons required; blocks always braced.
+- Expressions: C precedence — `|| && | ^ & == != < <= > >= << >> + - * / %`
+  and unary `- ! ~`. `&&`/`||` are logical (0/1) but **not**
+  short-circuiting: both sides always evaluate.
+- `mem[addr]` reads/writes raw memory. `arr[i]` is word-indexed
+  (`mem[arr + i*4]`); an array name alone is its address, and indexing a
+  scalar treats its value as a base address (poor man's pointers).
+- Numbers: decimal or `0x` hex, 32-bit; `0xFFFFFFFF` is the i32 bit pattern.
+
+**Semantics that matter**
+
+- `main()` is invoked by an implicit per-tick loop. Returning ends your
+  tick; calling `halt()` mid-function ends the tick *right there* and
+  resumes from that point next tick (great for multi-tick waits).
+- **All variables are statically allocated** (globals from `0xC000`):
+  globals AND locals persist across ticks; initializers (`var x = 100;` at
+  top level) run once per deploy. There are no stack frames — which means
+  **no recursion** (a recursive call reuses the same parameter slots).
+- Builtins: every syscall by snake_case name (`self_status`,
+  `read_entities`, `move_to`, `use_skill`, `pick_up`, `equip_best`,
+  `alloc_passive`, `random`, `move_item`, `drop_item`, `read_skills`,
+  `socket_gem`, `read_inventory`, `debug`), plus `abs`, `min`, `max`,
+  `mulfx`, `divfx` (Q16.16 math), and `halt`.
+- Compile errors carry line numbers; arity is checked for every builtin.
+
 ## Assembly syntax
 
 ```asm

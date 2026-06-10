@@ -65,11 +65,12 @@ MonsterDef(
 )
 ```
 
-## `content/brains/*.asm` — NPC behavior
+## `content/brains/*.bot` — NPC behavior
 
-Brains are **bot assembly** (see [bot-guide.md](bot-guide.md)), compiled at
-content load. Monsters run the exact same VM and syscalls as players;
-`ReadEntities` filter 1 means "enemies of me", so one brain works for any
+Brains are **`.bot` programs** (see the language reference in
+[bot-guide.md](bot-guide.md); raw `.asm` also accepted), compiled at content
+load. Monsters run the exact same VM and syscalls as players;
+`read_entities` filter 1 means "enemies of me", so one brain works for any
 faction. The file stem is the brain id.
 
 ## `content/items/*.ron` — ItemDef

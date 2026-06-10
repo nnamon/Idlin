@@ -16,8 +16,10 @@
 //! Syscall ABI (matches idlin-vm): push args in reverse order (argN first),
 //! then `sys <number> <argc>`; the host replaces them with one result word.
 
+pub mod lang;
 mod templates;
 
+pub use lang::{CompileError, compile};
 pub use templates::{TEMPLATE_GRINDER, template_grinder};
 
 use idlin_vm::Op;

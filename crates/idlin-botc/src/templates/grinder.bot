@@ -1,0 +1,44 @@
+// ============================================================
+// Idlin grinder template — the default chat-player brain.
+//
+// Per tick: read status; if dead, wait. Pick up our loot, run
+// gear/passive/gem upkeep, then fight the nearest enemy
+// (preferring our first skill gem, falling back to the basic
+// attack). Wander when nothing is around.
+//
+// See docs/bot-guide.md for the syscall reference.
+// ============================================================
+
+const SELF = 0xE000;       // SelfStatus buffer
+const ENTS = 0xE100;       // entity query buffer (24-byte records)
+const F_ENEMY = 1;
+const F_LOOT = 3;
+
+fn main() {
+    self_status(SELF);
+    if (mem[SELF + 32] & 1) { return; }        // dead: wait for respawn
+
+    // Pick up our loot if any is in sight.
+    if (read_entities(ENTS, 4, F_LOOT) > 0) {
+        pick_up(mem[ENTS]);
+    }
+
+    // Upkeep: gear, passives, gems.
+    equip_best();
+    alloc_passive(-1);
+    socket_gem(-1, -1);
+
+    // Fight the nearest enemy.
+    if (read_entities(ENTS, 8, F_ENEMY) > 0) {
+        var target = mem[ENTS];
+        if (use_skill(1, target, 0, 0) != 0) {  // -1: no gem / on cooldown
+            use_skill(0, target, 0, 0);
+        }
+        move_to(mem[ENTS + 8], mem[ENTS + 12]);
+        return;
+    }
+
+    // Nothing around: wander somewhere in the zone.
+    move_to((random() & 0x7FFFFFFF) % mem[SELF + 24],
+            (random() & 0x7FFFFFFF) % mem[SELF + 28]);
+}
