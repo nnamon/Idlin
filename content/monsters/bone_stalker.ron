@@ -1,0 +1,17 @@
+// A skeletal archer that pelts intruders from range.
+MonsterDef(
+    id: "bone_stalker",
+    name: "Bone Stalker",
+    model: "stalker",
+    brain: "hostile_melee",
+    hostile: true,
+    level: 2,
+    life: 40,
+    damage: 8,
+    speed_cps: 260,
+    range_cu: 750,          // 7.5 u ranged
+    cooldown_ticks: 14,
+    aggro_radius_cu: 1100,
+    xp: 35,
+    projectile: true,
+)

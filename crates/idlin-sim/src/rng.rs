@@ -43,6 +43,11 @@ impl Pcg32 {
         Pcg32::new(seed, seq)
     }
 
+    /// Raw generator state, for canonical world hashing.
+    pub fn state(&self) -> (u64, u64) {
+        (self.state, self.inc)
+    }
+
     pub fn next_u32(&mut self) -> u32 {
         let old = self.state;
         self.state = old.wrapping_mul(PCG_MULT).wrapping_add(self.inc);

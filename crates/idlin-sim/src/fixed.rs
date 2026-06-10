@@ -56,17 +56,24 @@ impl Fx {
     }
 
     /// Fixed-point square root via integer Newton's method. Negative → zero.
+    ///
+    /// Uses the monotonic-descent formulation: starting from x₀ ≥ √target the
+    /// sequence strictly decreases until it reaches ⌊√target⌋, then the next
+    /// step is ≥ x and we stop. (A naive `x != last` termination check can
+    /// oscillate between two adjacent integers forever.)
     pub fn sqrt(self) -> Fx {
         if self.0 <= 0 {
             return Fx::ZERO;
         }
         // sqrt(v / 2^16) * 2^16 == sqrt(v * 2^16) == isqrt(v << 16)
         let target = (self.0 as i64) << FRAC_BITS;
-        let mut x = target;
-        let mut last = 0i64;
-        while x != last && x != 0 {
-            last = x;
-            x = (x + target / x) / 2;
+        let mut x = target; // target >= 1 ⇒ target >= sqrt(target)
+        loop {
+            let y = (x + target / x) / 2;
+            if y >= x {
+                break;
+            }
+            x = y;
         }
         Fx(clamp_i64(x))
     }
@@ -221,6 +228,22 @@ mod tests {
         // sqrt(2) ≈ 1.41421; Newton on integers may be off by 1 ulp.
         let r = (Fx::from_int(2).sqrt().raw() - 0x16A09).abs();
         assert!(r <= 1, "sqrt(2) raw off by {r}");
+    }
+
+    #[test]
+    fn sqrt_terminates_and_is_exact_floor_everywhere() {
+        // Regression: the old `x != last` Newton termination oscillated
+        // forever on some inputs. Property-check a dense sweep: the result
+        // must be the exact floor square root, and it must terminate.
+        let mut x = 1i64;
+        while x <= i32::MAX as i64 {
+            let s = Fx(x as i32).sqrt().raw() as i64;
+            let target = x << 16;
+            assert!(s * s <= target, "sqrt({x}) = {s} too large");
+            assert!((s + 1) * (s + 1) > target, "sqrt({x}) = {s} too small");
+            // Dense at the low end (where oscillation bites), sparse above.
+            x += 1 + x / 257;
+        }
     }
 
     #[test]

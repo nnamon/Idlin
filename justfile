@@ -42,9 +42,11 @@ gen-ts:
 gen-check: gen-ts
     git diff --exit-code web/src/gen
 
-# Placeholders that grow with later phases.
-demo:
-    @echo "Phase 1: boots the world with 4 built-in bots + mock chat REPL"
+# Boot the world fresh (4 built-in bots) with the production frontend.
+demo: web-build
+    rm -rf data/snapshots
+    cargo run -p idlin-server
 
-replay fixture:
-    @echo "Phase 1: replays {{fixture}} and verifies the final state hash"
+# Verify the golden replay fixture (pinned seed+content+inputs → state hash).
+replay:
+    cargo test -p idlin-sim --test golden -- --nocapture

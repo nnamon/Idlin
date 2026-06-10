@@ -2,7 +2,7 @@ import type { C2S } from "../gen/C2S";
 import type { S2C } from "../gen/S2C";
 import type { Role } from "../gen/Role";
 
-export const PROTO_VERSION = 1;
+export const PROTO_VERSION = 2;
 const PING_INTERVAL_MS = 2000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
@@ -10,23 +10,28 @@ const RECONNECT_MAX_MS = 10_000;
 export interface NetStatus {
   connected: boolean;
   role: Role | null;
+  serverVersion: string | null;
   rttMs: number | null;
   serverTick: number | null;
   lastError: string | null;
 }
 
 type StatusListener = (status: NetStatus) => void;
+type MessageListener = (msg: S2C) => void;
 
 /**
  * WebSocket client for the Idlin protocol. Sends Hello on connect, pings on
- * an interval to measure RTT, and reconnects with capped exponential backoff.
+ * an interval to measure RTT, reconnects with capped exponential backoff, and
+ * forwards world messages to subscribers (the WorldStore).
  */
 export class NetClient {
   private ws: WebSocket | null = null;
   private listeners = new Set<StatusListener>();
+  private messageListeners = new Set<MessageListener>();
   private status: NetStatus = {
     connected: false,
     role: null,
+    serverVersion: null,
     rttMs: null,
     serverTick: null,
     lastError: null,
@@ -56,6 +61,11 @@ export class NetClient {
     return () => this.listeners.delete(listener);
   }
 
+  onMessage(listener: MessageListener): () => void {
+    this.messageListeners.add(listener);
+    return () => this.messageListeners.delete(listener);
+  }
+
   private connect(): void {
     const ws = new WebSocket(this.url);
     this.ws = ws;
@@ -83,6 +93,7 @@ export class NetClient {
         case "Welcome":
           this.update({
             role: msg.data.role,
+            serverVersion: msg.data.server_version,
             serverTick: msg.data.server_tick,
           });
           break;
@@ -97,6 +108,9 @@ export class NetClient {
         }
         case "Error":
           this.update({ lastError: `server error ${msg.data.code}: ${msg.data.msg}` });
+          break;
+        default:
+          for (const l of this.messageListeners) l(msg);
           break;
       }
     };

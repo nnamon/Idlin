@@ -1,0 +1,314 @@
+//! The VM host: where brains meet the world. Characters and NPCs run on the
+//! exact same VM with the exact same syscalls — a monster is just a bot whose
+//! program came from content. Bots observe and act only through the syscalls
+//! here; the sim validates everything, so a hostile or buggy bot can waste
+//! its own tick but never corrupt the world.
+//!
+//! Syscall ABI (mirrored in idlin-botc templates and content/brains):
+//! - args are popped first-arg-first (the bot pushes them in reverse order)
+//! - exactly the syscall's true arity is popped; the bot-declared argc is
+//!   only honored by `Debug` (capped) — lying about argc hurts only the bot
+//! - every syscall pushes exactly one result word; unknown numbers push -1
+//!
+//! SelfStatus layout (i32 words): +0 x, +4 y, +8 life, +12 life_max,
+//! +16 level, +20 xp, +24 map_w, +28 map_h, +32 flags (bit0 = dead),
+//! +36 anchor_x, +40 anchor_y, +44 aggro_radius, +48 attack_range.
+
+use crate::fixed::Fx;
+use crate::rng::Pcg32;
+use crate::world::{SimEvent, World};
+use idlin_vm::{DEFAULT_TICK_BUDGET, RunExit, Vm};
+use serde::{Deserialize, Serialize};
+
+/// Extra budget charged per syscall (on top of the Syscall instruction).
+pub const SYSCALL_COST: u32 = 20;
+/// How far bots can see.
+pub const QUERY_RADIUS: Fx = Fx::from_int(50);
+/// Hard cap on entity-query results.
+pub const MAX_QUERY_RESULTS: usize = 16;
+/// Size of one ReadEntities record in bytes.
+pub const ENTITY_RECORD_SIZE: u16 = 24;
+
+pub const SYS_DEBUG: i32 = 0;
+pub const SYS_SELF_STATUS: i32 = 1;
+pub const SYS_READ_ENTITIES: i32 = 2;
+pub const SYS_MOVE_TO: i32 = 6;
+pub const SYS_USE_SKILL: i32 = 7;
+pub const SYS_PICK_UP: i32 = 8;
+pub const SYS_RANDOM: i32 = 15;
+
+/// ReadEntities filters. "Enemies" is faction-relative: a player bot sees
+/// hostiles, a hostile NPC brain sees players — the same brain logic works
+/// from either side of the fight.
+pub const FILTER_ENEMIES: i32 = 1;
+pub const FILTER_CHARACTERS: i32 = 2;
+pub const FILTER_LOOT: i32 = 3;
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Bot {
+    pub vm: Vm,
+    /// Per-bot RNG stream: bots get randomness without touching world streams.
+    pub rng: Pcg32,
+    /// Host-side copy of the parameter block, rewritten into VM memory each
+    /// tick (the chat-command channel).
+    pub params: Vec<u8>,
+    pub program_hash: u64,
+    /// Deployment version, bumped on every program swap.
+    pub version: u32,
+}
+
+/// Slot arena for bots. Monsters churn constantly in a forever-world, so
+/// slots are reused (lowest-first — deterministic).
+#[derive(Default, Serialize, Deserialize)]
+pub struct BotArena {
+    slots: Vec<Option<Bot>>,
+    free: Vec<u32>,
+}
+
+impl BotArena {
+    pub fn insert(&mut self, bot: Bot) -> u32 {
+        match self.free.pop() {
+            Some(idx) => {
+                self.slots[idx as usize] = Some(bot);
+                idx
+            }
+            None => {
+                self.slots.push(Some(bot));
+                (self.slots.len() - 1) as u32
+            }
+        }
+    }
+
+    pub fn remove(&mut self, idx: u32) -> Option<Bot> {
+        let bot = self.slots.get_mut(idx as usize)?.take()?;
+        self.free.push(idx);
+        self.free.sort_unstable_by(|a, b| b.cmp(a)); // pop() yields lowest
+        Some(bot)
+    }
+
+    pub fn take(&mut self, idx: u32) -> Option<Bot> {
+        self.slots.get_mut(idx as usize)?.take()
+    }
+
+    pub fn put_back(&mut self, idx: u32, bot: Bot) {
+        self.slots[idx as usize] = Some(bot);
+    }
+
+    pub fn get_mut(&mut self, idx: u32) -> Option<&mut Bot> {
+        self.slots.get_mut(idx as usize)?.as_mut()
+    }
+
+    /// Occupied slots in ascending order (for hashing).
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &Bot)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| b.as_ref().map(|b| (i, b)))
+    }
+}
+
+impl World {
+    pub(crate) fn run_bots(&mut self, events: &mut Vec<SimEvent>) {
+        for slot in 0..self.zone.slot_count() {
+            let Some(e) = self.zone.get(slot) else {
+                continue;
+            };
+            let Some(bot_idx) = e.bot else { continue };
+            if !e.alive() {
+                continue; // the dead don't think; respawn handles them
+            }
+            // Move the bot out so the VM and the world can be borrowed together.
+            let Some(mut bot) = self.bots.take(bot_idx) else {
+                continue;
+            };
+            bot.vm.write_param_block(&bot.params);
+            let mut budget = DEFAULT_TICK_BUDGET;
+            loop {
+                match bot.vm.run(&mut budget) {
+                    RunExit::Halted | RunExit::OutOfBudget => break,
+                    RunExit::Syscall { number, argc } => {
+                        let result = self.syscall(slot, &mut bot, number, argc, events);
+                        bot.vm.push(result);
+                        budget = budget.saturating_sub(SYSCALL_COST);
+                    }
+                }
+            }
+            self.bots.put_back(bot_idx, bot);
+        }
+    }
+
+    fn syscall(
+        &mut self,
+        slot: usize,
+        bot: &mut Bot,
+        number: i32,
+        argc: i32,
+        events: &mut Vec<SimEvent>,
+    ) -> i32 {
+        match number {
+            SYS_DEBUG => {
+                let n = argc.clamp(0, 8);
+                let mut values = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    values.push(bot.vm.pop());
+                }
+                let id = self.zone.get(slot).map(|e| e.net_id).unwrap_or(0);
+                events.push(SimEvent::BotDebug { id, values });
+                0
+            }
+            SYS_SELF_STATUS => {
+                let out = bot.vm.pop() as u16;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let combat = e.combat.as_ref();
+                let ch = e.character.as_ref();
+                let life = combat
+                    .map(|c| c.life.clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0);
+                let life_max = combat
+                    .map(|c| c.life_max.clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0);
+                let level = ch.map(|c| c.level as i32).unwrap_or(0);
+                let xp = ch
+                    .map(|c| c.xp.clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0);
+                let dead = !e.alive();
+                // Characters anchor to the zone spawn point; monsters to home.
+                let anchor = e
+                    .monster
+                    .as_ref()
+                    .map(|m| m.anchor)
+                    .unwrap_or(self.zone.spawn);
+                let aggro = e
+                    .monster
+                    .as_ref()
+                    .map(|m| {
+                        let def = &self.content_monsters()[m.def_idx as usize];
+                        crate::world::fx_from_cu(def.aggro_radius_cu).raw()
+                    })
+                    .unwrap_or(0);
+                let range = combat.map(|c| c.range.raw()).unwrap_or(0);
+                let fields = [
+                    e.pos.x.raw(),
+                    e.pos.y.raw(),
+                    life,
+                    life_max,
+                    level,
+                    xp,
+                    self.zone.width.raw(),
+                    self.zone.height.raw(),
+                    dead as i32,
+                    anchor.x.raw(),
+                    anchor.y.raw(),
+                    aggro,
+                    range,
+                ];
+                for (i, v) in fields.into_iter().enumerate() {
+                    bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);
+                }
+                0
+            }
+            SYS_READ_ENTITIES => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_QUERY_RESULTS as i32) as usize;
+                let filter = bot.vm.pop();
+                let Some(me) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let (my_pos, my_net, my_faction) = (me.pos, me.net_id, me.faction());
+
+                let r = QUERY_RADIUS.raw() as i64;
+                let radius_sq = r * r;
+                // (dist_sq, net_id) keys make the ordering fully deterministic.
+                let mut found: Vec<(i64, u32, [i32; 6])> = Vec::new();
+                for (s, e) in self.zone.iter() {
+                    if s == slot {
+                        continue;
+                    }
+                    let visible = match filter {
+                        FILTER_ENEMIES => my_faction.is_enemy_of(e.faction()) && e.alive(),
+                        FILTER_CHARACTERS => e.character.is_some() && e.alive(),
+                        FILTER_LOOT => e.loot.as_ref().is_some_and(|l| l.owner == my_net),
+                        _ => false,
+                    };
+                    if !visible {
+                        continue;
+                    }
+                    let dx = (e.pos.x - my_pos.x).raw() as i64;
+                    let dy = (e.pos.y - my_pos.y).raw() as i64;
+                    let d2 = dx * dx + dy * dy;
+                    if d2 > radius_sq {
+                        continue;
+                    }
+                    let life_pct = e.combat.as_ref().map(|c| c.life_pct() as i32).unwrap_or(0);
+                    let rarity = e.loot.as_ref().map(|l| l.rarity as i32).unwrap_or(0);
+                    found.push((
+                        d2,
+                        e.net_id,
+                        [
+                            e.net_id as i32,
+                            e.kind_code(),
+                            e.pos.x.raw(),
+                            e.pos.y.raw(),
+                            life_pct,
+                            rarity,
+                        ],
+                    ));
+                }
+                found.sort_unstable_by_key(|&(d2, net, _)| (d2, net));
+                let n = found.len().min(max);
+                for (i, (_, _, rec)) in found.iter().take(n).enumerate() {
+                    let base = out.wrapping_add(i as u16 * ENTITY_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                n as i32
+            }
+            SYS_MOVE_TO => {
+                let x = bot.vm.pop();
+                let y = bot.vm.pop();
+                let target = self
+                    .zone
+                    .clamp_pos(crate::fixed::FxV2::new(Fx::from_raw(x), Fx::from_raw(y)));
+                if let Some(e) = self.zone.get_mut(slot) {
+                    e.intents.move_to = Some(target);
+                    0
+                } else {
+                    -1
+                }
+            }
+            SYS_USE_SKILL => {
+                let _skill_slot = bot.vm.pop(); // slot 0 = basic attack (Phase 1)
+                let target = bot.vm.pop();
+                let _x = bot.vm.pop();
+                let _y = bot.vm.pop();
+                if let Some(e) = self.zone.get_mut(slot) {
+                    e.intents.attack = Some(target as u32);
+                    0
+                } else {
+                    -1
+                }
+            }
+            SYS_PICK_UP => {
+                let id = bot.vm.pop();
+                if let Some(e) = self.zone.get_mut(slot) {
+                    e.intents.pickup = Some(id as u32);
+                    0
+                } else {
+                    -1
+                }
+            }
+            SYS_RANDOM => bot.rng.next_u32() as i32,
+            _ => -1,
+        }
+    }
+}
+
+/// FNV-1a over program bytes — bot programs are content-addressed.
+pub fn program_hash(program: &[u8]) -> u64 {
+    let mut h = crate::hash::Fnv1a64::new();
+    h.write_bytes(program);
+    h.finish()
+}

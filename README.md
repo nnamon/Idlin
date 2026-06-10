@@ -27,6 +27,28 @@ constraints are part of the sport.
   replication, auto-director, chat command parsing.
 - `web/` — Three.js + TypeScript spectator client (React for the overlay).
 
+## Design principles
+
+- **The engine runs content.** Zones, monsters, items — and *behavior* — are
+  data in `content/`. NPC brains are bot assembly (`content/brains/*.asm`)
+  compiled at load; monsters run on the exact same VM and syscalls as player
+  bots. Hostility is data (`hostile: true` → faction), so friendly NPCs are
+  just content too.
+- **Determinism is law.** The sim is integer/fixed-point only; identical
+  (seed, content, input history) reproduces the world bit-exactly on any
+  platform. Snapshots + determinism = exact resume after restart.
+- **Every state is defined.** Untrusted bytecode can be wrong, but it cannot
+  crash, stall, or desync the world: wrapping memory, instruction budgets,
+  defined div-by-zero, validated syscalls.
+
+## Versioning
+
+- **Project**: semver (workspace version, tagged releases).
+- **Wire protocol**: `PROTO_VERSION` integer, checked at Hello.
+- **Bytecode format**: `ILBC` container with a u16 format version, checked at
+  deploy time — outdated bots are rejected with a typed error before they run.
+- **Bot deployments**: monotonic integer per character, bumped on every swap.
+
 ## Development
 
 Requires Rust (via rustup), Node 22 + pnpm, and [just](https://github.com/casey/just).

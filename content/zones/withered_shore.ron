@@ -1,0 +1,16 @@
+// Campaign zone 1: a drowned coastline crawling with the waterlogged dead.
+ZoneDef(
+    id: "withered_shore",
+    name: "The Withered Shore",
+    width_u: 60,
+    height_u: 60,
+    spawn_x_u: 30,
+    spawn_y_u: 54,
+    packs: [
+        SpawnPack(monster: "drowned_shambler", count: 4, x_u: 14, y_u: 16, radius_u: 5, respawn_ticks: 150),
+        SpawnPack(monster: "drowned_shambler", count: 4, x_u: 40, y_u: 20, radius_u: 5, respawn_ticks: 150),
+        SpawnPack(monster: "drowned_shambler", count: 3, x_u: 22, y_u: 38, radius_u: 4, respawn_ticks: 150),
+        SpawnPack(monster: "bone_stalker",     count: 3, x_u: 46, y_u: 44, radius_u: 6, respawn_ticks: 200),
+        SpawnPack(monster: "tide_husk",        count: 2, x_u: 10, y_u: 46, radius_u: 3, respawn_ticks: 300),
+    ],
+)

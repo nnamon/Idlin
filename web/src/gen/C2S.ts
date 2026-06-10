@@ -3,4 +3,4 @@
 /**
  * Client → server.
  */
-export type C2S = { "type": "Hello", "data": { token: string, proto_version: number, } } | { "type": "Ping", "data": { nonce: number, } };
+export type C2S = { "type": "Hello", "data": { token: string, proto_version: number, } } | { "type": "Ping", "data": { nonce: number, } } | { "type": "DirectorMode", "data": { auto: boolean, } };
