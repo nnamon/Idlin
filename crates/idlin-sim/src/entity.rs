@@ -89,6 +89,20 @@ pub struct Intents {
     pub pickup: Option<u32>,
 }
 
+/// A concrete item instance. Affixes arrive with the full gearing system;
+/// until then rarity acts as a flat quality multiplier on the base stat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Item {
+    /// Index into ContentDb::items.
+    pub base_idx: u32,
+    pub rarity: Rarity,
+    /// Monster level at drop time (feeds affix tiers later).
+    pub item_level: u32,
+}
+
+pub const INVENTORY_CAP: usize = 24;
+pub const GEAR_SLOTS: usize = idlin_content::GearSlot::COUNT;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterState {
     pub name: String,
@@ -98,7 +112,11 @@ pub struct CharacterState {
     /// Set while dead; tick at which the character respawns.
     pub respawn_at: Option<u64>,
     pub kills: u64,
+    /// Lifetime pickups (display stat); the bag is `inventory`.
     pub items: u64,
+    pub inventory: Vec<Item>,
+    /// Indexed by GearSlot::idx().
+    pub equipment: [Option<Item>; GEAR_SLOTS],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +133,8 @@ pub struct MonsterState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LootState {
+    /// The actual dropped item.
+    pub item: Item,
     pub rarity: Rarity,
     /// Personal loot: only this character's net_id can see or take it.
     pub owner: u32,

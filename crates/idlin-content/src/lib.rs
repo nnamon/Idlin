@@ -90,6 +90,60 @@ fn default_radius_cu() -> i32 {
     45
 }
 
+/// Where a piece of gear goes. Weapon stats define the normal attack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GearSlot {
+    Weapon,
+    Helm,
+    Chest,
+    Boots,
+}
+
+impl GearSlot {
+    pub const COUNT: usize = 4;
+
+    pub fn idx(self) -> usize {
+        match self {
+            GearSlot::Weapon => 0,
+            GearSlot::Helm => 1,
+            GearSlot::Chest => 2,
+            GearSlot::Boots => 3,
+        }
+    }
+}
+
+/// An item base type. Affixes arrive with the full gearing system; until
+/// then rarity scales the base stat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemDef {
+    pub id: String,
+    pub name: String,
+    pub slot: GearSlot,
+    /// Weapon: attack damage (replaces unarmed).
+    #[serde(default)]
+    pub damage: i64,
+    /// Weapon: attack range in centi-units.
+    #[serde(default)]
+    pub range_cu: i32,
+    /// Weapon: ticks between attacks.
+    #[serde(default)]
+    pub cooldown_ticks: u32,
+    /// Weapon: ranged attack.
+    #[serde(default)]
+    pub projectile: bool,
+    /// Armor: flat life.
+    #[serde(default)]
+    pub life: i64,
+    /// Relative drop weight.
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+}
+
+fn default_weight() -> u32 {
+    100
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnPack {
     /// MonsterDef id.
@@ -127,6 +181,8 @@ pub struct ContentDb {
     pub zones: Vec<ZoneDef>,
     /// Sorted by id.
     pub brains: Vec<BrainDef>,
+    /// Sorted by id.
+    pub items: Vec<ItemDef>,
 }
 
 impl ContentDb {
@@ -143,6 +199,10 @@ impl ContentDb {
 
     pub fn brain_idx(&self, id: &str) -> Option<usize> {
         self.brains.binary_search_by(|b| b.id.as_str().cmp(id)).ok()
+    }
+
+    pub fn item_idx(&self, id: &str) -> Option<usize> {
+        self.items.binary_search_by(|i| i.id.as_str().cmp(id)).ok()
     }
 
     pub fn zone(&self, id: &str) -> Option<&ZoneDef> {
@@ -186,6 +246,9 @@ impl ContentDb {
             } else if rel_str.starts_with("zones/") {
                 db.zones
                     .push(ron::from_str::<ZoneDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("items/") {
+                db.items
+                    .push(ron::from_str::<ItemDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("brains/") && rel_str.ends_with(".asm") {
                 let id = Path::new(&rel_str)
                     .file_stem()
@@ -206,6 +269,15 @@ impl ContentDb {
         db.monsters.sort_by(|a, b| a.id.cmp(&b.id));
         db.zones.sort_by(|a, b| a.id.cmp(&b.id));
         db.brains.sort_by(|a, b| a.id.cmp(&b.id));
+        db.items.sort_by(|a, b| a.id.cmp(&b.id));
+        for w in db.items.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "items/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
         for w in db.monsters.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {

@@ -1,0 +1,11 @@
+// Something still pulses inside the shell cluster.
+ItemDef(
+    id: "barnacle_wand",
+    name: "Barnacle Wand",
+    slot: weapon,
+    damage: 12,
+    range_cu: 800,
+    cooldown_ticks: 9,
+    projectile: true,
+    weight: 60,
+)

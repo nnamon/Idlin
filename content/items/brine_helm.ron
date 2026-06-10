@@ -1,0 +1,8 @@
+// A drowned soldier's helm, scoured clean by the tide.
+ItemDef(
+    id: "brine_helm",
+    name: "Brinescoured Helm",
+    slot: helm,
+    life: 20,
+    weight: 90,
+)

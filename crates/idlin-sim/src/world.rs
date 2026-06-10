@@ -5,12 +5,15 @@
 //! input history) on every platform.
 
 use crate::bots::{Bot, BotArena, program_hash};
-use crate::entity::{CharacterState, Class, CombatStats, Entity, LootState, MonsterState, Rarity};
+use crate::entity::{
+    CharacterState, Class, CombatStats, Entity, GEAR_SLOTS, INVENTORY_CAP, Item, LootState,
+    MonsterState, Rarity,
+};
 use crate::fixed::{Fx, FxV2};
 use crate::hash::Fnv1a64;
 use crate::rng::{Domain, Pcg32};
 use crate::zone::{PackState, Zone};
-use idlin_content::{ContentDb, MonsterDef};
+use idlin_content::{ContentDb, GearSlot, MonsterDef};
 use idlin_vm::Vm;
 use serde::{Deserialize, Serialize};
 
@@ -79,11 +82,19 @@ pub enum SimEvent {
         owner_id: u32,
         owner: String,
         rarity: Rarity,
+        item: String,
     },
     ItemPickedUp {
         owner_id: u32,
         owner: String,
         rarity: Rarity,
+        item: String,
+    },
+    ItemEquipped {
+        id: u32,
+        owner: String,
+        rarity: Rarity,
+        item: String,
     },
     Hit {
         attacker: u32,
@@ -166,6 +177,30 @@ fn xp_to_next(level: u32) -> i64 {
     80 + 40 * l * l
 }
 
+/// Class life/damage at a given level, before gear (integer compounding).
+fn base_progression(class: Class, level: u32) -> (i64, i64) {
+    let (mut life, mut damage) = match class {
+        Class::Brute => (120, 12),
+        Class::Hunter => (90, 9),
+        Class::Arcanist => (80, 11),
+    };
+    for _ in 1..level {
+        life += life / 10;
+        damage += damage / 12 + 1;
+    }
+    (life, damage)
+}
+
+/// Placeholder until affixes: rarity scales an item's base stat.
+fn rarity_mult(rarity: Rarity) -> i64 {
+    match rarity {
+        Rarity::Normal => 100,
+        Rarity::Magic => 120,
+        Rarity::Rare => 150,
+        Rarity::Unique => 200,
+    }
+}
+
 impl World {
     pub fn new(seed: u64, content: &ContentDb) -> World {
         let zone = match content
@@ -229,6 +264,10 @@ impl World {
 
     pub(crate) fn content_monsters(&self) -> &[MonsterDef] {
         &self.content.monsters
+    }
+
+    pub(crate) fn content_items(&self) -> &[idlin_content::ItemDef] {
+        &self.content.items
     }
 
     pub fn tick_count(&self) -> u64 {
@@ -325,6 +364,8 @@ impl World {
                     respawn_at: None,
                     kills: 0,
                     items: 0,
+                    inventory: Vec::new(),
+                    equipment: Default::default(),
                 }),
                 monster: None,
                 loot: None,
@@ -461,7 +502,7 @@ impl World {
         // Sequential resolution in slot order: earlier attackers can kill a
         // target before later ones swing. Deterministic and simple.
         let mut dead_monsters: Vec<(usize, u32)> = Vec::new(); // (slot, bot idx)
-        let mut loot_spawns: Vec<(FxV2, Rarity, u32, String)> = Vec::new();
+        let mut loot_spawns: Vec<(FxV2, Item, u32, String)> = Vec::new();
         let now = self.tick;
 
         for slot in 0..self.zone.slot_count() {
@@ -544,20 +585,12 @@ impl World {
                             level: monster_level,
                         });
                         // Loot roll (personal: owned by the killer).
-                        if self.rng_loot.next_range(100) < 35 {
-                            let r = self.rng_loot.next_range(1000);
-                            let rarity = if r < 700 {
-                                Rarity::Normal
-                            } else if r < 950 {
-                                Rarity::Magic
-                            } else if r < 995 {
-                                Rarity::Rare
-                            } else {
-                                Rarity::Unique
-                            };
+                        if self.rng_loot.next_range(100) < 35
+                            && let Some(item) = self.roll_item(monster_level)
+                        {
                             loot_spawns.push((
                                 target_pos,
-                                rarity,
+                                item,
                                 attacker_net,
                                 attacker_name.clone(),
                             ));
@@ -591,8 +624,10 @@ impl World {
                 self.bots.remove(bot_idx);
             }
         }
-        for (pos, rarity, owner, owner_name) in loot_spawns {
+        for (pos, item, owner, owner_name) in loot_spawns {
             let net_id = self.alloc_net();
+            let rarity = item.rarity;
+            let item_name = self.content.items[item.base_idx as usize].name.clone();
             self.zone.insert(Entity {
                 net_id,
                 pos,
@@ -602,6 +637,7 @@ impl World {
                 character: None,
                 monster: None,
                 loot: Some(LootState {
+                    item,
                     rarity,
                     owner,
                     despawn_at: self.tick + LOOT_DESPAWN_TICKS,
@@ -611,8 +647,41 @@ impl World {
                 owner_id: owner,
                 owner: owner_name,
                 rarity,
+                item: item_name,
             });
         }
+    }
+
+    /// Roll a concrete item: weighted base pick + rarity + item level.
+    fn roll_item(&mut self, monster_level: u32) -> Option<Item> {
+        let total: u32 = self.content.items.iter().map(|i| i.weight).sum();
+        if total == 0 {
+            return None;
+        }
+        let mut roll = self.rng_loot.next_range(total);
+        let mut base_idx = 0u32;
+        for (i, def) in self.content.items.iter().enumerate() {
+            if roll < def.weight {
+                base_idx = i as u32;
+                break;
+            }
+            roll -= def.weight;
+        }
+        let r = self.rng_loot.next_range(1000);
+        let rarity = if r < 700 {
+            Rarity::Normal
+        } else if r < 950 {
+            Rarity::Magic
+        } else if r < 995 {
+            Rarity::Rare
+        } else {
+            Rarity::Unique
+        };
+        Some(Item {
+            base_idx,
+            rarity,
+            item_level: monster_level,
+        })
     }
 
     fn grant_xp(&mut self, slot: usize, xp: i64, events: &mut Vec<SimEvent>) {
@@ -633,16 +702,130 @@ impl World {
         }
         if leveled {
             let (name, level) = (ch.name.clone(), ch.level);
-            let combat = e.combat.as_mut().unwrap();
-            combat.life_max += combat.life_max / 10;
-            combat.damage += combat.damage / 12 + 1;
-            combat.life = combat.life_max;
+            self.refresh_derived_stats(slot);
+            if let Some(me) = self.zone.get_mut(slot)
+                && let Some(c) = me.combat.as_mut()
+            {
+                c.life = c.life_max; // level-up: full heal
+            }
             events.push(SimEvent::LevelUp {
                 id: net_id,
                 name,
                 level,
             });
         }
+    }
+
+    /// Recompute a character's combat numbers from class, level, and gear.
+    /// The weapon defines the normal attack (damage/range/cooldown/projectile,
+    /// with class damage contributing half); armor adds life. Current life is
+    /// preserved, gaining the max-life delta on upgrades.
+    fn refresh_derived_stats(&mut self, slot: usize) {
+        let Some(e) = self.zone.get(slot) else { return };
+        let Some(ch) = &e.character else { return };
+        let (class, level) = (ch.class, ch.level);
+        let (base_life, base_damage) = base_progression(class, level);
+        let unarmed = class_stats(class);
+
+        let mut life_max = base_life;
+        let mut damage = base_damage;
+        let mut range = unarmed.range;
+        let mut cooldown = unarmed.cooldown_ticks;
+        let mut projectile = unarmed.projectile;
+        for (i, slot_item) in ch.equipment.iter().enumerate() {
+            let Some(item) = slot_item else { continue };
+            let def = &self.content.items[item.base_idx as usize];
+            let mult = rarity_mult(item.rarity);
+            if i == GearSlot::Weapon.idx() {
+                damage = base_damage / 2 + def.damage * mult / 100;
+                range = fx_from_cu(def.range_cu);
+                cooldown = def.cooldown_ticks;
+                projectile = def.projectile;
+            } else {
+                life_max += def.life * mult / 100;
+            }
+        }
+
+        if let Some(me) = self.zone.get_mut(slot)
+            && let Some(c) = me.combat.as_mut()
+        {
+            let delta = life_max - c.life_max;
+            c.life_max = life_max;
+            if c.life > 0 {
+                c.life = (c.life + delta.max(0)).min(life_max);
+            }
+            c.damage = damage;
+            c.range = range;
+            c.cooldown_ticks = cooldown;
+            c.projectile = projectile;
+        }
+    }
+
+    /// Host-computed gear optimization (the EquipBest syscall): for each gear
+    /// slot, equip the highest-scoring item between what's worn and what's in
+    /// the bag. Returns the number of swaps; emits ItemEquipped events.
+    pub(crate) fn equip_best(&mut self, slot: usize, events: &mut Vec<SimEvent>) -> i32 {
+        let Some(e) = self.zone.get(slot) else {
+            return -1;
+        };
+        let Some(ch) = &e.character else { return -1 };
+        let (net_id, owner) = (e.net_id, ch.name.clone());
+
+        let score = |content: &ContentDb, item: &Item| -> i64 {
+            let def = &content.items[item.base_idx as usize];
+            let stat = if def.slot == GearSlot::Weapon {
+                def.damage
+            } else {
+                def.life
+            };
+            stat * rarity_mult(item.rarity)
+        };
+
+        let mut changes = 0;
+        for gear_idx in 0..GEAR_SLOTS {
+            // Find the best inventory candidate for this slot.
+            let Some(e) = self.zone.get(slot) else { break };
+            let ch = e.character.as_ref().unwrap();
+            let current_score = ch.equipment[gear_idx]
+                .as_ref()
+                .map(|i| score(&self.content, i))
+                .unwrap_or(-1);
+            let mut best: Option<(usize, i64)> = None;
+            for (inv_idx, item) in ch.inventory.iter().enumerate() {
+                if self.content.items[item.base_idx as usize].slot.idx() != gear_idx {
+                    continue;
+                }
+                let s = score(&self.content, item);
+                if s > current_score && best.is_none_or(|(_, bs)| s > bs) {
+                    best = Some((inv_idx, s));
+                }
+            }
+            let Some((inv_idx, _)) = best else { continue };
+
+            let item_name;
+            let item_rarity;
+            {
+                let me = self.zone.get_mut(slot).unwrap();
+                let ch = me.character.as_mut().unwrap();
+                let new_item = ch.inventory.remove(inv_idx);
+                item_name = self.content.items[new_item.base_idx as usize].name.clone();
+                item_rarity = new_item.rarity;
+                if let Some(old) = ch.equipment[gear_idx].replace(new_item) {
+                    ch.inventory.push(old);
+                }
+            }
+            changes += 1;
+            events.push(SimEvent::ItemEquipped {
+                id: net_id,
+                owner: owner.clone(),
+                rarity: item_rarity,
+                item: item_name,
+            });
+        }
+        if changes > 0 {
+            self.refresh_derived_stats(slot);
+        }
+        changes
     }
 
     fn pickups(&mut self, events: &mut Vec<SimEvent>) {
@@ -668,15 +851,24 @@ impl World {
             if loot.owner != my_net || my_pos.dist(l.pos) > PICKUP_RANGE {
                 continue;
             }
+            // A full bag refuses the pickup (vendoring arrives with towns).
+            if ch.inventory.len() >= INVENTORY_CAP {
+                continue;
+            }
             let rarity = loot.rarity;
+            let item = loot.item.clone();
+            let item_name = self.content.items[item.base_idx as usize].name.clone();
             self.zone.remove(loot_slot);
             if let Some(me) = self.zone.get_mut(slot) {
-                me.character.as_mut().unwrap().items += 1;
+                let ch = me.character.as_mut().unwrap();
+                ch.items += 1;
+                ch.inventory.push(item);
             }
             events.push(SimEvent::ItemPickedUp {
                 owner_id: my_net,
                 owner: my_name,
                 rarity,
+                item: item_name,
             });
         }
     }
@@ -911,6 +1103,24 @@ impl World {
                 h.write_u64(ch.respawn_at.unwrap_or(0));
                 h.write_u64(ch.kills);
                 h.write_u64(ch.items);
+                let fold_item = |h: &mut Fnv1a64, item: &Item| {
+                    h.write_u32(item.base_idx);
+                    h.write_u8(item.rarity as u8);
+                    h.write_u32(item.item_level);
+                };
+                h.write_u64(ch.inventory.len() as u64);
+                for item in &ch.inventory {
+                    fold_item(&mut h, item);
+                }
+                for slot_item in &ch.equipment {
+                    match slot_item {
+                        Some(item) => {
+                            h.write_u8(1);
+                            fold_item(&mut h, item);
+                        }
+                        None => h.write_u8(0),
+                    }
+                }
             }
             if let Some(m) = &e.monster {
                 h.write_u32(m.def_idx);
@@ -922,6 +1132,8 @@ impl World {
                 h.write_u8(l.rarity as u8);
                 h.write_u32(l.owner);
                 h.write_u64(l.despawn_at);
+                h.write_u32(l.item.base_idx);
+                h.write_u32(l.item.item_level);
             }
         }
         for pack in &self.zone.packs {

@@ -37,6 +37,7 @@ fn bots_grind_the_shore() {
     let mut level_ups = 0u64;
     let mut deaths = 0u64;
     let mut pickups = 0u64;
+    let mut equips = 0u64;
 
     let mut events = world.tick(&join_inputs());
     // 6000 ticks = 10 minutes of game time.
@@ -49,6 +50,7 @@ fn bots_grind_the_shore() {
             SimEvent::LevelUp { .. } => level_ups += 1,
             SimEvent::CharacterDied { .. } => deaths += 1,
             SimEvent::ItemPickedUp { .. } => pickups += 1,
+            SimEvent::ItemEquipped { .. } => equips += 1,
             _ => {}
         }
     }
@@ -59,6 +61,7 @@ fn bots_grind_the_shore() {
         "someone should level in 10 minutes; got {level_ups}"
     );
     assert!(pickups >= 1, "bots should pick up loot; got {pickups}");
+    assert!(equips >= 1, "bots should equip upgrades; got {equips}");
     // Deaths are possible (tide husks hit hard) but not required.
     let _ = deaths;
 

@@ -233,19 +233,34 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner_id,
             owner,
             rarity,
+            item,
         } => GameEvent::LootDropped {
             owner_id: *owner_id,
             owner: owner.clone(),
             rarity: *rarity as u8,
+            item: item.clone(),
         },
         SimEvent::ItemPickedUp {
             owner_id,
             owner,
             rarity,
+            item,
         } => GameEvent::ItemPickedUp {
             owner_id: *owner_id,
             owner: owner.clone(),
             rarity: *rarity as u8,
+            item: item.clone(),
+        },
+        SimEvent::ItemEquipped {
+            id,
+            owner,
+            rarity,
+            item,
+        } => GameEvent::ItemEquipped {
+            id: *id,
+            owner: owner.clone(),
+            rarity: *rarity as u8,
+            item: item.clone(),
         },
         SimEvent::Hit { .. } | SimEvent::BotDebug { .. } | SimEvent::JoinRejected { .. } => {
             return None;

@@ -195,9 +195,9 @@ export class WorldStore {
         push(`${ev.data.killer} slays a ${ev.data.monster}`, "#8a8aa0");
         break;
       case "LootDropped":
-        if (ev.data.rarity >= 2) {
+        if (ev.data.rarity >= 1) {
           push(
-            `✦ a ${RARITY_NAMES[ev.data.rarity]} item drops for ${ev.data.owner}`,
+            `✦ ${ev.data.item} (${RARITY_NAMES[ev.data.rarity]}) drops for ${ev.data.owner}`,
             RARITY_COLORS[ev.data.rarity],
           );
         }
@@ -205,10 +205,16 @@ export class WorldStore {
       case "ItemPickedUp":
         if (ev.data.rarity >= 2) {
           push(
-            `${ev.data.owner} claims a ${RARITY_NAMES[ev.data.rarity]} item`,
+            `${ev.data.owner} claims ${ev.data.item} (${RARITY_NAMES[ev.data.rarity]})`,
             RARITY_COLORS[ev.data.rarity],
           );
         }
+        break;
+      case "ItemEquipped":
+        push(
+          `⚙ ${ev.data.owner} equips ${ev.data.item}${ev.data.rarity >= 1 ? ` (${RARITY_NAMES[ev.data.rarity]})` : ""}`,
+          RARITY_COLORS[ev.data.rarity],
+        );
         break;
     }
   }

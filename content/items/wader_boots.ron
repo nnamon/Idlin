@@ -1,0 +1,8 @@
+// Tall boots for walking where the shore bites.
+ItemDef(
+    id: "wader_boots",
+    name: "Wader's Boots",
+    slot: boots,
+    life: 15,
+    weight: 90,
+)

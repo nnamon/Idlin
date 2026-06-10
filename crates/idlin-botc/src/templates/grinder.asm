@@ -42,6 +42,10 @@ main:
     pop
 no_loot:
 
+    ; --- gear: let the host equip any upgrades from the bag ---
+    sys 12 0           ; EquipBest()
+    pop
+
     ; --- combat: nearest monster, or wander if none ---
     pushs F_MON
     pushs 8

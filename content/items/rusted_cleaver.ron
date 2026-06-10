@@ -1,0 +1,11 @@
+// A salt-eaten butcher's blade. Heavy, slow, mean.
+ItemDef(
+    id: "rusted_cleaver",
+    name: "Rusted Cleaver",
+    slot: weapon,
+    damage: 14,
+    range_cu: 220,
+    cooldown_ticks: 8,
+    projectile: false,
+    weight: 100,
+)

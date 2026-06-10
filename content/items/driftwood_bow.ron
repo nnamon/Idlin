@@ -1,0 +1,11 @@
+// Warped but springy. The string smells of kelp.
+ItemDef(
+    id: "driftwood_bow",
+    name: "Driftwood Bow",
+    slot: weapon,
+    damage: 10,
+    range_cu: 950,
+    cooldown_ticks: 7,
+    projectile: true,
+    weight: 80,
+)

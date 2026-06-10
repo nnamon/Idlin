@@ -32,10 +32,15 @@ pub const ENTITY_RECORD_SIZE: u16 = 24;
 pub const SYS_DEBUG: i32 = 0;
 pub const SYS_SELF_STATUS: i32 = 1;
 pub const SYS_READ_ENTITIES: i32 = 2;
+pub const SYS_READ_INVENTORY: i32 = 5;
 pub const SYS_MOVE_TO: i32 = 6;
 pub const SYS_USE_SKILL: i32 = 7;
 pub const SYS_PICK_UP: i32 = 8;
+pub const SYS_EQUIP_BEST: i32 = 12;
 pub const SYS_RANDOM: i32 = 15;
+
+/// Size of one ReadInventory record in bytes.
+pub const INVENTORY_RECORD_SIZE: u16 = 16;
 
 /// ReadEntities filters. "Enemies" is faction-relative: a player bot sees
 /// hostiles, a hostile NPC brain sees players — the same brain logic works
@@ -300,6 +305,37 @@ impl World {
                     -1
                 }
             }
+            SYS_READ_INVENTORY => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, crate::entity::INVENTORY_CAP as i32) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let Some(ch) = &e.character else { return -1 };
+                // Record: base_idx, gear slot code, rarity, item_level.
+                let records: Vec<[i32; 4]> = ch
+                    .inventory
+                    .iter()
+                    .take(max)
+                    .map(|item| {
+                        let def = &self.content_items()[item.base_idx as usize];
+                        [
+                            item.base_idx as i32,
+                            def.slot.idx() as i32,
+                            item.rarity as i32,
+                            item.item_level as i32,
+                        ]
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * INVENTORY_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_EQUIP_BEST => self.equip_best(slot, events),
             SYS_RANDOM => bot.rng.next_u32() as i32,
             _ => -1,
         }

@@ -108,11 +108,19 @@ pub enum GameEvent {
         owner_id: u32,
         owner: String,
         rarity: u8,
+        item: String,
     },
     ItemPickedUp {
         owner_id: u32,
         owner: String,
         rarity: u8,
+        item: String,
+    },
+    ItemEquipped {
+        id: u32,
+        owner: String,
+        rarity: u8,
+        item: String,
     },
 }
 
