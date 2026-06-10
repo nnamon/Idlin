@@ -28,13 +28,13 @@ main:
     push SELF+36         ; anchor_x
     load
     sub
-    call abs
+    abs
     push SELF+4
     load
     push SELF+40
     load
     sub
-    call abs
+    abs
     add                  ; [mdist]
     push LEASH
     gt
@@ -53,13 +53,13 @@ main:
     push SELF
     load
     sub
-    call abs
+    abs
     push ENTS+12
     load
     push SELF+4
     load
     sub
-    call abs
+    abs
     add                  ; distance to nearest enemy
     push SELF+44         ; aggro radius
     load
@@ -143,15 +143,3 @@ go_home:
     pop
     halt
     jmp main
-
-abs:
-    ; i32 absolute value. Entry stack: [x, ret]
-    swap                 ; [ret, x]
-    dup
-    pushz
-    lt                   ; x < 0 ?
-    jmpifz abs_done
-    neg
-abs_done:
-    swap                 ; [|x|, ret]
-    ret

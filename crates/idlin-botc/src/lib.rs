@@ -243,7 +243,7 @@ fn expected_arity(stmt: &Stmt) -> Result<(), AsmError> {
         "halt" | "nop" | "pushz" | "pop" | "dup" | "swap" | "load" | "store" | "callabs"
         | "ret" | "lt" | "le" | "gt" | "ge" | "eq" | "ne" | "add" | "sub" | "mul" | "mulfx"
         | "div" | "divfx" | "mod" | "and" | "or" | "xor" | "shl" | "shr" | "neg" | "not"
-        | "syscall" => 0,
+        | "abs" | "min" | "max" | "syscall" => 0,
         "push" | "pushs" | "loadsp" | "storesp" | "jmp" | "jmpif" | "jmpifz" | "call" => 1,
         "sys" => 2,
         _ => {
@@ -302,6 +302,9 @@ fn encode(
         "shr" => out.push(simple(Op::Shr)),
         "neg" => out.push(simple(Op::Neg)),
         "not" => out.push(simple(Op::Not)),
+        "abs" => out.push(simple(Op::Abs)),
+        "min" => out.push(simple(Op::Min)),
+        "max" => out.push(simple(Op::Max)),
         "syscall" => out.push(simple(Op::Syscall)),
         "push" => {
             let v = resolve(&operands[0], symbols, line)?;

@@ -99,6 +99,11 @@ pub enum Op {
     Not = 0x4d, // bitwise not
     // World interface
     Syscall = 0x50,
+    // Extended ALU (additive opcodes are backward compatible: existing
+    // bytecode is unaffected, so no format version bump)
+    Abs = 0x60,
+    Min = 0x61,
+    Max = 0x62,
 }
 
 impl Op {
@@ -143,6 +148,9 @@ impl Op {
             0x4c => Op::Neg,
             0x4d => Op::Not,
             0x50 => Op::Syscall,
+            0x60 => Op::Abs,
+            0x61 => Op::Min,
+            0x62 => Op::Max,
             _ => return None,
         })
     }
@@ -497,6 +505,16 @@ impl Vm {
                     let a = self.pop();
                     self.push(!a);
                 }
+                Op::Abs => {
+                    let a = self.pop();
+                    // i32::MIN stays i32::MIN (wrapping) — defined, like Neg.
+                    self.push(a.wrapping_abs());
+                }
+                Op::Min | Op::Max => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(if (op == Op::Min) == (a < b) { a } else { b });
+                }
                 Op::Syscall => {
                     let number = self.pop();
                     let argc = self.pop();
@@ -615,6 +633,24 @@ mod tests {
         let mut p = push(0);
         p.extend([0x4d, 0x00]);
         assert_tos(&p, -1);
+    }
+
+    #[test]
+    fn extended_alu_abs_min_max() {
+        let mut p = push(-7);
+        p.extend([0x60, 0x00]); // abs
+        assert_tos(&p, 7);
+        let mut p = push(7);
+        p.extend([0x60, 0x00]);
+        assert_tos(&p, 7);
+        let mut p = push(i32::MIN);
+        p.extend([0x60, 0x00]); // wrapping: MIN stays MIN, defined
+        assert_tos(&p, i32::MIN);
+
+        assert_tos(&binop(3, -5, 0x61), -5); // min
+        assert_tos(&binop(3, -5, 0x62), 3); // max
+        assert_tos(&binop(4, 4, 0x61), 4);
+        assert_tos(&binop(4, 4, 0x62), 4);
     }
 
     #[test]
