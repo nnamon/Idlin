@@ -171,6 +171,8 @@ pub struct FnDecl {
 
 #[derive(Debug, Clone)]
 pub struct Program {
+    /// Declared passive build: node ids in allocation order.
+    pub build: Vec<(String, usize)>,
     pub consts: Vec<(String, i64, usize)>,
     /// Top-level vars: (name, array len or 1, optional init, line).
     pub globals: Vec<(String, u32, Option<Expr>, usize)>,

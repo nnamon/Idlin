@@ -271,6 +271,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             gem: gem.clone(),
         },
+        SimEvent::BuildDeclared { id, owner, nodes } => GameEvent::BuildDeclared {
+            id: *id,
+            owner: owner.clone(),
+            nodes: *nodes,
+        },
         SimEvent::GemLevelUp {
             id,
             owner,

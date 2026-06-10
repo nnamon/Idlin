@@ -99,6 +99,8 @@ same bytecode (the assembler below remains as the escape hatch). Brains in
 
 ```c
 // the default brain, in its entirety
+build [ "vit1", "socket_a", "socket_a1", "str1" ];   // the whole plan, up front
+
 const SELF = 0xE000;
 const ENTS = 0xE100;
 
@@ -108,7 +110,6 @@ fn main() {                            // main() runs once per tick
 
     if (read_entities(ENTS, 4, 3) > 0) { pick_up(mem[ENTS]); }
     equip_best();
-    alloc_passive(-1);
     socket_gem(-1, -1);
 
     if (read_entities(ENTS, 8, 1) > 0) {
@@ -149,10 +150,21 @@ fn main() {                            // main() runs once per tick
   **no recursion** (a recursive call reuses the same parameter slots).
 - Builtins: every syscall by snake_case name (`self_status`,
   `read_entities`, `move_to`, `use_skill`, `pick_up`, `equip_best`,
-  `alloc_passive`, `random`, `move_item`, `drop_item`, `read_skills`,
-  `socket_gem`, `read_inventory`, `debug`), plus `abs`, `min`, `max`,
-  `mulfx`, `divfx` (Q16.16 math), and `halt`.
+  `random`, `move_item`, `drop_item`, `read_skills`, `socket_gem`,
+  `read_inventory`, `debug`), plus `abs`, `min`, `max`, `mulfx`, `divfx`
+  (Q16.16 math), and `halt`.
 - Compile errors carry line numbers; arity is checked for every builtin.
+
+**The `build` declaration — your passive tree, up front**
+
+A bot declares its ENTIRE passive plan at the top of the program: up to 99
+node ids in allocation order. The compiler embeds the list and emits one
+`SetBuild` syscall during initialization; from then on the sim allocates
+the next connected entry automatically every time you level. Allocation is
+append-only — sockets you've unlocked (and the gems in them) can never be
+invalidated. Changing your build means deploying a new bot program, which
+is also how respec works: future points follow the new plan, allocated
+nodes persist. There is no per-tick passive decision to make.
 
 ## Assembly syntax
 
@@ -198,7 +210,7 @@ address you supply and return a count/status.
 | 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **-1** unknown slot / on cooldown |
 | 8 | `PickUp` | loot_id | 0 |
 | 12 | `EquipBest` | — | number of swaps made |
-| 13 | `AllocPassive` | node (−1 = auto) | node index allocated, or −1 |
+| 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; node refs are FNV-1a hashes of node ids) |
 | 15 | `Random` | — | a value from your private RNG stream |
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |

@@ -213,6 +213,9 @@ export class WorldStore {
       case "PassiveAllocated":
         push(`◈ ${ev.data.owner} learns ${ev.data.node}`, "#9a7bff");
         break;
+      case "BuildDeclared":
+        push(`◈ ${ev.data.owner} declares a build (${ev.data.nodes} nodes)`, "#9a7bff");
+        break;
       case "GemSocketed":
         push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#5adfdf");
         break;

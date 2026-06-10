@@ -37,7 +37,9 @@ pub const SYS_MOVE_TO: i32 = 6;
 pub const SYS_USE_SKILL: i32 = 7;
 pub const SYS_PICK_UP: i32 = 8;
 pub const SYS_EQUIP_BEST: i32 = 12;
-pub const SYS_ALLOC_PASSIVE: i32 = 13;
+/// Declares the whole passive build at bot initialization; emitted by the
+/// compiler from the `build [...]` declaration.
+pub const SYS_SET_BUILD: i32 = 14;
 pub const SYS_RANDOM: i32 = 15;
 pub const SYS_MOVE_ITEM: i32 = 16;
 pub const SYS_DROP_ITEM: i32 = 17;
@@ -389,9 +391,13 @@ impl World {
                 records.len() as i32
             }
             SYS_EQUIP_BEST => self.equip_best(slot, events),
-            SYS_ALLOC_PASSIVE => {
-                let node = bot.vm.pop();
-                self.alloc_passive(slot, node, &mut bot.rng, events)
+            SYS_SET_BUILD => {
+                let addr = bot.vm.pop() as u16;
+                let count = bot.vm.pop().clamp(0, 99) as u16;
+                let refs: Vec<u32> = (0..count)
+                    .map(|i| bot.vm.load_u32(addr.wrapping_add(4 * i)))
+                    .collect();
+                self.set_build(slot, &refs, events)
             }
             SYS_MOVE_ITEM => {
                 let inv_idx = bot.vm.pop();

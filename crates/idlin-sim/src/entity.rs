@@ -187,6 +187,10 @@ pub struct CharacterState {
     /// Allocated passive tree node indices (sorted). The start node is
     /// implicit and free.
     pub allocated: Vec<u32>,
+    /// The declared build: node indices in allocation order. Set once at
+    /// bot initialization (SetBuild); auto-allocated as levels arrive.
+    /// Append-only by construction — changing plans means redeploying.
+    pub build_plan: Vec<u32>,
     /// Unsocketed gems.
     pub pouch: Vec<GemInstance>,
     /// Gems socketed into allocated tree socket nodes (keyed by node index;

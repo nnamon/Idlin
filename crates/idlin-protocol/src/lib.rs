@@ -131,6 +131,11 @@ pub enum GameEvent {
         owner: String,
         gem: String,
     },
+    BuildDeclared {
+        id: u32,
+        owner: String,
+        nodes: u32,
+    },
     GemLevelUp {
         id: u32,
         owner: String,

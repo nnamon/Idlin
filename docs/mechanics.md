@@ -65,6 +65,18 @@ Player↔Hostile faction pair; Neutral entities can't hit or be hit.
 - Attack/skill cooldowns scale with attack speed:
   `cd = base·10000/attack_speed_factor`, minimum 2 ticks.
 
+## Experience and the passive tree
+
+- Kills grant the monster's XP to the killer (full, plus the kill credit);
+  **living characters within 10 u of the kill receive a 50% share**.
+- One passive point per level past 1. Points are spent automatically along
+  the bot's **declared build** (the `build [...]` list fixed at deploy):
+  the next connected, unallocated entry is taken on each level-up.
+  Allocation is append-only; redeploying with a new plan steers only
+  future points. No respec exists yet (refund items are planned with the
+  crafting system).
+- Socketed gems each receive half of whatever XP their owner gains.
+
 ## Death, regen, respawn
 
 - Out-of-combat regeneration: after **50 ticks** without dealing or taking

@@ -55,6 +55,7 @@ impl Parser {
 
     fn program(&mut self) -> Result<Program, CompileError> {
         let mut program = Program {
+            build: vec![],
             consts: vec![],
             globals: vec![],
             fns: vec![],
@@ -62,6 +63,38 @@ impl Parser {
         while let Some(tok) = self.peek() {
             let line = self.line();
             match tok {
+                Tok::Build => {
+                    self.next();
+                    self.eat(&Tok::LBracket, "`[`")?;
+                    if !program.build.is_empty() {
+                        return Err(CompileError::new(line, "duplicate `build` declaration"));
+                    }
+                    while self.peek() != Some(&Tok::RBracket) {
+                        let entry_line = self.line();
+                        match self.next() {
+                            Some(Tok::Str(id)) => program.build.push((id, entry_line)),
+                            other => {
+                                return Err(CompileError::new(
+                                    entry_line,
+                                    format!("expected a node id string, found {other:?}"),
+                                ));
+                            }
+                        }
+                        if self.peek() == Some(&Tok::Comma) {
+                            self.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    self.eat(&Tok::RBracket, "`]`")?;
+                    self.eat(&Tok::Semi, "`;`")?;
+                    if program.build.len() > 99 {
+                        return Err(CompileError::new(
+                            line,
+                            "build plans cap at 99 nodes (level 100)",
+                        ));
+                    }
+                }
                 Tok::Const => {
                     self.next();
                     let name = self.eat_ident("constant name")?;
@@ -102,7 +135,9 @@ impl Parser {
                 other => {
                     return Err(CompileError::new(
                         line,
-                        format!("expected `fn`, `var`, or `const` at top level, found {other:?}"),
+                        format!(
+                            "expected `fn`, `var`, `const`, or `build` at top level, found {other:?}"
+                        ),
                     ));
                 }
             }

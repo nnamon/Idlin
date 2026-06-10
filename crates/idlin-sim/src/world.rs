@@ -30,6 +30,8 @@ pub const LOOT_DESPAWN_TICKS: u64 = 600;
 pub const PICKUP_RANGE: Fx = Fx::from_raw(0x2_8000); // 2.5 u
 /// Ticks out of combat before regeneration kicks in.
 pub const REGEN_DELAY_TICKS: u64 = 50;
+/// Allies within this range of a kill receive a half XP share.
+pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
 /// through here — never by mutating state directly.
@@ -100,6 +102,11 @@ pub enum SimEvent {
         id: u32,
         owner: String,
         node: String,
+    },
+    BuildDeclared {
+        id: u32,
+        owner: String,
+        nodes: u32,
     },
     GemSocketed {
         id: u32,
@@ -386,6 +393,7 @@ impl World {
                     inventory: Vec::new(),
                     equipment: Default::default(),
                     allocated: Vec::new(),
+                    build_plan: Vec::new(),
                     pouch: Vec::new(),
                     sockets: std::collections::BTreeMap::new(),
                 }),
@@ -844,7 +852,24 @@ impl World {
                             attacker_name.to_string(),
                         ));
                     }
-                    self.grant_xp(attacker_slot, xp, events);
+                    self.grant_xp(attacker_slot, xp, true, events);
+                    // Allies near the kill share half the experience.
+                    let rr = XP_SHARE_RADIUS.raw() as i64 * XP_SHARE_RADIUS.raw() as i64;
+                    let allies: Vec<usize> = self
+                        .zone
+                        .iter()
+                        .filter(|(s, a)| {
+                            *s != attacker_slot && a.character.is_some() && a.alive() && {
+                                let dx = (a.pos.x - target_pos.x).raw() as i64;
+                                let dy = (a.pos.y - target_pos.y).raw() as i64;
+                                dx * dx + dy * dy <= rr
+                            }
+                        })
+                        .map(|(s, _)| s)
+                        .collect();
+                    for ally in allies {
+                        self.grant_xp(ally, xp / 2, false, events);
+                    }
                 }
             } else if let Some(ch) = &mut t.character {
                 ch.respawn_at = Some(now + RESPAWN_TICKS);
@@ -997,7 +1022,7 @@ impl World {
         })
     }
 
-    fn grant_xp(&mut self, slot: usize, xp: i64, events: &mut Vec<SimEvent>) {
+    fn grant_xp(&mut self, slot: usize, xp: i64, credit_kill: bool, events: &mut Vec<SimEvent>) {
         let Some(e) = self.zone.get_mut(slot) else {
             return;
         };
@@ -1005,7 +1030,9 @@ impl World {
         let Some(ch) = e.character.as_mut() else {
             return;
         };
-        ch.kills += 1;
+        if credit_kill {
+            ch.kills += 1;
+        }
         ch.xp += xp;
         let mut leveled = false;
         while ch.level < 100 && ch.xp >= xp_to_next(ch.level) {
@@ -1050,6 +1077,8 @@ impl World {
                 name,
                 level,
             });
+            // New points walk the declared build.
+            self.allocate_from_plan(slot, events);
         }
     }
 
@@ -1347,68 +1376,82 @@ impl World {
         }
     }
 
-    /// Allocate a passive node. `node < 0` = auto: lowest eligible node
-    /// adjacent to the allocated set (or the start node). Returns the node
-    /// index allocated, or -1.
-    pub(crate) fn alloc_passive(
+    /// Bot initialization: declare the whole build up front. Auto-allocation
+    /// walks this list as levels arrive — append-only, so tree-dependent
+    /// state (socketed gems) is never invalidated. Re-declaring (a redeploy)
+    /// only steers FUTURE points; allocated nodes always persist.
+    pub(crate) fn set_build(
         &mut self,
         slot: usize,
-        node: i32,
-        rng: &mut Pcg32,
+        refs: &[u32],
         events: &mut Vec<SimEvent>,
     ) -> i32 {
-        if self.content.tree.is_empty() {
-            return -1;
-        }
         let Some(e) = self.zone.get(slot) else {
             return -1;
         };
         let Some(ch) = &e.character else { return -1 };
-        if ch.passive_points() == 0 {
-            return -1;
-        }
         let (net_id, owner) = (e.net_id, ch.name.clone());
-        let start = self.content.tree_start;
-        let allocated = ch.allocated.clone();
-        let is_open = |idx: u32| -> bool {
-            if allocated.contains(&idx) || idx == start {
-                return false;
-            }
-            self.content.tree_adj[idx as usize]
-                .iter()
-                .any(|n| *n == start || allocated.contains(n))
-        };
 
-        let chosen: Option<u32> = if node >= 0 {
-            let idx = node as u32;
-            ((idx as usize) < self.content.tree.len() && is_open(idx)).then_some(idx)
-        } else {
-            // Auto: a random eligible node from the bot's own stream — every
-            // hero walks a different path, deterministically.
-            let eligible: Vec<u32> = (0..self.content.tree.len() as u32)
-                .filter(|&i| is_open(i))
-                .collect();
-            if eligible.is_empty() {
-                None
-            } else {
-                Some(eligible[rng.next_range(eligible.len() as u32) as usize])
+        let mut plan: Vec<u32> = Vec::with_capacity(refs.len());
+        for r in refs.iter().take(99) {
+            // Unknown refs (stale content) terminate the plan: the prefix
+            // that still resolves remains useful.
+            match self.content.tree_refs.iter().position(|tr| tr == r) {
+                Some(idx) => plan.push(idx as u32),
+                None => break,
             }
-        };
-        let Some(idx) = chosen else { return -1 };
-
-        let node_name = self.content.tree[idx as usize].name.clone();
-        if let Some(me) = self.zone.get_mut(slot) {
-            let ch = me.character.as_mut().unwrap();
-            ch.allocated.push(idx);
-            ch.allocated.sort_unstable();
         }
-        self.refresh_derived_stats(slot);
-        events.push(SimEvent::PassiveAllocated {
+        let declared = plan.len() as u32;
+        if let Some(me) = self.zone.get_mut(slot) {
+            me.character.as_mut().unwrap().build_plan = plan;
+        }
+        events.push(SimEvent::BuildDeclared {
             id: net_id,
             owner,
-            node: node_name,
+            nodes: declared,
         });
-        idx as i32
+        // Catch-up: a redeployed bot may have banked points.
+        self.allocate_from_plan(slot, events);
+        declared as i32
+    }
+
+    /// Spend available passive points along the declared plan: skip entries
+    /// already allocated, stop at the first one that isn't connected yet.
+    pub(crate) fn allocate_from_plan(&mut self, slot: usize, events: &mut Vec<SimEvent>) {
+        loop {
+            let Some(e) = self.zone.get(slot) else { return };
+            let Some(ch) = &e.character else { return };
+            if ch.passive_points() == 0 {
+                return;
+            }
+            let start = self.content.tree_start;
+            let next = ch
+                .build_plan
+                .iter()
+                .copied()
+                .find(|idx| !ch.allocated.contains(idx));
+            let Some(idx) = next else { return };
+            let connected = idx != start
+                && self.content.tree_adj[idx as usize]
+                    .iter()
+                    .any(|n| *n == start || ch.allocated.contains(n));
+            if !connected {
+                return; // plan blocked (authoring gap); retried next level
+            }
+            let (net_id, owner) = (e.net_id, ch.name.clone());
+            let node_name = self.content.tree[idx as usize].name.clone();
+            if let Some(me) = self.zone.get_mut(slot) {
+                let ch = me.character.as_mut().unwrap();
+                ch.allocated.push(idx);
+                ch.allocated.sort_unstable();
+            }
+            self.refresh_derived_stats(slot);
+            events.push(SimEvent::PassiveAllocated {
+                id: net_id,
+                owner,
+                node: node_name,
+            });
+        }
     }
 
     /// Socketed skill slots in deterministic order (ascending node index).
@@ -1495,7 +1538,6 @@ impl World {
         }
 
         // Apply: remove pouch gems (highest index first so indices hold).
-        let mut names: Vec<String> = Vec::new();
         {
             let me = self.zone.get_mut(slot).unwrap();
             let ch = me.character.as_mut().unwrap();
@@ -1503,7 +1545,6 @@ impl World {
             by_pouch.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
             for (node, pouch_idx) in by_pouch {
                 let gem = ch.pouch.remove(pouch_idx);
-                names.push(gem.gem_idx.to_string()); // placeholder, fixed below
                 ch.sockets.insert(
                     node,
                     SocketedGem {

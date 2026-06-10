@@ -9,6 +9,13 @@
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
 
+// The declared build: allocated automatically as we level. The whole
+// plan is fixed at deploy — changing it means deploying a new bot.
+build [
+    "vit1", "socket_a", "socket_a1", "str1", "str2", "str3",
+    "dex1", "dex2", "dex3", "vit2", "vit3",
+];
+
 const SELF = 0xE000;       // SelfStatus buffer
 const ENTS = 0xE100;       // entity query buffer (24-byte records)
 const F_ENEMY = 1;
@@ -23,9 +30,8 @@ fn main() {
         pick_up(mem[ENTS]);
     }
 
-    // Upkeep: gear, passives, gems.
+    // Upkeep: gear and gems (passives allocate themselves per the build).
     equip_best();
-    alloc_passive(-1);
     socket_gem(-1, -1);
 
     // Fight the nearest enemy.

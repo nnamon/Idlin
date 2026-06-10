@@ -359,6 +359,8 @@ pub struct ContentDb {
     /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
     pub tree: Vec<NodeDef>,
     pub tree_adj: Vec<Vec<u32>>,
+    /// Stable name-hash ref per node (same indices); collision-checked.
+    pub tree_refs: Vec<u32>,
     /// Index of the shared "start" node everyone begins at.
     pub tree_start: u32,
 }
@@ -567,6 +569,23 @@ impl ContentDb {
             edges.sort_unstable();
         }
         self.tree_adj = adj;
+        self.tree_refs = self
+            .tree
+            .iter()
+            .map(|n| idlin_botc::node_ref(&n.id))
+            .collect();
+        let mut seen = std::collections::BTreeMap::new();
+        for (i, &r) in self.tree_refs.iter().enumerate() {
+            if let Some(prev) = seen.insert(r, i) {
+                return Err(ContentError::DuplicateId {
+                    path: format!(
+                        "tree/ (node ref hash collision: `{}` vs `{}`)",
+                        self.tree[prev].id, self.tree[i].id
+                    ),
+                    id: self.tree[i].id.clone(),
+                });
+            }
+        }
         self.tree_start = match self.tree_node_idx("start") {
             Some(i) => i as u32,
             None if self.tree.is_empty() => 0,

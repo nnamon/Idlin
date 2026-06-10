@@ -6,11 +6,13 @@ use super::CompileError;
 pub enum Tok {
     // literals & names
     Num(i64),
+    Str(String),
     Ident(String),
     // keywords
     Fn,
     Var,
     Const,
+    Build,
     If,
     Else,
     While,
@@ -115,6 +117,22 @@ pub fn lex(source: &str) -> Result<Vec<Token>, CompileError> {
                     line,
                 });
             }
+            '"' => {
+                i += 1;
+                let start = i;
+                while i < bytes.len() && bytes[i] != '"' && bytes[i] != '\n' {
+                    i += 1;
+                }
+                if i >= bytes.len() || bytes[i] != '"' {
+                    return Err(CompileError::new(line, "unterminated string literal"));
+                }
+                let text: String = bytes[start..i].iter().collect();
+                i += 1;
+                out.push(Token {
+                    tok: Tok::Str(text),
+                    line,
+                });
+            }
             c if ident_start(c) => {
                 let start = i;
                 while i < bytes.len() && ident_cont(bytes[i]) {
@@ -125,6 +143,7 @@ pub fn lex(source: &str) -> Result<Vec<Token>, CompileError> {
                     "fn" => Tok::Fn,
                     "var" => Tok::Var,
                     "const" => Tok::Const,
+                    "build" => Tok::Build,
                     "if" => Tok::If,
                     "else" => Tok::Else,
                     "while" => Tok::While,

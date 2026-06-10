@@ -29,13 +29,16 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("use_skill", 7, 4),
     ("pick_up", 8, 1),
     ("equip_best", 12, 0),
-    ("alloc_passive", 13, 1),
     ("random", 15, 0),
     ("move_item", 16, 3),
     ("drop_item", 17, 1),
     ("read_skills", 18, 2),
     ("socket_gem", 19, 2),
 ];
+
+/// SetBuild is emitted by the compiler from the `build [...]` declaration,
+/// never called directly from source.
+const SYS_SET_BUILD: i64 = 14;
 
 #[derive(Clone, Copy)]
 struct VarSlot {
@@ -125,6 +128,20 @@ impl Gen {
             return Err(CompileError::new(0, "a bot needs `fn main()`"));
         }
 
+        // Declared build plan: the ref table lives at the end of the code
+        // (patched below); SetBuild(addr, count) runs once per deploy.
+        let mut build_table_fix: Option<usize> = None;
+        if !program.build.is_empty() {
+            self.push_value(program.build.len() as i64); // arg2: count
+            self.op(Op::Push); // arg1: table address (patched)
+            build_table_fix = Some(self.out.len());
+            self.out.extend_from_slice(&0i32.to_le_bytes());
+            self.push_value(2);
+            self.push_value(SYS_SET_BUILD);
+            self.op(Op::Syscall);
+            self.op(Op::Pop);
+        }
+
         // Global initializers (run once per deploy: memory starts zeroed,
         // and the loop below never returns here).
         for (name, _, init, line) in &program.globals {
@@ -169,6 +186,16 @@ impl Gen {
             self.op(Op::PushZero);
             self.op(Op::Swap);
             self.op(Op::Ret);
+        }
+
+        // The build-plan ref table (data appended after all code).
+        if let Some(fix) = build_table_fix {
+            let table_addr = self.out.len() as i32;
+            self.out[fix..fix + 4].copy_from_slice(&table_addr.to_le_bytes());
+            for (id, _) in &program.build {
+                let r = crate::node_ref(id);
+                self.out.extend_from_slice(&r.to_le_bytes());
+            }
         }
 
         // Patch calls.
