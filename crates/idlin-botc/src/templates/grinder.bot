@@ -10,37 +10,36 @@
 // ============================================================
 
 // Node numbers from the tree map page (content/tree/core.ron `num`).
-const N_VIGOR = 30;        // v1
-const N_SOCKET_A = 2;      // First Spark (gem socket)
-const N_BRAWN = 10;        // s1..s4: the Slaughter road to Butcher
-const N_HEFT = 11;
-const N_CLEAVING = 12;
-const N_BUTCHER = 13;
-const N_SOCKET_WAR = 19;   // War socket
-const N_THICK_SKIN = 31;   // v2..v4: Vitality to Oak Heart
-const N_HARDY = 32;
-const N_OAK_HEART = 33;
-const N_SURE_HANDS = 14;   // s5..s7: on to Executioner
-const N_RHYTHM = 15;
-const N_EXECUTIONER = 16;
-const N_BULWARK = 34;      // v5..v7: Vitality to Colossus
-const N_STALWART = 35;
-const N_COLOSSUS = 36;
-const N_GRIT = 90;         // rim
-const N_POISE = 50;        // z1..z4: Zephyr splash
-const N_FLEET = 51;
-const N_TEMPO = 52;
-const N_WINDRUNNER = 53;
-const N_SOCKET_WIND = 58;
+// Default build: a Warbringer bruiser splashing Bulwark for survival.
+const N_SOCKET_A = 2;      // First Spark (gem socket at start)
+const N_STR1 = 10;
+const N_STR2 = 11;
+const N_MIGHT = 12;
+const N_HEFT = 20;         // Warbringer limb
+const N_BRAWN = 21;
+const N_RHYTHM = 22;
+const N_BUTCHER = 23;
+const N_OVERWHELM = 24;
+const N_BERSERKER = 25;
+const N_SOCKET_WAR = 26;
+const N_THICK_SKIN = 30;   // Bulwark limb
+const N_HARDY = 31;
+const N_STALWART = 32;
+const N_COLOSSUS = 33;
+const N_IRON_WILL = 34;
+const N_SOCKET_AEGIS = 36;
+const N_SUREFOOT = 112;    // bridge toward Wind Dancer
+const N_POISE = 60;
+const N_FLEET = 61;
 
 // The declared build: allocated automatically as we level. The whole
 // plan is fixed at deploy — changing it means deploying a new bot.
 build [
-    N_VIGOR, N_SOCKET_A, N_BRAWN, N_HEFT, N_CLEAVING,
-    N_BUTCHER, N_SOCKET_WAR, N_THICK_SKIN, N_HARDY,
-    N_OAK_HEART, N_SURE_HANDS, N_RHYTHM, N_EXECUTIONER, N_BULWARK,
-    N_STALWART, N_COLOSSUS, N_GRIT, N_POISE, N_FLEET, N_TEMPO,
-    N_WINDRUNNER, N_SOCKET_WIND,
+    N_SOCKET_A, N_STR1, N_STR2, N_MIGHT,
+    N_HEFT, N_SOCKET_WAR, N_BRAWN, N_RHYTHM, N_BUTCHER,
+    N_THICK_SKIN, N_HARDY, N_SOCKET_AEGIS, N_STALWART, N_COLOSSUS,
+    N_OVERWHELM, N_BERSERKER, N_IRON_WILL,
+    N_SUREFOOT, N_FLEET, N_POISE,
 ];
 
 const SELF = 0xE000;       // SelfStatus buffer

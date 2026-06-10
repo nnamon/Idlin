@@ -65,11 +65,23 @@ Player↔Hostile faction pair; Neutral entities can't hit or be hit.
 - Attack/skill cooldowns scale with attack speed:
   `cd = base·10000/attack_speed_factor`, minimum 2 ticks.
 
+## Attributes
+
+Strength, Dexterity, and Intelligence are stats like any other (tree nodes
+and gear affixes can grant them). Each point converts:
+
+| Attribute | Per point |
+|---|---|
+| Strength | +0.5 maximum life, +0.1% increased physical damage |
+| Dexterity | +2 accuracy, +0.5 evasion |
+| Intelligence | +0.1% increased elemental AND chaos damage |
+
 ## Experience and the passive tree
 
 - Kills grant the monster's XP to the killer (full, plus the kill credit);
   **living characters within 10 u of the kill receive a 50% share**.
-- One passive point per level past 1. Points are spent automatically along
+- **Two passive points per level-up, five on every 10th level** (level 100
+  = 228 points total). Points are spent automatically along
   the bot's **declared build** (the `build [...]` list fixed at deploy):
   the next connected, unallocated entry is taken on each level-up.
   Allocation is append-only; redeploying with a new plan steers only

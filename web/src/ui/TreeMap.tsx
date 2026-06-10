@@ -22,6 +22,9 @@ interface TreeData {
 }
 
 const STAT_NAMES: Record<string, string> = {
+  strength: "Strength",
+  dexterity: "Dexterity",
+  intelligence: "Intelligence",
   life: "maximum life",
   damage_phys: "physical damage",
   damage_ele: "elemental damage",

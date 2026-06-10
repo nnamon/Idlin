@@ -200,10 +200,16 @@ pub struct CharacterState {
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,
 }
 
+/// Total passive points earned by a level: 2 per level-up, with every
+/// 10th level granting 5 instead (so travels stay affordable).
+pub fn total_passive_points(level: u32) -> u32 {
+    2 * (level - 1) + 3 * (level / 10)
+}
+
 impl CharacterState {
-    /// Unspent passive points: one per level past 1, minus allocations.
+    /// Unspent passive points.
     pub fn passive_points(&self) -> u32 {
-        (self.level - 1).saturating_sub(self.allocated.len() as u32)
+        total_passive_points(self.level).saturating_sub(self.allocated.len() as u32)
     }
 }
 

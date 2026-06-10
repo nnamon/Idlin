@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stat {
+    /// Attributes: granted by tree/gear, converted to derived bonuses
+    /// (see docs/mechanics.md).
+    Strength,
+    Dexterity,
+    Intelligence,
     Life,
     DamagePhys,
     DamageEle,
@@ -25,10 +30,13 @@ pub enum Stat {
     ResistChaos,
 }
 
-pub const STAT_COUNT: usize = 11;
+pub const STAT_COUNT: usize = 14;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
+        Stat::Strength,
+        Stat::Dexterity,
+        Stat::Intelligence,
         Stat::Life,
         Stat::DamagePhys,
         Stat::DamageEle,

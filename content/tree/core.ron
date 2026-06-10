@@ -1,168 +1,220 @@
-// The shared passive tree. Everyone (classless) starts at `start`; nodes
-// grant affixes exactly like gear. Socket nodes hold one skill gem each;
-// support gems socket into the skill gem itself (its support_slots).
+// The shared passive tree, v2. Everyone (classless) starts at `start`.
 //
-// Layout (pos is abstract client units):
-//                 EMBERS (elemental/chaos)
-//                        |
-//   SLAUGHTER (phys) — START — ZEPHYR (speed/evasion)
-//                        |
-//                 VITALITY (life/armour)
+// Structure: THREE attribute trunks (Strength SW, Dexterity SE,
+// Intelligence N), each forking into TWO archetypes. Keystones are leaf
+// commitments at the end of an archetype — you path INTO a playstyle, you
+// don't collect keystones along a ring. Hybrid bridges connect ADJACENT
+// archetypes mid-limb with dual-attribute travels, so mixed styles come
+// from pathing choices.
 //
-// Branch shape: 3 travels → notable → 3 travels → notable → keystone/rim.
-// Values: travels small, notables chunky, keystones trade-offs (more-layer).
+//                 Elementalist   Plaguecaller
+//                          \\     /
+//                       INT trunk
+//                            |
+//        Warbringer — STR ─ START ─ DEX — Deadeye
+//                       \\           /
+//                    Bulwark   Wind Dancer
+//
+// Attribute travels grant +10 of their attribute (see mechanics.md for
+// conversions). Points: 2 per level, 5 every 10th — travels are cheap.
 TreeDef(
     nodes: [
         NodeDef(id: "start", num: 1, name: "Awakening", pos: (0, 0), kind: travel,
-                links: ["s1", "v1", "z1", "e1", "socket_a"], grants: []),
-
-        // --- the first socket cluster, right at the start ---
-        NodeDef(id: "socket_a", num: 2, name: "First Spark", pos: (2, 2), kind: socket,
+                links: ["str1", "dex1", "int1", "socket_a"], grants: []),
+        NodeDef(id: "socket_a", num: 2, name: "First Spark", pos: (0, 4), kind: socket,
                 grants: []),
 
-        // ===================== SLAUGHTER (west): physical =====================
-        NodeDef(id: "s1", num: 10, name: "Brawn", pos: (-3, 0), kind: travel,
-                grants: [(stat: damage_phys, layer: added, value: 3)]),
-        NodeDef(id: "s2", num: 11, name: "Heft", pos: (-6, 0), kind: travel, links: ["s1"],
-                grants: [(stat: damage_phys, layer: increased, value: 800)]),
-        NodeDef(id: "s3", num: 12, name: "Cleaving Steps", pos: (-9, 0), kind: travel, links: ["s2"],
+        // ================= STRENGTH trunk (southwest) =================
+        NodeDef(id: "str1", num: 10, name: "Strength", pos: (-4, 2), kind: travel,
+                grants: [(stat: strength, layer: added, value: 10)]),
+        NodeDef(id: "str2", num: 11, name: "Strength", pos: (-8, 4), kind: travel, links: ["str1"],
+                grants: [(stat: strength, layer: added, value: 10)]),
+        NodeDef(id: "str3", num: 12, name: "Might", pos: (-12, 6), kind: notable, links: ["str2"],
                 grants: [
-                    (stat: damage_phys, layer: increased, value: 500),
-                    (stat: accuracy, layer: added, value: 10),
-                ]),
-        NodeDef(id: "s4", num: 13, name: "Butcher", pos: (-12, 0), kind: notable, links: ["s3"],
-                grants: [
-                    (stat: damage_phys, layer: increased, value: 1800),
-                    (stat: life, layer: added, value: 15),
-                ]),
-        NodeDef(id: "s5", num: 14, name: "Sure Hands", pos: (-15, 0), kind: travel, links: ["s4"],
-                grants: [(stat: accuracy, layer: added, value: 25)]),
-        NodeDef(id: "s6", num: 15, name: "Brutal Rhythm", pos: (-18, 0), kind: travel, links: ["s5"],
-                grants: [(stat: attack_speed, layer: increased, value: 600)]),
-        NodeDef(id: "s7", num: 16, name: "Executioner", pos: (-21, 0), kind: notable, links: ["s6"],
-                grants: [
-                    (stat: damage_phys, layer: increased, value: 2500),
-                    (stat: attack_speed, layer: increased, value: 500),
-                ]),
-        NodeDef(id: "s8", num: 17, name: "Overwhelm", pos: (-24, 0), kind: travel, links: ["s7"],
-                grants: [(stat: damage_phys, layer: increased, value: 1000)]),
-        NodeDef(id: "s9", num: 18, name: "Juggernaut", pos: (-27, 0), kind: keystone, links: ["s8"],
-                grants: [
-                    (stat: armour, layer: more, value: 4000),        // 40% MORE armour
-                    (stat: attack_speed, layer: more, value: -1000), // 10% LESS attack speed
-                ]),
-        // war socket cluster off Butcher
-        NodeDef(id: "socket_war", num: 19, name: "War Socket", pos: (-12, -3), kind: socket,
-                links: ["s4"], grants: []),
-
-        // ===================== VITALITY (south): life/armour ==================
-        NodeDef(id: "v1", num: 30, name: "Vigor", pos: (0, 3), kind: travel,
-                grants: [(stat: life, layer: added, value: 12)]),
-        NodeDef(id: "v2", num: 31, name: "Thick Skin", pos: (0, 6), kind: travel, links: ["v1"],
-                grants: [(stat: armour, layer: added, value: 25)]),
-        NodeDef(id: "v3", num: 32, name: "Hardy", pos: (0, 9), kind: travel, links: ["v2"],
-                grants: [(stat: life, layer: increased, value: 800)]),
-        NodeDef(id: "v4", num: 33, name: "Oak Heart", pos: (0, 12), kind: notable, links: ["v3"],
-                grants: [
-                    (stat: life, layer: increased, value: 1200),
+                    (stat: strength, layer: added, value: 20),
                     (stat: life, layer: added, value: 10),
                 ]),
-        NodeDef(id: "v5", num: 34, name: "Bulwark", pos: (0, 15), kind: travel, links: ["v4"],
-                grants: [(stat: armour, layer: added, value: 40)]),
-        NodeDef(id: "v6", num: 35, name: "Stalwart", pos: (0, 18), kind: travel, links: ["v5"],
-                grants: [(stat: armour, layer: increased, value: 800)]),
-        NodeDef(id: "v7", num: 36, name: "Colossus", pos: (0, 21), kind: notable, links: ["v6"],
+
+        // --- archetype: WARBRINGER (melee damage), west of Might ---
+        NodeDef(id: "w1", num: 20, name: "Heft", pos: (-16, 5), kind: travel, links: ["str3"],
+                grants: [(stat: damage_phys, layer: increased, value: 800)]),
+        NodeDef(id: "w2", num: 21, name: "Brawn", pos: (-20, 4), kind: travel, links: ["w1"],
+                grants: [(stat: damage_phys, layer: added, value: 4)]),
+        NodeDef(id: "w3", num: 22, name: "Brutal Rhythm", pos: (-24, 3), kind: travel, links: ["w2"],
+                grants: [(stat: attack_speed, layer: increased, value: 600)]),
+        NodeDef(id: "w4", num: 23, name: "Butcher", pos: (-28, 2), kind: notable, links: ["w3"],
+                grants: [
+                    (stat: damage_phys, layer: increased, value: 2000),
+                    (stat: life, layer: added, value: 15),
+                ]),
+        NodeDef(id: "w5", num: 24, name: "Overwhelm", pos: (-32, 1), kind: travel, links: ["w4"],
+                grants: [(stat: damage_phys, layer: increased, value: 1000)]),
+        NodeDef(id: "berserker", num: 25, name: "Berserker", pos: (-36, 0), kind: keystone,
+                links: ["w5"],
+                grants: [
+                    (stat: damage_phys, layer: more, value: 2500), // 25% MORE phys
+                    (stat: armour, layer: more, value: -1500),     // 15% LESS armour
+                ]),
+        NodeDef(id: "socket_war", num: 26, name: "War Socket", pos: (-19, 8), kind: socket,
+                links: ["w1"], grants: []),
+
+        // --- archetype: BULWARK (armour tank), south of Might ---
+        NodeDef(id: "b1", num: 30, name: "Thick Skin", pos: (-12, 11), kind: travel, links: ["str3"],
+                grants: [(stat: armour, layer: added, value: 30)]),
+        NodeDef(id: "b2", num: 31, name: "Hardy", pos: (-13, 16), kind: travel, links: ["b1"],
+                grants: [(stat: life, layer: increased, value: 800)]),
+        NodeDef(id: "b3", num: 32, name: "Stalwart", pos: (-14, 21), kind: travel, links: ["b2"],
+                grants: [(stat: armour, layer: increased, value: 1000)]),
+        NodeDef(id: "b4", num: 33, name: "Colossus", pos: (-15, 26), kind: notable, links: ["b3"],
                 grants: [
                     (stat: armour, layer: increased, value: 2000),
                     (stat: life, layer: added, value: 20),
                 ]),
-        NodeDef(id: "v8", num: 37, name: "Iron Will", pos: (0, 24), kind: travel, links: ["v7"],
-                grants: [(stat: life, layer: added, value: 15)]),
-        // root socket cluster off Oak Heart
-        NodeDef(id: "socket_root", num: 38, name: "Root Socket", pos: (3, 12), kind: socket,
-                links: ["v4"], grants: []),
-
-        // ===================== ZEPHYR (east): speed/evasion ===================
-        NodeDef(id: "z1", num: 50, name: "Poise", pos: (3, 0), kind: travel,
-                grants: [(stat: evasion, layer: added, value: 18)]),
-        NodeDef(id: "z2", num: 51, name: "Fleet", pos: (6, 0), kind: travel, links: ["z1"],
-                grants: [(stat: move_speed, layer: increased, value: 600)]),
-        NodeDef(id: "z3", num: 52, name: "Tempo", pos: (9, 0), kind: travel, links: ["z2"],
-                grants: [(stat: attack_speed, layer: increased, value: 600)]),
-        NodeDef(id: "z4", num: 53, name: "Windrunner", pos: (12, 0), kind: notable, links: ["z3"],
+        NodeDef(id: "b5", num: 34, name: "Iron Will", pos: (-16, 31), kind: travel, links: ["b4"],
+                grants: [(stat: life, layer: added, value: 18)]),
+        NodeDef(id: "juggernaut", num: 35, name: "Juggernaut", pos: (-17, 36), kind: keystone,
+                links: ["b5"],
                 grants: [
-                    (stat: move_speed, layer: increased, value: 1000),
-                    (stat: attack_speed, layer: increased, value: 800),
+                    (stat: armour, layer: more, value: 4000),        // 40% MORE armour
+                    (stat: attack_speed, layer: more, value: -1000), // 10% LESS attack speed
                 ]),
-        NodeDef(id: "z5", num: 54, name: "Slippery", pos: (15, 0), kind: travel, links: ["z4"],
-                grants: [(stat: evasion, layer: added, value: 30)]),
-        NodeDef(id: "z6", num: 55, name: "Dancer", pos: (18, 0), kind: travel, links: ["z5"],
-                grants: [(stat: evasion, layer: increased, value: 800)]),
-        NodeDef(id: "z7", num: 56, name: "Ghoststep", pos: (21, 0), kind: notable, links: ["z6"],
+        NodeDef(id: "socket_aegis", num: 36, name: "Aegis Socket", pos: (-9, 17), kind: socket,
+                links: ["b2"], grants: []),
+
+        // ================= DEXTERITY trunk (southeast) =================
+        NodeDef(id: "dex1", num: 40, name: "Dexterity", pos: (4, 2), kind: travel,
+                grants: [(stat: dexterity, layer: added, value: 10)]),
+        NodeDef(id: "dex2", num: 41, name: "Dexterity", pos: (8, 4), kind: travel, links: ["dex1"],
+                grants: [(stat: dexterity, layer: added, value: 10)]),
+        NodeDef(id: "dex3", num: 42, name: "Finesse", pos: (12, 6), kind: notable, links: ["dex2"],
+                grants: [
+                    (stat: dexterity, layer: added, value: 20),
+                    (stat: evasion, layer: added, value: 10),
+                ]),
+
+        // --- archetype: DEADEYE (precision), east of Finesse ---
+        NodeDef(id: "d1", num: 50, name: "Steady Hands", pos: (16, 5), kind: travel, links: ["dex3"],
+                grants: [(stat: accuracy, layer: added, value: 20)]),
+        NodeDef(id: "d2", num: 51, name: "Quick Draw", pos: (20, 4), kind: travel, links: ["d1"],
+                grants: [(stat: attack_speed, layer: increased, value: 600)]),
+        NodeDef(id: "d3", num: 52, name: "Keen Eye", pos: (24, 3), kind: travel, links: ["d2"],
+                grants: [(stat: accuracy, layer: added, value: 30)]),
+        NodeDef(id: "d4", num: 53, name: "Sure Aim", pos: (28, 2), kind: notable, links: ["d3"],
+                grants: [
+                    (stat: accuracy, layer: added, value: 40),
+                    (stat: attack_speed, layer: increased, value: 1000),
+                ]),
+        NodeDef(id: "d5", num: 54, name: "Piercing Shots", pos: (32, 1), kind: travel, links: ["d4"],
+                grants: [(stat: damage_phys, layer: increased, value: 1000)]),
+        NodeDef(id: "hawkeye", num: 55, name: "Hawkeye", pos: (36, 0), kind: keystone,
+                links: ["d5"],
+                grants: [
+                    (stat: accuracy, layer: more, value: 5000), // 50% MORE accuracy
+                    (stat: evasion, layer: more, value: -1000), // 10% LESS evasion
+                ]),
+        NodeDef(id: "socket_hunt", num: 56, name: "Hunt Socket", pos: (19, 8), kind: socket,
+                links: ["d1"], grants: []),
+
+        // --- archetype: WIND DANCER (evasion/speed), south of Finesse ---
+        NodeDef(id: "wd1", num: 60, name: "Poise", pos: (12, 11), kind: travel, links: ["dex3"],
+                grants: [(stat: evasion, layer: added, value: 20)]),
+        NodeDef(id: "wd2", num: 61, name: "Fleet", pos: (13, 16), kind: travel, links: ["wd1"],
+                grants: [(stat: move_speed, layer: increased, value: 700)]),
+        NodeDef(id: "wd3", num: 62, name: "Dancer", pos: (14, 21), kind: travel, links: ["wd2"],
+                grants: [(stat: evasion, layer: increased, value: 1000)]),
+        NodeDef(id: "wd4", num: 63, name: "Ghoststep", pos: (15, 26), kind: notable, links: ["wd3"],
                 grants: [
                     (stat: evasion, layer: increased, value: 2000),
-                    (stat: move_speed, layer: increased, value: 500),
+                    (stat: move_speed, layer: increased, value: 600),
                 ]),
-        NodeDef(id: "z8", num: 57, name: "Phantom Grace", pos: (24, 0), kind: keystone, links: ["z7"],
+        NodeDef(id: "wd5", num: 64, name: "Slipstream", pos: (16, 31), kind: travel, links: ["wd4"],
+                grants: [(stat: attack_speed, layer: increased, value: 800)]),
+        NodeDef(id: "phantom_grace", num: 65, name: "Phantom Grace", pos: (17, 36), kind: keystone,
+                links: ["wd5"],
                 grants: [
                     (stat: evasion, layer: more, value: 3500), // 35% MORE evasion
                     (stat: life, layer: more, value: -1200),   // 12% LESS life
                 ]),
-        // wind socket cluster off Windrunner
-        NodeDef(id: "socket_wind", num: 58, name: "Wind Socket", pos: (12, -3), kind: socket,
-                links: ["z4"], grants: []),
+        NodeDef(id: "socket_gale", num: 66, name: "Gale Socket", pos: (9, 17), kind: socket,
+                links: ["wd2"], grants: []),
 
-        // ===================== EMBERS (north): elemental/chaos ================
-        NodeDef(id: "e1", num: 70, name: "Spark", pos: (0, -3), kind: travel,
-                grants: [(stat: damage_ele, layer: added, value: 2)]),
-        NodeDef(id: "e2", num: 71, name: "Kindle", pos: (0, -6), kind: travel, links: ["e1"],
-                grants: [(stat: damage_ele, layer: increased, value: 1000)]),
-        NodeDef(id: "e3", num: 72, name: "Soot-Veined", pos: (0, -9), kind: travel, links: ["e2"],
-                grants: [(stat: resist_ele, layer: added, value: 800)]),
-        NodeDef(id: "e4", num: 73, name: "Emberheart", pos: (0, -12), kind: notable, links: ["e3"],
+        // ================= INTELLIGENCE trunk (north) =================
+        NodeDef(id: "int1", num: 70, name: "Intelligence", pos: (0, -5), kind: travel,
+                grants: [(stat: intelligence, layer: added, value: 10)]),
+        NodeDef(id: "int2", num: 71, name: "Intelligence", pos: (0, -10), kind: travel, links: ["int1"],
+                grants: [(stat: intelligence, layer: added, value: 10)]),
+        NodeDef(id: "int3", num: 72, name: "Insight", pos: (0, -15), kind: notable, links: ["int2"],
                 grants: [
-                    (stat: damage_ele, layer: increased, value: 2000),
+                    (stat: intelligence, layer: added, value: 20),
+                    (stat: resist_ele, layer: added, value: 500),
+                ]),
+
+        // --- archetype: ELEMENTALIST, northwest of Insight ---
+        NodeDef(id: "el1", num: 80, name: "Kindle", pos: (-5, -18), kind: travel, links: ["int3"],
+                grants: [(stat: damage_ele, layer: increased, value: 1000)]),
+        NodeDef(id: "el2", num: 81, name: "Living Flame", pos: (-10, -21), kind: travel, links: ["el1"],
+                grants: [(stat: damage_ele, layer: added, value: 3)]),
+        NodeDef(id: "el3", num: 82, name: "Ashen Ward", pos: (-15, -24), kind: travel, links: ["el2"],
+                grants: [(stat: resist_ele, layer: added, value: 1000)]),
+        NodeDef(id: "el4", num: 83, name: "Emberheart", pos: (-20, -27), kind: notable, links: ["el3"],
+                grants: [
+                    (stat: damage_ele, layer: increased, value: 2200),
                     (stat: damage_ele, layer: added, value: 3),
                 ]),
-        NodeDef(id: "e5", num: 74, name: "Venom", pos: (0, -15), kind: travel, links: ["e4"],
-                grants: [(stat: damage_chaos, layer: added, value: 2)]),
-        NodeDef(id: "e6", num: 75, name: "Fester", pos: (0, -18), kind: travel, links: ["e5"],
-                grants: [(stat: damage_chaos, layer: increased, value: 1200)]),
-        NodeDef(id: "e7", num: 76, name: "Plagueborn", pos: (0, -21), kind: notable, links: ["e6"],
+        NodeDef(id: "el5", num: 84, name: "Conflagrate", pos: (-25, -30), kind: travel, links: ["el4"],
+                grants: [(stat: damage_ele, layer: increased, value: 1200)]),
+        NodeDef(id: "overcharge", num: 85, name: "Overcharge", pos: (-30, -33), kind: keystone,
+                links: ["el5"],
                 grants: [
-                    (stat: damage_chaos, layer: increased, value: 2000),
-                    (stat: resist_chaos, layer: added, value: 1000),
+                    (stat: damage_ele, layer: more, value: 3000), // 30% MORE elemental
+                    (stat: armour, layer: more, value: -1000),    // 10% LESS armour
                 ]),
-        NodeDef(id: "e8", num: 77, name: "Attunement", pos: (0, -24), kind: travel, links: ["e7"],
-                grants: [(stat: resist_ele, layer: added, value: 1000)]),
-        // flame socket cluster off Emberheart
-        NodeDef(id: "socket_flame", num: 78, name: "Flame Socket", pos: (3, -12), kind: socket,
-                links: ["e4"], grants: []),
+        NodeDef(id: "socket_flame", num: 86, name: "Flame Socket", pos: (-9, -16), kind: socket,
+                links: ["el1"], grants: []),
 
-        // ===================== the rim: cross-branch travel ===================
-        NodeDef(id: "grit", num: 90, name: "Grit", pos: (-14, 14), kind: travel,
-                links: ["s7", "v7"],
+        // --- archetype: PLAGUECALLER (chaos), northeast of Insight ---
+        NodeDef(id: "pl1", num: 90, name: "Fester", pos: (5, -18), kind: travel, links: ["int3"],
+                grants: [(stat: damage_chaos, layer: increased, value: 1200)]),
+        NodeDef(id: "pl2", num: 91, name: "Venom", pos: (10, -21), kind: travel, links: ["pl1"],
+                grants: [(stat: damage_chaos, layer: added, value: 3)]),
+        NodeDef(id: "pl3", num: 92, name: "Grave Ward", pos: (15, -24), kind: travel, links: ["pl2"],
+                grants: [(stat: resist_chaos, layer: added, value: 1000)]),
+        NodeDef(id: "pl4", num: 93, name: "Plagueborn", pos: (20, -27), kind: notable, links: ["pl3"],
                 grants: [
-                    (stat: life, layer: added, value: 8),
-                    (stat: damage_phys, layer: increased, value: 400),
+                    (stat: damage_chaos, layer: increased, value: 2200),
+                    (stat: damage_chaos, layer: added, value: 3),
                 ]),
-        NodeDef(id: "surefoot", num: 91, name: "Surefoot", pos: (14, 14), kind: travel,
-                links: ["v7", "z7"],
+        NodeDef(id: "pl5", num: 94, name: "Blight", pos: (25, -30), kind: travel, links: ["pl4"],
+                grants: [(stat: damage_chaos, layer: increased, value: 1200)]),
+        NodeDef(id: "corruption", num: 95, name: "Corruption", pos: (30, -33), kind: keystone,
+                links: ["pl5"],
                 grants: [
-                    (stat: evasion, layer: added, value: 10),
-                    (stat: life, layer: added, value: 8),
+                    (stat: damage_chaos, layer: more, value: 3000), // 30% MORE chaos
+                    (stat: life, layer: more, value: -1000),        // 10% LESS life
                 ]),
-        NodeDef(id: "stormdance", num: 92, name: "Stormdance", pos: (14, -14), kind: travel,
-                links: ["z7", "e7"],
+        NodeDef(id: "socket_rot", num: 96, name: "Rot Socket", pos: (9, -16), kind: socket,
+                links: ["pl1"], grants: []),
+
+        // ============ hybrid bridges between ADJACENT archetypes ============
+        // (mid-limb travel links — mixed styles come from here, keystones
+        // stay leaf commitments)
+        NodeDef(id: "scorched_edge", num: 110, name: "Scorched Edge", pos: (-18, -10), kind: travel,
+                links: ["w2", "el2"],
                 grants: [
-                    (stat: attack_speed, layer: increased, value: 400),
-                    (stat: damage_ele, layer: added, value: 2),
+                    (stat: strength, layer: added, value: 5),
+                    (stat: intelligence, layer: added, value: 5),
                 ]),
-        NodeDef(id: "scorched_edge", num: 93, name: "Scorched Edge", pos: (-14, -14), kind: travel,
-                links: ["e7", "s7"],
+        NodeDef(id: "venom_fletch", num: 111, name: "Venom Fletch", pos: (18, -10), kind: travel,
+                links: ["d2", "pl2"],
                 grants: [
-                    (stat: damage_phys, layer: added, value: 2),
-                    (stat: damage_ele, layer: added, value: 2),
+                    (stat: dexterity, layer: added, value: 5),
+                    (stat: intelligence, layer: added, value: 5),
+                ]),
+        NodeDef(id: "surefoot", num: 112, name: "Surefoot", pos: (0, 18), kind: travel,
+                links: ["b2", "wd2"],
+                grants: [
+                    (stat: strength, layer: added, value: 5),
+                    (stat: dexterity, layer: added, value: 5),
                 ]),
     ],
 )

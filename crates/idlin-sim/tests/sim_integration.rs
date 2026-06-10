@@ -211,8 +211,8 @@ fn disconnected_builds_are_rejected_at_declaration() {
 
     // A plan that jumps straight to a deep node (v4 without v1-v3) must be
     // rejected outright; a connected plan must be accepted.
-    let bad = idlin_botc::compile("build [33]; fn main() {}").unwrap();
-    let good = idlin_botc::compile("build [30, 31, 32, 33]; fn main() {}").unwrap();
+    let bad = idlin_botc::compile("build [23]; fn main() {}").unwrap();
+    let good = idlin_botc::compile("build [10, 11, 12, 20]; fn main() {}").unwrap();
     let joins = TickInputs {
         joins: vec![
             JoinRequest {

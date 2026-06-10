@@ -113,9 +113,10 @@ AffixDef(
 )
 ```
 
-**Stat registry**: `life, damage_phys, damage_ele, damage_chaos,
-attack_speed, move_speed, armour, evasion, accuracy, resist_ele,
-resist_chaos`. The same vocabulary powers gear, tree nodes, and support
+**Stat registry**: `strength, dexterity, intelligence, life, damage_phys,
+damage_ele, damage_chaos, attack_speed, move_speed, armour, evasion,
+accuracy, resist_ele, resist_chaos` (attributes convert per
+[mechanics.md](mechanics.md)). The same vocabulary powers gear, tree nodes, and support
 gems — one evaluator (see [mechanics.md](mechanics.md)).
 
 ## `content/gems/*.ron` — GemDef

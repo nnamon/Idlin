@@ -1121,6 +1121,50 @@ impl World {
             }
         }
 
+        // Attribute conversions (PoE-flavored, integer): each point of
+        //   Strength:     +1/2 life,      +0.1% increased physical damage
+        //   Dexterity:    +2 accuracy,    +1/2 evasion
+        //   Intelligence: +0.1% increased elemental AND chaos damage
+        let strength = sheet.value(Stat::Strength, 0);
+        let dexterity = sheet.value(Stat::Dexterity, 0);
+        let intelligence = sheet.value(Stat::Intelligence, 0);
+        for grant in [
+            Grant {
+                stat: Stat::Life,
+                layer: crate::stats::Layer::Added,
+                value: strength / 2,
+            },
+            Grant {
+                stat: Stat::DamagePhys,
+                layer: crate::stats::Layer::Increased,
+                value: strength * 10,
+            },
+            Grant {
+                stat: Stat::Accuracy,
+                layer: crate::stats::Layer::Added,
+                value: dexterity * 2,
+            },
+            Grant {
+                stat: Stat::Evasion,
+                layer: crate::stats::Layer::Added,
+                value: dexterity / 2,
+            },
+            Grant {
+                stat: Stat::DamageEle,
+                layer: crate::stats::Layer::Increased,
+                value: intelligence * 10,
+            },
+            Grant {
+                stat: Stat::DamageChaos,
+                layer: crate::stats::Layer::Increased,
+                value: intelligence * 10,
+            },
+        ] {
+            if grant.value != 0 {
+                sheet.apply(&grant);
+            }
+        }
+
         let (dmg_base, range, cooldown_base, projectile) = match weapon {
             Some(item) => {
                 let def = &self.content.items[item.base_idx as usize];
@@ -1400,7 +1444,7 @@ impl World {
         // rejected outright (loudly) — better a visible authoring error than
         // a bot silently stuck mid-build.
         let mut plan: Vec<u32> = Vec::with_capacity(refs.len());
-        for (k, r) in refs.iter().take(99).enumerate() {
+        for (k, r) in refs.iter().take(240).enumerate() {
             let Some(idx) = self.content.tree_refs.iter().position(|tr| tr == r) else {
                 events.push(SimEvent::BuildRejected {
                     id: net_id,

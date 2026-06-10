@@ -93,10 +93,10 @@ impl Parser {
                     }
                     self.eat(&Tok::RBracket, "`]`")?;
                     self.eat(&Tok::Semi, "`;`")?;
-                    if program.build.len() > 99 {
+                    if program.build.len() > 240 {
                         return Err(CompileError::new(
                             line,
-                            "build plans cap at 99 nodes (level 100)",
+                            "build plans cap at 240 nodes (level 100 earns 228 points)",
                         ));
                     }
                 }

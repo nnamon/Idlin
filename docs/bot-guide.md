@@ -158,8 +158,8 @@ fn main() {                            // main() runs once per tick
 
 **The `build` declaration — your passive tree, up front**
 
-A bot declares its ENTIRE passive plan at the top of the program: up to 99
-node references in allocation order. Each node has a stable numeric id
+A bot declares its ENTIRE passive plan at the top of the program: up to
+240 node references in allocation order (level 100 earns 228 points). Each node has a stable numeric id
 (`num` in content, shown as `#N` on the tree map page) — use literals or
 named `const`s. The compiler embeds a packed u16 table (99 nodes = 198
 bytes max) and emits one `SetBuild` syscall during initialization. SetBuild validates the WHOLE plan up front: every entry
