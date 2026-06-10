@@ -78,6 +78,12 @@ async fn main() -> anyhow::Result<()> {
             ContentDb::empty()
         }
     };
+    if content.zones.is_empty() {
+        warn!(
+            "no zones loaded — content/ is missing or empty; the world will \
+             be the placeholder Void zone (run from the repository root)"
+        );
+    }
     info!(
         version = SERVER_VERSION,
         content_hash = format_args!("{:016x}", content.content_hash),

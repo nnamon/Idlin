@@ -55,3 +55,61 @@ pub fn load_world(content: &ContentDb, dir: &Path) -> Option<World> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use idlin_sim::TickInputs;
+    use std::path::PathBuf;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("idlin-persist-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn snapshot_roundtrip_resumes_exactly() {
+        let content = ContentDb::empty();
+        let mut world = World::new(7, &content);
+        let inputs = TickInputs::default();
+        for _ in 0..25 {
+            world.tick(&inputs);
+        }
+        let dir = temp_dir("roundtrip");
+        save_world(&world, &dir).expect("save snapshot");
+        let resumed = load_world(&content, &dir).expect("load snapshot");
+        assert_eq!(resumed.tick_count(), world.tick_count());
+        assert_eq!(resumed.state_hash(), world.state_hash());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_snapshot_means_fresh_world() {
+        let dir = temp_dir("missing");
+        assert!(load_world(&ContentDb::empty(), &dir).is_none());
+    }
+
+    #[test]
+    fn corrupt_snapshot_is_refused_not_fatal() {
+        let dir = temp_dir("corrupt");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(SNAP_NAME), b"not a postcard world").unwrap();
+        assert!(load_world(&ContentDb::empty(), &dir).is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn content_hash_mismatch_is_refused() {
+        // A world snapshotted against real content must not resume against
+        // empty content (and vice versa) — the hash gate catches it.
+        let real = ContentDb::load(std::path::Path::new("../../content")).expect("real content");
+        let world = World::new(7, &real);
+        let dir = temp_dir("mismatch");
+        save_world(&world, &dir).expect("save snapshot");
+        assert!(load_world(&ContentDb::empty(), &dir).is_none());
+        assert!(load_world(&real, &dir).is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

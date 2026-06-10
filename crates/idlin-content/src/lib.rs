@@ -47,6 +47,8 @@ pub enum ContentError {
     NoStartNode,
     #[error("duplicate id `{id}` in {path}")]
     DuplicateId { path: String, id: String },
+    #[error("affix `{affix}`: {msg}")]
+    BadAffixTiers { affix: String, msg: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -493,6 +495,29 @@ impl ContentDb {
                 });
             }
         }
+        // The loot roller picks "highest tier with ilvl <= item level" by
+        // scanning from the back, so tier order is load-bearing — reject
+        // violations here instead of rolling wrong values at runtime.
+        for affix in &db.affixes {
+            if affix.tiers.is_empty() {
+                return Err(ContentError::BadAffixTiers {
+                    affix: affix.id.clone(),
+                    msg: "has no tiers (dead affix)".into(),
+                });
+            }
+            for w in affix.tiers.windows(2) {
+                if w[0].ilvl >= w[1].ilvl {
+                    return Err(ContentError::BadAffixTiers {
+                        affix: affix.id.clone(),
+                        msg: format!(
+                            "tiers must be sorted by ilvl strictly ascending \
+                             (found ilvl {} followed by {})",
+                            w[0].ilvl, w[1].ilvl
+                        ),
+                    });
+                }
+            }
+        }
         db.gems.sort_by(|a, b| a.id.cmp(&b.id));
         for w in db.gems.windows(2) {
             if w[0].id == w[1].id {
@@ -636,5 +661,119 @@ mod tests {
             .zone("withered_shore")
             .expect("withered_shore must exist");
         assert!(!zone.packs.is_empty());
+    }
+
+    /// Build a throwaway content dir from (relative path, contents) pairs.
+    struct TempContent(PathBuf);
+    impl TempContent {
+        fn new(name: &str, files: &[(&str, &str)]) -> TempContent {
+            let dir = std::env::temp_dir()
+                .join(format!("idlin-content-test-{name}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            for (rel, body) in files {
+                let path = dir.join(rel);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, body).unwrap();
+            }
+            TempContent(dir)
+        }
+    }
+    impl Drop for TempContent {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const AFFIX_OK: &str = r#"AffixDef(
+        id: "hale", name: "Hale", kind: prefix, slots: [helm],
+        stat: life, layer: added,
+        tiers: [(ilvl: 1, min: 8, max: 15), (ilvl: 3, min: 16, max: 28)],
+    )"#;
+
+    #[test]
+    fn duplicate_ids_are_rejected() {
+        let tc = TempContent::new(
+            "dup",
+            &[("affixes/a.ron", AFFIX_OK), ("affixes/b.ron", AFFIX_OK)],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::DuplicateId { id, .. }) => assert_eq!(id, "hale"),
+            other => panic!("expected DuplicateId, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unsorted_affix_tiers_are_rejected() {
+        let tc = TempContent::new(
+            "tiers",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: prefix, slots: [helm],
+                    stat: life, layer: added,
+                    tiers: [(ilvl: 5, min: 1, max: 2), (ilvl: 2, min: 3, max: 4)],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadAffixTiers { affix, .. }) => assert_eq!(affix, "bad"),
+            other => panic!("expected BadAffixTiers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tierless_affixes_are_rejected() {
+        let tc = TempContent::new(
+            "notiers",
+            &[(
+                "affixes/empty.ron",
+                r#"AffixDef(
+                    id: "empty", name: "Empty", kind: prefix, slots: [helm],
+                    stat: life, layer: added, tiers: [],
+                )"#,
+            )],
+        );
+        assert!(matches!(
+            ContentDb::load(&tc.0),
+            Err(ContentError::BadAffixTiers { .. })
+        ));
+    }
+
+    #[test]
+    fn zone_referencing_unknown_monster_is_rejected() {
+        let tc = TempContent::new(
+            "zoneref",
+            &[(
+                "zones/test.ron",
+                r#"ZoneDef(
+                    id: "test", name: "Test", width_u: 10, height_u: 10,
+                    spawn_x_u: 5, spawn_y_u: 5,
+                    packs: [(monster: "no_such_monster", count: 1,
+                             x_u: 2, y_u: 2, radius_u: 1, respawn_ticks: 10)],
+                )"#,
+            )],
+        );
+        assert!(matches!(
+            ContentDb::load(&tc.0),
+            Err(ContentError::UnknownMonster { .. })
+        ));
+    }
+
+    #[test]
+    fn tree_link_to_unknown_node_is_rejected() {
+        let tc = TempContent::new(
+            "treelink",
+            &[(
+                "tree/core.ron",
+                r#"TreeDef(nodes: [
+                    NodeDef(id: "start", num: 1, name: "Start", pos: (0, 0),
+                            kind: socket, links: ["nowhere"], grants: []),
+                ])"#,
+            )],
+        );
+        assert!(matches!(
+            ContentDb::load(&tc.0),
+            Err(ContentError::UnknownTreeNode { .. })
+        ));
     }
 }

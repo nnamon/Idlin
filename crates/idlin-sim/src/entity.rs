@@ -271,11 +271,18 @@ impl Entity {
     /// Wire/syscall kind code: 1 = character, 2 = monster, 3 = loot.
     pub fn kind_code(&self) -> i32 {
         if self.character.is_some() {
-            1
+            KIND_CHARACTER as i32
         } else if self.monster.is_some() {
-            2
+            KIND_MONSTER as i32
         } else {
-            3
+            KIND_LOOT as i32
         }
     }
 }
+
+/// Entity kind codes, shared by `EntityView.kind`, the wire protocol, and
+/// the ReadEntities syscall. The protocol crate mirrors these as the
+/// `EntityKind` enum — keep them in sync.
+pub const KIND_CHARACTER: u8 = 1;
+pub const KIND_MONSTER: u8 = 2;
+pub const KIND_LOOT: u8 = 3;

@@ -5,11 +5,17 @@
 use crate::director::Director;
 use crate::runner::TickFrame;
 use idlin_protocol::{EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, S2C};
-use idlin_sim::{EntityView, SimEvent};
+use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
-use tracing::info;
+use tracing::{info, warn};
+
+/// Frames queued behind the replication task before we start complaining.
+/// The tick→replication channel is unbounded so a slow consumer can never
+/// stall the sim thread; the price is that a backlog grows silently — so
+/// it must not stay silent.
+const BACKLOG_WARN_FRAMES: usize = 50;
 
 /// Pre-serialized message broadcast to every connected client.
 pub type Frame = Arc<str>;
@@ -39,55 +45,17 @@ pub fn spawn_replication(
         let mut prev: HashMap<u32, EntityState> = HashMap::new();
         let mut director = Director::new();
         while let Some(frame) = frames.recv().await {
+            let backlog = frames.len();
+            if backlog > BACKLOG_WARN_FRAMES && frame.tick.is_multiple_of(50) {
+                warn!("replication is {backlog} frames behind the sim");
+            }
+
             let mut current: HashMap<u32, EntityState> = HashMap::with_capacity(frame.views.len());
             for v in &frame.views {
                 current.insert(v.id, to_state(v));
             }
 
-            // -- delta --
-            let mut spawned: Vec<EntityState> = Vec::new();
-            let mut moved: Vec<EntityMove> = Vec::new();
-            let mut updated: Vec<EntityPatch> = Vec::new();
-            let mut removed: Vec<u32> = Vec::new();
-            for (id, state) in &current {
-                match prev.get(id) {
-                    None => spawned.push(state.clone()),
-                    Some(old) => {
-                        if old.x != state.x || old.y != state.y {
-                            moved.push(EntityMove {
-                                id: *id,
-                                x: state.x,
-                                y: state.y,
-                            });
-                        }
-                        if old.life_pct != state.life_pct
-                            || old.level != state.level
-                            || old.dead != state.dead
-                            || old.kills != state.kills
-                            || old.items != state.items
-                        {
-                            updated.push(EntityPatch {
-                                id: *id,
-                                life_pct: state.life_pct,
-                                level: state.level,
-                                dead: state.dead,
-                                kills: state.kills,
-                                items: state.items,
-                            });
-                        }
-                    }
-                }
-            }
-            for id in prev.keys() {
-                if !current.contains_key(id) {
-                    removed.push(*id);
-                }
-            }
-            // Stable ordering for readable wire traffic.
-            spawned.sort_by_key(|s| s.id);
-            moved.sort_by_key(|m| m.id);
-            updated.sort_by_key(|u| u.id);
-            removed.sort_unstable();
+            let (spawned, moved, updated, removed) = diff(&prev, &current);
 
             let hits: Vec<HitFx> = frame
                 .events
@@ -118,6 +86,8 @@ pub fn spawn_replication(
                 removed,
                 hits,
             };
+            // broadcast::send only errs when no client is subscribed —
+            // normal between viewers, not a fault.
             let _ = broadcast.send(serialize(&delta));
 
             // -- narratable events --
@@ -130,7 +100,7 @@ pub fn spawn_replication(
             let characters: Vec<u32> = frame
                 .views
                 .iter()
-                .filter(|v| v.kind == 1 && !v.dead)
+                .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
                 .map(|v| v.id)
                 .collect();
             if let Some(cue) = director.update(frame.tick, &frame.events, &characters) {
@@ -151,6 +121,8 @@ pub fn spawn_replication(
                 height: zone_height,
                 entities,
             };
+            // The watch receiver lives in ReplicationHandles, so this send
+            // cannot fail while the server runs.
             let _ = snap_tx.send(serialize(&snapshot));
 
             prev = current;
@@ -162,6 +134,63 @@ pub fn spawn_replication(
         broadcast: tx,
         snapshot: snap_rx,
     }
+}
+
+/// Pure delta computation between two keyed entity-state maps, with stable
+/// (id-sorted) ordering for readable wire traffic.
+#[allow(clippy::type_complexity)]
+fn diff(
+    prev: &HashMap<u32, EntityState>,
+    current: &HashMap<u32, EntityState>,
+) -> (
+    Vec<EntityState>,
+    Vec<EntityMove>,
+    Vec<EntityPatch>,
+    Vec<u32>,
+) {
+    let mut spawned: Vec<EntityState> = Vec::new();
+    let mut moved: Vec<EntityMove> = Vec::new();
+    let mut updated: Vec<EntityPatch> = Vec::new();
+    let mut removed: Vec<u32> = Vec::new();
+    for (id, state) in current {
+        match prev.get(id) {
+            None => spawned.push(state.clone()),
+            Some(old) => {
+                if old.x != state.x || old.y != state.y {
+                    moved.push(EntityMove {
+                        id: *id,
+                        x: state.x,
+                        y: state.y,
+                    });
+                }
+                if old.life_pct != state.life_pct
+                    || old.level != state.level
+                    || old.dead != state.dead
+                    || old.kills != state.kills
+                    || old.items != state.items
+                {
+                    updated.push(EntityPatch {
+                        id: *id,
+                        life_pct: state.life_pct,
+                        level: state.level,
+                        dead: state.dead,
+                        kills: state.kills,
+                        items: state.items,
+                    });
+                }
+            }
+        }
+    }
+    for id in prev.keys() {
+        if !current.contains_key(id) {
+            removed.push(*id);
+        }
+    }
+    spawned.sort_by_key(|s| s.id);
+    moved.sort_by_key(|m| m.id);
+    updated.sort_by_key(|u| u.id);
+    removed.sort_unstable();
+    (spawned, moved, updated, removed)
 }
 
 fn serialize(msg: &S2C) -> Frame {
@@ -183,8 +212,8 @@ fn to_state(v: &EntityView) -> EntityState {
     EntityState {
         id: v.id,
         kind: match v.kind {
-            1 => EntityKind::Character,
-            2 => EntityKind::Monster,
+            KIND_CHARACTER => EntityKind::Character,
+            KIND_MONSTER => EntityKind::Monster,
             _ => EntityKind::Loot,
         },
         x: v.x_raw,
@@ -296,4 +325,69 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             return None;
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(id: u32, x: i32, life_pct: u8) -> EntityState {
+        EntityState {
+            id,
+            kind: EntityKind::Character,
+            x,
+            y: 0,
+            life_pct,
+            level: 1,
+            name: format!("e{id}"),
+            model: "hero".into(),
+            rarity: 0,
+            dead: false,
+            kills: 0,
+            items: 0,
+        }
+    }
+
+    fn keyed(states: Vec<EntityState>) -> HashMap<u32, EntityState> {
+        states.into_iter().map(|s| (s.id, s)).collect()
+    }
+
+    #[test]
+    fn diff_classifies_spawn_move_update_remove() {
+        let prev = keyed(vec![state(1, 0, 100), state(2, 5, 100), state(3, 9, 50)]);
+        let current = keyed(vec![
+            state(1, 7, 100), // moved
+            state(2, 5, 40),  // updated
+            state(4, 0, 100), // spawned
+        ]); // 3 removed
+        let (spawned, moved, updated, removed) = diff(&prev, &current);
+        assert_eq!(spawned.iter().map(|s| s.id).collect::<Vec<_>>(), [4]);
+        assert_eq!(
+            moved.iter().map(|m| (m.id, m.x)).collect::<Vec<_>>(),
+            [(1, 7)]
+        );
+        assert_eq!(
+            updated
+                .iter()
+                .map(|u| (u.id, u.life_pct))
+                .collect::<Vec<_>>(),
+            [(2, 40)]
+        );
+        assert_eq!(removed, [3]);
+    }
+
+    #[test]
+    fn diff_of_identical_maps_is_empty() {
+        let a = keyed(vec![state(1, 3, 80), state(2, 4, 90)]);
+        let (spawned, moved, updated, removed) = diff(&a, &a.clone());
+        assert!(spawned.is_empty() && moved.is_empty() && updated.is_empty() && removed.is_empty());
+    }
+
+    #[test]
+    fn diff_output_is_id_sorted_regardless_of_map_order() {
+        let prev = HashMap::new();
+        let current = keyed(vec![state(9, 0, 100), state(2, 0, 100), state(5, 0, 100)]);
+        let (spawned, ..) = diff(&prev, &current);
+        assert_eq!(spawned.iter().map(|s| s.id).collect::<Vec<_>>(), [2, 5, 9]);
+    }
 }
