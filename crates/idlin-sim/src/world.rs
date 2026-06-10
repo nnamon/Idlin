@@ -1570,13 +1570,20 @@ impl World {
         let support_slots_of =
             |gem: &GemInstance| self.content.gems[gem.gem_idx as usize].support_slots as usize;
         let is_socket_node = |node: u32| self.content.tree[node as usize].kind == NodeKind::Socket;
+        // The start node is implicitly allocated — if it's a socket (the
+        // First Spark pattern), it's usable from level 1.
+        let start_idx = self.content.tree_start;
+        let owns = |node: u32| node == start_idx || ch.allocated.contains(&node);
 
         // Work list: (node, pouch index, attach_as_support).
         let mut plans: Vec<(u32, usize, bool)> = Vec::new();
         if socket_sel >= 0 {
             let node = socket_sel as u32;
             let pouch_idx = pouch_sel.max(0) as usize;
-            if !ch.allocated.contains(&node) || !is_socket_node(node) || pouch_idx >= ch.pouch.len()
+            if (node as usize) >= self.content.tree.len()
+                || !owns(node)
+                || !is_socket_node(node)
+                || pouch_idx >= ch.pouch.len()
             {
                 return -1;
             }
@@ -1599,8 +1606,8 @@ impl World {
             }
         } else {
             let mut used: Vec<usize> = Vec::new();
-            // Pass 1: empty socket nodes get skill gems.
-            for &node in &ch.allocated {
+            // Pass 1: empty socket nodes get skill gems (start included).
+            for node in std::iter::once(start_idx).chain(ch.allocated.iter().copied()) {
                 if !is_socket_node(node) || ch.sockets.contains_key(&node) {
                     continue;
                 }

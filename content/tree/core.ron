@@ -19,10 +19,11 @@
 // conversions). Points: 2 per level, 5 every 10th — travels are cheap.
 TreeDef(
     nodes: [
-        NodeDef(id: "start", num: 1, name: "Awakening", pos: (0, 0), kind: travel,
-                links: ["str1", "dex1", "int1", "socket_a"], grants: []),
-        NodeDef(id: "socket_a", num: 2, name: "First Spark", pos: (0, 4), kind: socket,
-                grants: []),
+        // The starting node is itself the first gem socket — implicitly
+        // allocated, so every fresh character can hold a skill gem at once.
+        // (num 2 is retired: it belonged to the old separate First Spark.)
+        NodeDef(id: "start", num: 1, name: "First Spark", pos: (0, 0), kind: socket,
+                links: ["str1", "dex1", "int1"], grants: []),
 
         // ================= STRENGTH trunk (southwest) =================
         NodeDef(id: "str1", num: 10, name: "Strength", pos: (-4, 2), kind: travel,

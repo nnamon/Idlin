@@ -174,7 +174,8 @@ TreeDef(
 
 Node kinds: `travel` (small), `notable` (chunky), `keystone` (reserved for
 more-multipliers/behavior flags), `socket` (holds one skill gem; supports
-live on the gem). Characters get one point per level past 1; tree grants are affixes,
+live on the gem). The `start` node is implicitly allocated and free — make
+it a `socket` and every fresh character can run a skill gem from level 1. Characters get one point per level past 1; tree grants are affixes,
 evaluated identically to gear.
 
 `num` is the stable u16 reference compiled bots use in `build [...]`

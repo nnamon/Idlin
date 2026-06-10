@@ -167,16 +167,16 @@ export function TreeMap({ onClose }: { onClose: () => void }) {
               onMouseEnter={() => setHover(n)}
               style={{ cursor: "pointer" }}
             >
-              {n.kind.startsWith("socket") ? (
+              {n.kind === "socket" ? (
                 <rect
-                  x={cx - style.r}
-                  y={cy - style.r}
-                  width={style.r * 2}
-                  height={style.r * 2}
+                  x={cx - (style.r + (isStart ? 3 : 0))}
+                  y={cy - (style.r + (isStart ? 3 : 0))}
+                  width={(style.r + (isStart ? 3 : 0)) * 2}
+                  height={(style.r + (isStart ? 3 : 0)) * 2}
                   transform={`rotate(45 ${cx} ${cy})`}
                   fill={style.fill}
-                  stroke={hover?.id === n.id ? "#fff" : "#0a0a0f"}
-                  strokeWidth={2}
+                  stroke={isStart ? "#9a7bff" : hover?.id === n.id ? "#fff" : "#0a0a0f"}
+                  strokeWidth={isStart ? 3 : 2}
                 />
               ) : (
                 <circle

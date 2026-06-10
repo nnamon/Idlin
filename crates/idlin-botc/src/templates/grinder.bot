@@ -11,7 +11,6 @@
 
 // Node numbers from the tree map page (content/tree/core.ron `num`).
 // Default build: a Warbringer bruiser splashing Bulwark for survival.
-const N_SOCKET_A = 2;      // First Spark (gem socket at start)
 const N_STR1 = 10;
 const N_STR2 = 11;
 const N_MIGHT = 12;
@@ -35,7 +34,7 @@ const N_FLEET = 61;
 // The declared build: allocated automatically as we level. The whole
 // plan is fixed at deploy — changing it means deploying a new bot.
 build [
-    N_SOCKET_A, N_STR1, N_STR2, N_MIGHT,
+    N_STR1, N_STR2, N_MIGHT,
     N_HEFT, N_SOCKET_WAR, N_BRAWN, N_RHYTHM, N_BUTCHER,
     N_THICK_SKIN, N_HARDY, N_SOCKET_AEGIS, N_STALWART, N_COLOSSUS,
     N_OVERWHELM, N_BERSERKER, N_IRON_WILL,
