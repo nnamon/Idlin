@@ -3,7 +3,7 @@ AffixDef(
     id: "keen",
     name: "Keen",
     kind: prefix,
-    slots: [weapon],
+    pool: "weapon",
     weight: 70,
     stat: accuracy,
     layer: added,

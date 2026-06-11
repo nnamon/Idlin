@@ -7,5 +7,6 @@ ItemDef(
     w: 2, h: 2,
     armour: 12,
     block_bp: 1700,        // 17% chance to block a hit
+    affix_pools: ["find"],
     weight: 80,
 )

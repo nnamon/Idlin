@@ -3,7 +3,7 @@ AffixDef(
     id: "shimmering",
     name: "Shimmering",
     kind: prefix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 70,
     stat: energy_shield,
     layer: added,

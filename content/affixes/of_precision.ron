@@ -3,7 +3,7 @@ AffixDef(
     id: "of_precision",
     name: "of Precision",
     kind: suffix,
-    slots: [weapon],
+    pool: "weapon",
     weight: 60,
     stat: crit_chance,
     layer: increased,

@@ -43,6 +43,8 @@ pub enum ContentError {
     UnknownBrain { monster: String, brain: String },
     #[error("monster `{monster}` skill kit is invalid: {msg}")]
     BadMonsterSkills { monster: String, msg: String },
+    #[error("item `{item}` subscribes to affix pool `{pool}` which no affix belongs to")]
+    UnknownAffixPool { item: String, pool: String },
     #[error("tree node `{node}` links to unknown node `{link}`")]
     UnknownTreeNode { node: String, link: String },
     #[error("the passive tree has nodes but no `start` node")]
@@ -222,6 +224,10 @@ pub struct ItemDef {
     /// Weapon: its class, for skill eligibility (None on non-weapons).
     #[serde(default)]
     pub weapon_class: Option<WeaponClass>,
+    /// Affix pools this base draws from when rolling (the subscription
+    /// model: the item declares its pools, affixes declare membership).
+    #[serde(default)]
+    pub affix_pools: Vec<String>,
     /// Armor: base mitigation/avoidance (armour attenuates physical damage;
     /// evasion makes hits miss).
     #[serde(default)]
@@ -315,8 +321,10 @@ pub struct AffixDef {
     /// Display: prefixes prepend ("Heavy ..."), suffixes append ("... of X").
     pub name: String,
     pub kind: AffixKind,
-    /// Gear slots this affix can appear on.
-    pub slots: Vec<GearSlot>,
+    /// The ONE named pool this affix lives in; base items subscribe to
+    /// pools (`ItemDef::affix_pools`), so an item file fully answers
+    /// "what can roll on me".
+    pub pool: String,
     #[serde(default = "default_weight")]
     pub weight: u32,
     pub stat: Stat,
@@ -885,6 +893,16 @@ impl ContentDb {
                 }
             }
         }
+        for item in &db.items {
+            for pool in &item.affix_pools {
+                if !db.affixes.iter().any(|a| &a.pool == pool) {
+                    return Err(ContentError::UnknownAffixPool {
+                        item: item.id.clone(),
+                        pool: pool.clone(),
+                    });
+                }
+            }
+        }
         for monster in &db.monsters {
             if db.brain_idx(&monster.brain).is_none() {
                 return Err(ContentError::UnknownBrain {
@@ -1053,6 +1071,52 @@ mod tests {
         assert!(!widening.fits_skill(shot));
     }
 
+    #[test]
+    fn affix_pool_subscriptions_resolve() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        // Every gear base draws from at least one real pool, and every
+        // affix's pool has at least one subscriber (no orphans).
+        for item in &db.items {
+            assert!(
+                !item.affix_pools.is_empty(),
+                "{} subscribes to no pools",
+                item.id
+            );
+        }
+        for affix in &db.affixes {
+            assert!(
+                db.items.iter().any(|i| i.affix_pools.contains(&affix.pool)),
+                "affix {} sits in pool `{}` with no subscribers",
+                affix.id,
+                affix.pool
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_affix_pool_subscriptions_are_rejected() {
+        let tc = TempContent::new(
+            "badpool",
+            &[
+                ("affixes/a.ron", AFFIX_OK),
+                (
+                    "items/sword.ron",
+                    r#"ItemDef(
+                        id: "sword", name: "Sword", slot: weapon,
+                        affix_pools: ["weapon"],
+                    )"#,
+                ),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::UnknownAffixPool { item, pool }) => {
+                assert_eq!(item, "sword");
+                assert_eq!(pool, "weapon");
+            }
+            other => panic!("expected UnknownAffixPool, got {other:?}"),
+        }
+    }
+
     /// Build a throwaway content dir from (relative path, contents) pairs.
     struct TempContent(PathBuf);
     impl TempContent {
@@ -1075,7 +1139,7 @@ mod tests {
     }
 
     const AFFIX_OK: &str = r#"AffixDef(
-        id: "hale", name: "Hale", kind: prefix, slots: [helm],
+        id: "hale", name: "Hale", kind: prefix, pool: "armour",
         stat: life, layer: added,
         tiers: [(ilvl: 1, min: 8, max: 15), (ilvl: 3, min: 16, max: 28)],
     )"#;
@@ -1099,7 +1163,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: prefix, slots: [helm],
+                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
                     stat: life, layer: added,
                     tiers: [(ilvl: 5, min: 1, max: 2), (ilvl: 2, min: 3, max: 4)],
                 )"#,
@@ -1118,7 +1182,7 @@ mod tests {
             &[(
                 "affixes/empty.ron",
                 r#"AffixDef(
-                    id: "empty", name: "Empty", kind: prefix, slots: [helm],
+                    id: "empty", name: "Empty", kind: prefix, pool: "armour",
                     stat: life, layer: added, tiers: [],
                 )"#,
             )],

@@ -3,7 +3,7 @@ AffixDef(
     id: "of_embers",
     name: "of Embers",
     kind: suffix,
-    slots: [weapon],
+    pool: "weapon",
     weight: 80,
     stat: damage_fire,
     layer: added,

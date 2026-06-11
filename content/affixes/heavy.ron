@@ -3,7 +3,7 @@ AffixDef(
     id: "heavy",
     name: "Heavy",
     kind: prefix,
-    slots: [weapon],
+    pool: "weapon",
     weight: 100,
     stat: damage_phys,
     layer: increased,

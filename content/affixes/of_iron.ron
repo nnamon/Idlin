@@ -3,7 +3,7 @@ AffixDef(
     id: "of_iron",
     name: "of Iron",
     kind: suffix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 90,
     stat: armour,
     layer: added,

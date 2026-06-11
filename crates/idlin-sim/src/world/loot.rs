@@ -284,7 +284,7 @@ impl World {
 /// ones already present, prefix/suffix budgets shared with what's there,
 /// tiers gated by the item's level.
 fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32, kind_cap: u32) {
-    let slot = content.items[item.base_idx as usize].slot;
+    let pools = &content.items[item.base_idx as usize].affix_pools;
     let (mut prefixes, mut suffixes) = (0u32, 0u32);
     for ra in &item.affixes {
         match content.affixes[ra.affix_idx as usize].kind {
@@ -297,7 +297,7 @@ fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32,
         .iter()
         .enumerate()
         .filter(|(i, a)| {
-            a.slots.contains(&slot) && !item.affixes.iter().any(|ra| ra.affix_idx == *i as u32)
+            pools.contains(&a.pool) && !item.affixes.iter().any(|ra| ra.affix_idx == *i as u32)
         })
         .map(|(i, _)| i as u32)
         .collect();

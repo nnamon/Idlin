@@ -11,5 +11,6 @@ ItemDef(
     use_ticks: 7,
     projectile: true,
     weapon_class: Some(bow),
+    affix_pools: ["weapon"],
     weight: 80,
 )

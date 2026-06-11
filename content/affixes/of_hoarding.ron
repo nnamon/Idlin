@@ -3,7 +3,7 @@ AffixDef(
     id: "of_hoarding",
     name: "of Hoarding",
     kind: suffix,
-    slots: [helm, offhand],
+    pool: "find",
     weight: 35,
     stat: item_quantity,
     layer: increased,

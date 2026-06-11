@@ -3,7 +3,7 @@ AffixDef(
     id: "of_wind",
     name: "of the Wind",
     kind: suffix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 90,
     stat: evasion,
     layer: added,

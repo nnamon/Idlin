@@ -3,7 +3,7 @@ AffixDef(
     id: "of_storms",
     name: "of Storms",
     kind: suffix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 80,
     stat: resist_lightning,
     layer: added,

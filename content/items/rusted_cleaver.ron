@@ -11,5 +11,6 @@ ItemDef(
     use_ticks: 8,
     projectile: false,
     weapon_class: Some(melee),
+    affix_pools: ["weapon"],
     weight: 100,
 )

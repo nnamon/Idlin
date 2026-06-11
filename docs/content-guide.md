@@ -206,6 +206,18 @@ socket INTO that skill gem (capacity 1, +1 at gem level 7, +1 at 14;
 one copy of each support), and the tag gate is enforced at socket time
 (manual mismatch → −1 + a GemRejected event; auto skips misfits).
 
+## Affix pools — items subscribe
+
+Eligibility is a SUBSCRIPTION: every affix lives in exactly one named
+pool (`pool: "weapon"` on the AffixDef), and every base item lists the
+pools it draws from (`affix_pools: ["armour", "find"]` on the
+ItemDef) — so the item file fully answers "what can roll on me".
+Current pools: `weapon` (offense), `armour` (life/defenses/resists),
+`arcana` (mana, helm/chest), `stride` (movement, boots), `find`
+(rarity/quantity). New gear granularity is free: give bows their own
+`bow` pool and only bows subscribe. Loading fails on a subscription to
+a pool no affix belongs to.
+
 ## `content/currency/*.ron` — CurrencyDef
 
 ```ron

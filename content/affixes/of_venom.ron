@@ -3,7 +3,7 @@ AffixDef(
     id: "of_venom",
     name: "of Venom",
     kind: suffix,
-    slots: [weapon],
+    pool: "weapon",
     weight: 50,
     stat: damage_chaos,
     layer: added,

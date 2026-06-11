@@ -3,7 +3,7 @@ AffixDef(
     id: "arcane",
     name: "Arcane",
     kind: prefix,
-    slots: [helm, chest],
+    pool: "arcana",
     weight: 70,
     stat: mana,
     layer: added,

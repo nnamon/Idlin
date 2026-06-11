@@ -3,7 +3,7 @@ AffixDef(
     id: "hale",
     name: "Hale",
     kind: prefix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 100,
     stat: life,
     layer: added,

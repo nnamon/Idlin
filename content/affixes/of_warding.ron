@@ -3,7 +3,7 @@ AffixDef(
     id: "of_warding",
     name: "of Warding",
     kind: suffix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 80,
     stat: resist_fire,
     layer: added,

@@ -8,5 +8,6 @@ ItemDef(
     h: 3,
     armour: 60,
     evasion: 30,
+    affix_pools: ["armour", "arcana"],
     weight: 100,
 )

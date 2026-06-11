@@ -3,7 +3,7 @@ AffixDef(
     id: "of_the_depths",
     name: "of the Depths",
     kind: suffix,
-    slots: [helm, chest, boots],
+    pool: "armour",
     weight: 80,
     stat: resist_cold,
     layer: added,

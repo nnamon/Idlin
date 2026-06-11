@@ -12,5 +12,6 @@ ItemDef(
     use_ticks: 9,
     projectile: true,
     weapon_class: Some(wand),
+    affix_pools: ["weapon"],
     weight: 60,
 )

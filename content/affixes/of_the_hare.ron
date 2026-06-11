@@ -3,7 +3,7 @@ AffixDef(
     id: "of_the_hare",
     name: "of the Hare",
     kind: suffix,
-    slots: [boots],
+    pool: "stride",
     weight: 70,
     stat: move_speed,
     layer: increased,
