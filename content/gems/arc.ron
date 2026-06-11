@@ -1,0 +1,18 @@
+// Skill: a lance of lightning down a line — aim it (UseSkillDir).
+GemDef(
+    id: "arc",
+    name: "Arc",
+    kind: skill,
+    skill_kind: spell,
+    target_mode: direction,
+    tags: [spell, lightning],
+    weight: 70,
+    shape: line,
+    range_cu: 800,
+    width_cu: 130,
+    max_targets: 5,
+    added_lightning: (base: 8, per_level: 4),
+    crit_bp: 800,
+    cast_ticks: 7,
+    mana_cost: (base: 7, per_level: 1),
+)

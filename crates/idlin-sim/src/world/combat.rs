@@ -543,7 +543,13 @@ impl World {
                             gem_idx,
                         )
                     });
-                    let debuff = gem_def.debuff.clone().map(|b| (b.grants, b.duration_ticks));
+                    let debuff = gem_def.debuff.clone().map(|b| {
+                        (
+                            b.grants,
+                            (b.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0)
+                                / 10000) as u32,
+                        )
+                    });
                     let spec_template = StrikeSpec {
                         attacker_slot: Some(slot),
                         attacker_net,
@@ -603,18 +609,22 @@ impl World {
                             }
                         }
                         SkillShape::Nova => {
-                            let victims = self.collect_victims_radius(
-                                pos,
-                                radius,
-                                attacker_faction,
-                                gem_def.max_targets,
-                                Some(pos),
-                            );
-                            for ts in victims {
-                                let spec = spec_template.clone_for_next_victim();
-                                self.strike(spec, ts, now, events, &mut dead, &mut loot);
-                                swung = true;
+                            // Pure-utility novas (War Cry) carry no damage
+                            // and strike nobody — riders still fire below.
+                            if damage.iter().any(|d| *d > 0) {
+                                let victims = self.collect_victims_radius(
+                                    pos,
+                                    radius,
+                                    attacker_faction,
+                                    gem_def.max_targets,
+                                    Some(pos),
+                                );
+                                for ts in victims {
+                                    let spec = spec_template.clone_for_next_victim();
+                                    self.strike(spec, ts, now, events, &mut dead, &mut loot);
+                                }
                             }
+                            swung = true; // the sweep happens even on air
                         }
                         SkillShape::PointAoe => {
                             if pos.dist(aim_point) <= range + radius
@@ -674,9 +684,36 @@ impl World {
                     }
 
                     if swung {
-                        // Self-buff rider applies on use.
+                        // Buff rider: self always, plus allies inside the
+                        // skill's radius (War Cry rallies the line). The
+                        // duration support stretches it like other riders.
                         if let Some(buff) = gem_def.buff.clone() {
-                            self.apply_buff(slot, buff.grants, buff.duration_ticks);
+                            let duration = (buff.duration_ticks as i64
+                                * (10000 + mods.dot_duration_bp).max(0)
+                                / 10000) as u32;
+                            self.apply_buff(slot, buff.grants.clone(), duration);
+                            if radius.raw() > 0 {
+                                let rr = radius.raw() as i64 * radius.raw() as i64;
+                                let allies: Vec<usize> = self
+                                    .zone
+                                    .iter()
+                                    .filter(|(s, a)| {
+                                        *s != slot
+                                            && a.alive()
+                                            && a.faction() == attacker_faction
+                                            && a.combat.is_some()
+                                            && {
+                                                let dx = (a.pos.x - pos.x).raw() as i64;
+                                                let dy = (a.pos.y - pos.y).raw() as i64;
+                                                dx * dx + dy * dy <= rr
+                                            }
+                                    })
+                                    .map(|(s, _)| s)
+                                    .collect();
+                                for ally in allies {
+                                    self.apply_buff(ally, buff.grants.clone(), duration);
+                                }
+                            }
                         }
                         // Cast/swing FX for non-projectile shapes (the fan
                         // announces itself via ProjectileSpawned).
@@ -1653,6 +1690,91 @@ mod tests {
             .gem
             .level = 7;
         assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), 1);
+    }
+
+    #[test]
+    fn war_cry_rallies_nearby_allies_and_lingers() {
+        let content = content();
+        let mut world = World::new(77_77, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![
+                crate::JoinRequest {
+                    name: "Caster".into(),
+                    program: program.clone(),
+                },
+                crate::JoinRequest {
+                    name: "Ally".into(),
+                    program,
+                },
+            ],
+        });
+        let chars: Vec<usize> = (0..world.zone.slot_count())
+            .filter(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .collect();
+        let (caster, ally) = (chars[0], chars[1]);
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        let base_pos = world.zone.get(caster).unwrap().pos;
+        {
+            let a = world.zone.get_mut(ally).unwrap();
+            a.pos = FxV2::new(base_pos.x + Fx::from_int(2), base_pos.y);
+        }
+        let base_phys = world
+            .zone
+            .get(ally)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .damage[0];
+        {
+            let e = world.zone.get_mut(caster).unwrap();
+            e.character.as_mut().unwrap().sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "war_cry", 1),
+                    cooldown_left: 0,
+                    // Lingering: the duration tag stretches the buff too.
+                    supports: vec![instance(&content, "lingering", 1)],
+                },
+            );
+            e.combat.as_mut().unwrap().mana = 100;
+            e.intents.attack = Some(AttackIntent {
+                target: SkillTarget::Direction(FxV2::new(Fx::ONE, Fx::ZERO)),
+                skill: Some(node),
+            });
+        }
+        let mut events = Vec::new();
+        world.attacks(&mut events);
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, super::SimEvent::Hit { .. })),
+            "war cry strikes nobody"
+        );
+        for &who in &[caster, ally] {
+            let e = world.zone.get(who).unwrap();
+            let lingered = e.effects.iter().any(
+                |ef| matches!(ef, ActiveEffect::Buff { ticks_left, .. } if *ticks_left == 140),
+            );
+            assert!(lingered, "slot {who} carries the 100×1.4-tick rally");
+        }
+        let buffed_phys = world
+            .zone
+            .get(ally)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .damage[0];
+        assert!(
+            buffed_phys > base_phys,
+            "the rally raises ally phys: {buffed_phys} vs {base_phys}"
+        );
     }
 
     #[test]

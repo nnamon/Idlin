@@ -1,0 +1,25 @@
+// Skill: a ring of stolen winter. Everything caught is chilled —
+// genuinely slower to move and to swing.
+GemDef(
+    id: "frost_nova",
+    name: "Frost Nova",
+    kind: skill,
+    skill_kind: spell,
+    target_mode: entity,
+    tags: [spell, cold, aoe],
+    weight: 70,
+    shape: nova,
+    radius_cu: 380,
+    max_targets: 6,
+    added_cold: (base: 7, per_level: 3),
+    crit_bp: 600,
+    cast_ticks: 8,
+    mana_cost: (base: 8, per_level: 1),
+    debuff: Some(BuffDef(
+        grants: [
+            (stat: move_speed, layer: increased, value: -2500),
+            (stat: attack_speed, layer: increased, value: -2500),
+        ],
+        duration_ticks: 30,     // a 3-second chill
+    )),
+)
