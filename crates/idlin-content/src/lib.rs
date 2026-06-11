@@ -53,6 +53,10 @@ pub enum ContentError {
     DuplicateId { path: String, id: String },
     #[error("affix `{affix}`: {msg}")]
     BadAffixTiers { affix: String, msg: String },
+    #[error("tile map for `{zone}`: {msg}")]
+    BadMap { zone: String, msg: String },
+    #[error("tileset `{tileset}`: {msg}")]
+    BadTileset { tileset: String, msg: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -676,12 +680,141 @@ pub struct SpawnPack {
     pub respawn_ticks: u32,
 }
 
+/// One glyph in a tileset's palette: the authoring unit of map.txt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TileDef {
+    /// The map.txt character this tile is authored as.
+    pub glyph: char,
+    pub id: String,
+    pub walkable: bool,
+    /// Walls and tall props block sight; water doesn't.
+    #[serde(default)]
+    pub blocks_los: bool,
+    /// Ground finish painted under this tile (palette key).
+    pub ground: String,
+    /// What stands on the tile (client visual recipe); None = bare ground.
+    #[serde(default)]
+    pub prop: Option<String>,
+}
+
+/// A look-and-feel variant: the same structural kit under a different
+/// palette — PoE's few-tilesets-many-feels trick.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TilesetVariant {
+    pub id: String,
+    /// Ground id → "#rrggbb" overrides of the base palette.
+    #[serde(default)]
+    pub palette: Vec<(String, String)>,
+}
+
+/// A themed tile family — the shore, the town — reused by many zones.
+/// Owns its glyph palette, ground colors, variants, and its natural
+/// monster ecology (what belongs here by default; zones still stage
+/// specials like bosses on top).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TilesetDef {
+    pub id: String,
+    pub tiles: Vec<TileDef>,
+    /// Base ground palette: ground id → "#rrggbb".
+    pub palette: Vec<(String, String)>,
+    #[serde(default)]
+    pub variants: Vec<TilesetVariant>,
+    /// MonsterDef ids native to this tileset (random packs later; the
+    /// wiki and authoring sanity now).
+    #[serde(default)]
+    pub natural_monsters: Vec<String>,
+}
+
+impl TilesetDef {
+    pub fn tile_by_glyph(&self, glyph: char) -> Option<u8> {
+        self.tiles
+            .iter()
+            .position(|t| t.glyph == glyph)
+            .map(|i| i as u8)
+    }
+}
+
+/// An authored tile map: row-major cells indexing the tileset's palette.
+/// One cell = one sim unit.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TileGrid {
+    pub width: i32,
+    pub height: i32,
+    pub cells: Vec<u8>,
+}
+
+impl TileGrid {
+    /// Parse a map.txt against a tileset: rows must be uniform, every
+    /// glyph known. Width/height come from the text itself.
+    pub fn from_text(text: &str, tileset: &TilesetDef) -> Result<TileGrid, String> {
+        let rows: Vec<&str> = text
+            .lines()
+            .map(|l| l.trim_end_matches('\r'))
+            .filter(|l| !l.is_empty())
+            .collect();
+        if rows.is_empty() {
+            return Err("map is empty".into());
+        }
+        let width = rows[0].chars().count();
+        let mut cells = Vec::with_capacity(width * rows.len());
+        for (y, row) in rows.iter().enumerate() {
+            let n = row.chars().count();
+            if n != width {
+                return Err(format!("row {} is {n} wide; row 0 is {width}", y));
+            }
+            for (x, g) in row.chars().enumerate() {
+                match tileset.tile_by_glyph(g) {
+                    Some(i) => cells.push(i),
+                    None => {
+                        return Err(format!(
+                            "unknown glyph '{g}' at {x},{y} (tileset `{}`)",
+                            tileset.id
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(TileGrid {
+            width: width as i32,
+            height: rows.len() as i32,
+            cells,
+        })
+    }
+
+    pub fn cell(&self, x: i32, y: i32) -> Option<u8> {
+        if x < 0 || y < 0 || x >= self.width || y >= self.height {
+            return None;
+        }
+        Some(self.cells[(y * self.width + x) as usize])
+    }
+}
+
+/// One set-piece placement from an area's props.ron — pure visuals; the
+/// tiles underneath own collision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropPlacement {
+    /// Client manifest model key.
+    pub model: String,
+    pub x_u: i32,
+    pub y_u: i32,
+    #[serde(default)]
+    pub rot_deg: i32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PropsDef {
+    pub props: Vec<PropPlacement>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneDef {
     pub id: String,
     pub name: String,
-    /// Zone extent in whole units (logical 2D plane).
+    /// Zone extent in whole units (logical 2D plane). Zones with an
+    /// authored map.txt derive these from the map and may omit them.
+    #[serde(default)]
     pub width_u: i32,
+    #[serde(default)]
     pub height_u: i32,
     /// Character spawn/respawn point, whole units.
     pub spawn_x_u: i32,
@@ -711,6 +844,18 @@ pub struct ZoneDef {
     #[serde(default)]
     pub lines: Vec<String>,
     pub packs: Vec<SpawnPack>,
+    /// The tileset family this zone is authored in (zones with map.txt).
+    #[serde(default)]
+    pub tileset: Option<String>,
+    /// Look-and-feel variant within that tileset.
+    #[serde(default)]
+    pub tileset_variant: Option<String>,
+    /// The authored grid (areas/<id>/map.txt), attached by the loader.
+    #[serde(skip)]
+    pub tiles: Option<TileGrid>,
+    /// Set-piece placements (areas/<id>/props.ron), attached by the loader.
+    #[serde(skip)]
+    pub props: Vec<PropPlacement>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -735,6 +880,8 @@ pub struct ContentDb {
     pub speech: SpeechDef,
     /// Sorted by id.
     pub gems: Vec<GemDef>,
+    /// Sorted by id. The few themed families every authored map builds from.
+    pub tilesets: Vec<TilesetDef>,
     /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
     pub tree: Vec<NodeDef>,
     pub tree_adj: Vec<Vec<u32>>,
@@ -775,6 +922,139 @@ impl ContentDb {
             .map(|i| &self.zones[i])
     }
 
+    pub fn tileset(&self, id: &str) -> Option<&TilesetDef> {
+        self.tilesets
+            .binary_search_by(|t| t.id.as_str().cmp(id))
+            .ok()
+            .map(|i| &self.tilesets[i])
+    }
+
+    /// Validate tilesets and bind authored maps/props to their zones.
+    /// Runs after sorting: zones, tilesets, and monsters are all findable.
+    fn attach_maps(
+        &mut self,
+        maps: Vec<(String, String)>,
+        props: Vec<(String, PropsDef)>,
+    ) -> Result<(), ContentError> {
+        for ts in &self.tilesets {
+            let bad = |msg: String| ContentError::BadTileset {
+                tileset: ts.id.clone(),
+                msg,
+            };
+            let mut glyphs: Vec<char> = ts.tiles.iter().map(|t| t.glyph).collect();
+            glyphs.sort_unstable();
+            for w in glyphs.windows(2) {
+                if w[0] == w[1] {
+                    return Err(bad(format!("glyph '{}' is defined twice", w[0])));
+                }
+            }
+            if ts.tiles.len() > 256 {
+                return Err(bad("more than 256 tiles (cells are u8)".into()));
+            }
+            for t in &ts.tiles {
+                if !ts.palette.iter().any(|(g, _)| g == &t.ground) {
+                    return Err(bad(format!(
+                        "tile `{}` paints unknown ground `{}`",
+                        t.id, t.ground
+                    )));
+                }
+            }
+            for v in &ts.variants {
+                for (g, _) in &v.palette {
+                    if !ts.palette.iter().any(|(base, _)| base == g) {
+                        return Err(bad(format!(
+                            "variant `{}` recolors unknown ground `{g}`",
+                            v.id
+                        )));
+                    }
+                }
+            }
+            for m in &ts.natural_monsters {
+                if self.monster_idx(m).is_none() {
+                    return Err(bad(format!("natural monster `{m}` does not exist")));
+                }
+            }
+        }
+        for w in self.tilesets.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "tilesets/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
+
+        for (area, text) in maps {
+            let bad = |msg: String| ContentError::BadMap {
+                zone: area.clone(),
+                msg,
+            };
+            let Ok(zi) = self.zones.binary_search_by(|z| z.id.as_str().cmp(&area)) else {
+                return Err(bad("map.txt has no zone.ron with the area's id".into()));
+            };
+            let Some(ts_id) = self.zones[zi].tileset.clone() else {
+                return Err(bad("zone has a map.txt but declares no tileset".into()));
+            };
+            let Some(ts) = self.tileset(&ts_id) else {
+                return Err(bad(format!("unknown tileset `{ts_id}`")));
+            };
+            if let Some(v) = &self.zones[zi].tileset_variant
+                && !ts.variants.iter().any(|var| &var.id == v)
+            {
+                return Err(bad(format!("unknown variant `{v}` of tileset `{ts_id}`")));
+            }
+            let grid = TileGrid::from_text(&text, ts).map_err(&bad)?;
+            let walkable_at = |x: i32, y: i32| -> bool {
+                grid.cell(x, y)
+                    .is_some_and(|c| ts.tiles[c as usize].walkable)
+            };
+            let zone = &self.zones[zi];
+            if zone.width_u != 0 && (zone.width_u, zone.height_u) != (grid.width, grid.height) {
+                return Err(bad(format!(
+                    "zone.ron declares {}x{} but the map is {}x{}",
+                    zone.width_u, zone.height_u, grid.width, grid.height
+                )));
+            }
+            if !walkable_at(zone.spawn_x_u, zone.spawn_y_u) {
+                return Err(bad(format!(
+                    "spawn {}x{} is not walkable",
+                    zone.spawn_x_u, zone.spawn_y_u
+                )));
+            }
+            for pack in &zone.packs {
+                if !walkable_at(pack.x_u, pack.y_u) {
+                    return Err(bad(format!(
+                        "pack anchor {}x{} ({}) is not walkable",
+                        pack.x_u, pack.y_u, pack.monster
+                    )));
+                }
+            }
+            let zone = &mut self.zones[zi];
+            zone.width_u = grid.width;
+            zone.height_u = grid.height;
+            zone.tiles = Some(grid);
+        }
+        for zone in &self.zones {
+            if zone.tileset.is_some() && zone.tiles.is_none() {
+                return Err(ContentError::BadMap {
+                    zone: zone.id.clone(),
+                    msg: "declares a tileset but has no map.txt".into(),
+                });
+            }
+        }
+
+        for (area, def) in props {
+            let Ok(zi) = self.zones.binary_search_by(|z| z.id.as_str().cmp(&area)) else {
+                return Err(ContentError::BadMap {
+                    zone: area.clone(),
+                    msg: "props.ron has no zone.ron with the area's id".into(),
+                });
+            };
+            self.zones[zi].props = def.props;
+        }
+        Ok(())
+    }
+
     pub fn load(dir: &Path) -> Result<ContentDb, ContentError> {
         let mut files = Vec::new();
         collect_ron_files(dir, &mut files)?;
@@ -791,6 +1071,10 @@ impl ContentDb {
         };
 
         let mut db = ContentDb::default();
+        // Area maps/props arrive before their zone.ron in sort order; they
+        // attach to zones (by area directory name == zone id) after the loop.
+        let mut pending_maps: Vec<(String, String)> = Vec::new();
+        let mut pending_props: Vec<(String, PropsDef)> = Vec::new();
         for path in &files {
             let rel = path.strip_prefix(dir).unwrap_or(path);
             let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -822,6 +1106,9 @@ impl ContentDb {
             } else if rel_str.starts_with("currency/") {
                 db.currency
                     .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("tilesets/") {
+                db.tilesets
+                    .push(ron::from_str::<TilesetDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("gems/") {
                 db.gems
                     .push(ron::from_str::<GemDef>(&text).map_err(parse_err)?);
@@ -837,6 +1124,13 @@ impl ContentDb {
                 if rel_str.ends_with("/zone.ron") {
                     db.zones
                         .push(ron::from_str::<ZoneDef>(&text).map_err(parse_err)?);
+                } else if rel_str.ends_with("/map.txt") {
+                    pending_maps.push((parts[1].to_string(), text.into_owned()));
+                } else if rel_str.ends_with("/props.ron") {
+                    pending_props.push((
+                        parts[1].to_string(),
+                        ron::from_str::<PropsDef>(&text).map_err(parse_err)?,
+                    ));
                 } else if parts.len() >= 4 && parts[2] == "monsters" {
                     db.monsters
                         .push(ron::from_str::<MonsterDef>(&text).map_err(parse_err)?);
@@ -895,6 +1189,8 @@ impl ContentDb {
         db.brains.sort_by(|a, b| a.id.cmp(&b.id));
         db.items.sort_by(|a, b| a.id.cmp(&b.id));
         db.currency.sort_by(|a, b| a.id.cmp(&b.id));
+        db.tilesets.sort_by(|a, b| a.id.cmp(&b.id));
+        db.attach_maps(pending_maps, pending_props)?;
         for w in db.items.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
@@ -1130,7 +1426,7 @@ fn collect_ron_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> 
             collect_ron_files(&path, out)?;
         } else if path
             .extension()
-            .is_some_and(|e| e == "ron" || e == "asm" || e == "bot")
+            .is_some_and(|e| e == "ron" || e == "asm" || e == "bot" || e == "txt")
         {
             out.push(path);
         }
@@ -1289,6 +1585,108 @@ mod tests {
         stat: life, layer: added,
         tiers: [(ilvl: 1, min: 8, max: 15), (ilvl: 3, min: 16, max: 28)],
     )"#;
+
+    const TILESET_OK: &str = r##"TilesetDef(
+        id: "cave",
+        tiles: [
+            (glyph: '.', id: "floor", walkable: true,  blocks_los: false, ground: "stone"),
+            (glyph: '#', id: "wall",  walkable: false, blocks_los: true,  ground: "stone", prop: Some("wall")),
+            (glyph: '~', id: "pool",  walkable: false, blocks_los: false, ground: "water"),
+        ],
+        palette: [("stone", "#333333"), ("water", "#112233")],
+    )"##;
+
+    const TILE_ZONE_OK: &str = r#"ZoneDef(
+        id: "den", name: "The Den",
+        spawn_x_u: 1, spawn_y_u: 1,
+        tileset: Some("cave"),
+        packs: [],
+    )"#;
+
+    #[test]
+    fn area_map_binds_to_its_zone_and_derives_dims() {
+        let tc = TempContent::new(
+            "tilemap",
+            &[
+                ("tilesets/cave.ron", TILESET_OK),
+                ("areas/den/zone.ron", TILE_ZONE_OK),
+                ("areas/den/map.txt", "#####\n#...#\n#.~.#\n#####\n"),
+            ],
+        );
+        let db = ContentDb::load(&tc.0).unwrap();
+        let zone = db.zone("den").unwrap();
+        assert_eq!((zone.width_u, zone.height_u), (5, 4), "dims come from the map");
+        let grid = zone.tiles.as_ref().expect("grid attached");
+        let ts = db.tileset("cave").unwrap();
+        let tile = |x, y| &ts.tiles[grid.cell(x, y).unwrap() as usize];
+        assert!(!tile(0, 0).walkable && tile(0, 0).blocks_los, "corner is wall");
+        assert!(tile(1, 1).walkable, "interior floor walks");
+        assert!(!tile(2, 2).walkable && !tile(2, 2).blocks_los, "pool blocks feet, not sight");
+    }
+
+    #[test]
+    fn ragged_or_unknown_glyph_maps_are_rejected() {
+        for (name, map) in [("ragged", "###\n##\n"), ("glyph", "###\n#X#\n###\n")] {
+            let tc = TempContent::new(
+                name,
+                &[
+                    ("tilesets/cave.ron", TILESET_OK),
+                    ("areas/den/zone.ron", TILE_ZONE_OK),
+                    ("areas/den/map.txt", map),
+                ],
+            );
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::BadMap { zone, .. }) => assert_eq!(zone, "den"),
+                other => panic!("{name}: expected BadMap, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn unwalkable_spawn_is_rejected() {
+        let tc = TempContent::new(
+            "wallspawn",
+            &[
+                ("tilesets/cave.ron", TILESET_OK),
+                ("areas/den/zone.ron", TILE_ZONE_OK),
+                // Spawn (1,1) is a wall in this map.
+                ("areas/den/map.txt", "###\n###\n###\n"),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadMap { zone, msg }) => {
+                assert_eq!(zone, "den");
+                assert!(msg.contains("spawn"), "{msg}");
+            }
+            other => panic!("expected BadMap, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tileset_validation_catches_bad_palettes_and_ecology() {
+        let dup_glyph = TILESET_OK.replace("glyph: '~'", "glyph: '#'");
+        let bad_ground = TILESET_OK.replace("ground: \"water\")", "ground: \"lava\")");
+        let ghost_mob = TILESET_OK.replace(
+            "palette:",
+            "natural_monsters: [\"kraken\"], palette:",
+        );
+        for (name, body) in [("dupglyph", &dup_glyph), ("ground", &bad_ground), ("mob", &ghost_mob)] {
+            let tc = TempContent::new(name, &[("tilesets/cave.ron", body.as_str())]);
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::BadTileset { tileset, .. }) => assert_eq!(tileset, "cave"),
+                other => panic!("{name}: expected BadTileset, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn real_tilesets_load_and_name_real_monsters() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        assert!(db.tileset("shore").is_some() && db.tileset("town").is_some());
+        for m in &db.tileset("shore").unwrap().natural_monsters {
+            assert!(db.monster_idx(m).is_some(), "shore ecology lists {m}");
+        }
+    }
 
     #[test]
     fn duplicate_ids_are_rejected() {

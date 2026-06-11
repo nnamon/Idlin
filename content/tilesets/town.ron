@@ -1,0 +1,31 @@
+// The TOWN tileset: settlements — cobbled squares, timber walls, docks.
+// Saltmere is its first zone. Towns have no natural monsters; anything
+// hostile in a town is staged by the zone, which is exactly the point.
+TilesetDef(
+    id: "town",
+    tiles: [
+        (glyph: ':', id: "cobble",  walkable: true,  blocks_los: false, ground: "cobble"),
+        (glyph: '.', id: "dirt",    walkable: true,  blocks_los: false, ground: "dirt"),
+        (glyph: ',', id: "grass",   walkable: true,  blocks_los: false, ground: "grass"),
+        (glyph: '=', id: "plank",   walkable: true,  blocks_los: false, ground: "plank"),
+        (glyph: '~', id: "water",   walkable: false, blocks_los: false, ground: "water"),
+        (glyph: '#', id: "wall",    walkable: false, blocks_los: true,  ground: "cobble", prop: Some("wall")),
+        (glyph: 'H', id: "house",   walkable: false, blocks_los: true,  ground: "dirt",   prop: Some("house")),
+        (glyph: 'T', id: "tree",    walkable: false, blocks_los: true,  ground: "grass",  prop: Some("tree")),
+        (glyph: 'R', id: "rock",    walkable: false, blocks_los: true,  ground: "dirt",   prop: Some("rock")),
+        (glyph: 'b', id: "brazier", walkable: false, blocks_los: false, ground: "cobble", prop: Some("brazier")),
+        (glyph: 'c', id: "crate",   walkable: false, blocks_los: false, ground: "plank",  prop: Some("crate")),
+    ],
+    palette: [
+        ("cobble", "#3b3b47"),
+        ("dirt",   "#473e33"),
+        ("grass",  "#2f4032"),
+        ("plank",  "#52412d"),
+        ("water",  "#13233a"),
+    ],
+    variants: [
+        // A warmer, lamplit feel for prosperous districts.
+        (id: "lamplit", palette: [("cobble", "#46404e"), ("dirt", "#52463a")]),
+    ],
+    natural_monsters: [],
+)
