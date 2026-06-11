@@ -30,7 +30,29 @@
         "body": "Base_body",
         "legs": "Base_legs",
         "feet": "Base_feet"
-      }
+      },
+      "variants": [
+        {
+          "file": "models/body.glb",
+          "partSuffix": "_m",
+          "hairs": [
+            "hair_simpleparted",
+            "hair_buzzed",
+            "hair_beard",
+            "hair_long"
+          ]
+        },
+        {
+          "file": "models/body_female.glb",
+          "partSuffix": "_f",
+          "hairs": [
+            "hair_long",
+            "hair_buns",
+            "hair_buzzedfemale",
+            "hair_simpleparted"
+          ]
+        }
+      ]
     },
     "shambler": {
       "file": "models/body.glb",
@@ -50,7 +72,17 @@
         "body": "Base_body",
         "legs": "Base_legs",
         "feet": "Base_feet"
-      }
+      },
+      "variants": [
+        {
+          "file": "models/body.glb",
+          "partSuffix": "_m"
+        },
+        {
+          "file": "models/body_female.glb",
+          "partSuffix": "_f"
+        }
+      ]
     },
     "husk": {
       "file": "models/body.glb",
@@ -69,7 +101,13 @@
         "body": "Base_body",
         "legs": "Base_legs",
         "feet": "Base_feet"
-      }
+      },
+      "variants": [
+        {
+          "file": "models/body.glb",
+          "partSuffix": "_m"
+        }
+      ]
     },
     "stalker": {
       "file": "models/stalker.glb",
@@ -84,26 +122,26 @@
     }
   },
   "parts": {
-    "peasant_body": {
+    "peasant_body_m": {
       "region": "body",
       "files": [
         "models/parts/male_peasant_body.glb",
         "models/parts/male_peasant_arms.glb"
       ]
     },
-    "peasant_legs": {
+    "peasant_legs_m": {
       "region": "legs",
       "files": [
         "models/parts/male_peasant_legs.glb"
       ]
     },
-    "peasant_feet": {
+    "peasant_feet_m": {
       "region": "feet",
       "files": [
         "models/parts/male_peasant_feet.glb"
       ]
     },
-    "ranger_body": {
+    "ranger_body_m": {
       "region": "body",
       "files": [
         "models/parts/male_ranger_body.glb",
@@ -111,22 +149,103 @@
         "models/parts/male_ranger_acc_pauldron.glb"
       ]
     },
-    "ranger_legs": {
+    "ranger_legs_m": {
       "region": "legs",
       "files": [
         "models/parts/male_ranger_legs.glb"
       ]
     },
-    "ranger_feet": {
+    "ranger_feet_m": {
       "region": "feet",
       "files": [
         "models/parts/male_ranger_feet_boots.glb"
       ]
     },
-    "ranger_hood": {
+    "ranger_hood_m": {
       "region": "head",
       "files": [
         "models/parts/male_ranger_head_hood.glb"
+      ]
+    },
+    "peasant_body_f": {
+      "region": "body",
+      "files": [
+        "models/parts/female_peasant_body.glb",
+        "models/parts/female_peasant_arms.glb"
+      ]
+    },
+    "peasant_legs_f": {
+      "region": "legs",
+      "files": [
+        "models/parts/female_peasant_legs.glb"
+      ]
+    },
+    "peasant_feet_f": {
+      "region": "feet",
+      "files": [
+        "models/parts/female_peasant_feet.glb"
+      ]
+    },
+    "ranger_body_f": {
+      "region": "body",
+      "files": [
+        "models/parts/female_ranger_body.glb",
+        "models/parts/female_ranger_arms.glb",
+        "models/parts/female_ranger_acc_pauldrons.glb"
+      ]
+    },
+    "ranger_legs_f": {
+      "region": "legs",
+      "files": [
+        "models/parts/female_ranger_legs.glb"
+      ]
+    },
+    "ranger_feet_f": {
+      "region": "feet",
+      "files": [
+        "models/parts/female_ranger_feet.glb"
+      ]
+    },
+    "ranger_hood_f": {
+      "region": "head",
+      "files": [
+        "models/parts/female_ranger_head_hood.glb"
+      ]
+    },
+    "hair_long": {
+      "region": "hair",
+      "files": [
+        "models/parts/hair_long.glb"
+      ]
+    },
+    "hair_buns": {
+      "region": "hair",
+      "files": [
+        "models/parts/hair_buns.glb"
+      ]
+    },
+    "hair_beard": {
+      "region": "hair",
+      "files": [
+        "models/parts/hair_beard.glb"
+      ]
+    },
+    "hair_buzzed": {
+      "region": "hair",
+      "files": [
+        "models/parts/hair_buzzed.glb"
+      ]
+    },
+    "hair_buzzedfemale": {
+      "region": "hair",
+      "files": [
+        "models/parts/hair_buzzedfemale.glb"
+      ]
+    },
+    "hair_simpleparted": {
+      "region": "hair",
+      "files": [
+        "models/parts/hair_simpleparted.glb"
       ]
     }
   },

@@ -1,15 +1,19 @@
 import * as THREE from "three";
 import type { EntityRender } from "../world/store";
-import type { AssetLibrary, ModelDef } from "./Assets";
+import type { AssetLibrary, BodyVariant, ModelDef } from "./Assets";
 
 const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
 const FADE_S = 0.18;
 
+function strHash(s: string): number {
+  let hash = 0;
+  for (const c of s) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return hash;
+}
+
 /** Stable hue from a character name — same everywhere it appears. */
 export function nameColor(name: string): THREE.Color {
-  let hash = 0;
-  for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
-  return new THREE.Color().setHSL((hash % 360) / 360, 0.65, 0.55);
+  return new THREE.Color().setHSL((strHash(name) % 360) / 360, 0.65, 0.55);
 }
 
 interface WornPart {
@@ -39,6 +43,8 @@ export class EntityVisual {
 
   // Modular body
   private def: ModelDef | null = null;
+  private variant: BodyVariant | null = null;
+  private hairKey = "";
   private modelRoot: THREE.Object3D | null = null;
   private boneByName = new Map<string, THREE.Bone>();
   private worn = new Map<string, WornPart>(); // region → part
@@ -80,7 +86,15 @@ export class EntityVisual {
   }
 
   private buildModel(model: string, isMonster: boolean): void {
-    const inst = this.assets.instantiateModel(model);
+    // Cosmetic body variant: stable per character name; per entity id for
+    // monsters so packs come out mixed. Pure client-side — not replicated.
+    const def = this.assets.modelDef(model);
+    const seed = strHash(isMonster ? `${model}:${this.id}` : this.myName);
+    this.variant = def?.variants?.[seed % (def.variants.length || 1)] ?? null;
+    if (this.variant?.hairs?.length) {
+      this.hairKey = this.variant.hairs[(seed >> 3) % this.variant.hairs.length];
+    }
+    const inst = this.assets.instantiateModel(model, this.variant?.file);
     if (!inst) {
       // Unknown key: visible placeholder beats an invisible entity.
       const mesh = new THREE.Mesh(this.shared.fallbackGeo, this.shared.fallbackMat);
@@ -145,14 +159,26 @@ export class EntityVisual {
     if (key === this.gearKey || !this.def || !this.modelRoot) return;
     this.gearKey = key;
 
+    // Wire keys are variant-free; the body variant's suffix picks the
+    // male/female part file (falling back to the bare key, e.g. hair).
+    const resolve = (key: string): string => {
+      const suffixed = key + (this.variant?.partSuffix ?? "");
+      return this.assets.partDef(suffixed) ? suffixed : key;
+    };
     const desired = new Map<string, string>(); // region → part key
     for (const part of this.def.defaultParts ?? []) {
-      const def = this.assets.partDef(part);
-      if (def) desired.set(def.region, part);
+      const resolved = resolve(part);
+      const def = this.assets.partDef(resolved);
+      if (def) desired.set(def.region, resolved);
     }
     for (const part of gear) {
-      const def = this.assets.partDef(part);
-      if (def) desired.set(def.region, part);
+      const resolved = resolve(part);
+      const def = this.assets.partDef(resolved);
+      if (def) desired.set(def.region, resolved);
+    }
+    // Hair occupies its own region and disappears under a worn hood.
+    if (this.hairKey && !desired.has("head")) {
+      desired.set("hair", this.hairKey);
     }
 
     // The base skin shows only where nothing is worn — otherwise the body
@@ -171,7 +197,8 @@ export class EntityVisual {
     // …and attach the new ones.
     for (const [region, partKey] of desired) {
       if (this.worn.has(region)) continue;
-      const tintByName = this.def.nameTintParts?.includes(partKey) ?? false;
+      const bareKey = partKey.replace(/_(m|f)$/, "");
+      const tintByName = this.def.nameTintParts?.includes(bareKey) ?? false;
       const worn: WornPart = { key: partKey, meshes: [], ownedMaterials: [] };
       for (const src of this.assets.partMeshes(partKey)) {
         const mesh = src.clone();

@@ -84,7 +84,32 @@ const PARTS = [
   "Male_Ranger_Feet_Boots",
   "Male_Ranger_Head_Hood",
   "Male_Ranger_Acc_Pauldron",
+  "Female_Peasant_Arms",
+  "Female_Peasant_Body",
+  "Female_Peasant_Legs",
+  "Female_Peasant_Feet",
+  "Female_Ranger_Arms",
+  "Female_Ranger_Body",
+  "Female_Ranger_Legs",
+  "Female_Ranger_Feet",
+  "Female_Ranger_Head_Hood",
+  "Female_Ranger_Acc_Pauldrons",
 ];
+
+// Hairstyles: skinned to the same rig, attached like parts; hidden when a
+// hood occupies the head region.
+const HAIRS = [
+  "Hair_Long",
+  "Hair_Buns",
+  "Hair_Beard",
+  "Hair_Buzzed",
+  "Hair_BuzzedFemale",
+  "Hair_SimpleParted",
+];
+const HAIR_DIR = join(
+  packsDir,
+  "universal-base-characters/Universal Base Characters[Standard]/Hairstyles/Rigged to Head Bone/glTF (Godot -Unreal)",
+);
 
 // FBX-origin models: converted, then auto-normalized to a target size
 // (Quaternius FBX exports carry inconsistent unit scales).
@@ -211,11 +236,19 @@ function splitBodyRegions(doc, meshNodeName) {
   node.dispose();
 }
 
-// ---- 1. body.glb: base character + every clip, retargeted by bone name ----
-{
-  const doc = await io.read(BASE);
+// ---- 1. bodies: base character + every clip, retargeted by bone name ----
+const BODIES = [
+  { out: "body.glb", src: BASE, meshNode: "SuperHero_Male" },
+  {
+    out: "body_female.glb",
+    src: BASE.replace("Superhero_Male_FullBody", "Superhero_Female_FullBody"),
+    meshNode: "Superhero_Female",
+  },
+];
+for (const { out: bodyOut, src: bodySrc, meshNode } of BODIES) {
+  const doc = await io.read(bodySrc);
   for (const anim of doc.getRoot().listAnimations()) anim.dispose(); // base poses
-  splitBodyRegions(doc, "SuperHero_Male");
+  splitBodyRegions(doc, meshNode);
   const bodyScene = doc.getRoot().getDefaultScene();
 
   for (const [src, wanted] of [
@@ -252,11 +285,11 @@ function splitBodyRegions(doc, meshNodeName) {
 
   const have = doc.getRoot().listAnimations().map((a) => a.getName());
   const missing = [...CLIPS_UAL1, ...CLIPS_UAL2].filter((c) => !have.includes(c));
-  if (missing.length > 0) throw new Error(`body.glb: missing clips ${missing}`);
+  if (missing.length > 0) throw new Error(`${bodyOut}: missing clips ${missing}`);
 
   await finalize(doc);
-  await writeCompressed(doc, resolve(outDir, "body.glb"));
-  console.log(`body.glb: ${have.length} clips, height ${sceneHeight(doc).toFixed(2)}`);
+  await writeCompressed(doc, resolve(outDir, bodyOut));
+  console.log(`${bodyOut}: ${have.length} clips, height ${sceneHeight(doc).toFixed(2)}`);
 }
 
 // ---- 2. outfit parts: skinned glbs the client binds to body's skeleton ----
@@ -267,6 +300,14 @@ for (const part of PARTS) {
   const out = resolve(partsOut, `${part.toLowerCase()}.glb`);
   await writeCompressed(doc, out);
   console.log(`parts/${part.toLowerCase()}.glb`);
+}
+
+// ---- 2b. hairstyles ----
+for (const hair of HAIRS) {
+  const doc = await io.read(join(HAIR_DIR, `${hair}.gltf`));
+  await finalize(doc, 128);
+  await writeCompressed(doc, resolve(partsOut, `${hair.toLowerCase()}.glb`));
+  console.log(`parts/${hair.toLowerCase()}.glb`);
 }
 
 // ---- 3. FBX-origin models (own rigs / static weapons) ----

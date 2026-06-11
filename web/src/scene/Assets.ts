@@ -27,6 +27,17 @@ export interface ModelDef {
   /** Base-skin submeshes per paper-doll region, hidden when covered by a
    * worn part (head is intentionally absent: always visible). */
   baseRegions?: Record<string, string>;
+  /** Cosmetic body variants, picked client-side by name/id hash. The wire
+   * gear keys stay variant-free; partSuffix resolves them per body. */
+  variants?: BodyVariant[];
+}
+
+export interface BodyVariant {
+  file: string;
+  /** Appended to part keys when resolving (e.g. ranger_body -> ranger_body_f). */
+  partSuffix?: string;
+  /** Hairstyle part keys; one is hash-picked. Hidden under a worn hood. */
+  hairs?: string[];
 }
 
 export interface PartDef {
@@ -68,7 +79,10 @@ export class AssetLibrary {
 
     // Load each unique file once: the shared body serves several model keys.
     const paths = new Set<string>();
-    for (const def of Object.values(manifest.models)) paths.add(def.file);
+    for (const def of Object.values(manifest.models)) {
+      paths.add(def.file);
+      for (const v of def.variants ?? []) paths.add(v.file);
+    }
     for (const def of Object.values(manifest.parts)) def.files.forEach((f) => paths.add(f));
     for (const def of Object.values(manifest.weapons)) paths.add(def.file);
 
@@ -97,9 +111,9 @@ export class AssetLibrary {
    * Clone a rigged character body. Geometry and materials are shared with
    * the library copy; only the skeleton and node graph are per-instance.
    */
-  instantiateModel(key: string): ModelInstance | null {
+  instantiateModel(key: string, fileOverride?: string): ModelInstance | null {
     const def = this.manifest.models[key];
-    const loaded = def ? this.files.get(def.file) : undefined;
+    const loaded = def ? this.files.get(fileOverride ?? def.file) : undefined;
     if (!def || !loaded) return null;
     const root = cloneSkeleton(loaded.scene);
     root.scale.setScalar(def.scale);
