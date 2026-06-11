@@ -1556,7 +1556,8 @@ mod tests {
         assert_eq!(db.monsters[3].id, "tidewarden");
         // transfer_character zone indices (ZONE_SALTMERE in the shore brain).
         assert_eq!(db.zones[0].id, "saltmere");
-        assert_eq!(db.zones[1].id, "withered_shore");
+        assert_eq!(db.zones[1].id, "test_range");
+        assert_eq!(db.zones[2].id, "withered_shore");
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

@@ -56,6 +56,47 @@ pub struct Projectile {
     pub debuff: Option<(Vec<crate::stats::Grant>, u32)>,
 }
 
+/// Grid collision for authored (tile-mapped) zones: one cell per sim
+/// unit, row-major. Static for the zone's lifetime — the map is content,
+/// so the grid never feeds the state hash. Out-of-bounds is neither
+/// solid nor sight-blocking: `clamp_pos` owns the zone edge, and treating
+/// the rim as solid would jitter entities sitting exactly on it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimGrid {
+    pub width: i32,
+    pub height: i32,
+    /// Cell is standable ground.
+    pub walk: Vec<bool>,
+    /// Cell blocks line of sight.
+    pub los: Vec<bool>,
+}
+
+impl SimGrid {
+    fn idx(&self, cx: i64, cy: i64) -> Option<usize> {
+        if cx < 0 || cy < 0 || cx >= self.width as i64 || cy >= self.height as i64 {
+            return None;
+        }
+        Some((cy * self.width as i64 + cx) as usize)
+    }
+
+    pub fn solid_cell(&self, cx: i64, cy: i64) -> bool {
+        self.idx(cx, cy).is_some_and(|i| !self.walk[i])
+    }
+
+    pub fn sight_cell(&self, cx: i64, cy: i64) -> bool {
+        self.idx(cx, cy).is_some_and(|i| self.los[i])
+    }
+
+    /// In-bounds AND standable — what spawn scatter needs.
+    pub fn walkable_pos(&self, pos: FxV2) -> bool {
+        self.idx(
+            (pos.x.raw() as i64).div_euclid(65536),
+            (pos.y.raw() as i64).div_euclid(65536),
+        )
+        .is_some_and(|i| self.walk[i])
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Zone {
     pub name: String,
@@ -69,6 +110,9 @@ pub struct Zone {
     pub camp_radius: Fx,
     /// Generated with the area; constant for the zone's lifetime.
     pub obstacles: Vec<Obstacle>,
+    /// Authored tile collision (zones with a map.txt); generated zones
+    /// use `obstacles` instead.
+    pub grid: Option<SimGrid>,
     /// Skill projectiles in flight.
     pub projectiles: Vec<Projectile>,
     pub packs: Vec<PackState>,
@@ -87,6 +131,7 @@ impl Zone {
             spawn_radius,
             camp_radius: Fx::ZERO,
             obstacles: Vec::new(),
+            grid: None,
             projectiles: Vec::new(),
             packs: Vec::new(),
             slots: Vec::new(),

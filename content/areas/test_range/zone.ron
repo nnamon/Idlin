@@ -1,0 +1,19 @@
+// The Proving Grounds: the tile-system test environment. Every grid
+// mechanic in one room — walls and a gate, a roofed room with a narrow
+// door, a water pool (blocks feet, not sight), ground variety, props.
+// Sim integration tests and visual probes run here BEFORE any real zone
+// converts; it is never instanced by the live server.
+ZoneDef(
+    id: "test_range",
+    name: "The Proving Grounds",
+    spawn_x_u: 13,
+    spawn_y_u: 16,
+    spawn_radius_u: 2,
+    camp_radius_u: 3,
+    kind: story,
+    tileset: Some("town"),
+    packs: [
+        // Behind the north gate: bots must cross the wall line to grind.
+        (monster: "drowned_shambler", count: 3, x_u: 13, y_u: 3, radius_u: 2, respawn_ticks: 100),
+    ],
+)

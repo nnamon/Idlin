@@ -492,6 +492,55 @@ fn generate_obstacles(zone: &mut crate::zone::Zone, seed: u64, rocks: u32, trees
     }
 }
 
+/// Supercover walk a→b over sight-blocking cells: integer-only
+/// Amanatides–Woo with cross-multiplied boundary comparisons (raw coords
+/// < 2^23, distances < 2^17 raw per axis step — every product fits i64).
+/// Exact corner crossings check both side cells, so a diagonal wall seam
+/// never leaks sight.
+fn grid_sight_blocked(grid: &crate::zone::SimGrid, a: FxV2, b: FxV2) -> bool {
+    const CELL: i64 = 65536;
+    let (ax, ay) = (a.x.raw() as i64, a.y.raw() as i64);
+    let (bx, by) = (b.x.raw() as i64, b.y.raw() as i64);
+    let (mut cx, mut cy) = (ax.div_euclid(CELL), ay.div_euclid(CELL));
+    let (ex, ey) = (bx.div_euclid(CELL), by.div_euclid(CELL));
+    if grid.sight_cell(cx, cy) {
+        return true;
+    }
+    let (dx, dy) = (bx - ax, by - ay);
+    let (sx, sy): (i64, i64) = (if dx >= 0 { 1 } else { -1 }, if dy >= 0 { 1 } else { -1 });
+    // Raw distance from `a` to the next x/y cell boundary along the ray.
+    let mut to_bx = if dx >= 0 { (cx + 1) * CELL - ax } else { ax - cx * CELL };
+    let mut to_by = if dy >= 0 { (cy + 1) * CELL - ay } else { ay - cy * CELL };
+    let (adx, ady) = (dx.abs(), dy.abs());
+    let mut steps = (grid.width + grid.height) as i64 + 4;
+    while (cx, cy) != (ex, ey) && steps > 0 {
+        steps -= 1;
+        let tx = to_bx * ady; // time-to-boundary, cross-multiplied
+        let ty = to_by * adx;
+        if adx != 0 && (ady == 0 || tx < ty) {
+            cx += sx;
+            to_bx += CELL;
+        } else if ady != 0 && (adx == 0 || ty < tx) {
+            cy += sy;
+            to_by += CELL;
+        } else {
+            // The ray passes exactly through a cell corner: a wall on
+            // either side of the diagonal seals it.
+            if grid.sight_cell(cx + sx, cy) || grid.sight_cell(cx, cy + sy) {
+                return true;
+            }
+            cx += sx;
+            cy += sy;
+            to_bx += CELL;
+            to_by += CELL;
+        }
+        if grid.sight_cell(cx, cy) {
+            return true;
+        }
+    }
+    false
+}
+
 impl World {
     pub fn new(seed: u64, content: &ContentDb) -> World {
         World::new_for_zone(seed, content, "withered_shore")
@@ -543,7 +592,26 @@ impl World {
                         respawn_timer: 0,
                     });
                 }
-                generate_obstacles(&mut zone, seed, def.gen_rocks, def.gen_trees);
+                match (&def.tiles, &def.tileset) {
+                    // Authored zones: collision IS the map; nothing is
+                    // generated. Tileset presence was validated at load.
+                    (Some(tiles), Some(ts_id)) => {
+                        let ts = content.tileset(ts_id).expect("content validated at load");
+                        let mut walk = Vec::with_capacity(tiles.cells.len());
+                        let mut los = Vec::with_capacity(tiles.cells.len());
+                        for &c in &tiles.cells {
+                            walk.push(ts.tiles[c as usize].walkable);
+                            los.push(ts.tiles[c as usize].blocks_los);
+                        }
+                        zone.grid = Some(crate::zone::SimGrid {
+                            width: tiles.width,
+                            height: tiles.height,
+                            walk,
+                            los,
+                        });
+                    }
+                    _ => generate_obstacles(&mut zone, seed, def.gen_rocks, def.gen_trees),
+                }
                 zone
             }
             None => Zone::new(
@@ -665,10 +733,21 @@ impl World {
             return self.zone.spawn;
         }
         let r = r as u32;
-        let dx = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
-        let dy = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
-        let spawn = self.zone.spawn;
-        self.zone.clamp_pos(FxV2::new(spawn.x + dx, spawn.y + dy))
+        // Authored zones reject draws that land in walls/water (a handful
+        // of retries, then the exact spawn point — which load validation
+        // guarantees walkable). Generated zones keep their single draw.
+        let attempts = if self.zone.grid.is_some() { 8 } else { 1 };
+        for _ in 0..attempts {
+            let dx = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
+            let dy = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
+            let spawn = self.zone.spawn;
+            let pos = self.zone.clamp_pos(FxV2::new(spawn.x + dx, spawn.y + dy));
+            match &self.zone.grid {
+                Some(grid) if !grid.walkable_pos(pos) => continue,
+                _ => return pos,
+            }
+        }
+        self.zone.spawn
     }
 
     /// Speech bubbles from content tables only (monsters: their def's
@@ -948,9 +1027,15 @@ impl World {
     /// out radially, with a consistent tangential bias so an entity walking
     /// dead-center at a rock slides around it instead of pinning against
     /// the face. Runs after separation, in slot order — deterministic.
+    /// Authored zones push out of solid tiles instead; wall sliding falls
+    /// out of the axis-aligned correction naturally.
     fn obstacle_pushout(&mut self) {
         /// Max correction per tick: firm enough to beat any move speed.
         const MAX_PUSH: Fx = Fx::from_raw(0x8000); // 0.5 u
+        if self.zone.grid.is_some() {
+            self.grid_pushout(MAX_PUSH);
+            return;
+        }
         if self.zone.obstacles.is_empty() {
             return;
         }
@@ -993,10 +1078,82 @@ impl World {
         }
     }
 
-    /// Walls: does the straight line a→b cross any obstacle? Integer
-    /// segment-vs-disc with coordinates downshifted 8 bits (1/256 u
-    /// precision — ample for cover checks) so every product fits i64.
+    /// Tile-grid pushout: the entity circle vs the solid cells of the 3×3
+    /// neighborhood, via closest-point-on-AABB. Cells iterate in a fixed
+    /// order and corrections accumulate — deterministic like the disc path.
+    fn grid_pushout(&mut self, max_push: Fx) {
+        const CELL: i64 = 65536;
+        for slot in 0..self.zone.slot_count() {
+            let Some(e) = self.zone.get(slot) else {
+                continue;
+            };
+            if !e.alive() {
+                continue;
+            }
+            let Some(c) = &e.combat else { continue };
+            let (pos, radius) = (e.pos, c.radius);
+            let grid = self.zone.grid.as_ref().expect("checked by caller");
+            let (ccx, ccy) = (
+                (pos.x.raw() as i64).div_euclid(CELL),
+                (pos.y.raw() as i64).div_euclid(CELL),
+            );
+            let mut push_x = Fx::ZERO;
+            let mut push_y = Fx::ZERO;
+            for oy in -1..=1i64 {
+                for ox in -1..=1i64 {
+                    let (cx, cy) = (ccx + ox, ccy + oy);
+                    if !grid.solid_cell(cx, cy) {
+                        continue;
+                    }
+                    // Closest point on the cell's AABB to the entity.
+                    let nearest = FxV2::new(
+                        Fx::from_raw((pos.x.raw() as i64).clamp(cx * CELL, (cx + 1) * CELL) as i32),
+                        Fx::from_raw((pos.y.raw() as i64).clamp(cy * CELL, (cy + 1) * CELL) as i32),
+                    );
+                    let dist = pos.dist(nearest);
+                    if dist >= radius {
+                        continue;
+                    }
+                    if dist > Fx::from_raw(0x100) {
+                        let need = (radius - dist).min(max_push);
+                        let f = Fx::ONE / dist;
+                        push_x += (pos.x - nearest.x) * f * need;
+                        push_y += (pos.y - nearest.y) * f * need;
+                    } else {
+                        // On or inside the solid cell: escape along the
+                        // dominant axis away from the cell center
+                        // (deterministic; dead-center ties go +x).
+                        let half = CELL / 2;
+                        let dcx = pos.x.raw() as i64 - (cx * CELL + half);
+                        let dcy = pos.y.raw() as i64 - (cy * CELL + half);
+                        if dcx.abs() >= dcy.abs() {
+                            push_x += if dcx >= 0 { max_push } else { -max_push };
+                        } else {
+                            push_y += if dcy >= 0 { max_push } else { -max_push };
+                        }
+                    }
+                }
+            }
+            if push_x.raw() != 0 || push_y.raw() != 0 {
+                let new_pos = self
+                    .zone
+                    .clamp_pos(FxV2::new(pos.x + push_x, pos.y + push_y));
+                if let Some(me) = self.zone.get_mut(slot) {
+                    me.pos = new_pos;
+                }
+            }
+        }
+    }
+
+    /// Walls: does the straight line a→b cross any obstacle? Authored
+    /// zones answer from the tile grid; generated zones from the disc
+    /// scatter. Integer segment-vs-disc with coordinates downshifted 8
+    /// bits (1/256 u precision — ample for cover checks) so every
+    /// product fits i64.
     pub(crate) fn los_blocked(&self, a: FxV2, b: FxV2) -> bool {
+        if let Some(grid) = &self.zone.grid {
+            return grid_sight_blocked(grid, a, b);
+        }
         const S: i64 = 8;
         let ax = (a.x.raw() as i64) >> S;
         let ay = (a.y.raw() as i64) >> S;
@@ -1106,16 +1263,32 @@ impl World {
             let jitter_r = Fx::from_int(pack.def.radius_u as i16).raw() as u32;
             for _ in 0..missing {
                 // Radius 0 = staked exactly on the anchor (tutorial prey,
-                // bosses).
-                let (dx, dy) = if jitter_r == 0 {
-                    (Fx::ZERO, Fx::ZERO)
-                } else {
-                    (
-                        Fx::from_raw(self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32),
-                        Fx::from_raw(self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32),
-                    )
-                };
-                let pos = self.zone.clamp_pos(FxV2::new(anchor.x + dx, anchor.y + dy));
+                // bosses). Authored zones retry draws that land in walls,
+                // falling back to the anchor (validated walkable at load).
+                let attempts = if self.zone.grid.is_some() { 8 } else { 1 };
+                let mut pos = self.zone.clamp_pos(anchor);
+                for _ in 0..attempts {
+                    let (dx, dy) = if jitter_r == 0 {
+                        (Fx::ZERO, Fx::ZERO)
+                    } else {
+                        (
+                            Fx::from_raw(
+                                self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32,
+                            ),
+                            Fx::from_raw(
+                                self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32,
+                            ),
+                        )
+                    };
+                    let candidate = self.zone.clamp_pos(FxV2::new(anchor.x + dx, anchor.y + dy));
+                    match &self.zone.grid {
+                        Some(grid) if !grid.walkable_pos(candidate) => continue,
+                        _ => {
+                            pos = candidate;
+                            break;
+                        }
+                    }
+                }
                 self.spawn_monster(monster_idx, pack_idx as u32, pos);
             }
             self.zone.packs[pack_idx].alive = count;
