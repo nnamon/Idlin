@@ -603,10 +603,14 @@ impl World {
                     });
                 }
                 for exit in &def.exits {
+                    // Exit coords name a CELL; the portal stands at its
+                    // center (corner placement put the ring inside the
+                    // neighboring wall).
+                    const HALF: Fx = Fx::from_raw(0x8000);
                     zone.exits.push(crate::zone::ExitState {
                         pos: FxV2::new(
-                            Fx::from_int(exit.x_u as i16),
-                            Fx::from_int(exit.y_u as i16),
+                            Fx::from_int(exit.x_u as i16) + HALF,
+                            Fx::from_int(exit.y_u as i16) + HALF,
                         ),
                         dest: exit.dest.clone(),
                         open: exit.open,

@@ -23,6 +23,6 @@ ZoneDef(
     // ferry out, and rejoin at the south camp. The full transfer
     // machinery, visible on a loop.
     exits: [
-        (x_u: 13, y_u: 1, dest: "test_range", open: true),
+        (x_u: 13, y_u: 2, dest: "test_range", open: true),
     ],
 )
