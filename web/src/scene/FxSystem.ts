@@ -90,7 +90,8 @@ export class FxSystem {
     f.mat.opacity = 0.9;
     f.sprite.visible = true;
     f.sprite.scale.set(scale, scale, 1);
-    f.sprite.position.copy(at).setY(1.1);
+    f.sprite.position.copy(at);
+    f.sprite.position.y += 1.1;
   }
 
   private spawnTracer(from: THREE.Vector3, to: THREE.Vector3, now: number): void {
@@ -119,8 +120,10 @@ export class FxSystem {
     }
     t.active = true;
     t.bornAt = now;
-    t.from.copy(from).setY(1.3);
-    t.to.copy(to).setY(1.0);
+    t.from.copy(from);
+    t.from.y += 1.3;
+    t.to.copy(to);
+    t.to.y += 1.0;
     t.flightMs = Math.min(220, Math.max(90, t.from.distanceTo(t.to) * 22));
     t.mat.opacity = 1;
     t.sprite.visible = true;
@@ -169,7 +172,7 @@ export class FxSystem {
     n.bornAt = now;
     n.ttlMs = big ? 950 : 750;
     n.big = big;
-    n.baseY = 1.7;
+    n.baseY = at.y + 1.7;
     n.driftX = (Math.random() - 0.5) * 0.7;
     n.mat.opacity = 1;
     n.sprite.visible = true;

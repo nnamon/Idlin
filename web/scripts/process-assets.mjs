@@ -58,6 +58,8 @@ const PARTS_DIR = join(
 );
 const MONSTERS_FBX = join(packsDir, "lowpoly-animated-monsters/FBX");
 const WEAPONS_FBX = join(packsDir, "lowpoly-medieval-weapons/FBX");
+const NATURE_GLTF = join(packsDir, "nature/glTF");
+const PROPS_GLTF = join(packsDir, "props/Exports/glTF");
 
 // Clips the renderer's state machine uses (manifest.json maps roles → names).
 const CLIPS_UAL1 = [
@@ -308,6 +310,28 @@ for (const hair of HAIRS) {
   await finalize(doc, 128);
   await writeCompressed(doc, resolve(partsOut, `${hair.toLowerCase()}.glb`));
   console.log(`parts/${hair.toLowerCase()}.glb`);
+}
+
+// ---- 2c. environment props (static; scattered by the client) ----
+const ENV_PROPS = [
+  ["rock_1", join(NATURE_GLTF, "Rock_Medium_1.gltf")],
+  ["rock_2", join(NATURE_GLTF, "Rock_Medium_2.gltf")],
+  ["rock_3", join(NATURE_GLTF, "Rock_Medium_3.gltf")],
+  ["deadtree_1", join(NATURE_GLTF, "DeadTree_1.gltf")],
+  ["deadtree_2", join(NATURE_GLTF, "DeadTree_2.gltf")],
+  ["deadtree_3", join(NATURE_GLTF, "DeadTree_3.gltf")],
+  ["grass_1", join(NATURE_GLTF, "Grass_Wispy_Short.gltf")],
+  ["grass_2", join(NATURE_GLTF, "Grass_Wispy_Tall.gltf")],
+  ["barrel", join(PROPS_GLTF, "Barrel.gltf")],
+  ["crate", join(PROPS_GLTF, "Crate_Wooden.gltf")],
+];
+const propsDir = resolve(outDir, "props");
+mkdirSync(propsDir, { recursive: true });
+for (const [key, src2] of ENV_PROPS) {
+  const doc = await io.read(src2);
+  await finalize(doc, 256);
+  await writeCompressed(doc, resolve(propsDir, `${key}.glb`));
+  console.log(`props/${key}.glb height ${sceneHeight(doc).toFixed(2)}`);
 }
 
 // ---- 3. FBX-origin models (own rigs / static weapons) ----

@@ -11,6 +11,7 @@ import { DirectorCamera } from "../camera/DirectorCamera";
 import { AssetLibrary } from "./Assets";
 import { EntityVisual, SharedResources } from "./EntityVisuals";
 import { FxSystem } from "./FxSystem";
+import { Terrain } from "./Terrain";
 
 const SKY_COLOR = 0x07070d;
 
@@ -34,6 +35,7 @@ export class ZoneRenderer {
   readonly director: DirectorCamera;
 
   private assets: AssetLibrary | null = null;
+  private terrain: Terrain | null = null;
   private shared = new SharedResources();
   private visuals = new Map<number, EntityVisual>();
   private fx: FxSystem;
@@ -122,39 +124,16 @@ export class ZoneRenderer {
     this.composer.setSize(w, h);
   }
 
-  /** Dark, speckled sand — procedural so there's nothing to download. */
-  private makeGroundTexture(): THREE.CanvasTexture {
-    const c = document.createElement("canvas");
-    c.width = 256;
-    c.height = 256;
-    const ctx = c.getContext("2d")!;
-    ctx.fillStyle = "#15151f";
-    ctx.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 2600; i++) {
-      const v = Math.random();
-      ctx.fillStyle = v > 0.66 ? "#1b1d29" : v > 0.33 ? "#101018" : "#191724";
-      ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 1.5);
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-  }
-
   private buildZone(): void {
     const zone = this.store.zone;
-    if (!zone) return;
+    if (!zone || !this.assets) return;
     const { width: w, height: h } = zone;
 
-    const groundTex = this.makeGroundTexture();
-    groundTex.repeat.set(w / 8, h / 8);
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(w / 2, 0, h / 2);
-    ground.receiveShadow = true;
-    this.scene.add(ground);
+    // Cosmetic terrain: heightmap ground, sea, sky, scattered props. The
+    // sim stays 2D; everything samples terrain.heightAt for its foot Y.
+    this.terrain = new Terrain(w, h, zone.name);
+    this.terrain.build(this.assets);
+    this.scene.add(this.terrain.group);
 
     // Moon angled across the zone; shadow frustum sized to cover it.
     this.moon.position.set(w / 2 - 35, 45, h / 2 - 22);
@@ -178,14 +157,14 @@ export class ZoneRenderer {
       [0.18, 0.74],
     ];
     for (const [fx, fz] of spots) {
-      this.addBrazier(w * fx, h * fz);
+      this.addBrazier(w * fx, h * fz, this.terrain.heightAt(w * fx, h * fz));
     }
 
     this.director.setZoneCenter(w / 2, h / 2, Math.max(w, h));
     this.zoneBuilt = true;
   }
 
-  private addBrazier(x: number, z: number): void {
+  private addBrazier(x: number, z: number, y: number): void {
     const group = new THREE.Group();
     const post = new THREE.Mesh(
       new THREE.CylinderGeometry(0.16, 0.22, 1.1, 8),
@@ -211,7 +190,7 @@ export class ZoneRenderer {
     const light = new THREE.PointLight(0xff9a4a, 48, 19, 2);
     light.position.y = 1.7;
     group.add(post, bowl, coals, light);
-    group.position.set(x, 0, z);
+    group.position.set(x, y - 0.04, z);
     this.scene.add(group);
     this.braziers.push({ light, baseIntensity: 48, phase: Math.random() * Math.PI * 2 });
   }
@@ -222,9 +201,10 @@ export class ZoneRenderer {
     const now = performance.now();
     const t = this.timer.getElapsed();
 
-    if (!this.zoneBuilt && this.store.zone) {
+    if (!this.zoneBuilt && this.store.zone && this.assets) {
       this.buildZone();
     }
+    this.terrain?.update(t);
 
     for (const b of this.braziers) {
       b.light.intensity =
@@ -242,7 +222,8 @@ export class ZoneRenderer {
           this.scene.add(v.group);
           this.visuals.set(id, v);
         }
-        v.update(er, this.store.renderPos(er, now), dt, t);
+        const pos = this.store.renderPos(er, now);
+        v.update(er, pos, dt, t, this.terrain?.heightAt(pos.x, pos.y) ?? 0);
       }
       for (const [id, v] of this.visuals) {
         if (!seen.has(id)) {
@@ -278,7 +259,11 @@ export class ZoneRenderer {
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;
     if (focus) {
       this.focusRing.visible = true;
-      this.focusRing.position.set(focus.group.position.x, 0.05, focus.group.position.z);
+      this.focusRing.position.set(
+        focus.group.position.x,
+        focus.group.position.y + 0.06,
+        focus.group.position.z,
+      );
       const pulse = 1 + Math.sin(t * 4) * 0.12;
       this.focusRing.scale.set(pulse, pulse, 1);
       this.director.follow(focus.group.position, dt, zoom);

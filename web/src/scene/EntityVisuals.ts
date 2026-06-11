@@ -334,8 +334,8 @@ export class EntityVisual {
     action.reset().fadeIn(FADE_S * 0.5).play();
   }
 
-  update(er: EntityRender, pos: { x: number; y: number }, dt: number, t: number): void {
-    this.group.position.set(pos.x, 0, pos.y);
+  update(er: EntityRender, pos: { x: number; y: number }, dt: number, t: number, groundY = 0): void {
+    this.group.position.set(pos.x, groundY, pos.y);
 
     if (this.lootMesh) {
       this.lootMesh.rotation.y += dt * 1.5;

@@ -259,5 +259,37 @@
     "wand": {
       "file": "models/wand.glb"
     }
+  },
+  "props": {
+    "rock_1": {
+      "file": "models/props/rock_1.glb"
+    },
+    "rock_2": {
+      "file": "models/props/rock_2.glb"
+    },
+    "rock_3": {
+      "file": "models/props/rock_3.glb"
+    },
+    "deadtree_1": {
+      "file": "models/props/deadtree_1.glb"
+    },
+    "deadtree_2": {
+      "file": "models/props/deadtree_2.glb"
+    },
+    "deadtree_3": {
+      "file": "models/props/deadtree_3.glb"
+    },
+    "grass_1": {
+      "file": "models/props/grass_1.glb"
+    },
+    "grass_2": {
+      "file": "models/props/grass_2.glb"
+    },
+    "barrel": {
+      "file": "models/props/barrel.glb"
+    },
+    "crate": {
+      "file": "models/props/crate.glb"
+    }
   }
 }

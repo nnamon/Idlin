@@ -50,6 +50,8 @@ interface Manifest {
   models: Record<string, ModelDef>;
   parts: Record<string, PartDef>;
   weapons: Record<string, { file: string }>;
+  /** Static environment props, scattered deterministically by Terrain. */
+  props: Record<string, { file: string }>;
 }
 
 export interface ModelInstance {
@@ -85,6 +87,7 @@ export class AssetLibrary {
     }
     for (const def of Object.values(manifest.parts)) def.files.forEach((f) => paths.add(f));
     for (const def of Object.values(manifest.weapons)) paths.add(def.file);
+    for (const def of Object.values(manifest.props ?? {})) paths.add(def.file);
 
     const files = new Map<string, LoadedFile>();
     await Promise.all(
@@ -146,6 +149,13 @@ export class AssetLibrary {
   /** Clone a static weapon prop (shares geometry/materials). */
   instantiateWeapon(key: string): THREE.Object3D | null {
     const def = this.manifest.weapons[key];
+    const loaded = def ? this.files.get(def.file) : undefined;
+    return loaded ? loaded.scene.clone() : null;
+  }
+
+  /** Clone an environment prop (shares geometry/materials). */
+  instantiateProp(key: string): THREE.Object3D | null {
+    const def = this.manifest.props?.[key];
     const loaded = def ? this.files.get(def.file) : undefined;
     return loaded ? loaded.scene.clone() : null;
   }
