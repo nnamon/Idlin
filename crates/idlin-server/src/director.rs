@@ -17,6 +17,17 @@ pub struct Cue {
 const FOCUS_COOLDOWN_TICKS: u64 = 200;
 /// Default idle rotation hold.
 const IDLE_HOLD_TICKS: u32 = 80;
+/// Re-broadcast the current cue this often even when focus is unchanged —
+/// cues aren't in the snapshot, so without this a viewer who connects
+/// after the last cut idles in overview forever (exactly what happens
+/// with a single character, whose focus never changes).
+const REFRESH_TICKS: u64 = 50;
+/// A deliberate sweeping look at the whole zone, once a minute…
+const OVERVIEW_EVERY: u64 = 600;
+/// …held for five seconds before the camera returns to the people.
+const OVERVIEW_HOLD: u32 = 50;
+/// Sentinel focus: matches no entity, so the client plays its overview.
+pub const OVERVIEW_FOCUS: u32 = 0;
 
 // Event scoring: (score, hold_ticks) per event class. Higher score wins the
 // tick and interrupts a weaker hold. Presentation tuning, not game balance —
@@ -36,6 +47,10 @@ pub struct Director {
     cooldowns: HashMap<u32, u64>,
     rotation: Vec<u32>,
     rotation_idx: usize,
+    /// Tick of the last cue actually broadcast (drives the refresher).
+    last_emit: u64,
+    /// Next scheduled overview beat.
+    next_overview: u64,
 }
 
 impl Director {
@@ -47,6 +62,8 @@ impl Director {
             cooldowns: HashMap::new(),
             rotation: Vec::new(),
             rotation_idx: 0,
+            last_emit: 0,
+            next_overview: OVERVIEW_EVERY,
         }
     }
 
@@ -94,6 +111,7 @@ impl Director {
             let interrupts = tick >= self.hold_until || score > self.current_score;
             if interrupts && self.focus != Some(focus) {
                 self.set_focus(focus, score, tick, hold as u64);
+                self.last_emit = tick;
                 return Some(Cue {
                     focus,
                     reason: reason.to_string(),
@@ -102,12 +120,31 @@ impl Director {
             }
         }
 
-        // Idle rotation between characters.
+        // A scheduled overview beat: a sweeping look at the whole zone,
+        // never interrupting an event hold; the rotation resumes after.
+        if tick >= self.next_overview && tick >= self.hold_until && !self.rotation.is_empty() {
+            self.next_overview = tick + OVERVIEW_EVERY;
+            self.focus = None;
+            self.current_score = 0;
+            self.hold_until = tick + OVERVIEW_HOLD as u64;
+            self.last_emit = tick;
+            return Some(Cue {
+                focus: OVERVIEW_FOCUS,
+                reason: "the wider shore".to_string(),
+                hold_ticks: OVERVIEW_HOLD,
+            });
+        }
+
+        // Idle rotation between characters. Even an unchanged focus is
+        // re-broadcast periodically — cues aren't in the snapshot, and a
+        // viewer who joins after the last cut must still lock on.
         if tick >= self.hold_until && !self.rotation.is_empty() {
             self.rotation_idx = (self.rotation_idx + 1) % self.rotation.len();
             let focus = self.rotation[self.rotation_idx];
-            if self.focus != Some(focus) {
+            let refresh_due = tick.saturating_sub(self.last_emit) >= REFRESH_TICKS;
+            if self.focus != Some(focus) || refresh_due {
                 self.set_focus(focus, 0, tick, IDLE_HOLD_TICKS as u64);
+                self.last_emit = tick;
                 return Some(Cue {
                     focus,
                     reason: "roaming".to_string(),
@@ -183,9 +220,22 @@ mod tests {
         assert_eq!(first.reason, "roaming");
         // An empty roster must not panic or cue.
         assert!(d.update(1000, &[], &[]).is_none());
-        // Roster back: rotation resumes.
+        // Roster back: an overdue overview may take the first slot; the
+        // rotation must resume on a character right after.
         let next = d.update(2000, &[], &[10, 11]).expect("idle cue");
-        assert!(next.focus == 10 || next.focus == 11);
+        if next.focus == OVERVIEW_FOCUS {
+            let mut resumed = None;
+            for t in 2001..2300 {
+                if let Some(c) = d.update(t, &[], &[10, 11]) {
+                    resumed = Some(c);
+                    break;
+                }
+            }
+            let c = resumed.expect("rotation resumes after the sweep");
+            assert!(c.focus == 10 || c.focus == 11);
+        } else {
+            assert!(next.focus == 10 || next.focus == 11);
+        }
     }
 
     #[test]
@@ -194,5 +244,50 @@ mod tests {
         d.update(1, &[death(1)], &[1, 2]).expect("death cue");
         // A mere kill (score 30 < 80) during the death hold: no cut.
         assert!(d.update(2, &[kill(2)], &[1, 2]).is_none());
+    }
+
+    #[test]
+    fn a_lone_character_is_recued_for_late_joiners() {
+        let mut d = Director::new();
+        let first = d.update(1, &[], &[42]).expect("initial cue");
+        assert_eq!(first.focus, 42);
+        // Focus never changes with one character — but the cue must still
+        // re-broadcast so late-connecting viewers lock on.
+        let mut refreshed = false;
+        for t in 2..200 {
+            if let Some(c) = d.update(t, &[], &[42]) {
+                assert_eq!(c.focus, 42);
+                refreshed = true;
+                break;
+            }
+        }
+        assert!(refreshed, "the lone-character cue must refresh");
+    }
+
+    #[test]
+    fn overview_beats_arrive_on_schedule_and_yield_to_people() {
+        let mut d = Director::new();
+        d.update(1, &[], &[7]).expect("initial cue");
+        // March to the first scheduled overview.
+        let mut saw_overview_at = None;
+        for t in 2..OVERVIEW_EVERY + 200 {
+            if let Some(c) = d.update(t, &[], &[7])
+                && c.focus == OVERVIEW_FOCUS
+            {
+                saw_overview_at = Some(t);
+                break;
+            }
+        }
+        let t0 = saw_overview_at.expect("a scheduled overview must fire");
+        // And afterwards the camera returns to the character.
+        let mut returned = false;
+        for t in t0 + 1..t0 + 200 {
+            if let Some(c) = d.update(t, &[], &[7]) {
+                assert_eq!(c.focus, 7, "people come back after the sweep");
+                returned = true;
+                break;
+            }
+        }
+        assert!(returned);
     }
 }
