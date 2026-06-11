@@ -244,8 +244,11 @@ export class ZoneRenderer {
         const attacker = this.visuals.get(hit.attacker);
         const target = this.visuals.get(hit.target);
         if (!target) continue;
-        attacker?.playAttack(target.group.position);
-        this.fx.spawnHit(hit, attacker?.group.position ?? null, target.group.position, now);
+        if (!hit.dot) attacker?.playAttack(target.group.position);
+        this.fx.spawnHit(hit, target.group.position, now);
+      }
+      for (const p of this.store.drainProjectiles()) {
+        this.fx.spawnProjectile(p, (x, z) => this.terrain?.heightAt(x, z) ?? 0, now);
       }
     }
     this.fx.update(now);

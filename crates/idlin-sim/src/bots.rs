@@ -47,10 +47,12 @@ pub const SYS_READ_SKILLS: i32 = 18;
 pub const SYS_SOCKET_GEM: i32 = 19;
 pub const SYS_COUNT_ENTITIES: i32 = 20;
 pub const SYS_LINE_OF_SIGHT: i32 = 21;
+pub const SYS_USE_SKILL_AT: i32 = 22;
+pub const SYS_USE_SKILL_DIR: i32 = 23;
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
-pub const SKILL_RECORD_SIZE: u16 = 28;
+pub const SKILL_RECORD_SIZE: u16 = 48; // 12 words
 
 /// Size of one ReadInventory record in bytes:
 /// base_idx, slot, rarity, item_level, x, y, w, h.
@@ -225,6 +227,15 @@ impl World {
                     })
                     .unwrap_or(0);
                 let range = combat.map(|c| c.range.raw()).unwrap_or(0);
+                let mana = combat
+                    .map(|c| c.mana.clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0);
+                let mana_max = combat
+                    .map(|c| c.mana_max.clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0);
+                let es = combat
+                    .map(|c| c.es.clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0);
                 let fields = [
                     e.pos.x.raw(),
                     e.pos.y.raw(),
@@ -239,6 +250,9 @@ impl World {
                     anchor.y.raw(),
                     aggro,
                     range,
+                    mana,
+                    mana_max,
+                    es,
                 ];
                 for (i, v) in fields.into_iter().enumerate() {
                     bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);
@@ -354,38 +368,44 @@ impl World {
                 }
             }
             SYS_USE_SKILL => {
-                // Slot 0 = basic weapon attack; 1..N = socketed skill gems in
-                // tree-node order. Returns -1 for an unknown slot or a skill
-                // still on cooldown, so bots can fall back to slot 0.
+                // Slot 0 = basic weapon attack; 1..N = socketed skill gems
+                // in tree-node order. Entity-aimed. Rich error codes (see
+                // docs/bot-guide.md): 0 ok, -1 slot, -2 cooldown, -3 busy,
+                // -4 mana, -5 range, -6 LoS, -7 wrong mode, -8 target.
                 let skill_slot = bot.vm.pop();
                 let target = bot.vm.pop();
                 let _x = bot.vm.pop();
                 let _y = bot.vm.pop();
-                let Some(e) = self.zone.get(slot) else {
-                    return -1;
-                };
-                let skill = if skill_slot <= 0 {
-                    None
-                } else {
-                    let Some(ch) = &e.character else { return -1 };
-                    let nodes = self.skill_nodes(ch);
-                    let Some(&node) = nodes.get(skill_slot as usize - 1) else {
-                        return -1;
-                    };
-                    if ch.sockets[&node].cooldown_left > 0 {
-                        return -1;
-                    }
-                    Some(node)
-                };
-                if let Some(e) = self.zone.get_mut(slot) {
-                    e.intents.attack = Some(crate::entity::AttackIntent {
-                        target: target as u32,
-                        skill,
-                    });
-                    0
-                } else {
-                    -1
-                }
+                self.try_use_skill(
+                    slot,
+                    skill_slot,
+                    crate::entity::SkillTarget::Entity(target as u32),
+                )
+            }
+            SYS_USE_SKILL_AT => {
+                // Point-aimed skills: ground-target a location.
+                let skill_slot = bot.vm.pop();
+                let x = bot.vm.pop();
+                let y = bot.vm.pop();
+                self.try_use_skill(
+                    slot,
+                    skill_slot,
+                    crate::entity::SkillTarget::Point(FxV2::new(Fx::from_raw(x), Fx::from_raw(y))),
+                )
+            }
+            SYS_USE_SKILL_DIR => {
+                // Direction-aimed skills: cones, lines, projectile volleys.
+                let skill_slot = bot.vm.pop();
+                let dx = bot.vm.pop();
+                let dy = bot.vm.pop();
+                self.try_use_skill(
+                    slot,
+                    skill_slot,
+                    crate::entity::SkillTarget::Direction(FxV2::new(
+                        Fx::from_raw(dx),
+                        Fx::from_raw(dy),
+                    )),
+                )
             }
             SYS_PICK_UP => {
                 let id = bot.vm.pop();
@@ -463,22 +483,46 @@ impl World {
                 };
                 let Some(ch) = &e.character else { return -1 };
                 let nodes = self.skill_nodes(ch);
-                let records: Vec<[i32; 7]> = nodes
+                let now = self.tick_count();
+                let records: Vec<[i32; 12]> = nodes
                     .iter()
                     .take(max)
                     .enumerate()
                     .map(|(i, node)| {
                         let sg = &ch.sockets[node];
                         let def = &self.content_gems()[sg.gem.gem_idx as usize];
+                        let c = e.combat.as_ref();
                         let range = if def.range_cu > 0 {
                             crate::world::fx_from_cu(def.range_cu).raw()
                         } else {
-                            e.combat.as_ref().map(|c| c.range.raw()).unwrap_or(0)
+                            c.map(|c| c.range.raw()).unwrap_or(0)
                         };
                         let shape = match def.shape {
                             idlin_content::SkillShape::Target => 0,
                             idlin_content::SkillShape::Nova => 1,
+                            idlin_content::SkillShape::Cone => 2,
+                            idlin_content::SkillShape::Line => 3,
+                            idlin_content::SkillShape::PointAoe => 4,
+                            idlin_content::SkillShape::Projectile => 5,
                         };
+                        let target_mode = match def.target_mode {
+                            idlin_content::TargetMode::Entity => 0,
+                            idlin_content::TargetMode::Point => 1,
+                            idlin_content::TargetMode::Direction => 2,
+                        };
+                        let skill_kind = match def.skill_kind {
+                            idlin_content::SkillKind::Attack => 0,
+                            idlin_content::SkillKind::Spell => 1,
+                        };
+                        let cost = def.mana_cost.at(sg.gem.level).max(0);
+                        let use_ticks = if skill_kind == 1 {
+                            def.cast_ticks.max(2) as i32
+                        } else {
+                            c.map(|c| c.use_ticks as i32).unwrap_or(0)
+                        };
+                        let ready = (sg.cooldown_left == 0
+                            && c.map(|c| c.mana >= cost && now >= c.busy_until)
+                                .unwrap_or(false)) as i32;
                         [
                             (i + 1) as i32,
                             sg.gem.gem_idx as i32,
@@ -487,6 +531,11 @@ impl World {
                             range,
                             shape,
                             crate::world::fx_from_cu(def.radius_cu).raw(),
+                            cost.clamp(0, i32::MAX as i64) as i32,
+                            use_ticks,
+                            target_mode,
+                            skill_kind,
+                            ready,
                         ]
                     })
                     .collect();

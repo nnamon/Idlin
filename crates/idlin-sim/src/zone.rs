@@ -28,6 +28,30 @@ pub struct Obstacle {
     pub kind: u8,
 }
 
+/// A skill projectile in flight. Stepped each tick; hits the first enemy
+/// (or wall) in its path and resolves through the normal strike pipeline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Projectile {
+    pub pos: FxV2,
+    /// Per-tick velocity.
+    pub vel: FxV2,
+    /// Travel budget remaining (units).
+    pub remaining: Fx,
+    pub radius: Fx,
+    pub source: u32,
+    pub source_name: String,
+    pub source_is_char: bool,
+    pub hostile_to_players: bool,
+    pub accuracy: i64,
+    pub damage: [i64; crate::entity::DMG_COUNT],
+    pub crit_bp: i64,
+    pub crit_multi: i64,
+    pub pierce: u32,
+    /// Net ids already struck (pierce passes through each once).
+    pub already_hit: Vec<u32>,
+    pub dot: Option<(u8, i64, u32, u32)>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Zone {
     pub name: String,
@@ -39,6 +63,8 @@ pub struct Zone {
     pub spawn_radius: Fx,
     /// Generated with the area; constant for the zone's lifetime.
     pub obstacles: Vec<Obstacle>,
+    /// Skill projectiles in flight.
+    pub projectiles: Vec<Projectile>,
     pub packs: Vec<PackState>,
     slots: Vec<Option<Entity>>,
     free: Vec<u32>,
@@ -54,6 +80,7 @@ impl Zone {
             spawn,
             spawn_radius,
             obstacles: Vec::new(),
+            projectiles: Vec::new(),
             packs: Vec::new(),
             slots: Vec::new(),
             free: Vec::new(),

@@ -272,6 +272,9 @@ impl World {
                 h.write_i64(c.es_max);
                 h.write_u64(c.es_recharge_at);
                 h.write_i64(c.block);
+                h.write_i64(c.crit_inc);
+                h.write_i64(c.crit_multi);
+                h.write_i64(c.cast_speed);
                 h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
                 h.write_i32(c.radius.raw());
@@ -322,6 +325,30 @@ impl World {
                     }
                 }
             }
+            h.write_u64(e.effects.len() as u64);
+            for ef in &e.effects {
+                match ef {
+                    crate::entity::ActiveEffect::Dot {
+                        dtype,
+                        per_second,
+                        ticks_left,
+                        source,
+                        skill,
+                    } => {
+                        h.write_u8(1);
+                        h.write_u8(*dtype);
+                        h.write_i64(*per_second);
+                        h.write_u32(*ticks_left);
+                        h.write_u32(*source);
+                        h.write_u32(*skill);
+                    }
+                    crate::entity::ActiveEffect::Buff { grants, ticks_left } => {
+                        h.write_u8(2);
+                        h.write_u64(grants.len() as u64);
+                        h.write_u32(*ticks_left);
+                    }
+                }
+            }
             if let Some(m) = &e.monster {
                 h.write_u32(m.def_idx);
                 h.write_u8(m.hostile as u8);
@@ -350,6 +377,15 @@ impl World {
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
             h.write_u32(pack.respawn_timer);
+        }
+        for p in &self.zone.projectiles {
+            h.write_i32(p.pos.x.raw());
+            h.write_i32(p.pos.y.raw());
+            h.write_i32(p.vel.x.raw());
+            h.write_i32(p.vel.y.raw());
+            h.write_i32(p.remaining.raw());
+            h.write_u32(p.source);
+            h.write_u32(p.pierce);
         }
         for ob in &self.zone.obstacles {
             h.write_i32(ob.pos.x.raw());

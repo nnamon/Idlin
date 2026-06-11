@@ -1,9 +1,10 @@
 import * as THREE from "three";
-import type { ActiveHit } from "../world/store";
+import type { ActiveHit, ActiveProjectile } from "../world/store";
 
 /** Damage-number colors by dominant component:
  *  phys, fire, cold, lightning, chaos. */
 const DMG_COLORS = ["#ffe9c8", "#ff8a5a", "#6ab8e8", "#ffe96a", "#c08aff"];
+const PROJ_COLORS = [0xffe9c8, 0xff8a5a, 0x6ab8e8, 0xffe96a, 0xc08aff];
 const MISS_COLOR = "#8a8a99";
 
 const FLASH_POOL = 48;
@@ -58,16 +59,38 @@ export class FxSystem {
     this.glowTex = glowTex;
   }
 
-  spawnHit(hit: ActiveHit, from: THREE.Vector3 | null, to: THREE.Vector3, now: number): void {
-    if (hit.projectile && from) {
-      this.spawnTracer(from, to, now);
+  spawnHit(hit: ActiveHit, to: THREE.Vector3, now: number): void {
+    if (!hit.dot) {
+      this.spawnFlash(
+        to,
+        hit.killed ? 0xff5a5a : 0xfff0c0,
+        hit.killed ? 1.6 : 0.7,
+        now,
+        hit.killed ? 320 : 140,
+      );
     }
-    this.spawnFlash(to, hit.killed ? 0xff5a5a : 0xfff0c0, hit.killed ? 1.6 : 0.7, now, hit.killed ? 320 : 140);
+    const color = DMG_COLORS[hit.dmgType] ?? DMG_COLORS[0];
     if (hit.amount > 0) {
-      this.spawnNumber(to, String(hit.amount), DMG_COLORS[hit.dmgType] ?? DMG_COLORS[0], hit.killed, now);
-    } else {
+      // Crits read loud; dot burns read quiet and steady.
+      const text = hit.crit ? `${hit.amount}!` : String(hit.amount);
+      this.spawnNumber(to, text, hit.dot ? `${color}b0` : color, hit.crit || hit.killed, now);
+    } else if (!hit.dot) {
       this.spawnNumber(to, "miss", MISS_COLOR, false, now);
     }
+  }
+
+  /** A sim-spawned projectile: animate its real flight path. */
+  spawnProjectile(p: ActiveProjectile, groundY: (x: number, z: number) => number, now: number): void {
+    const speed = Math.hypot(p.vx, p.vy); // units per tick
+    if (speed <= 0) return;
+    const flightMs = (p.range / speed) * 100; // ticks → ms
+    const from = new THREE.Vector3(p.x, groundY(p.x, p.y) + 1.2, p.y);
+    const to = new THREE.Vector3(
+      p.x + (p.vx / speed) * p.range,
+      groundY(p.x + (p.vx / speed) * p.range, p.y + (p.vy / speed) * p.range) + 1.0,
+      p.y + (p.vy / speed) * p.range,
+    );
+    this.spawnTracer(from, to, now, Math.min(flightMs, 2500), PROJ_COLORS[p.dmgType] ?? 0xffc06a);
   }
 
   private spawnFlash(at: THREE.Vector3, color: number, scale: number, now: number, ttlMs: number): void {
@@ -95,7 +118,13 @@ export class FxSystem {
     f.sprite.position.y += 1.1;
   }
 
-  private spawnTracer(from: THREE.Vector3, to: THREE.Vector3, now: number): void {
+  private spawnTracer(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    now: number,
+    flightMs?: number,
+    color?: number,
+  ): void {
     let t = this.tracers.find((t) => !t.active);
     if (!t) {
       if (this.tracers.length >= TRACER_POOL) return;
@@ -122,10 +151,9 @@ export class FxSystem {
     t.active = true;
     t.bornAt = now;
     t.from.copy(from);
-    t.from.y += 1.3;
     t.to.copy(to);
-    t.to.y += 1.0;
-    t.flightMs = Math.min(220, Math.max(90, t.from.distanceTo(t.to) * 22));
+    t.flightMs = flightMs ?? Math.min(220, Math.max(90, t.from.distanceTo(t.to) * 22));
+    t.mat.color.setHex(color ?? 0xffc06a);
     t.mat.opacity = 1;
     t.sprite.visible = true;
     t.sprite.position.copy(t.from);

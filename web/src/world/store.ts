@@ -25,10 +25,24 @@ export interface ActiveHit {
   attacker: number;
   target: number;
   amount: number;
-  /** Dominant damage component: 0 phys, 1 elemental, 2 chaos. */
+  /** Dominant damage component: 0 phys, 1 fire, 2 cold, 3 lightning, 4 chaos. */
   dmgType: number;
+  crit: boolean;
+  dot: boolean;
   projectile: boolean;
   killed: boolean;
+  at: number;
+}
+
+/** A projectile in flight (client-side animation; hits are authoritative). */
+export interface ActiveProjectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  /** Sim units of travel budget. */
+  range: number;
+  dmgType: number;
   at: number;
 }
 
@@ -61,6 +75,7 @@ export class WorldStore {
   tick = 0;
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
+  pendingProjectiles: ActiveProjectile[] = [];
   cue: Cue | null = null;
   /** Latest inspect reply (the focus panel); refreshed by Overlay polling. */
   sheet: CharacterSheet | null = null;
@@ -127,8 +142,21 @@ export class WorldStore {
             target: h.target,
             amount: h.amount,
             dmgType: h.dmg_type,
+            crit: h.crit,
+            dot: h.dot,
             projectile: h.projectile,
             killed: h.killed,
+            at: now,
+          });
+        }
+        for (const p of d.projectiles) {
+          this.pendingProjectiles.push({
+            x: p.x / 65536,
+            y: p.y / 65536,
+            vx: p.vx / 65536,
+            vy: p.vy / 65536,
+            range: p.range / 65536,
+            dmgType: p.dmg_type,
             at: now,
           });
         }
@@ -166,6 +194,14 @@ export class WorldStore {
     if (this.pendingHits.length === 0) return [];
     const out = this.pendingHits;
     this.pendingHits = [];
+    return out;
+  }
+
+  /** Renderer drains projectile launches once per frame. */
+  drainProjectiles(): ActiveProjectile[] {
+    if (this.pendingProjectiles.length === 0) return [];
+    const out = this.pendingProjectiles;
+    this.pendingProjectiles = [];
     return out;
   }
 

@@ -101,6 +101,15 @@ impl World {
                 }
             }
         }
+        // Active buffs are grants with a clock; they re-derive on apply and
+        // on expiry, so folding them here keeps one evaluation path.
+        for ef in &e.effects {
+            if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
+                for g in grants {
+                    sheet.apply(g);
+                }
+            }
+        }
         let mut weapon: Option<&Item> = None;
         let mut armour_base = 0i64;
         let mut evasion_base = base_evasion(level);
@@ -234,6 +243,9 @@ impl World {
         let leech_life = sheet.value(Stat::LeechLife, 0);
         let leech_mana = sheet.value(Stat::LeechMana, 0);
         let block = sheet.value(Stat::Block, block_base).min(7500);
+        let crit_inc = sheet.value(Stat::CritChance, 10000).max(0);
+        let crit_multi = (15000 + sheet.value(Stat::CritMulti, 0)).max(10000);
+        let cast_speed = sheet.value(Stat::CastSpeed, 10000).max(1000);
         let speed = Fx::from_raw(
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
@@ -257,6 +269,9 @@ impl World {
             c.leech_life = leech_life;
             c.leech_mana = leech_mana;
             c.block = block;
+            c.crit_inc = crit_inc;
+            c.crit_multi = crit_multi;
+            c.cast_speed = cast_speed;
             c.damage = damage;
             c.accuracy = accuracy;
             c.evasion = evasion;

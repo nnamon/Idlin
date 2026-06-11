@@ -26,6 +26,7 @@ impl World {
             net_id,
             pos,
             intents: Default::default(),
+            effects: Vec::new(),
             bot: None,
             combat: None,
             character: None,

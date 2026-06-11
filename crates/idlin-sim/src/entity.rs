@@ -72,6 +72,12 @@ pub struct CombatStats {
     pub leech_mana: i64,
     /// Basis points chance to negate an incoming hit (shield-granted).
     pub block: i64,
+    /// Factor on skills' base crit chance (10000 = unchanged).
+    pub crit_inc: i64,
+    /// Total crit damage multiplier in basis points (15000 = ×1.5).
+    pub crit_multi: i64,
+    /// Factor on spell cast time (10000 = unchanged; higher = faster).
+    pub cast_speed: i64,
     /// Per-type attack damage: phys, fire, cold, lightning, chaos.
     pub damage: [i64; DMG_COUNT],
     pub accuracy: i64,
@@ -106,12 +112,42 @@ impl CombatStats {
     }
 }
 
-/// An attack intent: which enemy, with what. `skill: None` is the basic
+/// How a skill use is aimed; which forms are legal is the gem's
+/// target_mode (content).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum SkillTarget {
+    Entity(u32),
+    Point(FxV2),
+    Direction(FxV2),
+}
+
+/// An attack intent: aim plus what fires. `skill: None` is the basic
 /// weapon attack; `Some(node)` names the tree socket whose gem fires.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AttackIntent {
-    pub target: u32,
+    pub target: SkillTarget,
     pub skill: Option<u32>,
+}
+
+/// A timed effect on an entity: skill-applied damage over time, or a
+/// temporary stat buff (folded into refresh_derived_stats while active).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ActiveEffect {
+    Dot {
+        /// DMG_* index.
+        dtype: u8,
+        /// Damage applied once per second while active.
+        per_second: i64,
+        ticks_left: u32,
+        /// Attacker net id (XP/credit on death-by-dot goes here if alive).
+        source: u32,
+        /// Gem index (one dot per source+skill; reapply refreshes).
+        skill: u32,
+    },
+    Buff {
+        grants: Vec<crate::stats::Grant>,
+        ticks_left: u32,
+    },
 }
 
 /// Per-tick action intents. `attack`/`pickup` are cleared every tick (bots
@@ -268,6 +304,9 @@ pub struct Entity {
     pub net_id: u32,
     pub pos: FxV2,
     pub intents: Intents,
+    /// Timed effects (dots, buffs); swept by the effects pass.
+    #[serde(default)]
+    pub effects: Vec<ActiveEffect>,
     /// Index into the bot arena — characters AND monsters both think in the
     /// same VM; an entity without a bot (loot) just doesn't act.
     pub bot: Option<u32>,

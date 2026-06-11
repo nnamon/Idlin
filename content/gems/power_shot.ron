@@ -1,13 +1,20 @@
-// Skill: a single heavy ranged attack.
+// Skill: a single heavy arrow — a real projectile that flies, pierces
+// one body, and stops on walls.
 GemDef(
     id: "power_shot",
     name: "Power Shot",
     kind: skill,
+    skill_kind: attack,
+    target_mode: entity,
+    tags: [attack, projectile, physical],
     weight: 80,
     coeff_bp: 17000,        // 170% of weapon damage
-    shape: target,
-    projectile: true,
+    shape: projectile,
+    proj_speed_cps: 1800,
+    pierce: 1,
     range_cu: 1100,
+    crit_bp: 700,
+    mana_cost: (base: 5, per_level: 0),
     support_slots: 1,
-    cooldown_ticks: 22,
+    cooldown_ticks: 22,     // special: stays on a cooldown
 )

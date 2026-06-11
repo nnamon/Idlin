@@ -94,6 +94,30 @@ fire, cold, lightning, chaos** — with four typed resistances (capped at
   crafting system).
 - Socketed gems each receive half of whatever XP their owner gains.
 
+## Crits, projectiles, dots, and shapes
+
+- **Critical strikes**: every skill carries a base crit chance (the basic
+  attack: 5%); the `crit_chance` stat scales it, capped 95%. A crit
+  multiplies the post-mitigation hit by your `crit_multi` (base ×1.5).
+  Spells crit too. Dots never crit.
+- **Spells vs attacks**: attacks scale the weapon and roll accuracy;
+  spells carry their own per-gem-level base damage (`(base: 9,
+  per_level: 3)` formulas in content), never miss via accuracy, and cast
+  in `cast_ticks` scaled by cast speed.
+- **Projectiles are real**: they travel tick by tick, stop on the first
+  body they hit (minus `pierce`), and are stopped by obstacles. Sidestep
+  an arrow and it misses you.
+- **Shapes**: strike, self-nova, directional cone (`cone_cos_bp`),
+  directional line (`width_cu`), ground-target point-AoE, projectile.
+  Direction/point shapes are aimed BY THE BOT (UseSkillDir/UseSkillAt).
+- **Damage over time**: skills can apply typed dots (`dot:` in content)
+  that burn once per second; strongest per source+skill wins, reapply
+  refreshes. Dots skip accuracy, block, crit, and variance.
+- **Buffs**: skills can grant timed self-buffs (`buff:`); grants fold
+  into the stat sheet while active.
+- **Mana costs**: every gem declares one (`mana_cost` formula); the use
+  fails (code −4) without the mana, and the cost is charged on the swing.
+
 ## Pools, recovery, and commitment
 
 - **Mana**: base 35 + 4/level, +0.5 per Intelligence point and flat from

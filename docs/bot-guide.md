@@ -246,6 +246,29 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 
 | 20 | `CountEntities` | filter | zone-wide count of matching entities (same filter codes as ReadEntities, no distance cap). `count_entities(1)` answers "how many enemies are left in this area?" — useful for clear-the-zone logic. |
 | 21 | `LineOfSight` | x, y (raw Q16.16) | 1 if the straight line from you to (x, y) is clear of obstacles, 0 if blocked, −1 on error. Attacks enforce the same check, so test before you swing. |
+| 22 | `UseSkillAt` | slot, x, y (raw Q16.16) | point-aimed skills (ground-target AoE): cast at a location you compute. Same return codes as UseSkill. |
+| 23 | `UseSkillDir` | slot, dx, dy (raw Q16.16 vector) | direction-aimed skills (cones, lines, projectile volleys): sweep where you point. Same return codes as UseSkill. |
+
+### Skill-use return codes
+
+`UseSkill` / `UseSkillAt` / `UseSkillDir` validate immediately and queue the
+use on success. Diagnose failures — they are part of the game:
+
+| code | meaning |
+|---|---|
+| 0 | queued; it fires this tick |
+| −1 | no such skill slot |
+| −2 | on cooldown |
+| −3 | you're mid-swing/cast (use time) |
+| −4 | not enough mana |
+| −5 | out of range |
+| −6 | no line of sight |
+| −7 | wrong aim for this gem's target_mode (check ReadSkills) |
+| −8 | invalid target (dead, friendly, zero direction) |
+
+Each gem declares its `target_mode` in content: entity / point / direction.
+A direction gem will refuse `UseSkill(slot, id)` with −7 — aim it with
+`use_skill_dir(slot, dx, dy)` instead.
 
 ### Intents, not actions
 
@@ -261,7 +284,7 @@ can never hit your own faction.
 
 ### Struct layouts
 
-**SelfStatus** (13 words, 52 bytes):
+**SelfStatus** (16 words, 64 bytes):
 
 | Offset | Field |
 |---|---|
@@ -273,21 +296,26 @@ can never hit your own faction.
 | +36 / +40 | anchor x, y (monsters: home; characters: zone spawn) |
 | +44 | aggro radius (Q16.16; 0 for characters) |
 | +48 | attack range (Q16.16) |
+| +52 / +56 | mana, mana_max |
+| +60 | energy shield |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
 (faction-relative — the same brain works as a player or a monster!), 2 =
 characters, 3 = your own ground loot. Vision radius 50 units.
 
-**ReadInventory record** (8 words, 32 bytes): `base_idx, slot (0 weapon / 1
-helm / 2 chest / 3 boots), rarity, item_level, x, y, w, h`. The bag is a
+**ReadInventory record** (8 words, 32 bytes): `base_idx, slot (0 weapon /
+1 offhand / 2 helm / 3 chest / 4 boots), rarity, item_level, x, y, w, h`. The bag is a
 **12×5 grid**; items have footprints; pickups fail when nothing fits —
 managing space (`MoveItem`, `DropItem`, vendoring later) is your job.
 
-**ReadSkills record** (7 words, 28 bytes): `slot_no, gem_idx, level,
-cooldown_left, range (Q16.16), shape (0 target / 1 nova), radius (Q16.16)`.
-Skill slots are 1..N in tree-socket order; slot 0 is always the basic
-weapon attack.
+**ReadSkills record** (12 words, 48 bytes): `slot_no, gem_idx, level,
+cooldown_left, range (Q16.16), shape (0 target / 1 nova / 2 cone / 3 line /
+4 point-AoE / 5 projectile), radius (Q16.16), mana_cost, use_ticks (cast
+time for spells, your weapon's swing time for attacks), target_mode
+(0 entity / 1 point / 2 direction), skill_kind (0 attack / 1 spell),
+ready (1 = off cooldown, mana in pocket, not mid-use)`. Skill slots are
+1..N in tree-socket order; slot 0 is always the basic weapon attack.
 
 ## The param block (how chat reaches you)
 

@@ -10,7 +10,7 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0x066B_0265_DB4E_149C;
+const GOLDEN_HASH: u64 = 0x49A2_80B0_C6BB_9A20;
 
 #[test]
 fn golden_replay() {

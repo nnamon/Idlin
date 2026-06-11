@@ -6,6 +6,7 @@ import type { EntityState } from "./EntityState";
 import type { GameEvent } from "./GameEvent";
 import type { HitFx } from "./HitFx";
 import type { ObstacleState } from "./ObstacleState";
+import type { ProjectileFx } from "./ProjectileFx";
 import type { Role } from "./Role";
 
 /**
@@ -27,4 +28,4 @@ width: number, height: number,
 /**
  * Generated non-walkable props; constant for the zone's lifetime.
  */
-obstacles: Array<ObstacleState>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
+obstacles: Array<ObstacleState>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };

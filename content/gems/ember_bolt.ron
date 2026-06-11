@@ -1,14 +1,19 @@
-// Skill: a mote of stolen fire. Scales mostly from its own ember.
+// Skill: a mote of stolen fire. A true spell — its fire is its own,
+// growing with the gem, and it cannot miss.
 GemDef(
     id: "ember_bolt",
     name: "Ember Bolt",
     kind: skill,
+    skill_kind: spell,
+    target_mode: entity,
+    tags: [spell, projectile, fire],
     weight: 60,
-    coeff_bp: 7000,         // 70% of weapon damage...
-    added_fire: 7,           // ...plus its own elemental payload
-    shape: target,
-    projectile: true,
+    shape: projectile,
+    proj_speed_cps: 1500,
     range_cu: 900,
+    added_fire: (base: 9, per_level: 3),
+    crit_bp: 600,
+    cast_ticks: 7,
+    mana_cost: (base: 6, per_level: 1),
     support_slots: 2,
-    cooldown_ticks: 9,
 )

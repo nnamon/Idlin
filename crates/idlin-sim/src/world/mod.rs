@@ -143,8 +143,23 @@ pub enum SimEvent {
         /// Dominant damage component: 0 phys, 1 fire, 2 cold, 3 lightning,
         /// 4 chaos.
         dmg_type: u8,
+        crit: bool,
+        /// True for damage-over-time burns (steady, once per second).
+        dot: bool,
         projectile: bool,
         killed: bool,
+    },
+    /// A projectile took flight; the client animates it (hits arrive as
+    /// authoritative Hit events when the sim resolves them).
+    ProjectileSpawned {
+        /// Q16.16 raw launch position and per-tick velocity.
+        x: i32,
+        y: i32,
+        vx: i32,
+        vy: i32,
+        /// Q16.16 raw travel budget.
+        range: i32,
+        dmg_type: u8,
     },
     BotDebug {
         id: u32,
@@ -233,6 +248,9 @@ pub fn universal_stats(level: u32) -> CombatStats {
         leech_life: 0,
         leech_mana: 0,
         block: 0,
+        crit_inc: 10000,
+        crit_multi: 15000,
+        cast_speed: 10000,
         damage: [base_unarmed_damage(level), 0, 0, 0, 0],
         accuracy: base_accuracy(level),
         evasion: base_evasion(level),
@@ -415,7 +433,9 @@ impl World {
         self.movement();
         self.separation();
         self.obstacle_pushout();
+        self.step_projectiles(&mut events);
         self.attacks(&mut events);
+        self.effects_tick(&mut events);
         self.pickups(&mut events);
         self.regen();
         self.respawns(&mut events);
@@ -478,6 +498,7 @@ impl World {
                 net_id,
                 pos,
                 intents: Default::default(),
+                effects: Vec::new(),
                 bot: Some(bot_idx),
                 combat: Some(universal_stats(1)),
                 character: Some(CharacterState {
@@ -527,7 +548,8 @@ impl World {
 
             // Stop to fight: if the attack target is already in range, hold.
             if let Some(att) = e.intents.attack
-                && let Some(t) = self.zone.get_net(att.target)
+                && let crate::entity::SkillTarget::Entity(tid) = att.target
+                && let Some(t) = self.zone.get_net(tid)
                 && t.alive()
                 && pos.dist(t.pos) <= range
             {
@@ -830,6 +852,9 @@ impl World {
             leech_life: 0,
             leech_mana: 0,
             block: 0,
+            crit_inc: 10000,
+            crit_multi: 15000,
+            cast_speed: 10000,
             damage: [
                 def.damage,
                 def.damage_fire,
@@ -877,6 +902,7 @@ impl World {
             net_id,
             pos,
             intents: Default::default(),
+            effects: Vec::new(),
             bot,
             combat: Some(stats),
             character: None,

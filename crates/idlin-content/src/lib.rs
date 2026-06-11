@@ -245,13 +245,107 @@ pub enum GemKind {
     Support,
 }
 
+/// Attacks scale the weapon and roll accuracy; spells carry their own
+/// per-level base damage and never miss via accuracy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillKind {
+    #[default]
+    Attack,
+    Spell,
+}
+
+/// How the bot aims this skill (UseSkill / UseSkillAt / UseSkillDir).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetMode {
+    #[default]
+    Entity,
+    Point,
+    Direction,
+}
+
+/// Skill/support tags: gem identity, and (Phase 4) support compatibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GemTag {
+    Attack,
+    Spell,
+    Melee,
+    Projectile,
+    Aoe,
+    Duration,
+    Fire,
+    Cold,
+    Lightning,
+    Chaos,
+    Physical,
+}
+
+/// Damage types for skill payloads (indices match the sim's DMG_*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DmgType {
+    Phys,
+    Fire,
+    Cold,
+    Lightning,
+    Chaos,
+}
+
+impl DmgType {
+    pub fn idx(self) -> usize {
+        self as usize
+    }
+}
+
+/// Gem-level scaling: value(level) = base + per_level × (level − 1).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct Formula {
+    #[serde(default)]
+    pub base: i64,
+    #[serde(default)]
+    pub per_level: i64,
+}
+
+impl Formula {
+    pub fn at(&self, level: u32) -> i64 {
+        self.base + self.per_level * (level as i64 - 1)
+    }
+}
+
+/// A skill-applied damage-over-time payload.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct DotDef {
+    pub dtype: DmgType,
+    /// Damage per second while active.
+    pub per_second: Formula,
+    pub duration_ticks: u32,
+}
+
+/// A skill-applied timed stat effect (self-buff for now).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuffDef {
+    pub grants: Vec<Grant>,
+    pub duration_ticks: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillShape {
     /// Single-target strike at the chosen enemy.
     Target,
-    /// Hits everything hostile around the user.
+    /// Hits everything hostile around the user (radius_cu).
     Nova,
+    /// A directional sector from the user (range_cu + cone_cos_bp).
+    Cone,
+    /// A directional corridor from the user (range_cu + width_cu).
+    Line,
+    /// Hits everything hostile around a target point (radius_cu).
+    PointAoe,
+    /// A real traveling projectile (proj_speed_cps, pierce); collides with
+    /// the first enemy or obstacle in its path.
+    Projectile,
 }
 
 fn shape_target() -> SkillShape {
@@ -272,35 +366,71 @@ pub struct GemDef {
     pub kind: GemKind,
     #[serde(default = "default_weight")]
     pub weight: u32,
-    // -- skill fields --
-    /// Percent of weapon damage (basis points; 10000 = 100%).
+    // -- skill identity --
     #[serde(default)]
-    pub coeff_bp: i64,
-    /// Flat damage the skill itself contributes, by type.
+    pub skill_kind: SkillKind,
     #[serde(default)]
-    pub added_phys: i64,
+    pub target_mode: TargetMode,
     #[serde(default)]
-    pub added_fire: i64,
-    #[serde(default)]
-    pub added_cold: i64,
-    #[serde(default)]
-    pub added_lightning: i64,
-    #[serde(default)]
-    pub added_chaos: i64,
+    pub tags: Vec<GemTag>,
     #[serde(default = "shape_target")]
     pub shape: SkillShape,
+    // -- damage --
+    /// Attacks: percent of weapon damage (basis points). Spells ignore it.
     #[serde(default)]
-    pub projectile: bool,
-    /// 0 = use the weapon's range.
+    pub coeff_bp: i64,
+    /// Flat typed damage from the gem itself, scaling with gem level.
+    /// (Spells: this IS the damage. Attacks: added on top of the weapon.)
     #[serde(default)]
-    pub range_cu: i32,
-    /// Nova radius.
+    pub added_phys: Formula,
     #[serde(default)]
-    pub radius_cu: i32,
-    #[serde(default = "default_max_targets")]
-    pub max_targets: u32,
+    pub added_fire: Formula,
+    #[serde(default)]
+    pub added_cold: Formula,
+    #[serde(default)]
+    pub added_lightning: Formula,
+    #[serde(default)]
+    pub added_chaos: Formula,
+    /// Base critical chance in basis points (global crit stats scale it).
+    #[serde(default)]
+    pub crit_bp: i64,
+    // -- costs & timing --
+    /// Mana drawn per use, scaling with gem level.
+    #[serde(default)]
+    pub mana_cost: Formula,
+    /// Spells: base cast time (cast speed divides it). Attacks use the
+    /// weapon's use_ticks instead.
+    #[serde(default)]
+    pub cast_ticks: u32,
+    /// Specials only: extra per-gem cooldown on top of the use time.
     #[serde(default)]
     pub cooldown_ticks: u32,
+    // -- geometry --
+    /// 0 = use the weapon's range (entity/point modes; projectile launch).
+    #[serde(default)]
+    pub range_cu: i32,
+    /// Nova / PointAoe radius; projectile body radius.
+    #[serde(default)]
+    pub radius_cu: i32,
+    /// Cone width as cos(half-angle) in basis points (7000 ≈ 90° total).
+    #[serde(default = "default_cone_cos")]
+    pub cone_cos_bp: i64,
+    /// Line corridor width.
+    #[serde(default)]
+    pub width_cu: i32,
+    /// Projectile flight speed (centi-units/sec).
+    #[serde(default)]
+    pub proj_speed_cps: i32,
+    /// Enemies a projectile passes through before stopping.
+    #[serde(default)]
+    pub pierce: u32,
+    #[serde(default = "default_max_targets")]
+    pub max_targets: u32,
+    // -- riders --
+    #[serde(default)]
+    pub dot: Option<DotDef>,
+    #[serde(default)]
+    pub buff: Option<BuffDef>,
     /// Skill gems: how many support gems can be socketed INTO this gem.
     #[serde(default)]
     pub support_slots: u32,
@@ -308,6 +438,10 @@ pub struct GemDef {
     /// Grants applied to the cluster's skill (scaled by gem level).
     #[serde(default)]
     pub grants: Vec<Grant>,
+}
+
+fn default_cone_cos() -> i64 {
+    7000
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

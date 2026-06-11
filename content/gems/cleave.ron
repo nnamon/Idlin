@@ -3,11 +3,15 @@ GemDef(
     id: "cleave",
     name: "Cleave",
     kind: skill,
+    skill_kind: attack,
+    target_mode: entity,
+    tags: [attack, melee, aoe, physical],
     weight: 100,
     coeff_bp: 11000,        // 110% of weapon damage
     shape: nova,
     radius_cu: 320,         // 3.2 u around self
     max_targets: 5,
+    crit_bp: 500,
+    mana_cost: (base: 4, per_level: 0),
     support_slots: 2,
-    cooldown_ticks: 14,
 )

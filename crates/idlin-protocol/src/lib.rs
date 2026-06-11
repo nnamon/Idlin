@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 8;
+pub const PROTO_VERSION: u32 = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -74,6 +74,20 @@ pub struct EntityPatch {
     pub gear: Vec<String>,
 }
 
+/// A projectile took flight; the client animates the streak (hits arrive
+/// separately as authoritative HitFx).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ProjectileFx {
+    /// Q16.16 raw launch position and per-tick velocity.
+    pub x: i32,
+    pub y: i32,
+    pub vx: i32,
+    pub vy: i32,
+    /// Q16.16 raw travel budget.
+    pub range: i32,
+    pub dmg_type: u8,
+}
+
 /// A landed hit, for client-side effects (tracers, impact flashes).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct HitFx {
@@ -83,6 +97,9 @@ pub struct HitFx {
     /// Dominant damage component: 0 phys, 1 fire, 2 cold, 3 lightning,
     /// 4 chaos.
     pub dmg_type: u8,
+    pub crit: bool,
+    /// A damage-over-time burn tick (steady, once per second).
+    pub dot: bool,
     pub projectile: bool,
     pub killed: bool,
 }
@@ -299,6 +316,7 @@ pub enum S2C {
         updated: Vec<EntityPatch>,
         removed: Vec<u32>,
         hits: Vec<HitFx>,
+        projectiles: Vec<ProjectileFx>,
     },
     /// Batched narratable events for this tick.
     Events {
@@ -346,9 +364,12 @@ mod tests {
                 target: 2,
                 amount: 13,
                 dmg_type: 1,
+                crit: false,
+                dot: false,
                 projectile: true,
                 killed: false,
             }],
+            projectiles: vec![],
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: S2C = serde_json::from_str(&json).unwrap();
