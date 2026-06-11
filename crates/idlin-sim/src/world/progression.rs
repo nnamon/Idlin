@@ -3,8 +3,8 @@
 //! character's effective combat stats.
 
 use super::{
-    BASE_SPEED_CPS, SimEvent, UNARMED_COOLDOWN, UNARMED_RANGE_CU, World, base_accuracy,
-    base_evasion, base_life, base_unarmed_damage, fx_from_cu, speed_from_cps,
+    BASE_SPEED_CPS, SimEvent, UNARMED_RANGE_CU, UNARMED_USE_TICKS, World, base_accuracy,
+    base_evasion, base_life, base_mana, base_unarmed_damage, fx_from_cu, speed_from_cps,
 };
 use crate::entity::{DMG_COUNT, GEM_LEVEL_CAP, Item, RES_COUNT, gem_xp_to_next};
 use crate::fixed::Fx;
@@ -104,6 +104,7 @@ impl World {
         let mut weapon: Option<&Item> = None;
         let mut armour_base = 0i64;
         let mut evasion_base = base_evasion(level);
+        let mut block_base = 0i64;
         for (i, slot_item) in ch.equipment.iter().enumerate() {
             let Some(item) = slot_item else { continue };
             let def = &self.content.items[item.base_idx as usize];
@@ -120,6 +121,7 @@ impl World {
             } else {
                 armour_base += def.armour;
                 evasion_base += def.evasion;
+                block_base += def.block_bp;
             }
         }
 
@@ -168,7 +170,7 @@ impl World {
             }
         }
 
-        let (dmg_base, range, cooldown_base, projectile) = match weapon {
+        let (dmg_base, range, use_base, projectile) = match weapon {
             Some(item) => {
                 let def = &self.content.items[item.base_idx as usize];
                 (
@@ -180,14 +182,14 @@ impl World {
                         def.damage_chaos,
                     ],
                     fx_from_cu(def.range_cu),
-                    def.cooldown_ticks,
+                    def.use_ticks,
                     def.projectile,
                 )
             }
             None => (
                 [base_unarmed_damage(level), 0, 0, 0, 0],
                 fx_from_cu(UNARMED_RANGE_CU),
-                UNARMED_COOLDOWN,
+                UNARMED_USE_TICKS,
                 false,
             ),
         };
@@ -223,8 +225,15 @@ impl World {
             resists[i] = sheet.value(RES_STATS[i], 0);
         }
         let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
-        let cooldown = ((cooldown_base as i64 * 10000 / attack_factor).max(2)) as u32;
+        let use_ticks = ((use_base as i64 * 10000 / attack_factor).max(2)) as u32;
         let move_factor = sheet.value(Stat::MoveSpeed, 10000).max(1000);
+        let mana_max = sheet.value(Stat::Mana, base_mana(level)).max(0);
+        let es_max = sheet.value(Stat::EnergyShield, 0);
+        let life_regen = sheet.value(Stat::LifeRegen, 0);
+        let mana_regen = sheet.value(Stat::ManaRegen, 0);
+        let leech_life = sheet.value(Stat::LeechLife, 0);
+        let leech_mana = sheet.value(Stat::LeechMana, 0);
+        let block = sheet.value(Stat::Block, block_base).min(7500);
         let speed = Fx::from_raw(
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
@@ -237,13 +246,24 @@ impl World {
             if c.life > 0 {
                 c.life = (c.life + delta.max(0)).min(life_max);
             }
+            let mana_delta = mana_max - c.mana_max;
+            c.mana_max = mana_max;
+            c.mana = (c.mana + mana_delta.max(0)).clamp(0, mana_max);
+            let es_delta = es_max - c.es_max;
+            c.es_max = es_max;
+            c.es = (c.es + es_delta.max(0)).clamp(0, es_max);
+            c.life_regen = life_regen;
+            c.mana_regen = mana_regen;
+            c.leech_life = leech_life;
+            c.leech_mana = leech_mana;
+            c.block = block;
             c.damage = damage;
             c.accuracy = accuracy;
             c.evasion = evasion;
             c.armour = armour;
             c.resists = resists;
             c.range = range;
-            c.cooldown_ticks = cooldown;
+            c.use_ticks = use_ticks;
             c.speed_per_tick = speed;
             c.projectile = projectile;
         }

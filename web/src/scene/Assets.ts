@@ -54,6 +54,8 @@ interface Manifest {
   props: Record<string, { file: string }>;
   /** Ground-drop meshes for armor items (weapons reuse their own files). */
   drops: Record<string, { file: string }>;
+  /** Rigid gear meshes worn on a named bone (shields on hand_l). */
+  attachments: Record<string, { file: string; bone: string }>;
 }
 
 export interface ModelInstance {
@@ -91,6 +93,7 @@ export class AssetLibrary {
     for (const def of Object.values(manifest.weapons)) paths.add(def.file);
     for (const def of Object.values(manifest.props ?? {})) paths.add(def.file);
     for (const def of Object.values(manifest.drops ?? {})) paths.add(def.file);
+    for (const def of Object.values(manifest.attachments ?? {})) paths.add(def.file);
 
     // Canvas-rendered text (labels, damage numbers) uses the display font;
     // have it ready before any visual draws.
@@ -175,6 +178,13 @@ export class AssetLibrary {
     const def = this.manifest.drops?.[key];
     const loaded = def ? this.files.get(def.file) : undefined;
     return loaded ? loaded.scene.clone() : null;
+  }
+
+  /** Bone-worn rigid gear (shields): the mesh plus its target bone name. */
+  attachmentDef(key: string): { obj: THREE.Object3D; bone: string } | null {
+    const def = this.manifest.attachments?.[key];
+    const loaded = def ? this.files.get(def.file) : undefined;
+    return loaded ? { obj: loaded.scene.clone(), bone: def.bone } : null;
   }
 
   /**

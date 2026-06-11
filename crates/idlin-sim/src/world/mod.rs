@@ -42,6 +42,8 @@ pub const REGEN_DELAY_TICKS: u64 = 50;
 pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
 /// Ticks a monster corpse lies where it fell before decaying away.
 pub const CORPSE_TICKS: u64 = 300;
+/// Untouched ticks before energy shield begins recharging.
+pub const ES_RECHARGE_DELAY_TICKS: u64 = 40;
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
 /// through here — never by mutating state directly.
@@ -209,21 +211,36 @@ fn base_evasion(level: u32) -> i64 {
 const BASE_SPEED_CPS: i32 = 330;
 const BASE_RADIUS_CU: i32 = 45;
 const UNARMED_RANGE_CU: i32 = 160;
-const UNARMED_COOLDOWN: u32 = 8;
+const UNARMED_USE_TICKS: u32 = 8;
+
+/// Base mana at level 1; +4 per level (compact numbers).
+fn base_mana(level: u32) -> i64 {
+    35 + 4 * (level as i64 - 1)
+}
 
 /// Unarmed, ungeared stats at a given level — what everyone spawns with.
 pub fn universal_stats(level: u32) -> CombatStats {
     CombatStats {
         life: base_life(level),
         life_max: base_life(level),
+        mana: base_mana(level),
+        mana_max: base_mana(level),
+        es: 0,
+        es_max: 0,
+        es_recharge_at: 0,
+        life_regen: 0,
+        mana_regen: 0,
+        leech_life: 0,
+        leech_mana: 0,
+        block: 0,
         damage: [base_unarmed_damage(level), 0, 0, 0, 0],
         accuracy: base_accuracy(level),
         evasion: base_evasion(level),
         armour: 0,
         resists: [0; crate::entity::RES_COUNT],
         range: fx_from_cu(UNARMED_RANGE_CU),
-        cooldown_ticks: UNARMED_COOLDOWN,
-        cooldown_left: 0,
+        use_ticks: UNARMED_USE_TICKS,
+        busy_until: 0,
         speed_per_tick: speed_from_cps(BASE_SPEED_CPS),
         radius: fx_from_cu(BASE_RADIUS_CU),
         projectile: false,
@@ -503,6 +520,9 @@ impl World {
                 continue;
             };
             let Some(combat) = &e.combat else { continue };
+            if self.tick < combat.busy_until {
+                continue; // committed to a swing/cast — no moving mid-use
+            }
             let (pos, speed, range) = (e.pos, combat.speed_per_tick, combat.range);
 
             // Stop to fight: if the attack target is already in range, hold.
@@ -677,20 +697,35 @@ impl World {
         false
     }
 
-    /// Out-of-combat regeneration: anything alive that hasn't traded damage
-    /// for a while heals 2%/tick. Keeps idle play forgiving without bespoke
-    /// per-kind healing rules.
+    /// Recovery. Once per second (tick % 10): life/mana regen stats apply
+    /// and energy shield recharges if untouched past its delay; mana also
+    /// trickles 2%/s inherently. The out-of-combat burst heal (2%/tick
+    /// after 50 quiet ticks) stays — idle play remains forgiving.
     fn regen(&mut self) {
         let now = self.tick;
+        let second_edge = now.is_multiple_of(10);
         for slot in 0..self.zone.slot_count() {
             let Some(e) = self.zone.get_mut(slot) else {
                 continue;
             };
             let Some(c) = e.combat.as_mut() else { continue };
-            if c.life <= 0 || c.life >= c.life_max {
+            if c.life <= 0 {
                 continue;
             }
-            if now.saturating_sub(c.last_combat_tick) >= REGEN_DELAY_TICKS {
+            if second_edge {
+                if c.life < c.life_max && c.life_regen > 0 {
+                    c.life = (c.life + c.life_regen).min(c.life_max);
+                }
+                if c.mana < c.mana_max {
+                    let rate = (c.mana_max * 200 / 10000).max(1) + c.mana_regen;
+                    c.mana = (c.mana + rate).min(c.mana_max);
+                }
+                if c.es < c.es_max && now >= c.es_recharge_at {
+                    let rate = (c.es_max * 1000 / 10000).max(1);
+                    c.es = (c.es + rate).min(c.es_max);
+                }
+            }
+            if c.life < c.life_max && now.saturating_sub(c.last_combat_tick) >= REGEN_DELAY_TICKS {
                 c.life = (c.life + (c.life_max / 50).max(1)).min(c.life_max);
             }
         }
@@ -714,7 +749,9 @@ impl World {
                 me.character.as_mut().unwrap().respawn_at = None;
                 let c = me.combat.as_mut().unwrap();
                 c.life = c.life_max;
-                c.cooldown_left = 0;
+                c.mana = c.mana_max;
+                c.es = c.es_max;
+                c.busy_until = 0;
                 events.push(SimEvent::CharacterRespawned { id });
             }
         }
@@ -783,6 +820,16 @@ impl World {
         let stats = CombatStats {
             life: def.life,
             life_max: def.life,
+            mana: 0,
+            mana_max: 0,
+            es: 0,
+            es_max: 0,
+            es_recharge_at: 0,
+            life_regen: 0,
+            mana_regen: 0,
+            leech_life: 0,
+            leech_mana: 0,
+            block: 0,
             damage: [
                 def.damage,
                 def.damage_fire,
@@ -800,8 +847,8 @@ impl World {
                 def.resist_chaos,
             ],
             range: fx_from_cu(def.range_cu),
-            cooldown_ticks: def.cooldown_ticks,
-            cooldown_left: 0,
+            use_ticks: def.use_ticks,
+            busy_until: 0,
             speed_per_tick: speed_from_cps(def.speed_cps),
             radius: fx_from_cu(def.radius_cu),
             projectile: def.projectile,

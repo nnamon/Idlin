@@ -200,6 +200,7 @@ impl World {
             dmg * 100 + speed_bonus
         } else {
             sheet.value(Stat::Armour, def.armour) * 100
+                + sheet.value(Stat::Block, def.block_bp) / 3
                 + sheet.value(Stat::Evasion, def.evasion) * 100
                 + sheet.value(Stat::Life, 0) * 200
                 + sheet.value(Stat::ResistFire, 0) / 10

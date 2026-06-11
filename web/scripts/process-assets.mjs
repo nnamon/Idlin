@@ -121,6 +121,7 @@ const FBX_MODELS = [
   { out: "bow.glb", src: join(WEAPONS_FBX, "Bow_Wooden.fbx"), targetHeight: 1.0 },
   // Stand-in until a real wand mesh is sourced; reads fine at game distance.
   { out: "wand.glb", src: join(WEAPONS_FBX, "Dagger.fbx"), targetHeight: 0.45 },
+  { out: "shield_round.glb", src: join(WEAPONS_FBX, "Shield_Round.fbx"), targetHeight: 0.65 },
 ];
 
 mkdirSync(partsOut, { recursive: true });

@@ -1,0 +1,11 @@
+// A round of waterlogged planking, banded with salvaged iron.
+ItemDef(
+    id: "driftwood_buckler",
+    name: "Driftwood Buckler",
+    slot: offhand,
+    model: "shield_round",
+    w: 2, h: 2,
+    armour: 12,
+    block_bp: 1700,        // 17% chance to block a hit
+    weight: 80,
+)

@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 7;
+pub const PROTO_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -211,6 +211,12 @@ pub struct CharacterSheet {
     pub xp_next: i32,
     pub life: i32,
     pub life_max: i32,
+    pub mana: i32,
+    pub mana_max: i32,
+    pub es: i32,
+    pub es_max: i32,
+    /// Basis points chance to block (0 without a shield).
+    pub block_bp: i32,
     pub kills: u32,
     pub dmg_phys: i32,
     pub dmg_fire: i32,

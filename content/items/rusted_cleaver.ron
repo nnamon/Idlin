@@ -8,7 +8,7 @@ ItemDef(
     h: 3,
     damage_phys: 14,
     range_cu: 220,
-    cooldown_ticks: 8,
+    use_ticks: 8,
     projectile: false,
     weight: 100,
 )

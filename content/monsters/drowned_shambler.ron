@@ -11,7 +11,7 @@ MonsterDef(
     speed_cps: 250,        // 2.5 u/s — a hungry shamble
     radius_cu: 45,
     range_cu: 180,         // melee
-    cooldown_ticks: 12,
+    use_ticks: 12,
     aggro_radius_cu: 1400, // 14 u
     armour: 20,
     xp: 25,

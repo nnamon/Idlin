@@ -222,6 +222,10 @@ address you supply and return a count/status.
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
 | 18 | `ReadSkills` | out_addr, max (≤8) | count |
 | 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem (its own support_slots). Auto fills skills first, then supports. |
+**Attacks commit you.** A swing occupies your character for the weapon's
+use time (attack-speed scaled): movement and further actions wait until it
+finishes. Plan movement around your swings — or get caught flat-footed.
+
 Attacks require **line of sight**: a generated obstacle (rock, tree) between
 you and the target blocks the strike entirely — `UseSkill` will simply not
 land while cover intervenes. Movement slides along obstacle edges, so walking

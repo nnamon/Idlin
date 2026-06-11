@@ -109,8 +109,8 @@ pub struct MonsterDef {
     pub radius_cu: i32,
     /// Attack range in centi-units.
     pub range_cu: i32,
-    /// Ticks between attacks.
-    pub cooldown_ticks: u32,
+    /// Ticks one attack occupies (the base attack time).
+    pub use_ticks: u32,
     /// Aggro radius in centi-units.
     pub aggro_radius_cu: i32,
     /// XP granted to the killer.
@@ -128,20 +128,23 @@ fn default_radius_cu() -> i32 {
 #[serde(rename_all = "lowercase")]
 pub enum GearSlot {
     Weapon,
+    /// Shields (block) and, later, other off-hand items.
+    Offhand,
     Helm,
     Chest,
     Boots,
 }
 
 impl GearSlot {
-    pub const COUNT: usize = 4;
+    pub const COUNT: usize = 5;
 
     pub fn idx(self) -> usize {
         match self {
             GearSlot::Weapon => 0,
-            GearSlot::Helm => 1,
-            GearSlot::Chest => 2,
-            GearSlot::Boots => 3,
+            GearSlot::Offhand => 1,
+            GearSlot::Helm => 2,
+            GearSlot::Chest => 3,
+            GearSlot::Boots => 4,
         }
     }
 }
@@ -171,9 +174,12 @@ pub struct ItemDef {
     /// Weapon: attack range in centi-units.
     #[serde(default)]
     pub range_cu: i32,
-    /// Weapon: ticks between attacks.
+    /// Weapon: ticks one swing occupies (the base attack time).
     #[serde(default)]
-    pub cooldown_ticks: u32,
+    pub use_ticks: u32,
+    /// Offhand: basis points chance to block a hit.
+    #[serde(default)]
+    pub block_bp: i64,
     /// Weapon: ranged attack.
     #[serde(default)]
     pub projectile: bool,

@@ -61,7 +61,7 @@ MonsterDef(
     speed_cps: 160,
     radius_cu: 80,            // body radius (collision)
     range_cu: 220,
-    cooldown_ticks: 16,
+    use_ticks: 16,            // ticks one attack occupies (base attack time)
     aggro_radius_cu: 800,     // exposed to the brain via SelfStatus
     xp: 70,
     projectile: false,        // client renders ranged tracers
@@ -82,15 +82,16 @@ faction. The file stem is the brain id.
 ItemDef(
     id: "rusted_cleaver",
     name: "Rusted Cleaver",
-    slot: weapon,             // weapon | helm | chest | boots
+    slot: weapon,             // weapon | offhand | helm | chest | boots
     w: 2, h: 3,               // bag footprint (the bag is 12×5)
     // weapon fields — the equipped weapon DEFINES the normal attack:
     damage_phys: 14, damage_fire: 0, damage_cold: 0, damage_lightning: 0, damage_chaos: 0,
     range_cu: 220,
-    cooldown_ticks: 8,
+    use_ticks: 8,             // base attack time (speed stats divide it)
     projectile: false,
     // armour fields:
     armour: 0, evasion: 0,
+    block_bp: 0,              // offhand only: chance to block a hit (bp)
     weight: 100,              // relative drop weight
 )
 ```
@@ -142,7 +143,7 @@ GemDef(
     radius_cu: 320,           // nova radius
     max_targets: 5,
     support_slots: 2,         // supports socket INTO the gem (PoE2-style)
-    cooldown_ticks: 14,
+    cooldown_ticks: 14,       // gems only: special cooldown on top of use time
 )
 
 GemDef(

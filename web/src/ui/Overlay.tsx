@@ -160,6 +160,10 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
       <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 2px" }}>
         STATS
       </div>
+      {stat("life", `${sheet.life} / ${sheet.life_max}`)}
+      {stat("mana", `${sheet.mana} / ${sheet.mana_max}`)}
+      {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`)}
+      {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`)}
       {stat("dmg p/f/c/l/ch", dmgText)}
       {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`)}
       {stat("armour", `${sheet.armour}`)}

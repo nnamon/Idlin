@@ -7,7 +7,11 @@ import type { InvItemView } from "./InvItemView";
  * On-demand character inspection, shown while the director focuses an
  * idler: gear, brief stats, bag, gems, passives.
  */
-export type CharacterSheet = { id: number, name: string, level: number, xp: number, xp_next: number, life: number, life_max: number, kills: number, dmg_phys: number, dmg_fire: number, dmg_cold: number, dmg_lightning: number, dmg_chaos: number, accuracy: number, evasion: number, armour: number, 
+export type CharacterSheet = { id: number, name: string, level: number, xp: number, xp_next: number, life: number, life_max: number, mana: number, mana_max: number, es: number, es_max: number, 
+/**
+ * Basis points chance to block (0 without a shield).
+ */
+block_bp: number, kills: number, dmg_phys: number, dmg_fire: number, dmg_cold: number, dmg_lightning: number, dmg_chaos: number, accuracy: number, evasion: number, armour: number, 
 /**
  * Basis points (10000 = 100%); the cap is applied at use, not here.
  */

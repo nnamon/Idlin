@@ -16,6 +16,11 @@ pub struct CharacterSheetView {
     pub xp_next: i64,
     pub life: i64,
     pub life_max: i64,
+    pub mana: i64,
+    pub mana_max: i64,
+    pub es: i64,
+    pub es_max: i64,
+    pub block: i64,
     pub kills: u64,
     pub damage: [i64; crate::entity::DMG_COUNT],
     pub accuracy: i64,
@@ -36,7 +41,7 @@ pub struct CharacterSheetView {
 impl World {
     /// Inspect one character by net id (None for monsters/loot/unknown).
     pub fn character_sheet(&self, net_id: u32) -> Option<CharacterSheetView> {
-        const SLOT_NAMES: [&str; 4] = ["Weapon", "Helm", "Chest", "Boots"];
+        const SLOT_NAMES: [&str; 5] = ["Weapon", "Offhand", "Helm", "Chest", "Boots"];
         let e = self.zone.get_net(net_id)?;
         let ch = e.character.as_ref()?;
         let c = e.combat.as_ref()?;
@@ -94,6 +99,11 @@ impl World {
             xp_next: super::progression::xp_to_next(ch.level),
             life: c.life,
             life_max: c.life_max,
+            mana: c.mana,
+            mana_max: c.mana_max,
+            es: c.es,
+            es_max: c.es_max,
+            block: c.block,
             kills: ch.kills,
             damage: c.damage,
             accuracy: c.accuracy,
@@ -256,7 +266,13 @@ impl World {
                 for r in c.resists {
                     h.write_i64(r);
                 }
-                h.write_u32(c.cooldown_left);
+                h.write_i64(c.mana);
+                h.write_i64(c.mana_max);
+                h.write_i64(c.es);
+                h.write_i64(c.es_max);
+                h.write_u64(c.es_recharge_at);
+                h.write_i64(c.block);
+                h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
                 h.write_i32(c.radius.raw());
             }

@@ -56,6 +56,22 @@ pub const RES_COUNT: usize = 4;
 pub struct CombatStats {
     pub life: i64,
     pub life_max: i64,
+    /// Spent by skills (costs land with the skill executor); regenerates.
+    pub mana: i64,
+    pub mana_max: i64,
+    /// Depletes before life; recharges after a delay untouched.
+    pub es: i64,
+    pub es_max: i64,
+    /// Tick at which ES may begin recharging (pushed on any damage taken).
+    pub es_recharge_at: u64,
+    /// Flat life/mana per second from stats (regen pass applies per second).
+    pub life_regen: i64,
+    pub mana_regen: i64,
+    /// Basis points of damage dealt leeched to life/mana (per-strike cap).
+    pub leech_life: i64,
+    pub leech_mana: i64,
+    /// Basis points chance to negate an incoming hit (shield-granted).
+    pub block: i64,
     /// Per-type attack damage: phys, fire, cold, lightning, chaos.
     pub damage: [i64; DMG_COUNT],
     pub accuracy: i64,
@@ -65,8 +81,10 @@ pub struct CombatStats {
     /// Typed resistances in basis points (capped at use); see RES_*.
     pub resists: [i64; RES_COUNT],
     pub range: Fx,
-    pub cooldown_ticks: u32,
-    pub cooldown_left: u32,
+    /// Ticks one use of the basic weapon occupies (speed-scaled).
+    pub use_ticks: u32,
+    /// Occupied until this tick: no moving, no acting (use-time commitment).
+    pub busy_until: u64,
     pub speed_per_tick: Fx,
     /// Body radius for collision/separation.
     pub radius: Fx,

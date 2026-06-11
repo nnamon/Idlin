@@ -94,6 +94,26 @@ fire, cold, lightning, chaos** — with four typed resistances (capped at
   crafting system).
 - Socketed gems each receive half of whatever XP their owner gains.
 
+## Pools, recovery, and commitment
+
+- **Mana**: base 35 + 4/level, +0.5 per Intelligence point and flat from
+  gear. Skill costs land with the skill executor rework; the pool and its
+  regen are live. Mana regenerates 2% of maximum per second inherently,
+  plus any flat `mana_regen` stat.
+- **Energy shield** (INT defense): absorbs all damage before life. After
+  **4 seconds** untouched it recharges at 10% of maximum per second.
+- **Block**: shields (the offhand slot) grant a basis-point chance to
+  negate an incoming hit entirely, capped at 75%. Rolled after the
+  accuracy roll, before damage.
+- **Life/mana regen stats** apply once per second, always. The
+  out-of-combat burst heal (2%/tick after 5 quiet seconds) remains.
+- **Leech**: `leech_life`/`leech_mana` return that share of damage dealt
+  to the attacker, capped at 10% of the pool per strike.
+- **Use-time commitment**: swinging a weapon (or firing a gem) occupies
+  you for the weapon's `use_ticks`, divided by attack speed — no moving,
+  no other actions until it completes. Cooldowns now exist only as extra
+  gates on special skill gems.
+
 ## Death, regen, respawn
 
 - Out-of-combat regeneration: after **50 ticks** without dealing or taking

@@ -65,6 +65,8 @@ export class EntityVisual {
   private weaponKey = "";
   private weaponObj: THREE.Object3D | null = null;
   private handBone: THREE.Object3D | null = null;
+  /** Bone-worn rigid gear (shields), keyed by gear key. */
+  private wornAttachments = new Map<string, THREE.Object3D>();
 
   constructor(
     private readonly id: number,
@@ -179,6 +181,24 @@ export class EntityVisual {
     // Hair occupies its own region and disappears under a worn hood.
     if (this.hairKey && !desired.has("head")) {
       desired.set("hair", this.hairKey);
+    }
+
+    // Rigid bone-worn gear (shields) diffs separately from skinned parts.
+    const wantAttach = new Set(gear.filter((k) => this.assets.attachmentDef(k) !== null));
+    for (const [key, obj] of this.wornAttachments) {
+      if (!wantAttach.has(key)) {
+        obj.removeFromParent(); // clone shares GPU resources; no dispose
+        this.wornAttachments.delete(key);
+      }
+    }
+    for (const key of wantAttach) {
+      if (this.wornAttachments.has(key)) continue;
+      const att = this.assets.attachmentDef(key);
+      if (!att) continue;
+      const bone = this.modelRoot.getObjectByName(att.bone);
+      if (!bone) continue;
+      bone.add(att.obj);
+      this.wornAttachments.set(key, att.obj);
     }
 
     // The base skin shows only where nothing is worn — otherwise the body

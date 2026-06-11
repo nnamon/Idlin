@@ -11,16 +11,14 @@ use idlin_content::{GemKind, SkillShape};
 
 impl World {
     pub(super) fn attacks(&mut self, events: &mut Vec<SimEvent>) {
-        // Cooldowns tick down first (weapon and every socketed skill).
+        // Gem cooldowns tick down (the basic weapon is governed by the
+        // use-time commitment, busy_until, instead).
         for slot in 0..self.zone.slot_count() {
-            if let Some(e) = self.zone.get_mut(slot) {
-                if let Some(c) = e.combat.as_mut() {
-                    c.cooldown_left = c.cooldown_left.saturating_sub(1);
-                }
-                if let Some(ch) = e.character.as_mut() {
-                    for sg in ch.sockets.values_mut() {
-                        sg.cooldown_left = sg.cooldown_left.saturating_sub(1);
-                    }
+            if let Some(e) = self.zone.get_mut(slot)
+                && let Some(ch) = e.character.as_mut()
+            {
+                for sg in ch.sockets.values_mut() {
+                    sg.cooldown_left = sg.cooldown_left.saturating_sub(1);
                 }
             }
         }
@@ -50,21 +48,21 @@ impl World {
                 _ => continue,
             };
             let attacker_is_char = e.character.is_some();
-            let (pos, char_damage, accuracy, weapon_range, weapon_projectile, weapon_cd) = (
+            if now < combat.busy_until {
+                continue; // mid-swing/cast: committed
+            }
+            let (pos, char_damage, accuracy, weapon_range, weapon_projectile, weapon_use) = (
                 e.pos,
                 combat.damage,
                 combat.accuracy,
                 combat.range,
                 combat.projectile,
-                combat.cooldown_ticks,
+                combat.use_ticks,
             );
 
             match skill {
                 None => {
                     // Basic weapon attack.
-                    if combat.cooldown_left > 0 {
-                        continue;
-                    }
                     let Some(target_slot) = self.zone.slot_of(target) else {
                         continue;
                     };
@@ -95,7 +93,7 @@ impl World {
                     if let Some(me) = self.zone.get_mut(slot)
                         && let Some(c) = me.combat.as_mut()
                     {
-                        c.cooldown_left = weapon_cd;
+                        c.busy_until = now + weapon_use as u64;
                         c.last_combat_tick = now;
                     }
                 }
@@ -157,6 +155,7 @@ impl World {
                     let speed_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
                     let cooldown =
                         ((gem_def.cooldown_ticks as i64 * 10000 / speed_factor).max(2)) as u32;
+                    let gem_use = ((weapon_use as i64 * 10000 / speed_factor).max(2)) as u64;
                     let projectile = gem_def.projectile || weapon_projectile;
                     let (shape, radius, max_targets) = (
                         gem_def.shape,
@@ -235,6 +234,7 @@ impl World {
                             sg.cooldown_left = cooldown;
                         }
                         if let Some(c) = me.combat.as_mut() {
+                            c.busy_until = now + gem_use;
                             c.last_combat_tick = now;
                         }
                     }
@@ -296,10 +296,19 @@ impl World {
         }
         let target_net = t.net_id;
         let tc_ro = t.combat.as_ref().unwrap();
-        let (t_evasion, t_armour, t_resists) = (tc_ro.evasion, tc_ro.armour, tc_ro.resists);
+        let (t_evasion, t_armour, t_resists, t_block) =
+            (tc_ro.evasion, tc_ro.armour, tc_ro.resists, tc_ro.block);
 
         // Hit roll: accuracy vs evasion. A miss still marks combat.
-        let hit = (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(accuracy, t_evasion);
+        let mut hit =
+            (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(accuracy, t_evasion);
+        // Block: a shield can negate the whole hit (cap 75%).
+        if hit && t_block > 0 {
+            let block = t_block.min(7500);
+            if (self.rng_combat.next_range(10000) as i64) < block {
+                hit = false;
+            }
+        }
 
         let mut amount = 0i64;
         let mut dmg_type = 0u8;
@@ -327,7 +336,14 @@ impl World {
 
         let t = self.zone.get_mut(target_slot).unwrap();
         let tc = t.combat.as_mut().unwrap();
-        tc.life -= amount;
+        // Energy shield absorbs before life; any damage taken pushes the
+        // recharge delay out.
+        let to_es = amount.min(tc.es);
+        tc.es -= to_es;
+        tc.life -= amount - to_es;
+        if amount > 0 {
+            tc.es_recharge_at = now + super::ES_RECHARGE_DELAY_TICKS;
+        }
         tc.last_combat_tick = now;
         let killed = tc.life <= 0;
         events.push(SimEvent::Hit {
@@ -339,6 +355,34 @@ impl World {
             killed,
         });
 
+        // Leech: a slice of damage dealt returns to the attacker (capped
+        // at 10% of the pool per strike so big hits don't full-heal).
+        if amount > 0 {
+            let (leech_life, leech_mana) = {
+                let a = self.zone.get(attacker_slot).and_then(|e| e.combat.as_ref());
+                (
+                    a.map(|c| c.leech_life).unwrap_or(0),
+                    a.map(|c| c.leech_mana).unwrap_or(0),
+                )
+            };
+            if (leech_life > 0 || leech_mana > 0)
+                && let Some(ac) = self
+                    .zone
+                    .get_mut(attacker_slot)
+                    .and_then(|e| e.combat.as_mut())
+            {
+                if leech_life > 0 && ac.life > 0 {
+                    let gain = (amount * leech_life / 10000).min(ac.life_max / 10);
+                    ac.life = (ac.life + gain).min(ac.life_max);
+                }
+                if leech_mana > 0 {
+                    let gain = (amount * leech_mana / 10000).min(ac.mana_max / 10);
+                    ac.mana = (ac.mana + gain).min(ac.mana_max);
+                }
+            }
+        }
+
+        let t = self.zone.get_mut(target_slot).unwrap();
         if killed {
             let target_pos = t.pos;
             if let Some(m) = &t.monster {
