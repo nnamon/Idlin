@@ -26,6 +26,20 @@ pub struct Cue {
     pub hold_ticks: u32,
 }
 
+/// One row of the focus queue: an idler somewhere, and when the idle
+/// rotation will reach them (their position in the returned Vec).
+pub struct QueueEntry {
+    /// Where they are (tests assert cross-world coverage; the wire entry
+    /// carries the zone display name instead).
+    #[allow(dead_code)]
+    pub world_key: String,
+    pub name: String,
+    /// Currently held by the camera.
+    pub focused: bool,
+    /// Recently featured; event cues skip them until the cooldown lapses.
+    pub on_cooldown: bool,
+}
+
 /// How long a character stays ineligible after being featured.
 const FOCUS_COOLDOWN_TICKS: u64 = 200;
 /// Default idle rotation hold.
@@ -146,15 +160,7 @@ impl Director {
         }
 
         // The full roster, every world, deterministic order.
-        let mut roster: Vec<(String, u32, String)> = worlds
-            .iter()
-            .flat_map(|w| {
-                w.characters
-                    .iter()
-                    .map(|(id, n)| (w.key.to_string(), *id, n.clone()))
-            })
-            .collect();
-        roster.sort_by(|a, b| a.2.cmp(&b.2));
+        let roster = roster(worlds);
 
         // A scheduled overview beat: a sweeping look at the CURRENT zone,
         // never interrupting an event hold; the rotation resumes after.
@@ -197,6 +203,25 @@ impl Director {
         None
     }
 
+    /// The cross-world roster in upcoming-focus order: index 0 is next up
+    /// in the idle rotation. What a stream overlay shows as "who's next" —
+    /// events can jump the queue, which is the charm, not a lie.
+    pub fn focus_queue(&self, tick: u64, worlds: &[WorldView<'_>]) -> Vec<QueueEntry> {
+        let roster = roster(worlds);
+        let len = roster.len();
+        (1..=len)
+            .map(|i| {
+                let (world_key, _, name) = roster[(self.rotation_idx + i) % len].clone();
+                QueueEntry {
+                    focused: self.focus_name.as_ref() == Some(&name),
+                    on_cooldown: self.cooldowns.get(&name).copied().unwrap_or(0) > tick,
+                    world_key,
+                    name,
+                }
+            })
+            .collect()
+    }
+
     fn set_focus(&mut self, name: &str, world: &str, score: u32, tick: u64, hold: u64) {
         self.focus_name = Some(name.to_string());
         self.current_world = Some(world.to_string());
@@ -207,6 +232,21 @@ impl Director {
             .insert(name.to_string(), tick + FOCUS_COOLDOWN_TICKS);
         self.cooldowns.retain(|_, &mut until| until > tick);
     }
+}
+
+/// Everyone everywhere as (world key, net id, name), name-sorted — the
+/// deterministic order both the idle rotation and the focus queue walk.
+fn roster(worlds: &[WorldView<'_>]) -> Vec<(String, u32, String)> {
+    let mut roster: Vec<(String, u32, String)> = worlds
+        .iter()
+        .flat_map(|w| {
+            w.characters
+                .iter()
+                .map(|(id, n)| (w.key.to_string(), *id, n.clone()))
+        })
+        .collect();
+    roster.sort_by(|a, b| a.2.cmp(&b.2));
+    roster
 }
 
 #[cfg(test)]
@@ -309,6 +349,27 @@ mod tests {
             }
         }
         assert!(refreshed, "the lone-character cue must refresh");
+    }
+
+    #[test]
+    fn focus_queue_walks_the_rotation_order_and_flags_focus() {
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = vec![];
+        let (a_ch, b_ch) = (chars(&[1, 2]), vec![(9, "zed".to_string())]);
+        let worlds = [
+            WorldView { key: "a", events: &no_ev, characters: &a_ch },
+            WorldView { key: "b", events: &no_ev, characters: &b_ch },
+        ];
+        let cue = d.update(1, &worlds).expect("initial cue");
+        let q = d.focus_queue(1, &worlds);
+        assert_eq!(q.len(), 3, "everyone everywhere is listed");
+        let focused: Vec<&str> = q.iter().filter(|e| e.focused).map(|e| e.name.as_str()).collect();
+        assert_eq!(focused.len(), 1, "exactly one focused entry");
+        let by_id = |id: u32| if id == 9 { "zed".to_string() } else { format!("c{id}") };
+        assert_eq!(focused[0], by_id(cue.focus), "the focused row matches the cue");
+        assert!(q.iter().any(|e| e.world_key == "b"), "the other world is in the queue");
+        // The focused character just got a cooldown stamp.
+        assert!(q.iter().find(|e| e.focused).unwrap().on_cooldown);
     }
 
     #[test]

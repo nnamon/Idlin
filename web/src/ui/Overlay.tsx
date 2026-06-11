@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
+import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
 import { TreeMap } from "./TreeMap";
@@ -41,10 +42,24 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
     const h = setInterval(ask, 1000);
     return () => clearInterval(h);
   }, [client, focusId]);
-  const sheet = store.sheet && store.sheet.id === focusId ? store.sheet : null;
+  // Gate the sheet by name as well as id: net ids are per-world (every
+  // instance's idler is id 1), so after a cross-world cut the previous
+  // character's sheet would otherwise show until the next poll lands.
+  const sheet =
+    store.sheet &&
+    store.sheet.id === focusId &&
+    (!focused || store.sheet.name === focused.state.name)
+      ? store.sheet
+      : null;
   const chars = store
     .characters()
     .sort((a, b) => b.state.level - a.state.level || b.state.kills - a.state.kills);
+  // Focused row first, then everyone in the order the rotation will
+  // visit them, numbered from 1.
+  let queuePos = 0;
+  const queueRows = [...store.focusQueue]
+    .sort((a, b) => Number(b.focused) - Number(a.focused))
+    .map((q) => <QueueRow key={q.name} q={q} pos={q.focused ? null : ++queuePos} />);
   const now = performance.now();
   const ticker = store.ticker.filter((t) => now - t.at < 14000).slice(-8);
 
@@ -102,11 +117,25 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           </div>
         )}
         <div style={panelStyle}>
-          <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1 }}>IDLERS</div>
-          {chars.map((c) => (
-            <LeaderRow key={c.state.id} c={c} focused={c.state.id === focusId} />
-          ))}
-          {chars.length === 0 && <div style={{ color: "#55556a" }}>none yet</div>}
+          {store.focusQueue.length > 0 ? (
+            // The featured feed carries every idler everywhere, in the
+            // order the director's rotation will visit them.
+            <>
+              <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1 }}>
+                IDLERS · FOCUS QUEUE
+              </div>
+              {queueRows}
+            </>
+          ) : (
+            // Watch feeds see one world: the local roster.
+            <>
+              <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1 }}>IDLERS</div>
+              {chars.map((c) => (
+                <LeaderRow key={c.state.id} c={c} focused={c.state.id === focusId} />
+              ))}
+              {chars.length === 0 && <div style={{ color: "#55556a" }}>none yet</div>}
+            </>
+          )}
         </div>
         {sheet && <SheetPanel sheet={sheet} />}
       </div>
@@ -306,6 +335,35 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
       <span style={{ color: "#8a8aa0" }}>
         lv{c.state.level} · {c.state.kills}k
       </span>
+    </div>
+  );
+}
+
+/** One idler on the cross-world focus queue: ▸ marks the camera's hold,
+ *  numbers count down to each idler's turn, ⧖ marks a focus cooldown. */
+function QueueRow({ q, pos }: { q: FocusQueueEntry; pos: number | null }) {
+  return (
+    <div style={{ fontSize: 12, opacity: q.cooldown && !q.focused ? 0.6 : 1 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          color: q.dead ? "#55556a" : q.focused ? "#e8e8ff" : "#b0b0c8",
+        }}
+      >
+        <span>
+          <span style={{ color: "#9a7bff", display: "inline-block", width: 16 }}>
+            {q.focused ? "▸" : pos}
+          </span>
+          {q.name}
+          {q.dead ? " ☠" : ""}
+          {q.cooldown && !q.focused ? " ⧖" : ""}
+        </span>
+        <span style={{ color: "#8a8aa0" }}>lv{q.level}</span>
+      </div>
+      <div style={{ color: "#55556a", fontSize: 10, paddingLeft: 16, lineHeight: 1.2 }}>
+        {q.zone}
+      </div>
     </div>
   );
 }

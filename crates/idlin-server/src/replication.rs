@@ -9,8 +9,8 @@
 use crate::director::{Director, WorldView};
 use crate::runner::TickBatch;
 use idlin_protocol::{
-    EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, ObstacleState,
-    ProjectileFx, S2C, SkillFx,
+    EntityKind, EntityMove, EntityPatch, EntityState, FocusQueueEntry, GameEvent, HitFx,
+    ObstacleState, ProjectileFx, S2C, SkillFx,
 };
 use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
@@ -40,9 +40,8 @@ pub struct FeedHandle {
 /// across transfers.
 #[derive(Clone, Default)]
 pub struct Routing {
-    /// The current featured world key (informational; the featured FEED is
-    /// already composed server-side, so sockets don't route with this yet).
-    #[allow(dead_code)]
+    /// The current featured world key — the director's choice, refreshed
+    /// every tick. Sockets scope featured-feed inspections with it.
     pub featured: String,
     /// Character name → world key.
     pub by_character: HashMap<String, String>,
@@ -104,6 +103,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
         let mut worlds: HashMap<String, WorldState> = HashMap::new();
         let mut director = Director::new();
         let mut featured_key: Option<String> = None;
+        let mut last_queue: Option<Frame> = None;
         while let Some(batch) = batches.recv().await {
             let backlog = batches.len();
             if backlog > BACKLOG_WARN_FRAMES {
@@ -119,6 +119,8 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
             // character there this tick — corpses included; a dead idler
             // awaiting respawn is still the story.
             let mut roster: Vec<Vec<(u32, String)>> = Vec::with_capacity(batch.frames.len());
+            // Focus-queue dressing: name → (level, dead, zone display name).
+            let mut char_info: HashMap<String, (u32, bool, String)> = HashMap::new();
 
             for frame in &batch.frames {
                 // Lazily create this world's feed + state.
@@ -223,7 +225,13 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                         .views
                         .iter()
                         .filter(|v| v.kind == KIND_CHARACTER)
-                        .map(|v| (v.id, v.name.clone()))
+                        .map(|v| {
+                            char_info.insert(
+                                v.name.clone(),
+                                (v.level, v.dead, frame.zone_name.clone()),
+                            );
+                            (v.id, v.name.clone())
+                        })
                         .collect(),
                 );
                 outs.push(FrameOut {
@@ -279,12 +287,36 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
             if !all_events.is_empty() {
                 let _ = featured_tx.send(serialize(&S2C::Events { events: all_events }));
             }
+            let cue_emitted = cue.is_some();
             if let Some(cue) = cue {
                 let _ = featured_tx.send(serialize(&S2C::DirectorCue {
                     focus: cue.focus,
                     reason: cue.reason,
                     hold_ticks: cue.hold_ticks,
                 }));
+            }
+            // The focus queue rides the featured feed: on change, and with
+            // every cue so late joiners get it within one refresh beat.
+            let entries: Vec<FocusQueueEntry> = director
+                .focus_queue(tick, &views)
+                .into_iter()
+                .map(|q| {
+                    let (level, dead, zone) =
+                        char_info.get(&q.name).cloned().unwrap_or_default();
+                    FocusQueueEntry {
+                        name: q.name,
+                        zone,
+                        level,
+                        dead,
+                        focused: q.focused,
+                        cooldown: q.on_cooldown,
+                    }
+                })
+                .collect();
+            let queue_msg = serialize(&S2C::FocusQueue { entries });
+            if cue_emitted || last_queue.as_deref() != Some(&*queue_msg) {
+                let _ = featured_tx.send(queue_msg.clone());
+                last_queue = Some(queue_msg);
             }
             if let Some(out) = featured_out {
                 let _ = featured_snap_tx.send(out.snapshot.clone());

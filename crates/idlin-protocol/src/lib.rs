@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 16;
+pub const PROTO_VERSION: u32 = 17;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -290,6 +290,22 @@ pub struct GemView {
     pub support: bool,
 }
 
+/// One idler on the global focus-queue roster (every world), listed in
+/// the order the director's idle rotation will visit them. Events can
+/// jump the queue — that's the broadcast's charm, not a lie.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct FocusQueueEntry {
+    pub name: String,
+    /// Display name of the zone they're in.
+    pub zone: String,
+    pub level: u32,
+    pub dead: bool,
+    /// Currently held by the director's camera.
+    pub focused: bool,
+    /// Recently featured; event cues skip them for a while.
+    pub cooldown: bool,
+}
+
 /// On-demand character inspection, shown while the director focuses an
 /// idler: gear, brief stats, bag, gems, passives.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -411,6 +427,10 @@ pub enum S2C {
         focus: u32,
         reason: String,
         hold_ticks: u32,
+    },
+    /// The cross-world roster in upcoming-focus order (featured feed).
+    FocusQueue {
+        entries: Vec<FocusQueueEntry>,
     },
     CharacterSheet {
         sheet: CharacterSheet,

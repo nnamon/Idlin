@@ -258,8 +258,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     },
                     Ok(C2S::DirectorMode { .. }) => continue, // client-side concern in Phase 1
                     Ok(C2S::Inspect { id }) => {
+                        // Featured viewers inspect in whichever world the
+                        // director's camera is on RIGHT NOW — the runner's
+                        // own fallback pick can disagree with the broadcast.
+                        let key = current_key.clone().or_else(|| {
+                            let f = routing.borrow().featured.clone();
+                            (!f.is_empty()).then_some(f)
+                        });
                         let (tx_r, rx_r) = tokio::sync::oneshot::channel();
-                        let _ = state.inspect.send((current_key.clone(), id, tx_r));
+                        let _ = state.inspect.send((key, id, tx_r));
                         match tokio::time::timeout(std::time::Duration::from_millis(300), rx_r)
                             .await
                         {

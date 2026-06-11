@@ -3,6 +3,7 @@ import type { CharacterSheet } from "./CharacterSheet";
 import type { EntityMove } from "./EntityMove";
 import type { EntityPatch } from "./EntityPatch";
 import type { EntityState } from "./EntityState";
+import type { FocusQueueEntry } from "./FocusQueueEntry";
 import type { GameEvent } from "./GameEvent";
 import type { HitFx } from "./HitFx";
 import type { ObstacleState } from "./ObstacleState";
@@ -29,4 +30,4 @@ width: number, height: number,
 /**
  * Generated non-walkable props; constant for the zone's lifetime.
  */
-obstacles: Array<ObstacleState>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, skills: Array<SkillFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
+obstacles: Array<ObstacleState>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, skills: Array<SkillFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };

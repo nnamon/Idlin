@@ -1,6 +1,7 @@
 import type { S2C } from "../gen/S2C";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { EntityState } from "../gen/EntityState";
+import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { GameEvent } from "../gen/GameEvent";
 
 const TICK_MS = 100; // 10 Hz sim; interpolation window
@@ -99,6 +100,8 @@ export class WorldStore {
   pendingProjectiles: ActiveProjectile[] = [];
   pendingSkills: ActiveSkill[] = [];
   cue: Cue | null = null;
+  /** All idlers, all worlds, in upcoming-focus order (featured feed). */
+  focusQueue: FocusQueueEntry[] = [];
   /** Speech bubbles: entity id → line + when (renderer reads each frame). */
   speech = new Map<number, { text: string; at: number }>();
   /** Latest inspect reply (the focus panel); refreshed by Overlay polling. */
@@ -224,6 +227,11 @@ export class WorldStore {
           holdTicks: d.hold_ticks,
           at: performance.now(),
         };
+        this.version++;
+        break;
+      }
+      case "FocusQueue": {
+        this.focusQueue = msg.data.entries;
         this.version++;
         break;
       }
