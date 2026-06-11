@@ -97,6 +97,17 @@ impl SimGrid {
     }
 }
 
+/// A walk-up exit: a character bot standing close enough takes it with
+/// the UseExit syscall — nothing ever forces a transfer. The zone brain
+/// gates `open`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExitState {
+    pub pos: FxV2,
+    /// Destination zone id (the host ferries the bundle).
+    pub dest: String,
+    pub open: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Zone {
     pub name: String,
@@ -113,6 +124,8 @@ pub struct Zone {
     /// Authored tile collision (zones with a map.txt); generated zones
     /// use `obstacles` instead.
     pub grid: Option<SimGrid>,
+    /// Walk-up exits to other zones.
+    pub exits: Vec<ExitState>,
     /// Skill projectiles in flight.
     pub projectiles: Vec<Projectile>,
     pub packs: Vec<PackState>,
@@ -132,6 +145,7 @@ impl Zone {
             camp_radius: Fx::ZERO,
             obstacles: Vec::new(),
             grid: None,
+            exits: Vec::new(),
             projectiles: Vec::new(),
             packs: Vec::new(),
             slots: Vec::new(),

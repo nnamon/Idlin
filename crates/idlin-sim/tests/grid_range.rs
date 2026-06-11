@@ -77,6 +77,36 @@ fn bots_fight_through_the_gate_and_never_stand_in_walls() {
 }
 
 #[test]
+fn bots_take_the_open_exit_and_the_loop_ferries_them_back() {
+    // The range's exit is always open and loops to itself: bots clear the
+    // gate pack (close enemies outrank leaving), then walk through and
+    // re-arrive at the south camp — the full transfer machinery on a loop,
+    // chosen by the bot's own UseExit call. Nothing forces it.
+    let mut world = World::new_for_zone(0xD0_0D, &content(), "test_range");
+    let mut inputs = join_two();
+    let mut departures = 0;
+    let mut joins = 0;
+    for _ in 0..2500 {
+        let events = world.tick(&inputs);
+        inputs = TickInputs::default();
+        joins += events
+            .iter()
+            .filter(|e| matches!(e, SimEvent::CharacterJoined { .. }))
+            .count();
+        for (bundle, dest) in world.take_departures() {
+            assert_eq!(dest, "test_range", "the demo exit loops home");
+            departures += 1;
+            inputs.arrivals.push(bundle);
+        }
+        if departures >= 2 {
+            break;
+        }
+    }
+    assert!(departures >= 1, "a bot must choose the open exit");
+    assert!(joins > 2, "ferried bots must re-arrive (beyond the 2 boot joins)");
+}
+
+#[test]
 fn the_proving_grounds_replay_identically() {
     let run = |seed: u64| {
         let mut w = World::new_for_zone(seed, &content(), "test_range");

@@ -199,6 +199,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     height: frame.zone_height,
                     obstacles: frame.obstacles.clone(),
                     tiles: frame.tiles.as_deref().cloned(),
+                    exits: frame.exits.clone(),
                     entities,
                 });
 
@@ -523,6 +524,7 @@ fn empty_snapshot(zone_name: &str, width: i32, height: i32, obstacles: &[Obstacl
         height,
         obstacles: obstacles.to_vec(),
         tiles: None,
+        exits: vec![],
         entities: vec![],
     })
     .expect("serialize")
@@ -565,6 +567,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             killer: killer.clone(),
         },
         SimEvent::CharacterRespawned { id } => GameEvent::CharacterRespawned { id: *id },
+        SimEvent::ExitChanged { x, y, open } => GameEvent::ExitChanged {
+            x: *x,
+            y: *y,
+            open: *open,
+        },
         SimEvent::LevelUp { id, name, level } => GameEvent::LevelUp {
             id: *id,
             name: name.clone(),

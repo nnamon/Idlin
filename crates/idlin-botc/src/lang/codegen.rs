@@ -41,13 +41,17 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("read_currency", 24, 2),
     ("use_currency", 25, 2),
     ("say", 26, 1),
-    // Zone-brain syscalls (no-ops for entity bots).
+    ("read_exits", 27, 2),
+    ("use_exit", 28, 0),
+    // Zone-brain syscalls (no-ops for entity bots). There is NO forced
+    // character transfer: bots take exits themselves (use_exit); brains
+    // only gate whether an exit is open.
     ("query_characters", 100, 2),
     ("poll_events", 101, 2),
     ("narrate", 102, 2),
     ("drop_loot", 103, 5),
     ("spawn_monster", 104, 3),
-    ("transfer_character", 105, 2),
+    ("set_exit", 106, 2),
 ];
 
 /// SetBuild is emitted by the compiler from the `build [...]` declaration,

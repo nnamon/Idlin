@@ -51,4 +51,10 @@ ZoneDef(
         // The boss holds the bluff path.
         SpawnPack(monster: "tidewarden",       count: 1, x_u: 17, y_u: 6,   radius_u: 0, respawn_ticks: 3000),
     ],
+    // The bluff path up to Saltmere, behind the boss. Starts shut; the
+    // brain opens it when the Tidewarden falls — walking through is the
+    // killer's own bot's decision (use_exit).
+    exits: [
+        (x_u: 17, y_u: 2, dest: "saltmere", open: false),
+    ],
 )

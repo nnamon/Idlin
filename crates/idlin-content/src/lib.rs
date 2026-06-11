@@ -666,6 +666,20 @@ pub struct TreeDef {
     pub nodes: Vec<NodeDef>,
 }
 
+/// A zone exit: a PLACE a character bot must walk to and take with the
+/// UseExit syscall — there are no forced transfers. Brains gate `open`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExitDef {
+    pub x_u: i32,
+    pub y_u: i32,
+    /// Destination ZoneDef id (self-loops are legal — the test range
+    /// cycles characters through its own exit).
+    pub dest: String,
+    /// Usable from boot? Closed exits open via the zone brain's set_exit.
+    #[serde(default)]
+    pub open: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnPack {
     /// MonsterDef id.
@@ -844,6 +858,9 @@ pub struct ZoneDef {
     #[serde(default)]
     pub lines: Vec<String>,
     pub packs: Vec<SpawnPack>,
+    /// Walk-up exits to other zones (bots confirm with UseExit).
+    #[serde(default)]
+    pub exits: Vec<ExitDef>,
     /// The tileset family this zone is authored in (zones with map.txt).
     #[serde(default)]
     pub tileset: Option<String>,
@@ -1026,6 +1043,14 @@ impl ContentDb {
                     return Err(bad(format!(
                         "pack anchor {}x{} ({}) is not walkable",
                         pack.x_u, pack.y_u, pack.monster
+                    )));
+                }
+            }
+            for exit in &zone.exits {
+                if !walkable_at(exit.x_u, exit.y_u) {
+                    return Err(bad(format!(
+                        "exit {}x{} (to {}) is not walkable",
+                        exit.x_u, exit.y_u, exit.dest
                     )));
                 }
             }
@@ -1264,6 +1289,14 @@ impl ContentDb {
                         path: format!("zones/{}.ron", zone.id),
                         zone: zone.id.clone(),
                         monster: pack.monster.clone(),
+                    });
+                }
+            }
+            for exit in &zone.exits {
+                if db.zone(&exit.dest).is_none() {
+                    return Err(ContentError::BadMap {
+                        zone: zone.id.clone(),
+                        msg: format!("exit leads to unknown zone `{}`", exit.dest),
                     });
                 }
             }

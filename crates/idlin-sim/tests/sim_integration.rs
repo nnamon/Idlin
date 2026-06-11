@@ -342,17 +342,23 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     town.tick(&TickInputs::default());
 
     // Stage the final exam in test time: drop the pilgrim at the bluff and
-    // reduce the Tidewarden to a 1-life, harmless effigy. The kill, hoard,
-    // countdown, and transfer all run through the REAL pipeline and brain.
+    // reduce EVERY monster to a 1-life, harmless effigy — the bluff's
+    // neighbors would otherwise eat a level-1 pilgrim, and there are no
+    // forced transfers to save them anymore. The kill, hoard, exit
+    // opening, and the bot's own walk through the bluff gate all run the
+    // REAL pipeline and brain.
     let views = shore.views();
     let me = views.iter().find(|v| v.kind == 1).unwrap().id;
-    let boss = views
+    views
         .iter()
         .find(|v| v.name == "The Tidewarden")
-        .expect("the boss stands at the bluff")
-        .id;
+        .expect("the boss stands at the bluff");
     shore.test_teleport(me, 17, 8);
-    shore.test_set_combat(boss, 1, 0);
+    for v in &views {
+        if v.kind == 2 && !v.dead {
+            shore.test_set_combat(v.id, 1, 0);
+        }
+    }
 
     let mut departed = None;
     let empty = TickInputs::default();

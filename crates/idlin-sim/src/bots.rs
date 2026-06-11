@@ -52,6 +52,10 @@ pub const SYS_USE_SKILL_DIR: i32 = 23;
 pub const SYS_READ_CURRENCY: i32 = 24;
 pub const SYS_USE_CURRENCY: i32 = 25;
 pub const SYS_SAY: i32 = 26;
+pub const SYS_READ_EXITS: i32 = 27;
+pub const SYS_USE_EXIT: i32 = 28;
+/// UseExit reach: how close a bot must stand to take an exit.
+pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
@@ -449,6 +453,58 @@ impl World {
             SYS_SAY => {
                 let line = bot.vm.pop();
                 self.try_say(slot, line, events)
+            }
+            SYS_READ_EXITS => {
+                // The zone's exits as 16-byte records: (x raw, y raw,
+                // open, reserved). Returns how many were written — the
+                // bot navigates to and takes them itself; nothing ever
+                // forces a transfer.
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, 16) as usize;
+                let n = self.zone.exits.len().min(max);
+                for (i, exit) in self.zone.exits.iter().take(n).enumerate() {
+                    let base = out.wrapping_add(16 * i as u16);
+                    bot.vm.store_i32(base, exit.pos.x.raw());
+                    bot.vm.store_i32(base.wrapping_add(4), exit.pos.y.raw());
+                    bot.vm.store_i32(base.wrapping_add(8), exit.open as i32);
+                    bot.vm.store_i32(base.wrapping_add(12), 0);
+                }
+                n as i32
+            }
+            SYS_USE_EXIT => {
+                // Take the exit underfoot. 0 = staged (departs this tick),
+                // −1 no exit in reach, −2 the exit in reach is closed.
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                if e.character.is_none() {
+                    return -1; // monsters live and die in their zone
+                }
+                let net = e.net_id;
+                let pos = e.pos;
+                let reach = crate::fixed::Fx::from_raw(EXIT_REACH_RAW);
+                let mut found_closed = false;
+                let mut dest: Option<String> = None;
+                for exit in &self.zone.exits {
+                    if pos.dist(exit.pos) > reach {
+                        continue;
+                    }
+                    if exit.open {
+                        dest = Some(exit.dest.clone());
+                        break;
+                    }
+                    found_closed = true;
+                }
+                match dest {
+                    Some(dest) => {
+                        if !self.pending_exits.iter().any(|(n, _)| *n == net) {
+                            self.pending_exits.push((net, dest));
+                        }
+                        0
+                    }
+                    None if found_closed => -2,
+                    None => -1,
+                }
             }
             SYS_PICK_UP => {
                 let id = bot.vm.pop();

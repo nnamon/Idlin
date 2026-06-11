@@ -45,6 +45,7 @@ build [
 const SELF = 0xE000;       // SelfStatus buffer
 const ENTS = 0xE100;       // entity query buffer (24-byte records)
 const SKL = 0xE400;        // ReadSkills records (48 bytes each)
+const EXITS = 0xE700;      // ReadExits records (16 bytes each)
 const F_ENEMY = 1;
 const F_LOOT = 3;
 
@@ -80,6 +81,25 @@ fn main() {
     equip_best();
     socket_gem(-1, -1);
 
+    // An OPEN exit means the zone's story is done with us. Find one
+    // first: it outranks distant enemies (we leave), but anything CLOSE
+    // still gets fought — exits are walked to, not teleported through.
+    var open_ex = 0;
+    var ex = 0;
+    var ey = 0;
+    var nxits = read_exits(EXITS, 4);
+    var e = 0;
+    while (e < nxits) {
+        var er = EXITS + e * 16;
+        if (mem[er + 8] == 1) {
+            open_ex = 1;
+            ex = mem[er];
+            ey = mem[er + 4];
+            e = nxits;
+        }
+        e = e + 1;
+    }
+
     // Fight the nearest enemy. Attacks are wasted intent without line of
     // sight, so only swing when the lane is clear; either way keep closing
     // distance — movement slides around cover.
@@ -87,6 +107,19 @@ fn main() {
         var target = mem[ENTS];
         var tx = mem[ENTS + 8];
         var ty = mem[ENTS + 12];
+        // Heading out? Ignore enemies beyond ~6u (Chebyshev, raw Q16.16:
+        // squaring raw deltas would overflow).
+        if (open_ex == 1) {
+            var adx = tx - mem[SELF];
+            if (adx < 0) { adx = 0 - adx; }
+            var ady = ty - mem[SELF + 4];
+            if (ady < 0) { ady = 0 - ady; }
+            if (adx > 0x60000 || ady > 0x60000) {
+                if (use_exit() == 0) { return; }
+                move_to(ex, ey);
+                return;
+            }
+        }
         if (line_of_sight(tx, ty) == 1) {
             // Mana budget: gem skills only above 20% mana — the basic
             // attack is free, and the pool wants emergency headroom.
@@ -113,7 +146,13 @@ fn main() {
         return;
     }
 
-    // Nothing around: wander somewhere in the zone.
+    // The area is clear: take the open exit if there is one (the bot's
+    // own call — nothing forces a transfer), else wander.
+    if (open_ex == 1) {
+        if (use_exit() == 0) { return; }
+        move_to(ex, ey);
+        return;
+    }
     move_to((random() & 0x7FFFFFFF) % mem[SELF + 24],
             (random() & 0x7FFFFFFF) % mem[SELF + 28]);
 }

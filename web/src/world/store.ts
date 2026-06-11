@@ -99,6 +99,7 @@ export class WorldStore {
     height: number;
     obstacles: ZoneObstacle[];
     tiles: TileMapState | null;
+    exits: { x: number; y: number; open: boolean }[];
   } | null = null;
   tick = 0;
   ticker: TickerItem[] = [];
@@ -130,6 +131,11 @@ export class WorldStore {
             kind: o.kind,
           })),
           tiles: d.tiles ?? null,
+          exits: (d.exits ?? []).map((e) => ({
+            x: e.x / 65536,
+            y: e.y / 65536,
+            open: e.open,
+          })),
         };
         this.tick = d.tick;
         this.entities.clear();
@@ -322,6 +328,18 @@ export class WorldStore {
       case "CharacterRespawned": {
         const name = this.entities.get(ev.data.id)?.state.name ?? "someone";
         push(`✚ ${name} returns to the fight`, "#7bff9a");
+        break;
+      }
+      case "ExitChanged": {
+        // Flip the matching portal's state in place (snapshots carry the
+        // full list; this keeps live viewers current between them).
+        const ex = ev.data.x / 65536;
+        const ey = ev.data.y / 65536;
+        const exit = this.zone?.exits.find(
+          (e) => Math.abs(e.x - ex) < 0.01 && Math.abs(e.y - ey) < 0.01,
+        );
+        if (exit) exit.open = ev.data.open;
+        push(ev.data.open ? "◈ A way forward opens" : "◈ A way forward closes", "#6fe3c1");
         break;
       }
       case "LevelUp":

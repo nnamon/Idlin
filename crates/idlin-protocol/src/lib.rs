@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 18;
+pub const PROTO_VERSION: u32 = 19;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -143,6 +143,13 @@ pub enum GameEvent {
     CharacterJoined {
         id: u32,
         name: String,
+    },
+    /// An exit opened or closed (raw Q16.16 coords — the client keys its
+    /// portal visuals by position).
+    ExitChanged {
+        x: i32,
+        y: i32,
+        open: bool,
     },
     CharacterDied {
         id: u32,
@@ -288,6 +295,16 @@ pub struct GemView {
     pub xp_next: i32,
     /// Support gems render indented under their skill.
     pub support: bool,
+}
+
+/// A walk-up zone exit (portal). Bots take these themselves; the client
+/// renders open ones as an inviting glow.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ExitView {
+    /// Q16.16 raw.
+    pub x: i32,
+    pub y: i32,
+    pub open: bool,
 }
 
 /// One glyph's resolved look: the server applies tileset + variant so
@@ -443,6 +460,9 @@ pub enum S2C {
         /// The authored tile map; None for generated zones.
         #[serde(default)]
         tiles: Option<TileMapState>,
+        /// Walk-up exits (portals), open state included.
+        #[serde(default)]
+        exits: Vec<ExitView>,
         entities: Vec<EntityState>,
     },
     /// Per-tick changes relative to the previous tick.

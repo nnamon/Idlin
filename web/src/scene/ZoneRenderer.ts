@@ -64,6 +64,13 @@ export class ZoneRenderer {
   private fx: FxSystem;
   private braziers: Brazier[] = [];
   private brazierGroups: THREE.Group[] = [];
+  /** Zone exits (portals), index-aligned with store.zone.exits. */
+  private exitMarkers: Array<{
+    group: THREE.Group;
+    ring: THREE.MeshStandardMaterial;
+    beam: THREE.MeshBasicMaterial;
+    light: THREE.PointLight;
+  }> = [];
   private moon: THREE.DirectionalLight;
   private focusRing: THREE.Mesh;
   private timer = new THREE.Timer();
@@ -173,6 +180,8 @@ export class ZoneRenderer {
     for (const g of this.brazierGroups) g.removeFromParent();
     this.brazierGroups = [];
     this.braziers = [];
+    for (const m of this.exitMarkers) m.group.removeFromParent();
+    this.exitMarkers = [];
     // Entity visuals too: net ids are PER-WORLD (every instance's idler is
     // id 1), so reusing a visual across a cut would keep the old world's
     // baked name label — Kargan's nameplate riding on Veles.
@@ -220,6 +229,38 @@ export class ZoneRenderer {
     // Braziers: warm flickering counterpoints to the cold moonlight.
     for (const [bx, bz] of brazierSpots) {
       this.addBrazier(bx, bz, this.terrain.heightAt(bx, bz));
+    }
+
+    // Exits: a portal ring + beam per zone exit. Open state animates in
+    // the frame loop (a closed exit is a faint dark ring).
+    for (const exit of zone.exits) {
+      const y = this.terrain.heightAt(exit.x, exit.y);
+      const group = new THREE.Group();
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: 0x1a3a34,
+        emissive: 0x6fe3c1,
+        emissiveIntensity: 0.2,
+        roughness: 0.6,
+      });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.1, 10, 28), ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.08;
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0x6fe3c1,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 5.5, 14, 1, true), beamMat);
+      beam.position.y = 2.8;
+      const light = new THREE.PointLight(0x6fe3c1, 0, 9, 2);
+      light.position.y = 1.4;
+      group.add(ring, beam, light);
+      group.position.set(exit.x, y, exit.y);
+      this.scene.add(group);
+      this.exitMarkers.push({ group, ring: ringMat, beam: beamMat, light });
     }
 
     this.director.setZoneSize(w, h);
@@ -272,6 +313,17 @@ export class ZoneRenderer {
     for (const b of this.braziers) {
       b.light.intensity =
         b.baseIntensity * (0.82 + 0.14 * Math.sin(t * 9 + b.phase) + 0.1 * Math.sin(t * 23 + b.phase * 3));
+    }
+
+    // Portals breathe while open; closed ones sit as faint dark rings.
+    const exits = this.store.zone?.exits ?? [];
+    for (let i = 0; i < this.exitMarkers.length; i++) {
+      const m = this.exitMarkers[i];
+      const open = exits[i]?.open ?? false;
+      const pulse = 0.75 + 0.25 * Math.sin(t * 2.2 + i);
+      m.ring.emissiveIntensity = open ? 1.6 * pulse : 0.15;
+      m.beam.opacity = open ? 0.16 * pulse : 0;
+      m.light.intensity = open ? 11 * pulse : 0;
     }
 
     // -- sync entities (only once models are in; one frame of patience) --

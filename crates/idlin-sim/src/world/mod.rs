@@ -99,6 +99,12 @@ pub enum SimEvent {
     CharacterRespawned {
         id: u32,
     },
+    /// An exit opened or closed (zone brain's set_exit). Raw Q16.16 coords.
+    ExitChanged {
+        x: i32,
+        y: i32,
+        open: bool,
+    },
     LevelUp {
         id: u32,
         name: String,
@@ -288,10 +294,14 @@ pub struct World {
     /// This tick's event records staged for the brain (transient).
     #[serde(skip)]
     zone_brain_inbox: Vec<[i32; 4]>,
-    /// Characters detached by transfer_character this tick, awaiting the
+    /// Characters whose bundles detached this tick (UseExit), awaiting the
     /// host's ferry (drained right after tick; transient).
     #[serde(skip)]
     pending_departures: Vec<(CharacterBundle, String)>,
+    /// UseExit calls staged during bot execution; detached in slot-call
+    /// order after bots finish (an entity can't vanish mid-arena-walk).
+    #[serde(skip)]
+    pub(crate) pending_exits: Vec<(u32, String)>,
 }
 
 // ---- universal (classless) character bases ----
@@ -592,6 +602,16 @@ impl World {
                         respawn_timer: 0,
                     });
                 }
+                for exit in &def.exits {
+                    zone.exits.push(crate::zone::ExitState {
+                        pos: FxV2::new(
+                            Fx::from_int(exit.x_u as i16),
+                            Fx::from_int(exit.y_u as i16),
+                        ),
+                        dest: exit.dest.clone(),
+                        open: exit.open,
+                    });
+                }
                 match (&def.tiles, &def.tileset) {
                     // Authored zones: collision IS the map; nothing is
                     // generated. Tileset presence was validated at load.
@@ -638,6 +658,7 @@ impl World {
             zone_lines,
             zone_brain_inbox: Vec::new(),
             pending_departures: Vec::new(),
+            pending_exits: Vec::new(),
         }
     }
 
@@ -706,6 +727,7 @@ impl World {
         self.clear_transient_intents();
         self.apply_joins(inputs, &mut events);
         self.run_bots(&mut events);
+        self.process_exits(&mut events);
         self.movement();
         self.separation();
         self.obstacle_pushout();
@@ -723,6 +745,44 @@ impl World {
         let id = self.next_net_id;
         self.next_net_id += 1;
         id
+    }
+
+    /// Detach the characters who took an exit this tick: entity + bot
+    /// become a portable bundle for the host to ferry — the sim owns
+    /// exactly one zone. The persist block travels; working VM memory
+    /// resets, like a redeploy.
+    fn process_exits(&mut self, events: &mut Vec<SimEvent>) {
+        for (net, dest) in std::mem::take(&mut self.pending_exits) {
+            let Some(slot) = self.zone.slot_of(net) else {
+                continue; // died and was removed in the same tick
+            };
+            if self.zone.get(slot).is_none_or(|e| e.character.is_none()) {
+                continue;
+            }
+            let Some(mut entity) = self.zone.remove(slot) else {
+                continue;
+            };
+            let character = entity.character.take().unwrap();
+            let name = character.name.clone();
+            let Some(b) = entity.bot.and_then(|idx| self.bots.remove(idx)) else {
+                continue; // a characterless husk would be a bug
+            };
+            self.pending_departures.push((
+                CharacterBundle {
+                    character,
+                    persist: b.vm.read_persist_block(),
+                    program: b.program,
+                    params: b.params,
+                    bot_version: b.version,
+                },
+                dest.clone(),
+            ));
+            events.push(SimEvent::CharacterDeparted {
+                id: net,
+                name,
+                dest,
+            });
+        }
     }
 
     /// A spawn position scattered inside the zone's spawn area, so idlers

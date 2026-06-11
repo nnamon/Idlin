@@ -163,6 +163,15 @@ impl World {
         }
     }
 
+    /// The zone's exits as raw Q16.16 (x, y, open) for replication.
+    pub fn exit_views(&self) -> Vec<(i32, i32, bool)> {
+        self.zone
+            .exits
+            .iter()
+            .map(|e| (e.pos.x.raw(), e.pos.y.raw(), e.open))
+            .collect()
+    }
+
     /// TEST HARNESS ONLY: line-of-sight between two unit coordinates.
     pub fn test_los_clear(&self, ax: i16, ay: i16, bx: i16, by: i16) -> bool {
         !self.los_blocked(
@@ -505,6 +514,11 @@ impl World {
             h.write_i32(ob.pos.y.raw());
             h.write_i32(ob.radius.raw());
             h.write_u8(ob.kind);
+        }
+        for ex in &self.zone.exits {
+            h.write_i32(ex.pos.x.raw());
+            h.write_i32(ex.pos.y.raw());
+            h.write_u8(ex.open as u8);
         }
         if let Some(b) = &self.zone_brain {
             for byte in b.vm.state_bytes() {
