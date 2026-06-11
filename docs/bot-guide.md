@@ -115,8 +115,20 @@ fn main() {                            // main() runs once per tick
 
     if (read_entities(ENTS, 8, 1) > 0) {
         var target = mem[ENTS];
-        if (use_skill(1, target, 0, 0) != 0) { use_skill(0, target, 0, 0); }
-        move_to(mem[ENTS + 8], mem[ENTS + 12]);
+        var tx = mem[ENTS + 8];
+        var ty = mem[ENTS + 12];
+        // Lead with the first READY skill, aimed per its target_mode
+        // (+36) — ready (+44) already folds cooldown/mana/weapon. The
+        // full grinder template loops every slot and budgets mana.
+        var used = -1;
+        if (read_skills(0xE400, 1) > 0 && mem[0xE400 + 44] == 1) {
+            var mode = mem[0xE400 + 36];
+            if (mode == 0) { used = use_skill(1, target, 0, 0); }
+            if (mode == 1) { used = use_skill_at(1, tx, ty); }
+            if (mode == 2) { used = use_skill_dir(1, tx - mem[SELF], ty - mem[SELF + 4]); }
+        }
+        if (used != 0) { use_skill(0, target, 0, 0); }
+        move_to(tx, ty);
         return;
     }
     move_to((random() & 0x7FFFFFFF) % mem[SELF + 24],

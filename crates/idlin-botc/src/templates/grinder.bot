@@ -2,9 +2,10 @@
 // Idlin grinder template — the default chat-player brain.
 //
 // Per tick: read status; if dead, wait. Pick up our loot, run
-// gear/passive/gem upkeep, then fight the nearest enemy
-// (preferring our first skill gem, falling back to the basic
-// attack). Wander when nothing is around.
+// gear/passive/gem upkeep, then fight the nearest enemy —
+// leading with the first READY skill gem aimed per its declared
+// targeting mode, budgeting mana, falling back to the basic
+// attack. Wander when nothing is around.
 //
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
@@ -43,8 +44,18 @@ build [
 
 const SELF = 0xE000;       // SelfStatus buffer
 const ENTS = 0xE100;       // entity query buffer (24-byte records)
+const SKL = 0xE400;        // ReadSkills records (48 bytes each)
 const F_ENEMY = 1;
 const F_LOOT = 3;
+
+// Fire one skill slot at the target, honoring its declared targeting
+// mode (record +36; ready checked by the caller). 0 = it flies.
+fn fire_skill(rec, slot, target, tx, ty) {
+    var mode = mem[rec + 36];
+    if (mode == 0) { return use_skill(slot, target, 0, 0); }
+    if (mode == 1) { return use_skill_at(slot, tx, ty); }
+    return use_skill_dir(slot, tx - mem[SELF], ty - mem[SELF + 4]);
+}
 
 fn main() {
     self_status(SELF);
@@ -67,7 +78,24 @@ fn main() {
         var tx = mem[ENTS + 8];
         var ty = mem[ENTS + 12];
         if (line_of_sight(tx, ty) == 1) {
-            if (use_skill(1, target, 0, 0) != 0) {  // -1: no gem / on cooldown
+            // Mana budget: gem skills only above 20% mana — the basic
+            // attack is free, and the pool wants emergency headroom.
+            var used = -1;
+            if (mem[SELF + 52] * 5 >= mem[SELF + 56]) {
+                // First READY skill wins (+44; ready already folds
+                // cooldown, mana, use-time, and the weapon gate).
+                var n = read_skills(SKL, 4);
+                var i = 0;
+                while (i < n) {
+                    var rec = SKL + i * 48;
+                    if (mem[rec + 44] == 1) {
+                        used = fire_skill(rec, i + 1, target, tx, ty);
+                        if (used == 0) { i = n; }
+                    }
+                    i = i + 1;
+                }
+            }
+            if (used != 0) {
                 use_skill(0, target, 0, 0);
             }
         }
