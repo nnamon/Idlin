@@ -33,6 +33,8 @@ interface Tracer {
   bornAt: number;
   flightMs: number;
   active: boolean;
+  /** Who fired it — server hits terminate the matching visual. */
+  attacker: number;
 }
 
 interface DamageNumber {
@@ -194,6 +196,18 @@ export class FxSystem {
   }
 
   spawnHit(hit: ActiveHit, to: THREE.Vector3, now: number): void {
+    // The server resolved this projectile's flight — its visual must not
+    // sail on through the target (it reads as a broken hitbox, hit or
+    // miss alike). End the attacker's oldest live tracer here and now.
+    if (hit.projectile) {
+      let oldest: Tracer | null = null;
+      for (const t of this.tracers) {
+        if (t.active && t.attacker === hit.attacker && (!oldest || t.bornAt < oldest.bornAt)) {
+          oldest = t;
+        }
+      }
+      if (oldest) oldest.flightMs = Math.max(1, now - oldest.bornAt);
+    }
     if (!hit.dot) {
       this.spawnFlash(
         to,
@@ -275,7 +289,7 @@ export class FxSystem {
       p.y + (p.vy / speed) * p.range,
     );
     const color = PROJ_COLORS[p.dmgType] ?? 0xffc06a;
-    this.spawnTracer(from, to, now, Math.min(flightMs, 2500), color);
+    this.spawnTracer(from, to, now, Math.min(flightMs, 2500), color, p.attacker);
     // Muzzle flash at the launch point.
     this.spawnFlash(from, color, 0.5, now, 120, 0);
   }
@@ -340,6 +354,7 @@ export class FxSystem {
     now: number,
     flightMs?: number,
     color?: number,
+    attacker = 0,
   ): void {
     let t = this.tracers.find((t) => !t.active);
     if (!t) {
@@ -370,6 +385,7 @@ export class FxSystem {
         bornAt: 0,
         flightMs: 0,
         active: false,
+        attacker: 0,
       };
       t.sprite.scale.set(0.34, 0.34, 1);
       this.scene.add(t.sprite);
@@ -378,6 +394,7 @@ export class FxSystem {
     }
     t.active = true;
     t.bornAt = now;
+    t.attacker = attacker;
     t.from.copy(from);
     t.to.copy(to);
     t.flightMs = flightMs ?? Math.min(220, Math.max(90, t.from.distanceTo(t.to) * 22));
