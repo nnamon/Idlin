@@ -44,14 +44,10 @@ const BASE = join(
   packsDir,
   "universal-base-characters/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf",
 );
-const UAL1 = join(
-  packsDir,
-  "universal-animation-library/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
-);
-const UAL2 = join(
-  packsDir,
-  "ual2/Universal Animation Library 2[Standard]/Unreal-Godot/UAL2_Standard.glb",
-);
+// Paid tiers (UAL1 Pro / UAL2 Source) — full clip sets, same rig as the
+// free Standard GLBs they replace.
+const UAL1 = join(packsDir, "ual1-pro/Unreal-Godot/UAL1.glb");
+const UAL2 = join(packsDir, "ual2-source/Unreal-Godot/UAL2.glb");
 const PARTS_DIR = join(
   packsDir,
   "modular-character-outfits-fantasy/Modular Character Outfits - Fantasy[Standard]/Exports/glTF (Godot-Unreal)/Modular Parts",
@@ -73,7 +69,14 @@ const CLIPS_UAL1 = [
   "Death01",
   "PickUp_Table",
 ];
-const CLIPS_UAL2 = ["Zombie_Idle_Loop", "Zombie_Walk_Fwd_Loop", "Zombie_Scratch", "Melee_Hook"];
+const CLIPS_UAL2 = [
+  "Zombie_Idle_Loop",
+  "Zombie_Walk_Fwd_Loop",
+  "Zombie_Scratch",
+  "Melee_Hook",
+  "Bow_Shoot",
+  "Hit_Knockback",
+];
 
 const PARTS = [
   "Male_Peasant_Arms",

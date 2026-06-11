@@ -13,7 +13,7 @@
       },
       "attackClips": {
         "cleaver": "Sword_Attack",
-        "bow": "Pistol_Shoot",
+        "bow": "Bow_Shoot",
         "wand": "Spell_Simple_Shoot"
       },
       "handSlot": "hand_r",
