@@ -124,8 +124,8 @@ impl World {
             Stat::DamageLightning,
             Stat::DamageChaos,
         ];
-        for i in 0..DMG_COUNT {
-            next.damage[i] = sheet.value(DMG_STATS[i], next.damage[i]).max(0);
+        for (i, stat) in DMG_STATS.iter().enumerate() {
+            next.damage[i] = sheet.value(*stat, next.damage[i]).max(0);
         }
         next.accuracy = sheet.value(Stat::Accuracy, next.accuracy).max(0);
         next.evasion = sheet.value(Stat::Evasion, next.evasion).max(0);
@@ -136,8 +136,8 @@ impl World {
             Stat::ResistLightning,
             Stat::ResistChaos,
         ];
-        for i in 0..RES_COUNT {
-            next.resists[i] = sheet.value(RES_STATS[i], next.resists[i]);
+        for (i, stat) in RES_STATS.iter().enumerate() {
+            next.resists[i] = sheet.value(*stat, next.resists[i]);
         }
         let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
         next.use_ticks = ((def.use_ticks as i64 * 10000 / attack_factor).max(2)) as u32;
