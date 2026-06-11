@@ -93,23 +93,41 @@ pub fn spawn_tick_loop(
                     }
                 }
 
-                // Feature the world with the most living characters (the
-                // story follows the people); ties go to the earliest.
+                // Feature the world with the most characters — corpses
+                // included: a dead idler awaiting respawn is still the
+                // story (counting only the living made every death flap
+                // the stream to the empty town for five seconds). Ties go
+                // to the earliest world.
                 let featured = worlds
                     .iter()
                     .enumerate()
                     .map(|(i, mw)| {
-                        let chars = mw
-                            .world
-                            .views()
-                            .iter()
-                            .filter(|v| v.kind == 1 && !v.dead)
-                            .count();
+                        let chars = mw.world.views().iter().filter(|v| v.kind == 1).count();
                         (i, chars)
                     })
                     .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)))
                     .map(|(i, _)| i)
                     .unwrap_or(0);
+
+                // The featured world's full event stream, plus the GLOBAL
+                // announcements from every other world (arrivals,
+                // departures, town narration) so the ticker never misses a
+                // crossing just because the camera was elsewhere.
+                let mut events: Vec<SimEvent> = Vec::new();
+                for (i, evs) in frames_data {
+                    if i == featured {
+                        events.extend(evs);
+                    } else {
+                        events.extend(evs.into_iter().filter(|ev| {
+                            matches!(
+                                ev,
+                                SimEvent::CharacterDeparted { .. }
+                                    | SimEvent::CharacterJoined { .. }
+                                    | SimEvent::Narration { .. }
+                            )
+                        }));
+                    }
+                }
 
                 let mw = &worlds[featured];
                 let tick = mw.world.tick_count();
@@ -128,11 +146,7 @@ pub fn spawn_tick_loop(
                         .map(|(x, y, radius, kind)| ObstacleState { x, y, radius, kind })
                         .collect(),
                     views: mw.world.views(),
-                    events: frames_data
-                        .into_iter()
-                        .find(|(i, _)| *i == featured)
-                        .map(|(_, ev)| ev)
-                        .unwrap_or_default(),
+                    events,
                 };
                 // Replication gone (shutdown) → stop simulating.
                 if frames.send(frame).is_err() {
