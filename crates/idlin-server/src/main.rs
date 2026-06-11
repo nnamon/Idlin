@@ -42,11 +42,11 @@ struct AppState {
     tree_json: Arc<str>,
 }
 
-/// The four built-in characters a fresh world starts with.
+/// The built-in characters a fresh world starts with.
 fn builtin_joins() -> anyhow::Result<TickInputs> {
     let program = idlin_botc::template_grinder()
         .map_err(|e| anyhow::anyhow!("grinder template failed to assemble: {e}"))?;
-    let joins = ["Kargan", "Veles", "Mirra", "Thane"]
+    let joins = ["Kargan", "Veles"]
         .into_iter()
         .map(|name| JoinRequest {
             name: name.into(),
