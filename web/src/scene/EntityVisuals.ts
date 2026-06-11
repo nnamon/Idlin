@@ -17,7 +17,7 @@ function applyRarityGlow(root: THREE.Object3D, rarity: number): THREE.Material[]
     if (o instanceof THREE.Mesh && !Array.isArray(o.material)) {
       const mat = o.material.clone() as THREE.MeshStandardMaterial;
       mat.emissive = new THREE.Color(glow);
-      mat.emissiveIntensity = 0.35;
+      mat.emissiveIntensity = 0.12;
       o.material = mat;
       owned.push(mat);
     }
@@ -269,7 +269,7 @@ export class EntityVisual {
             if (tintByName) mat.color?.lerp(nameColor(this.myName), 0.55);
             if (glow) {
               mat.emissive = new THREE.Color(glow);
-              mat.emissiveIntensity = 0.3;
+              mat.emissiveIntensity = 0.1;
             }
             mesh.material = mat;
             worn.ownedMaterials.push(mat);
