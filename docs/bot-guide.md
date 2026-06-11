@@ -260,6 +260,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 21 | `LineOfSight` | x, y (raw Q16.16) | 1 if the straight line from you to (x, y) is clear of obstacles, 0 if blocked, −1 on error. Attacks enforce the same check, so test before you swing. |
 | 22 | `UseSkillAt` | slot, x, y (raw Q16.16) | point-aimed skills (ground-target AoE): cast at a location you compute. Same return codes as UseSkill. |
 | 23 | `UseSkillDir` | slot, dx, dy (raw Q16.16 vector) | direction-aimed skills (cones, lines, projectile volleys): sweep where you point. Same return codes as UseSkill. |
+| 24 | `ReadCurrency` | out_addr, max (≤16) | obol counts as u32 words in content order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. |
+| 25 | `UseCurrency` | currency_idx, inv_idx | spend one obol on the bag item at inv_idx. 0 ok; −1 bad index / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 
 ### Skill-use return codes
 

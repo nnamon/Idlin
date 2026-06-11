@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "augment_obol",
+    name: "Augment Obol",
+    op: add_affix_magic,
+    weight: 90,
+    tier: 1,
+)

@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "divine_obol",
+    name: "Divine Obol",
+    op: reroll_values,
+    weight: 8,
+    tier: 3,
+)

@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "exalted_obol",
+    name: "Exalted Obol",
+    op: add_affix_rare,
+    weight: 6,
+    tier: 3,
+)

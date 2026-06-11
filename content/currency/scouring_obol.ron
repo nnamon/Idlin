@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "scouring_obol",
+    name: "Scouring Obol",
+    op: to_normal,
+    weight: 40,
+    tier: 1,
+)

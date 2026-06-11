@@ -263,6 +263,18 @@ impl World {
                         ch.pouch.push(gem);
                     }
                 }
+                LootPayload::Currency(idx) => {
+                    let idx = *idx as usize;
+                    self.zone.remove(loot_slot);
+                    if let Some(me) = self.zone.get_mut(slot) {
+                        let ch = me.character.as_mut().unwrap();
+                        if ch.currency.len() <= idx {
+                            ch.currency.resize(idx + 1, 0);
+                        }
+                        ch.currency[idx] += 1;
+                        ch.items += 1;
+                    }
+                }
             }
             events.push(SimEvent::ItemPickedUp {
                 owner_id: my_net,

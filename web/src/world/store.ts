@@ -341,6 +341,9 @@ export class WorldStore {
       case "GemSocketed":
         push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#5adfdf");
         break;
+      case "CurrencyUsed":
+        push(`✶ ${ev.data.owner}'s ${ev.data.currency} reshapes ${ev.data.item}`, "#ffd75a");
+        break;
       case "GemRejected":
         push(
           `⚠ ${ev.data.gem} refuses ${ev.data.owner}'s ${ev.data.skill} (wrong tags)`,

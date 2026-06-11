@@ -206,6 +206,20 @@ socket INTO that skill gem (capacity 1, +1 at gem level 7, +1 at 14;
 one copy of each support), and the tag gate is enforced at socket time
 (manual mismatch → −1 + a GemRejected event; auto skips misfits).
 
+## `content/currency/*.ron` — CurrencyDef
+
+```ron
+CurrencyDef(
+    id: "chaotic_obol",
+    name: "Chaotic Obol",
+    op: reroll_rare,      // to_magic | add_affix_magic | reroll_magic |
+                          // to_rare | normal_to_rare | reroll_rare |
+                          // add_affix_rare | to_normal | reroll_values
+    weight: 25,           // drop weight within the currency pool
+    tier: 2,              // 0..3 — pillar/panel color
+)
+```
+
 ## `content/naming.ron` — rare/unique name pools
 
 One file, two word lists; rare and unique items draw `first + second`

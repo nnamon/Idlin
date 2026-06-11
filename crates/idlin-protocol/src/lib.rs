@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 12;
+pub const PROTO_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -198,6 +198,13 @@ pub enum GameEvent {
         gem: String,
         skill: String,
     },
+    /// An obol spent on a bag item (the name is post-craft).
+    CurrencyUsed {
+        id: u32,
+        owner: String,
+        currency: String,
+        item: String,
+    },
     BuildDeclared {
         id: u32,
         owner: String,
@@ -248,6 +255,15 @@ pub struct InvItemView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct CurrencyView {
+    pub name: String,
+    /// Owned count (only nonzero entries ship).
+    pub count: u32,
+    /// Display tier 0..3 (panel color).
+    pub tier: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GemView {
     pub name: String,
     pub level: u32,
@@ -292,6 +308,7 @@ pub struct CharacterSheet {
     pub equipment: Vec<GearSlotView>,
     pub inventory: Vec<InvItemView>,
     pub gems: Vec<GemView>,
+    pub currency: Vec<CurrencyView>,
     pub passive_allocated: u32,
     pub passive_unspent: u32,
     pub build_len: u32,

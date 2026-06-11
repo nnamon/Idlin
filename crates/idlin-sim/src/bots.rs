@@ -49,6 +49,8 @@ pub const SYS_COUNT_ENTITIES: i32 = 20;
 pub const SYS_LINE_OF_SIGHT: i32 = 21;
 pub const SYS_USE_SKILL_AT: i32 = 22;
 pub const SYS_USE_SKILL_DIR: i32 = 23;
+pub const SYS_READ_CURRENCY: i32 = 24;
+pub const SYS_USE_CURRENCY: i32 = 25;
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
@@ -406,6 +408,30 @@ impl World {
                         Fx::from_raw(dy),
                     )),
                 )
+            }
+            SYS_READ_CURRENCY => {
+                // Obol counts in content order (the bot-guide names the
+                // indices); returns how many were written.
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, 16) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let Some(ch) = &e.character else { return -1 };
+                let n = self.content_currency_len().min(max);
+                for i in 0..n {
+                    let count = ch.currency.get(i).copied().unwrap_or(0);
+                    bot.vm.store_i32(
+                        out.wrapping_add(4 * i as u16),
+                        count.min(i32::MAX as u64) as i32,
+                    );
+                }
+                n as i32
+            }
+            SYS_USE_CURRENCY => {
+                let currency_sel = bot.vm.pop();
+                let inv_sel = bot.vm.pop();
+                self.use_currency(slot, currency_sel, inv_sel, events)
             }
             SYS_PICK_UP => {
                 let id = bot.vm.pop();

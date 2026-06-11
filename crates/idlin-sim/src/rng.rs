@@ -12,6 +12,9 @@ pub enum Domain {
     MapLayout = 3,
     Combat = 4,
     Bot = 5,
+    /// Currency crafting rolls (UseCurrency) — separate from drops so
+    /// crafting spam never shifts the loot stream.
+    Craft = 6,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

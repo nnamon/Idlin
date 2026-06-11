@@ -161,7 +161,7 @@ pub struct Intents {
 }
 
 /// One rolled affix on a concrete item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RolledAffix {
     /// Index into ContentDb::affixes.
     pub affix_idx: u32,
@@ -219,6 +219,8 @@ pub struct SocketedGem {
 pub enum LootPayload {
     Gear(Item),
     Gem(GemInstance),
+    /// One obol (index into ContentDb::currency) — picked up as a count.
+    Currency(u32),
 }
 
 /// Gems live in a small pouch, not the bag grid (they're small).
@@ -264,6 +266,9 @@ pub struct CharacterState {
     pub build_plan: Vec<u32>,
     /// Unsocketed gems.
     pub pouch: Vec<GemInstance>,
+    /// Obol counts, indexed like ContentDb::currency (resized on demand).
+    #[serde(default)]
+    pub currency: Vec<u64>,
     /// Gems socketed into allocated tree socket nodes (keyed by node index;
     /// BTreeMap for deterministic iteration).
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,

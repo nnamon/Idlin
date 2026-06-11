@@ -259,6 +259,45 @@ pub struct AffixTier {
     pub max: i64,
 }
 
+/// What a currency item does to gear when used (the orb verbs, mapped
+/// onto the affix engine).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurrencyOp {
+    /// Normal → magic with fresh affixes (Transmute).
+    ToMagic,
+    /// +1 affix on a magic item with room (Augment).
+    AddAffixMagic,
+    /// Reroll a magic item's affixes (Alter).
+    RerollMagic,
+    /// Magic → rare, +1 affix, new name (Regal).
+    ToRare,
+    /// Normal → rare outright (Alchemy).
+    NormalToRare,
+    /// Reroll a rare item's affixes and name (Chaotic).
+    RerollRare,
+    /// +1 affix on a rare item with room (Exalted).
+    AddAffixRare,
+    /// Strip to normal (Scouring).
+    ToNormal,
+    /// Reroll every affix VALUE within its tier (Divine).
+    RerollValues,
+}
+
+/// A currency item: stored as a plain count, spent on gear in the bag.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurrencyDef {
+    pub id: String,
+    pub name: String,
+    pub op: CurrencyOp,
+    /// Relative drop weight within the currency pool.
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    /// Display tier 0..3 — pillar/ticker color (rarer verbs glow louder).
+    #[serde(default)]
+    pub tier: u8,
+}
+
 /// Word pools for generated rare/unique item names ("Vile Thorns").
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NamingDef {
@@ -644,6 +683,8 @@ pub struct ContentDb {
     pub affixes: Vec<AffixDef>,
     /// Name word pools for rare/unique items.
     pub naming: NamingDef,
+    /// Sorted by id. Currency is COUNTED, not bag-stored.
+    pub currency: Vec<CurrencyDef>,
     /// Sorted by id.
     pub gems: Vec<GemDef>,
     /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
@@ -728,6 +769,9 @@ impl ContentDb {
                     .push(ron::from_str::<AffixDef>(&text).map_err(parse_err)?);
             } else if rel_str == "naming.ron" {
                 db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
+            } else if rel_str.starts_with("currency/") {
+                db.currency
+                    .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("gems/") {
                 db.gems
                     .push(ron::from_str::<GemDef>(&text).map_err(parse_err)?);
@@ -763,6 +807,7 @@ impl ContentDb {
         db.zones.sort_by(|a, b| a.id.cmp(&b.id));
         db.brains.sort_by(|a, b| a.id.cmp(&b.id));
         db.items.sort_by(|a, b| a.id.cmp(&b.id));
+        db.currency.sort_by(|a, b| a.id.cmp(&b.id));
         for w in db.items.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {

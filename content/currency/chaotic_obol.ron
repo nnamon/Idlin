@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "chaotic_obol",
+    name: "Chaotic Obol",
+    op: reroll_rare,
+    weight: 25,
+    tier: 2,
+)

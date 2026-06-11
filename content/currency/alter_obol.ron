@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "alter_obol",
+    name: "Alter Obol",
+    op: reroll_magic,
+    weight: 80,
+    tier: 1,
+)

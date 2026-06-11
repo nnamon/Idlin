@@ -394,6 +394,17 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             gem: gem.clone(),
             skill: skill.clone(),
         },
+        SimEvent::CurrencyUsed {
+            id,
+            owner,
+            currency,
+            item,
+        } => GameEvent::CurrencyUsed {
+            id: *id,
+            owner: owner.clone(),
+            currency: currency.clone(),
+            item: item.clone(),
+        },
         SimEvent::BuildDeclared { id, owner, nodes } => GameEvent::BuildDeclared {
             id: *id,
             owner: owner.clone(),

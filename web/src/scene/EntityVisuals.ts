@@ -287,17 +287,27 @@ export class EntityVisual {
     // anything worth walking to gets a tall light pillar; normal-tier gear
     // is just a small dim glint on the sand.
     const gem = model === "gem";
-    const dim = !gem && rarity < 1;
-    const geo = gem ? this.shared.gemGeo : dim ? this.shared.lootGeoSmall : this.shared.lootGeo;
+    const obol = model === "currency";
+    const dim = !gem && !obol && rarity < 1;
+    const geo = gem
+      ? this.shared.gemGeo
+      : obol
+        ? this.shared.obolGeo
+        : dim
+          ? this.shared.lootGeoSmall
+          : this.shared.lootGeo;
     const mat = gem
       ? this.shared.gemMat
-      : dim
-        ? this.shared.lootMatNormal
-        : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
+      : obol
+        ? this.shared.obolMat
+        : dim
+          ? this.shared.lootMatNormal
+          : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
     this.lootMesh = new THREE.Mesh(geo, mat);
     this.lootBaseY = dim ? 0.28 : 0.55;
     this.lootMesh.position.y = this.lootBaseY;
     this.group.add(this.lootMesh);
+    // Obols reuse the rarity pillars via their display tier.
     const pillarMat = gem
       ? this.shared.pillarMats.gem
       : rarity >= 1
@@ -529,6 +539,14 @@ export class SharedResources {
   /** Normal-tier gear: a small, dim glint instead of a beacon. */
   readonly lootGeoSmall = new THREE.OctahedronGeometry(0.13);
   readonly gemGeo = new THREE.TetrahedronGeometry(0.3);
+  /** Obols: a small gold coin-ish disc. */
+  readonly obolGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.06, 12);
+  readonly obolMat = new THREE.MeshStandardMaterial({
+    color: 0xd8b85a,
+    emissive: 0xd8b85a,
+    emissiveIntensity: 0.55,
+    roughness: 0.35,
+  });
   readonly lootMats: THREE.MeshStandardMaterial[];
   readonly lootMatNormal = new THREE.MeshStandardMaterial({
     color: 0x8a8a93,

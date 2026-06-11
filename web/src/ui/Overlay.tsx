@@ -217,6 +217,20 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
           ))}
         </>
       )}
+      {sheet.currency.length > 0 && (
+        <>
+          <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 2px" }}>
+            OBOLS
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+            {sheet.currency.map((c, i) => (
+              <span key={i} style={{ fontSize: 11, color: ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"][c.tier] ?? "#bfbfbf" }}>
+                {c.name.replace(" Obol", "")} ×{c.count}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
       <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 3px" }}>
         BAG
       </div>

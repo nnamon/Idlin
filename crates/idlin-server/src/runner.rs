@@ -1,7 +1,7 @@
 //! The tick loop: a dedicated OS thread driving the pure sim at a fixed
 //! cadence. The async side only ever sees published `TickFrame`s.
 
-use idlin_protocol::{CharacterSheet, GearSlotView, GemView, InvItemView};
+use idlin_protocol::{CharacterSheet, CurrencyView, GearSlotView, GemView, InvItemView};
 use idlin_sim::world::CharacterSheetView;
 use idlin_sim::{EntityView, SimEvent, TICK_HZ, TickInputs, World};
 use std::path::PathBuf;
@@ -149,6 +149,15 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                 xp: xp.clamp(0, i32::MAX as i64) as i32,
                 xp_next: xp_next.clamp(0, i32::MAX as i64) as i32,
                 support,
+            })
+            .collect(),
+        currency: v
+            .currency
+            .into_iter()
+            .map(|(name, count, tier)| CurrencyView {
+                name,
+                count: count.min(u32::MAX as u64) as u32,
+                tier,
             })
             .collect(),
         passive_allocated: v.passive_allocated,

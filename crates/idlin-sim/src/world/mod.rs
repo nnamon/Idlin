@@ -143,6 +143,13 @@ pub enum SimEvent {
         gem: String,
         level: u32,
     },
+    /// An obol spent on a bag item (the item name is post-craft).
+    CurrencyUsed {
+        id: u32,
+        owner: String,
+        currency: String,
+        item: String,
+    },
     Hit {
         attacker: u32,
         target: u32,
@@ -235,6 +242,7 @@ pub struct World {
     rng_ai: Pcg32,
     rng_combat: Pcg32,
     rng_loot: Pcg32,
+    rng_craft: Pcg32,
 }
 
 // ---- universal (classless) character bases ----
@@ -482,6 +490,7 @@ impl World {
             rng_ai: Pcg32::stream(seed, Domain::ZoneAi, 0),
             rng_combat: Pcg32::stream(seed, Domain::Combat, 0),
             rng_loot: Pcg32::stream(seed, Domain::Loot, 0),
+            rng_craft: Pcg32::stream(seed, Domain::Craft, 0),
         }
     }
 
@@ -501,6 +510,10 @@ impl World {
 
     pub(crate) fn content_items(&self) -> &[ItemDef] {
         &self.content.items
+    }
+
+    pub(crate) fn content_currency_len(&self) -> usize {
+        self.content.currency.len()
     }
 
     pub(crate) fn content_gems(&self) -> &[idlin_content::GemDef] {
@@ -624,6 +637,7 @@ impl World {
                     allocated: Vec::new(),
                     build_plan: Vec::new(),
                     pouch: Vec::new(),
+                    currency: vec![0; self.content.currency.len()],
                     sockets: std::collections::BTreeMap::new(),
                 }),
                 monster: None,

@@ -130,6 +130,19 @@ Worn rarity reads on the character: magic/rare/unique gear and weapons
 carry a tier-colored emissive glow on the worn mesh. Idlers with an
 empty slot wear nothing — fresh wretches wash ashore naked.
 
+## Currency (the obols)
+
+Crafting is PoE verbs over the affix engine, held as plain COUNTS (no
+bag space): **Transmute** (normal→magic), **Augment** (+1 affix on
+magic), **Alter** (reroll magic), **Regal** (magic→rare, +1, new name),
+**Alchemy** (normal→rare), **Chaotic** (reroll rare, new name),
+**Exalted** (+1 on rare, name kept), **Scouring** (strip to normal),
+**Divine** (reroll affix VALUES within their tiers). Obols drop from
+monsters (~10% of drops, weighted — Exalted and Divine are rare),
+stand on the shore under tier-colored pillars, and are spent through
+`UseCurrency` on bag items only. Every roll draws from a dedicated
+deterministic stream, so crafting spam never shifts loot luck.
+
 ## Monsters are characters
 
 Everything-is-a-bot extends to everything-is-a-character: a monster def

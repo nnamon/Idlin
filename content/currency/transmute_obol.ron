@@ -1,0 +1,7 @@
+CurrencyDef(
+    id: "transmute_obol",
+    name: "Transmute Obol",
+    op: to_magic,
+    weight: 100,
+    tier: 1,
+)

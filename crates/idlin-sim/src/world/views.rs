@@ -34,6 +34,8 @@ pub struct CharacterSheetView {
     /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
     /// follow their skill.
     pub gems: Vec<(String, u32, i64, i64, bool)>,
+    /// (name, count, tier) per owned obol kind (nonzero only).
+    pub currency: Vec<(String, u64, u8)>,
     pub passive_allocated: u32,
     pub passive_unspent: u32,
     pub build_len: u32,
@@ -94,6 +96,16 @@ impl World {
                 gems.push(gem_row(sup, true));
             }
         }
+        let currency = ch
+            .currency
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| **c > 0)
+            .map(|(i, c)| {
+                let def = &self.content.currency[i];
+                (def.name.clone(), *c, def.tier)
+            })
+            .collect();
         Some(CharacterSheetView {
             id: e.net_id,
             name: ch.name.clone(),
@@ -116,6 +128,7 @@ impl World {
             equipment,
             inventory,
             gems,
+            currency,
             passive_allocated: ch.allocated.len() as u32,
             passive_unspent: ch.passive_points(),
             build_len: ch.build_plan.len() as u32,
@@ -223,6 +236,7 @@ impl World {
                     let model = match &l.payload {
                         LootPayload::Gear(_) => "loot".to_string(),
                         LootPayload::Gem(_) => "gem".to_string(),
+                        LootPayload::Currency(_) => "currency".to_string(),
                     };
                     (
                         String::new(),
@@ -267,7 +281,12 @@ impl World {
         h.write_u64(self.content_hash);
         h.write_u64(self.tick);
         h.write_u32(self.next_net_id);
-        for rng in [&self.rng_ai, &self.rng_combat, &self.rng_loot] {
+        for rng in [
+            &self.rng_ai,
+            &self.rng_combat,
+            &self.rng_loot,
+            &self.rng_craft,
+        ] {
             let (state, inc) = rng.state();
             h.write_u64(state);
             h.write_u64(inc);
@@ -346,6 +365,9 @@ impl World {
                     h.write_u32(gem.level);
                     h.write_i64(gem.xp);
                 }
+                for count in &ch.currency {
+                    h.write_u64(*count);
+                }
                 for (node, sg) in &ch.sockets {
                     h.write_u32(*node);
                     h.write_u32(sg.gem.gem_idx);
@@ -410,6 +432,10 @@ impl World {
                         h.write_u32(gem.gem_idx);
                         h.write_u32(gem.level);
                         h.write_i64(gem.xp);
+                    }
+                    LootPayload::Currency(idx) => {
+                        h.write_u8(3);
+                        h.write_u32(*idx);
                     }
                 }
             }
