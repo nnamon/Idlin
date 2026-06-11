@@ -15,6 +15,20 @@ import { Terrain } from "./Terrain";
 
 const SKY_COLOR = 0x07070d;
 
+/**
+ * Stable identity for a replicated zone. Per-idler instances share a
+ * display name ("The Withered Shore") but scatter their own rocks and
+ * trees, so the obstacle layout is folded into a cheap hash — a director
+ * cut between instances must rebuild the terrain.
+ */
+function zoneKey(zone: NonNullable<WorldStore["zone"]>): string {
+  let h = 0;
+  for (const o of zone.obstacles) {
+    h = (h * 31 + Math.round(o.x * 8) * 7 + Math.round(o.y * 8) * 13 + o.kind) | 0;
+  }
+  return `${zone.name}|${zone.width}x${zone.height}|${h}`;
+}
+
 interface Brazier {
   light: THREE.PointLight;
   baseIntensity: number;
@@ -44,9 +58,11 @@ export class ZoneRenderer {
   private moon: THREE.DirectionalLight;
   private focusRing: THREE.Mesh;
   private timer = new THREE.Timer();
-  /// Name of the zone the scene was built for — a transfer flips the
-  /// featured world, and the terrain must follow.
-  private builtZoneName: string | null = null;
+  /// Identity of the zone the scene was built for — a director cut or
+  /// transfer flips the featured world, and the terrain must follow.
+  /// Instances share display names ("The Withered Shore") but differ in
+  /// obstacle layout, so the key folds the obstacles in too.
+  private builtZoneKey: string | null = null;
   private onResize = () => this.resize();
   /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character;
    *  ?cam=x,y,z,tx,ty,tz pins it entirely (shot framing/verification). */
@@ -183,7 +199,7 @@ export class ZoneRenderer {
     }
 
     this.director.setZoneSize(w, h);
-    this.builtZoneName = zone.name;
+    this.builtZoneKey = zoneKey(zone);
   }
 
   private addBrazier(x: number, z: number, y: number): void {
@@ -224,7 +240,7 @@ export class ZoneRenderer {
     const now = performance.now();
     const t = this.timer.getElapsed();
 
-    if (this.store.zone && this.assets && this.store.zone.name !== this.builtZoneName) {
+    if (this.store.zone && this.assets && zoneKey(this.store.zone) !== this.builtZoneKey) {
       this.buildZone();
     }
     this.terrain?.update(t);

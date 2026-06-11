@@ -6,7 +6,7 @@
 //! With IDLIN_RECORD set, every world's exact wire stream is journaled to
 //! disk as a replayable recording.
 
-use crate::director::Director;
+use crate::director::{Director, WorldView};
 use crate::runner::TickBatch;
 use idlin_protocol::{
     EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, ObstacleState,
@@ -65,6 +65,27 @@ struct WorldState {
     recorder: Option<std::fs::File>,
 }
 
+/// One world's already-serialized output for this tick, kept so the
+/// featured feed can be composed AFTER the director has watched every
+/// world and chosen where the camera lives.
+struct FrameOut {
+    key: String,
+    delta: Frame,
+    snapshot: Frame,
+    events: Vec<GameEvent>,
+}
+
+/// Events worth splicing onto the featured feed even when they happened
+/// in a world the camera isn't watching.
+fn is_announcement(ev: &GameEvent) -> bool {
+    matches!(
+        ev,
+        GameEvent::CharacterDeparted { .. }
+            | GameEvent::CharacterJoined { .. }
+            | GameEvent::Narration { .. }
+    )
+}
+
 pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> ReplicationHandles {
     let (featured_tx, _) = broadcast::channel::<Frame>(256);
     let (featured_snap_tx, featured_snap_rx) =
@@ -90,14 +111,14 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
             }
 
             let mut routing = Routing {
-                featured: batch.featured_key.clone(),
+                featured: String::new(),
                 by_character: HashMap::new(),
             };
-            let mut global_events: Vec<GameEvent> = Vec::new();
-            let mut featured_delta: Option<Frame> = None;
-            let mut featured_events: Vec<GameEvent> = Vec::new();
-            let mut featured_snapshot: Option<Frame> = None;
-            let mut featured_frame_meta: Option<(u64, Vec<SimEvent>, Vec<u32>)> = None;
+            let mut outs: Vec<FrameOut> = Vec::with_capacity(batch.frames.len());
+            // The director's view of each world: (net id, name) for every
+            // character there this tick — corpses included; a dead idler
+            // awaiting respawn is still the story.
+            let mut roster: Vec<Vec<(u32, String)>> = Vec::with_capacity(batch.frames.len());
 
             for frame in &batch.frames {
                 // Lazily create this world's feed + state.
@@ -197,63 +218,78 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 let _ = ws.snap_tx.send(snapshot.clone());
                 ws.prev = current;
 
-                if frame.world_key == batch.featured_key {
-                    featured_delta = Some(delta);
-                    featured_events = events;
-                    featured_snapshot = Some(snapshot);
-                    featured_frame_meta = Some((
-                        frame.tick,
-                        frame.events.clone(),
-                        frame
-                            .views
-                            .iter()
-                            .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
-                            .map(|v| v.id)
-                            .collect(),
-                    ));
-                } else {
-                    // Global announcements cross worlds on the featured feed.
-                    global_events.extend(frame.events.iter().filter_map(|ev| {
-                        matches!(
-                            ev,
-                            SimEvent::CharacterDeparted { .. }
-                                | SimEvent::CharacterJoined { .. }
-                                | SimEvent::Narration { .. }
-                        )
-                        .then(|| to_game_event(ev))
-                        .flatten()
-                    }));
-                }
+                roster.push(
+                    frame
+                        .views
+                        .iter()
+                        .filter(|v| v.kind == KIND_CHARACTER)
+                        .map(|v| (v.id, v.name.clone()))
+                        .collect(),
+                );
+                outs.push(FrameOut {
+                    key: frame.world_key.clone(),
+                    delta,
+                    snapshot,
+                    events,
+                });
             }
 
+            // The director watches EVERY world; the featured feed mirrors
+            // whichever one it cues. The runner's most-characters hint only
+            // seeds the camera before the first cue.
+            let tick = batch.frames.iter().map(|f| f.tick).max().unwrap_or(0);
+            let views: Vec<WorldView<'_>> = batch
+                .frames
+                .iter()
+                .zip(&roster)
+                .map(|(f, ch)| WorldView {
+                    key: &f.world_key,
+                    events: &f.events,
+                    characters: ch,
+                })
+                .collect();
+            let cue = director.update(tick, &views);
+            let target = cue
+                .as_ref()
+                .map(|c| c.world_key.clone())
+                .or_else(|| director.current_world.clone())
+                .unwrap_or_else(|| batch.featured_key.clone());
+
             // -- compose the featured virtual feed --
-            if featured_key.as_deref() != Some(batch.featured_key.as_str()) {
-                info!("featured world is now {}", batch.featured_key);
-                featured_key = Some(batch.featured_key.clone());
-                if let Some(snap) = &featured_snapshot {
-                    let _ = featured_tx.send(snap.clone());
+            let featured_out = outs.iter().find(|o| o.key == target);
+            if featured_key.as_deref() != Some(target.as_str()) {
+                info!("featured world is now {target}");
+                featured_key = Some(target.clone());
+                if let Some(out) = featured_out {
+                    let _ = featured_tx.send(out.snapshot.clone());
                 }
             }
-            if let Some(delta) = featured_delta {
-                let _ = featured_tx.send(delta);
+            if let Some(out) = featured_out {
+                let _ = featured_tx.send(out.delta.clone());
             }
-            let mut all_events = featured_events;
-            all_events.extend(global_events);
+            // The featured world's full event stream, plus announcements
+            // crossing over from everywhere else.
+            let mut all_events: Vec<GameEvent> =
+                featured_out.map(|o| o.events.clone()).unwrap_or_default();
+            for out in &outs {
+                if out.key != target {
+                    all_events.extend(out.events.iter().filter(|e| is_announcement(e)).cloned());
+                }
+            }
             if !all_events.is_empty() {
                 let _ = featured_tx.send(serialize(&S2C::Events { events: all_events }));
             }
-            if let Some((tick, events, characters)) = featured_frame_meta
-                && let Some(cue) = director.update(tick, &events, &characters)
-            {
+            if let Some(cue) = cue {
                 let _ = featured_tx.send(serialize(&S2C::DirectorCue {
                     focus: cue.focus,
                     reason: cue.reason,
                     hold_ticks: cue.hold_ticks,
                 }));
             }
-            if let Some(snap) = featured_snapshot {
-                let _ = featured_snap_tx.send(snap);
+            if let Some(out) = featured_out {
+                let _ = featured_snap_tx.send(out.snapshot.clone());
             }
+            routing.featured = target;
             let _ = routing_tx.send(routing);
         }
         info!("tick batch channel closed; replication exiting");

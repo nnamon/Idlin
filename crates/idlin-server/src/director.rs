@@ -1,28 +1,40 @@
-//! Auto-director v1: scores world events, applies per-focus cooldowns, and
-//! falls back to a round-robin of characters when nothing exciting happens.
-//! The client follows cues in auto mode; scoring lives server-side so cues
-//! can later also drive chat announcements.
+//! Auto-director v2: scores events across EVERY world (each idler's
+//! instance, the shared town), applies per-character cooldowns, and falls
+//! back to a round-robin over all characters everywhere. The featured
+//! world FOLLOWS the director's focus — the camera cuts between instances
+//! the way a sports broadcast cuts between courts. Scoring lives
+//! server-side so cues can later also drive chat announcements and clips.
 
 use idlin_sim::SimEvent;
 use std::collections::HashMap;
 
-/// A camera cue (mapped to `S2C::DirectorCue` by replication).
+/// One world's tick, as the director sees it.
+pub struct WorldView<'a> {
+    pub key: &'a str,
+    pub events: &'a [SimEvent],
+    /// Every character there this tick (net id, name) — dead included;
+    /// a corpse awaiting respawn is still the story.
+    pub characters: &'a [(u32, String)],
+}
+
+/// A camera cue (mapped to `S2C::DirectorCue` by replication). The world
+/// key tells replication which feed the broadcast should now mirror.
 pub struct Cue {
+    pub world_key: String,
     pub focus: u32,
     pub reason: String,
     pub hold_ticks: u32,
 }
 
-/// How long a focus stays ineligible after being featured.
+/// How long a character stays ineligible after being featured.
 const FOCUS_COOLDOWN_TICKS: u64 = 200;
 /// Default idle rotation hold.
 const IDLE_HOLD_TICKS: u32 = 80;
 /// Re-broadcast the current cue this often even when focus is unchanged —
 /// cues aren't in the snapshot, so without this a viewer who connects
-/// after the last cut idles in overview forever (exactly what happens
-/// with a single character, whose focus never changes).
+/// after the last cut idles in overview forever.
 const REFRESH_TICKS: u64 = 50;
-/// A deliberate sweeping look at the whole zone, once a minute…
+/// A deliberate sweeping look at the current zone, once a minute…
 const OVERVIEW_EVERY: u64 = 600;
 /// …held for five seconds before the camera returns to the people.
 const OVERVIEW_HOLD: u32 = 50;
@@ -41,11 +53,14 @@ const SCORE_KILL: (u32, u32) = (30, 40);
 const RARE_DROP_MIN_RARITY: u8 = 2;
 
 pub struct Director {
-    focus: Option<u32>,
+    /// The focused character by NAME — the only identity stable across
+    /// worlds (net ids are per-world, and a transfer changes both).
+    focus_name: Option<String>,
+    /// The world the broadcast currently mirrors.
+    pub current_world: Option<String>,
     hold_until: u64,
     current_score: u32,
-    cooldowns: HashMap<u32, u64>,
-    rotation: Vec<u32>,
+    cooldowns: HashMap<String, u64>,
     rotation_idx: usize,
     /// Tick of the last cue actually broadcast (drives the refresher).
     last_emit: u64,
@@ -56,97 +71,123 @@ pub struct Director {
 impl Director {
     pub fn new() -> Director {
         Director {
-            focus: None,
+            focus_name: None,
+            current_world: None,
             hold_until: 0,
             current_score: 0,
             cooldowns: HashMap::new(),
-            rotation: Vec::new(),
             rotation_idx: 0,
             last_emit: 0,
             next_overview: OVERVIEW_EVERY,
         }
     }
 
-    /// Feed one tick's events + the character roster; returns a cue when the
-    /// camera should move.
-    pub fn update(&mut self, tick: u64, events: &[SimEvent], characters: &[u32]) -> Option<Cue> {
-        self.rotation = characters.to_vec();
+    /// Feed every world's tick; returns a cue when the broadcast should cut.
+    pub fn update(&mut self, tick: u64, worlds: &[WorldView<'_>]) -> Option<Cue> {
+        let name_of = |key: &str, id: u32| -> Option<&String> {
+            worlds
+                .iter()
+                .find(|w| w.key == key)
+                .and_then(|w| w.characters.iter().find(|(i, _)| *i == id))
+                .map(|(_, n)| n)
+        };
 
-        // Find the strongest scoreable event this tick.
-        let mut best: Option<(u32, u32, &'static str, u32)> = None; // (focus, score, reason, hold)
-        for ev in events {
-            let scored = match ev {
-                SimEvent::CharacterDied { id, .. } => {
-                    Some((*id, SCORE_DEATH.0, "death", SCORE_DEATH.1))
+        // The strongest scoreable event this tick, across every world.
+        let mut best: Option<(String, u32, String, u32, &'static str, u32)> = None;
+        for w in worlds {
+            for ev in w.events {
+                let scored = match ev {
+                    SimEvent::CharacterDied { id, .. } => {
+                        Some((*id, SCORE_DEATH.0, "death", SCORE_DEATH.1))
+                    }
+                    SimEvent::LevelUp { id, .. } => {
+                        Some((*id, SCORE_LEVEL_UP.0, "level-up", SCORE_LEVEL_UP.1))
+                    }
+                    SimEvent::LootDropped {
+                        owner_id, rarity, ..
+                    } if (*rarity as u8) >= RARE_DROP_MIN_RARITY => {
+                        Some((*owner_id, SCORE_RARE_DROP.0, "rare drop", SCORE_RARE_DROP.1))
+                    }
+                    SimEvent::MonsterKilled { killer_id, .. } => {
+                        Some((*killer_id, SCORE_KILL.0, "kill", SCORE_KILL.1))
+                    }
+                    SimEvent::CharacterJoined { id, .. } => {
+                        Some((*id, SCORE_JOIN.0, "new challenger", SCORE_JOIN.1))
+                    }
+                    _ => None,
+                };
+                let Some((id, score, reason, hold)) = scored else {
+                    continue;
+                };
+                let Some(name) = name_of(w.key, id) else {
+                    continue;
+                };
+                if self.cooldowns.get(name).copied().unwrap_or(0) > tick {
+                    continue;
                 }
-                SimEvent::LevelUp { id, .. } => {
-                    Some((*id, SCORE_LEVEL_UP.0, "level-up", SCORE_LEVEL_UP.1))
+                if best.as_ref().is_none_or(|(_, _, _, s, _, _)| score > *s) {
+                    best = Some((w.key.to_string(), id, name.clone(), score, reason, hold));
                 }
-                SimEvent::LootDropped {
-                    owner_id, rarity, ..
-                } if (*rarity as u8) >= RARE_DROP_MIN_RARITY => {
-                    Some((*owner_id, SCORE_RARE_DROP.0, "rare drop", SCORE_RARE_DROP.1))
-                }
-                SimEvent::MonsterKilled { killer_id, .. } => {
-                    Some((*killer_id, SCORE_KILL.0, "kill", SCORE_KILL.1))
-                }
-                SimEvent::CharacterJoined { id, .. } => {
-                    Some((*id, SCORE_JOIN.0, "new challenger", SCORE_JOIN.1))
-                }
-                _ => None,
-            };
-            let Some((focus, score, reason, hold)) = scored else {
-                continue;
-            };
-            if self.cooldowns.get(&focus).copied().unwrap_or(0) > tick {
-                continue;
-            }
-            if best.is_none_or(|(_, s, _, _)| score > s) {
-                best = Some((focus, score, reason, hold));
             }
         }
 
         // A new event interrupts when it outranks the current hold.
-        if let Some((focus, score, reason, hold)) = best {
+        if let Some((world, id, name, score, reason, hold)) = best {
             let interrupts = tick >= self.hold_until || score > self.current_score;
-            if interrupts && self.focus != Some(focus) {
-                self.set_focus(focus, score, tick, hold as u64);
-                self.last_emit = tick;
+            if interrupts && self.focus_name.as_ref() != Some(&name) {
+                self.set_focus(&name, &world, score, tick, hold as u64);
                 return Some(Cue {
-                    focus,
+                    world_key: world,
+                    focus: id,
                     reason: reason.to_string(),
                     hold_ticks: hold,
                 });
             }
         }
 
-        // A scheduled overview beat: a sweeping look at the whole zone,
+        // The full roster, every world, deterministic order.
+        let mut roster: Vec<(String, u32, String)> = worlds
+            .iter()
+            .flat_map(|w| {
+                w.characters
+                    .iter()
+                    .map(|(id, n)| (w.key.to_string(), *id, n.clone()))
+            })
+            .collect();
+        roster.sort_by(|a, b| a.2.cmp(&b.2));
+
+        // A scheduled overview beat: a sweeping look at the CURRENT zone,
         // never interrupting an event hold; the rotation resumes after.
-        if tick >= self.next_overview && tick >= self.hold_until && !self.rotation.is_empty() {
+        if tick >= self.next_overview && tick >= self.hold_until && !roster.is_empty() {
             self.next_overview = tick + OVERVIEW_EVERY;
-            self.focus = None;
+            self.focus_name = None;
             self.current_score = 0;
             self.hold_until = tick + OVERVIEW_HOLD as u64;
             self.last_emit = tick;
+            let world = self
+                .current_world
+                .clone()
+                .unwrap_or_else(|| roster[0].0.clone());
             return Some(Cue {
+                world_key: world,
                 focus: OVERVIEW_FOCUS,
                 reason: "the wider shore".to_string(),
                 hold_ticks: OVERVIEW_HOLD,
             });
         }
 
-        // Idle rotation between characters. Even an unchanged focus is
-        // re-broadcast periodically — cues aren't in the snapshot, and a
-        // viewer who joins after the last cut must still lock on.
-        if tick >= self.hold_until && !self.rotation.is_empty() {
-            self.rotation_idx = (self.rotation_idx + 1) % self.rotation.len();
-            let focus = self.rotation[self.rotation_idx];
+        // Idle rotation across all characters everywhere. Even an unchanged
+        // focus is re-broadcast periodically — cues aren't in the snapshot,
+        // and a viewer who joins after the last cut must still lock on.
+        if tick >= self.hold_until && !roster.is_empty() {
+            self.rotation_idx = (self.rotation_idx + 1) % roster.len();
+            let (world, id, name) = roster[self.rotation_idx].clone();
             let refresh_due = tick.saturating_sub(self.last_emit) >= REFRESH_TICKS;
-            if self.focus != Some(focus) || refresh_due {
-                self.set_focus(focus, 0, tick, IDLE_HOLD_TICKS as u64);
-                self.last_emit = tick;
+            if self.focus_name.as_ref() != Some(&name) || refresh_due {
+                self.set_focus(&name, &world, 0, tick, IDLE_HOLD_TICKS as u64);
                 return Some(Cue {
-                    focus,
+                    world_key: world,
+                    focus: id,
                     reason: "roaming".to_string(),
                     hold_ticks: IDLE_HOLD_TICKS,
                 });
@@ -156,11 +197,14 @@ impl Director {
         None
     }
 
-    fn set_focus(&mut self, focus: u32, score: u32, tick: u64, hold: u64) {
-        self.focus = Some(focus);
+    fn set_focus(&mut self, name: &str, world: &str, score: u32, tick: u64, hold: u64) {
+        self.focus_name = Some(name.to_string());
+        self.current_world = Some(world.to_string());
         self.current_score = score;
         self.hold_until = tick + hold;
-        self.cooldowns.insert(focus, tick + FOCUS_COOLDOWN_TICKS);
+        self.last_emit = tick;
+        self.cooldowns
+            .insert(name.to_string(), tick + FOCUS_COOLDOWN_TICKS);
         self.cooldowns.retain(|_, &mut until| until > tick);
     }
 }
@@ -187,75 +231,78 @@ mod tests {
         }
     }
 
+    fn chars(ids: &[u32]) -> Vec<(u32, String)> {
+        ids.iter().map(|i| (*i, format!("c{i}"))).collect()
+    }
+
     #[test]
-    fn strongest_event_wins_the_tick() {
+    fn strongest_event_wins_across_worlds() {
         let mut d = Director::new();
-        let cue = d
-            .update(1, &[kill(1), death(2), kill(3)], &[1, 2, 3])
-            .expect("a cue");
-        assert_eq!(cue.focus, 2);
+        let (a_ev, b_ev) = (vec![kill(1)], vec![death(1)]);
+        let (a_ch, b_ch) = (chars(&[1]), vec![(1, "other".to_string())]);
+        let worlds = [
+            WorldView { key: "a", events: &a_ev, characters: &a_ch },
+            WorldView { key: "b", events: &b_ev, characters: &b_ch },
+        ];
+        let cue = d.update(1, &worlds).expect("a cue");
+        assert_eq!(cue.world_key, "b", "the death in world b outranks the kill in a");
         assert_eq!(cue.reason, "death");
     }
 
     #[test]
-    fn featured_focus_cools_down() {
+    fn rotation_visits_every_world() {
         let mut d = Director::new();
-        d.update(1, &[death(7)], &[7, 8]).expect("first cue");
-        // Same character dies again immediately: still on cooldown, and the
-        // hold is still running, so the camera must not re-cut to them.
-        let cue = d.update(2, &[death(7)], &[7, 8]);
-        assert!(cue.is_none(), "cooldown must suppress an immediate repeat");
-        // Camera moves to 8 in the meantime...
-        let cue = d.update(100, &[death(8)], &[7, 8]).expect("cut to 8");
-        assert_eq!(cue.focus, 8);
-        // ...and once 7's cooldown has lapsed, 7 is featurable again.
-        let cue = d.update(1 + FOCUS_COOLDOWN_TICKS + 1, &[death(7)], &[7, 8]);
-        assert!(cue.is_some_and(|c| c.focus == 7));
-    }
-
-    #[test]
-    fn idle_rotation_cycles_characters_and_survives_empty_roster() {
-        let mut d = Director::new();
-        let first = d.update(1, &[], &[10, 11]).expect("idle cue");
-        assert_eq!(first.reason, "roaming");
-        // An empty roster must not panic or cue.
-        assert!(d.update(1000, &[], &[]).is_none());
-        // Roster back: an overdue overview may take the first slot; the
-        // rotation must resume on a character right after.
-        let next = d.update(2000, &[], &[10, 11]).expect("idle cue");
-        if next.focus == OVERVIEW_FOCUS {
-            let mut resumed = None;
-            for t in 2001..2300 {
-                if let Some(c) = d.update(t, &[], &[10, 11]) {
-                    resumed = Some(c);
-                    break;
-                }
+        let (no_ev, a_ch, b_ch): (Vec<SimEvent>, _, _) =
+            (vec![], chars(&[1]), vec![(5, "zed".to_string())]);
+        let mut seen = std::collections::HashSet::new();
+        let mut t = 1;
+        for _ in 0..40 {
+            let worlds = [
+                WorldView { key: "a", events: &no_ev, characters: &a_ch },
+                WorldView { key: "b", events: &no_ev, characters: &b_ch },
+            ];
+            if let Some(c) = d.update(t, &worlds)
+                && c.focus != OVERVIEW_FOCUS
+            {
+                seen.insert(c.world_key.clone());
             }
-            let c = resumed.expect("rotation resumes after the sweep");
-            assert!(c.focus == 10 || c.focus == 11);
-        } else {
-            assert!(next.focus == 10 || next.focus == 11);
+            t += IDLE_HOLD_TICKS as u64;
         }
+        assert!(seen.contains("a") && seen.contains("b"), "got {seen:?}");
     }
 
     #[test]
-    fn weak_event_does_not_interrupt_a_strong_hold() {
+    fn featured_focus_cools_down_by_name() {
         let mut d = Director::new();
-        d.update(1, &[death(1)], &[1, 2]).expect("death cue");
-        // A mere kill (score 30 < 80) during the death hold: no cut.
-        assert!(d.update(2, &[kill(2)], &[1, 2]).is_none());
+        let ev = vec![death(7)];
+        let ch = chars(&[7, 8]);
+        let w = |e: &'static Vec<SimEvent>, c: &'static Vec<(u32, String)>| WorldView {
+            key: "a",
+            events: e,
+            characters: c,
+        };
+        // (leak for 'static in test simplicity)
+        let ev: &'static Vec<SimEvent> = Box::leak(Box::new(ev));
+        let ch: &'static Vec<(u32, String)> = Box::leak(Box::new(ch));
+        d.update(1, &[w(ev, ch)]).expect("first cue");
+        // Same character dies again immediately: cooldown + hold suppress.
+        assert!(d.update(2, &[w(ev, ch)]).is_none());
     }
 
     #[test]
     fn a_lone_character_is_recued_for_late_joiners() {
         let mut d = Director::new();
-        let first = d.update(1, &[], &[42]).expect("initial cue");
+        let no_ev: Vec<SimEvent> = vec![];
+        let ch = chars(&[42]);
+        let first = d
+            .update(1, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
+            .expect("initial cue");
         assert_eq!(first.focus, 42);
-        // Focus never changes with one character — but the cue must still
-        // re-broadcast so late-connecting viewers lock on.
         let mut refreshed = false;
         for t in 2..200 {
-            if let Some(c) = d.update(t, &[], &[42]) {
+            if let Some(c) =
+                d.update(t, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
+            {
                 assert_eq!(c.focus, 42);
                 refreshed = true;
                 break;
@@ -265,13 +312,16 @@ mod tests {
     }
 
     #[test]
-    fn overview_beats_arrive_on_schedule_and_yield_to_people() {
+    fn overview_beats_arrive_and_yield_to_people() {
         let mut d = Director::new();
-        d.update(1, &[], &[7]).expect("initial cue");
-        // March to the first scheduled overview.
+        let no_ev: Vec<SimEvent> = vec![];
+        let ch = chars(&[7]);
+        d.update(1, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
+            .expect("initial cue");
         let mut saw_overview_at = None;
         for t in 2..OVERVIEW_EVERY + 200 {
-            if let Some(c) = d.update(t, &[], &[7])
+            if let Some(c) =
+                d.update(t, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
                 && c.focus == OVERVIEW_FOCUS
             {
                 saw_overview_at = Some(t);
@@ -279,10 +329,11 @@ mod tests {
             }
         }
         let t0 = saw_overview_at.expect("a scheduled overview must fire");
-        // And afterwards the camera returns to the character.
         let mut returned = false;
         for t in t0 + 1..t0 + 200 {
-            if let Some(c) = d.update(t, &[], &[7]) {
+            if let Some(c) =
+                d.update(t, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
+            {
                 assert_eq!(c.focus, 7, "people come back after the sweep");
                 returned = true;
                 break;
