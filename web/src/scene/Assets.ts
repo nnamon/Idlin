@@ -173,13 +173,6 @@ export class AssetLibrary {
     return loaded ? loaded.scene.clone() : null;
   }
 
-  /** Clone a ground-drop mesh for an armor item visual key. */
-  instantiateDrop(key: string): THREE.Object3D | null {
-    const def = this.manifest.drops?.[key];
-    const loaded = def ? this.files.get(def.file) : undefined;
-    return loaded ? loaded.scene.clone() : null;
-  }
-
   /** Bone-worn rigid gear (shields): the mesh plus its target bone name. */
   attachmentDef(key: string): { obj: THREE.Object3D; bone: string } | null {
     const def = this.manifest.attachments?.[key];

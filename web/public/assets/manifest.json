@@ -293,17 +293,6 @@
       "file": "models/props/crate.glb"
     }
   },
-  "drops": {
-    "ranger_hood": {
-      "file": "models/drops/ranger_hood.glb"
-    },
-    "ranger_body": {
-      "file": "models/drops/ranger_body.glb"
-    },
-    "ranger_feet": {
-      "file": "models/drops/ranger_feet.glb"
-    }
-  },
   "attachments": {
     "shield_round": {
       "file": "models/shield_round.glb",

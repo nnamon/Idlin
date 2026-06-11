@@ -59,6 +59,7 @@ export class EntityVisual {
 
   // Parts
   private lootMesh: THREE.Object3D | null = null;
+  private lootBaseY = 0.55;
   private hpBg: THREE.Sprite | null = null;
   private hpFg: THREE.Sprite | null = null;
   private label: THREE.Sprite | null = null;
@@ -246,46 +247,29 @@ export class EntityVisual {
   }
 
   private buildLoot(model: string, rarity: number): void {
-    // Drops show the actual item when art exists for its visual key —
-    // weapons reuse their equip meshes, armor uses baked static versions.
-    let display: THREE.Object3D | null = null;
-    if (model !== "gem" && model !== "loot") {
-      display = this.assets.instantiateWeapon(model) ?? this.assets.instantiateDrop(model);
-    }
-    if (display) {
-      // Recenter (bind-pose parts sit away from the origin) and normalize.
-      const box = new THREE.Box3().setFromObject(display);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const s = 0.62 / Math.max(size.x, size.y, size.z, 0.001);
-      display.scale.multiplyScalar(s);
-      display.position.set(-center.x * s, -center.y * s, -center.z * s);
-      const pivot = new THREE.Group();
-      pivot.add(display);
-      pivot.position.y = 0.55;
-      pivot.rotation.z = 0.35; // a casual tilt, like it fell there
-      this.lootMesh = pivot;
-    } else {
-      const geo = model === "gem" ? this.shared.gemGeo : this.shared.lootGeo;
-      const mat =
-        model === "gem"
-          ? this.shared.gemMat
-          : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
-      this.lootMesh = new THREE.Mesh(geo, mat);
-      this.lootMesh.position.y = 0.55;
-    }
+    // The PoE ritual, pillars only (no per-item meshes — cheap at scale):
+    // anything worth walking to gets a tall light pillar; normal-tier gear
+    // is just a small dim glint on the sand.
+    const gem = model === "gem";
+    const dim = !gem && rarity < 1;
+    const geo = gem ? this.shared.gemGeo : dim ? this.shared.lootGeoSmall : this.shared.lootGeo;
+    const mat = gem
+      ? this.shared.gemMat
+      : dim
+        ? this.shared.lootMatNormal
+        : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
+    this.lootMesh = new THREE.Mesh(geo, mat);
+    this.lootBaseY = dim ? 0.28 : 0.55;
+    this.lootMesh.position.y = this.lootBaseY;
     this.group.add(this.lootMesh);
-    // The PoE ritual: a light pillar calls out anything worth walking to.
-    // Normal-tier gear gets no pillar — just the item on the sand.
-    const pillarMat =
-      model === "gem"
-        ? this.shared.pillarMats.gem
-        : rarity >= 1
-          ? this.shared.pillarMats.rarity[Math.min(rarity, 3)]
-          : null;
+    const pillarMat = gem
+      ? this.shared.pillarMats.gem
+      : rarity >= 1
+        ? this.shared.pillarMats.rarity[Math.min(rarity, 3)]
+        : null;
     if (pillarMat) {
       const pillar = new THREE.Mesh(this.shared.pillarGeo, pillarMat);
-      pillar.position.y = 2.1;
+      pillar.position.y = 3.75;
       this.group.add(pillar);
     }
     this.height = 0.7;
@@ -410,7 +394,7 @@ export class EntityVisual {
 
     if (this.lootMesh) {
       this.lootMesh.rotation.y += dt * 1.5;
-      this.lootMesh.position.y = 0.55 + Math.sin(t * 2 + this.id) * 0.08;
+      this.lootMesh.position.y = this.lootBaseY + Math.sin(t * 2 + this.id) * 0.08;
       return;
     }
 
@@ -497,11 +481,19 @@ export class EntityVisual {
 export class SharedResources {
   readonly whiteTex: THREE.Texture;
   readonly glowTex: THREE.Texture;
-  readonly pillarGeo = new THREE.CylinderGeometry(0.13, 0.24, 4.2, 10, 1, true);
+  readonly pillarGeo = new THREE.CylinderGeometry(0.13, 0.26, 7.5, 10, 1, true);
   readonly pillarMats: { rarity: THREE.MeshBasicMaterial[]; gem: THREE.MeshBasicMaterial };
   readonly lootGeo = new THREE.OctahedronGeometry(0.32);
+  /** Normal-tier gear: a small, dim glint instead of a beacon. */
+  readonly lootGeoSmall = new THREE.OctahedronGeometry(0.13);
   readonly gemGeo = new THREE.TetrahedronGeometry(0.3);
   readonly lootMats: THREE.MeshStandardMaterial[];
+  readonly lootMatNormal = new THREE.MeshStandardMaterial({
+    color: 0x8a8a93,
+    emissive: 0x8a8a93,
+    emissiveIntensity: 0.18,
+    roughness: 0.6,
+  });
   readonly gemMat: THREE.MeshStandardMaterial;
   readonly fallbackGeo = new THREE.SphereGeometry(0.5, 12, 8);
   readonly fallbackMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
