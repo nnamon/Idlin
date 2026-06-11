@@ -2,217 +2,396 @@
 
 Generated from content/ — do not edit.
 
-## barnacle_wand
+Each base lists every affix its pools can roll. *Share* is the affix's weight over the total weight available to this base (first-roll odds; rolled affixes leave the pool).
 
-```
-ItemDef {
-    id: "barnacle_wand",
-    name: "Barnacle Wand",
-    slot: Weapon,
-    w: 1,
-    h: 3,
-    damage_phys: 8,
-    damage_fire: 0,
-    damage_cold: 6,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 800,
-    use_ticks: 9,
-    block_bp: 0,
-    projectile: true,
-    weapon_class: Some(
-        Wand,
-    ),
-    affix_pools: [
-        "weapon",
-    ],
-    armour: 0,
-    evasion: 0,
-    weight: 60,
-    model: "wand",
-}
-```
+## barnacle_wand — pools: weapon
 
-## brine_helm
+### Heavy (`heavy`) — Prefix · DamagePhys Increased · weight 100 (18.9%)
 
-```
-ItemDef {
-    id: "brine_helm",
-    name: "Brinescoured Helm",
-    slot: Helm,
-    w: 2,
-    h: 2,
-    damage_phys: 0,
-    damage_fire: 0,
-    damage_cold: 0,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 0,
-    use_ticks: 0,
-    block_bp: 0,
-    projectile: false,
-    weapon_class: None,
-    affix_pools: [
-        "armour",
-        "arcana",
-        "find",
-    ],
-    armour: 50,
-    evasion: 0,
-    weight: 90,
-    model: "ranger_hood",
-}
-```
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 2600–4000 |
+| T2 | 3+ | 1600–2500 |
+| T3 | 1+ | 800–1500 |
 
-## driftwood_bow
+### Honed (`honed`) — Prefix · DamagePhys Added · weight 100 (18.9%)
 
-```
-ItemDef {
-    id: "driftwood_bow",
-    name: "Driftwood Bow",
-    slot: Weapon,
-    w: 2,
-    h: 4,
-    damage_phys: 10,
-    damage_fire: 0,
-    damage_cold: 0,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 950,
-    use_ticks: 7,
-    block_bp: 0,
-    projectile: true,
-    weapon_class: Some(
-        Bow,
-    ),
-    affix_pools: [
-        "weapon",
-    ],
-    armour: 0,
-    evasion: 0,
-    weight: 80,
-    model: "bow",
-}
-```
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 9–14 |
+| T2 | 3+ | 5–8 |
+| T3 | 1+ | 2–4 |
 
-## driftwood_buckler
+### Keen (`keen`) — Prefix · Accuracy Added · weight 70 (13.2%)
 
-```
-ItemDef {
-    id: "driftwood_buckler",
-    name: "Driftwood Buckler",
-    slot: Offhand,
-    w: 2,
-    h: 2,
-    damage_phys: 0,
-    damage_fire: 0,
-    damage_cold: 0,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 0,
-    use_ticks: 0,
-    block_bp: 1700,
-    projectile: false,
-    weapon_class: None,
-    affix_pools: [
-        "find",
-    ],
-    armour: 12,
-    evasion: 0,
-    weight: 80,
-    model: "shield_round",
-}
-```
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 31–60 |
+| T2 | 1+ | 15–30 |
 
-## kelp_vest
+### of Embers (`of_embers`) — Suffix · DamageFire Added · weight 80 (15.1%)
 
-```
-ItemDef {
-    id: "kelp_vest",
-    name: "Kelp-Woven Vest",
-    slot: Chest,
-    w: 2,
-    h: 3,
-    damage_phys: 0,
-    damage_fire: 0,
-    damage_cold: 0,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 0,
-    use_ticks: 0,
-    block_bp: 0,
-    projectile: false,
-    weapon_class: None,
-    affix_pools: [
-        "armour",
-        "arcana",
-    ],
-    armour: 60,
-    evasion: 30,
-    weight: 100,
-    model: "ranger_body",
-}
-```
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 6–11 |
+| T2 | 1+ | 2–5 |
 
-## rusted_cleaver
+### of Precision (`of_precision`) — Suffix · CritChance Increased · weight 60 (11.3%)
 
-```
-ItemDef {
-    id: "rusted_cleaver",
-    name: "Rusted Cleaver",
-    slot: Weapon,
-    w: 2,
-    h: 3,
-    damage_phys: 14,
-    damage_fire: 0,
-    damage_cold: 0,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 220,
-    use_ticks: 8,
-    block_bp: 0,
-    projectile: false,
-    weapon_class: Some(
-        Melee,
-    ),
-    affix_pools: [
-        "weapon",
-    ],
-    armour: 0,
-    evasion: 0,
-    weight: 100,
-    model: "cleaver",
-}
-```
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1801–3000 |
+| T2 | 1+ | 1000–1800 |
 
-## wader_boots
+### of Venom (`of_venom`) — Suffix · DamageChaos Added · weight 50 (9.4%)
 
-```
-ItemDef {
-    id: "wader_boots",
-    name: "Wader's Boots",
-    slot: Boots,
-    w: 2,
-    h: 2,
-    damage_phys: 0,
-    damage_fire: 0,
-    damage_cold: 0,
-    damage_lightning: 0,
-    damage_chaos: 0,
-    range_cu: 0,
-    use_ticks: 0,
-    block_bp: 0,
-    projectile: false,
-    weapon_class: None,
-    affix_pools: [
-        "armour",
-        "stride",
-        "find",
-    ],
-    armour: 0,
-    evasion: 40,
-    weight: 90,
-    model: "ranger_feet",
-}
-```
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 5+ | 5–9 |
+| T2 | 2+ | 2–4 |
+
+### Swift (`swift`) — Prefix · AttackSpeed Increased · weight 70 (13.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1000–1600 |
+| T2 | 1+ | 500–900 |
+
+## brine_helm — pools: armour, arcana, find
+
+### Arcane (`arcane`) — Prefix · Mana Added · weight 70 (9.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 23–36 |
+| T2 | 3+ | 13–22 |
+| T3 | 1+ | 6–12 |
+
+### Hale (`hale`) — Prefix · Life Added · weight 100 (13.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 29–45 |
+| T2 | 3+ | 16–28 |
+| T3 | 1+ | 8–15 |
+
+### of Hoarding (`of_hoarding`) — Suffix · ItemQuantity Increased · weight 35 (4.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 900–1500 |
+| T2 | 2+ | 400–800 |
+
+### of Iron (`of_iron`) — Suffix · Armour Added · weight 90 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 31–60 |
+| T2 | 1+ | 15–30 |
+
+### of Plunder (`of_plunder`) — Suffix · ItemRarity Increased · weight 50 (6.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1600–2500 |
+| T2 | 1+ | 800–1500 |
+
+### of Storms (`of_storms`) — Suffix · ResistLightning Added · weight 80 (10.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 1501–2400 |
+| T2 | 3+ | 901–1500 |
+| T3 | 1+ | 500–900 |
+
+### of the Depths (`of_the_depths`) — Suffix · ResistCold Added · weight 80 (10.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 1501–2400 |
+| T2 | 3+ | 901–1500 |
+| T3 | 1+ | 500–900 |
+
+### of Warding (`of_warding`) — Suffix · ResistFire Added · weight 80 (10.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1300–2200 |
+| T2 | 1+ | 500–1200 |
+
+### of the Wind (`of_wind`) — Suffix · Evasion Added · weight 90 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 26–50 |
+| T2 | 1+ | 12–25 |
+
+### Shimmering (`shimmering`) — Prefix · EnergyShield Added · weight 70 (9.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 20–32 |
+| T2 | 3+ | 11–19 |
+| T3 | 1+ | 5–10 |
+
+## driftwood_bow — pools: weapon
+
+### Heavy (`heavy`) — Prefix · DamagePhys Increased · weight 100 (18.9%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 2600–4000 |
+| T2 | 3+ | 1600–2500 |
+| T3 | 1+ | 800–1500 |
+
+### Honed (`honed`) — Prefix · DamagePhys Added · weight 100 (18.9%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 9–14 |
+| T2 | 3+ | 5–8 |
+| T3 | 1+ | 2–4 |
+
+### Keen (`keen`) — Prefix · Accuracy Added · weight 70 (13.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 31–60 |
+| T2 | 1+ | 15–30 |
+
+### of Embers (`of_embers`) — Suffix · DamageFire Added · weight 80 (15.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 6–11 |
+| T2 | 1+ | 2–5 |
+
+### of Precision (`of_precision`) — Suffix · CritChance Increased · weight 60 (11.3%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1801–3000 |
+| T2 | 1+ | 1000–1800 |
+
+### of Venom (`of_venom`) — Suffix · DamageChaos Added · weight 50 (9.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 5+ | 5–9 |
+| T2 | 2+ | 2–4 |
+
+### Swift (`swift`) — Prefix · AttackSpeed Increased · weight 70 (13.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1000–1600 |
+| T2 | 1+ | 500–900 |
+
+## driftwood_buckler — pools: find
+
+### of Hoarding (`of_hoarding`) — Suffix · ItemQuantity Increased · weight 35 (41.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 900–1500 |
+| T2 | 2+ | 400–800 |
+
+### of Plunder (`of_plunder`) — Suffix · ItemRarity Increased · weight 50 (58.8%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1600–2500 |
+| T2 | 1+ | 800–1500 |
+
+## kelp_vest — pools: armour, arcana
+
+### Arcane (`arcane`) — Prefix · Mana Added · weight 70 (10.6%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 23–36 |
+| T2 | 3+ | 13–22 |
+| T3 | 1+ | 6–12 |
+
+### Hale (`hale`) — Prefix · Life Added · weight 100 (15.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 29–45 |
+| T2 | 3+ | 16–28 |
+| T3 | 1+ | 8–15 |
+
+### of Iron (`of_iron`) — Suffix · Armour Added · weight 90 (13.6%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 31–60 |
+| T2 | 1+ | 15–30 |
+
+### of Storms (`of_storms`) — Suffix · ResistLightning Added · weight 80 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 1501–2400 |
+| T2 | 3+ | 901–1500 |
+| T3 | 1+ | 500–900 |
+
+### of the Depths (`of_the_depths`) — Suffix · ResistCold Added · weight 80 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 1501–2400 |
+| T2 | 3+ | 901–1500 |
+| T3 | 1+ | 500–900 |
+
+### of Warding (`of_warding`) — Suffix · ResistFire Added · weight 80 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1300–2200 |
+| T2 | 1+ | 500–1200 |
+
+### of the Wind (`of_wind`) — Suffix · Evasion Added · weight 90 (13.6%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 26–50 |
+| T2 | 1+ | 12–25 |
+
+### Shimmering (`shimmering`) — Prefix · EnergyShield Added · weight 70 (10.6%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 20–32 |
+| T2 | 3+ | 11–19 |
+| T3 | 1+ | 5–10 |
+
+## rusted_cleaver — pools: weapon
+
+### Heavy (`heavy`) — Prefix · DamagePhys Increased · weight 100 (18.9%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 2600–4000 |
+| T2 | 3+ | 1600–2500 |
+| T3 | 1+ | 800–1500 |
+
+### Honed (`honed`) — Prefix · DamagePhys Added · weight 100 (18.9%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 9–14 |
+| T2 | 3+ | 5–8 |
+| T3 | 1+ | 2–4 |
+
+### Keen (`keen`) — Prefix · Accuracy Added · weight 70 (13.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 31–60 |
+| T2 | 1+ | 15–30 |
+
+### of Embers (`of_embers`) — Suffix · DamageFire Added · weight 80 (15.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 6–11 |
+| T2 | 1+ | 2–5 |
+
+### of Precision (`of_precision`) — Suffix · CritChance Increased · weight 60 (11.3%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1801–3000 |
+| T2 | 1+ | 1000–1800 |
+
+### of Venom (`of_venom`) — Suffix · DamageChaos Added · weight 50 (9.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 5+ | 5–9 |
+| T2 | 2+ | 2–4 |
+
+### Swift (`swift`) — Prefix · AttackSpeed Increased · weight 70 (13.2%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1000–1600 |
+| T2 | 1+ | 500–900 |
+
+## wader_boots — pools: armour, stride, find
+
+### Hale (`hale`) — Prefix · Life Added · weight 100 (13.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 29–45 |
+| T2 | 3+ | 16–28 |
+| T3 | 1+ | 8–15 |
+
+### of Hoarding (`of_hoarding`) — Suffix · ItemQuantity Increased · weight 35 (4.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 900–1500 |
+| T2 | 2+ | 400–800 |
+
+### of Iron (`of_iron`) — Suffix · Armour Added · weight 90 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 31–60 |
+| T2 | 1+ | 15–30 |
+
+### of Plunder (`of_plunder`) — Suffix · ItemRarity Increased · weight 50 (6.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1600–2500 |
+| T2 | 1+ | 800–1500 |
+
+### of Storms (`of_storms`) — Suffix · ResistLightning Added · weight 80 (10.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 1501–2400 |
+| T2 | 3+ | 901–1500 |
+| T3 | 1+ | 500–900 |
+
+### of the Depths (`of_the_depths`) — Suffix · ResistCold Added · weight 80 (10.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 1501–2400 |
+| T2 | 3+ | 901–1500 |
+| T3 | 1+ | 500–900 |
+
+### of the Hare (`of_the_hare`) — Suffix · MoveSpeed Increased · weight 70 (9.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1000–1500 |
+| T2 | 1+ | 500–900 |
+
+### of Warding (`of_warding`) — Suffix · ResistFire Added · weight 80 (10.7%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 1300–2200 |
+| T2 | 1+ | 500–1200 |
+
+### of the Wind (`of_wind`) — Suffix · Evasion Added · weight 90 (12.1%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 4+ | 26–50 |
+| T2 | 1+ | 12–25 |
+
+### Shimmering (`shimmering`) — Prefix · EnergyShield Added · weight 70 (9.4%)
+
+| tier | ilvl | roll |
+|---|---|---|
+| T1 | 6+ | 20–32 |
+| T2 | 3+ | 11–19 |
+| T3 | 1+ | 5–10 |
 

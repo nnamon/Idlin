@@ -16,10 +16,38 @@ fn main() {
         println!("wrote docs/wiki/{name}");
     };
 
-    // -- items & their affix pools --
-    let mut s = String::from("# Item bases\n\nGenerated from content/ — do not edit.\n\n");
+    // -- items: every base with its full affix table (weights + tiers) --
+    let mut s = String::from(
+        "# Item bases\n\nGenerated from content/ — do not edit.\n\nEach base lists every \
+         affix its pools can roll. *Share* is the affix's weight over the total weight \
+         available to this base (first-roll odds; rolled affixes leave the pool).\n\n",
+    );
     for it in &db.items {
-        let _ = writeln!(s, "## {}\n\n```\n{:#?}\n```\n", it.id, it);
+        let _ = writeln!(s, "## {} — pools: {}\n", it.id, it.affix_pools.join(", "));
+        let eligible: Vec<_> = db
+            .affixes
+            .iter()
+            .filter(|a| it.affix_pools.contains(&a.pool))
+            .collect();
+        let total: u32 = eligible.iter().map(|a| a.weight).sum();
+        for a in &eligible {
+            let share = if total > 0 { a.weight as f64 * 100.0 / total as f64 } else { 0.0 };
+            let _ = writeln!(
+                s,
+                "### {} (`{}`) — {:?} · {:?} {:?} · weight {} ({share:.1}%)\n",
+                a.name, a.id, a.kind, a.stat, a.layer, a.weight,
+            );
+            let _ = writeln!(s, "| tier | ilvl | roll |");
+            let _ = writeln!(s, "|---|---|---|");
+            // Tiers are authored low→high; display best-first like PoE.
+            for (n, t) in a.tiers.iter().rev().enumerate() {
+                let _ = writeln!(s, "| T{} | {}+ | {}–{} |", n + 1, t.ilvl, t.min, t.max);
+            }
+            let _ = writeln!(s);
+        }
+        if eligible.is_empty() {
+            let _ = writeln!(s, "_No affixes subscribe to these pools._\n");
+        }
     }
     write("items.md", s);
 
