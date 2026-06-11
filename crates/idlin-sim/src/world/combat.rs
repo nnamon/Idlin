@@ -228,10 +228,20 @@ impl World {
             }
         }
 
+        // The dead stay where they fell: free the brain immediately (the
+        // arena slot may be reused), mark the corpse for decay, and let
+        // respawns() sweep it later. Corpses fail alive(), so every other
+        // system already ignores them.
         for (slot, bot_idx) in dead_monsters {
-            self.zone.remove(slot);
             if bot_idx != u32::MAX {
                 self.bots.remove(bot_idx);
+            }
+            if let Some(e) = self.zone.get_mut(slot) {
+                e.bot = None;
+                e.intents = Default::default();
+                if let Some(m) = e.monster.as_mut() {
+                    m.decay_at = Some(now + super::CORPSE_TICKS);
+                }
             }
         }
         for (pos, payload, owner, owner_name) in loot_spawns {
@@ -327,7 +337,9 @@ impl World {
                 dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
                 let pack = &mut self.zone.packs[pack_idx as usize];
                 pack.alive = pack.alive.saturating_sub(1);
-                if pack.respawn_timer == 0 {
+                // Packs respawn as a unit: the timer starts only once the
+                // whole pack has been wiped.
+                if pack.alive == 0 {
                     pack.respawn_timer = pack.def.respawn_ticks;
                 }
                 if attacker_is_char {

@@ -52,6 +52,8 @@ interface Manifest {
   weapons: Record<string, { file: string }>;
   /** Static environment props, scattered deterministically by Terrain. */
   props: Record<string, { file: string }>;
+  /** Ground-drop meshes for armor items (weapons reuse their own files). */
+  drops: Record<string, { file: string }>;
 }
 
 export interface ModelInstance {
@@ -88,6 +90,14 @@ export class AssetLibrary {
     for (const def of Object.values(manifest.parts)) def.files.forEach((f) => paths.add(f));
     for (const def of Object.values(manifest.weapons)) paths.add(def.file);
     for (const def of Object.values(manifest.props ?? {})) paths.add(def.file);
+    for (const def of Object.values(manifest.drops ?? {})) paths.add(def.file);
+
+    // Canvas-rendered text (labels, damage numbers) uses the display font;
+    // have it ready before any visual draws.
+    await Promise.all([
+      document.fonts.load('40px "Anton SC"'),
+      document.fonts.load('600 40px "Cinzel"'),
+    ]).catch(() => {});
 
     const files = new Map<string, LoadedFile>();
     await Promise.all(
@@ -156,6 +166,13 @@ export class AssetLibrary {
   /** Clone an environment prop (shares geometry/materials). */
   instantiateProp(key: string): THREE.Object3D | null {
     const def = this.manifest.props?.[key];
+    const loaded = def ? this.files.get(def.file) : undefined;
+    return loaded ? loaded.scene.clone() : null;
+  }
+
+  /** Clone a ground-drop mesh for an armor item visual key. */
+  instantiateDrop(key: string): THREE.Object3D | null {
+    const def = this.manifest.drops?.[key];
     const loaded = def ? this.files.get(def.file) : undefined;
     return loaded ? loaded.scene.clone() : null;
   }

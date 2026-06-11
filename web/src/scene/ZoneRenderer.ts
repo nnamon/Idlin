@@ -48,7 +48,8 @@ export class ZoneRenderer {
   /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character;
    *  ?cam=x,y,z,tx,ty,tz pins it entirely (shot framing/verification). */
   private followOverride = new URLSearchParams(location.search).get("follow");
-  private zoomOverride = Number(new URLSearchParams(location.search).get("zoom") ?? "0.55");
+  /** Multiplies the follow distance everywhere (cue follows included). */
+  private zoomOverride = Number(new URLSearchParams(location.search).get("zoom") ?? "1");
   private camOverride = new URLSearchParams(location.search)
     .get("cam")
     ?.split(",")
@@ -152,20 +153,21 @@ export class ZoneRenderer {
     cam.far = 140;
     cam.updateProjectionMatrix();
 
-    // Braziers: warm flickering counterpoints to the cold moonlight,
-    // scattered at fixed fractions of the zone so any layout gets a few.
+    // Braziers: warm flickering counterpoints to the cold moonlight — a
+    // trail of them marks the way up the strand.
     const spots: Array<[number, number]> = [
-      [0.5, 0.88], // near the spawn beach
-      [0.22, 0.3],
-      [0.68, 0.32],
-      [0.82, 0.72],
-      [0.18, 0.74],
+      [0.5, 0.93], // the spawn camp
+      [0.3, 0.76],
+      [0.62, 0.58],
+      [0.34, 0.4],
+      [0.6, 0.22],
+      [0.44, 0.06], // the far end
     ];
     for (const [fx, fz] of spots) {
       this.addBrazier(w * fx, h * fz, this.terrain.heightAt(w * fx, h * fz));
     }
 
-    this.director.setZoneCenter(w / 2, h / 2, Math.max(w, h));
+    this.director.setZoneSize(w, h);
     this.zoneBuilt = true;
   }
 
@@ -187,17 +189,17 @@ export class ZoneRenderer {
       new THREE.MeshStandardMaterial({
         color: 0xff7a26,
         emissive: 0xff9a4a,
-        emissiveIntensity: 1.3,
+        emissiveIntensity: 0.75,
         roughness: 0.6,
       }),
     );
     coals.position.y = 1.34;
-    const light = new THREE.PointLight(0xff9a4a, 48, 19, 2);
+    const light = new THREE.PointLight(0xff9a4a, 17, 14, 2);
     light.position.y = 1.7;
     group.add(post, bowl, coals, light);
     group.position.set(x, y - 0.04, z);
     this.scene.add(group);
-    this.braziers.push({ light, baseIntensity: 48, phase: Math.random() * Math.PI * 2 });
+    this.braziers.push({ light, baseIntensity: 17, phase: Math.random() * Math.PI * 2 });
   }
 
   private frame(): void {
@@ -258,13 +260,12 @@ export class ZoneRenderer {
       return;
     }
     let focusId = this.store.cue?.focus;
-    let zoom = 1;
+    const zoom = this.zoomOverride;
     if (this.followOverride) {
       const name = this.followOverride.toLowerCase();
       for (const er of this.store.entities.values()) {
         if (er.state.name.toLowerCase() === name) {
           focusId = er.state.id;
-          zoom = this.zoomOverride;
           break;
         }
       }

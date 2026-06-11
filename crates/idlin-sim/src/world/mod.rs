@@ -16,6 +16,8 @@ mod progression;
 mod tree;
 mod views;
 
+pub use views::CharacterSheetView;
+
 use crate::bots::{Bot, BotArena, program_hash};
 use crate::entity::{CharacterState, CombatStats, Entity, MonsterState, Rarity};
 use crate::fixed::{Fx, FxV2};
@@ -38,6 +40,8 @@ pub const PICKUP_RANGE: Fx = Fx::from_raw(0x2_8000); // 2.5 u
 pub const REGEN_DELAY_TICKS: u64 = 50;
 /// Allies within this range of a kill receive a half XP share.
 pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
+/// Ticks a monster corpse lies where it fell before decaying away.
+pub const CORPSE_TICKS: u64 = 300;
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
 /// through here — never by mutating state directly.
@@ -589,10 +593,12 @@ impl World {
             }
         }
 
-        // Packs refill once their timer runs out.
+        // Packs respawn as a unit: survivors hold their ground (no trickle
+        // refills); once the pack is wiped and its timer runs out, the whole
+        // pack rises again.
         for pack_idx in 0..self.zone.packs.len() {
             let pack = &self.zone.packs[pack_idx];
-            if pack.alive >= pack.def.count {
+            if pack.alive > 0 {
                 continue;
             }
             if pack.respawn_timer > 0 {
@@ -620,11 +626,16 @@ impl World {
             self.zone.packs[pack_idx].alive = count;
         }
 
-        // Loot despawn.
+        // Loot despawn and corpse decay.
         let mut stale: Vec<usize> = Vec::new();
         for (slot, e) in self.zone.iter() {
             if let Some(l) = &e.loot
                 && l.despawn_at <= self.tick
+            {
+                stale.push(slot);
+            }
+            if let Some(m) = &e.monster
+                && m.decay_at.is_some_and(|d| d <= self.tick)
             {
                 stale.push(slot);
             }
@@ -691,6 +702,7 @@ impl World {
                 pack_idx,
                 anchor: pos,
                 hostile,
+                decay_at: None,
             }),
             loot: None,
         });

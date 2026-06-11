@@ -312,7 +312,38 @@ for (const hair of HAIRS) {
   console.log(`parts/${hair.toLowerCase()}.glb`);
 }
 
-// ---- 2c. environment props (static; scattered by the client) ----
+// ---- 2c. ground-drop versions of armor parts: skinning stripped, the
+// bind-pose mesh becomes a static prop (the client recenters by bbox) ----
+const DROPS = [
+  ["ranger_hood", "Male_Ranger_Head_Hood"],
+  ["ranger_body", "Male_Ranger_Body"],
+  ["ranger_feet", "Male_Ranger_Feet_Boots"],
+];
+const dropsDir = resolve(outDir, "drops");
+mkdirSync(dropsDir, { recursive: true });
+for (const [key, part] of DROPS) {
+  const doc = await io.read(join(PARTS_DIR, `${part}.gltf`));
+  const root = doc.getRoot();
+  const scene = root.getDefaultScene();
+  const staticNodes = [];
+  for (const node of root.listNodes()) {
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    for (const prim of mesh.listPrimitives()) {
+      prim.setAttribute("JOINTS_0", null);
+      prim.setAttribute("WEIGHTS_0", null);
+    }
+    staticNodes.push(doc.createNode(`drop_${key}`).setMesh(mesh));
+    node.setMesh(null);
+  }
+  for (const child of scene.listChildren()) scene.removeChild(child);
+  for (const n of staticNodes) scene.addChild(n);
+  await finalize(doc, 256);
+  await writeCompressed(doc, resolve(dropsDir, `${key}.glb`));
+  console.log(`drops/${key}.glb`);
+}
+
+// ---- 2c2. environment props (static; scattered by the client) ----
 const ENV_PROPS = [
   ["rock_1", join(NATURE_GLTF, "Rock_Medium_1.gltf")],
   ["rock_2", join(NATURE_GLTF, "Rock_Medium_2.gltf")],

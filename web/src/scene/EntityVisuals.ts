@@ -58,7 +58,7 @@ export class EntityVisual {
   private targetAngle = 0;
 
   // Parts
-  private lootMesh: THREE.Mesh | null = null;
+  private lootMesh: THREE.Object3D | null = null;
   private hpBg: THREE.Sprite | null = null;
   private hpFg: THREE.Sprite | null = null;
   private label: THREE.Sprite | null = null;
@@ -226,14 +226,48 @@ export class EntityVisual {
   }
 
   private buildLoot(model: string, rarity: number): void {
-    const geo = model === "gem" ? this.shared.gemGeo : this.shared.lootGeo;
-    const mat =
-      model === "gem"
-        ? this.shared.gemMat
-        : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
-    this.lootMesh = new THREE.Mesh(geo, mat);
-    this.lootMesh.position.y = 0.55;
+    // Drops show the actual item when art exists for its visual key —
+    // weapons reuse their equip meshes, armor uses baked static versions.
+    let display: THREE.Object3D | null = null;
+    if (model !== "gem" && model !== "loot") {
+      display = this.assets.instantiateWeapon(model) ?? this.assets.instantiateDrop(model);
+    }
+    if (display) {
+      // Recenter (bind-pose parts sit away from the origin) and normalize.
+      const box = new THREE.Box3().setFromObject(display);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const s = 0.62 / Math.max(size.x, size.y, size.z, 0.001);
+      display.scale.multiplyScalar(s);
+      display.position.set(-center.x * s, -center.y * s, -center.z * s);
+      const pivot = new THREE.Group();
+      pivot.add(display);
+      pivot.position.y = 0.55;
+      pivot.rotation.z = 0.35; // a casual tilt, like it fell there
+      this.lootMesh = pivot;
+    } else {
+      const geo = model === "gem" ? this.shared.gemGeo : this.shared.lootGeo;
+      const mat =
+        model === "gem"
+          ? this.shared.gemMat
+          : this.shared.lootMats[Math.min(rarity, this.shared.lootMats.length - 1)];
+      this.lootMesh = new THREE.Mesh(geo, mat);
+      this.lootMesh.position.y = 0.55;
+    }
     this.group.add(this.lootMesh);
+    // The PoE ritual: a light pillar calls out anything worth walking to.
+    // Normal-tier gear gets no pillar — just the item on the sand.
+    const pillarMat =
+      model === "gem"
+        ? this.shared.pillarMats.gem
+        : rarity >= 1
+          ? this.shared.pillarMats.rarity[Math.min(rarity, 3)]
+          : null;
+    if (pillarMat) {
+      const pillar = new THREE.Mesh(this.shared.pillarGeo, pillarMat);
+      pillar.position.y = 2.1;
+      this.group.add(pillar);
+    }
     this.height = 0.7;
   }
 
@@ -265,22 +299,22 @@ export class EntityVisual {
 
   private buildLabel(text: string): void {
     const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = 512;
+    canvas.height = 128;
     const ctx = canvas.getContext("2d")!;
-    ctx.font = "bold 36px ui-monospace, monospace";
+    ctx.font = '64px "Anton SC", "Cinzel", sans-serif';
     ctx.textAlign = "center";
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = "#000";
-    ctx.strokeText(text, 128, 44);
-    ctx.fillStyle = `#${nameColor(text).clone().offsetHSL(0, -0.15, 0.25).getHexString()}`;
-    ctx.fillText(text, 128, 44);
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 9;
+    ctx.shadowOffsetY = 3;
+    ctx.fillStyle = "#e9e4d4";
+    ctx.fillText(text, 256, 84);
     const tex = new THREE.CanvasTexture(canvas);
     this.label = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
+      new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0.92 }),
     );
-    this.label.scale.set(3.2, 0.8, 1);
-    this.label.position.y = this.height + 0.95;
+    this.label.scale.set(5.0, 1.25, 1);
+    this.label.position.y = this.height + 1.05;
     this.group.add(this.label);
   }
 
@@ -426,6 +460,8 @@ export class EntityVisual {
 export class SharedResources {
   readonly whiteTex: THREE.Texture;
   readonly glowTex: THREE.Texture;
+  readonly pillarGeo = new THREE.CylinderGeometry(0.13, 0.24, 4.2, 10, 1, true);
+  readonly pillarMats: { rarity: THREE.MeshBasicMaterial[]; gem: THREE.MeshBasicMaterial };
   readonly lootGeo = new THREE.OctahedronGeometry(0.32);
   readonly gemGeo = new THREE.TetrahedronGeometry(0.3);
   readonly lootMats: THREE.MeshStandardMaterial[];
@@ -465,5 +501,37 @@ export class SharedResources {
       emissiveIntensity: 1.0,
       roughness: 0.4,
     });
+
+    // Loot pillars: vertical alpha gradient, additive, fog-aware.
+    const pc = document.createElement("canvas");
+    pc.width = 8;
+    pc.height = 128;
+    const pctx = pc.getContext("2d")!;
+    const pgrad = pctx.createLinearGradient(0, 128, 0, 0);
+    pgrad.addColorStop(0, "rgba(255,255,255,0.85)");
+    pgrad.addColorStop(0.35, "rgba(255,255,255,0.4)");
+    pgrad.addColorStop(1, "rgba(255,255,255,0)");
+    pctx.fillStyle = pgrad;
+    pctx.fillRect(0, 0, 8, 128);
+    const pillarTex = new THREE.CanvasTexture(pc);
+    const pillarMat = (color: number) =>
+      new THREE.MeshBasicMaterial({
+        map: pillarTex,
+        color,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+    this.pillarMats = {
+      rarity: [
+        pillarMat(0xbfbfbf), // normal (unused; no pillar)
+        pillarMat(0x5a8aff), // magic
+        pillarMat(0xffd75a), // rare
+        pillarMat(0xff9a3c), // unique
+      ],
+      gem: pillarMat(0x5adfdf),
+    };
   }
 }

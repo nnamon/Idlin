@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
 import { TreeMap } from "./TreeMap";
+
+const RARITY_TEXT = ["#b8b8c8", "#5a8aff", "#ffd75a", "#ff9a3c"];
 
 const TICK_HZ = 10;
 
@@ -28,6 +31,17 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
 
   const focusId = store.cue?.focus;
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
+
+  // Keep the focus panel fresh: re-request the sheet while a character is
+  // in frame (cheap: one small message per second).
+  useEffect(() => {
+    if (focusId === undefined) return;
+    const ask = () => client.send({ type: "Inspect", data: { id: focusId } });
+    ask();
+    const h = setInterval(ask, 1000);
+    return () => clearInterval(h);
+  }, [client, focusId]);
+  const sheet = store.sheet && store.sheet.id === focusId ? store.sheet : null;
   const chars = store
     .characters()
     .sort((a, b) => b.state.level - a.state.level || b.state.kills - a.state.kills);
@@ -94,6 +108,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           ))}
           {chars.length === 0 && <div style={{ color: "#55556a" }}>none yet</div>}
         </div>
+        {sheet && <SheetPanel sheet={sheet} />}
       </div>
 
       {/* bottom-left: event ticker */}
@@ -113,6 +128,87 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
         ))}
       </div>
     </>
+  );
+}
+
+/** The focus panel: gear, brief stats, and the bag of the watched idler. */
+function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
+  const stat = (label: string, value: string) => (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5 }}>
+      <span style={{ color: "#77778e" }}>{label}</span>
+      <span style={{ color: "#c8c8e0" }}>{value}</span>
+    </div>
+  );
+  const dmg = [sheet.dmg_phys, sheet.dmg_ele, sheet.dmg_chaos];
+  const dmgText = `${dmg[0]}/${dmg[1]}/${dmg[2]}`;
+  const res = `${Math.min(75, Math.round(sheet.resist_ele_bp / 100))}% / ${Math.min(75, Math.round(sheet.resist_chaos_bp / 100))}%`;
+  const CELL = 13;
+  return (
+    <div style={{ ...panelStyle, marginTop: 8, lineHeight: 1.5 }}>
+      <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, marginBottom: 2 }}>
+        EQUIPMENT
+      </div>
+      {sheet.equipment.map((g) => (
+        <div key={g.slot} style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5 }}>
+          <span style={{ color: "#77778e" }}>{g.slot}</span>
+          <span style={{ color: g.name ? RARITY_TEXT[g.rarity] : "#44445a" }}>
+            {g.name || "—"}
+          </span>
+        </div>
+      ))}
+      <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 2px" }}>
+        STATS
+      </div>
+      {stat("damage p/e/c", dmgText)}
+      {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`)}
+      {stat("armour", `${sheet.armour}`)}
+      {stat("resists e/c", res)}
+      {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
+      {sheet.gems.length > 0 && (
+        <>
+          <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 2px" }}>
+            GEMS
+          </div>
+          {sheet.gems.map((g, i) => (
+            <div key={i} style={{ fontSize: 11.5, color: "#5adfdf", paddingLeft: g.support ? 12 : 0 }}>
+              {g.support ? "↳ " : "◆ "}
+              {g.name} <span style={{ color: "#77778e" }}>lv{g.level}</span>
+            </div>
+          ))}
+        </>
+      )}
+      <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 3px" }}>
+        BAG
+      </div>
+      <div
+        style={{
+          position: "relative",
+          width: 12 * CELL,
+          height: 5 * CELL,
+          background: "#15151f",
+          border: "1px solid #2c2c40",
+          backgroundImage:
+            "repeating-linear-gradient(0deg, transparent, transparent 12px, #1d1d2c 12px, #1d1d2c 13px), repeating-linear-gradient(90deg, transparent, transparent 12px, #1d1d2c 12px, #1d1d2c 13px)",
+        }}
+      >
+        {sheet.inventory.map((it, i) => (
+          <div
+            key={i}
+            title={it.name}
+            style={{
+              position: "absolute",
+              left: it.x * CELL,
+              top: it.y * CELL,
+              width: it.w * CELL - 1,
+              height: it.h * CELL - 1,
+              background: `${RARITY_TEXT[it.rarity]}33`,
+              border: `1px solid ${RARITY_TEXT[it.rarity]}`,
+              boxSizing: "border-box",
+            }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -159,13 +159,15 @@ export class FxSystem {
     }
     const { ctx, canvas } = n;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = `bold ${big ? 56 : 44}px ui-monospace, monospace`;
+    ctx.font = `${big ? 58 : 44}px "Anton SC", "Cinzel", sans-serif`;
     ctx.textAlign = "center";
-    ctx.lineWidth = 8;
-    ctx.strokeStyle = "rgba(0,0,0,0.9)";
-    ctx.strokeText(text, 96, 56);
+    ctx.shadowColor = "rgba(0,0,0,0.95)";
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
     ctx.fillStyle = color;
-    ctx.fillText(text, 96, 56);
+    ctx.fillText(text, 96, 58);
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
     n.tex.needsUpdate = true;
 
     n.active = true;
@@ -215,6 +217,10 @@ export class FxSystem {
       n.sprite.position.y = n.baseY + a * (n.big ? 1.5 : 1.1);
       n.sprite.position.x += n.driftX * 0.004;
       n.mat.opacity = a < 0.55 ? 1 : 1 - (a - 0.55) / 0.45;
+      // A quick settle-pop on arrival, then steady.
+      const pop = a < 0.14 ? 1.28 - (a / 0.14) * 0.28 : 1;
+      const s = (n.big ? 1.5 : 1.05) * pop;
+      n.sprite.scale.set(2.4 * s * (192 / 160), s, 1);
     }
   }
 

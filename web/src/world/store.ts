@@ -1,4 +1,5 @@
 import type { S2C } from "../gen/S2C";
+import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { EntityState } from "../gen/EntityState";
 import type { GameEvent } from "../gen/GameEvent";
 
@@ -52,6 +53,8 @@ export class WorldStore {
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
   cue: Cue | null = null;
+  /** Latest inspect reply (the focus panel); refreshed by Overlay polling. */
+  sheet: CharacterSheet | null = null;
   version = 0;
   private tickerKey = 0;
 
@@ -115,6 +118,11 @@ export class WorldStore {
       }
       case "Events": {
         for (const ev of msg.data.events) this.narrate(ev);
+        this.version++;
+        break;
+      }
+      case "CharacterSheet": {
+        this.sheet = msg.data.sheet;
         this.version++;
         break;
       }

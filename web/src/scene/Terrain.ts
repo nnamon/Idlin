@@ -7,17 +7,16 @@ import type { AssetLibrary } from "./Assets";
  * heightmap is pure deterministic math from the zone dimensions, so every
  * viewer sees the same shore.
  *
- * The zone's identity is a LONG SHORE: a wide flat sand beach along the
- * whole south edge (the spawn beach), a gently meandering waterline with
- * foam waves lapping onto the sand, and ground rising northward into
- * ridged bluffs that close the horizon.
+ * The zone is a LONG STRAND walked south → north: the sea runs along the
+ * whole EAST edge with a gently meandering waterline and foam lapping onto
+ * a wide sand band; bluffs rise to the west and close both ends.
  */
 
 /** Padding rendered beyond the playable zone so the world doesn't end. */
 const PAD = 34;
 const WATER_Y = -0.3;
-/** How far the beach band reaches inland from the south edge. */
-const BEACH_DEPTH = 16;
+/** How far the beach band reaches inland from the waterline. */
+const BEACH_DEPTH = 13;
 
 function hash2(ix: number, iz: number, seed: number): number {
   let h = (ix * 374761393 + iz * 668265263 + seed * 1442695041) >>> 0;
@@ -80,9 +79,9 @@ export class Terrain {
     this.seed = h;
   }
 
-  /** Where the sea meets the sand, gently meandering along x. */
-  waterlineZ(x: number): number {
-    return this.zoneH + 1 + (vnoise(x * 0.045, 7.7, this.seed ^ 31) * 2 - 1) * 1.4;
+  /** Where the sea meets the sand, gently meandering along the strand. */
+  waterlineX(z: number): number {
+    return this.zoneW + 1 + (vnoise(z * 0.045, 7.7, this.seed ^ 31) * 2 - 1) * 1.4;
   }
 
   /**
@@ -93,21 +92,21 @@ export class Terrain {
     const { zoneW: w, zoneH: h } = this;
     // Gentle dunes everywhere…
     let y = vnoise(x * 0.06, z * 0.06, this.seed) * 0.9 + vnoise(x * 0.22, z * 0.22, this.seed ^ 7) * 0.22 - 0.5;
-    // …rising northward into ridged bluffs (strongest at and beyond z=0).
-    const northness = smoothstep(h * 0.62, -10, z);
-    const ridge = vnoise(x * 0.05, z * 0.11, this.seed ^ 13);
-    y += northness * (1.7 + ridge * 2.2);
-    // Hills also close the east/west horizon beyond the bounds.
-    const out = Math.max(0, -x, x - w);
+    // …rising westward into ridged bluffs (strongest at and beyond x=0).
+    const westness = smoothstep(w * 0.55, -8, x);
+    const ridge = vnoise(x * 0.11, z * 0.05, this.seed ^ 13);
+    y += westness * (1.6 + ridge * 2.2);
+    // Hills also close the strand's two ends.
+    const out = Math.max(0, -z, z - h);
     y += smoothstep(4, PAD - 8, out) * 4.5;
 
-    // The long shore: a wide, flat sand band easing into the sea.
-    const zw = this.waterlineZ(x);
-    const beach = smoothstep(zw - BEACH_DEPTH, zw - 3, z);
+    // The strand: a wide flat sand band easing east into the sea.
+    const xw = this.waterlineX(z);
+    const beach = smoothstep(xw - BEACH_DEPTH, xw - 3, x);
     y = y * (1 - beach) + 0.08 * beach; // flatten onto the sand
-    const toSea = smoothstep(zw - 3, zw, z);
+    const toSea = smoothstep(xw - 3, xw, x);
     y = y * (1 - toSea) + (WATER_Y + 0.12) * toSea; // ease to the waterline
-    if (z > zw) y = WATER_Y + 0.12 - (z - zw) * 0.3; // seafloor falls away
+    if (x > xw) y = WATER_Y + 0.12 - (x - xw) * 0.3; // seafloor falls away
     return Math.max(y, WATER_Y - 3.2);
   }
 
@@ -118,10 +117,11 @@ export class Terrain {
     const spanX = w + PAD * 2;
     const minZ = -PAD;
     const spanZ = h + PAD * 2;
-    const segs = 120;
+    const segsX = 70;
+    const segsZ = 150;
 
     // -- displaced, vertex-colored ground --
-    const geo = new THREE.PlaneGeometry(spanX, spanZ, segs, segs);
+    const geo = new THREE.PlaneGeometry(spanX, spanZ, segsX, segsZ);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
@@ -135,12 +135,12 @@ export class Terrain {
       const z = pos.getZ(i) + minZ + spanZ / 2;
       const y = this.heightAt(x, z);
       pos.setY(i, y);
-      // Pale dry sand on the beach, darker soil inland, rock on the bluffs,
-      // wet sheen where the tide reaches.
-      const zw = this.waterlineZ(x);
-      const beach = smoothstep(zw - BEACH_DEPTH, zw - 4, z);
+      // Pale dry sand on the strand, darker soil inland, rock on the
+      // bluffs, wet sheen where the tide reaches.
+      const xw = this.waterlineX(z);
+      const beach = smoothstep(xw - BEACH_DEPTH, xw - 4, x);
       const high = smoothstep(1.2, 4.0, y);
-      const wetness = smoothstep(zw - 2.5, zw + 1, z);
+      const wetness = smoothstep(xw - 2.5, xw + 1, x);
       tmp.copy(inland).lerp(sand, beach).lerp(rock, high).lerp(wet, wetness);
       const grain = 0.92 + 0.16 * vnoise(x * 1.7, z * 1.7, this.seed ^ 99);
       colors[i * 3] = tmp.r * grain;
@@ -157,9 +157,9 @@ export class Terrain {
     ground.receiveShadow = true;
     this.group.add(ground);
 
-    // -- the sea: a broad plane south of the waterline --
+    // -- the sea: a broad plane east of the waterline --
     this.water = new THREE.Mesh(
-      new THREE.PlaneGeometry(spanX, PAD + 40),
+      new THREE.PlaneGeometry(PAD + 40, spanZ),
       new THREE.MeshStandardMaterial({
         color: 0x16344f,
         roughness: 0.16,
@@ -171,7 +171,7 @@ export class Terrain {
       }),
     );
     this.water.rotation.x = -Math.PI / 2;
-    this.water.position.set(minX + spanX / 2, WATER_Y, h + (PAD + 40) / 2 - 6);
+    this.water.position.set(w + (PAD + 40) / 2 - 6, WATER_Y, minZ + spanZ / 2);
     this.group.add(this.water);
 
     // -- lapping waves: foam strips that roll up the sand and fade --
@@ -184,7 +184,7 @@ export class Terrain {
         depthWrite: false,
         fog: true,
       });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(spanX, 1.6), mat);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, spanZ), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.renderOrder = 1;
       this.group.add(mesh);
@@ -193,7 +193,7 @@ export class Terrain {
 
     // -- sky: gradient dome + a sparse field of stars --
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(230, 24, 12),
+      new THREE.SphereGeometry(260, 24, 12),
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
         fog: false,
@@ -225,9 +225,9 @@ export class Terrain {
     for (let i = 0; i < 420; i++) {
       const az = rng() * Math.PI * 2;
       const el = 0.12 + rng() * 1.3;
-      starPos[i * 3] = w / 2 + 215 * Math.cos(el) * Math.cos(az);
-      starPos[i * 3 + 1] = 215 * Math.sin(el);
-      starPos[i * 3 + 2] = h / 2 + 215 * Math.cos(el) * Math.sin(az);
+      starPos[i * 3] = w / 2 + 245 * Math.cos(el) * Math.cos(az);
+      starPos[i * 3 + 1] = 245 * Math.sin(el);
+      starPos[i * 3 + 2] = h / 2 + 245 * Math.cos(el) * Math.sin(az);
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
@@ -247,41 +247,41 @@ export class Terrain {
     this.scatterProps(assets, rng);
   }
 
-  /** Soft-edged horizontal foam band. */
+  /** Soft-edged foam band. */
   private makeFoamTexture(): THREE.CanvasTexture {
     const c = document.createElement("canvas");
-    c.width = 256;
-    c.height = 32;
+    c.width = 32;
+    c.height = 256;
     const ctx = c.getContext("2d")!;
-    const grad = ctx.createLinearGradient(0, 0, 0, 32);
+    const grad = ctx.createLinearGradient(0, 0, 32, 0);
     grad.addColorStop(0, "rgba(255,255,255,0)");
     grad.addColorStop(0.35, "rgba(220,235,255,0.85)");
     grad.addColorStop(0.55, "rgba(200,220,245,0.5)");
     grad.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 32);
+    ctx.fillRect(0, 0, 32, 256);
     // Break the band up so it reads as foam, not a stripe.
     ctx.globalCompositeOperation = "destination-out";
     for (let i = 0; i < 90; i++) {
       ctx.beginPath();
-      ctx.arc(Math.random() * 256, Math.random() * 32, 1.5 + Math.random() * 4, 0, Math.PI * 2);
+      ctx.arc(Math.random() * 32, Math.random() * 256, 1.5 + Math.random() * 4, 0, Math.PI * 2);
       ctx.fill();
     }
     const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.repeat.set(6, 1);
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 8);
     return tex;
   }
 
   /**
    * Deterministic set dressing. Props are cosmetic (no collision); density
-   * is biased toward the zone edges so the fighting lanes stay readable.
+   * is biased away from the strand so the fighting lane stays readable.
    */
   private scatterProps(assets: AssetLibrary, rng: () => number): void {
     const { zoneW: w, zoneH: h } = this;
     const spawnX = w / 2;
-    const spawnZ = h * 0.9;
-    const beachTopZ = h - BEACH_DEPTH;
+    const spawnZ = h - 8;
+    const beachLeftX = w - BEACH_DEPTH;
 
     const placeOne = (
       key: string,
@@ -313,44 +313,44 @@ export class Terrain {
     const pick = (keys: string[]) => keys[Math.floor(rng() * keys.length)];
     const clearOfSpawn = (x: number, z: number, r = 7) => Math.hypot(x - spawnX, z - spawnZ) >= r;
 
-    // Inland dressing (north of the beach): rocks and dead trees, denser
-    // toward the bluffs and the east/west fringes.
-    for (let i = 0; i < 34; i++) {
+    // Inland dressing (west of the strand): rocks and dead trees, denser
+    // toward the bluffs and beyond both ends.
+    for (let i = 0; i < 46; i++) {
       const edge = rng() < 0.6;
-      const x = edge ? (rng() < 0.5 ? -2 - rng() * 16 : w + 2 + rng() * 16) : rng() * w;
-      const z = -10 + rng() * (beachTopZ + 6);
+      const x = edge ? -2 - rng() * 16 : rng() * beachLeftX;
+      const z = -12 + rng() * (h + 24);
       if (!clearOfSpawn(x, z)) continue;
       placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 0.35 + rng() * 0.9);
     }
-    for (let i = 0; i < 13; i++) {
-      const x = -8 + rng() * (w + 16);
-      const z = -8 + rng() * (beachTopZ * 0.85);
+    for (let i = 0; i < 18; i++) {
+      const x = -8 + rng() * (beachLeftX * 0.9 + 8);
+      const z = -8 + rng() * (h + 16);
       placeOne(pick(["deadtree_1", "deadtree_2", "deadtree_3"]), x, z, 0.3 + rng() * 0.22);
     }
     // Dry grass keeps to the inland soil, not the open sand.
-    for (let i = 0; i < 80; i++) {
-      const x = rng() * w;
-      const z = rng() * (beachTopZ - 1);
+    for (let i = 0; i < 110; i++) {
+      const x = rng() * (beachLeftX - 1);
+      const z = rng() * h;
       if (!clearOfSpawn(x, z)) continue;
       placeOne(pick(["grass_1", "grass_2"]), x, z, 0.7 + rng() * 0.5, { castShadow: false });
     }
     // Driftwood: dead trees washed up along the sand, half-buried.
-    for (let i = 0; i < 7; i++) {
-      const x = rng() * w;
-      const z = beachTopZ + 2 + rng() * (BEACH_DEPTH - 5);
+    for (let i = 0; i < 12; i++) {
+      const x = beachLeftX + 2 + rng() * (BEACH_DEPTH - 5);
+      const z = rng() * h;
       if (!clearOfSpawn(x, z, 9)) continue;
       placeOne(pick(["deadtree_1", "deadtree_2"]), x, z, 0.2 + rng() * 0.14, { lieDown: true });
     }
-    // A rocky headland reaching into the surf on the west end of the beach.
+    // A rocky headland reaching into the surf partway up the strand.
     for (let i = 0; i < 8; i++) {
-      const x = w * 0.04 + rng() * w * 0.14;
-      const z = h - 5 + rng() * 8;
+      const x = w - 5 + rng() * 8;
+      const z = h * 0.32 + rng() * (h * 0.06);
       placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 1.0 + rng() * 1.3);
     }
     // Camp clutter near the spawn beach.
     for (let i = 0; i < 6; i++) {
       const x = spawnX - 9 + rng() * 18;
-      const z = spawnZ - 7 + rng() * 9;
+      const z = spawnZ - 5 + rng() * 9;
       if (Math.hypot(x - spawnX, z - spawnZ) < 3.5) continue;
       placeOne(pick(["barrel", "crate"]), x, z, 0.85 + rng() * 0.25);
     }
@@ -364,10 +364,10 @@ export class Terrain {
       const p = (t / 6.5 + f.phase) % 1;
       // Roll from the sea up onto the sand, pause, and dissolve.
       const reach = 1 - Math.pow(1 - Math.min(1, p * 1.25), 2); // ease-out
-      const z = h + 5.5 - reach * 7.5;
-      f.mesh.position.set(w / 2, WATER_Y + 0.16 + reach * 0.16, z);
+      const x = w + 5.5 - reach * 7.5;
+      f.mesh.position.set(x, WATER_Y + 0.16 + reach * 0.16, h / 2);
       f.mat.opacity = Math.sin(Math.min(1, p * 1.1) * Math.PI) * 0.55;
-      (f.mat.map as THREE.Texture).offset.x = f.phase + t * 0.004;
+      (f.mat.map as THREE.Texture).offset.y = f.phase + t * 0.004;
     }
   }
 }

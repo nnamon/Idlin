@@ -26,7 +26,8 @@ ZoneDef(
     id: "withered_shore",
     name: "The Withered Shore",
     width_u: 60, height_u: 60,        // whole units
-    spawn_x_u: 30, spawn_y_u: 54,     // character spawn point
+    spawn_x_u: 17, spawn_y_u: 122,    // idler spawn point
+    spawn_radius_u: 7,                // spawn AREA: join/respawn scatter (0 = exact point)
     packs: [
         SpawnPack(monster: "drowned_shambler", count: 4,
                   x_u: 14, y_u: 16,   // pack anchor

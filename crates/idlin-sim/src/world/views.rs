@@ -6,7 +6,111 @@ use crate::entity::{Item, LootPayload};
 use crate::hash::Fnv1a64;
 use idlin_content::GearSlot;
 
+/// Inspection snapshot of one character (the server maps this onto the
+/// protocol's CharacterSheet for the focus panel).
+pub struct CharacterSheetView {
+    pub id: u32,
+    pub name: String,
+    pub level: u32,
+    pub xp: i64,
+    pub xp_next: i64,
+    pub life: i64,
+    pub life_max: i64,
+    pub kills: u64,
+    pub damage: [i64; 3],
+    pub accuracy: i64,
+    pub evasion: i64,
+    pub armour: i64,
+    pub resist_ele: i64,
+    pub resist_chaos: i64,
+    /// (slot name, Some((item name, rarity)) or None when empty).
+    pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
+    /// (name, rarity, x, y, w, h) per bag item.
+    pub inventory: Vec<(String, u8, u8, u8, u8, u8)>,
+    /// (name, level, is_support) — supports follow their skill.
+    pub gems: Vec<(String, u32, bool)>,
+    pub passive_allocated: u32,
+    pub passive_unspent: u32,
+    pub build_len: u32,
+}
+
 impl World {
+    /// Inspect one character by net id (None for monsters/loot/unknown).
+    pub fn character_sheet(&self, net_id: u32) -> Option<CharacterSheetView> {
+        const SLOT_NAMES: [&str; 4] = ["Weapon", "Helm", "Chest", "Boots"];
+        let e = self.zone.get_net(net_id)?;
+        let ch = e.character.as_ref()?;
+        let c = e.combat.as_ref()?;
+        let equipment = ch
+            .equipment
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                (
+                    SLOT_NAMES[i],
+                    s.as_ref().map(|item| {
+                        (
+                            self.content.items[item.base_idx as usize].name.clone(),
+                            item.rarity as u8,
+                        )
+                    }),
+                )
+            })
+            .collect();
+        let inventory = ch
+            .inventory
+            .iter()
+            .map(|p| {
+                let def = &self.content.items[p.item.base_idx as usize];
+                (
+                    def.name.clone(),
+                    p.item.rarity as u8,
+                    p.x,
+                    p.y,
+                    def.w,
+                    def.h,
+                )
+            })
+            .collect();
+        let mut gems = Vec::new();
+        for sg in ch.sockets.values() {
+            gems.push((
+                self.content.gems[sg.gem.gem_idx as usize].name.clone(),
+                sg.gem.level,
+                false,
+            ));
+            for sup in &sg.supports {
+                gems.push((
+                    self.content.gems[sup.gem_idx as usize].name.clone(),
+                    sup.level,
+                    true,
+                ));
+            }
+        }
+        Some(CharacterSheetView {
+            id: e.net_id,
+            name: ch.name.clone(),
+            level: ch.level,
+            xp: ch.xp,
+            xp_next: super::progression::xp_to_next(ch.level),
+            life: c.life,
+            life_max: c.life_max,
+            kills: ch.kills,
+            damage: c.damage,
+            accuracy: c.accuracy,
+            evasion: c.evasion,
+            armour: c.armour,
+            resist_ele: c.resist_ele,
+            resist_chaos: c.resist_chaos,
+            equipment,
+            inventory,
+            gems,
+            passive_allocated: ch.allocated.len() as u32,
+            passive_unspent: ch.passive_points(),
+            build_len: ch.build_plan.len() as u32,
+        })
+    }
+
     /// Flat per-entity views for replication.
     pub fn views(&self) -> Vec<EntityView> {
         self.zone
@@ -52,15 +156,29 @@ impl World {
                             Vec::new(),
                             def.level,
                             0,
-                            false,
+                            !e.alive(),
                             0,
                             0,
                         )
                     } else {
                         let l = e.loot.as_ref().unwrap();
+                        // Drops render as their actual item when the def
+                        // names a model; gems and plain bases fall back to
+                        // generic pickups.
+                        let model = match &l.payload {
+                            LootPayload::Gear(item) => {
+                                let m = &self.content.items[item.base_idx as usize].model;
+                                if m.is_empty() {
+                                    "loot".to_string()
+                                } else {
+                                    m.clone()
+                                }
+                            }
+                            LootPayload::Gem(_) => "gem".to_string(),
+                        };
                         (
                             String::new(),
-                            "loot".to_string(),
+                            model,
                             String::new(),
                             Vec::new(),
                             0,
@@ -184,6 +302,7 @@ impl World {
                 h.write_u8(m.hostile as u8);
                 h.write_i32(m.anchor.x.raw());
                 h.write_i32(m.anchor.y.raw());
+                h.write_u64(m.decay_at.unwrap_or(0));
             }
             if let Some(l) = &e.loot {
                 h.write_u8(l.rarity as u8);

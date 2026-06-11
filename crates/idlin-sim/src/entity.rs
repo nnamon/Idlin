@@ -223,6 +223,8 @@ pub struct MonsterState {
     pub anchor: FxV2,
     /// Copied from the def at spawn so faction checks never need content.
     pub hostile: bool,
+    /// Set at death: the corpse lies where it fell until this tick.
+    pub decay_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -45,6 +45,7 @@ pub const SYS_MOVE_ITEM: i32 = 16;
 pub const SYS_DROP_ITEM: i32 = 17;
 pub const SYS_READ_SKILLS: i32 = 18;
 pub const SYS_SOCKET_GEM: i32 = 19;
+pub const SYS_COUNT_ENTITIES: i32 = 20;
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
@@ -299,6 +300,32 @@ impl World {
                     }
                 }
                 n as i32
+            }
+            SYS_COUNT_ENTITIES => {
+                // Zone-wide census: how many entities match the filter (the
+                // same codes as ReadEntities), regardless of distance. Lets
+                // a bot ask "is this area cleared?".
+                let filter = bot.vm.pop();
+                let Some(me) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let (my_net, my_faction) = (me.net_id, me.faction());
+                let mut n = 0;
+                for (s, e) in self.zone.iter() {
+                    if s == slot {
+                        continue;
+                    }
+                    let counted = match filter {
+                        FILTER_ENEMIES => my_faction.is_enemy_of(e.faction()) && e.alive(),
+                        FILTER_CHARACTERS => e.character.is_some() && e.alive(),
+                        FILTER_LOOT => e.loot.as_ref().is_some_and(|l| l.owner == my_net),
+                        _ => false,
+                    };
+                    if counted {
+                        n += 1;
+                    }
+                }
+                n
             }
             SYS_MOVE_TO => {
                 let x = bot.vm.pop();

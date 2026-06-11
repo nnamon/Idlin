@@ -36,6 +36,8 @@ struct AppState {
     server_tick: Arc<AtomicU64>,
     broadcast: broadcast::Sender<replication::Frame>,
     snapshot: watch::Receiver<replication::Frame>,
+    /// Focus-panel inspections, answered by the tick thread.
+    inspect: mpsc::UnboundedSender<runner::InspectRequest>,
     /// Pre-serialized passive tree for the map page.
     tree_json: Arc<str>,
 }
@@ -105,10 +107,12 @@ async fn main() -> anyhow::Result<()> {
 
     let server_tick = Arc::new(AtomicU64::new(world.tick_count()));
     let (frame_tx, frame_rx) = mpsc::unbounded_channel();
+    let (inspect_tx, inspect_rx) = mpsc::unbounded_channel();
     runner::spawn_tick_loop(
         world,
         first_inputs,
         frame_tx,
+        inspect_rx,
         server_tick.clone(),
         snapshot_dir,
     );
@@ -119,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         server_tick,
         broadcast: handles.broadcast,
         snapshot: handles.snapshot,
+        inspect: inspect_tx,
         tree_json,
     };
     let app = Router::new()
@@ -210,6 +215,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         server_tick: state.server_tick.load(Ordering::Relaxed),
                     },
                     Ok(C2S::DirectorMode { .. }) => continue, // client-side concern in Phase 1
+                    Ok(C2S::Inspect { id }) => {
+                        let (tx_r, rx_r) = tokio::sync::oneshot::channel();
+                        let _ = state.inspect.send((id, tx_r));
+                        match tokio::time::timeout(std::time::Duration::from_millis(300), rx_r)
+                            .await
+                        {
+                            Ok(Ok(Some(sheet))) => S2C::CharacterSheet { sheet },
+                            _ => S2C::Error {
+                                code: 3,
+                                msg: format!("no character {id}"),
+                            },
+                        }
+                    }
                     Err(e) => S2C::Error { code: 2, msg: format!("bad message: {e}") },
                 };
                 let is_welcome = welcomed && matches!(reply, S2C::Welcome { .. });

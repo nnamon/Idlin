@@ -11,7 +11,7 @@ use crate::fixed::Fx;
 use crate::stats::{Grant, Stat, StatSheet};
 use idlin_content::GearSlot;
 
-fn xp_to_next(level: u32) -> i64 {
+pub(super) fn xp_to_next(level: u32) -> i64 {
     let l = level as i64;
     80 + 40 * l * l
 }

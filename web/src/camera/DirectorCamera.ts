@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const FOLLOW_OFFSET = new THREE.Vector3(10, 11.5, 10);
+const FOLLOW_OFFSET = new THREE.Vector3(14, 16, 14);
 
 /**
  * Smooth camera rig: follows the director's focus with damped motion, or
@@ -11,12 +11,17 @@ export class DirectorCamera {
   private center = new THREE.Vector3(30, 0, 30);
   private orbitRadius = 40;
   private orbitAngle = 0;
+  private zoneW = 60;
+  private zoneH = 60;
+  private patrolT = 0;
 
   constructor(private camera: THREE.PerspectiveCamera) {}
 
-  setZoneCenter(x: number, z: number, extent: number): void {
-    this.center.set(x, 0, z);
-    this.orbitRadius = extent * 0.55;
+  setZoneSize(w: number, h: number): void {
+    this.zoneW = w;
+    this.zoneH = h;
+    this.center.set(w / 2, 0, h / 2);
+    this.orbitRadius = Math.min(w, h) * 0.9;
     this.lookTarget.copy(this.center);
   }
 
@@ -29,15 +34,28 @@ export class DirectorCamera {
   }
 
   idle(dt: number): void {
-    this.orbitAngle += dt * 0.06;
-    const desired = new THREE.Vector3(
-      this.center.x + Math.cos(this.orbitAngle) * this.orbitRadius,
-      this.orbitRadius * 0.6,
-      this.center.z + Math.sin(this.orbitAngle) * this.orbitRadius,
-    );
+    const { zoneW: w, zoneH: h } = this;
+    let desired: THREE.Vector3;
+    let look: THREE.Vector3;
+    if (h > w * 1.6) {
+      // Strip zones: patrol slowly along the strand instead of orbiting.
+      this.patrolT += dt * 0.022;
+      const s = (Math.sin(this.patrolT) + 1) / 2; // ping-pong 0..1
+      const z = 12 + s * (h - 24);
+      desired = new THREE.Vector3(w / 2 + w * 1.05, w * 0.85, z + w * 0.8);
+      look = new THREE.Vector3(w / 2, 0.5, z - 4);
+    } else {
+      this.orbitAngle += dt * 0.06;
+      desired = new THREE.Vector3(
+        this.center.x + Math.cos(this.orbitAngle) * this.orbitRadius,
+        this.orbitRadius * 0.6,
+        this.center.z + Math.sin(this.orbitAngle) * this.orbitRadius,
+      );
+      look = this.center;
+    }
     const k = 1 - Math.exp(-dt * 1.2);
     this.camera.position.lerp(desired, k);
-    this.lookTarget.lerp(this.center, 1 - Math.exp(-dt * 2));
+    this.lookTarget.lerp(look, 1 - Math.exp(-dt * 2));
     this.camera.lookAt(this.lookTarget);
   }
 }

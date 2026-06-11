@@ -5,6 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Idlin</title>
     <style>
+      /* Anton SC (OFL) carries the in-world text; Cinzel (also OFL) is
+         the fallback face. */
+      @font-face {
+        font-family: "Anton SC";
+        src: url("/fonts/anton-sc.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Cinzel";
+        font-weight: 600;
+        src: url("/fonts/cinzel-600.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Cinzel";
+        font-weight: 800;
+        src: url("/fonts/cinzel-800.woff2") format("woff2");
+      }
       html,
       body {
         margin: 0;

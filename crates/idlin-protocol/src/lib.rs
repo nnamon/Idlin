@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 5;
+pub const PROTO_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -160,6 +160,62 @@ pub enum GameEvent {
     },
 }
 
+/// One equipment slot on the inspect sheet ("" name = empty slot).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct GearSlotView {
+    pub slot: String,
+    pub name: String,
+    pub rarity: u8,
+}
+
+/// One bag item on the inspect sheet (grid placement + footprint).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct InvItemView {
+    pub name: String,
+    pub rarity: u8,
+    pub x: u8,
+    pub y: u8,
+    pub w: u8,
+    pub h: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct GemView {
+    pub name: String,
+    pub level: u32,
+    /// Support gems render indented under their skill.
+    pub support: bool,
+}
+
+/// On-demand character inspection, shown while the director focuses an
+/// idler: gear, brief stats, bag, gems, passives.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct CharacterSheet {
+    pub id: u32,
+    pub name: String,
+    pub level: u32,
+    pub xp: i32,
+    pub xp_next: i32,
+    pub life: i32,
+    pub life_max: i32,
+    pub kills: u32,
+    pub dmg_phys: i32,
+    pub dmg_ele: i32,
+    pub dmg_chaos: i32,
+    pub accuracy: i32,
+    pub evasion: i32,
+    pub armour: i32,
+    /// Basis points (10000 = 100%); the cap is applied at use, not here.
+    pub resist_ele_bp: i32,
+    pub resist_chaos_bp: i32,
+    pub equipment: Vec<GearSlotView>,
+    pub inventory: Vec<InvItemView>,
+    pub gems: Vec<GemView>,
+    pub passive_allocated: u32,
+    pub passive_unspent: u32,
+    pub build_len: u32,
+}
+
 /// Client → server.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data")]
@@ -174,6 +230,10 @@ pub enum C2S {
     /// Owner only: toggle automatic camera direction.
     DirectorMode {
         auto: bool,
+    },
+    /// Request the inspect sheet for a character (the focus panel).
+    Inspect {
+        id: u32,
     },
 }
 
@@ -224,6 +284,9 @@ pub enum S2C {
         focus: u32,
         reason: String,
         hold_ticks: u32,
+    },
+    CharacterSheet {
+        sheet: CharacterSheet,
     },
     Error {
         code: u32,

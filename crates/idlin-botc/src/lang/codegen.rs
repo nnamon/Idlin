@@ -34,6 +34,7 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("drop_item", 17, 1),
     ("read_skills", 18, 2),
     ("socket_gem", 19, 2),
+    ("count_entities", 20, 1),
 ];
 
 /// SetBuild is emitted by the compiler from the `build [...]` declaration,

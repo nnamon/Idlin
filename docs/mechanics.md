@@ -95,8 +95,12 @@ and gear affixes can grant them). Each point converts:
   damage, everything alive heals 2% max life per tick.
 - Characters respawn at the zone spawn **50 ticks** after death, full life,
   no XP or item loss.
-- Monsters are removed on death; their pack refills `respawn_ticks` after
-  first loss.
+- Dead monsters leave corpses where they fell for **300 ticks** (30 s); a
+  corpse is inert (no AI, untargetable, skipped by every system) and decays
+  away on its own.
+- Packs respawn **as a unit**: survivors hold their ground (no trickle
+  refills); once the whole pack is wiped, `respawn_ticks` later it rises
+  again at its spawn anchor.
 
 ## Loot
 
