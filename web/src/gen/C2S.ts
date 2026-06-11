@@ -3,4 +3,11 @@
 /**
  * Client → server.
  */
-export type C2S = { "type": "Hello", "data": { token: string, proto_version: number, } } | { "type": "Ping", "data": { nonce: number, } } | { "type": "DirectorMode", "data": { auto: boolean, } } | { "type": "Inspect", "data": { id: number, } };
+export type C2S = { "type": "Hello", "data": { token: string, proto_version: number, 
+/**
+ * What this connection watches: None/absent = the featured
+ * broadcast (director-driven); Some(name) = the world containing
+ * that character, following them across zone transfers.
+ * Permission gating arrives with real auth.
+ */
+watch: string | null, } } | { "type": "Ping", "data": { nonce: number, } } | { "type": "DirectorMode", "data": { auto: boolean, } } | { "type": "Inspect", "data": { id: number, } };

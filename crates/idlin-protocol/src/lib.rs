@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 15;
+pub const PROTO_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -340,6 +340,12 @@ pub enum C2S {
     Hello {
         token: String,
         proto_version: u32,
+        /// What this connection watches: None/absent = the featured
+        /// broadcast (director-driven); Some(name) = the world containing
+        /// that character, following them across zone transfers.
+        /// Permission gating arrives with real auth.
+        #[serde(default)]
+        watch: Option<String>,
     },
     Ping {
         nonce: u32,

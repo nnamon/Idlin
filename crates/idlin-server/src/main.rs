@@ -34,8 +34,12 @@ pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Clone)]
 struct AppState {
     server_tick: Arc<AtomicU64>,
-    broadcast: broadcast::Sender<replication::Frame>,
-    snapshot: watch::Receiver<replication::Frame>,
+    /// The featured (director-driven) virtual feed — the default watch.
+    featured: replication::FeedHandle,
+    /// Per-world feeds for character subscriptions.
+    feeds: Arc<std::sync::RwLock<std::collections::HashMap<String, replication::FeedHandle>>>,
+    /// Live routing: featured key + character → world key.
+    routing: watch::Receiver<replication::Routing>,
     /// Focus-panel inspections, answered by the tick thread.
     inspect: mpsc::UnboundedSender<runner::InspectRequest>,
     /// Pre-serialized passive tree for the map page.
@@ -149,8 +153,9 @@ async fn main() -> anyhow::Result<()> {
     let tree_json: Arc<str> = Arc::from(tree_to_json(&content));
     let state = AppState {
         server_tick,
-        broadcast: handles.broadcast,
-        snapshot: handles.snapshot,
+        featured: handles.featured,
+        feeds: handles.feeds,
+        routing: handles.routing,
         inspect: inspect_tx,
         tree_json,
     };
@@ -158,6 +163,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .route("/api/tree", get(tree_handler))
         .route("/healthz", get(|| async { "ok" }))
+        // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
+        .nest_service("/recordings", ServeDir::new("data/recordings"))
         .fallback_service(ServeDir::new("web/dist"))
         .with_state(state);
 
@@ -209,10 +216,16 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Resp
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut tx, mut rx) = socket.split();
-    let mut feed = state.broadcast.subscribe();
 
-    // Phase 1: every connection is the owner view. Hello → Welcome + snapshot,
-    // then the live delta stream; Pings answered inline.
+    // Every connection holds ONE subscription: the featured broadcast by
+    // default, or — when Hello names a character to watch — the feed of
+    // whichever world contains them, re-routed live as they transfer.
+    let mut feed = state.featured.broadcast.subscribe();
+    let mut my_snapshot = state.featured.snapshot.clone();
+    let mut routing = state.routing.clone();
+    let mut watch_name: Option<String> = None;
+    let mut current_key: Option<String> = None; // None = the featured feed
+
     let mut welcomed = false;
     loop {
         tokio::select! {
@@ -220,7 +233,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 let Some(Ok(msg)) = msg else { break };
                 let Message::Text(text) = msg else { continue };
                 let reply = match serde_json::from_str::<C2S>(&text) {
-                    Ok(C2S::Hello { proto_version, .. }) => {
+                    Ok(C2S::Hello { proto_version, watch, .. }) => {
                         if proto_version != PROTO_VERSION {
                             S2C::Error {
                                 code: 1,
@@ -230,11 +243,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                         } else {
                             welcomed = true;
+                            watch_name = watch;
                             S2C::Welcome {
                                 role: Role::Owner,
                                 proto_version: PROTO_VERSION,
-                                server_version: SERVER_VERSION.to_string(),
                                 server_tick: state.server_tick.load(Ordering::Relaxed),
+                                server_version: SERVER_VERSION.to_string(),
                             }
                         }
                     }
@@ -245,7 +259,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     Ok(C2S::DirectorMode { .. }) => continue, // client-side concern in Phase 1
                     Ok(C2S::Inspect { id }) => {
                         let (tx_r, rx_r) = tokio::sync::oneshot::channel();
-                        let _ = state.inspect.send((id, tx_r));
+                        let _ = state.inspect.send((current_key.clone(), id, tx_r));
                         match tokio::time::timeout(std::time::Duration::from_millis(300), rx_r)
                             .await
                         {
@@ -263,10 +277,55 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 if tx.send(Message::Text(json.into())).await.is_err() {
                     break;
                 }
-                // Right after Welcome, deliver the current world snapshot.
+                // Right after Welcome: bind the subscription and deliver
+                // that feed's current snapshot.
                 if is_welcome {
-                    let snap = state.snapshot.borrow().clone();
+                    if let Some(name) = &watch_name {
+                        let key = routing.borrow().by_character.get(name).cloned();
+                        match key.and_then(|k| {
+                            state.feeds.read().expect("feeds lock").get(&k).cloned().map(|f| (k, f))
+                        }) {
+                            Some((key, handle)) => {
+                                feed = handle.broadcast.subscribe();
+                                my_snapshot = handle.snapshot.clone();
+                                current_key = Some(key);
+                            }
+                            None => {
+                                let err = serde_json::to_string(&S2C::Error {
+                                    code: 4,
+                                    msg: format!("no character named {name}; showing the broadcast"),
+                                }).expect("protocol always serializes");
+                                if tx.send(Message::Text(err.into())).await.is_err() {
+                                    break;
+                                }
+                                watch_name = None;
+                            }
+                        }
+                    }
+                    let snap = my_snapshot.borrow().clone();
                     if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            // A watched character moved worlds: follow them.
+            changed = routing.changed(), if watch_name.is_some() => {
+                if changed.is_err() { break; }
+                let Some(name) = &watch_name else { continue };
+                let key = routing.borrow().by_character.get(name).cloned();
+                if key == current_key || key.is_none() {
+                    continue;
+                }
+                let key = key.unwrap();
+                let handle = state.feeds.read().expect("feeds lock").get(&key).cloned();
+                if let Some(handle) = handle {
+                    feed = handle.broadcast.subscribe();
+                    my_snapshot = handle.snapshot.clone();
+                    current_key = Some(key);
+                    let snap = my_snapshot.borrow().clone();
+                    if welcomed
+                        && tx.send(Message::Text(snap.to_string().into())).await.is_err()
+                    {
                         break;
                     }
                 }
@@ -282,7 +341,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         // Fell behind: self-heal with a fresh snapshot.
                         warn!("client lagged {n} frames; resyncing with snapshot");
-                        let snap = state.snapshot.borrow().clone();
+                        let snap = my_snapshot.borrow().clone();
                         if welcomed
                             && tx.send(Message::Text(snap.to_string().into())).await.is_err()
                         {

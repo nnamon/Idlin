@@ -1,16 +1,21 @@
-//! Replication: turns per-tick sim frames into protocol messages.
-//! One delta stream is broadcast to all clients (Phase 1: everyone is the
-//! owner view); a full snapshot is kept fresh for new joiners and lag resync.
+//! Replication: turns the full simulation output (every world, every tick)
+//! into per-world message FEEDS that viewers subscribe to. The "featured"
+//! virtual feed composes the director-driven broadcast on top: it forwards
+//! the featured world's stream, splices in global announcements from the
+//! other worlds, and emits a fresh snapshot whenever the feature changes.
+//! With IDLIN_RECORD set, every world's exact wire stream is journaled to
+//! disk as a replayable recording.
 
 use crate::director::Director;
-use crate::runner::TickFrame;
+use crate::runner::TickBatch;
 use idlin_protocol::{
     EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, ObstacleState,
     ProjectileFx, S2C, SkillFx,
 };
 use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::io::Write;
+use std::sync::{Arc, RwLock};
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{info, warn};
 
@@ -23,197 +28,353 @@ const BACKLOG_WARN_FRAMES: usize = 50;
 /// Pre-serialized message broadcast to every connected client.
 pub type Frame = Arc<str>;
 
-pub struct ReplicationHandles {
-    /// Per-tick delta/event/cue stream.
+/// One subscribable feed: live messages plus the latest snapshot for
+/// joining and lag-recovery.
+#[derive(Clone)]
+pub struct FeedHandle {
     pub broadcast: broadcast::Sender<Frame>,
-    /// Latest full snapshot JSON, for connect/resync.
     pub snapshot: watch::Receiver<Frame>,
 }
 
-pub fn spawn_replication(mut frames: mpsc::UnboundedReceiver<TickFrame>) -> ReplicationHandles {
-    let (tx, _) = broadcast::channel::<Frame>(256);
-    let (snap_tx, snap_rx) =
+/// Where everyone is: sockets use this to follow a character's world
+/// across transfers.
+#[derive(Clone, Default)]
+pub struct Routing {
+    /// The current featured world key (informational; the featured FEED is
+    /// already composed server-side, so sockets don't route with this yet).
+    #[allow(dead_code)]
+    pub featured: String,
+    /// Character name → world key.
+    pub by_character: HashMap<String, String>,
+}
+
+pub struct ReplicationHandles {
+    /// The featured (director-driven) virtual feed — the default broadcast.
+    pub featured: FeedHandle,
+    /// Per-world feeds, created as worlds first report.
+    pub feeds: Arc<RwLock<HashMap<String, FeedHandle>>>,
+    /// Live routing table (featured key + character locations).
+    pub routing: watch::Receiver<Routing>,
+}
+
+/// Per-world replication state (diff continuity, snapshot, recorder).
+struct WorldState {
+    prev: HashMap<u32, EntityState>,
+    snap_tx: watch::Sender<Frame>,
+    tx: broadcast::Sender<Frame>,
+    recorder: Option<std::fs::File>,
+}
+
+pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> ReplicationHandles {
+    let (featured_tx, _) = broadcast::channel::<Frame>(256);
+    let (featured_snap_tx, featured_snap_rx) =
         watch::channel::<Frame>(Arc::from(empty_snapshot("connecting…", 65536, 65536, &[])));
-    let broadcast = tx.clone();
+    let feeds: Arc<RwLock<HashMap<String, FeedHandle>>> = Arc::new(RwLock::new(HashMap::new()));
+    let (routing_tx, routing_rx) = watch::channel(Routing::default());
+
+    let featured_handle = FeedHandle {
+        broadcast: featured_tx.clone(),
+        snapshot: featured_snap_rx.clone(),
+    };
+    let feeds_task = feeds.clone();
+    let record = std::env::var("IDLIN_RECORD").is_ok();
 
     tokio::spawn(async move {
-        let mut prev: HashMap<u32, EntityState> = HashMap::new();
+        let mut worlds: HashMap<String, WorldState> = HashMap::new();
         let mut director = Director::new();
-        let mut current_world: Option<String> = None;
-        while let Some(frame) = frames.recv().await {
-            let backlog = frames.len();
-            if backlog > BACKLOG_WARN_FRAMES && frame.tick.is_multiple_of(50) {
-                warn!("replication is {backlog} frames behind the sim");
+        let mut featured_key: Option<String> = None;
+        while let Some(batch) = batches.recv().await {
+            let backlog = batches.len();
+            if backlog > BACKLOG_WARN_FRAMES {
+                warn!("replication is {backlog} ticks behind the sim");
             }
 
-            let mut current: HashMap<u32, EntityState> = HashMap::with_capacity(frame.views.len());
-            for v in &frame.views {
-                current.insert(v.id, to_state(v));
-            }
+            let mut routing = Routing {
+                featured: batch.featured_key.clone(),
+                by_character: HashMap::new(),
+            };
+            let mut global_events: Vec<GameEvent> = Vec::new();
+            let mut featured_delta: Option<Frame> = None;
+            let mut featured_events: Vec<GameEvent> = Vec::new();
+            let mut featured_snapshot: Option<Frame> = None;
+            let mut featured_frame_meta: Option<(u64, Vec<SimEvent>, Vec<u32>)> = None;
 
-            // The featured world changed (a transfer moved the story):
-            // reset the diff and push a full snapshot at every viewer so
-            // the client flips zones cleanly.
-            if current_world.as_deref() != Some(frame.world_key.as_str()) {
-                info!("featured world is now {}", frame.world_key);
-                current_world = Some(frame.world_key.clone());
-                prev.clear();
+            for frame in &batch.frames {
+                // Lazily create this world's feed + state.
+                if !worlds.contains_key(&frame.world_key) {
+                    let (tx, _) = broadcast::channel::<Frame>(256);
+                    let (snap_tx, snap_rx) = watch::channel::<Frame>(Arc::from(empty_snapshot(
+                        &frame.zone_name,
+                        frame.zone_width,
+                        frame.zone_height,
+                        &frame.obstacles,
+                    )));
+                    feeds_task.write().expect("feeds lock").insert(
+                        frame.world_key.clone(),
+                        FeedHandle {
+                            broadcast: tx.clone(),
+                            snapshot: snap_rx,
+                        },
+                    );
+                    let recorder = if record {
+                        open_recorder(&frame.world_key)
+                    } else {
+                        None
+                    };
+                    worlds.insert(
+                        frame.world_key.clone(),
+                        WorldState {
+                            prev: HashMap::new(),
+                            snap_tx,
+                            tx,
+                            recorder,
+                        },
+                    );
+                    info!("world feed online: {}", frame.world_key);
+                }
+                let ws = worlds.get_mut(&frame.world_key).expect("just inserted");
+
+                let mut current: HashMap<u32, EntityState> =
+                    HashMap::with_capacity(frame.views.len());
+                for v in &frame.views {
+                    current.insert(v.id, to_state(v));
+                    if v.kind == KIND_CHARACTER {
+                        routing
+                            .by_character
+                            .insert(v.name.clone(), frame.world_key.clone());
+                    }
+                }
+
+                let (spawned, moved, updated, removed) = diff(&ws.prev, &current);
+                let delta = serialize(&S2C::ZoneDelta {
+                    tick: frame.tick,
+                    spawned,
+                    moved,
+                    updated,
+                    removed,
+                    hits: collect_hits(&frame.events),
+                    projectiles: collect_projectiles(&frame.events),
+                    skills: collect_skills(&frame.events),
+                });
+                let events: Vec<GameEvent> =
+                    frame.events.iter().filter_map(to_game_event).collect();
+                let events_msg = if events.is_empty() {
+                    None
+                } else {
+                    Some(serialize(&S2C::Events {
+                        events: events.clone(),
+                    }))
+                };
+
+                // Snapshot for this world (joiners + lag resync).
                 let mut entities: Vec<EntityState> = current.values().cloned().collect();
                 entities.sort_by_key(|s| s.id);
-                let _ = broadcast.send(serialize(&S2C::ZoneSnapshot {
+                let snapshot = serialize(&S2C::ZoneSnapshot {
                     tick: frame.tick,
                     zone_name: frame.zone_name.clone(),
                     width: frame.zone_width,
                     height: frame.zone_height,
                     obstacles: frame.obstacles.clone(),
                     entities,
-                }));
+                });
+
+                // The recording IS the wire stream: snapshot first, then
+                // every delta and event line — replayable verbatim.
+                if let Some(f) = ws.recorder.as_mut() {
+                    if ws.prev.is_empty() {
+                        let _ = writeln!(f, "{snapshot}");
+                    }
+                    let _ = writeln!(f, "{delta}");
+                    if let Some(ev) = &events_msg {
+                        let _ = writeln!(f, "{ev}");
+                    }
+                }
+
+                let _ = ws.tx.send(delta.clone());
+                if let Some(ev) = &events_msg {
+                    let _ = ws.tx.send(ev.clone());
+                }
+                let _ = ws.snap_tx.send(snapshot.clone());
+                ws.prev = current;
+
+                if frame.world_key == batch.featured_key {
+                    featured_delta = Some(delta);
+                    featured_events = events;
+                    featured_snapshot = Some(snapshot);
+                    featured_frame_meta = Some((
+                        frame.tick,
+                        frame.events.clone(),
+                        frame
+                            .views
+                            .iter()
+                            .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
+                            .map(|v| v.id)
+                            .collect(),
+                    ));
+                } else {
+                    // Global announcements cross worlds on the featured feed.
+                    global_events.extend(frame.events.iter().filter_map(|ev| {
+                        matches!(
+                            ev,
+                            SimEvent::CharacterDeparted { .. }
+                                | SimEvent::CharacterJoined { .. }
+                                | SimEvent::Narration { .. }
+                        )
+                        .then(|| to_game_event(ev))
+                        .flatten()
+                    }));
+                }
             }
 
-            let (spawned, moved, updated, removed) = diff(&prev, &current);
-
-            let hits: Vec<HitFx> = frame
-                .events
-                .iter()
-                .filter_map(|ev| match ev {
-                    SimEvent::Hit {
-                        attacker,
-                        target,
-                        amount,
-                        dmg_type,
-                        crit,
-                        dot,
-                        projectile,
-                        killed,
-                    } => Some(HitFx {
-                        attacker: *attacker,
-                        target: *target,
-                        amount: (*amount).clamp(0, i32::MAX as i64) as i32,
-                        dmg_type: *dmg_type,
-                        crit: *crit,
-                        dot: *dot,
-                        projectile: *projectile,
-                        killed: *killed,
-                    }),
-                    _ => None,
-                })
-                .collect();
-            let projectiles: Vec<ProjectileFx> = frame
-                .events
-                .iter()
-                .filter_map(|ev| match ev {
-                    SimEvent::ProjectileSpawned {
-                        attacker,
-                        spell,
-                        x,
-                        y,
-                        vx,
-                        vy,
-                        range,
-                        dmg_type,
-                    } => Some(ProjectileFx {
-                        attacker: *attacker,
-                        spell: *spell,
-                        x: *x,
-                        y: *y,
-                        vx: *vx,
-                        vy: *vy,
-                        range: *range,
-                        dmg_type: *dmg_type,
-                    }),
-                    _ => None,
-                })
-                .collect();
-            let skills: Vec<SkillFx> = frame
-                .events
-                .iter()
-                .filter_map(|ev| match ev {
-                    SimEvent::SkillFx {
-                        attacker,
-                        spell,
-                        shape,
-                        x,
-                        y,
-                        dx,
-                        dy,
-                        radius,
-                        range,
-                        dmg_type,
-                    } => Some(SkillFx {
-                        attacker: *attacker,
-                        spell: *spell,
-                        shape: *shape,
-                        x: *x,
-                        y: *y,
-                        dx: *dx,
-                        dy: *dy,
-                        radius: *radius,
-                        range: *range,
-                        dmg_type: *dmg_type,
-                    }),
-                    _ => None,
-                })
-                .collect();
-
-            let delta = S2C::ZoneDelta {
-                tick: frame.tick,
-                spawned,
-                moved,
-                updated,
-                removed,
-                hits,
-                projectiles,
-                skills,
-            };
-            // broadcast::send only errs when no client is subscribed —
-            // normal between viewers, not a fault.
-            let _ = broadcast.send(serialize(&delta));
-
-            // -- narratable events --
-            let events: Vec<GameEvent> = frame.events.iter().filter_map(to_game_event).collect();
-            if !events.is_empty() {
-                let _ = broadcast.send(serialize(&S2C::Events { events }));
+            // -- compose the featured virtual feed --
+            if featured_key.as_deref() != Some(batch.featured_key.as_str()) {
+                info!("featured world is now {}", batch.featured_key);
+                featured_key = Some(batch.featured_key.clone());
+                if let Some(snap) = &featured_snapshot {
+                    let _ = featured_tx.send(snap.clone());
+                }
             }
-
-            // -- director --
-            let characters: Vec<u32> = frame
-                .views
-                .iter()
-                .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
-                .map(|v| v.id)
-                .collect();
-            if let Some(cue) = director.update(frame.tick, &frame.events, &characters) {
-                let _ = broadcast.send(serialize(&S2C::DirectorCue {
+            if let Some(delta) = featured_delta {
+                let _ = featured_tx.send(delta);
+            }
+            let mut all_events = featured_events;
+            all_events.extend(global_events);
+            if !all_events.is_empty() {
+                let _ = featured_tx.send(serialize(&S2C::Events { events: all_events }));
+            }
+            if let Some((tick, events, characters)) = featured_frame_meta
+                && let Some(cue) = director.update(tick, &events, &characters)
+            {
+                let _ = featured_tx.send(serialize(&S2C::DirectorCue {
                     focus: cue.focus,
                     reason: cue.reason,
                     hold_ticks: cue.hold_ticks,
                 }));
             }
-
-            // -- fresh snapshot for joiners --
-            let mut entities: Vec<EntityState> = current.values().cloned().collect();
-            entities.sort_by_key(|s| s.id);
-            let snapshot = S2C::ZoneSnapshot {
-                tick: frame.tick,
-                zone_name: frame.zone_name.clone(),
-                width: frame.zone_width,
-                height: frame.zone_height,
-                obstacles: frame.obstacles.clone(),
-                entities,
-            };
-            // The watch receiver lives in ReplicationHandles, so this send
-            // cannot fail while the server runs.
-            let _ = snap_tx.send(serialize(&snapshot));
-
-            prev = current;
+            if let Some(snap) = featured_snapshot {
+                let _ = featured_snap_tx.send(snap);
+            }
+            let _ = routing_tx.send(routing);
         }
-        info!("tick frame channel closed; replication exiting");
+        info!("tick batch channel closed; replication exiting");
     });
 
     ReplicationHandles {
-        broadcast: tx,
-        snapshot: snap_rx,
+        featured: featured_handle,
+        feeds,
+        routing: routing_rx,
     }
+}
+
+/// Open a JSONL journal for one world's wire stream.
+fn open_recorder(world_key: &str) -> Option<std::fs::File> {
+    let dir = std::path::Path::new("data/recordings");
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        warn!("recordings dir: {e}");
+        return None;
+    }
+    let name: String = world_key
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    match std::fs::File::create(dir.join(format!("{name}.jsonl"))) {
+        Ok(f) => {
+            info!("recording {world_key} → data/recordings/{name}.jsonl");
+            Some(f)
+        }
+        Err(e) => {
+            warn!("recorder for {world_key}: {e}");
+            None
+        }
+    }
+}
+
+fn collect_hits(events: &[SimEvent]) -> Vec<HitFx> {
+    events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::Hit {
+                attacker,
+                target,
+                amount,
+                dmg_type,
+                crit,
+                dot,
+                projectile,
+                killed,
+            } => Some(HitFx {
+                attacker: *attacker,
+                target: *target,
+                amount: (*amount).clamp(0, i32::MAX as i64) as i32,
+                dmg_type: *dmg_type,
+                crit: *crit,
+                dot: *dot,
+                projectile: *projectile,
+                killed: *killed,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn collect_projectiles(events: &[SimEvent]) -> Vec<ProjectileFx> {
+    events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::ProjectileSpawned {
+                attacker,
+                spell,
+                x,
+                y,
+                vx,
+                vy,
+                range,
+                dmg_type,
+            } => Some(ProjectileFx {
+                attacker: *attacker,
+                spell: *spell,
+                x: *x,
+                y: *y,
+                vx: *vx,
+                vy: *vy,
+                range: *range,
+                dmg_type: *dmg_type,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn collect_skills(events: &[SimEvent]) -> Vec<SkillFx> {
+    events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::SkillFx {
+                attacker,
+                spell,
+                shape,
+                x,
+                y,
+                dx,
+                dy,
+                radius,
+                range,
+                dmg_type,
+            } => Some(SkillFx {
+                attacker: *attacker,
+                spell: *spell,
+                shape: *shape,
+                x: *x,
+                y: *y,
+                dx: *dx,
+                dy: *dy,
+                radius: *radius,
+                range: *range,
+                dmg_type: *dmg_type,
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Pure delta computation between two keyed entity-state maps, with stable

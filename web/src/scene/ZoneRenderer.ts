@@ -50,7 +50,10 @@ export class ZoneRenderer {
   private onResize = () => this.resize();
   /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character;
    *  ?cam=x,y,z,tx,ty,tz pins it entirely (shot framing/verification). */
-  private followOverride = new URLSearchParams(location.search).get("follow");
+  /** ?follow= pins the camera; ?watch= implies following its character. */
+  private followOverride =
+    new URLSearchParams(location.search).get("follow") ??
+    new URLSearchParams(location.search).get("watch");
   /** Multiplies the follow distance everywhere (cue follows included). */
   private zoomOverride = Number(new URLSearchParams(location.search).get("zoom") ?? "1");
   private camOverride = new URLSearchParams(location.search)

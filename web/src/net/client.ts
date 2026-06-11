@@ -2,7 +2,7 @@ import type { C2S } from "../gen/C2S";
 import type { S2C } from "../gen/S2C";
 import type { Role } from "../gen/Role";
 
-export const PROTO_VERSION = 15;
+export const PROTO_VERSION = 16;
 const PING_INTERVAL_MS = 2000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
@@ -42,7 +42,12 @@ export class NetClient {
   private reconnectDelay = RECONNECT_BASE_MS;
   private closed = false;
 
-  constructor(private url: string) {}
+  /** `watch`: a character name to subscribe to (their world follows them
+   *  across transfers); null = the featured director-driven broadcast. */
+  constructor(
+    private url: string,
+    private watch: string | null = null,
+  ) {}
 
   start(): void {
     this.closed = false;
@@ -75,7 +80,7 @@ export class NetClient {
       this.update({ connected: true, lastError: null });
       this.send({
         type: "Hello",
-        data: { token: "dev", proto_version: PROTO_VERSION },
+        data: { token: "dev", proto_version: PROTO_VERSION, watch: this.watch },
       });
       this.clearPingTimer();
       this.pingTimer = setInterval(() => this.ping(), PING_INTERVAL_MS);

@@ -16,12 +16,12 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 
 /// A focus-panel inspection: answered by the tick thread between ticks so
-/// the pure sim never crosses a thread boundary.
-pub type InspectRequest = (u32, oneshot::Sender<Option<CharacterSheet>>);
+/// the pure sim never crosses a thread boundary. The world key scopes the
+/// lookup (net ids are per-world); None = the featured world.
+pub type InspectRequest = (Option<String>, u32, oneshot::Sender<Option<CharacterSheet>>);
 
-/// Everything the replication side needs from one completed tick of the
-/// featured world. Zone identity rides along so replication can reset and
-/// resend a full snapshot whenever the featured world changes.
+/// One world's completed tick, with zone identity so any feed can emit a
+/// full snapshot at any moment (late joiners, subscription switches).
 pub struct TickFrame {
     /// Stable identity of the world this frame came from.
     pub world_key: String,
@@ -32,6 +32,15 @@ pub struct TickFrame {
     pub obstacles: Vec<ObstacleState>,
     pub views: Vec<EntityView>,
     pub events: Vec<SimEvent>,
+}
+
+/// Every world's frame for one server tick — the FULL simulation output.
+/// Replication fans this into per-world feeds; viewers subscribe to the
+/// feeds their permissions allow.
+pub struct TickBatch {
+    /// The director-followed world (most characters).
+    pub featured_key: String,
+    pub frames: Vec<TickFrame>,
 }
 
 /// One world under management: the shared town, or a per-idler instance.
@@ -48,7 +57,7 @@ pub struct ManagedWorld {
 
 pub fn spawn_tick_loop(
     mut worlds: Vec<ManagedWorld>,
-    frames: UnboundedSender<TickFrame>,
+    frames: UnboundedSender<TickBatch>,
     mut inspect_rx: UnboundedReceiver<InspectRequest>,
     server_tick: Arc<AtomicU64>,
 ) {
@@ -109,58 +118,54 @@ pub fn spawn_tick_loop(
                     .map(|(i, _)| i)
                     .unwrap_or(0);
 
-                // The featured world's full event stream, plus the GLOBAL
-                // announcements from every other world (arrivals,
-                // departures, town narration) so the ticker never misses a
-                // crossing just because the camera was elsewhere.
-                let mut events: Vec<SimEvent> = Vec::new();
+                // Ship EVERY world's frame: the full simulation output.
+                // Replication fans it into per-world feeds; the featured
+                // virtual feed is composed there too.
+                let mut batch_frames = Vec::with_capacity(worlds.len());
+                let mut events_by_world: Vec<Vec<SimEvent>> = vec![Vec::new(); worlds.len()];
                 for (i, evs) in frames_data {
-                    if i == featured {
-                        events.extend(evs);
-                    } else {
-                        events.extend(evs.into_iter().filter(|ev| {
-                            matches!(
-                                ev,
-                                SimEvent::CharacterDeparted { .. }
-                                    | SimEvent::CharacterJoined { .. }
-                                    | SimEvent::Narration { .. }
-                            )
-                        }));
-                    }
+                    events_by_world[i] = evs;
                 }
-
-                let mw = &worlds[featured];
-                let tick = mw.world.tick_count();
-                server_tick.store(tick, Ordering::Relaxed);
-                let (zw, zh) = mw.world.zone_size_raw();
-                let frame = TickFrame {
-                    world_key: mw.key.clone(),
-                    tick,
-                    zone_name: mw.world.zone_name().to_string(),
-                    zone_width: zw,
-                    zone_height: zh,
-                    obstacles: mw
-                        .world
-                        .obstacle_views()
-                        .into_iter()
-                        .map(|(x, y, radius, kind)| ObstacleState { x, y, radius, kind })
-                        .collect(),
-                    views: mw.world.views(),
-                    events,
-                };
+                for (i, mw) in worlds.iter().enumerate() {
+                    let (zw, zh) = mw.world.zone_size_raw();
+                    batch_frames.push(TickFrame {
+                        world_key: mw.key.clone(),
+                        tick: mw.world.tick_count(),
+                        zone_name: mw.world.zone_name().to_string(),
+                        zone_width: zw,
+                        zone_height: zh,
+                        obstacles: mw
+                            .world
+                            .obstacle_views()
+                            .into_iter()
+                            .map(|(x, y, radius, kind)| ObstacleState { x, y, radius, kind })
+                            .collect(),
+                        views: mw.world.views(),
+                        events: std::mem::take(&mut events_by_world[i]),
+                    });
+                }
+                server_tick.store(worlds[featured].world.tick_count(), Ordering::Relaxed);
                 // Replication gone (shutdown) → stop simulating.
-                if frames.send(frame).is_err() {
+                if frames
+                    .send(TickBatch {
+                        featured_key: worlds[featured].key.clone(),
+                        frames: batch_frames,
+                    })
+                    .is_err()
+                {
                     info!("replication channel closed; tick loop exiting");
                     return;
                 }
 
-                // Focus-panel inspections answer from the featured world
-                // (its ids are the ones on screen).
-                while let Ok((id, reply)) = inspect_rx.try_recv() {
+                // Focus-panel inspections answer from the requested world
+                // (net ids are per-world; None = featured).
+                while let Ok((world_key, id, reply)) = inspect_rx.try_recv() {
+                    let mw = match &world_key {
+                        Some(key) => worlds.iter().find(|mw| &mw.key == key),
+                        None => Some(&worlds[featured]),
+                    };
                     let _ = reply.send(
-                        worlds[featured]
-                            .world
-                            .character_sheet(id)
+                        mw.and_then(|mw| mw.world.character_sheet(id))
                             .map(sheet_to_proto),
                     );
                 }
