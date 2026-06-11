@@ -50,13 +50,16 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
     const h = setInterval(ask, 1000);
     return () => clearInterval(h);
   }, [client, focusId]);
-  // Gate the sheet by name as well as id: net ids are per-world (every
-  // instance's idler is id 1), so after a cross-world cut the previous
-  // character's sheet would otherwise show until the next poll lands.
+  // The sheet renders only while the focused idler is actually PRESENT
+  // and matches by name as well as id — net ids are per-world (every
+  // instance's idler is id 1), so a cross-world cut, a departure, or an
+  // overview sweep must all drop the panels, not show a stale sheet.
   const sheet =
     store.sheet &&
+    focused &&
+    focused.state.kind === "Character" &&
     store.sheet.id === focusId &&
-    (!focused || store.sheet.name === focused.state.name)
+    store.sheet.name === focused.state.name
       ? store.sheet
       : null;
   const chars = store
