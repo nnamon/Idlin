@@ -5,7 +5,7 @@ GemDef(
     kind: skill,
     weight: 60,
     coeff_bp: 7000,         // 70% of weapon damage...
-    added_ele: 7,           // ...plus its own elemental payload
+    added_fire: 7,           // ...plus its own elemental payload
     shape: target,
     projectile: true,
     range_cu: 900,

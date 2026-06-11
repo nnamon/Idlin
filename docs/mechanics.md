@@ -72,9 +72,14 @@ and gear affixes can grant them). Each point converts:
 
 | Attribute | Per point |
 |---|---|
-| Strength | +0.5 maximum life, +0.1% increased physical damage |
-| Dexterity | +2 accuracy, +0.5 evasion |
-| Intelligence | +0.1% increased elemental AND chaos damage |
+| Strength | +0.5 maximum life, +0.2% increased physical damage with MELEE weapons |
+| Dexterity | +2 accuracy, +0.2% increased evasion |
+| Intelligence | +0.5 maximum mana, +0.2% increased energy shield |
+
+(Mana and energy shield pools land with the combat rework's next phase;
+the grants already evaluate.) Damage comes in five types — **physical,
+fire, cold, lightning, chaos** — with four typed resistances (capped at
+75% at use); armour attenuates physical only.
 
 ## Experience and the passive tree
 

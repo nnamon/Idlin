@@ -27,18 +27,22 @@ const STAT_NAMES: Record<string, string> = {
   intelligence: "Intelligence",
   life: "maximum life",
   damage_phys: "physical damage",
-  damage_ele: "elemental damage",
+  damage_fire: "fire damage",
+  damage_cold: "cold damage",
+  damage_lightning: "lightning damage",
   damage_chaos: "chaos damage",
   attack_speed: "attack speed",
   move_speed: "movement speed",
   armour: "armour",
   evasion: "evasion",
   accuracy: "accuracy",
-  resist_ele: "elemental resistance",
+  resist_fire: "fire resistance",
+  resist_cold: "cold resistance",
+  resist_lightning: "lightning resistance",
   resist_chaos: "chaos resistance",
 };
 
-const PERCENT_STATS = new Set(["resist_ele", "resist_chaos"]);
+const PERCENT_STATS = new Set(["resist_fire", "resist_cold", "resist_lightning", "resist_chaos"]);
 
 function fmtGrant(g: Grant): string {
   const name = STAT_NAMES[g.stat] ?? g.stat;

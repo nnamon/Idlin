@@ -1,36 +1,61 @@
 //! The stat vocabulary shared by all power sources: item affixes, passive
-//! tree nodes, and (later) gems all describe themselves as grants of
+//! tree nodes, and gems all describe themselves as grants of
 //! `(stat, layer, value)`. The sim owns the evaluator; content owns the words.
 
 use serde::{Deserialize, Serialize};
 
 /// The stat registry. Content references these by snake_case name.
+/// Declaration order is the index order (`idx` relies on it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stat {
     /// Attributes: granted by tree/gear, converted to derived bonuses
-    /// (see docs/mechanics.md).
+    /// (STR → life + melee phys%, DEX → accuracy + evasion%,
+    /// INT → mana + energy shield%; see docs/mechanics.md).
     Strength,
     Dexterity,
     Intelligence,
+    // -- pools --
     Life,
+    Mana,
+    EnergyShield,
+    // -- recovery (Added: units per second; integer-divided per tick) --
+    LifeRegen,
+    ManaRegen,
+    /// Basis points of damage dealt returned as life/mana (rate-capped).
+    LeechLife,
+    LeechMana,
+    // -- damage by type --
     DamagePhys,
-    DamageEle,
+    DamageFire,
+    DamageCold,
+    DamageLightning,
     DamageChaos,
-    /// Factor on attack rate (base 10000); higher = faster attacks.
+    /// The STR bucket: increased physical damage with melee weapons only.
+    MeleePhys,
+    // -- speeds (factors, base 10000) --
     AttackSpeed,
-    /// Factor on movement (base 10000).
+    CastSpeed,
     MoveSpeed,
+    // -- defenses --
     Armour,
     Evasion,
     Accuracy,
-    /// Basis points of elemental resistance (capped at use).
-    ResistEle,
-    /// Basis points of chaos resistance (capped at use).
+    /// Basis points chance to negate a hit entirely (needs a shield).
+    Block,
+    // -- crit --
+    /// Basis points; skills supply their own base, this scales it.
+    CritChance,
+    /// Basis points of bonus damage on crit (base 5000 = +50%).
+    CritMulti,
+    // -- resistances (basis points, capped at use) --
+    ResistFire,
+    ResistCold,
+    ResistLightning,
     ResistChaos,
 }
 
-pub const STAT_COUNT: usize = 14;
+pub const STAT_COUNT: usize = 29;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -38,23 +63,35 @@ impl Stat {
         Stat::Dexterity,
         Stat::Intelligence,
         Stat::Life,
+        Stat::Mana,
+        Stat::EnergyShield,
+        Stat::LifeRegen,
+        Stat::ManaRegen,
+        Stat::LeechLife,
+        Stat::LeechMana,
         Stat::DamagePhys,
-        Stat::DamageEle,
+        Stat::DamageFire,
+        Stat::DamageCold,
+        Stat::DamageLightning,
         Stat::DamageChaos,
+        Stat::MeleePhys,
         Stat::AttackSpeed,
+        Stat::CastSpeed,
         Stat::MoveSpeed,
         Stat::Armour,
         Stat::Evasion,
         Stat::Accuracy,
-        Stat::ResistEle,
+        Stat::Block,
+        Stat::CritChance,
+        Stat::CritMulti,
+        Stat::ResistFire,
+        Stat::ResistCold,
+        Stat::ResistLightning,
         Stat::ResistChaos,
     ];
 
     pub fn idx(self) -> usize {
-        Stat::ALL
-            .iter()
-            .position(|&s| s == self)
-            .expect("stat in registry")
+        self as usize
     }
 }
 
@@ -74,4 +111,16 @@ pub struct Grant {
     pub layer: Layer,
     /// Added: flat units. Increased/More: basis points.
     pub value: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_order_matches_discriminants() {
+        for (i, s) in Stat::ALL.iter().enumerate() {
+            assert_eq!(s.idx(), i, "{s:?} out of order");
+        }
+    }
 }

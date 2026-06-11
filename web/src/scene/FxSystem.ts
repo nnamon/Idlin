@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import type { ActiveHit } from "../world/store";
 
-/** Damage-number colors by dominant component: phys, elemental, chaos. */
-const DMG_COLORS = ["#ffe9c8", "#6ae8e8", "#c08aff"];
+/** Damage-number colors by dominant component:
+ *  phys, fire, cold, lightning, chaos. */
+const DMG_COLORS = ["#ffe9c8", "#ff8a5a", "#6ab8e8", "#ffe96a", "#c08aff"];
 const MISS_COLOR = "#8a8a99";
 
 const FLASH_POOL = 48;

@@ -17,12 +17,11 @@ pub struct CharacterSheetView {
     pub life: i64,
     pub life_max: i64,
     pub kills: u64,
-    pub damage: [i64; 3],
+    pub damage: [i64; crate::entity::DMG_COUNT],
     pub accuracy: i64,
     pub evasion: i64,
     pub armour: i64,
-    pub resist_ele: i64,
-    pub resist_chaos: i64,
+    pub resists: [i64; crate::entity::RES_COUNT],
     /// (slot name, Some((item name, rarity)) or None when empty).
     pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
     /// (name, rarity, x, y, w, h) per bag item.
@@ -100,8 +99,7 @@ impl World {
             accuracy: c.accuracy,
             evasion: c.evasion,
             armour: c.armour,
-            resist_ele: c.resist_ele,
-            resist_chaos: c.resist_chaos,
+            resists: c.resists,
             equipment,
             inventory,
             gems,
@@ -255,8 +253,9 @@ impl World {
                 h.write_i64(c.accuracy);
                 h.write_i64(c.evasion);
                 h.write_i64(c.armour);
-                h.write_i64(c.resist_ele);
-                h.write_i64(c.resist_chaos);
+                for r in c.resists {
+                    h.write_i64(r);
+                }
                 h.write_u32(c.cooldown_left);
                 h.write_u64(c.last_combat_tick);
                 h.write_i32(c.radius.raw());

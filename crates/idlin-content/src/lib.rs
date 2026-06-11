@@ -77,9 +77,13 @@ pub struct MonsterDef {
     pub life: i64,
     /// Physical attack damage.
     pub damage: i64,
-    /// Elemental / chaos attack damage components.
+    /// Typed attack damage components.
     #[serde(default)]
-    pub damage_ele: i64,
+    pub damage_fire: i64,
+    #[serde(default)]
+    pub damage_cold: i64,
+    #[serde(default)]
+    pub damage_lightning: i64,
     #[serde(default)]
     pub damage_chaos: i64,
     /// Defenses. Accuracy 0 means "derive from level" (60 + 15·level).
@@ -89,9 +93,13 @@ pub struct MonsterDef {
     pub evasion: i64,
     #[serde(default)]
     pub accuracy: i64,
-    /// Resistances in basis points.
+    /// Typed resistances in basis points.
     #[serde(default)]
-    pub resist_ele: i64,
+    pub resist_fire: i64,
+    #[serde(default)]
+    pub resist_cold: i64,
+    #[serde(default)]
+    pub resist_lightning: i64,
     #[serde(default)]
     pub resist_chaos: i64,
     /// Movement speed in centi-units per second.
@@ -153,7 +161,11 @@ pub struct ItemDef {
     #[serde(default)]
     pub damage_phys: i64,
     #[serde(default)]
-    pub damage_ele: i64,
+    pub damage_fire: i64,
+    #[serde(default)]
+    pub damage_cold: i64,
+    #[serde(default)]
+    pub damage_lightning: i64,
     #[serde(default)]
     pub damage_chaos: i64,
     /// Weapon: attack range in centi-units.
@@ -258,11 +270,15 @@ pub struct GemDef {
     /// Percent of weapon damage (basis points; 10000 = 100%).
     #[serde(default)]
     pub coeff_bp: i64,
-    /// Flat damage the skill itself contributes.
+    /// Flat damage the skill itself contributes, by type.
     #[serde(default)]
     pub added_phys: i64,
     #[serde(default)]
-    pub added_ele: i64,
+    pub added_fire: i64,
+    #[serde(default)]
+    pub added_cold: i64,
+    #[serde(default)]
+    pub added_lightning: i64,
     #[serde(default)]
     pub added_chaos: i64,
     #[serde(default = "shape_target")]

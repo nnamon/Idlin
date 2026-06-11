@@ -7,7 +7,7 @@ ItemDef(
     w: 1,
     h: 3,
     damage_phys: 8,
-    damage_ele: 6,
+    damage_cold: 6,
     range_cu: 800,
     cooldown_ticks: 9,
     projectile: true,

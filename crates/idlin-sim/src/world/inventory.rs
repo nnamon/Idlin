@@ -192,7 +192,9 @@ impl World {
         }
         if def.slot == GearSlot::Weapon {
             let dmg = sheet.value(Stat::DamagePhys, def.damage_phys)
-                + sheet.value(Stat::DamageEle, def.damage_ele)
+                + sheet.value(Stat::DamageFire, def.damage_fire)
+                + sheet.value(Stat::DamageCold, def.damage_cold)
+                + sheet.value(Stat::DamageLightning, def.damage_lightning)
                 + sheet.value(Stat::DamageChaos, def.damage_chaos);
             let speed_bonus = sheet.value(Stat::AttackSpeed, 10000) - 10000;
             dmg * 100 + speed_bonus
@@ -200,7 +202,9 @@ impl World {
             sheet.value(Stat::Armour, def.armour) * 100
                 + sheet.value(Stat::Evasion, def.evasion) * 100
                 + sheet.value(Stat::Life, 0) * 200
-                + sheet.value(Stat::ResistEle, 0) / 10
+                + sheet.value(Stat::ResistFire, 0) / 10
+                + sheet.value(Stat::ResistCold, 0) / 10
+                + sheet.value(Stat::ResistLightning, 0) / 10
                 + sheet.value(Stat::ResistChaos, 0) / 10
                 + (sheet.value(Stat::MoveSpeed, 10000) - 10000)
         }

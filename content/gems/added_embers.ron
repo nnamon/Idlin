@@ -5,6 +5,6 @@ GemDef(
     kind: support,
     weight: 80,
     grants: [
-        (stat: damage_ele, layer: added, value: 5),
+        (stat: damage_fire, layer: added, value: 5),
     ],
 )

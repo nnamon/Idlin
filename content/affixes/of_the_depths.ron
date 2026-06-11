@@ -1,0 +1,15 @@
+// "... of the Depths" — cold resistance on any armour piece.
+AffixDef(
+    id: "of_the_depths",
+    name: "of the Depths",
+    kind: suffix,
+    slots: [helm, chest, boots],
+    weight: 80,
+    stat: resist_cold,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 500, max: 900),
+        (ilvl: 3, min: 901, max: 1500),
+        (ilvl: 6, min: 1501, max: 2400),
+    ],
+)

@@ -5,7 +5,7 @@ AffixDef(
     kind: suffix,
     slots: [weapon],
     weight: 80,
-    stat: damage_ele,
+    stat: damage_fire,
     layer: added,
     tiers: [
         (ilvl: 1, min: 2, max: 5),

@@ -37,8 +37,17 @@ impl Faction {
 
 /// Damage type indices into `CombatStats::damage`.
 pub const DMG_PHYS: usize = 0;
-pub const DMG_ELE: usize = 1;
-pub const DMG_CHAOS: usize = 2;
+pub const DMG_FIRE: usize = 1;
+pub const DMG_COLD: usize = 2;
+pub const DMG_LIGHTNING: usize = 3;
+pub const DMG_CHAOS: usize = 4;
+pub const DMG_COUNT: usize = 5;
+/// Resistance indices into `CombatStats::resists` (no phys: armour's job).
+pub const RES_FIRE: usize = 0;
+pub const RES_COLD: usize = 1;
+pub const RES_LIGHTNING: usize = 2;
+pub const RES_CHAOS: usize = 3;
+pub const RES_COUNT: usize = 4;
 
 /// Derived combat numbers, cached on the entity. For characters these are
 /// recomputed from (level, gear, tree) by the stat engine; for monsters they
@@ -47,15 +56,14 @@ pub const DMG_CHAOS: usize = 2;
 pub struct CombatStats {
     pub life: i64,
     pub life_max: i64,
-    /// Per-type attack damage: phys, elemental, chaos.
-    pub damage: [i64; 3],
+    /// Per-type attack damage: phys, fire, cold, lightning, chaos.
+    pub damage: [i64; DMG_COUNT],
     pub accuracy: i64,
     pub evasion: i64,
     /// Attenuates physical damage taken.
     pub armour: i64,
-    /// Resistances in basis points (capped at use).
-    pub resist_ele: i64,
-    pub resist_chaos: i64,
+    /// Typed resistances in basis points (capped at use); see RES_*.
+    pub resists: [i64; RES_COUNT],
     pub range: Fx,
     pub cooldown_ticks: u32,
     pub cooldown_left: u32,

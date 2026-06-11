@@ -49,6 +49,16 @@ impl StatSheet {
         }
     }
 
+    /// Fold one stat's buckets into another's — e.g. the STR melee-phys
+    /// bucket folds into phys damage only when the weapon is melee.
+    pub fn fold(&mut self, from: Stat, to: Stat) {
+        let f = from.idx();
+        let t = to.idx();
+        self.added[t] += self.added[f];
+        self.increased[t] += self.increased[f];
+        self.more[t] = self.more[t] * self.more[f] / 10000;
+    }
+
     /// Evaluate a stat against its base value. Never returns negative.
     pub fn value(&self, stat: Stat, base: i64) -> i64 {
         let i = stat.idx();

@@ -147,27 +147,51 @@ TreeDef(
         NodeDef(id: "int3", num: 72, name: "Insight", pos: (0, -15), kind: notable, links: ["int2"],
                 grants: [
                     (stat: intelligence, layer: added, value: 20),
-                    (stat: resist_ele, layer: added, value: 500),
+                    (stat: resist_fire, layer: added, value: 500),
+                    (stat: resist_cold, layer: added, value: 500),
+                    (stat: resist_lightning, layer: added, value: 500),
                 ]),
 
         // --- archetype: ELEMENTALIST, northwest of Insight ---
         NodeDef(id: "el1", num: 80, name: "Kindle", pos: (-5, -18), kind: travel, links: ["int3"],
-                grants: [(stat: damage_ele, layer: increased, value: 1000)]),
+                grants: [
+                    (stat: damage_fire, layer: increased, value: 1000),
+                    (stat: damage_cold, layer: increased, value: 1000),
+                    (stat: damage_lightning, layer: increased, value: 1000),
+                ]),
         NodeDef(id: "el2", num: 81, name: "Living Flame", pos: (-10, -21), kind: travel, links: ["el1"],
-                grants: [(stat: damage_ele, layer: added, value: 3)]),
+                grants: [
+                    (stat: damage_fire, layer: added, value: 1),
+                    (stat: damage_cold, layer: added, value: 1),
+                    (stat: damage_lightning, layer: added, value: 1),
+                ]),
         NodeDef(id: "el3", num: 82, name: "Ashen Ward", pos: (-15, -24), kind: travel, links: ["el2"],
-                grants: [(stat: resist_ele, layer: added, value: 1000)]),
+                grants: [
+                    (stat: resist_fire, layer: added, value: 1000),
+                    (stat: resist_cold, layer: added, value: 1000),
+                    (stat: resist_lightning, layer: added, value: 1000),
+                ]),
         NodeDef(id: "el4", num: 83, name: "Emberheart", pos: (-20, -27), kind: notable, links: ["el3"],
                 grants: [
-                    (stat: damage_ele, layer: increased, value: 2200),
-                    (stat: damage_ele, layer: added, value: 3),
+                    (stat: damage_fire, layer: increased, value: 2200),
+                    (stat: damage_cold, layer: increased, value: 2200),
+                    (stat: damage_lightning, layer: increased, value: 2200),
+                    (stat: damage_fire, layer: added, value: 1),
+                    (stat: damage_cold, layer: added, value: 1),
+                    (stat: damage_lightning, layer: added, value: 1),
                 ]),
         NodeDef(id: "el5", num: 84, name: "Conflagrate", pos: (-25, -30), kind: travel, links: ["el4"],
-                grants: [(stat: damage_ele, layer: increased, value: 1200)]),
+                grants: [
+                    (stat: damage_fire, layer: increased, value: 1200),
+                    (stat: damage_cold, layer: increased, value: 1200),
+                    (stat: damage_lightning, layer: increased, value: 1200),
+                ]),
         NodeDef(id: "overcharge", num: 85, name: "Overcharge", pos: (-30, -33), kind: keystone,
                 links: ["el5"],
                 grants: [
-                    (stat: damage_ele, layer: more, value: 3000), // 30% MORE elemental
+                    (stat: damage_fire, layer: more, value: 3000),
+                    (stat: damage_cold, layer: more, value: 3000),
+                    (stat: damage_lightning, layer: more, value: 3000), // 30% MORE of each element
                     (stat: armour, layer: more, value: -1000),    // 10% LESS armour
                 ]),
         NodeDef(id: "socket_flame", num: 86, name: "Flame Socket", pos: (-9, -16), kind: socket,

@@ -53,10 +53,10 @@ MonsterDef(
     level: 3,
     life: 150,
     damage: 14,               // physical attack damage
-    damage_ele: 0, damage_chaos: 0,
+    damage_fire: 0, damage_cold: 0, damage_lightning: 0, damage_chaos: 0,
     armour: 80, evasion: 0,
     accuracy: 0,              // 0 = derived: 60 + 15·level
-    resist_ele: 2500,         // basis points (25%)
+    resist_cold: 2500,        // typed resists: resist_fire/_cold/_lightning/_chaos (bp)
     resist_chaos: 0,
     speed_cps: 160,
     radius_cu: 80,            // body radius (collision)
@@ -85,7 +85,7 @@ ItemDef(
     slot: weapon,             // weapon | helm | chest | boots
     w: 2, h: 3,               // bag footprint (the bag is 12×5)
     // weapon fields — the equipped weapon DEFINES the normal attack:
-    damage_phys: 14, damage_ele: 0, damage_chaos: 0,
+    damage_phys: 14, damage_fire: 0, damage_cold: 0, damage_lightning: 0, damage_chaos: 0,
     range_cu: 220,
     cooldown_ticks: 8,
     projectile: false,
@@ -117,8 +117,11 @@ AffixDef(
 ```
 
 **Stat registry**: `strength, dexterity, intelligence, life, damage_phys,
-damage_ele, damage_chaos, attack_speed, move_speed, armour, evasion,
-accuracy, resist_ele, resist_chaos` (attributes convert per
+damage_fire, damage_cold, damage_lightning, damage_chaos, melee_phys,
+mana, energy_shield, life_regen, mana_regen, leech_life, leech_mana,
+attack_speed, cast_speed, move_speed, armour, evasion, accuracy, block,
+crit_chance, crit_multi, resist_fire, resist_cold, resist_lightning,
+resist_chaos` (attributes convert per
 [mechanics.md](mechanics.md)). The same vocabulary powers gear, tree nodes, and support
 gems — one evaluator (see [mechanics.md](mechanics.md)).
 

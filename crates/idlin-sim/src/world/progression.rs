@@ -6,7 +6,7 @@ use super::{
     BASE_SPEED_CPS, SimEvent, UNARMED_COOLDOWN, UNARMED_RANGE_CU, World, base_accuracy,
     base_evasion, base_life, base_unarmed_damage, fx_from_cu, speed_from_cps,
 };
-use crate::entity::{DMG_CHAOS, DMG_ELE, DMG_PHYS, GEM_LEVEL_CAP, Item, gem_xp_to_next};
+use crate::entity::{DMG_COUNT, GEM_LEVEL_CAP, Item, RES_COUNT, gem_xp_to_next};
 use crate::fixed::Fx;
 use crate::stats::{Grant, Stat, StatSheet};
 use idlin_content::GearSlot;
@@ -123,10 +123,11 @@ impl World {
             }
         }
 
-        // Attribute conversions (PoE-flavored, integer): each point of
-        //   Strength:     +1/2 life,      +0.1% increased physical damage
-        //   Dexterity:    +2 accuracy,    +1/2 evasion
-        //   Intelligence: +0.1% increased elemental AND chaos damage
+        // Attribute conversions (PoE-classic, user-locked; ratios flagged
+        // for redline). Each point of:
+        //   Strength:     +0.5 life,     +0.2% increased MELEE phys
+        //   Dexterity:    +2 accuracy,   +0.2% increased evasion
+        //   Intelligence: +0.5 mana,     +0.2% increased energy shield
         let strength = sheet.value(Stat::Strength, 0);
         let dexterity = sheet.value(Stat::Dexterity, 0);
         let intelligence = sheet.value(Stat::Intelligence, 0);
@@ -137,9 +138,9 @@ impl World {
                 value: strength / 2,
             },
             Grant {
-                stat: Stat::DamagePhys,
+                stat: Stat::MeleePhys,
                 layer: crate::stats::Layer::Increased,
-                value: strength * 10,
+                value: strength * 20,
             },
             Grant {
                 stat: Stat::Accuracy,
@@ -148,18 +149,18 @@ impl World {
             },
             Grant {
                 stat: Stat::Evasion,
+                layer: crate::stats::Layer::Increased,
+                value: dexterity * 20,
+            },
+            Grant {
+                stat: Stat::Mana,
                 layer: crate::stats::Layer::Added,
-                value: dexterity / 2,
+                value: intelligence / 2,
             },
             Grant {
-                stat: Stat::DamageEle,
+                stat: Stat::EnergyShield,
                 layer: crate::stats::Layer::Increased,
-                value: intelligence * 10,
-            },
-            Grant {
-                stat: Stat::DamageChaos,
-                layer: crate::stats::Layer::Increased,
-                value: intelligence * 10,
+                value: intelligence * 20,
             },
         ] {
             if grant.value != 0 {
@@ -171,31 +172,56 @@ impl World {
             Some(item) => {
                 let def = &self.content.items[item.base_idx as usize];
                 (
-                    [def.damage_phys, def.damage_ele, def.damage_chaos],
+                    [
+                        def.damage_phys,
+                        def.damage_fire,
+                        def.damage_cold,
+                        def.damage_lightning,
+                        def.damage_chaos,
+                    ],
                     fx_from_cu(def.range_cu),
                     def.cooldown_ticks,
                     def.projectile,
                 )
             }
             None => (
-                [base_unarmed_damage(level), 0, 0],
+                [base_unarmed_damage(level), 0, 0, 0, 0],
                 fx_from_cu(UNARMED_RANGE_CU),
                 UNARMED_COOLDOWN,
                 false,
             ),
         };
 
+        // The STR bucket applies only to melee weapons (and bare fists).
+        if !projectile {
+            sheet.fold(Stat::MeleePhys, Stat::DamagePhys);
+        }
+
         let life_max = sheet.value(Stat::Life, base_life(level)).max(1);
-        let damage = [
-            sheet.value(Stat::DamagePhys, dmg_base[DMG_PHYS]),
-            sheet.value(Stat::DamageEle, dmg_base[DMG_ELE]),
-            sheet.value(Stat::DamageChaos, dmg_base[DMG_CHAOS]),
+        const DMG_STATS: [Stat; DMG_COUNT] = [
+            Stat::DamagePhys,
+            Stat::DamageFire,
+            Stat::DamageCold,
+            Stat::DamageLightning,
+            Stat::DamageChaos,
         ];
+        let mut damage = [0i64; DMG_COUNT];
+        for i in 0..DMG_COUNT {
+            damage[i] = sheet.value(DMG_STATS[i], dmg_base[i]);
+        }
         let accuracy = sheet.value(Stat::Accuracy, base_accuracy(level));
         let evasion = sheet.value(Stat::Evasion, evasion_base);
         let armour = sheet.value(Stat::Armour, armour_base);
-        let resist_ele = sheet.value(Stat::ResistEle, 0);
-        let resist_chaos = sheet.value(Stat::ResistChaos, 0);
+        const RES_STATS: [Stat; RES_COUNT] = [
+            Stat::ResistFire,
+            Stat::ResistCold,
+            Stat::ResistLightning,
+            Stat::ResistChaos,
+        ];
+        let mut resists = [0i64; RES_COUNT];
+        for i in 0..RES_COUNT {
+            resists[i] = sheet.value(RES_STATS[i], 0);
+        }
         let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
         let cooldown = ((cooldown_base as i64 * 10000 / attack_factor).max(2)) as u32;
         let move_factor = sheet.value(Stat::MoveSpeed, 10000).max(1000);
@@ -215,8 +241,7 @@ impl World {
             c.accuracy = accuracy;
             c.evasion = evasion;
             c.armour = armour;
-            c.resist_ele = resist_ele;
-            c.resist_chaos = resist_chaos;
+            c.resists = resists;
             c.range = range;
             c.cooldown_ticks = cooldown;
             c.speed_per_tick = speed;

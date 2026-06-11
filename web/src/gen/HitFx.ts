@@ -5,6 +5,7 @@
  */
 export type HitFx = { attacker: number, target: number, amount: number, 
 /**
- * Dominant damage component: 0 phys, 1 elemental, 2 chaos.
+ * Dominant damage component: 0 phys, 1 fire, 2 cold, 3 lightning,
+ * 4 chaos.
  */
 dmg_type: number, projectile: boolean, killed: boolean, };

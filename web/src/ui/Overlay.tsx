@@ -139,9 +139,10 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
       <span style={{ color: "#c8c8e0" }}>{value}</span>
     </div>
   );
-  const dmg = [sheet.dmg_phys, sheet.dmg_ele, sheet.dmg_chaos];
-  const dmgText = `${dmg[0]}/${dmg[1]}/${dmg[2]}`;
-  const res = `${Math.min(75, Math.round(sheet.resist_ele_bp / 100))}% / ${Math.min(75, Math.round(sheet.resist_chaos_bp / 100))}%`;
+  const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
+  const dmgText = dmg.join("/");
+  const resPct = (bp: number) => Math.min(75, Math.round(bp / 100));
+  const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
   const CELL = 13;
   return (
     <div style={{ ...panelStyle, marginTop: 8, lineHeight: 1.5 }}>
@@ -159,10 +160,10 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
       <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1, margin: "6px 0 2px" }}>
         STATS
       </div>
-      {stat("damage p/e/c", dmgText)}
+      {stat("dmg p/f/c/l/ch", dmgText)}
       {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`)}
       {stat("armour", `${sheet.armour}`)}
-      {stat("resists e/c", res)}
+      {stat("res f/c/l/ch", res)}
       {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
       {sheet.gems.length > 0 && (
         <>

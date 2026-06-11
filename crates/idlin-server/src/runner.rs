@@ -100,13 +100,17 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         life_max: clamp_i32(v.life_max),
         kills: v.kills.min(u32::MAX as u64) as u32,
         dmg_phys: clamp_i32(v.damage[0]),
-        dmg_ele: clamp_i32(v.damage[1]),
-        dmg_chaos: clamp_i32(v.damage[2]),
+        dmg_fire: clamp_i32(v.damage[1]),
+        dmg_cold: clamp_i32(v.damage[2]),
+        dmg_lightning: clamp_i32(v.damage[3]),
+        dmg_chaos: clamp_i32(v.damage[4]),
         accuracy: clamp_i32(v.accuracy),
         evasion: clamp_i32(v.evasion),
         armour: clamp_i32(v.armour),
-        resist_ele_bp: clamp_i32(v.resist_ele),
-        resist_chaos_bp: clamp_i32(v.resist_chaos),
+        resist_fire_bp: clamp_i32(v.resists[0]),
+        resist_cold_bp: clamp_i32(v.resists[1]),
+        resist_lightning_bp: clamp_i32(v.resists[2]),
+        resist_chaos_bp: clamp_i32(v.resists[3]),
         equipment: v
             .equipment
             .into_iter()

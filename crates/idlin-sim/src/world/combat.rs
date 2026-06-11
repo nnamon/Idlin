@@ -4,7 +4,7 @@
 //! target before later ones swing.
 
 use super::{RESPAWN_TICKS, SimEvent, World, XP_SHARE_RADIUS, fx_from_cu};
-use crate::entity::{AttackIntent, DMG_CHAOS, DMG_ELE, DMG_PHYS, LootPayload, gem_scale_bp};
+use crate::entity::{AttackIntent, DMG_COUNT, DMG_PHYS, LootPayload, gem_scale_bp};
 use crate::fixed::FxV2;
 use crate::stats::{Grant, Stat, StatSheet, apply_resist, hit_chance_bp, mitigate_phys};
 use idlin_content::{GemKind, SkillShape};
@@ -129,10 +129,22 @@ impl World {
                         }
                     }
 
-                    let added = [gem_def.added_phys, gem_def.added_ele, gem_def.added_chaos];
-                    let mut damage = [0i64; 3];
-                    let stats = [Stat::DamagePhys, Stat::DamageEle, Stat::DamageChaos];
-                    for i in 0..3 {
+                    let added = [
+                        gem_def.added_phys,
+                        gem_def.added_fire,
+                        gem_def.added_cold,
+                        gem_def.added_lightning,
+                        gem_def.added_chaos,
+                    ];
+                    let mut damage = [0i64; DMG_COUNT];
+                    let stats = [
+                        Stat::DamagePhys,
+                        Stat::DamageFire,
+                        Stat::DamageCold,
+                        Stat::DamageLightning,
+                        Stat::DamageChaos,
+                    ];
+                    for i in 0..DMG_COUNT {
                         let base =
                             char_damage[i] * gem_def.coeff_bp / 10000 + added[i] * scale / 10000;
                         damage[i] = sheet.value(stats[i], base);
@@ -268,7 +280,7 @@ impl World {
         attacker_name: &str,
         attacker_is_char: bool,
         accuracy: i64,
-        damage: [i64; 3],
+        damage: [i64; DMG_COUNT],
         projectile: bool,
         target_slot: usize,
         now: u64,
@@ -284,12 +296,7 @@ impl World {
         }
         let target_net = t.net_id;
         let tc_ro = t.combat.as_ref().unwrap();
-        let (t_evasion, t_armour, t_res_ele, t_res_chaos) = (
-            tc_ro.evasion,
-            tc_ro.armour,
-            tc_ro.resist_ele,
-            tc_ro.resist_chaos,
-        );
+        let (t_evasion, t_armour, t_resists) = (tc_ro.evasion, tc_ro.armour, tc_ro.resists);
 
         // Hit roll: accuracy vs evasion. A miss still marks combat.
         let hit = (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(accuracy, t_evasion);
@@ -298,21 +305,24 @@ impl World {
         let mut dmg_type = 0u8;
         if hit {
             // One variance roll (75%..=125%) applied to every component, then
-            // per-type mitigation: armour curve for phys, capped resistances
-            // for elemental/chaos.
+            // per-type mitigation: the armour curve for phys, capped typed
+            // resistances for everything else.
             let variance = 75 + self.rng_combat.next_range(51) as i64;
-            let phys = mitigate_phys(damage[DMG_PHYS] * variance / 100, t_armour);
-            let ele = apply_resist(damage[DMG_ELE] * variance / 100, t_res_ele);
-            let chaos = apply_resist(damage[DMG_CHAOS] * variance / 100, t_res_chaos);
-            amount = (phys + ele + chaos).max(1);
-            // Dominant component drives the client's damage-number color.
-            dmg_type = if chaos > phys && chaos > ele {
-                2
-            } else if ele > phys {
-                1
-            } else {
-                0
-            };
+            let mut taken = [0i64; DMG_COUNT];
+            taken[DMG_PHYS] = mitigate_phys(damage[DMG_PHYS] * variance / 100, t_armour);
+            for i in 1..DMG_COUNT {
+                taken[i] = apply_resist(damage[i] * variance / 100, t_resists[i - 1]);
+            }
+            amount = taken.iter().sum::<i64>().max(1);
+            // Dominant component drives the client's damage-number color
+            // (0 phys, 1 fire, 2 cold, 3 lightning, 4 chaos).
+            let mut best = 0;
+            for i in 1..DMG_COUNT {
+                if taken[i] > taken[best] {
+                    best = i;
+                }
+            }
+            dmg_type = best as u8;
         }
 
         let t = self.zone.get_mut(target_slot).unwrap();

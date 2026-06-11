@@ -1,0 +1,14 @@
+// "... of Precision" — increased critical strike chance on weapons.
+AffixDef(
+    id: "of_precision",
+    name: "of Precision",
+    kind: suffix,
+    slots: [weapon],
+    weight: 60,
+    stat: crit_chance,
+    layer: increased,
+    tiers: [
+        (ilvl: 1, min: 1000, max: 1800),
+        (ilvl: 4, min: 1801, max: 3000),
+    ],
+)

@@ -14,7 +14,7 @@ MonsterDef(
     cooldown_ticks: 16,
     aggro_radius_cu: 1300,
     armour: 80,
-    resist_ele: 2500,
+    resist_cold: 2500,
     xp: 70,
     projectile: false,
 )
