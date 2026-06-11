@@ -1019,12 +1019,31 @@ impl World {
                         continue;
                     }
                     let reach = te.combat.as_ref().map(|c| c.radius).unwrap_or(Fx::ZERO) + p.radius;
-                    let dx = (te.pos.x - p.pos.x).raw() as i64;
-                    let dy = (te.pos.y - p.pos.y).raw() as i64;
-                    let d2 = dx * dx + dy * dy;
-                    let rr = reach.raw() as i64 * reach.raw() as i64;
-                    if d2 <= rr && best.is_none_or(|(bd, bn, _)| (d2, te.net_id) < (bd, bn)) {
-                        best = Some((d2, te.net_id, ts));
+                    // SWEPT test: closest approach of the whole tick's
+                    // travel segment to the target, not just the endpoint —
+                    // an endpoint check tunnels through small targets when
+                    // the per-tick step exceeds the combined radii (fast
+                    // arrows sailed clean through skeletons). Coordinates
+                    // downshift 8 bits so every product fits i64; ordering
+                    // is by first contact ALONG the flight, then net id.
+                    const S: i64 = 8;
+                    let ax = (prev.x.raw() as i64) >> S;
+                    let ay = (prev.y.raw() as i64) >> S;
+                    let bx = (p.pos.x.raw() as i64) >> S;
+                    let by = (p.pos.y.raw() as i64) >> S;
+                    let ox = (te.pos.x.raw() as i64) >> S;
+                    let oy = (te.pos.y.raw() as i64) >> S;
+                    let (dx, dy) = (bx - ax, by - ay);
+                    let len2 = (dx * dx + dy * dy).max(1);
+                    let dot = ((ox - ax) * dx + (oy - ay) * dy).clamp(0, len2);
+                    let tq = (dot << 16) / len2;
+                    let cx = ax + ((dx * tq) >> 16);
+                    let cy = ay + ((dy * tq) >> 16);
+                    let (ddx, ddy) = (ox - cx, oy - cy);
+                    let d2 = ddx * ddx + ddy * ddy;
+                    let r = (reach.raw() as i64) >> S;
+                    if d2 <= r * r && best.is_none_or(|(bt, bn, _)| (tq, te.net_id) < (bt, bn)) {
+                        best = Some((tq, te.net_id, ts));
                     }
                 }
                 let Some((_, net, ts)) = best else { break };
@@ -1779,6 +1798,53 @@ mod tests {
             .map(|(s, _)| s)
             .unwrap();
         assert_eq!(world.try_say(warden, 99, &mut events), 0);
+    }
+
+    #[test]
+    fn fast_projectiles_cannot_tunnel_through_small_targets() {
+        // An 8u-per-tick projectile crosses a staked shambler whose
+        // combined radii are far smaller than the step. The endpoint-only
+        // check sailed straight through; the swept segment must connect.
+        let content = content();
+        let mut world = World::new(0xA110, &content);
+        world.tick(&crate::TickInputs::default()); // packs spawn
+        let (slot, pos) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.pos))
+            .expect("a monster stands somewhere");
+        let life_before = world.zone.get(slot).unwrap().combat.as_ref().unwrap().life;
+        world.zone.projectiles.push(crate::zone::Projectile {
+            pos: FxV2::new(pos.x, pos.y - Fx::from_int(4)),
+            vel: FxV2::new(Fx::ZERO, Fx::from_int(8)), // leaps clean past
+            remaining: Fx::from_int(20),
+            radius: Fx::from_raw(0x4000), // 0.25 u
+            source: 9999,
+            source_name: "Test".into(),
+            source_is_char: true,
+            hostile_to_players: false,
+            spell: true, // spells never miss via accuracy
+            accuracy: 0,
+            damage: [25, 0, 0, 0, 0],
+            crit_bp: 0,
+            crit_multi: 15000,
+            pierce: 0,
+            already_hit: Vec::new(),
+            dot: None,
+            debuff: None,
+        });
+        let mut events = Vec::new();
+        world.step_projectiles(&mut events);
+        let life_after = world
+            .zone
+            .get(slot)
+            .map(|e| e.combat.as_ref().unwrap().life)
+            .unwrap_or(0); // killed outright also counts as a hit
+        assert!(
+            life_after < life_before,
+            "the swept segment must connect ({life_before} -> {life_after})"
+        );
     }
 
     #[test]
