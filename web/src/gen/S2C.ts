@@ -10,6 +10,7 @@ import type { ObstacleState } from "./ObstacleState";
 import type { ProjectileFx } from "./ProjectileFx";
 import type { Role } from "./Role";
 import type { SkillFx } from "./SkillFx";
+import type { TileMapState } from "./TileMapState";
 
 /**
  * Server → client.
@@ -29,5 +30,10 @@ server_tick: number, } } | { "type": "Pong", "data": { nonce: number, server_tic
 width: number, height: number, 
 /**
  * Generated non-walkable props; constant for the zone's lifetime.
+ * Empty for authored (tile-mapped) zones.
  */
-obstacles: Array<ObstacleState>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, skills: Array<SkillFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
+obstacles: Array<ObstacleState>, 
+/**
+ * The authored tile map; None for generated zones.
+ */
+tiles: TileMapState | null, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, skills: Array<SkillFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };

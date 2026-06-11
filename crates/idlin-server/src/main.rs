@@ -109,31 +109,49 @@ async fn main() -> anyhow::Result<()> {
     // (Snapshot resume is disabled in multi-world mode for now: every
     // boot is a fresh act.)
     let _ = &snapshot_dir;
-    let mut worlds = vec![runner::ManagedWorld {
-        key: "saltmere".into(),
-        zone_id: "saltmere".into(),
-        world: World::new_for_zone(seed, &content, "saltmere"),
-        pending: TickInputs::default(),
-    }];
-    let joins = builtin_joins()?;
-    for join in joins.joins {
-        let key = format!("withered_shore#{}", join.name);
-        // Per-instance seed: every idler gets their own deterministic shore.
-        let mut h = 0xcbf29ce484222325u64;
-        for b in join.name.bytes() {
-            h ^= b as u64;
-            h = h.wrapping_mul(0x100000001b3);
+    // Dev escape hatch: IDLIN_WORLD_OVERRIDE=<zone_id> runs ONE shared
+    // world of that zone with every built-in idler in it — how the tile
+    // test range (and any future zone) gets eyeballed before going live.
+    let worlds = if let Ok(zone_id) = std::env::var("IDLIN_WORLD_OVERRIDE") {
+        info!("IDLIN_WORLD_OVERRIDE: running a single {zone_id} world");
+        vec![runner::ManagedWorld {
+            key: zone_id.clone(),
+            zone_id: zone_id.clone(),
+            world: World::new_for_zone(seed, &content, &zone_id),
+            tiles: runner::resolve_tile_map(&content, &zone_id),
+            pending: builtin_joins()?,
+        }]
+    } else {
+        let mut worlds = vec![runner::ManagedWorld {
+            key: "saltmere".into(),
+            zone_id: "saltmere".into(),
+            world: World::new_for_zone(seed, &content, "saltmere"),
+            tiles: runner::resolve_tile_map(&content, "saltmere"),
+            pending: TickInputs::default(),
+        }];
+        let joins = builtin_joins()?;
+        for join in joins.joins {
+            let key = format!("withered_shore#{}", join.name);
+            // Per-instance seed: every idler gets their own deterministic
+            // shore.
+            let mut h = 0xcbf29ce484222325u64;
+            for b in join.name.bytes() {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            worlds.push(runner::ManagedWorld {
+                key,
+                zone_id: "withered_shore".into(),
+                world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
+                tiles: runner::resolve_tile_map(&content, "withered_shore"),
+                pending: TickInputs {
+                    joins: vec![join],
+                    arrivals: Vec::new(),
+                },
+            });
         }
-        worlds.push(runner::ManagedWorld {
-            key,
-            zone_id: "withered_shore".into(),
-            world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
-            pending: TickInputs {
-                joins: vec![join],
-                arrivals: Vec::new(),
-            },
-        });
-    }
+        worlds
+    };
     info!(
         "running {} worlds: {}",
         worlds.len(),

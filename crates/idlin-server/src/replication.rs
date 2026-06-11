@@ -198,6 +198,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     width: frame.zone_width,
                     height: frame.zone_height,
                     obstacles: frame.obstacles.clone(),
+                    tiles: frame.tiles.as_deref().cloned(),
                     entities,
                 });
 
@@ -521,6 +522,7 @@ fn empty_snapshot(zone_name: &str, width: i32, height: i32, obstacles: &[Obstacl
         width,
         height,
         obstacles: obstacles.to_vec(),
+        tiles: None,
         entities: vec![],
     })
     .expect("serialize")

@@ -12,6 +12,7 @@ import { AssetLibrary } from "./Assets";
 import { EntityVisual, SharedResources } from "./EntityVisuals";
 import { FxSystem } from "./FxSystem";
 import { Terrain } from "./Terrain";
+import { TileTerrain } from "./TileTerrain";
 
 const SKY_COLOR = 0x07070d;
 
@@ -25,6 +26,14 @@ function zoneKey(zone: NonNullable<WorldStore["zone"]>): string {
   let h = 0;
   for (const o of zone.obstacles) {
     h = (h * 31 + Math.round(o.x * 8) * 7 + Math.round(o.y * 8) * 13 + o.kind) | 0;
+  }
+  if (zone.tiles) {
+    for (const row of zone.tiles.rows) {
+      for (let i = 0; i < row.length; i++) h = (h * 31 + row.charCodeAt(i)) | 0;
+    }
+    for (const l of zone.tiles.legend) {
+      for (let i = 0; i < l.ground.length; i++) h = (h * 31 + l.ground.charCodeAt(i)) | 0;
+    }
   }
   return `${zone.name}|${zone.width}x${zone.height}|${h}`;
 }
@@ -49,7 +58,7 @@ export class ZoneRenderer {
   readonly director: DirectorCamera;
 
   private assets: AssetLibrary | null = null;
-  private terrain: Terrain | null = null;
+  private terrain: Terrain | TileTerrain | null = null;
   private shared = new SharedResources();
   private visuals = new Map<number, EntityVisual>();
   private fx: FxSystem;
@@ -171,10 +180,29 @@ export class ZoneRenderer {
     this.visuals.clear();
     const { width: w, height: h } = zone;
 
-    // Cosmetic terrain: heightmap ground, sea, sky, scattered props. The
-    // sim stays 2D; everything samples terrain.heightAt for its foot Y.
-    this.terrain = new Terrain(w, h, zone.name);
-    this.terrain.build(this.assets, zone.obstacles);
+    // Authored zones render from their tile map; generated zones keep the
+    // heightmap-and-scatter look. Either way the sim stays 2D and
+    // everything samples terrain.heightAt for its foot Y.
+    let brazierSpots: Array<[number, number]>;
+    if (zone.tiles) {
+      const tt = new TileTerrain(zone.tiles);
+      tt.build(this.assets);
+      this.terrain = tt;
+      brazierSpots = tt.brazierSpots; // authored cells, absolute coords
+    } else {
+      const terrain = new Terrain(w, h, zone.name);
+      terrain.build(this.assets, zone.obstacles);
+      this.terrain = terrain;
+      // The classic trail of braziers up the strand, in zone fractions.
+      brazierSpots = [
+        [0.5, 0.93], // the spawn camp
+        [0.3, 0.76],
+        [0.62, 0.58],
+        [0.34, 0.4],
+        [0.6, 0.22],
+        [0.44, 0.06], // the far end
+      ].map(([fx, fz]) => [w * fx, h * fz]);
+    }
     this.scene.add(this.terrain.group);
 
     // Moon angled across the zone; shadow frustum sized to cover it.
@@ -189,18 +217,9 @@ export class ZoneRenderer {
     cam.far = 140;
     cam.updateProjectionMatrix();
 
-    // Braziers: warm flickering counterpoints to the cold moonlight — a
-    // trail of them marks the way up the strand.
-    const spots: Array<[number, number]> = [
-      [0.5, 0.93], // the spawn camp
-      [0.3, 0.76],
-      [0.62, 0.58],
-      [0.34, 0.4],
-      [0.6, 0.22],
-      [0.44, 0.06], // the far end
-    ];
-    for (const [fx, fz] of spots) {
-      this.addBrazier(w * fx, h * fz, this.terrain.heightAt(w * fx, h * fz));
+    // Braziers: warm flickering counterpoints to the cold moonlight.
+    for (const [bx, bz] of brazierSpots) {
+      this.addBrazier(bx, bz, this.terrain.heightAt(bx, bz));
     }
 
     this.director.setZoneSize(w, h);

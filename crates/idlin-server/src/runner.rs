@@ -3,8 +3,10 @@
 //! zone instances — ticking them all and ferrying zone transfers between
 //! them; the async side only ever sees the FEATURED world's `TickFrame`s.
 
+use idlin_content::ContentDb;
 use idlin_protocol::{
-    CharacterSheet, CurrencyView, GearSlotView, GemView, InvItemView, ObstacleState,
+    CharacterSheet, CurrencyView, GearSlotView, GemView, InvItemView, ObstacleState, PropState,
+    TileMapState, TileVisual,
 };
 use idlin_sim::world::CharacterSheetView;
 use idlin_sim::{EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -30,6 +32,8 @@ pub struct TickFrame {
     pub zone_width: i32,
     pub zone_height: i32,
     pub obstacles: Vec<ObstacleState>,
+    /// Authored zones: the resolved tile map (static; shared by Arc).
+    pub tiles: Option<Arc<TileMapState>>,
     pub views: Vec<EntityView>,
     pub events: Vec<SimEvent>,
 }
@@ -50,9 +54,63 @@ pub struct ManagedWorld {
     /// The ZoneDef id this world simulates (transfer destinations match it).
     pub zone_id: String,
     pub world: World,
+    /// Resolved tile map for authored zones (build once at boot).
+    pub tiles: Option<Arc<TileMapState>>,
     /// Inputs queued for this world's next tick (joins at boot, then
     /// ferried arrivals).
     pub pending: TickInputs,
+}
+
+/// Resolve a zone's authored map into wire form: tileset + variant
+/// applied server-side, so snapshots and recordings are self-contained.
+pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMapState>> {
+    let def = content.zone(zone_id)?;
+    let grid = def.tiles.as_ref()?;
+    let ts = content.tileset(def.tileset.as_deref()?)?;
+    let variant = def
+        .tileset_variant
+        .as_deref()
+        .and_then(|v| ts.variants.iter().find(|var| var.id == v));
+    let color_of = |ground: &str| -> String {
+        variant
+            .and_then(|v| v.palette.iter().find(|(g, _)| g == ground))
+            .or_else(|| ts.palette.iter().find(|(g, _)| g == ground))
+            .map(|(_, c)| c.clone())
+            .unwrap_or_else(|| "#444444".into())
+    };
+    let legend = ts
+        .tiles
+        .iter()
+        .map(|t| TileVisual {
+            glyph: t.glyph.to_string(),
+            ground: color_of(&t.ground),
+            prop: t.prop.clone(),
+            walkable: t.walkable,
+        })
+        .collect();
+    let rows = (0..grid.height)
+        .map(|y| {
+            (0..grid.width)
+                .map(|x| ts.tiles[grid.cell(x, y).expect("in bounds") as usize].glyph)
+                .collect::<String>()
+        })
+        .collect();
+    Some(Arc::new(TileMapState {
+        width: grid.width,
+        height: grid.height,
+        rows,
+        legend,
+        props: def
+            .props
+            .iter()
+            .map(|p| PropState {
+                model: p.model.clone(),
+                x_u: p.x_u,
+                y_u: p.y_u,
+                rot_deg: p.rot_deg,
+            })
+            .collect(),
+    }))
 }
 
 pub fn spawn_tick_loop(
@@ -140,6 +198,7 @@ pub fn spawn_tick_loop(
                             .into_iter()
                             .map(|(x, y, radius, kind)| ObstacleState { x, y, radius, kind })
                             .collect(),
+                        tiles: mw.tiles.clone(),
                         views: mw.world.views(),
                         events: std::mem::take(&mut events_by_world[i]),
                     });

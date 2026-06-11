@@ -3,6 +3,7 @@ import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { EntityState } from "../gen/EntityState";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { GameEvent } from "../gen/GameEvent";
+import type { TileMapState } from "../gen/TileMapState";
 
 const TICK_MS = 100; // 10 Hz sim; interpolation window
 
@@ -92,8 +93,13 @@ const RARITY_COLORS = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"];
  */
 export class WorldStore {
   entities = new Map<number, EntityRender>();
-  zone: { name: string; width: number; height: number; obstacles: ZoneObstacle[] } | null =
-    null;
+  zone: {
+    name: string;
+    width: number;
+    height: number;
+    obstacles: ZoneObstacle[];
+    tiles: TileMapState | null;
+  } | null = null;
   tick = 0;
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
@@ -123,6 +129,7 @@ export class WorldStore {
             radius: o.radius / 65536,
             kind: o.kind,
           })),
+          tiles: d.tiles ?? null,
         };
         this.tick = d.tick;
         this.entities.clear();

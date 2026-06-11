@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 17;
+pub const PROTO_VERSION: u32 = 18;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -290,6 +290,41 @@ pub struct GemView {
     pub support: bool,
 }
 
+/// One glyph's resolved look: the server applies tileset + variant so
+/// snapshots (and recordings) are self-contained — the client never
+/// reads content files.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct TileVisual {
+    /// Single map character, as a string for wire/TS friendliness.
+    pub glyph: String,
+    /// Ground paint, "#rrggbb".
+    pub ground: String,
+    /// What stands on the tile (client recipe key): wall/house/rock/…
+    pub prop: Option<String>,
+    /// The client may path-preview/dim unwalkable ground.
+    pub walkable: bool,
+}
+
+/// One authored set-piece placement (props.ron).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PropState {
+    pub model: String,
+    pub x_u: i32,
+    pub y_u: i32,
+    pub rot_deg: i32,
+}
+
+/// An authored zone's tile map, fully resolved for rendering. One char
+/// per sim unit, rows top-to-bottom.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct TileMapState {
+    pub width: i32,
+    pub height: i32,
+    pub rows: Vec<String>,
+    pub legend: Vec<TileVisual>,
+    pub props: Vec<PropState>,
+}
+
 /// One idler on the global focus-queue roster (every world), listed in
 /// the order the director's idle rotation will visit them. Events can
 /// jump the queue — that's the broadcast's charm, not a lie.
@@ -403,7 +438,11 @@ pub enum S2C {
         width: i32,
         height: i32,
         /// Generated non-walkable props; constant for the zone's lifetime.
+        /// Empty for authored (tile-mapped) zones.
         obstacles: Vec<ObstacleState>,
+        /// The authored tile map; None for generated zones.
+        #[serde(default)]
+        tiles: Option<TileMapState>,
         entities: Vec<EntityState>,
     },
     /// Per-tick changes relative to the previous tick.
