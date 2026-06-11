@@ -156,7 +156,7 @@ pub struct EntityView {
     pub life_pct: u8,
     pub level: u32,
     pub name: String,
-    /// Client-side visual key (monster archetype model; characters: "hero").
+    /// Client-side visual key (monster archetype model; characters: "idler").
     pub model: String,
     /// Equipped weapon visual key (characters; "" when unarmed).
     pub weapon: String,
@@ -251,6 +251,7 @@ impl World {
                         Fx::from_int(def.spawn_x_u as i16),
                         Fx::from_int(def.spawn_y_u as i16),
                     ),
+                    Fx::from_int(def.spawn_radius_u as i16),
                 );
                 for pack in &def.packs {
                     let monster_idx = content
@@ -271,6 +272,7 @@ impl World {
                 Fx::from_int(60),
                 Fx::from_int(60),
                 FxV2::new(Fx::from_int(30), Fx::from_int(30)),
+                Fx::ZERO,
             ),
         };
         World {
@@ -358,6 +360,20 @@ impl World {
         id
     }
 
+    /// A spawn position scattered inside the zone's spawn area, so idlers
+    /// don't stack on one point at joins and respawns.
+    fn spawn_pos(&mut self) -> FxV2 {
+        let r = self.zone.spawn_radius.raw();
+        if r <= 0 {
+            return self.zone.spawn;
+        }
+        let r = r as u32;
+        let dx = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
+        let dy = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
+        let spawn = self.zone.spawn;
+        self.zone.clamp_pos(FxV2::new(spawn.x + dx, spawn.y + dy))
+    }
+
     fn clear_transient_intents(&mut self) {
         for slot in 0..self.zone.slot_count() {
             if let Some(e) = self.zone.get_mut(slot) {
@@ -389,9 +405,10 @@ impl World {
                 program_hash: program_hash(&join.program),
                 version: 1,
             });
+            let pos = self.spawn_pos();
             self.zone.insert(Entity {
                 net_id,
-                pos: self.zone.spawn,
+                pos,
                 intents: Default::default(),
                 bot: Some(bot_idx),
                 combat: Some(universal_stats(1)),
@@ -560,7 +577,7 @@ impl World {
             if at > self.tick {
                 continue;
             }
-            let spawn = self.zone.spawn;
+            let spawn = self.spawn_pos();
             if let Some(me) = self.zone.get_mut(slot) {
                 let id = me.net_id;
                 me.pos = spawn;

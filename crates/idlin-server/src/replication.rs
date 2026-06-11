@@ -348,7 +348,7 @@ mod tests {
             life_pct,
             level: 1,
             name: format!("e{id}"),
-            model: "hero".into(),
+            model: "idler".into(),
             rarity: 0,
             weapon: String::new(),
             gear: vec![],

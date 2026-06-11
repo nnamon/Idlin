@@ -39,7 +39,7 @@ the sport. Monster behavior is bot code too, shipped as content.
 - **Faction-aware collision**: allies pass through with a soft nudge,
   enemies body-block.
 - **The broadcast view**: Three.js spectator client with snapshot/delta
-  replication, an auto-director camera, event ticker, and hero leaderboard.
+  replication, an auto-director camera, event ticker, and idler leaderboard.
 
 ## Run it
 
@@ -48,7 +48,7 @@ Requires Rust (rustup), Node 22 + pnpm, and [just](https://github.com/casey/just
 ```sh
 just dev      # game server on :7777 + Vite dev server on :5173
 just serve    # production-style: build the frontend, serve from the server
-just demo     # wipe snapshots and boot a fresh world (4 built-in heroes)
+just demo     # wipe snapshots and boot a fresh world (4 built-in idlers)
 just check    # everything CI runs: fmt, clippy, tests, bindings, typecheck
 just replay   # verify the golden determinism fixture
 ```

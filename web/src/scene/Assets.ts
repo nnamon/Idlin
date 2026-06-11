@@ -14,7 +14,7 @@ export interface ModelDef {
   file: string;
   scale: number;
   clips: Record<string, string>;
-  /** Hero only: weapon key → attack clip override. */
+  /** Idlers only: weapon key → attack clip override. */
   attackClips?: Record<string, string>;
   /** Bone name to parent the equipped weapon mesh to. */
   handSlot?: string;

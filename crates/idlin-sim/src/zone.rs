@@ -23,6 +23,9 @@ pub struct Zone {
     pub width: Fx,
     pub height: Fx,
     pub spawn: FxV2,
+    /// Idlers spawn/respawn scattered within this radius of `spawn`, so the
+    /// cast doesn't bunch up at a single point.
+    pub spawn_radius: Fx,
     pub packs: Vec<PackState>,
     slots: Vec<Option<Entity>>,
     free: Vec<u32>,
@@ -30,12 +33,13 @@ pub struct Zone {
 }
 
 impl Zone {
-    pub fn new(name: String, width: Fx, height: Fx, spawn: FxV2) -> Zone {
+    pub fn new(name: String, width: Fx, height: Fx, spawn: FxV2, spawn_radius: Fx) -> Zone {
         Zone {
             name,
             width,
             height,
             spawn,
+            spawn_radius,
             packs: Vec::new(),
             slots: Vec::new(),
             free: Vec::new(),

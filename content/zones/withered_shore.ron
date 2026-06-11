@@ -5,7 +5,8 @@ ZoneDef(
     width_u: 60,
     height_u: 60,
     spawn_x_u: 30,
-    spawn_y_u: 54,
+    spawn_y_u: 52,
+    spawn_radius_u: 8,
     packs: [
         SpawnPack(monster: "drowned_shambler", count: 4, x_u: 14, y_u: 16, radius_u: 5, respawn_ticks: 150),
         SpawnPack(monster: "drowned_shambler", count: 4, x_u: 40, y_u: 20, radius_u: 5, respawn_ticks: 150),

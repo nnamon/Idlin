@@ -347,6 +347,9 @@ pub struct ZoneDef {
     /// Character spawn/respawn point, whole units.
     pub spawn_x_u: i32,
     pub spawn_y_u: i32,
+    /// Spawn scatter radius in whole units (0 = exact point).
+    #[serde(default)]
+    pub spawn_radius_u: i32,
     pub packs: Vec<SpawnPack>,
 }
 

@@ -88,7 +88,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           </div>
         )}
         <div style={panelStyle}>
-          <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1 }}>HEROES</div>
+          <div style={{ color: "#8a8aa0", fontSize: 11, letterSpacing: 1 }}>IDLERS</div>
           {chars.map((c) => (
             <LeaderRow key={c.state.id} c={c} focused={c.state.id === focusId} />
           ))}

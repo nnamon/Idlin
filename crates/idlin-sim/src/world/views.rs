@@ -34,7 +34,7 @@ impl World {
                             .collect();
                         (
                             ch.name.clone(),
-                            "hero".to_string(),
+                            "idler".to_string(),
                             weapon,
                             gear,
                             ch.level,

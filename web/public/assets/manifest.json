@@ -1,6 +1,6 @@
 {
   "models": {
-    "hero": {
+    "idler": {
       "file": "models/body.glb",
       "scale": 1.0,
       "clips": {
