@@ -74,6 +74,7 @@ impl World {
                     if !t.alive()
                         || !attacker_faction.is_enemy_of(t.faction())
                         || pos.dist(t.pos) > weapon_range
+                        || self.los_blocked(pos, t.pos)
                     {
                         continue;
                     }
@@ -159,6 +160,7 @@ impl World {
                                 && t.alive()
                                 && attacker_faction.is_enemy_of(t.faction())
                                 && pos.dist(t.pos) <= range
+                                && !self.los_blocked(pos, t.pos)
                             {
                                 self.strike(
                                     slot,
@@ -189,7 +191,7 @@ impl World {
                                 let dx = (te.pos.x - pos.x).raw() as i64;
                                 let dy = (te.pos.y - pos.y).raw() as i64;
                                 let d2 = dx * dx + dy * dy;
-                                if d2 <= rr {
+                                if d2 <= rr && !self.los_blocked(pos, te.pos) {
                                     victims.push((d2, te.net_id, ts));
                                 }
                             }

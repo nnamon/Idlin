@@ -647,6 +647,36 @@ impl World {
         }
     }
 
+    /// Walls: does the straight line a→b cross any obstacle? Integer
+    /// segment-vs-disc with coordinates downshifted 8 bits (1/256 u
+    /// precision — ample for cover checks) so every product fits i64.
+    pub(crate) fn los_blocked(&self, a: FxV2, b: FxV2) -> bool {
+        const S: i64 = 8;
+        let ax = (a.x.raw() as i64) >> S;
+        let ay = (a.y.raw() as i64) >> S;
+        let bx = (b.x.raw() as i64) >> S;
+        let by = (b.y.raw() as i64) >> S;
+        let dx = bx - ax;
+        let dy = by - ay;
+        let len2 = (dx * dx + dy * dy).max(1);
+        for ob in &self.zone.obstacles {
+            let ox = (ob.pos.x.raw() as i64) >> S;
+            let oy = (ob.pos.y.raw() as i64) >> S;
+            let r = (ob.radius.raw() as i64) >> S;
+            // Closest point on the segment to the disc center.
+            let dot = ((ox - ax) * dx + (oy - ay) * dy).clamp(0, len2);
+            let tq = (dot << 16) / len2;
+            let cx = ax + ((dx * tq) >> 16);
+            let cy = ay + ((dy * tq) >> 16);
+            let ddx = cx - ox;
+            let ddy = cy - oy;
+            if ddx * ddx + ddy * ddy < r * r {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Out-of-combat regeneration: anything alive that hasn't traded damage
     /// for a while heals 2%/tick. Keeps idle play forgiving without bespoke
     /// per-kind healing rules.

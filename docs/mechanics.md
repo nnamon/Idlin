@@ -95,6 +95,11 @@ and gear affixes can grant them). Each point converts:
   damage, everything alive heals 2% max life per tick.
 - Characters respawn at the zone spawn **50 ticks** after death, full life,
   no XP or item loss.
+- **Walls**: generated obstacles block attacks. Every strike — melee,
+  projectile, and each nova victim individually — requires unbroken line
+  of sight from attacker to target; a rock between you and the enemy means
+  no hit (and no cooldown spent). Movement slides around obstacles, so
+  repositioning is automatic but costs time.
 - Dead monsters leave corpses where they fell for **300 ticks** (30 s); a
   corpse is inert (no AI, untargetable, skipped by every system) and decays
   away on its own.
