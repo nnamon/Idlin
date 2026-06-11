@@ -397,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-botc"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "idlin-vm",
  "thiserror",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-chat"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-content"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "idlin-botc",
  "ron",
@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-protocol"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -433,7 +433,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-server"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-sim"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "idlin-botc",
  "idlin-content",
@@ -464,7 +464,7 @@ dependencies = [
 
 [[package]]
 name = "idlin-vm"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
 ]
