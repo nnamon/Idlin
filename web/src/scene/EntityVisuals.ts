@@ -319,7 +319,7 @@ export class EntityVisual {
     canvas.width = 512;
     canvas.height = 128;
     const ctx = canvas.getContext("2d")!;
-    ctx.font = 'bold 56px ui-monospace, "SF Mono", Menlo, monospace';
+    ctx.font = 'bold 56px "Idlin Mono", ui-monospace, Menlo, monospace';
     ctx.textAlign = "center";
     ctx.shadowColor = "rgba(0,0,0,0.9)";
     ctx.shadowBlur = 9;
@@ -388,7 +388,7 @@ export class EntityVisual {
       const canvas = (this.bubbleTex!.image as HTMLCanvasElement);
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '32px ui-monospace, "SF Mono", Menlo, monospace';
+      ctx.font = '32px "Idlin Mono", ui-monospace, Menlo, monospace';
       ctx.textAlign = "center";
       const w = Math.min(500, ctx.measureText(text).width + 36);
       ctx.fillStyle = "rgba(12, 12, 22, 0.82)";

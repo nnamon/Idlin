@@ -152,7 +152,13 @@ export class ZoneRenderer {
     this.focusRing.visible = false;
     this.scene.add(this.focusRing);
 
-    void AssetLibrary.load().then((assets) => {
+    // Nameplates and damage numbers bake the font into canvases at
+    // entity creation — the face must be resolved before the first bake.
+    void Promise.all([
+      AssetLibrary.load(),
+      document.fonts.load('bold 56px "Idlin Mono"'),
+      document.fonts.load('32px "Idlin Mono"'),
+    ]).then(([assets]) => {
       this.assets = assets;
       // The HUD draws item icons rendered from the same models.
       this.store.icons = new IconFactory(assets);

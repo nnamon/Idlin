@@ -4,22 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Idlin</title>
+    <link
+      rel="preload"
+      href="/fonts/JetBrainsMono-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/JetBrainsMono-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <style>
-      /* Anton SC (OFL) carries the in-world text; Cinzel (also OFL) is
-         the fallback face. */
+      /* JetBrains Mono (OFL, bundled): ONE face on every platform — the
+         system mono stack only matches it on a Mac. Canvas-baked text
+         (nameplates, damage numbers) uses the same family, so it must be
+         preloaded before the scene starts baking labels. */
       @font-face {
-        font-family: "Anton SC";
-        src: url("/fonts/anton-sc.woff2") format("woff2");
+        font-family: "Idlin Mono";
+        font-weight: 400;
+        font-display: block;
+        src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
       }
       @font-face {
-        font-family: "Cinzel";
-        font-weight: 600;
-        src: url("/fonts/cinzel-600.woff2") format("woff2");
-      }
-      @font-face {
-        font-family: "Cinzel";
-        font-weight: 800;
-        src: url("/fonts/cinzel-800.woff2") format("woff2");
+        font-family: "Idlin Mono";
+        font-weight: 700;
+        font-display: block;
+        src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
       }
       html,
       body {
@@ -27,7 +41,7 @@
         height: 100%;
         overflow: hidden;
         background: #0a0a0f;
-        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
       }
       #scene {
         position: fixed;
