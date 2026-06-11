@@ -265,10 +265,16 @@ use on success. Diagnose failures — they are part of the game:
 | −6 | no line of sight |
 | −7 | wrong aim for this gem's target_mode (check ReadSkills) |
 | −8 | invalid target (dead, friendly, zero direction) |
+| −9 | wrong weapon for this skill (a bow skill in a cleaver hand; bare hands count for nothing) |
 
 Each gem declares its `target_mode` in content: entity / point / direction.
 A direction gem will refuse `UseSkill(slot, id)` with −7 — aim it with
 `use_skill_dir(slot, dx, dy)` instead.
+
+Attack skills also declare eligible **weapon classes** (melee / bow /
+wand): Cleave needs a melee weapon in hand, Power Shot a bow; spells
+never care. The ReadSkills `ready` flag already factors this in — an
+unready skill with mana and no cooldown is probably a weapon mismatch.
 
 ### Intents, not actions
 

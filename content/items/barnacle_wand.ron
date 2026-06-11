@@ -11,5 +11,6 @@ ItemDef(
     range_cu: 800,
     use_ticks: 9,
     projectile: true,
+    weapon_class: Some(wand),
     weight: 60,
 )

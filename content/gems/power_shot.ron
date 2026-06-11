@@ -7,6 +7,7 @@ GemDef(
     skill_kind: attack,
     target_mode: entity,
     tags: [attack, projectile, physical],
+    weapon_classes: [bow],
     weight: 80,
     coeff_bp: 17000,        // 170% of weapon damage
     shape: projectile,

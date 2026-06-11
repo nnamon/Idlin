@@ -123,6 +123,16 @@ fn default_radius_cu() -> i32 {
     45
 }
 
+/// What kind of weapon a base is — attack skills gate on this (a bow
+/// skill refuses to fire off a cleaver). Spells don't care.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaponClass {
+    Melee,
+    Bow,
+    Wand,
+}
+
 /// Where a piece of gear goes. Weapon stats define the normal attack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -183,6 +193,9 @@ pub struct ItemDef {
     /// Weapon: ranged attack.
     #[serde(default)]
     pub projectile: bool,
+    /// Weapon: its class, for skill eligibility (None on non-weapons).
+    #[serde(default)]
+    pub weapon_class: Option<WeaponClass>,
     /// Armor: base mitigation/avoidance (armour attenuates physical damage;
     /// evasion makes hits miss).
     #[serde(default)]
@@ -488,6 +501,11 @@ pub struct GemDef {
     /// blind, exposure). Strongest-equal-grants reapply refreshes.
     #[serde(default)]
     pub debuff: Option<BuffDef>,
+    /// Attack skills: weapon classes this skill fires with (empty = any,
+    /// and spells never care). Wielding anything else — or nothing — is
+    /// use error −9.
+    #[serde(default)]
+    pub weapon_classes: Vec<WeaponClass>,
     // -- support fields --
     /// Tags this support fits: the skill must share at least one.
     #[serde(default)]

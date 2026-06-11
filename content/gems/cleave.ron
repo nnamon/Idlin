@@ -6,6 +6,7 @@ GemDef(
     skill_kind: attack,
     target_mode: entity,
     tags: [attack, melee, aoe, physical],
+    weapon_classes: [melee],
     weight: 100,
     coeff_bp: 11000,        // 110% of weapon damage
     shape: nova,

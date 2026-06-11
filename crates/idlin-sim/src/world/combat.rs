@@ -144,6 +144,7 @@ pub(crate) const SKILL_ERR_RANGE: i32 = -5;
 pub(crate) const SKILL_ERR_LOS: i32 = -6;
 pub(crate) const SKILL_ERR_MODE: i32 = -7;
 pub(crate) const SKILL_ERR_TARGET: i32 = -8;
+pub(crate) const SKILL_ERR_WEAPON: i32 = -9;
 
 impl World {
     /// Fold the behavior effects of every support socketed into a skill.
@@ -180,6 +181,23 @@ impl World {
             }
         }
         m
+    }
+
+    /// Whether the character's wielded weapon satisfies a gem's weapon
+    /// gate. Empty requirement = anything (spells, universal attacks);
+    /// otherwise the wielded class must be listed — bare hands never are.
+    pub(crate) fn weapon_eligible(
+        &self,
+        gem: &idlin_content::GemDef,
+        ch: &crate::entity::CharacterState,
+    ) -> bool {
+        if gem.weapon_classes.is_empty() {
+            return true;
+        }
+        ch.equipment[idlin_content::GearSlot::Weapon.idx()]
+            .as_ref()
+            .and_then(|item| self.content.items[item.base_idx as usize].weapon_class)
+            .is_some_and(|class| gem.weapon_classes.contains(&class))
     }
 
     /// A skill's mana cost with support multipliers folded in. Shared by the
@@ -279,6 +297,9 @@ impl World {
                 return SKILL_ERR_COOLDOWN;
             }
             let gem = &self.content.gems[sg.gem.gem_idx as usize];
+            if !self.weapon_eligible(gem, ch) {
+                return SKILL_ERR_WEAPON;
+            }
             if c.mana < self.skill_mana_cost(sg) {
                 return SKILL_ERR_MANA;
             }
@@ -443,6 +464,9 @@ impl World {
                     let gem_def = self.content.gems[sg.gem.gem_idx as usize].clone();
                     if gem_def.kind != GemKind::Skill {
                         continue;
+                    }
+                    if !self.weapon_eligible(&gem_def, ch) {
+                        continue; // disarmed mid-queue, or the wrong tool
                     }
                     let gem_idx = sg.gem.gem_idx;
                     let level = sg.gem.level;
@@ -1489,13 +1513,26 @@ mod tests {
             cooldown_left: 0,
             supports: supports.iter().map(|s| instance(&content, s, 1)).collect(),
         };
+        // Attack skills demand an eligible weapon — wield one.
+        let weapon = match skill {
+            "cleave" => Some("rusted_cleaver"),
+            "power_shot" => Some("driftwood_bow"),
+            _ => None,
+        };
         let e = world.zone.get_mut(char_slot).unwrap();
         e.pos = FxV2::new(monster_pos.x + Fx::from_raw(0x4000), monster_pos.y);
-        e.character
-            .as_mut()
-            .unwrap()
-            .sockets
-            .insert(socket_node, sg);
+        let ch = e.character.as_mut().unwrap();
+        ch.sockets.insert(socket_node, sg);
+        if let Some(id) = weapon {
+            let base_idx = content.items.iter().position(|i| i.id == id).expect(id) as u32;
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(crate::entity::Item {
+                base_idx,
+                rarity: crate::entity::Rarity::Normal,
+                item_level: 1,
+                affixes: Vec::new(),
+                name: String::new(),
+            });
+        }
         let c = e.combat.as_mut().unwrap();
         c.mana = 100;
         e.intents.attack = Some(AttackIntent {
@@ -1616,6 +1653,98 @@ mod tests {
             .gem
             .level = 7;
         assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), 1);
+    }
+
+    #[test]
+    fn attack_skills_demand_an_eligible_weapon() {
+        let content = content();
+        let mut world = World::new(99_99, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let monster_net = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(_, e)| e.net_id)
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        let item_idx = |id: &str| content.items.iter().position(|i| i.id == id).expect(id) as u32;
+        let equip = |world: &mut World, base: Option<u32>| {
+            let e = world.zone.get_mut(slot).unwrap();
+            let ch = e.character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] =
+                base.map(|base_idx| crate::entity::Item {
+                    base_idx,
+                    rarity: crate::entity::Rarity::Normal,
+                    item_level: 1,
+                    affixes: Vec::new(),
+                    name: String::new(),
+                });
+            e.combat.as_mut().unwrap().mana = 100;
+        };
+        {
+            let e = world.zone.get_mut(slot).unwrap();
+            // Stand next to the monster so range/LoS never interfere.
+            let mpos = world.zone.get_net(monster_net).unwrap().pos;
+            let e = world.zone.get_mut(slot).unwrap();
+            e.pos = FxV2::new(mpos.x + Fx::from_raw(0x4000), mpos.y);
+            let _ = e;
+        }
+        // Cleave demands melee: bare hands and a bow both refuse (−9);
+        // the cleaver fires.
+        {
+            let e = world.zone.get_mut(slot).unwrap();
+            e.character.as_mut().unwrap().sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "cleave", 1),
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+        }
+        equip(&mut world, None);
+        assert_eq!(
+            world.try_use_skill(slot, 1, SkillTarget::Entity(monster_net)),
+            SKILL_ERR_WEAPON,
+            "bare hands can't cleave"
+        );
+        equip(&mut world, Some(item_idx("driftwood_bow")));
+        assert_eq!(
+            world.try_use_skill(slot, 1, SkillTarget::Entity(monster_net)),
+            SKILL_ERR_WEAPON,
+            "a bow can't cleave"
+        );
+        equip(&mut world, Some(item_idx("rusted_cleaver")));
+        assert_eq!(
+            world.try_use_skill(slot, 1, SkillTarget::Entity(monster_net)),
+            0,
+            "the cleaver cleaves"
+        );
+        // Ember Bolt is a spell: the weapon is irrelevant, bare hands fine.
+        {
+            let e = world.zone.get_mut(slot).unwrap();
+            let ch = e.character.as_mut().unwrap();
+            ch.sockets.get_mut(&node).unwrap().gem = instance(&content, "ember_bolt", 1);
+        }
+        equip(&mut world, None);
+        assert_eq!(
+            world.try_use_skill(slot, 1, SkillTarget::Entity(monster_net)),
+            0,
+            "spells cast bare-handed"
+        );
     }
 
     #[test]

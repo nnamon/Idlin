@@ -171,6 +171,10 @@ empty slot wear nothing — fresh wretches wash ashore naked.
   moves and swings slower until the effect expires.
 - **Mana costs**: every gem declares one (`mana_cost` formula); the use
   fails (code −4) without the mana, and the cost is charged on the swing.
+- **Weapon gates**: attack skills list eligible weapon classes
+  (`weapon_classes: [melee]` / `[bow]` / `[wand]`); using them with the
+  wrong tool — or bare hands — fails with code −9. Spells (and attacks
+  with an empty list) fire with anything.
 
 ## Pools, recovery, and commitment
 

@@ -10,5 +10,6 @@ ItemDef(
     range_cu: 950,
     use_ticks: 7,
     projectile: true,
+    weapon_class: Some(bow),
     weight: 80,
 )

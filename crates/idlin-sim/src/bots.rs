@@ -524,6 +524,7 @@ impl World {
                             c.map(|c| c.cast_speed).unwrap_or(10000),
                         ) as i32;
                         let ready = (sg.cooldown_left == 0
+                            && self.weapon_eligible(def, ch)
                             && c.map(|c| c.mana >= cost && now >= c.busy_until)
                                 .unwrap_or(false)) as i32;
                         [

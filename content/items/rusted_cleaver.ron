@@ -10,5 +10,6 @@ ItemDef(
     range_cu: 220,
     use_ticks: 8,
     projectile: false,
+    weapon_class: Some(melee),
     weight: 100,
 )
