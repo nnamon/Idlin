@@ -1534,6 +1534,71 @@ mod tests {
     }
 
     #[test]
+    fn support_capacity_grows_with_gem_level() {
+        use crate::entity::support_slots;
+        assert_eq!(support_slots(1), 1);
+        assert_eq!(support_slots(6), 1);
+        assert_eq!(support_slots(7), 2);
+        assert_eq!(support_slots(13), 2);
+        assert_eq!(support_slots(14), 3);
+        assert_eq!(support_slots(20), 3);
+
+        // At the socket: a level-1 skill is full after one support.
+        let content = content();
+        let mut world = World::new(8, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.allocated.push(node);
+            ch.sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "cleave", 1),
+                    cooldown_left: 0,
+                    supports: vec![instance(&content, "heavier_blows", 1)],
+                },
+            );
+            ch.pouch.push(instance(&content, "quickening", 1));
+        }
+        let mut ev = Vec::new();
+        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
+        // The same skill at level 7 has a second slot.
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .sockets
+            .get_mut(&node)
+            .unwrap()
+            .gem
+            .level = 7;
+        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), 1);
+    }
+
+    #[test]
     fn duplicate_supports_are_refused() {
         let content = content();
         let mut world = World::new(7, &content);
@@ -1564,7 +1629,8 @@ mod tests {
             ch.sockets.insert(
                 node,
                 SocketedGem {
-                    gem: instance(&content, "cleave", 1),
+                    // Level 7: capacity 2, so only the dup rule can refuse.
+                    gem: instance(&content, "cleave", 7),
                     cooldown_left: 0,
                     supports: vec![instance(&content, "heavier_blows", 1)],
                 },

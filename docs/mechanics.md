@@ -71,8 +71,11 @@ Player↔Hostile faction pair; Neutral entities can't hit or be hit.
 
 ## Support gems
 
-Supports socket INTO a skill gem (up to its `support_slots`, PoE2-style)
-and apply only to that skill. Two layers:
+Supports socket INTO a skill gem and apply only to that skill. Capacity
+is earned, not authored: a skill gem holds 1 support, a 2nd from gem
+level 7, a 3rd from 14 — both skill and support gems gain half their
+owner's kill XP while socketed, so a build's support depth grows with
+play. Only one copy of a given support fits a skill. Two layers:
 
 - **Tags gate the pairing.** Every skill gem declares `tags`
   (attack/spell/melee/projectile/aoe/duration/fire/…); every support

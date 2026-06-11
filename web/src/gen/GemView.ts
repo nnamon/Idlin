@@ -2,6 +2,10 @@
 
 export type GemView = { name: string, level: number, 
 /**
+ * Progress into the current level; xp_next is 0 at the level cap.
+ */
+xp: number, xp_next: number, 
+/**
  * Support gems render indented under their skill.
  */
 support: boolean, };

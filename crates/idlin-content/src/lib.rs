@@ -474,9 +474,6 @@ pub struct GemDef {
     pub dot: Option<DotDef>,
     #[serde(default)]
     pub buff: Option<BuffDef>,
-    /// Skill gems: how many support gems can be socketed INTO this gem.
-    #[serde(default)]
-    pub support_slots: u32,
     // -- support fields --
     /// Tags this support fits: the skill must share at least one.
     #[serde(default)]

@@ -221,7 +221,7 @@ address you supply and return a count/status.
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
 | 18 | `ReadSkills` | out_addr, max (≤8) | count |
-| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem (its own support_slots). **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell) — a mismatched manual socket returns −1; auto mode (−1,−1) fills skills first, then only supports that fit. |
+| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first, then only supports that fit. |
 **Attacks commit you.** A swing occupies your character for the weapon's
 use time (attack-speed scaled): movement and further actions wait until it
 finishes. Plan movement around your swings — or get caught flat-footed.

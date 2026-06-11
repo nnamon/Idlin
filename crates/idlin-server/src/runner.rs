@@ -143,9 +143,11 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         gems: v
             .gems
             .into_iter()
-            .map(|(name, level, support)| GemView {
+            .map(|(name, level, xp, xp_next, support)| GemView {
                 name,
                 level,
+                xp: xp.clamp(0, i32::MAX as i64) as i32,
+                xp_next: xp_next.clamp(0, i32::MAX as i64) as i32,
                 support,
             })
             .collect(),

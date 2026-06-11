@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 10;
+pub const PROTO_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -245,6 +245,9 @@ pub struct InvItemView {
 pub struct GemView {
     pub name: String,
     pub level: u32,
+    /// Progress into the current level; xp_next is 0 at the level cap.
+    pub xp: i32,
+    pub xp_next: i32,
     /// Support gems render indented under their skill.
     pub support: bool,
 }

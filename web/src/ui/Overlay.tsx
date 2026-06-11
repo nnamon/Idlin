@@ -175,9 +175,44 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
             GEMS
           </div>
           {sheet.gems.map((g, i) => (
-            <div key={i} style={{ fontSize: 11.5, color: "#5adfdf", paddingLeft: g.support ? 12 : 0 }}>
-              {g.support ? "↳ " : "◆ "}
-              {g.name} <span style={{ color: "#77778e" }}>lv{g.level}</span>
+            <div
+              key={i}
+              style={{
+                fontSize: 11.5,
+                color: "#5adfdf",
+                paddingLeft: g.support ? 12 : 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span style={{ whiteSpace: "nowrap" }}>
+                {g.support ? "↳ " : "◆ "}
+                {g.name} <span style={{ color: "#77778e" }}>lv{g.level}</span>
+              </span>
+              {g.xp_next > 0 ? (
+                <span
+                  style={{
+                    flex: "0 0 44px",
+                    height: 4,
+                    background: "#23233a",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                  }}
+                  title={`${g.xp} / ${g.xp_next} xp`}
+                >
+                  <span
+                    style={{
+                      display: "block",
+                      height: "100%",
+                      width: `${Math.min(100, Math.round((g.xp / g.xp_next) * 100))}%`,
+                      background: "#5adfdf",
+                    }}
+                  />
+                </span>
+              ) : (
+                <span style={{ color: "#ffd75a", fontSize: 9.5, letterSpacing: 1 }}>MAX</span>
+              )}
             </div>
           ))}
         </>

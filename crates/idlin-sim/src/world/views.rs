@@ -31,8 +31,9 @@ pub struct CharacterSheetView {
     pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
     /// (name, rarity, x, y, w, h) per bag item.
     pub inventory: Vec<(String, u8, u8, u8, u8, u8)>,
-    /// (name, level, is_support) — supports follow their skill.
-    pub gems: Vec<(String, u32, bool)>,
+    /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
+    /// follow their skill.
+    pub gems: Vec<(String, u32, i64, i64, bool)>,
     pub passive_allocated: u32,
     pub passive_unspent: u32,
     pub build_len: u32,
@@ -76,19 +77,25 @@ impl World {
                 )
             })
             .collect();
+        let gem_row = |gem: &crate::entity::GemInstance, support: bool| {
+            let next = if gem.level >= crate::entity::GEM_LEVEL_CAP {
+                0
+            } else {
+                crate::entity::gem_xp_to_next(gem.level)
+            };
+            (
+                self.content.gems[gem.gem_idx as usize].name.clone(),
+                gem.level,
+                gem.xp,
+                next,
+                support,
+            )
+        };
         let mut gems = Vec::new();
         for sg in ch.sockets.values() {
-            gems.push((
-                self.content.gems[sg.gem.gem_idx as usize].name.clone(),
-                sg.gem.level,
-                false,
-            ));
+            gems.push(gem_row(&sg.gem, false));
             for sup in &sg.supports {
-                gems.push((
-                    self.content.gems[sup.gem_idx as usize].name.clone(),
-                    sup.level,
-                    true,
-                ));
+                gems.push(gem_row(sup, true));
             }
         }
         Some(CharacterSheetView {

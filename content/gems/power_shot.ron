@@ -15,6 +15,5 @@ GemDef(
     range_cu: 1100,
     crit_bp: 700,
     mana_cost: (base: 5, per_level: 0),
-    support_slots: 1,
     cooldown_ticks: 22,     // special: stays on a cooldown
 )

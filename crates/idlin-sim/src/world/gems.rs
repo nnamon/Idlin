@@ -2,7 +2,7 @@
 //! the deterministic skill-slot ordering UseSkill/ReadSkills index into.
 
 use super::{SimEvent, World};
-use crate::entity::{CharacterState, GemInstance, SocketedGem};
+use crate::entity::{CharacterState, GemInstance, SocketedGem, support_slots};
 use idlin_content::{GemKind, NodeKind};
 
 impl World {
@@ -40,8 +40,8 @@ impl World {
         let (net_id, owner) = (e.net_id, ch.name.clone());
 
         let gem_kind_of = |gem: &GemInstance| self.content.gems[gem.gem_idx as usize].kind;
-        let support_slots_of =
-            |gem: &GemInstance| self.content.gems[gem.gem_idx as usize].support_slots as usize;
+        // Capacity grows as the SKILL gem levels (1, then 2 at 7, 3 at 14).
+        let support_slots_of = |gem: &GemInstance| support_slots(gem.level);
         let is_socket_node = |node: u32| self.content.tree[node as usize].kind == NodeKind::Socket;
         // The start node is implicitly allocated — if it's a socket (the
         // First Spark pattern), it's usable from level 1.

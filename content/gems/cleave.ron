@@ -13,5 +13,4 @@ GemDef(
     max_targets: 5,
     crit_bp: 500,
     mana_cost: (base: 4, per_level: 0),
-    support_slots: 2,
 )

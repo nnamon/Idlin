@@ -158,7 +158,8 @@ GemDef(
     // -- riders --
     dot: None,            // Some(DotDef(dtype, per_second: Formula, duration_ticks))
     buff: None,           // Some(BuffDef(grants, duration_ticks)) — self-buff on use
-    support_slots: 2,     // supports socket INTO the gem (PoE2-style)
+    // Support capacity is NOT authored: a skill gem earns slots by level
+    // (1 base, +1 at 7, +1 at 14).
 )
 
 GemDef(
@@ -180,12 +181,13 @@ GemDef(
 )
 ```
 
-Gems drop (12% of drops), live in the pouch, and gain half their owner's
-kill XP (cap level 20); every Formula field re-evaluates at the gem's
-level. A skill gem socketed in a `socket` tree node becomes UseSkill slot
-1..N; supports socket INTO that skill gem, and the tag gate is enforced
-at socket time (manual mismatch → −1 + a GemRejected event; auto skips
-misfits).
+Gems drop (12% of drops), live in the pouch, and — while socketed —
+gain half their owner's kill XP (cap level 20, supports included);
+every Formula field re-evaluates at the gem's level. A skill gem
+socketed in a `socket` tree node becomes UseSkill slot 1..N; supports
+socket INTO that skill gem (capacity 1, +1 at gem level 7, +1 at 14;
+one copy of each support), and the tag gate is enforced at socket time
+(manual mismatch → −1 + a GemRejected event; auto skips misfits).
 
 ## `content/tree/*.ron` — the passive tree
 

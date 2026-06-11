@@ -199,7 +199,8 @@ pub struct GemInstance {
 }
 
 /// A skill gem sitting in an allocated tree socket node, carrying its own
-/// support gems (capacity = the gem's support_slots).
+/// support gems (capacity grows with the skill gem's level — see
+/// [`support_slots`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocketedGem {
     pub gem: GemInstance,
@@ -219,14 +220,15 @@ pub enum LootPayload {
 pub const POUCH_CAP: usize = 12;
 pub const GEM_LEVEL_CAP: u32 = 20;
 
-/// Gem level scaling: +4% to the gem's numbers per level.
-pub fn gem_scale_bp(level: u32) -> i64 {
-    10000 + 400 * (level as i64 - 1)
-}
-
 pub fn gem_xp_to_next(level: u32) -> i64 {
     let l = level as i64;
     60 + 30 * l * l
+}
+
+/// Support capacity of a SKILL gem, by its level: 1 slot at first, a
+/// second at 7, a third at 14 (the level-20 cap never reaches four).
+pub fn support_slots(level: u32) -> usize {
+    1 + (level / 7) as usize
 }
 
 /// Bag grid dimensions (PoE proportions; item footprints are content).

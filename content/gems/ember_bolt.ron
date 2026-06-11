@@ -15,5 +15,4 @@ GemDef(
     crit_bp: 600,
     cast_ticks: 7,
     mana_cost: (base: 6, per_level: 1),
-    support_slots: 2,
 )
