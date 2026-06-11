@@ -255,6 +255,14 @@ export class ZoneRenderer {
           ?.playSkill(p.spell, new THREE.Vector3(p.x + p.vx, 0, p.y + p.vy));
         this.fx.spawnProjectile(p, (x, z) => this.terrain?.heightAt(x, z) ?? 0, now);
       }
+      // Speech bubbles: hand fresh lines to their visuals, expire old ones.
+      for (const [id, s] of this.store.speech) {
+        if (now - s.at > 4500) {
+          this.store.speech.delete(id);
+          continue;
+        }
+        this.visuals.get(id)?.showSpeech(s.text, s.at, now);
+      }
       for (const s of this.store.drainSkills()) {
         // Point blasts anchor away from the caster — face the blast, not
         // the shape origin math.

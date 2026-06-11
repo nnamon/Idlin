@@ -15,6 +15,7 @@ mod loot;
 mod progression;
 mod tree;
 mod views;
+mod zone_brain;
 
 pub use views::CharacterSheetView;
 
@@ -90,6 +91,8 @@ pub enum SimEvent {
         killer_id: u32,
         killer: String,
         monster: String,
+        /// Index into ContentDb::monsters (zone brains key off this).
+        def_idx: u32,
         level: u32,
     },
     LootDropped {
@@ -200,6 +203,17 @@ pub enum SimEvent {
         id: u32,
         values: Vec<i32>,
     },
+    /// Authored zone narration (target 0 = everyone).
+    Narration {
+        target: u32,
+        text: String,
+    },
+    /// An entity speaks (speech bubble). Text comes from content tables
+    /// only — bots pick by index, never inject strings.
+    Speech {
+        id: u32,
+        text: String,
+    },
 }
 
 /// Flat renderable view of an entity, exported to the server each tick.
@@ -243,6 +257,13 @@ pub struct World {
     rng_combat: Pcg32,
     rng_loot: Pcg32,
     rng_craft: Pcg32,
+    /// The zone's scripting brain (the dungeon master is a bot too).
+    zone_brain: Option<crate::bots::Bot>,
+    /// Authored narration lines the brain fires by index.
+    zone_lines: Vec<String>,
+    /// This tick's event records staged for the brain (transient).
+    #[serde(skip)]
+    zone_brain_inbox: Vec<[i32; 4]>,
 }
 
 // ---- universal (classless) character bases ----
@@ -445,11 +466,28 @@ fn generate_obstacles(zone: &mut crate::zone::Zone, seed: u64, rocks: u32, trees
 
 impl World {
     pub fn new(seed: u64, content: &ContentDb) -> World {
+        let mut zone_brain: Option<crate::bots::Bot> = None;
+        let mut zone_lines: Vec<String> = Vec::new();
         let zone = match content
             .zone("withered_shore")
             .or_else(|| content.zones.first())
         {
             Some(def) => {
+                // The zone's scripting brain, if the def names one.
+                zone_lines = def.lines.clone();
+                let camp = Fx::from_int(def.camp_radius_u as i16);
+                if let Some(brain) = &def.brain
+                    && let Some(i) = content.brain_idx(brain)
+                {
+                    let program = &content.brains[i].program;
+                    zone_brain = Vm::new(program).ok().map(|vm| crate::bots::Bot {
+                        vm,
+                        rng: Pcg32::stream(seed, Domain::ZoneBrain, 0),
+                        params: vec![0; idlin_vm::PARAM_BLOCK_LEN],
+                        program_hash: crate::bots::program_hash(program),
+                        version: 1,
+                    });
+                }
                 let mut zone = Zone::new(
                     def.name.clone(),
                     Fx::from_int(def.width_u as i16),
@@ -460,7 +498,7 @@ impl World {
                     ),
                     Fx::from_int(def.spawn_radius_u as i16),
                 );
-                zone.tutorial_drops = def.tutorial_drops;
+                zone.camp_radius = camp;
                 for pack in &def.packs {
                     let monster_idx = content
                         .monster_idx(&pack.monster)
@@ -496,6 +534,9 @@ impl World {
             rng_combat: Pcg32::stream(seed, Domain::Combat, 0),
             rng_loot: Pcg32::stream(seed, Domain::Loot, 0),
             rng_craft: Pcg32::stream(seed, Domain::Craft, 0),
+            zone_brain,
+            zone_lines,
+            zone_brain_inbox: Vec::new(),
         }
     }
 
@@ -515,6 +556,11 @@ impl World {
 
     pub(crate) fn content_items(&self) -> &[ItemDef] {
         &self.content.items
+    }
+
+    #[cfg(test)]
+    pub(crate) fn content_monsters_id(&self, def_idx: u32) -> &str {
+        &self.content.monsters[def_idx as usize].id
     }
 
     pub(crate) fn content_currency_len(&self) -> usize {
@@ -568,6 +614,7 @@ impl World {
         self.pickups(&mut events);
         self.regen();
         self.respawns(&mut events);
+        self.run_zone_brain(&mut events);
         events
     }
 
@@ -589,6 +636,40 @@ impl World {
         let dy = Fx::from_raw(self.rng_ai.next_range(r * 2) as i32 - r as i32);
         let spawn = self.zone.spawn;
         self.zone.clamp_pos(FxV2::new(spawn.x + dx, spawn.y + dy))
+    }
+
+    /// Speech bubbles from content tables only (monsters: their def's
+    /// lines; characters: the global speech set), index wrapped,
+    /// rate-limited per entity. 0 ok, −1 no lines/voice, −2 cooldown.
+    pub(crate) fn try_say(&mut self, slot: usize, line: i32, events: &mut Vec<SimEvent>) -> i32 {
+        let line = line.max(0) as usize;
+        let now = self.tick;
+        let Some(e) = self.zone.get(slot) else {
+            return -1;
+        };
+        let (cooldown, lines): (u64, &[String]) = if let Some(m) = &e.monster {
+            (
+                crate::entity::SAY_COOLDOWN_MONSTER,
+                &self.content.monsters[m.def_idx as usize].lines,
+            )
+        } else if e.character.is_some() {
+            (crate::entity::SAY_COOLDOWN_CHAR, &self.content.speech.lines)
+        } else {
+            return -1;
+        };
+        if lines.is_empty() {
+            return -1;
+        }
+        if e.last_say_tick != 0 && now < e.last_say_tick + cooldown {
+            return -2; // still catching its breath
+        }
+        let id = e.net_id;
+        let text = lines[line % lines.len()].clone();
+        if let Some(e) = self.zone.get_mut(slot) {
+            e.last_say_tick = now;
+        }
+        events.push(SimEvent::Speech { id, text });
+        0
     }
 
     fn clear_transient_intents(&mut self) {
@@ -627,6 +708,7 @@ impl World {
                 net_id,
                 pos,
                 intents: Default::default(),
+                last_say_tick: 0,
                 effects: Vec::new(),
                 bot: Some(bot_idx),
                 combat: Some(universal_stats(1)),
@@ -931,10 +1013,16 @@ impl World {
             );
             let jitter_r = Fx::from_int(pack.def.radius_u as i16).raw() as u32;
             for _ in 0..missing {
-                let dx =
-                    Fx::from_raw(self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32);
-                let dy =
-                    Fx::from_raw(self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32);
+                // Radius 0 = staked exactly on the anchor (tutorial prey,
+                // bosses).
+                let (dx, dy) = if jitter_r == 0 {
+                    (Fx::ZERO, Fx::ZERO)
+                } else {
+                    (
+                        Fx::from_raw(self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32),
+                        Fx::from_raw(self.rng_ai.next_range(jitter_r * 2) as i32 - jitter_r as i32),
+                    )
+                };
                 let pos = self.zone.clamp_pos(FxV2::new(anchor.x + dx, anchor.y + dy));
                 self.spawn_monster(monster_idx, pack_idx as u32, pos);
             }
@@ -989,6 +1077,7 @@ impl World {
             net_id,
             pos,
             intents: Default::default(),
+            last_say_tick: 0,
             effects: Vec::new(),
             bot,
             combat: Some(stats),

@@ -141,6 +141,10 @@ pub struct MonsterDef {
     /// Mana pool (skills spend it; 2%/s inherent regen like characters).
     #[serde(default)]
     pub mana: i64,
+    /// Things this monster may SAY (speech bubbles) — story in the mouths
+    /// of the dead. The brain picks by index (host wraps modulo).
+    #[serde(default)]
+    pub lines: Vec<String>,
     /// The monster's gem kit — same gem pool as characters, fixed levels,
     /// cast through the same syscalls (UseSkill slot 1..N in list order).
     #[serde(default)]
@@ -159,6 +163,17 @@ pub enum WeaponClass {
     Melee,
     Bow,
     Wand,
+}
+
+/// What kind of place a zone is — drives death rules (story zones
+/// respawn you at the entrance; maps will return you to the town portal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ZoneKind {
+    #[default]
+    Story,
+    Map,
+    Town,
 }
 
 /// Where a piece of gear goes. Weapon stats define the normal attack.
@@ -302,6 +317,14 @@ pub struct CurrencyDef {
     /// Display tier 0..3 — pillar/ticker color (rarer verbs glow louder).
     #[serde(default)]
     pub tier: u8,
+}
+
+/// The fixed set of things player bots may SAY (speech bubbles) — bots
+/// pick by index, so user programs can never inject arbitrary text.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SpeechDef {
+    #[serde(default)]
+    pub lines: Vec<String>,
 }
 
 /// Word pools for generated rare/unique item names ("Vile Thorns").
@@ -666,17 +689,27 @@ pub struct ZoneDef {
     /// Spawn scatter radius in whole units (0 = exact point).
     #[serde(default)]
     pub spawn_radius_u: i32,
+    /// Sanctuary radius around the spawn camp: monsters never acquire
+    /// characters inside it (0 = no sanctuary).
+    #[serde(default)]
+    pub camp_radius_u: i32,
     /// Area generation: non-walkable rocks/trees placed with the zone
     /// (clearing spawn and pack anchors). Rendered by the client.
     #[serde(default)]
     pub gen_rocks: u32,
     #[serde(default)]
     pub gen_trees: u32,
-    /// Scripted onboarding beats: each character's FIRST kill here drops
-    /// a weapon, and the SECOND drops a skill gem suited to whatever
-    /// weapon they're wielding by then.
     #[serde(default)]
-    pub tutorial_drops: bool,
+    pub kind: ZoneKind,
+    /// The zone's BRAIN: a bot program (content/brains) that runs once per
+    /// tick with zone-scoped syscalls — scripted encounters, narration,
+    /// drops. The dungeon master is a bot too.
+    #[serde(default)]
+    pub brain: Option<String>,
+    /// Authored narration lines the brain fires by index (Narrate syscall).
+    /// Text is content; WHEN it fires is script.
+    #[serde(default)]
+    pub lines: Vec<String>,
     pub packs: Vec<SpawnPack>,
 }
 
@@ -698,6 +731,8 @@ pub struct ContentDb {
     pub naming: NamingDef,
     /// Sorted by id. Currency is COUNTED, not bag-stored.
     pub currency: Vec<CurrencyDef>,
+    /// Player-sayable speech lines (speech.ron).
+    pub speech: SpeechDef,
     /// Sorted by id.
     pub gems: Vec<GemDef>,
     /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
@@ -782,6 +817,8 @@ impl ContentDb {
                     .push(ron::from_str::<AffixDef>(&text).map_err(parse_err)?);
             } else if rel_str == "naming.ron" {
                 db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
+            } else if rel_str == "speech.ron" {
+                db.speech = ron::from_str::<SpeechDef>(&text).map_err(parse_err)?;
             } else if rel_str.starts_with("currency/") {
                 db.currency
                     .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
@@ -906,6 +943,16 @@ impl ContentDb {
                         pool: pool.clone(),
                     });
                 }
+            }
+        }
+        for zone in &db.zones {
+            if let Some(brain) = &zone.brain
+                && db.brain_idx(brain).is_none()
+            {
+                return Err(ContentError::UnknownBrain {
+                    monster: format!("zone {}", zone.id),
+                    brain: brain.clone(),
+                });
             }
         }
         for monster in &db.monsters {
@@ -1120,6 +1167,32 @@ mod tests {
             }
             other => panic!("expected UnknownAffixPool, got {other:?}"),
         }
+    }
+
+    /// The withered_shore zone brain hardcodes content indices (the VM
+    /// has no string lookups); this test pins them to reality so a content
+    /// add that shifts an index fails loudly instead of dropping the
+    /// wrong gem. UPDATE THE SCRIPT AND THIS TEST TOGETHER.
+    #[test]
+    fn zone_brain_content_indices_hold() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let item = |i: usize| db.items[i].id.as_str();
+        let gem = |i: usize| db.gems[i].id.as_str();
+        assert_eq!(item(0), "barnacle_wand");
+        assert_eq!(item(2), "driftwood_bow");
+        assert_eq!(item(5), "rusted_cleaver");
+        assert_eq!(gem(1), "arc");
+        assert_eq!(gem(2), "cleave");
+        assert_eq!(gem(3), "ember_bolt");
+        assert_eq!(gem(4), "frost_nova");
+        assert_eq!(gem(6), "heavy_swing");
+        assert_eq!(gem(8), "plague_cloud");
+        assert_eq!(gem(9), "power_shot");
+        assert_eq!(gem(10), "quickening");
+        assert_eq!(gem(12), "swift_casting");
+        assert_eq!(gem(14), "widening");
+        assert_eq!(db.currency[8].id, "transmute_obol");
+        assert_eq!(db.monsters[3].id, "tidewarden");
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

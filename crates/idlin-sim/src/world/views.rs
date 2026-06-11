@@ -387,6 +387,7 @@ impl World {
                     }
                 }
             }
+            h.write_u64(e.last_say_tick);
             h.write_u64(e.effects.len() as u64);
             for ef in &e.effects {
                 match ef {
@@ -464,6 +465,14 @@ impl World {
             h.write_i32(ob.pos.y.raw());
             h.write_i32(ob.radius.raw());
             h.write_u8(ob.kind);
+        }
+        if let Some(b) = &self.zone_brain {
+            for byte in b.vm.state_bytes() {
+                h.write_u8(byte);
+            }
+            let (state, inc) = b.rng.state();
+            h.write_u64(state);
+            h.write_u64(inc);
         }
         for (idx, bot) in self.bots.iter() {
             h.write_u64(idx as u64);

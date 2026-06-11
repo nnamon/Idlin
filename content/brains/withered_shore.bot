@@ -1,0 +1,168 @@
+// ============================================================
+// Zone brain: The Withered Shore. The dungeon master is a bot.
+//
+// Choreographs the onboarding: welcome narration, the scripted
+// first-weapon and suited-gem drops, the first obol, threshold
+// story beats up the strand, and the Tidewarden's hoard.
+//
+// Content indices below are pinned by a test in idlin-content —
+// if gems/items/monsters/currency change, update BOTH.
+// ============================================================
+
+const EVS = 0xE000;       // PollEvents records (16 bytes each)
+const Q = 0xE400;         // QueryCharacters records (32 bytes each)
+const STATE = 0xD000;     // per-character rows: [net, flags] (8 bytes)
+const MAX_CHARS = 16;
+
+// content indices (sorted ids; pinned by content test)
+const IT_WAND = 0;        // barnacle_wand
+const IT_BOW = 2;         // driftwood_bow
+const IT_CLEAVER = 5;     // rusted_cleaver
+const GEM_ARC = 1;
+const GEM_CLEAVE = 2;
+const GEM_EMBER = 3;      // ember_bolt
+const GEM_FROST = 4;      // frost_nova
+const GEM_HEAVY = 6;      // heavy_swing
+const GEM_PLAGUE = 8;     // plague_cloud
+const GEM_SHOT = 9;       // power_shot
+const SUP_QUICKENING = 10;
+const SUP_SWIFT = 12;     // swift_casting
+const SUP_WIDENING = 14;
+const CUR_TRANSMUTE = 8;  // transmute_obol
+const MON_TIDEWARDEN = 3;
+
+// narration lines (ZoneDef.lines)
+const L_WELCOME = 0;
+const L_FIRSTKILL = 1;
+const L_ARMED = 2;
+const L_GEM = 3;
+const L_SOCKET = 4;
+const L_LEVEL = 5;
+const L_OBOL = 6;
+const L_WRECKS = 7;
+const L_STALKERS = 8;
+const L_BOSSDOWN = 9;
+const L_BOSSWARN = 10;
+
+// flags: 1 welcomed, 2 weapon, 4 armed-line, 8 gem, 16 socket-line,
+// 32 level-line, 64 obol, 128 y<70, 256 y<40, 512 boss warning
+fn state_row(net) {
+    var i = 0;
+    while (i < MAX_CHARS) {
+        var row = STATE + i * 8;
+        if (mem[row] == net) { return row; }
+        if (mem[row] == 0) { mem[row] = net; return row; }
+        i = i + 1;
+    }
+    return STATE;
+}
+
+fn main() {
+    var nq = query_characters(Q, MAX_CHARS);
+
+    // -- state-driven beats: welcome, gated drops, threshold story --
+    var i = 0;
+    while (i < nq) {
+        var r = Q + i * 32;
+        var net = mem[r];
+        var row = state_row(net);
+        var kills = mem[r + 4];
+        var x = mem[r + 12];
+        var y = mem[r + 16];
+
+        if ((mem[row + 4] & 1) == 0) {
+            narrate(L_WELCOME, net);
+            mem[row + 4] = mem[row + 4] + 1;
+        }
+        // First kill pays a weapon; what you keep decides your path.
+        if (kills >= 1 && (mem[row + 4] & 2) == 0) {
+            var w = (random() & 0x7FFFFFFF) % 3;
+            var base = IT_CLEAVER;
+            if (w == 1) { base = IT_BOW; }
+            if (w == 2) { base = IT_WAND; }
+            drop_loot(0, base, x, y, net);
+            narrate(L_FIRSTKILL, net);
+            mem[row + 4] = mem[row + 4] + 2;
+        }
+        // Second kill pays a gem suited to the wielded class.
+        if (kills >= 2 && (mem[row + 4] & 8) == 0) {
+            var wc = mem[r + 20];
+            var gem = GEM_EMBER;
+            if (wc == 0) {
+                gem = GEM_CLEAVE;
+                if ((random() & 1) == 1) { gem = GEM_HEAVY; }
+            }
+            if (wc == 1) { gem = GEM_SHOT; }
+            if (wc == 2 || wc == -1) {
+                var s = (random() & 0x7FFFFFFF) % 4;
+                if (s == 1) { gem = GEM_FROST; }
+                if (s == 2) { gem = GEM_ARC; }
+                if (s == 3) { gem = GEM_PLAGUE; }
+            }
+            drop_loot(1, gem, x, y, net);
+            narrate(L_GEM, net);
+            mem[row + 4] = mem[row + 4] + 8;
+        }
+        // The tenth corpse pays the ferryman.
+        if (kills >= 10 && (mem[row + 4] & 64) == 0) {
+            drop_loot(2, CUR_TRANSMUTE, x, y, net);
+            narrate(L_OBOL, net);
+            mem[row + 4] = mem[row + 4] + 64;
+        }
+        // Story thresholds, marching north (y shrinks).
+        if (y < 0x460000 && (mem[row + 4] & 128) == 0) {
+            narrate(L_WRECKS, net);
+            mem[row + 4] = mem[row + 4] + 128;
+        }
+        if (y < 0x280000 && (mem[row + 4] & 256) == 0) {
+            narrate(L_STALKERS, net);
+            mem[row + 4] = mem[row + 4] + 256;
+        }
+        if (y < 0x140000 && (mem[row + 4] & 512) == 0) {
+            narrate(L_BOSSWARN, net);
+            mem[row + 4] = mem[row + 4] + 512;
+        }
+        i = i + 1;
+    }
+
+    // -- event-driven beats: first equip/socket/level, the boss hoard --
+    var ne = poll_events(EVS, 32);
+    var j = 0;
+    while (j < ne) {
+        var ev = EVS + j * 16;
+        var kind = mem[ev];
+        var who = mem[ev + 4];
+        var row2 = state_row(who);
+        if (kind == 2 && (mem[row2 + 4] & 4) == 0) {
+            narrate(L_ARMED, who);
+            mem[row2 + 4] = mem[row2 + 4] + 4;
+        }
+        if (kind == 3 && (mem[row2 + 4] & 16) == 0) {
+            narrate(L_SOCKET, who);
+            mem[row2 + 4] = mem[row2 + 4] + 16;
+        }
+        if (kind == 4 && (mem[row2 + 4] & 32) == 0) {
+            narrate(L_LEVEL, who);
+            mem[row2 + 4] = mem[row2 + 4] + 32;
+        }
+        if (kind == 1 && mem[ev + 8] == MON_TIDEWARDEN) {
+            narrate(L_BOSSDOWN, 0);
+            // The hoard lands at the killer's feet: a rare and a support.
+            var k = 0;
+            while (k < nq) {
+                var qr = Q + k * 32;
+                if (mem[qr] == who) {
+                    drop_loot(3, 8, mem[qr + 12], mem[qr + 16], who);
+                    var sup = (random() & 0x7FFFFFFF) % 3;
+                    var sgem = SUP_QUICKENING;
+                    if (sup == 1) { sgem = SUP_SWIFT; }
+                    if (sup == 2) { sgem = SUP_WIDENING; }
+                    drop_loot(1, sgem, mem[qr + 12], mem[qr + 16], who);
+                    k = nq;
+                }
+                k = k + 1;
+            }
+        }
+        j = j + 1;
+    }
+}

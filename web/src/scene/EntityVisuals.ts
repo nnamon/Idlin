@@ -60,6 +60,9 @@ export class EntityVisual {
   // Parts
   private lootMesh: THREE.Object3D | null = null;
   private lootBaseY = 0.55;
+  private bubble: THREE.Sprite | null = null;
+  private bubbleTex: THREE.CanvasTexture | null = null;
+  private bubbleShownAt = 0;
   private hpBg: THREE.Sprite | null = null;
   private hpFg: THREE.Sprite | null = null;
   private label: THREE.Sprite | null = null;
@@ -366,6 +369,46 @@ export class EntityVisual {
     base?.reset().fadeIn(FADE_S).play();
   }
 
+  /** A speech bubble above the head: latest line wins, fades out. */
+  showSpeech(text: string, at: number, now: number): void {
+    if (at !== this.bubbleShownAt) {
+      this.bubbleShownAt = at;
+      if (!this.bubble) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 512;
+        canvas.height = 96;
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+        this.bubble = new THREE.Sprite(mat);
+        this.bubble.renderOrder = 3;
+        this.bubble.scale.set(4.4, 0.82, 1);
+        this.bubbleTex = tex;
+        this.group.add(this.bubble);
+      }
+      const canvas = (this.bubbleTex!.image as HTMLCanvasElement);
+      const ctx = canvas.getContext("2d")!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '34px "Cinzel", serif';
+      ctx.textAlign = "center";
+      const w = Math.min(500, ctx.measureText(text).width + 36);
+      ctx.fillStyle = "rgba(12, 12, 22, 0.82)";
+      ctx.beginPath();
+      ctx.roundRect((canvas.width - w) / 2, 14, w, 64, 14);
+      ctx.fill();
+      ctx.fillStyle = "#e8e2cc";
+      ctx.fillText(text, canvas.width / 2, 58, 460);
+      this.bubbleTex!.needsUpdate = true;
+      this.bubble.position.set(0, this.height + 1.15, 0);
+      this.bubble.visible = true;
+    }
+    const age = (now - at) / 4500;
+    if (this.bubble) {
+      (this.bubble.material as THREE.SpriteMaterial).opacity =
+        age < 0.75 ? 1 : 1 - (age - 0.75) / 0.25;
+      if (age >= 1) this.bubble.visible = false;
+    }
+  }
+
   /** Swing at a target: weapon-specific clip when we have one. */
   playAttack(targetPos: THREE.Vector3): void {
     this.playOneShot(
@@ -484,6 +527,11 @@ export class EntityVisual {
     }
     (this.hpBg?.material as THREE.Material | undefined)?.dispose();
     (this.hpFg?.material as THREE.Material | undefined)?.dispose();
+    if (this.bubble) {
+      this.bubble.removeFromParent();
+      (this.bubble.material as THREE.Material).dispose();
+      this.bubbleTex?.dispose();
+    }
   }
 }
 

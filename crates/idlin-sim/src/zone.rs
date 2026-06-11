@@ -65,8 +65,8 @@ pub struct Zone {
     /// Idlers spawn/respawn scattered within this radius of `spawn`, so the
     /// cast doesn't bunch up at a single point.
     pub spawn_radius: Fx,
-    /// Scripted onboarding: first-kill weapon, second-kill suited gem.
-    pub tutorial_drops: bool,
+    /// Monsters never acquire characters inside this radius of `spawn`.
+    pub camp_radius: Fx,
     /// Generated with the area; constant for the zone's lifetime.
     pub obstacles: Vec<Obstacle>,
     /// Skill projectiles in flight.
@@ -85,7 +85,7 @@ impl Zone {
             height,
             spawn,
             spawn_radius,
-            tutorial_drops: false,
+            camp_radius: Fx::ZERO,
             obstacles: Vec::new(),
             projectiles: Vec::new(),
             packs: Vec::new(),

@@ -260,6 +260,7 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 21 | `LineOfSight` | x, y (raw Q16.16) | 1 if the straight line from you to (x, y) is clear of obstacles, 0 if blocked, −1 on error. Attacks enforce the same check, so test before you swing. |
 | 22 | `UseSkillAt` | slot, x, y (raw Q16.16) | point-aimed skills (ground-target AoE): cast at a location you compute. Same return codes as UseSkill. |
 | 23 | `UseSkillDir` | slot, dx, dy (raw Q16.16 vector) | direction-aimed skills (cones, lines, projectile volleys): sweep where you point. Same return codes as UseSkill. |
+| 26 | `Say` | line_idx | speak a speech-bubble line: monsters use their def's `lines:`, characters the global `content/speech.ron` set (index wraps — bots can NEVER inject arbitrary text). 0 ok; −1 no lines for you; −2 rate-limited (characters 10s, monsters 5s). |
 | 24 | `ReadCurrency` | out_addr, max (≤16) | obol counts as u32 words in content order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. |
 | 25 | `UseCurrency` | currency_idx, inv_idx | spend one obol on the bag item at inv_idx. 0 ok; −1 bad index / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 
@@ -339,6 +340,23 @@ ready (1 = off cooldown, mana in pocket, not mid-use)`. Skill slots are
 `mana_cost` and `use_ticks` are FINAL numbers — socketed support gems
 (mana multipliers, attack/cast speed) and your own cast speed are already
 folded in, so budget straight off the record.
+
+## Zone brains (the dungeon master is a bot)
+
+A zone may name a `brain:` in its def — a bot program that runs once
+per tick, bound to no entity, with a zone-scoped syscall table:
+
+| # | builtin | what |
+|---|---|---|
+| 100 | `query_characters(out, max)` | 8-word records per idler: net, kills, level, x, y, weapon_class (−1/0 melee/1 bow/2 wand), life_pct, dead |
+| 101 | `poll_events(out, max)` | drains this tick's events as 4-word records: kind (1 kill / 2 equip / 3 socket / 4 level / 5 died / 6 pickup), char net, a, b (kill: a = monster def idx, b = level) |
+| 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone) |
+| 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx` |
+| 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns) |
+
+Events are DATA the script drains — there are no callbacks; the VM
+stays one `main()` per tick. `content/brains/withered_shore.bot` is
+the canonical example: the whole tutorial choreography is script.
 
 ## The param block (how chat reaches you)
 

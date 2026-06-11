@@ -99,6 +99,8 @@ export class WorldStore {
   pendingProjectiles: ActiveProjectile[] = [];
   pendingSkills: ActiveSkill[] = [];
   cue: Cue | null = null;
+  /** Speech bubbles: entity id → line + when (renderer reads each frame). */
+  speech = new Map<number, { text: string; at: number }>();
   /** Latest inspect reply (the focus panel); refreshed by Overlay polling. */
   sheet: CharacterSheet | null = null;
   version = 0;
@@ -340,6 +342,12 @@ export class WorldStore {
         break;
       case "GemSocketed":
         push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#5adfdf");
+        break;
+      case "Narration":
+        push(`✦ ${ev.data.text}`, "#d8c89a");
+        break;
+      case "Speech":
+        this.speech.set(ev.data.id, { text: ev.data.text, at: performance.now() });
         break;
       case "CurrencyUsed":
         push(`✶ ${ev.data.owner}'s ${ev.data.currency} reshapes ${ev.data.item}`, "#ffd75a");

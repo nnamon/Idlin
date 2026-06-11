@@ -163,6 +163,10 @@ pub struct Intents {
     pub pickup: Option<u32>,
 }
 
+/// Speech-bubble rate limit (ticks between says).
+pub const SAY_COOLDOWN_CHAR: u64 = 100;
+pub const SAY_COOLDOWN_MONSTER: u64 = 50;
+
 /// One rolled affix on a concrete item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RolledAffix {
@@ -327,6 +331,9 @@ pub struct Entity {
     /// Timed effects (dots, buffs); swept by the effects pass.
     #[serde(default)]
     pub effects: Vec<ActiveEffect>,
+    /// Last tick this entity spoke (speech-bubble rate limit).
+    #[serde(default)]
+    pub last_say_tick: u64,
     /// Index into the bot arena — characters AND monsters both think in the
     /// same VM; an entity without a bot (loot) just doesn't act.
     pub bot: Option<u32>,

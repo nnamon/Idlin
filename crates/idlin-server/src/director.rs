@@ -145,6 +145,7 @@ mod tests {
             killer_id,
             killer: format!("c{killer_id}"),
             monster: "shambler".into(),
+            def_idx: 0,
             level: 1,
         }
     }

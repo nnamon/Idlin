@@ -51,6 +51,7 @@ pub const SYS_USE_SKILL_AT: i32 = 22;
 pub const SYS_USE_SKILL_DIR: i32 = 23;
 pub const SYS_READ_CURRENCY: i32 = 24;
 pub const SYS_USE_CURRENCY: i32 = 25;
+pub const SYS_SAY: i32 = 26;
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
@@ -278,8 +279,16 @@ impl World {
                     if s == slot {
                         continue;
                     }
+                    // Camp sanctuary: monsters can't acquire characters
+                    // resting inside the spawn pocket.
+                    let sanctified = e.character.is_some()
+                        && self.zone.camp_radius.raw() > 0
+                        && self.zone.get(slot).is_some_and(|q| q.monster.is_some())
+                        && e.pos.dist(self.zone.spawn) < self.zone.camp_radius;
                     let visible = match filter {
-                        FILTER_ENEMIES => my_faction.is_enemy_of(e.faction()) && e.alive(),
+                        FILTER_ENEMIES => {
+                            my_faction.is_enemy_of(e.faction()) && e.alive() && !sanctified
+                        }
                         FILTER_CHARACTERS => e.character.is_some() && e.alive(),
                         FILTER_LOOT => e.loot.as_ref().is_some_and(|l| l.owner == my_net),
                         _ => false,
@@ -432,6 +441,10 @@ impl World {
                 let currency_sel = bot.vm.pop();
                 let inv_sel = bot.vm.pop();
                 self.use_currency(slot, currency_sel, inv_sel, events)
+            }
+            SYS_SAY => {
+                let line = bot.vm.pop();
+                self.try_say(slot, line, events)
             }
             SYS_PICK_UP => {
                 let id = bot.vm.pop();

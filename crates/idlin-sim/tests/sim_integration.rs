@@ -244,3 +244,66 @@ fn disconnected_builds_are_rejected_at_declaration() {
     assert!(why.contains("not connected"), "reason: {why}");
     assert_eq!(declared, Some(("Good".into(), 4)));
 }
+
+#[test]
+fn the_shore_brain_choreographs_the_opening() {
+    let content = content();
+    let mut world = World::new(0x5708E, &content);
+    let program = idlin_botc::template_grinder().expect("template assembles");
+    let mut events = world.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Wretch".into(),
+            program,
+        }],
+    });
+    for _ in 0..1200 {
+        events.extend(world.tick(&TickInputs::default()));
+    }
+
+    let narrations: Vec<&str> = events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::Narration { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        narrations.iter().any(|t| t.contains("tide spits you")),
+        "the welcome beat must fire; got {narrations:?}"
+    );
+    assert!(
+        narrations.iter().any(|t| t.contains("give up their tools")),
+        "the first-kill beat must fire; got {narrations:?}"
+    );
+
+    // The scripted weapon and suited gem both landed as drops.
+    let weapon_names = ["Rusted Cleaver", "Driftwood Bow", "Barnacle Wand"];
+    let gem_names = [
+        "Cleave",
+        "Heavy Swing",
+        "Power Shot",
+        "Ember Bolt",
+        "Frost Nova",
+        "Arc",
+        "Plague Cloud",
+    ];
+    let drops: Vec<&str> = events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::LootDropped { item, .. } => Some(item.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        drops.iter().any(|d| weapon_names.contains(d)),
+        "scripted weapon must drop; got {drops:?}"
+    );
+    assert!(
+        drops.iter().any(|d| gem_names.contains(d)),
+        "scripted suited gem must drop; got {drops:?}"
+    );
+    assert!(
+        narrations.iter().any(|t| t.contains("Armed")),
+        "the first-equip beat must fire; got {narrations:?}"
+    );
+}

@@ -1283,26 +1283,9 @@ impl World {
                     killer_id: attacker_net,
                     killer: attacker_name.to_string(),
                     monster: monster_name,
+                    def_idx,
                     level: monster_level,
                 });
-                // Scripted onboarding (tutorial zones): the first kill
-                // hands the killer a weapon, the second a suited skill gem
-                // — on top of whatever luck provides.
-                if self.zone.tutorial_drops {
-                    let kills_before = attacker_slot
-                        .and_then(|s| self.zone.get(s))
-                        .and_then(|e| e.character.as_ref())
-                        .map(|ch| ch.kills)
-                        .unwrap_or(u64::MAX);
-                    if let Some(payload) = self.tutorial_drop(kills_before, attacker_slot) {
-                        loot_spawns.push((
-                            target_pos,
-                            payload,
-                            attacker_net,
-                            attacker_name.to_string(),
-                        ));
-                    }
-                }
                 // Loot (personal: owned by the killer): quantity first,
                 // then per-drop rarity — both the killer's stats. Multiple
                 // drops scatter a little so pillars don't stack.
@@ -1748,81 +1731,51 @@ mod tests {
     }
 
     #[test]
-    fn tutorial_zone_scripts_the_first_two_drops() {
+    fn speech_comes_from_tables_and_rate_limits() {
         let content = content();
-        let mut world = World::new(0x7070, &content);
+        let mut world = World::new(0x5A1D, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             joins: vec![crate::JoinRequest {
-                name: "Fresh".into(),
+                name: "Talker".into(),
                 program,
             }],
         });
-        let slot = (0..world.zone.slot_count())
+        let char_slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
             .unwrap();
-        let prey: Vec<(u32, FxV2)> = world
+        let mut events = Vec::new();
+        assert_eq!(world.try_say(char_slot, 0, &mut events), 0);
+        assert!(matches!(
+            &events[0],
+            super::SimEvent::Speech { text, .. } if text == "Still breathing."
+        ));
+        // Rate-limited immediately after.
+        assert_eq!(world.try_say(char_slot, 1, &mut events), -2);
+        // A shambler has no lines: it has nothing to say.
+        let shambler = world
             .zone
             .iter()
-            .filter(|(_, e)| e.monster.is_some() && e.alive())
-            .map(|(_, e)| (e.net_id, e.pos))
-            .take(2)
-            .collect();
-        assert!(world.zone.tutorial_drops, "the shore is a tutorial zone");
-
-        let weapon_names: Vec<String> = content
-            .items
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| world.content_monsters_id(m.def_idx) == "drowned_shambler")
+            })
+            .map(|(s, _)| s)
+            .unwrap();
+        assert_eq!(world.try_say(shambler, 0, &mut events), -1);
+        // The Tidewarden speaks; index wraps.
+        let warden = world
+            .zone
             .iter()
-            .filter(|d| d.weapon_class.is_some())
-            .map(|d| d.name.clone())
-            .collect();
-        let spell_names = ["Ember Bolt", "Frost Nova", "Arc", "Plague Cloud"];
-
-        let mut drops_per_kill: Vec<Vec<String>> = Vec::new();
-        for (net, pos) in prey {
-            {
-                let e = world.zone.get_mut(slot).unwrap();
-                e.pos = FxV2::new(pos.x + Fx::from_raw(0x4000), pos.y);
-                let c = e.combat.as_mut().unwrap();
-                c.damage[0] = 100_000; // one swing, one corpse
-                c.busy_until = 0;
-                e.intents.attack = Some(AttackIntent {
-                    target: SkillTarget::Entity(net),
-                    skill: None,
-                });
-            }
-            let mut events = Vec::new();
-            world.attacks(&mut events);
-            assert!(
-                events
-                    .iter()
-                    .any(|ev| matches!(ev, super::SimEvent::MonsterKilled { .. })),
-                "the prey must die"
-            );
-            drops_per_kill.push(
-                events
-                    .iter()
-                    .filter_map(|ev| match ev {
-                        super::SimEvent::LootDropped { item, .. } => Some(item.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-            );
-        }
-        assert!(
-            drops_per_kill[0].iter().any(|n| weapon_names.contains(n)),
-            "first kill must drop a weapon, got {:?}",
-            drops_per_kill[0]
-        );
-        // Still unarmed at kill two (ground loot isn't auto-picked), so
-        // the suited family is the spells.
-        assert!(
-            drops_per_kill[1]
-                .iter()
-                .any(|n| spell_names.contains(&n.as_str())),
-            "second kill must drop a suited gem, got {:?}",
-            drops_per_kill[1]
-        );
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| world.content_monsters_id(m.def_idx) == "tidewarden")
+            })
+            .map(|(s, _)| s)
+            .unwrap();
+        assert_eq!(world.try_say(warden, 99, &mut events), 0);
     }
 
     #[test]

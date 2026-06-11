@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 14;
+pub const PROTO_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -204,6 +204,16 @@ pub enum GameEvent {
         owner: String,
         currency: String,
         item: String,
+    },
+    /// Authored zone narration (target 0 = everyone).
+    Narration {
+        target: u32,
+        text: String,
+    },
+    /// An entity speaks: the client draws a bubble over its head.
+    Speech {
+        id: u32,
+        text: String,
     },
     BuildDeclared {
         id: u32,

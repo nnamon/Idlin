@@ -132,10 +132,13 @@ empty slot wear nothing — fresh wretches wash ashore naked.
 
 ## Currency (the obols)
 
-Tutorial zones script the first beats: a character's first kill there
-always drops a weapon, and the second a skill gem suited to their
-wielded weapon class — onboarding without touching the loot math
-below.
+Story zones are choreographed by their zone BRAIN (a bot, like
+everything else): the Withered Shore's script guarantees a weapon on
+your first kill, a gem suited to your wielded weapon on your second,
+an obol on your tenth, narrates the march north, and pays the
+Tidewarden's hoard — all without touching the loot math below.
+Entities can also SPEAK (speech bubbles) from fixed content tables,
+rate-limited, never free-text.
 
 Drops follow the PoE order, per kill: **quantity first** — the
 KILLER's `item_quantity` factor scales the number of drop rolls (base

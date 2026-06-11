@@ -15,6 +15,8 @@ pub enum Domain {
     /// Currency crafting rolls (UseCurrency) — separate from drops so
     /// crafting spam never shifts the loot stream.
     Craft = 6,
+    /// The zone's scripting brain.
+    ZoneBrain = 7,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

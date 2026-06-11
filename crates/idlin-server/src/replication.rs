@@ -334,6 +334,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             killer,
             monster,
             level,
+            ..
         } => GameEvent::MonsterKilled {
             killer_id: *killer_id,
             killer: killer.clone(),
@@ -404,6 +405,14 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             currency: currency.clone(),
             item: item.clone(),
+        },
+        SimEvent::Narration { target, text } => GameEvent::Narration {
+            target: *target,
+            text: text.clone(),
+        },
+        SimEvent::Speech { id, text } => GameEvent::Speech {
+            id: *id,
+            text: text.clone(),
         },
         SimEvent::BuildDeclared { id, owner, nodes } => GameEvent::BuildDeclared {
             id: *id,

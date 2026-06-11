@@ -1,31 +1,53 @@
 // Campaign zone 1: a long drowned strand. Idlers wash up at the south
 // end and fight their way north along the waterline; packs grow nastier
-// the further up the shore they push. (Tutorial strip — will become a
-// per-idler instance once zone instancing lands.)
+// the further up the shore they push. The zone BRAIN (a bot, like
+// everything else) choreographs the opening beats and the boss.
 ZoneDef(
     id: "withered_shore",
     name: "The Withered Shore",
+    kind: story,
     width_u: 34,
     height_u: 130,
     spawn_x_u: 17,
     spawn_y_u: 122,
     spawn_radius_u: 7,
+    // Sanctuary: monsters never acquire idlers resting at the camp.
+    camp_radius_u: 10,
     gen_rocks: 16,
     gen_trees: 9,
-    // Scripted onboarding: every idler's first kill yields a weapon, the
-    // second a skill gem that suits it.
-    tutorial_drops: true,
+    brain: Some("withered_shore"),
+    // Authored narration the brain fires by index (text = content,
+    // WHEN = script).
+    lines: [
+        "The tide spits you onto the Withered Shore. Salt in your lungs. Get up.",
+        "It stops moving. The dead give up their tools — take them.",
+        "Armed. The shore feels smaller already.",
+        "Something hums in the wreck-sand — a gem, warm against your palm.",
+        "The gem takes. Your arm knows a new violence.",
+        "The shore concedes a little strength. Your build remembers itself.",
+        "An obol, salt-crusted. The dead paid the ferryman; you will spend it on steel.",
+        "Wrecks thicken. These dead drowned angrier.",
+        "Bone stalkers pace the dune line. Something north is feeding them.",
+        "The Tidewarden breaks. The path up the bluffs lies open.",
+        "The Tidewarden rises from the shallows, crowned in storm.",
+    ],
     // Packs spawn (and respawn) as a unit: survivors hold their ground
     // until the whole pack is wiped, then the timer brings it back.
+    // The opening is choreographed: a staked single, a pair, then a
+    // ramp of 3/4/5 before the strand opens up.
     packs: [
-        SpawnPack(monster: "drowned_shambler", count: 6, x_u: 16, y_u: 108, radius_u: 5, respawn_ticks: 400),
-        SpawnPack(monster: "drowned_shambler", count: 7, x_u: 22, y_u: 94,  radius_u: 5, respawn_ticks: 400),
-        SpawnPack(monster: "drowned_shambler", count: 6, x_u: 10, y_u: 80,  radius_u: 4, respawn_ticks: 400),
-        SpawnPack(monster: "drowned_shambler", count: 7, x_u: 18, y_u: 66,  radius_u: 5, respawn_ticks: 400),
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 17, y_u: 114, radius_u: 0, respawn_ticks: 300),
+        SpawnPack(monster: "drowned_shambler", count: 2, x_u: 14, y_u: 110, radius_u: 2, respawn_ticks: 350),
+        SpawnPack(monster: "drowned_shambler", count: 3, x_u: 16, y_u: 106, radius_u: 4, respawn_ticks: 400),
+        SpawnPack(monster: "drowned_shambler", count: 4, x_u: 22, y_u: 94,  radius_u: 5, respawn_ticks: 400),
+        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 10, y_u: 80,  radius_u: 4, respawn_ticks: 400),
+        SpawnPack(monster: "drowned_shambler", count: 6, x_u: 18, y_u: 66,  radius_u: 5, respawn_ticks: 400),
         SpawnPack(monster: "bone_stalker",     count: 4, x_u: 24, y_u: 53,  radius_u: 5, respawn_ticks: 500),
         SpawnPack(monster: "bone_stalker",     count: 5, x_u: 12, y_u: 40,  radius_u: 6, respawn_ticks: 500),
         SpawnPack(monster: "tide_husk",        count: 3, x_u: 20, y_u: 27,  radius_u: 4, respawn_ticks: 700),
         SpawnPack(monster: "bone_stalker",     count: 4, x_u: 10, y_u: 17,  radius_u: 5, respawn_ticks: 500),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 17, y_u: 9,   radius_u: 4, respawn_ticks: 700),
+        SpawnPack(monster: "tide_husk",        count: 3, x_u: 22, y_u: 10,  radius_u: 3, respawn_ticks: 700),
+        // The boss holds the bluff path.
+        SpawnPack(monster: "tidewarden",       count: 1, x_u: 17, y_u: 6,   radius_u: 0, respawn_ticks: 3000),
     ],
 )

@@ -1,0 +1,14 @@
+// The fixed set of things player bots may say (speech bubbles, indexed,
+// rate-limited). Bots pick by index — no arbitrary strings, ever.
+SpeechDef(
+    lines: [
+        "Still breathing.",
+        "The shore provides.",
+        "Stronger now.",
+        "This one's mine.",
+        "Keep up.",
+        "Back to the brine with you.",
+        "I remember drowning.",
+        "North. Always north.",
+    ],
+)
