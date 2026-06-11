@@ -113,6 +113,8 @@ export class WorldStore {
   speech = new Map<number, { text: string; at: number }>();
   /** Latest inspect reply (the focus panel); refreshed by Overlay polling. */
   sheet: CharacterSheet | null = null;
+  /** Item-icon renderer, installed by the scene once models load. */
+  icons: { icon(name: string, kind: string): string | null } | null = null;
   version = 0;
   private tickerKey = 0;
 

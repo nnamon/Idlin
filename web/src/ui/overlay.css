@@ -1,0 +1,191 @@
+/* ============================================================
+   Idlin HUD — engraved night-steel chrome.
+   Art direction: PoE's idiom at stream-overlay scale. Item ART
+   carries the panels (icons rendered from the world's own models);
+   text recedes to captions. Cinzel for display, mono for data.
+   ============================================================ */
+
+/* Type scale — THE three sizes. Data is 13px, captions 11px, display
+   16px+. Nothing readable ever drops below 9px (slot corner tags). */
+:root {
+  --fs-data: 13px;
+  --fs-caption: 11px;
+  --fs-display: 16px;
+}
+
+.panel {
+  position: relative;
+  padding: 11px 13px;
+  color: #c8c8e0;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(58, 52, 86, 0.16), transparent 55%),
+    linear-gradient(173deg, rgba(15, 15, 24, 0.95), rgba(7, 7, 12, 0.97));
+  border: 1px solid #383852;
+  outline: 1px solid rgba(0, 0, 0, 0.85);
+  border-radius: 3px;
+  box-shadow:
+    0 5px 22px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(170, 170, 230, 0.07),
+    inset 0 0 26px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Gilded corner ticks — the ornament that says "panel", quietly. */
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  pointer-events: none;
+}
+.panel::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid rgba(150, 124, 72, 0.55);
+  border-left: 2px solid rgba(150, 124, 72, 0.55);
+}
+.panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid rgba(150, 124, 72, 0.55);
+  border-right: 2px solid rgba(150, 124, 72, 0.55);
+}
+
+/* Section rule: engraved small caps with a fading hairline. */
+.hdr {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: #97884f;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px #000;
+  padding-bottom: 3px;
+  margin: 10px 0 6px;
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(90deg, #4a3f26, rgba(74, 63, 38, 0)) 1;
+}
+.hdr.first {
+  margin-top: 0;
+}
+
+/* Display name (focus card, plaque). */
+.display {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #ece9f7;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* Director-reason chip. */
+.chip {
+  font-size: 10.5px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #b9a4ff;
+  border: 1px solid #45356b;
+  border-radius: 2px;
+  padding: 1px 6px;
+  background: linear-gradient(180deg, #221a3c, #160f2a);
+  box-shadow: inset 0 1px 0 rgba(190, 160, 255, 0.12);
+}
+
+/* Paper-doll slot: shaped, near-black, item art floats in it. */
+.slot {
+  position: relative;
+  border-radius: 2px;
+  background:
+    radial-gradient(80% 80% at 50% 35%, rgba(60, 60, 90, 0.22), transparent),
+    linear-gradient(168deg, #101019, #0a0a11);
+  border: 1px solid #272739;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.slot.filled {
+  border-color: color-mix(in srgb, var(--rar) 65%, #1a1a26);
+  background:
+    radial-gradient(90% 75% at 50% 30%, color-mix(in srgb, var(--rar) 16%, transparent), transparent 75%),
+    linear-gradient(168deg, #10101a, #0a0a11);
+  box-shadow:
+    inset 0 0 14px color-mix(in srgb, var(--rar) 14%, transparent),
+    inset 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.slot img {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8));
+}
+.slot .tag {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 9px;
+  letter-spacing: 1.3px;
+  color: #494960;
+  text-transform: uppercase;
+}
+.slot .name { /* caption under the art */
+  position: absolute;
+  bottom: 1px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--rar);
+  text-shadow: 0 1px 2px #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+}
+
+/* The bag: a dark vault grid; items are art spanning their footprint. */
+.bag {
+  position: relative;
+  background: #07070d;
+  border: 1px solid #2c2c40;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+.bagitem {
+  position: absolute;
+  border-radius: 2px;
+  background:
+    radial-gradient(80% 80% at 50% 40%, color-mix(in srgb, var(--rar) 20%, transparent), transparent),
+    rgba(10, 10, 18, 0.5);
+  border: 1px solid color-mix(in srgb, var(--rar) 70%, #11111c);
+  box-shadow: inset 0 0 8px color-mix(in srgb, var(--rar) 14%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.bagitem img {
+  width: 92%;
+  height: 92%;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+}
+
+/* Data rows (stats). */
+.row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.row .k {
+  color: #6c6c86;
+}
+.row .v {
+  color: #d4d4e8;
+}

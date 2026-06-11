@@ -11,6 +11,7 @@ import { DirectorCamera } from "../camera/DirectorCamera";
 import { AssetLibrary } from "./Assets";
 import { EntityVisual, SharedResources } from "./EntityVisuals";
 import { FxSystem } from "./FxSystem";
+import { IconFactory } from "./IconFactory";
 import { Terrain } from "./Terrain";
 import { TileTerrain } from "./TileTerrain";
 
@@ -153,6 +154,8 @@ export class ZoneRenderer {
 
     void AssetLibrary.load().then((assets) => {
       this.assets = assets;
+      // The HUD draws item icons rendered from the same models.
+      this.store.icons = new IconFactory(assets);
     });
 
     this.resize();

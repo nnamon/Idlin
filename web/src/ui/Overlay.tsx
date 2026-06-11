@@ -4,41 +4,27 @@ import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
 import { TreeMap } from "./TreeMap";
+import "./overlay.css";
+
+type Icons = { icon(name: string, kind: string): string | null } | null;
+
+/** Best-guess silhouette family for a bag item (until items carry kinds). */
+function bagKind(name: string, w: number, h: number): string {
+  const n = name.toLowerCase();
+  if (n.includes("boots") || n.includes("wader")) return "boots";
+  if (n.includes("helm")) return "helm";
+  if (n.includes("vest") || n.includes("chest") || n.includes("plate")) return "chest";
+  if (w === 1 && h === 1) return "gem";
+  return "item";
+}
 
 const RARITY_TEXT = ["#b8b8c8", "#5a8aff", "#ffd75a", "#ff9a3c"];
 
 const TICK_HZ = 10;
 
-const panelStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  background: "linear-gradient(173deg, rgba(17,17,26,0.92), rgba(10,10,16,0.92))",
-  border: "1px solid #2e2e44",
-  boxShadow: "0 2px 14px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03)",
-  borderRadius: 5,
-  color: "#c8c8e0",
-  fontSize: 13,
-  lineHeight: 1.6,
-};
-
-/** Section header: the small-caps engraved rule used across every panel. */
+/** Section header: the engraved small-caps rule used across every panel. */
 function Header({ children, first }: { children: React.ReactNode; first?: boolean }) {
-  return (
-    <div
-      style={{
-        fontFamily: "Cinzel, serif",
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: 2.5,
-        color: "#8d8da8",
-        textTransform: "uppercase",
-        borderBottom: "1px solid #26263a",
-        paddingBottom: 3,
-        margin: first ? "0 0 6px" : "9px 0 6px",
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <div className={first ? "hdr first" : "hdr"}>{children}</div>;
 }
 
 export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
@@ -88,28 +74,20 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   return (
     <>
       {/* top-left: status */}
-      <div style={{ ...panelStyle, position: "absolute", top: 12, left: 12 }}>
-        <div
-          style={{
-            fontFamily: "Cinzel, serif",
-            color: "#9a7bff",
-            fontWeight: 700,
-            fontSize: 15,
-            letterSpacing: 4,
-          }}
-        >
+      <div className="panel" style={{ position: "absolute", top: 12, left: 12 }}>
+        <div style={{ fontWeight: 700, color: "#9a7bff", fontSize: 15, letterSpacing: 4 }}>
           IDLIN
         </div>
-        <div style={{ fontFamily: "Cinzel, serif", color: "#a8a8c2", fontSize: 12 }}>
+        <div style={{ fontWeight: 700, color: "#a8a8c2", fontSize: 13.5 }}>
           {store.zone?.name ?? "connecting…"}
         </div>
-        <div style={{ fontSize: 11.5 }}>
+        <div style={{ fontSize: 12.5 }}>
           <span style={{ color: "#70708a" }}>link </span>
           <span style={{ color: status?.connected ? "#7bff9a" : "#ff6a6a" }}>
             {status?.connected ? `live · ${status.rttMs ?? "—"} ms` : "disconnected"}
           </span>
         </div>
-        <div style={{ color: "#70708a", fontSize: 11.5 }}>
+        <div style={{ color: "#70708a", fontSize: 12.5 }}>
           tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
         </div>
         <button
@@ -134,46 +112,25 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
       {showTree && <TreeMap onClose={() => setShowTree(false)} />}
 
       {/* top-right: focus + leaderboard */}
-      <div style={{ position: "absolute", top: 12, right: 12, width: 248 }}>
+      <div style={{ position: "absolute", top: 12, right: 12, width: 282 }}>
         {focused && focused.state.kind === "Character" && (
-          <div style={{ ...panelStyle, marginBottom: 8 }}>
+          <div className="panel" style={{ marginBottom: 8 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span
-                style={{
-                  fontFamily: "Cinzel, serif",
-                  color: "#ece9ff",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  letterSpacing: 0.5,
-                }}
-              >
+              <span className="display" style={{ fontSize: 17 }}>
                 {focused.state.name}
               </span>
-              <span
-                style={{
-                  color: "#9a7bff",
-                  fontSize: 9.5,
-                  letterSpacing: 1.5,
-                  textTransform: "uppercase",
-                  border: "1px solid #3c2f5e",
-                  borderRadius: 3,
-                  padding: "1px 5px",
-                  background: "#1b1530",
-                }}
-              >
-                {store.cue?.reason}
-              </span>
+              <span className="chip">{store.cue?.reason}</span>
             </div>
-            <div style={{ color: "#70708a", fontSize: 11.5 }}>
+            <div style={{ color: "#70708a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
             </div>
             <LifeBar pct={focused.state.life_pct} dead={focused.state.dead} />
-            <div style={{ fontSize: 11.5, color: "#70708a" }}>
+            <div style={{ fontSize: 12.5, color: "#70708a" }}>
               {focused.state.kills} kills · {focused.state.items} items
             </div>
           </div>
         )}
-        <div style={panelStyle}>
+        <div className="panel">
           {store.focusQueue.length > 0 ? (
             // The featured feed carries every idler everywhere, in the
             // order the director's rotation will visit them.
@@ -192,7 +149,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
             </>
           )}
         </div>
-        {sheet && <SheetPanel sheet={sheet} />}
+        {sheet && <SheetPanel sheet={sheet} icons={store.icons} />}
       </div>
 
       {/* bottom-left: event ticker */}
@@ -215,123 +172,86 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   );
 }
 
-/** One gear slot in the paper-doll: framed cell, rarity glow, item name. */
+/** One paper-doll slot: shaped cell, item ART, rarity backdrop glow. */
 function SlotBox({
   label,
   gear,
   area,
+  icons,
 }: {
   label: string;
   gear: { name: string; rarity: number } | undefined;
   area: string;
+  icons: Icons;
 }) {
   const filled = !!gear?.name;
   const color = filled ? RARITY_TEXT[gear.rarity] : "#2a2a3e";
+  const src = filled ? icons?.icon(gear.name, label.toLowerCase()) : null;
   return (
     <div
+      className={filled ? "slot filled" : "slot"}
       title={gear?.name || undefined}
-      style={{
-        gridArea: area,
-        background: filled
-          ? `linear-gradient(165deg, ${color}24, #13131d 75%)`
-          : "linear-gradient(165deg, #15151f, #101018)",
-        border: `1px solid ${filled ? `${color}aa` : "#262638"}`,
-        boxShadow: filled ? `inset 0 0 10px ${color}1c` : "inset 0 1px 4px rgba(0,0,0,0.5)",
-        borderRadius: 3,
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "10px 3px 3px",
-        boxSizing: "border-box",
-        minHeight: 0,
-      }}
+      style={{ gridArea: area, ["--rar" as string]: color }}
     >
-      <span
-        style={{
-          position: "absolute",
-          top: 2,
-          left: 4,
-          fontSize: 7.5,
-          letterSpacing: 1.2,
-          color: "#4c4c62",
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          fontFamily: "Cinzel, serif",
-          fontSize: 8.5,
-          fontWeight: 600,
-          color: filled ? color : "#33334a",
-          textAlign: "center",
-          lineHeight: 1.25,
-          overflow: "hidden",
-          wordBreak: "break-word",
-          maxHeight: "100%",
-        }}
-      >
-        {filled ? gear.name : "—"}
-      </span>
+      <span className="tag">{label}</span>
+      {src ? (
+        <img src={src} alt="" />
+      ) : (
+        <span
+          style={{
+            fontWeight: 700,
+            fontSize: 10,
+            color: filled ? color : "#2c2c40",
+            textAlign: "center",
+            padding: "8px 2px 0",
+            wordBreak: "break-word",
+          }}
+        >
+          {filled ? gear.name : ""}
+        </span>
+      )}
+      {filled && src && <span className="name">{gear.name.split(" (")[0]}</span>}
     </div>
   );
 }
 
-/** The PoE-style bag: a 12×5 grid, items spanning their true footprint. */
-function BagGrid({ sheet }: { sheet: CharacterSheet }) {
-  const CELL = 17;
+/** The bag: a dark 12×5 vault; items are art spanning their footprint. */
+function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
+  const CELL = 21;
   return (
     <div
+      className="bag"
       style={{
-        position: "relative",
         width: 12 * CELL + 1,
         height: 5 * CELL + 1,
-        background: "#0d0d15",
-        border: "1px solid #2c2c40",
-        borderRadius: 2,
         backgroundImage:
-          `repeating-linear-gradient(0deg, transparent, transparent ${CELL - 1}px, #1b1b2a ${CELL - 1}px, #1b1b2a ${CELL}px),` +
-          `repeating-linear-gradient(90deg, transparent, transparent ${CELL - 1}px, #1b1b2a ${CELL - 1}px, #1b1b2a ${CELL}px)`,
+          `repeating-linear-gradient(0deg, transparent, transparent ${CELL - 1}px, #181826 ${CELL - 1}px, #181826 ${CELL}px),` +
+          `repeating-linear-gradient(90deg, transparent, transparent ${CELL - 1}px, #181826 ${CELL - 1}px, #181826 ${CELL}px)`,
       }}
     >
       {sheet.inventory.map((it, i) => {
         const color = RARITY_TEXT[it.rarity];
-        const wide = it.w >= 2;
+        const src = icons?.icon(it.name, bagKind(it.name, it.w, it.h));
         return (
           <div
             key={i}
+            className="bagitem"
             title={it.name}
             style={{
-              position: "absolute",
               left: it.x * CELL + 1,
               top: it.y * CELL + 1,
               width: it.w * CELL - 1,
               height: it.h * CELL - 1,
-              background: `linear-gradient(150deg, ${color}30, ${color}10)`,
-              border: `1px solid ${color}`,
-              borderRadius: 2,
-              boxSizing: "border-box",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
+              ["--rar" as string]: color,
             }}
           >
-            <span
-              style={{
-                fontFamily: "Cinzel, serif",
-                fontSize: wide ? 8.5 : 9,
-                fontWeight: 700,
-                color,
-                textAlign: "center",
-                lineHeight: 1.15,
-                padding: 1,
-              }}
-            >
-              {wide ? it.name.split(" (")[0] : it.name.charAt(0)}
-            </span>
+            {src ? (
+              <img src={src} alt="" />
+            ) : (
+              <span style={{ fontWeight: 700, fontSize: 11, color }}>
+                {it.name.charAt(0)}
+              </span>
+            )}
           </div>
         );
       })}
@@ -340,14 +260,11 @@ function BagGrid({ sheet }: { sheet: CharacterSheet }) {
 }
 
 /** The focus panel: paper-doll gear, stats, gems, obols, and the bag. */
-function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
+function SheetPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   const stat = (label: string, value: string) => (
-    <div
-      key={label}
-      style={{ display: "flex", justifyContent: "space-between", fontSize: 11, lineHeight: 1.55 }}
-    >
-      <span style={{ color: "#70708a" }}>{label}</span>
-      <span style={{ color: "#cfcfe4" }}>{value}</span>
+    <div key={label} className="row">
+      <span className="k">{label}</span>
+      <span className="v">{value}</span>
     </div>
   );
   const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
@@ -355,23 +272,23 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
   const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
   const bySlot = new Map(sheet.equipment.map((g) => [g.slot.toLowerCase(), g]));
   return (
-    <div style={{ ...panelStyle, marginTop: 8, lineHeight: 1.5 }}>
+    <div className="panel" style={{ marginTop: 8, lineHeight: 1.5 }}>
       <Header first>Equipment</Header>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "62px 1fr 62px",
-          gridTemplateRows: "44px 52px 34px",
-          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" ". boots ."`,
+          gridTemplateColumns: "60px 1fr 60px",
+          gridTemplateRows: "46px 62px 40px",
+          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" "weapon boots offhand"`,
           gap: 5,
           marginBottom: 2,
         }}
       >
-        <SlotBox area="weapon" label="Weapon" gear={bySlot.get("weapon")} />
-        <SlotBox area="helm" label="Helm" gear={bySlot.get("helm")} />
-        <SlotBox area="offhand" label="Offhand" gear={bySlot.get("offhand")} />
-        <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} />
-        <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} />
+        <SlotBox area="weapon" label="Weapon" gear={bySlot.get("weapon")} icons={icons} />
+        <SlotBox area="helm" label="Helm" gear={bySlot.get("helm")} icons={icons} />
+        <SlotBox area="offhand" label="Offhand" gear={bySlot.get("offhand")} icons={icons} />
+        <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
+        <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
       </div>
       <Header>Stats</Header>
       {stat("life", `${Math.max(0, sheet.life)} / ${sheet.life_max}`)}
@@ -395,7 +312,7 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
             <div
               key={i}
               style={{
-                fontSize: 11.5,
+                fontSize: 12.5,
                 color: "#5adfdf",
                 paddingLeft: g.support ? 12 : 0,
                 display: "flex",
@@ -428,7 +345,7 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
                   />
                 </span>
               ) : (
-                <span style={{ color: "#ffd75a", fontSize: 9.5, letterSpacing: 1 }}>MAX</span>
+                <span style={{ color: "#ffd75a", fontSize: 10.5, letterSpacing: 1 }}>MAX</span>
               )}
             </div>
           ))}
@@ -439,7 +356,7 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
           <Header>Obols</Header>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
             {sheet.currency.map((c, i) => (
-              <span key={i} style={{ fontSize: 11, color: ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"][c.tier] ?? "#bfbfbf" }}>
+              <span key={i} style={{ fontSize: 12.5, color: ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"][c.tier] ?? "#bfbfbf" }}>
                 {c.name.replace(" Obol", "")} ×{c.count}
               </span>
             ))}
@@ -447,7 +364,7 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
         </>
       )}
       <Header>Bag</Header>
-      <BagGrid sheet={sheet} />
+      <BagGrid sheet={sheet} icons={icons} />
     </div>
   );
 }
@@ -475,7 +392,7 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
       style={{
         display: "flex",
         justifyContent: "space-between",
-        fontSize: 12,
+        fontSize: 13,
         color: c.state.dead ? "#55556a" : focused ? "#e8e8ff" : "#b0b0c8",
       }}
     >
@@ -495,7 +412,7 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
  *  numbers count down to each idler's turn, ⧖ marks a focus cooldown. */
 function QueueRow({ q, pos }: { q: FocusQueueEntry; pos: number | null }) {
   return (
-    <div style={{ fontSize: 12, opacity: q.cooldown && !q.focused ? 0.6 : 1 }}>
+    <div style={{ fontSize: 13, opacity: q.cooldown && !q.focused ? 0.6 : 1 }}>
       <div
         style={{
           display: "flex",
@@ -513,7 +430,7 @@ function QueueRow({ q, pos }: { q: FocusQueueEntry; pos: number | null }) {
         </span>
         <span style={{ color: "#8a8aa0" }}>lv{q.level}</span>
       </div>
-      <div style={{ color: "#55556a", fontSize: 10, paddingLeft: 16, lineHeight: 1.2 }}>
+      <div style={{ color: "#55556a", fontSize: 11, paddingLeft: 16, lineHeight: 1.25 }}>
         {q.zone}
       </div>
     </div>

@@ -434,7 +434,7 @@ export class FxSystem {
     }
     const { ctx, canvas } = n;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = `${big ? 58 : 44}px "Anton SC", "Cinzel", sans-serif`;
+    ctx.font = `bold ${big ? 44 : 32}px ui-monospace, "SF Mono", Menlo, monospace`;
     ctx.textAlign = "center";
     ctx.shadowColor = "rgba(0,0,0,0.95)";
     ctx.shadowBlur = 6;
