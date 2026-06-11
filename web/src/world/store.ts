@@ -349,6 +349,9 @@ export class WorldStore {
       case "Speech":
         this.speech.set(ev.data.id, { text: ev.data.text, at: performance.now() });
         break;
+      case "CharacterDeparted":
+        push(`⇧ ${ev.data.name} leaves for ${ev.data.dest}`, "#9a7bff");
+        break;
       case "CurrencyUsed":
         push(`✶ ${ev.data.owner}'s ${ev.data.currency} reshapes ${ev.data.item}`, "#ffd75a");
         break;

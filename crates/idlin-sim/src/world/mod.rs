@@ -51,6 +51,11 @@ pub const ES_RECHARGE_DELAY_TICKS: u64 = 40;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TickInputs {
     pub joins: Vec<JoinRequest>,
+    /// Characters arriving from ANOTHER world (zone transfers). The host
+    /// ferries departures from one world into arrivals of the next —
+    /// cross-world traffic is plain I/O, like joins always were.
+    #[serde(default)]
+    pub arrivals: Vec<CharacterBundle>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +63,18 @@ pub struct JoinRequest {
     pub name: String,
     /// Assembled, versioned VM bytecode (a template for chat players).
     pub program: Vec<u8>,
+}
+
+/// Everything a character IS, portable across worlds: progression and
+/// possessions, plus the bot — its program and its persist block (the
+/// VM's working memory resets on transfer, exactly like a redeploy).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterBundle {
+    pub character: crate::entity::CharacterState,
+    pub program: Vec<u8>,
+    pub persist: Vec<u8>,
+    pub params: Vec<u8>,
+    pub bot_version: u32,
 }
 
 /// Things that happened during a tick that the outside world may care about
@@ -214,6 +231,13 @@ pub enum SimEvent {
         id: u32,
         text: String,
     },
+    /// A character left this world for another zone (the host ferries the
+    /// bundle; see World::take_departures).
+    CharacterDeparted {
+        id: u32,
+        name: String,
+        dest: String,
+    },
 }
 
 /// Flat renderable view of an entity, exported to the server each tick.
@@ -264,6 +288,10 @@ pub struct World {
     /// This tick's event records staged for the brain (transient).
     #[serde(skip)]
     zone_brain_inbox: Vec<[i32; 4]>,
+    /// Characters detached by transfer_character this tick, awaiting the
+    /// host's ferry (drained right after tick; transient).
+    #[serde(skip)]
+    pending_departures: Vec<(CharacterBundle, String)>,
 }
 
 // ---- universal (classless) character bases ----
@@ -466,12 +494,15 @@ fn generate_obstacles(zone: &mut crate::zone::Zone, seed: u64, rocks: u32, trees
 
 impl World {
     pub fn new(seed: u64, content: &ContentDb) -> World {
+        World::new_for_zone(seed, content, "withered_shore")
+    }
+
+    /// A world simulating one specific zone — the multi-world server runs
+    /// the shared town and per-idler instances as separate Worlds.
+    pub fn new_for_zone(seed: u64, content: &ContentDb, zone_id: &str) -> World {
         let mut zone_brain: Option<crate::bots::Bot> = None;
         let mut zone_lines: Vec<String> = Vec::new();
-        let zone = match content
-            .zone("withered_shore")
-            .or_else(|| content.zones.first())
-        {
+        let zone = match content.zone(zone_id).or_else(|| content.zones.first()) {
             Some(def) => {
                 // The zone's scripting brain, if the def names one.
                 zone_lines = def.lines.clone();
@@ -484,6 +515,7 @@ impl World {
                         vm,
                         rng: Pcg32::stream(seed, Domain::ZoneBrain, 0),
                         params: vec![0; idlin_vm::PARAM_BLOCK_LEN],
+                        program: program.clone(),
                         program_hash: crate::bots::program_hash(program),
                         version: 1,
                     });
@@ -537,6 +569,7 @@ impl World {
             zone_brain,
             zone_lines,
             zone_brain_inbox: Vec::new(),
+            pending_departures: Vec::new(),
         }
     }
 
@@ -700,6 +733,7 @@ impl World {
                 vm,
                 rng: Pcg32::stream(self.seed, Domain::Bot, net_id as u64),
                 params: vec![0; idlin_vm::PARAM_BLOCK_LEN],
+                program: join.program.clone(),
                 program_hash: program_hash(&join.program),
                 version: 1,
             });
@@ -735,6 +769,64 @@ impl World {
                 name: join.name.clone(),
             });
         }
+        for bundle in &inputs.arrivals {
+            // A transfer is a redeploy that walked: fresh VM, persist block
+            // restored, the character exactly as it left.
+            let mut vm = match Vm::new(&bundle.program) {
+                Ok(vm) => vm,
+                Err(e) => {
+                    events.push(SimEvent::JoinRejected {
+                        name: bundle.character.name.clone(),
+                        reason: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+            vm.write_persist_block(&bundle.persist);
+            let net_id = self.alloc_net();
+            let bot_idx = self.bots.insert(Bot {
+                vm,
+                rng: Pcg32::stream(self.seed, Domain::Bot, net_id as u64),
+                params: bundle.params.clone(),
+                program: bundle.program.clone(),
+                program_hash: program_hash(&bundle.program),
+                version: bundle.bot_version,
+            });
+            let mut character = bundle.character.clone();
+            character.respawn_at = None;
+            if character.currency.len() < self.content.currency.len() {
+                character.currency.resize(self.content.currency.len(), 0);
+            }
+            let name = character.name.clone();
+            let level = character.level;
+            let pos = self.spawn_pos();
+            let slot = self.zone.insert(Entity {
+                net_id,
+                pos,
+                intents: Default::default(),
+                last_say_tick: 0,
+                effects: Vec::new(),
+                bot: Some(bot_idx),
+                combat: Some(universal_stats(level)),
+                character: Some(character),
+                monster: None,
+                loot: None,
+            });
+            // Re-derive from gear/tree, then arrive rested: full pools.
+            self.refresh_derived_stats(slot);
+            if let Some(c) = self.zone.get_mut(slot).and_then(|e| e.combat.as_mut()) {
+                c.life = c.life_max;
+                c.mana = c.mana_max;
+                c.es = c.es_max;
+            }
+            events.push(SimEvent::CharacterJoined { id: net_id, name });
+        }
+    }
+
+    /// Drain the characters that left this world this tick (the host
+    /// ferries each bundle into its destination world's arrivals).
+    pub fn take_departures(&mut self) -> Vec<(CharacterBundle, String)> {
+        std::mem::take(&mut self.pending_departures)
     }
 
     fn monster_def(&self, idx: u32) -> &MonsterDef {
@@ -1069,6 +1161,7 @@ impl World {
                 vm,
                 rng: Pcg32::stream(self.seed, Domain::Bot, net_id as u64),
                 params: vec![0; idlin_vm::PARAM_BLOCK_LEN],
+                program: program.clone(),
                 program_hash: program_hash(&program),
                 version: 1,
             })

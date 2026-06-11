@@ -1,6 +1,11 @@
 //! World snapshot persistence. The sim is fully serde-serializable (including
 //! every bot VM's memory), so a snapshot plus determinism equals an exact
 //! resume. Writes are atomic (temp file + rename).
+//!
+//! PARKED in multi-world mode: per-world snapshot/resume (the town and
+//! every instance saved under its world key) comes back with the
+//! persistence pass; until then every boot is a fresh act.
+#![allow(dead_code)]
 
 use anyhow::Context;
 use idlin_content::ContentDb;

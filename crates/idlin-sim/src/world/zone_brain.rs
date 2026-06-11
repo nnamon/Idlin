@@ -6,7 +6,7 @@
 //! Events are DATA the script drains (PollEvents), not callbacks: the VM
 //! stays a synchronous one-main()-per-tick machine.
 
-use super::{SimEvent, World};
+use super::{CharacterBundle, SimEvent, World};
 use crate::bots::{Bot, SYSCALL_COST};
 use crate::entity::{GemInstance, Item, LootPayload, Rarity};
 use crate::fixed::{Fx, FxV2};
@@ -27,6 +27,7 @@ const SYS_POLL_EVENTS: i32 = 101;
 const SYS_NARRATE: i32 = 102;
 const SYS_DROP_LOOT: i32 = 103;
 const SYS_SPAWN_MONSTER: i32 = 104;
+const SYS_TRANSFER_CHARACTER: i32 = 105;
 const SYS_DEBUG: i32 = 0;
 const SYS_RANDOM: i32 = 15;
 
@@ -239,6 +240,49 @@ impl World {
                 // Scripted spawns belong to no pack (sentinel): they never
                 // respawn and don't disturb pack bookkeeping.
                 self.spawn_monster(i as u32, u32::MAX, pos);
+                0
+            }
+            SYS_TRANSFER_CHARACTER => {
+                // Send a character to another zone: detach the entity and
+                // its bot into a portable bundle for the HOST to ferry —
+                // the sim owns exactly one zone. The persist block travels;
+                // working VM memory resets, like a redeploy.
+                let net = bot.vm.pop().max(0) as u32;
+                let zone_sel = bot.vm.pop();
+                let zi = usize::try_from(zone_sel).unwrap_or(usize::MAX);
+                if zi >= self.content.zones.len() {
+                    return -1;
+                }
+                let dest = self.content.zones[zi].id.clone();
+                let Some(slot) = self.zone.slot_of(net) else {
+                    return -1;
+                };
+                if self.zone.get(slot).is_none_or(|e| e.character.is_none()) {
+                    return -1;
+                }
+                let Some(mut entity) = self.zone.remove(slot) else {
+                    return -1;
+                };
+                let character = entity.character.take().unwrap();
+                let name = character.name.clone();
+                let Some(b) = entity.bot.and_then(|idx| self.bots.remove(idx)) else {
+                    return -1; // a characterless husk would be a bug
+                };
+                self.pending_departures.push((
+                    CharacterBundle {
+                        character,
+                        persist: b.vm.read_persist_block(),
+                        program: b.program,
+                        params: b.params,
+                        bot_version: b.version,
+                    },
+                    dest.clone(),
+                ));
+                events.push(SimEvent::CharacterDeparted {
+                    id: net,
+                    name,
+                    dest,
+                });
                 0
             }
             _ => -1,

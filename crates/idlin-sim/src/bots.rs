@@ -78,6 +78,9 @@ pub struct Bot {
     /// Host-side copy of the parameter block, rewritten into VM memory each
     /// tick (the chat-command channel).
     pub params: Vec<u8>,
+    /// The versioned bytecode container as deployed — zone transfers carry
+    /// it so the bot can be rebuilt in the destination world.
+    pub program: Vec<u8>,
     pub program_hash: u64,
     /// Deployment version, bumped on every program swap.
     pub version: u32,
@@ -86,12 +89,13 @@ pub struct Bot {
 impl Bot {
     /// Swap the bot's program for a new one. VM memory and registers reset,
     /// but the persistent block survives — bot-learned state outlives code
-    /// (and, later, zone transfers). Params are host-owned and survive too.
+    /// (and zone transfers). Params are host-owned and survive too.
     pub fn redeploy(&mut self, program: &[u8]) -> Result<(), idlin_vm::VmError> {
         let persist = self.vm.read_persist_block();
         let mut vm = Vm::new(program)?;
         vm.write_persist_block(&persist);
         self.vm = vm;
+        self.program = program.to_vec();
         self.program_hash = program_hash(program);
         self.version += 1;
         Ok(())

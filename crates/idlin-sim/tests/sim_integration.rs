@@ -19,7 +19,10 @@ fn join_inputs() -> TickInputs {
             program: program.clone(),
         })
         .collect();
-    TickInputs { joins }
+    TickInputs {
+        joins,
+        arrivals: Vec::new(),
+    }
 }
 
 #[test]
@@ -71,10 +74,20 @@ fn bots_grind_the_shore() {
     // Deaths are possible (tide husks hit hard) but not required.
     let _ = deaths;
 
-    // The world must still be populated and bounded.
+    // The world must still be populated and bounded. Characters only
+    // leave by BREAKING THE TIDEWARDEN (the shore brain transfers them
+    // to Saltmere) — anyone missing must be accounted for by a departure.
+    let departures = events
+        .iter()
+        .filter(|ev| matches!(ev, SimEvent::CharacterDeparted { .. }))
+        .count();
     let views = world.views();
     let characters = views.iter().filter(|v| v.kind == 1).count();
-    assert_eq!(characters, 4, "characters never despawn");
+    assert_eq!(
+        characters + departures,
+        4,
+        "characters never vanish without a departure"
+    );
     assert!(views.len() < 200, "entity leak? {} entities", views.len());
 }
 
@@ -137,6 +150,7 @@ fn same_faction_spawn_stack_drifts_apart() {
     let mut world = World::new(5, &content);
     let halt = idlin_botc::assemble("halt\n").unwrap();
     let joins = TickInputs {
+        arrivals: Vec::new(),
         joins: ["A", "B", "C", "D"]
             .into_iter()
             .map(|name| JoinRequest {
@@ -183,6 +197,7 @@ fn persist_block_survives_redeploy() {
         vm: idlin_vm::Vm::new(&writer).unwrap(),
         rng: Pcg32::stream(1, Domain::Bot, 1),
         params: vec![0; idlin_vm::PARAM_BLOCK_LEN],
+        program: writer.clone(),
         program_hash: program_hash(&writer),
         version: 1,
     };
@@ -214,6 +229,7 @@ fn disconnected_builds_are_rejected_at_declaration() {
     let bad = idlin_botc::compile("build [23]; fn main() {}").unwrap();
     let good = idlin_botc::compile("build [10, 11, 12, 20]; fn main() {}").unwrap();
     let joins = TickInputs {
+        arrivals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Bad".into(),
@@ -255,6 +271,7 @@ fn the_shore_brain_choreographs_the_opening() {
             name: "Wretch".into(),
             program,
         }],
+        arrivals: Vec::new(),
     });
     for _ in 0..1200 {
         events.extend(world.tick(&TickInputs::default()));
@@ -306,4 +323,85 @@ fn the_shore_brain_choreographs_the_opening() {
         narrations.iter().any(|t| t.contains("Armed")),
         "the first-equip beat must fire; got {narrations:?}"
     );
+}
+
+#[test]
+fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
+    let content = content();
+    // Two worlds, one host (this test): a private shore and the shared town.
+    let mut shore = World::new_for_zone(0xAC71, &content, "withered_shore");
+    let mut town = World::new_for_zone(0xAC72, &content, "saltmere");
+    let program = idlin_botc::template_grinder().expect("template assembles");
+    shore.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Pilgrim".into(),
+            program,
+        }],
+        arrivals: Vec::new(),
+    });
+    town.tick(&TickInputs::default());
+
+    // Stage the final exam in test time: drop the pilgrim at the bluff and
+    // reduce the Tidewarden to a 1-life, harmless effigy. The kill, hoard,
+    // countdown, and transfer all run through the REAL pipeline and brain.
+    let views = shore.views();
+    let me = views.iter().find(|v| v.kind == 1).unwrap().id;
+    let boss = views
+        .iter()
+        .find(|v| v.name == "The Tidewarden")
+        .expect("the boss stands at the bluff")
+        .id;
+    shore.test_teleport(me, 17, 8);
+    shore.test_set_combat(boss, 1, 0);
+
+    let mut departed = None;
+    let empty = TickInputs::default();
+    for _ in 0..600 {
+        let events = shore.tick(&empty);
+        let dep = shore.take_departures();
+        if !dep.is_empty() {
+            assert!(events.iter().any(|ev| matches!(
+                ev,
+                SimEvent::CharacterDeparted { name, dest, .. }
+                    if name == "Pilgrim" && dest == "saltmere"
+            )));
+            departed = Some(dep);
+            break;
+        }
+    }
+    let mut departed = departed.expect("the pilgrim must break the Tidewarden and leave");
+    let (bundle, dest) = departed.pop().unwrap();
+    assert_eq!(dest, "saltmere");
+    assert!(
+        bundle.character.kills >= 1,
+        "the killer carries their tally"
+    );
+    let kills_at_departure = bundle.character.kills;
+
+    // The host ferries the bundle into the town.
+    let events = town.tick(&TickInputs {
+        joins: Vec::new(),
+        arrivals: vec![bundle],
+    });
+    assert!(
+        events
+            .iter()
+            .any(|ev| matches!(ev, SimEvent::CharacterJoined { name, .. } if name == "Pilgrim"))
+    );
+    // Saltmere's brain greets the arrival within a few ticks.
+    let mut greeted = false;
+    let mut t = events;
+    for _ in 0..5 {
+        greeted |= t
+            .iter()
+            .any(|ev| matches!(ev, SimEvent::Narration { text, .. } if text.contains("Saltmere")));
+        t = town.tick(&empty);
+    }
+    assert!(greeted, "the town must greet the arrival");
+    // Identity survived the ferry.
+    let views = town.views();
+    let me = views.iter().find(|v| v.kind == 1).expect("arrived");
+    assert_eq!(me.name, "Pilgrim");
+    assert_eq!(me.kills, kills_at_departure, "the tally crossed the bluff");
+    assert!(!me.weapon.is_empty(), "still armed in town");
 }

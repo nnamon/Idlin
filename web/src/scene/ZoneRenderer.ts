@@ -40,10 +40,13 @@ export class ZoneRenderer {
   private visuals = new Map<number, EntityVisual>();
   private fx: FxSystem;
   private braziers: Brazier[] = [];
+  private brazierGroups: THREE.Group[] = [];
   private moon: THREE.DirectionalLight;
   private focusRing: THREE.Mesh;
   private timer = new THREE.Timer();
-  private zoneBuilt = false;
+  /// Name of the zone the scene was built for — a transfer flips the
+  /// featured world, and the terrain must follow.
+  private builtZoneName: string | null = null;
   private onResize = () => this.resize();
   /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character;
    *  ?cam=x,y,z,tx,ty,tz pins it entirely (shot framing/verification). */
@@ -133,6 +136,15 @@ export class ZoneRenderer {
   private buildZone(): void {
     const zone = this.store.zone;
     if (!zone || !this.assets) return;
+    // A zone switch (featured-world transfer) rebuilds the set: old
+    // terrain and braziers leave with their world.
+    if (this.terrain) {
+      this.terrain.group.removeFromParent();
+      this.terrain = null;
+    }
+    for (const g of this.brazierGroups) g.removeFromParent();
+    this.brazierGroups = [];
+    this.braziers = [];
     const { width: w, height: h } = zone;
 
     // Cosmetic terrain: heightmap ground, sea, sky, scattered props. The
@@ -168,7 +180,7 @@ export class ZoneRenderer {
     }
 
     this.director.setZoneSize(w, h);
-    this.zoneBuilt = true;
+    this.builtZoneName = zone.name;
   }
 
   private addBrazier(x: number, z: number, y: number): void {
@@ -199,6 +211,7 @@ export class ZoneRenderer {
     group.add(post, bowl, coals, light);
     group.position.set(x, y - 0.04, z);
     this.scene.add(group);
+    this.brazierGroups.push(group);
     this.braziers.push({ light, baseIntensity: 17, phase: Math.random() * Math.PI * 2 });
   }
 
@@ -208,7 +221,7 @@ export class ZoneRenderer {
     const now = performance.now();
     const t = this.timer.getElapsed();
 
-    if (!this.zoneBuilt && this.store.zone && this.assets) {
+    if (this.store.zone && this.assets && this.store.zone.name !== this.builtZoneName) {
       this.buildZone();
     }
     this.terrain?.update(t);

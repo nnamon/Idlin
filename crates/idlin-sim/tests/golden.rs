@@ -10,7 +10,7 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0xA04E_71DA_70AA_A4EA;
+const GOLDEN_HASH: u64 = 0x2370_6B49_6DB4_FAC0;
 
 #[test]
 fn golden_replay() {
@@ -19,6 +19,7 @@ fn golden_replay() {
     let mut world = World::new(GOLDEN_SEED, &content);
 
     let joins = TickInputs {
+        arrivals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Golden".into(),

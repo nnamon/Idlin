@@ -30,25 +30,16 @@ pub struct ReplicationHandles {
     pub snapshot: watch::Receiver<Frame>,
 }
 
-pub fn spawn_replication(
-    mut frames: mpsc::UnboundedReceiver<TickFrame>,
-    zone_name: String,
-    zone_width: i32,
-    zone_height: i32,
-    obstacles: Vec<ObstacleState>,
-) -> ReplicationHandles {
+pub fn spawn_replication(mut frames: mpsc::UnboundedReceiver<TickFrame>) -> ReplicationHandles {
     let (tx, _) = broadcast::channel::<Frame>(256);
-    let (snap_tx, snap_rx) = watch::channel::<Frame>(Arc::from(empty_snapshot(
-        &zone_name,
-        zone_width,
-        zone_height,
-        &obstacles,
-    )));
+    let (snap_tx, snap_rx) =
+        watch::channel::<Frame>(Arc::from(empty_snapshot("connecting…", 65536, 65536, &[])));
     let broadcast = tx.clone();
 
     tokio::spawn(async move {
         let mut prev: HashMap<u32, EntityState> = HashMap::new();
         let mut director = Director::new();
+        let mut current_world: Option<String> = None;
         while let Some(frame) = frames.recv().await {
             let backlog = frames.len();
             if backlog > BACKLOG_WARN_FRAMES && frame.tick.is_multiple_of(50) {
@@ -58,6 +49,25 @@ pub fn spawn_replication(
             let mut current: HashMap<u32, EntityState> = HashMap::with_capacity(frame.views.len());
             for v in &frame.views {
                 current.insert(v.id, to_state(v));
+            }
+
+            // The featured world changed (a transfer moved the story):
+            // reset the diff and push a full snapshot at every viewer so
+            // the client flips zones cleanly.
+            if current_world.as_deref() != Some(frame.world_key.as_str()) {
+                info!("featured world is now {}", frame.world_key);
+                current_world = Some(frame.world_key.clone());
+                prev.clear();
+                let mut entities: Vec<EntityState> = current.values().cloned().collect();
+                entities.sort_by_key(|s| s.id);
+                let _ = broadcast.send(serialize(&S2C::ZoneSnapshot {
+                    tick: frame.tick,
+                    zone_name: frame.zone_name.clone(),
+                    width: frame.zone_width,
+                    height: frame.zone_height,
+                    obstacles: frame.obstacles.clone(),
+                    entities,
+                }));
             }
 
             let (spawned, moved, updated, removed) = diff(&prev, &current);
@@ -185,10 +195,10 @@ pub fn spawn_replication(
             entities.sort_by_key(|s| s.id);
             let snapshot = S2C::ZoneSnapshot {
                 tick: frame.tick,
-                zone_name: zone_name.clone(),
-                width: zone_width,
-                height: zone_height,
-                obstacles: obstacles.clone(),
+                zone_name: frame.zone_name.clone(),
+                width: frame.zone_width,
+                height: frame.zone_height,
+                obstacles: frame.obstacles.clone(),
                 entities,
             };
             // The watch receiver lives in ReplicationHandles, so this send
@@ -413,6 +423,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
         SimEvent::Speech { id, text } => GameEvent::Speech {
             id: *id,
             text: text.clone(),
+        },
+        SimEvent::CharacterDeparted { id, name, dest } => GameEvent::CharacterDeparted {
+            id: *id,
+            name: name.clone(),
+            dest: dest.clone(),
         },
         SimEvent::BuildDeclared { id, owner, nodes } => GameEvent::BuildDeclared {
             id: *id,

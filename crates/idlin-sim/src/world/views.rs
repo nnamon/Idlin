@@ -150,6 +150,31 @@ impl World {
             .collect()
     }
 
+    /// TEST HARNESS ONLY: overwrite an entity's life and flat phys damage
+    /// so journey tests finish in test time (e.g. a 1-life harmless boss).
+    /// Nothing in the engine calls it.
+    pub fn test_set_combat(&mut self, net_id: u32, life: i64, phys: i64) {
+        if let Some(slot) = self.zone.slot_of(net_id)
+            && let Some(c) = self.zone.get_mut(slot).and_then(|e| e.combat.as_mut())
+        {
+            c.life_max = life.max(1);
+            c.life = life.max(1);
+            c.damage[0] = phys;
+        }
+    }
+
+    /// TEST HARNESS ONLY: teleport an entity (whole units).
+    pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {
+        if let Some(slot) = self.zone.slot_of(net_id)
+            && let Some(e) = self.zone.get_mut(slot)
+        {
+            e.pos = crate::fixed::FxV2::new(
+                crate::fixed::Fx::from_int(x_u),
+                crate::fixed::Fx::from_int(y_u),
+            );
+        }
+    }
+
     /// Flat per-entity views for replication.
     pub fn views(&self) -> Vec<EntityView> {
         self.zone

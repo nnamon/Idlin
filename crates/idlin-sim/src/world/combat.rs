@@ -1563,6 +1563,7 @@ mod tests {
         let mut world = World::new(424_242, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -1680,6 +1681,7 @@ mod tests {
         let mut world = World::new(8, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -1736,6 +1738,7 @@ mod tests {
         let mut world = World::new(0x5A1D, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Talker".into(),
                 program,
@@ -1784,6 +1787,7 @@ mod tests {
         let mut world = World::new(0xBEEF, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Bait".into(),
                 program,
@@ -1859,6 +1863,7 @@ mod tests {
         let mut world = World::new(77_77, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![
                 crate::JoinRequest {
                     name: "Caster".into(),
@@ -1944,6 +1949,7 @@ mod tests {
         let mut world = World::new(99_99, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -2061,6 +2067,7 @@ mod tests {
         let mut world = World::new(515_151, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -2152,6 +2159,7 @@ mod tests {
         let mut world = World::new(7, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,

@@ -791,6 +791,7 @@ mod find_tests {
     fn killer_with_factors(w: &mut World, quantity: i64, rarity: i64) -> Option<usize> {
         let program = idlin_botc::assemble("halt\n").unwrap();
         w.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Finder".into(),
                 program,

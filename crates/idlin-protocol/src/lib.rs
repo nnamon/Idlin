@@ -215,6 +215,12 @@ pub enum GameEvent {
         id: u32,
         text: String,
     },
+    /// A character left for another zone.
+    CharacterDeparted {
+        id: u32,
+        name: String,
+        dest: String,
+    },
     BuildDeclared {
         id: u32,
         owner: String,

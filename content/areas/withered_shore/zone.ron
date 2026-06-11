@@ -30,6 +30,7 @@ ZoneDef(
         "Bone stalkers pace the dune line. Something north is feeding them.",
         "The Tidewarden breaks. The path up the bluffs lies open.",
         "The Tidewarden rises from the shallows, crowned in storm.",
+        "You climb. Below, the shore keeps its dead. Above — firelight.",
     ],
     // Packs spawn (and respawn) as a unit: survivors hold their ground
     // until the whole pack is wiped, then the timer brings it back.

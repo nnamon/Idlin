@@ -1,0 +1,25 @@
+// Area brain: Saltmere, the Act 1 town. Quiet by design — it greets
+// each arrival personally and announces them to the camp. Vendors,
+// stash, and the map device come later; they'll be syscalls and
+// script, like everything else.
+
+include "std/zone_lib.bot";
+
+const L_WELCOME = 0;        // to the arriving idler
+const L_ANNOUNCE = 1;       // to everyone else
+
+const F_WELCOMED = 1;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * 32;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_WELCOMED) == 1) {
+            narrate(L_WELCOME, net);
+            narrate(L_ANNOUNCE, 0);
+        }
+        i = i + 1;
+    }
+}

@@ -1258,6 +1258,9 @@ mod tests {
         assert_eq!(gem(14), "widening");
         assert_eq!(db.currency[8].id, "transmute_obol");
         assert_eq!(db.monsters[3].id, "tidewarden");
+        // transfer_character zone indices (ZONE_SALTMERE in the shore brain).
+        assert_eq!(db.zones[0].id, "saltmere");
+        assert_eq!(db.zones[1].id, "withered_shore");
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

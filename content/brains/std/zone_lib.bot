@@ -41,16 +41,33 @@ const EV_LEVEL = 4;
 const EV_DIED = 5;
 const EV_PICKUP = 6;
 
-// The state row for a character (created on first sight).
+// The state row for a character (created on first sight): 16 bytes —
+// [net, flags, timer, spare]. `timer` is a general per-character
+// countdown (zl_timer_* below); `spare` is yours.
 fn zl_state_row(net) {
     var i = 0;
     while (i < ZL_MAX_CHARS) {
-        var row = ZL_STATE + i * 8;
+        var row = ZL_STATE + i * 16;
         if (mem[row] == net) { return row; }
         if (mem[row] == 0) { mem[row] = net; return row; }
         i = i + 1;
     }
     return ZL_STATE;
+}
+
+// Arm a per-character countdown (ticks). Overwrites any running one.
+fn zl_timer_set(net, ticks) {
+    var row = zl_state_row(net);
+    mem[row + 8] = ticks;
+}
+
+// Tick a character's countdown down; returns 1 exactly when it expires.
+fn zl_timer_fired(net) {
+    var row = zl_state_row(net);
+    if (mem[row + 8] <= 0) { return 0; }
+    mem[row + 8] = mem[row + 8] - 1;
+    if (mem[row + 8] == 0) { return 1; }
+    return 0;
 }
 
 // True exactly once per character: checks the flag bit, sets it, and

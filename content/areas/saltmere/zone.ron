@@ -1,0 +1,23 @@
+// Act 1 town: Saltmere — a survivors' camp on the bluffs above the
+// Withered Shore. The first SHARED ground: every idler's shore is their
+// own, but everyone who breaks the Tidewarden climbs up to the same
+// firelight. No monsters; the whole town is sanctuary.
+ZoneDef(
+    id: "saltmere",
+    name: "Saltmere",
+    kind: town,
+    width_u: 30,
+    height_u: 26,
+    spawn_x_u: 15,
+    spawn_y_u: 20,
+    spawn_radius_u: 5,
+    camp_radius_u: 40,      // the whole town is sanctuary
+    gen_rocks: 5,
+    gen_trees: 4,
+    brain: Some("saltmere"),
+    lines: [
+        "Saltmere. Fires that stay lit. Faces that stay alive.",
+        "Another wretch crests the bluff. The camp counts one more.",
+    ],
+    packs: [],
+)

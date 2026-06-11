@@ -53,7 +53,10 @@ fn builtin_joins() -> anyhow::Result<TickInputs> {
             program: program.clone(),
         })
         .collect();
-    Ok(TickInputs { joins })
+    Ok(TickInputs {
+        joins,
+        arrivals: Vec::new(),
+    })
 }
 
 #[tokio::main]
@@ -96,32 +99,52 @@ async fn main() -> anyhow::Result<()> {
         "idlin starting"
     );
 
-    // Resume from snapshot when possible; otherwise a fresh world with the
-    // built-in cast joining on tick 1.
-    let (world, first_inputs) = match persist::load_world(&content, &snapshot_dir) {
-        Some(world) => (world, None),
-        None => (World::new(seed, &content), Some(builtin_joins()?)),
-    };
-    let zone_name = world.zone_name().to_string();
-    let (zone_w, zone_h) = world.zone_size_raw();
-    let obstacles: Vec<idlin_protocol::ObstacleState> = world
-        .obstacle_views()
-        .into_iter()
-        .map(|(x, y, radius, kind)| idlin_protocol::ObstacleState { x, y, radius, kind })
-        .collect();
+    // The multi-world layout: one SHARED town (Saltmere) plus a private
+    // shore instance per built-in idler. Transfers ferry characters from
+    // their instance into the town when the Tidewarden falls.
+    // (Snapshot resume is disabled in multi-world mode for now: every
+    // boot is a fresh act.)
+    let _ = &snapshot_dir;
+    let mut worlds = vec![runner::ManagedWorld {
+        key: "saltmere".into(),
+        zone_id: "saltmere".into(),
+        world: World::new_for_zone(seed, &content, "saltmere"),
+        pending: TickInputs::default(),
+    }];
+    let joins = builtin_joins()?;
+    for join in joins.joins {
+        let key = format!("withered_shore#{}", join.name);
+        // Per-instance seed: every idler gets their own deterministic shore.
+        let mut h = 0xcbf29ce484222325u64;
+        for b in join.name.bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        worlds.push(runner::ManagedWorld {
+            key,
+            zone_id: "withered_shore".into(),
+            world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
+            pending: TickInputs {
+                joins: vec![join],
+                arrivals: Vec::new(),
+            },
+        });
+    }
+    info!(
+        "running {} worlds: {}",
+        worlds.len(),
+        worlds
+            .iter()
+            .map(|w| w.key.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
-    let server_tick = Arc::new(AtomicU64::new(world.tick_count()));
+    let server_tick = Arc::new(AtomicU64::new(0));
     let (frame_tx, frame_rx) = mpsc::unbounded_channel();
     let (inspect_tx, inspect_rx) = mpsc::unbounded_channel();
-    runner::spawn_tick_loop(
-        world,
-        first_inputs,
-        frame_tx,
-        inspect_rx,
-        server_tick.clone(),
-        snapshot_dir,
-    );
-    let handles = replication::spawn_replication(frame_rx, zone_name, zone_w, zone_h, obstacles);
+    runner::spawn_tick_loop(worlds, frame_tx, inspect_rx, server_tick.clone());
+    let handles = replication::spawn_replication(frame_rx);
 
     let tree_json: Arc<str> = Arc::from(tree_to_json(&content));
     let state = AppState {

@@ -40,6 +40,13 @@ const L_WRECKS = 7;
 const L_STALKERS = 8;
 const L_BOSSDOWN = 9;
 const L_BOSSWARN = 10;
+const L_DEPART = 11;
+
+// Zone index for transfers (sorted ids; pinned by content test).
+const ZONE_SALTMERE = 0;
+// Ticks between the Tidewarden falling and the climb to Saltmere —
+// long enough to collect the hoard.
+const DEPART_DELAY = 80;
 
 // beat flags (zl_once bits)
 const F_WELCOME = 1;
@@ -112,6 +119,12 @@ fn main() {
         if (y < 0x460000) { zl_narrate_once(net, F_Y70, L_WRECKS); }
         if (y < 0x280000) { zl_narrate_once(net, F_Y40, L_STALKERS); }
         if (y < 0x140000) { zl_narrate_once(net, F_BOSSWARN, L_BOSSWARN); }
+        // The climb to Saltmere, once the departure countdown runs out
+        // (armed when this character broke the Tidewarden).
+        if (zl_timer_fired(net) == 1) {
+            narrate(L_DEPART, net);
+            transfer_character(net, ZONE_SALTMERE);
+        }
         i = i + 1;
     }
 
@@ -127,7 +140,8 @@ fn main() {
         if (kind == EV_LEVEL) { zl_narrate_once(who, F_LEVEL, L_LEVEL); }
         if (kind == EV_KILL && mem[ev + PE_A] == MON_TIDEWARDEN) {
             narrate(L_BOSSDOWN, 0);
-            // The hoard lands at the killer's feet: a rare and a support.
+            // The hoard lands at the killer's feet: a rare and a support
+            // — then the bluff path claims them (departure countdown).
             var k = 0;
             while (k < nq) {
                 var qr = ZL_Q + k * 32;
@@ -142,6 +156,7 @@ fn main() {
                 }
                 k = k + 1;
             }
+            zl_timer_set(who, DEPART_DELAY);
         }
         j = j + 1;
     }
