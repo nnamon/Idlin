@@ -483,6 +483,11 @@ pub struct GemDef {
     pub dot: Option<DotDef>,
     #[serde(default)]
     pub buff: Option<BuffDef>,
+    /// On-hit rider applied to VICTIMS: timed stat grants through the same
+    /// effects system as self-buffs (negative values = debuff — chill,
+    /// blind, exposure). Strongest-equal-grants reapply refreshes.
+    #[serde(default)]
+    pub debuff: Option<BuffDef>,
     // -- support fields --
     /// Tags this support fits: the skill must share at least one.
     #[serde(default)]

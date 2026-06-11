@@ -164,6 +164,11 @@ empty slot wear nothing — fresh wretches wash ashore naked.
   refreshes. Dots skip accuracy, block, crit, and variance.
 - **Buffs**: skills can grant timed self-buffs (`buff:`); grants fold
   into the stat sheet while active.
+- **Debuffs**: skills can land timed stat grants on their VICTIMS
+  (`debuff:` — negative values: chill, blind, exposure) through the
+  same effects system. Hitting a monster re-derives its stats from its
+  def with active effects folded in, so a chilled tide husk genuinely
+  moves and swings slower until the effect expires.
 - **Mana costs**: every gem declares one (`mana_cost` formula); the use
   fails (code −4) without the mana, and the cost is charged on the swing.
 

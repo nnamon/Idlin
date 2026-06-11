@@ -85,10 +85,83 @@ impl World {
         }
     }
 
+    /// Re-derive an entity's combat stats after anything that changes them
+    /// (level, gear, tree, timed effects). Characters rebuild their full
+    /// sheet; monsters rebuild from their def and fold active effects —
+    /// that's how enemy debuffs (chill etc.) actually bite.
+    pub(super) fn refresh_derived_stats(&mut self, slot: usize) {
+        let Some(e) = self.zone.get(slot) else { return };
+        if e.character.is_some() {
+            self.refresh_character_stats(slot);
+        } else if e.monster.is_some() {
+            self.refresh_monster_stats(slot);
+        }
+    }
+
+    /// Monsters: def base + active effect grants. Folds the combat-relevant
+    /// stats (life, damage, accuracy/evasion/armour, resists, attack and
+    /// move speed) with the same clamps the character path uses.
+    fn refresh_monster_stats(&mut self, slot: usize) {
+        use crate::entity::ActiveEffect;
+        let Some(e) = self.zone.get(slot) else { return };
+        let Some(m) = &e.monster else { return };
+        let def_idx = m.def_idx;
+        let mut sheet = StatSheet::new();
+        for ef in &e.effects {
+            if let ActiveEffect::Buff { grants, .. } = ef {
+                for g in grants {
+                    sheet.apply(g);
+                }
+            }
+        }
+        let def = &self.content.monsters[def_idx as usize];
+        let mut next = super::monster_base_stats(def);
+        next.life_max = sheet.value(Stat::Life, next.life_max).max(1);
+        const DMG_STATS: [Stat; DMG_COUNT] = [
+            Stat::DamagePhys,
+            Stat::DamageFire,
+            Stat::DamageCold,
+            Stat::DamageLightning,
+            Stat::DamageChaos,
+        ];
+        for i in 0..DMG_COUNT {
+            next.damage[i] = sheet.value(DMG_STATS[i], next.damage[i]).max(0);
+        }
+        next.accuracy = sheet.value(Stat::Accuracy, next.accuracy).max(0);
+        next.evasion = sheet.value(Stat::Evasion, next.evasion).max(0);
+        next.armour = sheet.value(Stat::Armour, next.armour).max(0);
+        const RES_STATS: [Stat; RES_COUNT] = [
+            Stat::ResistFire,
+            Stat::ResistCold,
+            Stat::ResistLightning,
+            Stat::ResistChaos,
+        ];
+        for i in 0..RES_COUNT {
+            next.resists[i] = sheet.value(RES_STATS[i], next.resists[i]);
+        }
+        let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
+        next.use_ticks = ((def.use_ticks as i64 * 10000 / attack_factor).max(2)) as u32;
+        let move_factor = sheet.value(Stat::MoveSpeed, 10000).max(1000);
+        next.speed_per_tick = crate::fixed::Fx::from_raw(
+            (super::speed_from_cps(def.speed_cps).raw() as i64 * move_factor / 10000) as i32,
+        );
+
+        if let Some(me) = self.zone.get_mut(slot)
+            && let Some(c) = me.combat.as_mut()
+        {
+            // Runtime state survives the rebuild; life clamps to the new max.
+            next.life = c.life.min(next.life_max);
+            next.busy_until = c.busy_until;
+            next.last_combat_tick = c.last_combat_tick;
+            next.es_recharge_at = c.es_recharge_at;
+            *c = next;
+        }
+    }
+
     /// Build the full stat sheet for a character: tree grants + gear affixes,
     /// evaluated over universal bases and gear base stats. The weapon defines
     /// the normal attack; armour/evasion bases sum across gear.
-    pub(super) fn refresh_derived_stats(&mut self, slot: usize) {
+    fn refresh_character_stats(&mut self, slot: usize) {
         let Some(e) = self.zone.get(slot) else { return };
         let Some(ch) = &e.character else { return };
         let level = ch.level;

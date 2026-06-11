@@ -266,6 +266,56 @@ fn base_mana(level: u32) -> i64 {
 }
 
 /// Unarmed, ungeared stats at a given level — what everyone spawns with.
+/// A monster's stats straight from its def — the base that spawning uses
+/// and that debuff re-derivation rebuilds from.
+pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats {
+    let accuracy = if def.accuracy > 0 {
+        def.accuracy
+    } else {
+        60 + 15 * def.level as i64
+    };
+    CombatStats {
+        life: def.life,
+        life_max: def.life,
+        mana: 0,
+        mana_max: 0,
+        es: 0,
+        es_max: 0,
+        es_recharge_at: 0,
+        life_regen: 0,
+        mana_regen: 0,
+        leech_life: 0,
+        leech_mana: 0,
+        block: 0,
+        crit_inc: 10000,
+        crit_multi: 15000,
+        cast_speed: 10000,
+        damage: [
+            def.damage,
+            def.damage_fire,
+            def.damage_cold,
+            def.damage_lightning,
+            def.damage_chaos,
+        ],
+        accuracy,
+        evasion: def.evasion,
+        armour: def.armour,
+        resists: [
+            def.resist_fire,
+            def.resist_cold,
+            def.resist_lightning,
+            def.resist_chaos,
+        ],
+        range: fx_from_cu(def.range_cu),
+        use_ticks: def.use_ticks,
+        busy_until: 0,
+        speed_per_tick: speed_from_cps(def.speed_cps),
+        radius: fx_from_cu(def.radius_cu),
+        projectile: def.projectile,
+        last_combat_tick: 0,
+    }
+}
+
 pub fn universal_stats(level: u32) -> CombatStats {
     CombatStats {
         life: base_life(level),
@@ -866,51 +916,7 @@ impl World {
     /// program from content driving it and stats straight from its def.
     fn spawn_monster(&mut self, monster_idx: u32, pack_idx: u32, pos: FxV2) {
         let def = &self.content.monsters[monster_idx as usize];
-        let accuracy = if def.accuracy > 0 {
-            def.accuracy
-        } else {
-            60 + 15 * def.level as i64
-        };
-        let stats = CombatStats {
-            life: def.life,
-            life_max: def.life,
-            mana: 0,
-            mana_max: 0,
-            es: 0,
-            es_max: 0,
-            es_recharge_at: 0,
-            life_regen: 0,
-            mana_regen: 0,
-            leech_life: 0,
-            leech_mana: 0,
-            block: 0,
-            crit_inc: 10000,
-            crit_multi: 15000,
-            cast_speed: 10000,
-            damage: [
-                def.damage,
-                def.damage_fire,
-                def.damage_cold,
-                def.damage_lightning,
-                def.damage_chaos,
-            ],
-            accuracy,
-            evasion: def.evasion,
-            armour: def.armour,
-            resists: [
-                def.resist_fire,
-                def.resist_cold,
-                def.resist_lightning,
-                def.resist_chaos,
-            ],
-            range: fx_from_cu(def.range_cu),
-            use_ticks: def.use_ticks,
-            busy_until: 0,
-            speed_per_tick: speed_from_cps(def.speed_cps),
-            radius: fx_from_cu(def.radius_cu),
-            projectile: def.projectile,
-            last_combat_tick: 0,
-        };
+        let stats = monster_base_stats(def);
         let hostile = def.hostile;
         let program = self
             .content

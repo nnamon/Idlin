@@ -158,6 +158,7 @@ GemDef(
     // -- riders --
     dot: None,            // Some(DotDef(dtype, per_second: Formula, duration_ticks))
     buff: None,           // Some(BuffDef(grants, duration_ticks)) — self-buff on use
+    debuff: None,         // Some(BuffDef(...)) — lands on VICTIMS (negative = chill etc.)
     // Support capacity is NOT authored: a skill gem earns slots by level
     // (1 base, +1 at 7, +1 at 14).
 )

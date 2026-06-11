@@ -52,6 +52,8 @@ pub struct Projectile {
     /// Net ids already struck (pierce passes through each once).
     pub already_hit: Vec<u32>,
     pub dot: Option<(u8, i64, u32, u32)>,
+    /// Victim rider: (grants, duration_ticks) applied on hit.
+    pub debuff: Option<(Vec<crate::stats::Grant>, u32)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

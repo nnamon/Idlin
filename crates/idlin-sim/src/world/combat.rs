@@ -105,6 +105,8 @@ pub(super) struct StrikeSpec {
     pub projectile: bool,
     /// On-hit rider: (dtype, per_second, duration_ticks, skill idx).
     pub dot: Option<(u8, i64, u32, u32)>,
+    /// On-hit rider applied to the VICTIM: timed stat grants (chill etc.).
+    pub debuff: Option<(Vec<Grant>, u32)>,
 }
 
 impl StrikeSpec {
@@ -124,6 +126,7 @@ impl StrikeSpec {
                 crit_multi: self.crit_multi,
                 projectile: self.projectile,
                 dot: self.dot,
+                debuff: self.debuff.clone(),
             }
         }
     }
@@ -404,6 +407,7 @@ impl World {
                         crit_multi,
                         projectile: weapon_projectile,
                         dot: None,
+                        debuff: None,
                     };
                     if weapon_projectile {
                         let toward = t.pos;
@@ -515,6 +519,7 @@ impl World {
                             gem_idx,
                         )
                     });
+                    let debuff = gem_def.debuff.clone().map(|b| (b.grants, b.duration_ticks));
                     let spec_template = StrikeSpec {
                         attacker_slot: Some(slot),
                         attacker_net,
@@ -528,6 +533,7 @@ impl World {
                         crit_multi,
                         projectile: gem_def.shape == SkillShape::Projectile,
                         dot,
+                        debuff,
                     };
 
                     // Aim: where is this skill pointed?
@@ -870,6 +876,7 @@ impl World {
             pierce,
             already_hit: Vec::new(),
             dot: spec.dot,
+            debuff: spec.debuff,
         });
     }
 
@@ -937,6 +944,7 @@ impl World {
                     crit_multi: p.crit_multi,
                     projectile: true,
                     dot: p.dot,
+                    debuff: p.debuff.clone(),
                 };
                 self.strike(spec, ts, now, events, &mut dead, &mut loot);
                 p.already_hit.push(net);
@@ -1083,6 +1091,17 @@ impl World {
                     skill,
                 });
             }
+        }
+
+        // On-hit rider: the skill's debuff lands on the victim through the
+        // same timed-effects channel as self-buffs (re-deriving its stats).
+        if hit
+            && !killed
+            && !spec.is_dot
+            && let Some((grants, duration)) = spec.debuff.clone()
+            && !grants.is_empty()
+        {
+            self.apply_buff(target_slot, grants, duration);
         }
 
         // Leech: a slice of damage dealt returns to the attacker (capped
@@ -1328,6 +1347,7 @@ impl World {
                     crit_multi: 10000,
                     projectile: false,
                     dot: None,
+                    debuff: None,
                 };
                 self.strike(spec, slot, now, events, &mut dead, &mut loot);
             }
@@ -1596,6 +1616,124 @@ mod tests {
             .gem
             .level = 7;
         assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), 1);
+    }
+
+    #[test]
+    fn debuffs_chill_monsters_and_expire() {
+        use crate::stats::{Grant, Layer, Stat};
+        let mut content = content();
+        // A synthetic chill spell: clone a real gem and bolt on the rider.
+        let mut chill = content
+            .gems
+            .iter()
+            .find(|g| g.id == "ember_bolt")
+            .unwrap()
+            .clone();
+        chill.id = "zz_test_chill".into();
+        chill.shape = idlin_content::SkillShape::Target;
+        chill.debuff = Some(idlin_content::BuffDef {
+            grants: vec![
+                Grant {
+                    stat: Stat::MoveSpeed,
+                    layer: Layer::Increased,
+                    value: -3000,
+                },
+                Grant {
+                    stat: Stat::AttackSpeed,
+                    layer: Layer::Increased,
+                    value: -3000,
+                },
+            ],
+            duration_ticks: 20,
+        });
+        content.gems.push(chill);
+
+        let mut world = World::new(515_151, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+        });
+        let char_slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let (monster_slot, monster_net, monster_pos) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.net_id, e.pos))
+            .unwrap();
+        let (base_speed, base_use) = {
+            let c = world
+                .zone
+                .get(monster_slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap();
+            (c.speed_per_tick, c.use_ticks)
+        };
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        {
+            let e = world.zone.get_mut(char_slot).unwrap();
+            e.pos = FxV2::new(monster_pos.x + Fx::from_raw(0x4000), monster_pos.y);
+            e.character.as_mut().unwrap().sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "zz_test_chill", 1),
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+            let c = e.combat.as_mut().unwrap();
+            c.mana = 100;
+            e.intents.attack = Some(AttackIntent {
+                target: SkillTarget::Entity(monster_net),
+                skill: Some(node),
+            });
+        }
+        let mut events = Vec::new();
+        world.attacks(&mut events);
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, super::SimEvent::Hit { .. })),
+            "the chill bolt must land"
+        );
+        let c = world
+            .zone
+            .get(monster_slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap();
+        assert!(
+            c.speed_per_tick < base_speed,
+            "chilled monsters move slower: {} vs {}",
+            c.speed_per_tick.raw(),
+            base_speed.raw()
+        );
+        assert!(
+            c.use_ticks > base_use,
+            "chilled monsters swing slower: {} vs {base_use}",
+            c.use_ticks
+        );
+        // The debuff burns down through effects_tick and stats restore.
+        for _ in 0..21 {
+            let mut ev = Vec::new();
+            world.effects_tick(&mut ev);
+        }
+        let e = world.zone.get(monster_slot).unwrap();
+        assert!(e.effects.is_empty(), "debuff must expire");
+        let c = e.combat.as_ref().unwrap();
+        assert_eq!(c.speed_per_tick, base_speed, "speed restores on expiry");
+        assert_eq!(c.use_ticks, base_use, "swing time restores on expiry");
     }
 
     #[test]
