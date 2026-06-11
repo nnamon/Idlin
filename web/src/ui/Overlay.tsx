@@ -30,6 +30,7 @@ function Header({ children, first }: { children: React.ReactNode; first?: boolea
 export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
   const [status, setStatus] = useState<NetStatus | null>(null);
   const [showTree, setShowTree] = useState(false);
+  const [drawer, setDrawer] = useState(false);
   const [, setVersion] = useState(0);
 
   useEffect(() => client.onStatus(setStatus), [client]);
@@ -77,17 +78,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   return (
     <>
       {/* left column: status plaque + the focused idler's stats */}
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          left: 12,
-          width: 252,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
+      <div className="hud-left">
       <div className="panel">
         <div style={{ fontWeight: 700, color: "#9a7bff", fontSize: 15, letterSpacing: 4 }}>
           IDLIN
@@ -128,7 +119,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
       {showTree && <TreeMap onClose={() => setShowTree(false)} />}
 
       {/* top-right: focus + leaderboard */}
-      <div style={{ position: "absolute", top: 12, right: 12, width: 282 }}>
+      <div className={drawer ? "hud-right open" : "hud-right"}>
         {focused && focused.state.kind === "Character" && (
           <div className="panel" style={{ marginBottom: 8 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -166,10 +157,21 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           )}
         </div>
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
+        {/* phones hide the left column; the drawer carries the numbers */}
+        {sheet && (
+          <div className="mobile-only">
+            <StatsPanel sheet={sheet} />
+          </div>
+        )}
       </div>
 
+      {/* phones: the panels live in a slide-in drawer */}
+      <button className="hud-toggle" onClick={() => setDrawer((d) => !d)}>
+        {drawer ? "✕" : "☰"}
+      </button>
+
       {/* bottom-left: event ticker */}
-      <div style={{ position: "absolute", bottom: 14, left: 12, maxWidth: 460 }}>
+      <div className="hud-ticker">
         {ticker.map((t) => (
           <div
             key={t.key}

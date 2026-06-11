@@ -189,3 +189,90 @@
 .row .v {
   color: #d4d4e8;
 }
+
+/* ---- HUD layout: desktop columns; phones get a drawer ---- */
+.hud-left {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 252px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hud-right {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 282px;
+}
+.hud-ticker {
+  position: absolute;
+  bottom: 14px;
+  left: 12px;
+  max-width: 460px;
+}
+.hud-toggle {
+  display: none;
+}
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  /* Watching comes first on a phone: the world fills the screen, the
+     ticker stays, everything else slides in from the right. */
+  .hud-left {
+    display: none;
+  }
+  .mobile-only {
+    display: block;
+    margin-top: 8px;
+  }
+  .hud-right {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(86vw, 320px);
+    padding: 10px 10px 72px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: rgba(6, 6, 11, 0.92);
+    border-left: 1px solid #2e2e44;
+    transform: translateX(105%);
+    transition: transform 0.22s ease;
+    pointer-events: auto;
+  }
+  .hud-right.open {
+    transform: none;
+  }
+  .hud-toggle {
+    display: block;
+    position: absolute;
+    bottom: 16px;
+    right: 14px;
+    z-index: 10;
+    width: 46px;
+    height: 46px;
+    border-radius: 8px;
+    border: 1px solid #383852;
+    background: linear-gradient(173deg, rgba(17, 17, 26, 0.95), rgba(8, 8, 13, 0.95));
+    color: #b9a4ff;
+    font-size: 19px;
+    font-family: inherit;
+    pointer-events: auto;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+  }
+  .hud-ticker {
+    max-width: 72vw;
+    bottom: 12px;
+  }
+  .hud-ticker > div {
+    font-size: 11px !important;
+    line-height: 1.45;
+  }
+  .hud-ticker > div:nth-child(-n + 4) {
+    display: none; /* fewer lines on a small screen */
+  }
+}
