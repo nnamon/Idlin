@@ -178,6 +178,11 @@ pub struct Item {
     /// Monster level at drop time; gates affix tiers.
     pub item_level: u32,
     pub affixes: Vec<RolledAffix>,
+    /// Rolled display name: base for normal, affix-composed for magic
+    /// ("Heavy Driftwood Bow of Haste"), generated for rare/unique
+    /// ("Vile Thorns"). Empty = fall back to the base name.
+    #[serde(default)]
+    pub name: String,
 }
 
 /// An item sitting in the bag grid at (x, y); footprint comes from its base.

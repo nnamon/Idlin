@@ -220,6 +220,15 @@ pub struct AffixTier {
     pub max: i64,
 }
 
+/// Word pools for generated rare/unique item names ("Vile Thorns").
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NamingDef {
+    #[serde(default)]
+    pub first: Vec<String>,
+    #[serde(default)]
+    pub second: Vec<String>,
+}
+
 /// A rollable item affix: a (stat, layer) grant whose value comes from the
 /// highest tier the item level allows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -584,6 +593,8 @@ pub struct ContentDb {
     pub items: Vec<ItemDef>,
     /// Sorted by id.
     pub affixes: Vec<AffixDef>,
+    /// Name word pools for rare/unique items.
+    pub naming: NamingDef,
     /// Sorted by id.
     pub gems: Vec<GemDef>,
     /// Passive tree, sorted by id. Adjacency in `tree_adj` (same indices).
@@ -666,6 +677,8 @@ impl ContentDb {
             } else if rel_str.starts_with("affixes/") {
                 db.affixes
                     .push(ron::from_str::<AffixDef>(&text).map_err(parse_err)?);
+            } else if rel_str == "naming.ron" {
+                db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
             } else if rel_str.starts_with("gems/") {
                 db.gems
                     .push(ron::from_str::<GemDef>(&text).map_err(parse_err)?);

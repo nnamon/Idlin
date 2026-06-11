@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 11;
+pub const PROTO_VERSION: u32 = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -45,9 +45,13 @@ pub struct EntityState {
     pub rarity: u8,
     /// Equipped weapon visual key ("" = unarmed; characters only).
     pub weapon: String,
+    /// Weapon rarity 0..3 — the client tints the worn mesh by tier.
+    pub weapon_rarity: u8,
     /// Visual part keys from equipped armor, in gear-slot order. The client
     /// composes the character model from these (modular paper-doll).
     pub gear: Vec<String>,
+    /// Rarity per gear entry (aligned with `gear`) for worn-tier glows.
+    pub gear_rarity: Vec<u8>,
     pub dead: bool,
     pub kills: u32,
     pub items: u32,
@@ -70,8 +74,10 @@ pub struct EntityPatch {
     pub items: u32,
     /// Equipped weapon visual key; patched so swaps show up mid-stream.
     pub weapon: String,
+    pub weapon_rarity: u8,
     /// Armor visual part keys; patched so upgrades show up mid-stream.
     pub gear: Vec<String>,
+    pub gear_rarity: Vec<u8>,
 }
 
 /// A projectile took flight; the client animates the streak (hits arrive

@@ -53,12 +53,8 @@ impl World {
             .map(|(i, s)| {
                 (
                     SLOT_NAMES[i],
-                    s.as_ref().map(|item| {
-                        (
-                            self.content.items[item.base_idx as usize].name.clone(),
-                            item.rarity as u8,
-                        )
-                    }),
+                    s.as_ref()
+                        .map(|item| (self.item_display(item), item.rarity as u8)),
                 )
             })
             .collect();
@@ -68,7 +64,7 @@ impl World {
             .map(|p| {
                 let def = &self.content.items[p.item.base_idx as usize];
                 (
-                    def.name.clone(),
+                    self.item_display(&p.item),
                     p.item.rarity as u8,
                     p.x,
                     p.y,
@@ -142,77 +138,106 @@ impl World {
             .iter()
             .map(|(_, e)| {
                 let combat = e.combat.as_ref();
-                let (name, model, weapon, gear, level, rarity, dead, kills, items) =
-                    if let Some(ch) = &e.character {
-                        // The equipped weapon's visual key, for the client's
-                        // hand-attachment mesh ("" = unarmed).
-                        let weapon = ch.equipment[GearSlot::Weapon.idx()]
-                            .as_ref()
-                            .map(|item| self.content.items[item.base_idx as usize].model.clone())
-                            .unwrap_or_default();
-                        // Armor visual part keys in gear-slot order: the
-                        // client's paper-doll composes the model from these.
-                        let gear: Vec<String> = ch
-                            .equipment
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, _)| *i != GearSlot::Weapon.idx())
-                            .filter_map(|(_, slot)| slot.as_ref())
-                            .map(|item| self.content.items[item.base_idx as usize].model.clone())
-                            .filter(|m| !m.is_empty())
-                            .collect();
-                        (
-                            ch.name.clone(),
-                            "idler".to_string(),
-                            weapon,
-                            gear,
-                            ch.level,
-                            0,
-                            !e.alive(),
-                            ch.kills,
-                            ch.items,
-                        )
-                    } else if let Some(m) = &e.monster {
-                        let def = self.monster_def(m.def_idx);
-                        (
-                            def.name.clone(),
-                            def.model.clone(),
-                            String::new(),
-                            Vec::new(),
-                            def.level,
-                            0,
-                            !e.alive(),
-                            0,
-                            0,
-                        )
-                    } else {
-                        let l = e.loot.as_ref().unwrap();
-                        // Drops render as their actual item when the def
-                        // names a model; gems and plain bases fall back to
-                        // generic pickups.
-                        let model = match &l.payload {
-                            LootPayload::Gear(item) => {
-                                let m = &self.content.items[item.base_idx as usize].model;
-                                if m.is_empty() {
-                                    "loot".to_string()
-                                } else {
-                                    m.clone()
-                                }
-                            }
-                            LootPayload::Gem(_) => "gem".to_string(),
-                        };
-                        (
-                            String::new(),
-                            model,
-                            String::new(),
-                            Vec::new(),
-                            0,
-                            l.rarity as u8,
-                            false,
-                            0,
-                            0,
-                        )
+                #[allow(clippy::type_complexity)]
+                let (
+                    name,
+                    model,
+                    weapon,
+                    weapon_rarity,
+                    gear,
+                    gear_rarity,
+                    level,
+                    rarity,
+                    dead,
+                    kills,
+                    items,
+                ): (
+                    String,
+                    String,
+                    String,
+                    u8,
+                    Vec<String>,
+                    Vec<u8>,
+                    u32,
+                    u8,
+                    bool,
+                    u64,
+                    u64,
+                ) = if let Some(ch) = &e.character {
+                    // The equipped weapon's visual key, for the client's
+                    // hand-attachment mesh ("" = unarmed), plus its rarity
+                    // for the worn-tier glow.
+                    let wslot = ch.equipment[GearSlot::Weapon.idx()].as_ref();
+                    let weapon = wslot
+                        .map(|item| self.content.items[item.base_idx as usize].model.clone())
+                        .unwrap_or_default();
+                    let weapon_rarity = wslot.map(|item| item.rarity as u8).unwrap_or(0);
+                    // Armor visual part keys in gear-slot order (rarity
+                    // aligned): the client's paper-doll composes from these.
+                    let mut gear: Vec<String> = Vec::new();
+                    let mut gear_rarity: Vec<u8> = Vec::new();
+                    for (i, slot) in ch.equipment.iter().enumerate() {
+                        if i == GearSlot::Weapon.idx() {
+                            continue;
+                        }
+                        let Some(item) = slot.as_ref() else { continue };
+                        let model = &self.content.items[item.base_idx as usize].model;
+                        if model.is_empty() {
+                            continue;
+                        }
+                        gear.push(model.clone());
+                        gear_rarity.push(item.rarity as u8);
+                    }
+                    (
+                        ch.name.clone(),
+                        "idler".to_string(),
+                        weapon,
+                        weapon_rarity,
+                        gear,
+                        gear_rarity,
+                        ch.level,
+                        0,
+                        !e.alive(),
+                        ch.kills,
+                        ch.items,
+                    )
+                } else if let Some(m) = &e.monster {
+                    let def = self.monster_def(m.def_idx);
+                    (
+                        def.name.clone(),
+                        def.model.clone(),
+                        String::new(),
+                        0,
+                        Vec::new(),
+                        Vec::new(),
+                        def.level,
+                        0,
+                        !e.alive(),
+                        0,
+                        0,
+                    )
+                } else {
+                    let l = e.loot.as_ref().unwrap();
+                    // Drops are pillar + marker only: the client just needs
+                    // gem vs gear.
+                    let model = match &l.payload {
+                        LootPayload::Gear(_) => "loot".to_string(),
+                        LootPayload::Gem(_) => "gem".to_string(),
                     };
+                    (
+                        String::new(),
+                        model,
+                        String::new(),
+                        0,
+                        Vec::new(),
+                        Vec::new(),
+                        0,
+                        l.rarity as u8,
+                        false,
+                        0,
+                        0,
+                    )
+                };
                 EntityView {
                     id: e.net_id,
                     kind: e.kind_code() as u8,
@@ -223,7 +248,9 @@ impl World {
                     name,
                     model,
                     weapon,
+                    weapon_rarity,
                     gear,
+                    gear_rarity,
                     rarity,
                     dead,
                     kills,
@@ -249,6 +276,7 @@ impl World {
             h.write_u32(item.base_idx);
             h.write_u8(item.rarity as u8);
             h.write_u32(item.item_level);
+            h.write_bytes(item.name.as_bytes());
             h.write_u64(item.affixes.len() as u64);
             for ra in &item.affixes {
                 h.write_u32(ra.affix_idx);

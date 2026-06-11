@@ -239,7 +239,9 @@ fn diff(
                     || old.kills != state.kills
                     || old.items != state.items
                     || old.weapon != state.weapon
+                    || old.weapon_rarity != state.weapon_rarity
                     || old.gear != state.gear
+                    || old.gear_rarity != state.gear_rarity
                 {
                     updated.push(EntityPatch {
                         id: *id,
@@ -249,7 +251,9 @@ fn diff(
                         kills: state.kills,
                         items: state.items,
                         weapon: state.weapon.clone(),
+                        weapon_rarity: state.weapon_rarity,
                         gear: state.gear.clone(),
+                        gear_rarity: state.gear_rarity.clone(),
                     });
                 }
             }
@@ -299,7 +303,9 @@ fn to_state(v: &EntityView) -> EntityState {
         model: v.model.clone(),
         rarity: v.rarity,
         weapon: v.weapon.clone(),
+        weapon_rarity: v.weapon_rarity,
         gear: v.gear.clone(),
+        gear_rarity: v.gear_rarity.clone(),
         dead: v.dead,
         kills: v.kills.min(u32::MAX as u64) as u32,
         items: v.items.min(u32::MAX as u64) as u32,
@@ -435,7 +441,9 @@ mod tests {
             model: "idler".into(),
             rarity: 0,
             weapon: String::new(),
+            weapon_rarity: 0,
             gear: vec![],
+            gear_rarity: vec![],
             dead: false,
             kills: 0,
             items: 0,

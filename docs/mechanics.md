@@ -111,6 +111,25 @@ the grants already evaluate.) Damage comes in five types — **physical,
 fire, cold, lightning, chaos** — with four typed resistances (capped at
 75% at use); armour attenuates physical only.
 
+## Item identity (names and affix budgets)
+
+PoE-style prefix/suffix items:
+
+- **Normal**: the base name alone ("Driftwood Bow"), zero affixes.
+- **Magic**: at most ONE prefix and ONE suffix; the name composes from
+  the rolled affixes around the base — "Heavy Driftwood Bow of the
+  Wind".
+- **Rare**: 3–5 affixes (≤3 prefixes, ≤3 suffixes) and a generated
+  two-word name drawn from `content/naming.ron` word pools ("Vile
+  Thorns"); displays carry the base in parentheses.
+- **Unique**: fixed-name, fixed-affix items are planned; until real
+  unique defs exist they roll like extra-affix rares with generated
+  names.
+
+Worn rarity reads on the character: magic/rare/unique gear and weapons
+carry a tier-colored emissive glow on the worn mesh. Idlers with an
+empty slot wear nothing — fresh wretches wash ashore naked.
+
 ## Experience and the passive tree
 
 - Kills grant the monster's XP to the killer (full, plus the kill credit);

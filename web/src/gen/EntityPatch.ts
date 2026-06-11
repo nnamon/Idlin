@@ -4,8 +4,8 @@ export type EntityPatch = { id: number, life_pct: number, level: number, dead: b
 /**
  * Equipped weapon visual key; patched so swaps show up mid-stream.
  */
-weapon: string, 
+weapon: string, weapon_rarity: number, 
 /**
  * Armor visual part keys; patched so upgrades show up mid-stream.
  */
-gear: Array<string>, };
+gear: Array<string>, gear_rarity: Array<number>, };

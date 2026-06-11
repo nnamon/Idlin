@@ -2,7 +2,7 @@ import type { C2S } from "../gen/C2S";
 import type { S2C } from "../gen/S2C";
 import type { Role } from "../gen/Role";
 
-export const PROTO_VERSION = 11;
+export const PROTO_VERSION = 12;
 const PING_INTERVAL_MS = 2000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 10_000;

@@ -3,7 +3,27 @@ import type { EntityRender } from "../world/store";
 import type { AssetLibrary, BodyVariant, ModelDef } from "./Assets";
 
 const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
+/** Worn-tier glow: normal gear stays matte; magic+ gets an emissive cast. */
+const RARITY_GLOW = [0, 0x4a7dff, 0xffd75a, 0xff9a3c];
 const FADE_S = 0.18;
+
+/** Clone-and-glow every material under a worn mesh; returns the clones
+ *  (caller disposes them — the geometry stays shared). */
+function applyRarityGlow(root: THREE.Object3D, rarity: number): THREE.Material[] {
+  const glow = RARITY_GLOW[Math.min(rarity, 3)];
+  if (!glow) return [];
+  const owned: THREE.Material[] = [];
+  root.traverse((o) => {
+    if (o instanceof THREE.Mesh && !Array.isArray(o.material)) {
+      const mat = o.material.clone() as THREE.MeshStandardMaterial;
+      mat.emissive = new THREE.Color(glow);
+      mat.emissiveIntensity = 0.35;
+      o.material = mat;
+      owned.push(mat);
+    }
+  });
+  return owned;
+}
 
 function strHash(s: string): number {
   let hash = 0;
@@ -64,10 +84,12 @@ export class EntityVisual {
   private hpFg: THREE.Sprite | null = null;
   private label: THREE.Sprite | null = null;
   private weaponKey = "";
+  private weaponRarity = 0;
   private weaponObj: THREE.Object3D | null = null;
+  private weaponMats: THREE.Material[] = [];
   private handBone: THREE.Object3D | null = null;
   /** Bone-worn rigid gear (shields), keyed by gear key. */
-  private wornAttachments = new Map<string, THREE.Object3D>();
+  private wornAttachments = new Map<string, { obj: THREE.Object3D; mats: THREE.Material[] }>();
 
   constructor(
     private readonly id: number,
@@ -83,8 +105,8 @@ export class EntityVisual {
       this.buildModel(state.model, state.kind === "Monster");
       this.buildBars();
       if (state.kind === "Character") this.buildLabel(state.name);
-      this.composeGear(state.gear);
-      this.setWeapon(state.weapon);
+      this.composeGear(state.gear, state.gear_rarity ?? []);
+      this.setWeapon(state.weapon, state.weapon_rarity ?? 0);
     }
   }
 
@@ -157,8 +179,8 @@ export class EntityVisual {
    * The paper-doll: defaults fill each region, replicated gear overrides by
    * region. Bound to this body's skeleton — same rig, shared bind pose.
    */
-  private composeGear(gear: string[]): void {
-    const key = gear.join("|");
+  private composeGear(gear: string[], gearRarity: number[]): void {
+    const key = gear.join("|") + "#" + gearRarity.join(",");
     if (key === this.gearKey || !this.def || !this.modelRoot) return;
     this.gearKey = key;
 
@@ -169,13 +191,15 @@ export class EntityVisual {
       return this.assets.partDef(suffixed) ? suffixed : key;
     };
     const desired = new Map<string, string>(); // region → part key
+    const rarityByKey = new Map<string, number>(); // resolved part → rarity
     for (const part of this.def.defaultParts ?? []) {
       const resolved = resolve(part);
       const def = this.assets.partDef(resolved);
       if (def) desired.set(def.region, resolved);
     }
-    for (const part of gear) {
+    for (const [i, part] of gear.entries()) {
       const resolved = resolve(part);
+      rarityByKey.set(resolved, gearRarity[i] ?? 0);
       const def = this.assets.partDef(resolved);
       if (def) desired.set(def.region, resolved);
     }
@@ -185,21 +209,28 @@ export class EntityVisual {
     }
 
     // Rigid bone-worn gear (shields) diffs separately from skinned parts.
-    const wantAttach = new Set(gear.filter((k) => this.assets.attachmentDef(k) !== null));
-    for (const [key, obj] of this.wornAttachments) {
+    // Rarity changes re-attach (the key set alone wouldn't notice).
+    const wantAttach = new Map(
+      gear
+        .filter((k) => this.assets.attachmentDef(k) !== null)
+        .map((k) => [k + "#" + (rarityByKey.get(resolve(k)) ?? 0), k]),
+    );
+    for (const [key, worn] of this.wornAttachments) {
       if (!wantAttach.has(key)) {
-        obj.removeFromParent(); // clone shares GPU resources; no dispose
+        worn.obj.removeFromParent(); // clone shares GPU resources…
+        for (const m of worn.mats) m.dispose(); // …but glow mats are ours
         this.wornAttachments.delete(key);
       }
     }
-    for (const key of wantAttach) {
+    for (const [key, bare] of wantAttach) {
       if (this.wornAttachments.has(key)) continue;
-      const att = this.assets.attachmentDef(key);
+      const att = this.assets.attachmentDef(bare);
       if (!att) continue;
       const bone = this.modelRoot.getObjectByName(att.bone);
       if (!bone) continue;
+      const mats = applyRarityGlow(att.obj, rarityByKey.get(resolve(bare)) ?? 0);
       bone.add(att.obj);
-      this.wornAttachments.set(key, att.obj);
+      this.wornAttachments.set(key, { obj: att.obj, mats });
     }
 
     // The base skin shows only where nothing is worn — otherwise the body
@@ -229,12 +260,17 @@ export class EntityVisual {
         mesh.bind(new THREE.Skeleton(bones, src.skeleton.boneInverses), mesh.bindMatrix);
         mesh.frustumCulled = false;
         mesh.castShadow = true;
+        const glow = RARITY_GLOW[rarityByKey.get(partKey) ?? 0];
         if (!Array.isArray(mesh.material)) {
           if (this.def.tint) {
             mesh.material = this.assets.tintedMaterial(mesh.material, this.def.tint);
-          } else if (tintByName) {
+          } else if (tintByName || glow) {
             const mat = mesh.material.clone() as THREE.MeshStandardMaterial;
-            mat.color?.lerp(nameColor(this.myName), 0.55);
+            if (tintByName) mat.color?.lerp(nameColor(this.myName), 0.55);
+            if (glow) {
+              mat.emissive = new THREE.Color(glow);
+              mat.emissiveIntensity = 0.3;
+            }
             mesh.material = mat;
             worn.ownedMaterials.push(mat);
           }
@@ -323,16 +359,22 @@ export class EntityVisual {
   }
 
   /** Swap the visible weapon when the replicated key changes. */
-  private setWeapon(key: string): void {
-    if (key === this.weaponKey) return;
+  private setWeapon(key: string, rarity: number): void {
+    if (key === this.weaponKey && rarity === this.weaponRarity) return;
     this.weaponKey = key;
+    this.weaponRarity = rarity;
     if (this.weaponObj) {
-      this.weaponObj.removeFromParent(); // clone shares GPU resources; no dispose
+      this.weaponObj.removeFromParent(); // clone shares GPU resources…
+      for (const m of this.weaponMats) m.dispose(); // …but glow mats are ours
       this.weaponObj = null;
+      this.weaponMats = [];
     }
     if (key && this.handBone) {
       this.weaponObj = this.assets.instantiateWeapon(key);
-      if (this.weaponObj) this.handBone.add(this.weaponObj);
+      if (this.weaponObj) {
+        this.weaponMats = applyRarityGlow(this.weaponObj, rarity);
+        this.handBone.add(this.weaponObj);
+      }
     }
   }
 
@@ -453,8 +495,8 @@ export class EntityVisual {
     if (delta < -Math.PI) delta += Math.PI * 2;
     this.group.rotation.y += delta * Math.min(1, dt * 12);
 
-    this.composeGear(er.state.gear);
-    this.setWeapon(er.state.weapon);
+    this.composeGear(er.state.gear, er.state.gear_rarity ?? []);
+    this.setWeapon(er.state.weapon, er.state.weapon_rarity ?? 0);
     this.mixer?.update(dt);
   }
 

@@ -189,6 +189,22 @@ socket INTO that skill gem (capacity 1, +1 at gem level 7, +1 at 14;
 one copy of each support), and the tag gate is enforced at socket time
 (manual mismatch → −1 + a GemRejected event; auto skips misfits).
 
+## `content/naming.ron` — rare/unique name pools
+
+One file, two word lists; rare and unique items draw `first + second`
+("Vile Thorns") deterministically from the loot RNG:
+
+```ron
+NamingDef(
+    first: ["Vile", "Grim", "Brine", ...],
+    second: ["Thorns", "Maw", "Grasp", ...],
+)
+```
+
+Empty pools fall back to the base name. Magic item names need no
+authoring — they compose from the rolled affixes' `name` fields
+(prefixes read like "Heavy", suffixes like "of the Wind").
+
 ## `content/tree/*.ron` — the passive tree
 
 Files contribute nodes to one shared graph. Everyone (classless) starts at

@@ -155,7 +155,9 @@ export class WorldStore {
           er.state.kills = u.kills;
           er.state.items = u.items;
           er.state.weapon = u.weapon;
+          er.state.weapon_rarity = u.weapon_rarity;
           er.state.gear = u.gear;
+          er.state.gear_rarity = u.gear_rarity;
         }
         for (const id of d.removed) this.entities.delete(id);
         for (const h of d.hits) {

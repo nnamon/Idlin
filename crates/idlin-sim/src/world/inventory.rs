@@ -126,6 +126,8 @@ impl World {
                 }
             }
             let Some((inv_idx, _)) = best else { continue };
+            // Rolled display name, while the immutable borrow still holds.
+            let item_name = self.item_display(&ch.inventory[inv_idx].item);
 
             // Swap: candidate leaves the grid, then the old piece gets a
             // first-fit spot (likely the freed cells) or drops at our feet.
@@ -133,7 +135,6 @@ impl World {
             let ch_mut = me.character.as_mut().unwrap();
             let placed = ch_mut.inventory.remove(inv_idx);
             let new_item = placed.item;
-            let item_name = self.content.items[new_item.base_idx as usize].name.clone();
             let item_rarity = new_item.rarity;
             let old = ch_mut.equipment[gear_idx].replace(new_item);
             if let Some(old_item) = old {

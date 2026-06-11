@@ -210,8 +210,12 @@ pub struct EntityView {
     pub model: String,
     /// Equipped weapon visual key (characters; "" when unarmed).
     pub weapon: String,
+    /// Weapon rarity (0 normal..3 unique) for the worn-tier glow.
+    pub weapon_rarity: u8,
     /// Visual part keys from equipped armor (characters), gear-slot order.
     pub gear: Vec<String>,
+    /// Rarity per gear entry (aligned with `gear`).
+    pub gear_rarity: Vec<u8>,
     pub rarity: u8,
     pub dead: bool,
     pub kills: u64,

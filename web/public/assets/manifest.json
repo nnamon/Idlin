@@ -17,11 +17,7 @@
         "wand": "Spell_Simple_Shoot"
       },
       "handSlot": "hand_r",
-      "defaultParts": [
-        "peasant_body",
-        "peasant_legs",
-        "peasant_feet"
-      ],
+      "defaultParts": [],
       "nameTintParts": [
         "peasant_body",
         "ranger_body",

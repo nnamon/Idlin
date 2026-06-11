@@ -26,7 +26,15 @@ rarity: number,
  */
 weapon: string, 
 /**
+ * Weapon rarity 0..3 — the client tints the worn mesh by tier.
+ */
+weapon_rarity: number, 
+/**
  * Visual part keys from equipped armor, in gear-slot order. The client
  * composes the character model from these (modular paper-doll).
  */
-gear: Array<string>, dead: boolean, kills: number, items: number, };
+gear: Array<string>, 
+/**
+ * Rarity per gear entry (aligned with `gear`) for worn-tier glows.
+ */
+gear_rarity: Array<number>, dead: boolean, kills: number, items: number, };
