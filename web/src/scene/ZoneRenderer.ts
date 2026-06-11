@@ -155,7 +155,7 @@ export class ZoneRenderer {
   private buildZone(): void {
     const zone = this.store.zone;
     if (!zone || !this.assets) return;
-    // A zone switch (featured-world transfer) rebuilds the set: old
+    // A zone switch (director cut or transfer) rebuilds the set: old
     // terrain and braziers leave with their world.
     if (this.terrain) {
       this.terrain.group.removeFromParent();
@@ -164,6 +164,11 @@ export class ZoneRenderer {
     for (const g of this.brazierGroups) g.removeFromParent();
     this.brazierGroups = [];
     this.braziers = [];
+    // Entity visuals too: net ids are PER-WORLD (every instance's idler is
+    // id 1), so reusing a visual across a cut would keep the old world's
+    // baked name label — Kargan's nameplate riding on Veles.
+    for (const v of this.visuals.values()) v.dispose();
+    this.visuals.clear();
     const { width: w, height: h } = zone;
 
     // Cosmetic terrain: heightmap ground, sea, sky, scattered props. The
