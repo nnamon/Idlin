@@ -151,6 +151,10 @@ fn main() {                            // main() runs once per tick
   (`mem[arr + i*4]`); an array name alone is its address, and indexing a
   scalar treats its value as a base address (poor man's pointers).
 - Numbers: decimal or `0x` hex, 32-bit; `0xFFFFFFFF` is the i32 bit pattern.
+- `include "std/zone_lib.bot";` splices another file (resolved under
+  `content/brains/`, depth-capped) — expanded by the content loader
+  before compilation. `content/brains/std/` holds shared libraries;
+  they are never brains themselves.
 
 **Semantics that matter**
 

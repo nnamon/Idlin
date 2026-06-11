@@ -206,6 +206,34 @@ socket INTO that skill gem (capacity 1, +1 at gem level 7, +1 at 14;
 one copy of each support), and the tag gate is enforced at socket time
 (manual mismatch → −1 + a GemRejected event; auto skips misfits).
 
+## Packaging an area — the canonical bundle
+
+Everything one area needs ships together under `content/areas/<name>/`:
+
+```
+areas/withered_shore/
+  zone.ron              the ZoneDef (its `id:` stays the lookup key)
+  brain.bot             the area's script; the brain id IS the
+                        directory name, so `brain: Some("<name>")`
+                        in zone.ron resolves automatically
+  monsters/*.ron        area-exclusive monsters (shared archetypes
+                        stay in content/monsters/)
+```
+
+Start a new area by copying `content/templates/area/` (the loader
+ignores `templates/`). Scripts DRY via the include directive —
+`include "std/zone_lib.bot";` resolves under `content/brains/`, where
+`std/` holds shared libraries (include-only, never brains themselves):
+`zone_lib.bot` provides the per-character beat table (`zl_once`,
+`zl_narrate_once`) and the record-offset constants. Included files
+hash like any content, so a library edit changes the world's content
+identity.
+
+GOTCHA the library header repeats: `&&`/`||` are EAGER in the bot
+language (both sides always evaluate) — keep side-effecting calls
+like `zl_once` nested inside their gates, never beside them in a
+compound condition.
+
 ## Zones — declarative data plus a scripting BRAIN
 
 Zones are data: `kind` (story | map | town — story zones respawn you

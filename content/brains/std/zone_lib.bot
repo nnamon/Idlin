@@ -1,0 +1,72 @@
+// ============================================================
+// std/zone_lib.bot — shared helpers for zone brains.
+//
+// Pull in with:   include "std/zone_lib.bot";
+// (Expanded textually by the content loader; this file is never a
+// brain itself — no main() here.)
+//
+// Conventions: per-character beat state lives at ZL_STATE as
+// [net, flags] rows; QueryCharacters records land at ZL_Q and
+// PollEvents records at ZL_EVS. Flags are caller-defined bits.
+//
+// GOTCHA: && and || are EAGER in this language — both sides always
+// evaluate. Never put zl_once (or any side-effecting call) in a
+// compound condition; nest the ifs instead.
+// ============================================================
+
+const ZL_EVS = 0xE000;     // PollEvents records (16 bytes each)
+const ZL_Q = 0xE400;       // QueryCharacters records (32 bytes each)
+const ZL_STATE = 0xD000;   // per-character rows: [net, flags] (8 bytes)
+const ZL_MAX_CHARS = 16;
+
+// QueryCharacters record field offsets.
+const QC_NET = 0;
+const QC_KILLS = 4;
+const QC_LEVEL = 8;
+const QC_X = 12;
+const QC_Y = 16;
+const QC_WCLASS = 20;
+const QC_LIFE = 24;
+const QC_DEAD = 28;
+
+// PollEvents record fields and kinds.
+const PE_KIND = 0;
+const PE_WHO = 4;
+const PE_A = 8;
+const PE_B = 12;
+const EV_KILL = 1;
+const EV_EQUIP = 2;
+const EV_SOCKET = 3;
+const EV_LEVEL = 4;
+const EV_DIED = 5;
+const EV_PICKUP = 6;
+
+// The state row for a character (created on first sight).
+fn zl_state_row(net) {
+    var i = 0;
+    while (i < ZL_MAX_CHARS) {
+        var row = ZL_STATE + i * 8;
+        if (mem[row] == net) { return row; }
+        if (mem[row] == 0) { mem[row] = net; return row; }
+        i = i + 1;
+    }
+    return ZL_STATE;
+}
+
+// True exactly once per character: checks the flag bit, sets it, and
+// reports whether this was the first time.
+fn zl_once(net, bit) {
+    var row = zl_state_row(net);
+    if ((mem[row + 4] & bit) != 0) { return 0; }
+    mem[row + 4] = mem[row + 4] + bit;
+    return 1;
+}
+
+// Narrate a line to a character exactly once (flag-gated).
+fn zl_narrate_once(net, bit, line) {
+    if (zl_once(net, bit) == 1) {
+        narrate(line, net);
+        return 1;
+    }
+    return 0;
+}

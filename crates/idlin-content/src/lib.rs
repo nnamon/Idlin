@@ -828,13 +828,50 @@ impl ContentDb {
             } else if rel_str.starts_with("tree/") {
                 let tree = ron::from_str::<TreeDef>(&text).map_err(parse_err)?;
                 db.tree.extend(tree.nodes);
+            } else if rel_str.starts_with("areas/") {
+                // Area bundles: everything one area needs, packaged
+                // together — areas/<name>/zone.ron + brain.bot +
+                // monsters/*.ron. The brain's id is the area's directory
+                // name, so `brain: Some("<name>")` in zone.ron just works.
+                let parts: Vec<&str> = rel_str.split('/').collect();
+                if rel_str.ends_with("/zone.ron") {
+                    db.zones
+                        .push(ron::from_str::<ZoneDef>(&text).map_err(parse_err)?);
+                } else if parts.len() >= 4 && parts[2] == "monsters" {
+                    db.monsters
+                        .push(ron::from_str::<MonsterDef>(&text).map_err(parse_err)?);
+                } else if rel_str.ends_with("/brain.bot") {
+                    let id = parts[1].to_string();
+                    let expanded =
+                        expand_includes(dir, &text, 0).map_err(|msg| ContentError::Brain {
+                            path: rel_str.clone(),
+                            msg,
+                        })?;
+                    let program =
+                        idlin_botc::compile(&expanded).map_err(|e| ContentError::Brain {
+                            path: rel_str.clone(),
+                            msg: e.to_string(),
+                        })?;
+                    db.brains.push(BrainDef { id, program });
+                }
+                // Anything else under areas/ is the author's business.
+            } else if rel_str.starts_with("brains/std/") {
+                // Shared script libraries: include-able, never brains
+                // themselves (no main()); hashed like everything else.
+            } else if rel_str.starts_with("templates/") {
+                // Copy-me skeletons: hashed but never loaded as content.
             } else if rel_str.starts_with("brains/") {
                 let id = Path::new(&rel_str)
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let program = if rel_str.ends_with(".bot") {
-                    idlin_botc::compile(&text).map_err(|e| ContentError::Brain {
+                    let expanded =
+                        expand_includes(dir, &text, 0).map_err(|msg| ContentError::Brain {
+                            path: rel_str.clone(),
+                            msg,
+                        })?;
+                    idlin_botc::compile(&expanded).map_err(|e| ContentError::Brain {
                         path: rel_str.clone(),
                         msg: e.to_string(),
                     })?
@@ -1052,6 +1089,34 @@ impl ContentDb {
         };
         Ok(())
     }
+}
+
+/// Expand `include "path";` lines in a .bot source — paths resolve under
+/// `content/brains/` (the std library home). Textual splice, depth-capped;
+/// included files feed the content hash as themselves, so a library edit
+/// always changes the world's content identity.
+fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String, String> {
+    if depth > 8 {
+        return Err("include depth exceeded (cycle?)".into());
+    }
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("include ") {
+            let rel = rest.trim().trim_end_matches(';').trim_matches('"');
+            if rel.contains("..") {
+                return Err(format!("include escapes content/: {rel}"));
+            }
+            let path = content_root.join("brains").join(rel);
+            let text = fs::read_to_string(&path).map_err(|e| format!("include {rel}: {e}"))?;
+            out.push_str(&expand_includes(content_root, &text, depth + 1)?);
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    Ok(out)
 }
 
 fn collect_ron_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {

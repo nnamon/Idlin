@@ -1,0 +1,39 @@
+// TEMPLATE — the area's script. The dungeon master is a bot: same VM,
+// same budget (5000 instr/tick), own deterministic RNG. It runs once
+// per tick at the end of the pipeline with the zone syscalls
+// (docs/bot-guide.md "Zone brains"): query_characters, poll_events,
+// narrate, drop_loot, spawn_monster.
+//
+// The std library provides per-character beat state (zl_once /
+// zl_narrate_once) and record offsets — see its header for layout.
+
+include "std/zone_lib.bot";
+
+// Line indices into zone.ron `lines:`.
+const L_WELCOME = 0;
+
+// Beat flags: one bit per once-only beat, per character.
+const F_WELCOME = 1;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * 32;
+        var net = mem[r + QC_NET];
+        zl_narrate_once(net, F_WELCOME, L_WELCOME);
+        // State-driven beats go here: gate on mem[r + QC_KILLS],
+        // mem[r + QC_Y] thresholds, mem[r + QC_WCLASS]...
+        i = i + 1;
+    }
+
+    var ne = poll_events(ZL_EVS, 32);
+    var j = 0;
+    while (j < ne) {
+        var ev = ZL_EVS + j * 16;
+        // Event-driven beats: mem[ev + PE_KIND] is EV_KILL / EV_EQUIP /
+        // EV_SOCKET / EV_LEVEL / EV_DIED / EV_PICKUP; PE_WHO the
+        // character; EV_KILL's PE_A is the monster def index.
+        j = j + 1;
+    }
+}

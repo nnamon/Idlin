@@ -1,0 +1,148 @@
+// ============================================================
+// Area brain: The Withered Shore. The dungeon master is a bot.
+//
+// Choreographs the onboarding: welcome narration, the scripted
+// first-weapon and suited-gem drops, the first obol, threshold
+// story beats up the strand, and the Tidewarden's hoard.
+//
+// Content indices below are pinned by a test in idlin-content —
+// if gems/items/monsters/currency change, update BOTH.
+// ============================================================
+
+include "std/zone_lib.bot";
+
+// content indices (sorted ids; pinned by content test)
+const IT_WAND = 0;        // barnacle_wand
+const IT_BOW = 2;         // driftwood_bow
+const IT_CLEAVER = 5;     // rusted_cleaver
+const GEM_ARC = 1;
+const GEM_CLEAVE = 2;
+const GEM_EMBER = 3;      // ember_bolt
+const GEM_FROST = 4;      // frost_nova
+const GEM_HEAVY = 6;      // heavy_swing
+const GEM_PLAGUE = 8;     // plague_cloud
+const GEM_SHOT = 9;       // power_shot
+const SUP_QUICKENING = 10;
+const SUP_SWIFT = 12;     // swift_casting
+const SUP_WIDENING = 14;
+const CUR_TRANSMUTE = 8;  // transmute_obol
+const MON_TIDEWARDEN = 3;
+
+// narration lines (zone.ron `lines:`)
+const L_WELCOME = 0;
+const L_FIRSTKILL = 1;
+const L_ARMED = 2;
+const L_GEM = 3;
+const L_SOCKET = 4;
+const L_LEVEL = 5;
+const L_OBOL = 6;
+const L_WRECKS = 7;
+const L_STALKERS = 8;
+const L_BOSSDOWN = 9;
+const L_BOSSWARN = 10;
+
+// beat flags (zl_once bits)
+const F_WELCOME = 1;
+const F_WEAPON = 2;
+const F_ARMED = 4;
+const F_GEMDROP = 8;
+const F_SOCKET = 16;
+const F_LEVEL = 32;
+const F_OBOL = 64;
+const F_Y70 = 128;
+const F_Y40 = 256;
+const F_BOSSWARN = 512;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+
+    // -- state-driven beats: welcome, gated drops, threshold story --
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * 32;
+        var net = mem[r + QC_NET];
+        var kills = mem[r + QC_KILLS];
+        var x = mem[r + QC_X];
+        var y = mem[r + QC_Y];
+
+        zl_narrate_once(net, F_WELCOME, L_WELCOME);
+
+        // NOTE: && is EAGER in this language (both sides always run) —
+        // side-effecting calls like zl_once must sit INSIDE the gate,
+        // never beside it.
+        // First kill pays a weapon; what you keep decides your path.
+        if (kills >= 1) {
+            if (zl_once(net, F_WEAPON) == 1) {
+                var w = (random() & 0x7FFFFFFF) % 3;
+                var base = IT_CLEAVER;
+                if (w == 1) { base = IT_BOW; }
+                if (w == 2) { base = IT_WAND; }
+                drop_loot(0, base, x, y, net);
+                narrate(L_FIRSTKILL, net);
+            }
+        }
+        // Second kill pays a gem suited to the wielded class.
+        if (kills >= 2) {
+            if (zl_once(net, F_GEMDROP) == 1) {
+                var wc = mem[r + QC_WCLASS];
+                var gem = GEM_EMBER;
+                if (wc == 0) {
+                    gem = GEM_CLEAVE;
+                    if ((random() & 1) == 1) { gem = GEM_HEAVY; }
+                }
+                if (wc == 1) { gem = GEM_SHOT; }
+                if (wc == 2 || wc == -1) {
+                    var s = (random() & 0x7FFFFFFF) % 4;
+                    if (s == 1) { gem = GEM_FROST; }
+                    if (s == 2) { gem = GEM_ARC; }
+                    if (s == 3) { gem = GEM_PLAGUE; }
+                }
+                drop_loot(1, gem, x, y, net);
+                narrate(L_GEM, net);
+            }
+        }
+        // The tenth corpse pays the ferryman.
+        if (kills >= 10) {
+            if (zl_once(net, F_OBOL) == 1) {
+                drop_loot(2, CUR_TRANSMUTE, x, y, net);
+                narrate(L_OBOL, net);
+            }
+        }
+        // Story thresholds, marching north (y shrinks).
+        if (y < 0x460000) { zl_narrate_once(net, F_Y70, L_WRECKS); }
+        if (y < 0x280000) { zl_narrate_once(net, F_Y40, L_STALKERS); }
+        if (y < 0x140000) { zl_narrate_once(net, F_BOSSWARN, L_BOSSWARN); }
+        i = i + 1;
+    }
+
+    // -- event-driven beats: first equip/socket/level, the boss hoard --
+    var ne = poll_events(ZL_EVS, 32);
+    var j = 0;
+    while (j < ne) {
+        var ev = ZL_EVS + j * 16;
+        var kind = mem[ev + PE_KIND];
+        var who = mem[ev + PE_WHO];
+        if (kind == EV_EQUIP) { zl_narrate_once(who, F_ARMED, L_ARMED); }
+        if (kind == EV_SOCKET) { zl_narrate_once(who, F_SOCKET, L_SOCKET); }
+        if (kind == EV_LEVEL) { zl_narrate_once(who, F_LEVEL, L_LEVEL); }
+        if (kind == EV_KILL && mem[ev + PE_A] == MON_TIDEWARDEN) {
+            narrate(L_BOSSDOWN, 0);
+            // The hoard lands at the killer's feet: a rare and a support.
+            var k = 0;
+            while (k < nq) {
+                var qr = ZL_Q + k * 32;
+                if (mem[qr + QC_NET] == who) {
+                    drop_loot(3, 8, mem[qr + QC_X], mem[qr + QC_Y], who);
+                    var sup = (random() & 0x7FFFFFFF) % 3;
+                    var sgem = SUP_QUICKENING;
+                    if (sup == 1) { sgem = SUP_SWIFT; }
+                    if (sup == 2) { sgem = SUP_WIDENING; }
+                    drop_loot(1, sgem, mem[qr + QC_X], mem[qr + QC_Y], who);
+                    k = nq;
+                }
+                k = k + 1;
+            }
+        }
+        j = j + 1;
+    }
+}
