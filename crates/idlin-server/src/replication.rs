@@ -4,7 +4,9 @@
 
 use crate::director::Director;
 use crate::runner::TickFrame;
-use idlin_protocol::{EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, S2C};
+use idlin_protocol::{
+    EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, ObstacleState, S2C,
+};
 use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,12 +34,14 @@ pub fn spawn_replication(
     zone_name: String,
     zone_width: i32,
     zone_height: i32,
+    obstacles: Vec<ObstacleState>,
 ) -> ReplicationHandles {
     let (tx, _) = broadcast::channel::<Frame>(256);
     let (snap_tx, snap_rx) = watch::channel::<Frame>(Arc::from(empty_snapshot(
         &zone_name,
         zone_width,
         zone_height,
+        &obstacles,
     )));
     let broadcast = tx.clone();
 
@@ -121,6 +125,7 @@ pub fn spawn_replication(
                 zone_name: zone_name.clone(),
                 width: zone_width,
                 height: zone_height,
+                obstacles: obstacles.clone(),
                 entities,
             };
             // The watch receiver lives in ReplicationHandles, so this send
@@ -203,12 +208,13 @@ fn serialize(msg: &S2C) -> Frame {
     Arc::from(serde_json::to_string(msg).expect("protocol types always serialize"))
 }
 
-fn empty_snapshot(zone_name: &str, width: i32, height: i32) -> String {
+fn empty_snapshot(zone_name: &str, width: i32, height: i32, obstacles: &[ObstacleState]) -> String {
     serde_json::to_string(&S2C::ZoneSnapshot {
         tick: 0,
         zone_name: zone_name.to_string(),
         width,
         height,
+        obstacles: obstacles.to_vec(),
         entities: vec![],
     })
     .expect("serialize")

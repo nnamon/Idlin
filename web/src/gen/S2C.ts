@@ -5,6 +5,7 @@ import type { EntityPatch } from "./EntityPatch";
 import type { EntityState } from "./EntityState";
 import type { GameEvent } from "./GameEvent";
 import type { HitFx } from "./HitFx";
+import type { ObstacleState } from "./ObstacleState";
 import type { Role } from "./Role";
 
 /**
@@ -22,4 +23,8 @@ server_tick: number, } } | { "type": "Pong", "data": { nonce: number, server_tic
 /**
  * Q16.16 raw zone extents.
  */
-width: number, height: number, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
+width: number, height: number, 
+/**
+ * Generated non-walkable props; constant for the zone's lifetime.
+ */
+obstacles: Array<ObstacleState>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };

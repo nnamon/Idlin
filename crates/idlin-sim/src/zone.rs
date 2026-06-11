@@ -17,6 +17,17 @@ pub struct PackState {
     pub respawn_timer: u32,
 }
 
+/// A non-walkable disc generated with the area. Rendered by the client
+/// as the matching prop (rock, dead tree); the sim slides entities along
+/// its edge.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Obstacle {
+    pub pos: FxV2,
+    pub radius: Fx,
+    /// Visual kind: 0 = rock, 1 = dead tree.
+    pub kind: u8,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Zone {
     pub name: String,
@@ -26,6 +37,8 @@ pub struct Zone {
     /// Idlers spawn/respawn scattered within this radius of `spawn`, so the
     /// cast doesn't bunch up at a single point.
     pub spawn_radius: Fx,
+    /// Generated with the area; constant for the zone's lifetime.
+    pub obstacles: Vec<Obstacle>,
     pub packs: Vec<PackState>,
     slots: Vec<Option<Entity>>,
     free: Vec<u32>,
@@ -40,6 +53,7 @@ impl Zone {
             height,
             spawn,
             spawn_radius,
+            obstacles: Vec::new(),
             packs: Vec::new(),
             slots: Vec::new(),
             free: Vec::new(),

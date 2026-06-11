@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { ZoneObstacle } from "../world/store";
 import type { AssetLibrary } from "./Assets";
 
 /**
@@ -111,7 +112,7 @@ export class Terrain {
   }
 
   /** Build ground, water, foam, and sky; scatter props. Call once per zone. */
-  build(assets: AssetLibrary): void {
+  build(assets: AssetLibrary, obstacles: ZoneObstacle[] = []): void {
     const { zoneW: w, zoneH: h } = this;
     const minX = -PAD;
     const spanX = w + PAD * 2;
@@ -245,6 +246,28 @@ export class Terrain {
     this.group.add(stars);
 
     this.scatterProps(assets, rng);
+    this.placeObstacles(assets, obstacles, rng);
+  }
+
+  /**
+   * Sim-generated obstacles: the authoritative non-walkable rocks/trees.
+   * Rendered exactly where the sim put them — entities slide around these.
+   */
+  private placeObstacles(assets: AssetLibrary, obstacles: ZoneObstacle[], rng: () => number): void {
+    const ROCKS = ["rock_1", "rock_2", "rock_3"];
+    const TREES = ["deadtree_1", "deadtree_2", "deadtree_3"];
+    for (const ob of obstacles) {
+      const keys = ob.kind === 1 ? TREES : ROCKS;
+      const obj = assets.instantiateProp(keys[Math.floor(rng() * keys.length)]);
+      if (!obj) continue;
+      // Footprint → visual scale: rock bases are ~1u radius at scale 1,
+      // tree trunks much thinner than their canopy footprint.
+      const s = ob.kind === 1 ? Math.max(0.26, ob.radius * 0.5) : Math.max(0.3, ob.radius * 0.95);
+      obj.scale.setScalar(s);
+      obj.rotation.y = rng() * Math.PI * 2;
+      obj.position.set(ob.x, this.heightAt(ob.x, ob.y) - 0.08, ob.y);
+      this.group.add(obj);
+    }
   }
 
   /** Soft-edged foam band. */
@@ -313,17 +336,17 @@ export class Terrain {
     const pick = (keys: string[]) => keys[Math.floor(rng() * keys.length)];
     const clearOfSpawn = (x: number, z: number, r = 7) => Math.hypot(x - spawnX, z - spawnZ) >= r;
 
-    // Inland dressing (west of the strand): rocks and dead trees, denser
-    // toward the bluffs and beyond both ends.
-    for (let i = 0; i < 46; i++) {
-      const edge = rng() < 0.6;
-      const x = edge ? -2 - rng() * 16 : rng() * beachLeftX;
-      const z = -12 + rng() * (h + 24);
-      if (!clearOfSpawn(x, z)) continue;
+    // Large rocks/trees INSIDE the playable bounds come from the sim's
+    // obstacle layout (placeObstacles) — they're collision. The client only
+    // dresses the non-walkable fringe: the bluffs and beyond both ends.
+    for (let i = 0; i < 40; i++) {
+      const x = rng() < 0.7 ? -2 - rng() * 16 : rng() * w;
+      const inside = x > -2;
+      const z = inside ? (rng() < 0.5 ? -12 + rng() * 10 : h + 2 + rng() * 10) : -12 + rng() * (h + 24);
       placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 0.35 + rng() * 0.9);
     }
-    for (let i = 0; i < 18; i++) {
-      const x = -8 + rng() * (beachLeftX * 0.9 + 8);
+    for (let i = 0; i < 14; i++) {
+      const x = -8 - rng() * 10;
       const z = -8 + rng() * (h + 16);
       placeOne(pick(["deadtree_1", "deadtree_2", "deadtree_3"]), x, z, 0.3 + rng() * 0.22);
     }
@@ -341,9 +364,9 @@ export class Terrain {
       if (!clearOfSpawn(x, z, 9)) continue;
       placeOne(pick(["deadtree_1", "deadtree_2"]), x, z, 0.2 + rng() * 0.14, { lieDown: true });
     }
-    // A rocky headland reaching into the surf partway up the strand.
+    // A rocky headland in the surf, just beyond the walkable bound.
     for (let i = 0; i < 8; i++) {
-      const x = w - 5 + rng() * 8;
+      const x = w + 0.8 + rng() * 4.5;
       const z = h * 0.32 + rng() * (h * 0.06);
       placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 1.0 + rng() * 1.3);
     }

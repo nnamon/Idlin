@@ -240,6 +240,51 @@ fn speed_from_cps(cps: i32) -> Fx {
     Fx::from_raw(((cps as i64) * 65536 / 100 / TICK_HZ as i64) as i32)
 }
 
+/// Area generation: scatter non-walkable rocks/trees, keeping the spawn
+/// area, pack anchors, and other obstacles clear. Deterministic from the
+/// world seed — every replay and every client sees the same layout.
+fn generate_obstacles(zone: &mut crate::zone::Zone, seed: u64, rocks: u32, trees: u32) {
+    let mut rng = Pcg32::stream(seed, Domain::MapLayout, 0);
+    let margin = Fx::from_int(2);
+    let span_x = (zone.width - margin - margin).raw().max(1) as u32;
+    let span_y = (zone.height - margin - margin).raw().max(1) as u32;
+    let kinds: [(u32, u8, i32, i32); 2] = [
+        // (count, kind, min radius cu, max radius cu)
+        (rocks, 0, 70, 140),
+        (trees, 1, 45, 75),
+    ];
+    for (count, kind, r_min, r_max) in kinds {
+        for _ in 0..count {
+            'attempts: for _ in 0..12 {
+                let x = margin + Fx::from_raw(rng.next_range(span_x) as i32);
+                let y = margin + Fx::from_raw(rng.next_range(span_y) as i32);
+                let radius = fx_from_cu(r_min + rng.next_range((r_max - r_min) as u32 + 1) as i32);
+                let pos = FxV2::new(x, y);
+                if pos.dist(zone.spawn) < zone.spawn_radius + Fx::from_int(3) {
+                    continue 'attempts;
+                }
+                for pack in &zone.packs {
+                    let anchor = FxV2::new(
+                        Fx::from_int(pack.def.x_u as i16),
+                        Fx::from_int(pack.def.y_u as i16),
+                    );
+                    if pos.dist(anchor) < Fx::from_int(pack.def.radius_u as i16 + 3) {
+                        continue 'attempts;
+                    }
+                }
+                for ob in &zone.obstacles {
+                    if pos.dist(ob.pos) < radius + ob.radius + Fx::from_int(1) {
+                        continue 'attempts;
+                    }
+                }
+                zone.obstacles
+                    .push(crate::zone::Obstacle { pos, radius, kind });
+                break 'attempts;
+            }
+        }
+    }
+}
+
 impl World {
     pub fn new(seed: u64, content: &ContentDb) -> World {
         let zone = match content
@@ -269,6 +314,7 @@ impl World {
                         respawn_timer: 0,
                     });
                 }
+                generate_obstacles(&mut zone, seed, def.gen_rocks, def.gen_trees);
                 zone
             }
             None => Zone::new(
@@ -351,6 +397,7 @@ impl World {
         self.run_bots(&mut events);
         self.movement();
         self.separation();
+        self.obstacle_pushout();
         self.attacks(&mut events);
         self.pickups(&mut events);
         self.regen();
@@ -546,6 +593,55 @@ impl World {
                 }
                 if let Some(mb) = self.zone.get_mut(b) {
                     mb.pos = new_b;
+                }
+            }
+        }
+    }
+
+    /// Obstacles are non-walkable: anything alive overlapping one is pushed
+    /// out radially, with a consistent tangential bias so an entity walking
+    /// dead-center at a rock slides around it instead of pinning against
+    /// the face. Runs after separation, in slot order — deterministic.
+    fn obstacle_pushout(&mut self) {
+        /// Max correction per tick: firm enough to beat any move speed.
+        const MAX_PUSH: Fx = Fx::from_raw(0x8000); // 0.5 u
+        if self.zone.obstacles.is_empty() {
+            return;
+        }
+        for slot in 0..self.zone.slot_count() {
+            let Some(e) = self.zone.get(slot) else {
+                continue;
+            };
+            if !e.alive() {
+                continue;
+            }
+            let Some(c) = &e.combat else { continue };
+            let (pos, radius) = (e.pos, c.radius);
+            let mut push_x = Fx::ZERO;
+            let mut push_y = Fx::ZERO;
+            for ob in &self.zone.obstacles {
+                let min_dist = radius + ob.radius;
+                let dist = pos.dist(ob.pos);
+                if dist >= min_dist {
+                    continue;
+                }
+                let need = (min_dist - dist).min(MAX_PUSH);
+                let dir = if dist > Fx::from_raw(0x100) {
+                    let f = Fx::ONE / dist;
+                    FxV2::new((pos.x - ob.pos.x) * f, (pos.y - ob.pos.y) * f)
+                } else {
+                    FxV2::new(Fx::ONE, Fx::ZERO) // dead-center: deterministic out
+                };
+                let side = need / Fx::from_int(2);
+                push_x = push_x + dir.x * need - dir.y * side;
+                push_y = push_y + dir.y * need + dir.x * side;
+            }
+            if push_x.raw() != 0 || push_y.raw() != 0 {
+                let new_pos = self
+                    .zone
+                    .clamp_pos(FxV2::new(pos.x + push_x, pos.y + push_y));
+                if let Some(me) = self.zone.get_mut(slot) {
+                    me.pos = new_pos;
                 }
             }
         }

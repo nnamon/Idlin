@@ -10,6 +10,8 @@ ZoneDef(
     spawn_x_u: 17,
     spawn_y_u: 122,
     spawn_radius_u: 7,
+    gen_rocks: 16,
+    gen_trees: 9,
     // Packs spawn (and respawn) as a unit: survivors hold their ground
     // until the whole pack is wiped, then the timer brings it back.
     packs: [

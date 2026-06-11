@@ -39,6 +39,14 @@ export interface Cue {
   at: number;
 }
 
+/** Sim-generated non-walkable prop, in sim units. */
+export interface ZoneObstacle {
+  x: number;
+  y: number;
+  radius: number;
+  kind: number;
+}
+
 const RARITY_NAMES = ["common", "magic", "rare", "UNIQUE"];
 const RARITY_COLORS = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"];
 
@@ -48,7 +56,8 @@ const RARITY_COLORS = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"];
  */
 export class WorldStore {
   entities = new Map<number, EntityRender>();
-  zone: { name: string; width: number; height: number } | null = null;
+  zone: { name: string; width: number; height: number; obstacles: ZoneObstacle[] } | null =
+    null;
   tick = 0;
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
@@ -62,7 +71,17 @@ export class WorldStore {
     switch (msg.type) {
       case "ZoneSnapshot": {
         const d = msg.data;
-        this.zone = { name: d.zone_name, width: d.width / 65536, height: d.height / 65536 };
+        this.zone = {
+          name: d.zone_name,
+          width: d.width / 65536,
+          height: d.height / 65536,
+          obstacles: d.obstacles.map((o) => ({
+            x: o.x / 65536,
+            y: o.y / 65536,
+            radius: o.radius / 65536,
+            kind: o.kind,
+          })),
+        };
         this.tick = d.tick;
         this.entities.clear();
         const now = performance.now();

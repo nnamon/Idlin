@@ -104,6 +104,11 @@ async fn main() -> anyhow::Result<()> {
     };
     let zone_name = world.zone_name().to_string();
     let (zone_w, zone_h) = world.zone_size_raw();
+    let obstacles: Vec<idlin_protocol::ObstacleState> = world
+        .obstacle_views()
+        .into_iter()
+        .map(|(x, y, radius, kind)| idlin_protocol::ObstacleState { x, y, radius, kind })
+        .collect();
 
     let server_tick = Arc::new(AtomicU64::new(world.tick_count()));
     let (frame_tx, frame_rx) = mpsc::unbounded_channel();
@@ -116,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
         server_tick.clone(),
         snapshot_dir,
     );
-    let handles = replication::spawn_replication(frame_rx, zone_name, zone_w, zone_h);
+    let handles = replication::spawn_replication(frame_rx, zone_name, zone_w, zone_h, obstacles);
 
     let tree_json: Arc<str> = Arc::from(tree_to_json(&content));
     let state = AppState {

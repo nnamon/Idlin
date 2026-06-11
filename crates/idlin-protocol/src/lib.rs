@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 6;
+pub const PROTO_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -160,6 +160,18 @@ pub enum GameEvent {
     },
 }
 
+/// A non-walkable disc generated with the area; the client renders the
+/// matching prop (rock, dead tree) at exactly this spot.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ObstacleState {
+    /// Q16.16 raw.
+    pub x: i32,
+    pub y: i32,
+    pub radius: i32,
+    /// 0 = rock, 1 = dead tree.
+    pub kind: u8,
+}
+
 /// One equipment slot on the inspect sheet ("" name = empty slot).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GearSlotView {
@@ -263,6 +275,8 @@ pub enum S2C {
         /// Q16.16 raw zone extents.
         width: i32,
         height: i32,
+        /// Generated non-walkable props; constant for the zone's lifetime.
+        obstacles: Vec<ObstacleState>,
         entities: Vec<EntityState>,
     },
     /// Per-tick changes relative to the previous tick.

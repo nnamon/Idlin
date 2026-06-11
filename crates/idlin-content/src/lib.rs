@@ -350,6 +350,12 @@ pub struct ZoneDef {
     /// Spawn scatter radius in whole units (0 = exact point).
     #[serde(default)]
     pub spawn_radius_u: i32,
+    /// Area generation: non-walkable rocks/trees placed with the zone
+    /// (clearing spawn and pack anchors). Rendered by the client.
+    #[serde(default)]
+    pub gen_rocks: u32,
+    #[serde(default)]
+    pub gen_trees: u32,
     pub packs: Vec<SpawnPack>,
 }
 

@@ -111,6 +111,16 @@ impl World {
         })
     }
 
+    /// The generated obstacle layout as raw Q16.16 (x, y, radius, kind),
+    /// for the snapshot — constant for the zone's lifetime.
+    pub fn obstacle_views(&self) -> Vec<(i32, i32, i32, u8)> {
+        self.zone
+            .obstacles
+            .iter()
+            .map(|o| (o.pos.x.raw(), o.pos.y.raw(), o.radius.raw(), o.kind))
+            .collect()
+    }
+
     /// Flat per-entity views for replication.
     pub fn views(&self) -> Vec<EntityView> {
         self.zone
@@ -325,6 +335,12 @@ impl World {
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
             h.write_u32(pack.respawn_timer);
+        }
+        for ob in &self.zone.obstacles {
+            h.write_i32(ob.pos.x.raw());
+            h.write_i32(ob.pos.y.raw());
+            h.write_i32(ob.radius.raw());
+            h.write_u8(ob.kind);
         }
         for (idx, bot) in self.bots.iter() {
             h.write_u64(idx as u64);

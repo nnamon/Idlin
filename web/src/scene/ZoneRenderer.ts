@@ -138,7 +138,7 @@ export class ZoneRenderer {
     // Cosmetic terrain: heightmap ground, sea, sky, scattered props. The
     // sim stays 2D; everything samples terrain.heightAt for its foot Y.
     this.terrain = new Terrain(w, h, zone.name);
-    this.terrain.build(this.assets);
+    this.terrain.build(this.assets, zone.obstacles);
     this.scene.add(this.terrain.group);
 
     // Moon angled across the zone; shadow frustum sized to cover it.
