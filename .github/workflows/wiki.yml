@@ -1,17 +1,13 @@
 name: Wiki
 
 # Regenerate the content wiki from the RONs and publish it to the repo's
-# Wiki tab. The wiki inherits the repo's (private) visibility, unlike
-# Pages. NOTE: the wiki git must exist — create any page once in the UI
-# before the first run.
+# Wiki tab on every RELEASE — the wiki documents shipped versions, not
+# every push. The wiki inherits the repo's (private) visibility, unlike
+# Pages.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "content/**"
-      - "crates/idlin-content/**"
-      - ".github/workflows/wiki.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -38,6 +34,8 @@ jobs:
           cd wiki
           sed -i 's/\(](\)\([a-z-]*\)\.md)/\1\2)/g' *.md
           mv README.md Home.md
+          # Stamp which release these pages document.
+          sed -i "1s/$/\n\n_Release: ${{ github.event.release.tag_name || 'manual run' }} (${GITHUB_SHA::8})_/" Home.md
           git config user.name "wiki-bot"
           git config user.email "actions@github.com"
           git add -A
