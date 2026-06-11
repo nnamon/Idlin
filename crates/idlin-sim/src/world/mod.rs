@@ -130,6 +130,13 @@ pub enum SimEvent {
         owner: String,
         gem: String,
     },
+    /// A support gem refused a skill at socket time (tag mismatch).
+    GemRejected {
+        id: u32,
+        owner: String,
+        gem: String,
+        skill: String,
+    },
     GemLevelUp {
         id: u32,
         owner: String,
@@ -152,12 +159,33 @@ pub enum SimEvent {
     /// A projectile took flight; the client animates it (hits arrive as
     /// authoritative Hit events when the sim resolves them).
     ProjectileSpawned {
+        /// Caster, so the client can play the launch animation.
+        attacker: u32,
+        spell: bool,
         /// Q16.16 raw launch position and per-tick velocity.
         x: i32,
         y: i32,
         vx: i32,
         vy: i32,
         /// Q16.16 raw travel budget.
+        range: i32,
+        dmg_type: u8,
+    },
+    /// A non-projectile skill went off: the client plays the cast/swing
+    /// animation and draws the shape (ring, cone, line) where it happened.
+    SkillFx {
+        attacker: u32,
+        spell: bool,
+        /// 0 strike, 1 nova, 2 cone, 3 line, 4 point-AoE.
+        shape: u8,
+        /// Q16.16 raw: the shape's anchor (the caster, except point-AoE
+        /// which anchors at the blast point) and aim direction (normalized).
+        x: i32,
+        y: i32,
+        dx: i32,
+        dy: i32,
+        /// Q16.16 raw: shape footprint (radius for rings, reach for sweeps).
+        radius: i32,
         range: i32,
         dmg_type: u8,
     },

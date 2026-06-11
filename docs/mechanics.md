@@ -53,17 +53,44 @@ Player↔Hostile faction pair; Neutral entities can't hit or be hit.
 
 ## Skills and gems
 
-- Skill damage base = `character damage per type × coeff_bp/10000 +
-  gem added × gem_scale`, then support grants apply as a stat sheet on top.
-- Supports socket into the skill gem itself (up to its `support_slots`,
-  PoE2-style) and apply only to that skill.
-- Gem scale: `1 + 4%·(gem level − 1)`; gems gain **half** of each kill's
-  XP individually; gem XP to next = 60 + 30·L²; cap 20.
-- Nova skills hit up to `max_targets` nearest enemies within the radius,
-  in deterministic (distance, id) order. Per-skill cooldowns are
-  independent of the weapon swing.
-- Attack/skill cooldowns scale with attack speed:
-  `cd = base·10000/attack_speed_factor`, minimum 2 ticks.
+- Attack skill damage per type = `character damage × coeff_bp/10000 +
+  gem added (at gem level) + support added (at support level)`. Spells
+  drop the weapon term entirely — their `added_*` formulas ARE the
+  damage. Legacy support stat grants fold in as a per-use sheet, then
+  support MORE multipliers apply on top.
+- Gem growth is **formula-driven**: every scaling number is a
+  `(base, per_level)` pair evaluated at the gem's level. Gems gain
+  **half** of each kill's XP individually; gem XP to next = 60 + 30·L²;
+  cap 20.
+- **Use time, not cooldowns**: an attack occupies its user for the
+  weapon's `use_ticks`; a spell for `cast_ticks` scaled by cast speed.
+  No moving or acting mid-use. `cooldown_ticks` exists only on special
+  skills (e.g. Power Shot) and runs on top of the use time.
+- Nova/AoE skills hit up to `max_targets` nearest enemies, in
+  deterministic (distance, id) order.
+
+## Support gems
+
+Supports socket INTO a skill gem (up to its `support_slots`, PoE2-style)
+and apply only to that skill. Two layers:
+
+- **Tags gate the pairing.** Every skill gem declares `tags`
+  (attack/spell/melee/projectile/aoe/duration/fire/…); every support
+  declares `requires_tags` and must share at least one with the skill.
+  A manual `SocketGem` with a mismatched pair fails (−1) and emits a
+  loud GemRejected event; auto-socketing simply skips misfits.
+- **Effects change behavior, not just numbers**: `more_damage`
+  (multiplicative, per-type or all), `added_damage` (flat, scales with
+  the SUPPORT's level), `inc_attack_speed` / `inc_cast_speed` (shorten
+  the use time), `extra_projectiles` (the shot fans out in 12° steps),
+  `pierce`, `aoe_inc` (grows ring radius, corridor width, and cone
+  reach), `dot_duration_inc`, and `mana_mult` (multiplies the skill's
+  mana cost; ReadSkills reports the final cost).
+
+Current roster: Heavier Blows (melee: 20% MORE phys), Quickening
+(attack: 20% attack speed), Added Embers (attack|spell: flat fire),
+Split Quiver (projectile: +2 projectiles, 25% LESS damage), Widening
+(aoe: 30% increased area).
 
 ## Attributes
 

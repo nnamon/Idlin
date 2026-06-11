@@ -330,6 +330,49 @@ pub struct BuffDef {
     pub duration_ticks: u32,
 }
 
+/// What a support gem does to the skill it's socketed into. Behavior and
+/// numbers both live here; tags gate which skills accept the support.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportEffect {
+    /// Multiplicative damage (negative bp = less). None = all types.
+    MoreDamage {
+        dtype: Option<DmgType>,
+        bp: i64,
+    },
+    /// Flat typed damage added to the skill, scaling with SUPPORT level.
+    AddedDamage {
+        dtype: DmgType,
+        amount: Formula,
+    },
+    IncAttackSpeed {
+        bp: i64,
+    },
+    IncCastSpeed {
+        bp: i64,
+    },
+    /// Fires this many additional projectiles in a fan.
+    ExtraProjectiles {
+        count: u32,
+    },
+    /// Additional bodies a projectile passes through.
+    Pierce {
+        count: u32,
+    },
+    /// Scales the skill's radius/width (basis points of increase).
+    AoeInc {
+        bp: i64,
+    },
+    /// Scales the skill's dot duration.
+    DotDurationInc {
+        bp: i64,
+    },
+    /// Scales the skill's mana cost (e.g. 4000 = 40% more mana).
+    ManaMult {
+        bp: i64,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillShape {
@@ -435,13 +478,28 @@ pub struct GemDef {
     #[serde(default)]
     pub support_slots: u32,
     // -- support fields --
-    /// Grants applied to the cluster's skill (scaled by gem level).
+    /// Tags this support fits: the skill must share at least one.
+    #[serde(default)]
+    pub requires_tags: Vec<GemTag>,
+    /// What socketing this support does to its skill.
+    #[serde(default)]
+    pub effects: Vec<SupportEffect>,
+    /// Legacy stat grants (tree-node style); still applied if present.
     #[serde(default)]
     pub grants: Vec<Grant>,
 }
 
 fn default_cone_cos() -> i64 {
     7000
+}
+
+impl GemDef {
+    /// Whether this SUPPORT gem fits `skill`: a support declares the tags it
+    /// works with, and the skill must share at least one. A support with no
+    /// required tags fits anything.
+    pub fn fits_skill(&self, skill: &GemDef) -> bool {
+        self.requires_tags.is_empty() || self.requires_tags.iter().any(|t| skill.tags.contains(t))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -829,6 +887,33 @@ mod tests {
             .zone("withered_shore")
             .expect("withered_shore must exist");
         assert!(!zone.packs.is_empty());
+    }
+
+    #[test]
+    fn support_tag_gating_on_real_content() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let gem = |id: &str| db.gems.iter().find(|g| g.id == id).expect(id);
+        let (cleave, ember, shot) = (gem("cleave"), gem("ember_bolt"), gem("power_shot"));
+        // Melee-only fits the melee sweep, not the spell or the arrow.
+        let heavier = gem("heavier_blows");
+        assert!(heavier.fits_skill(cleave));
+        assert!(!heavier.fits_skill(ember));
+        assert!(!heavier.fits_skill(shot));
+        // Projectile-only fits both projectiles, not the sweep.
+        let split = gem("split_quiver");
+        assert!(!split.fits_skill(cleave));
+        assert!(split.fits_skill(ember));
+        assert!(split.fits_skill(shot));
+        // Attack-or-spell fits everything in the current roster.
+        let embers = gem("added_embers");
+        assert!(embers.fits_skill(cleave));
+        assert!(embers.fits_skill(ember));
+        assert!(embers.fits_skill(shot));
+        // AoE-only fits the sweep alone.
+        let widening = gem("widening");
+        assert!(widening.fits_skill(cleave));
+        assert!(!widening.fits_skill(ember));
+        assert!(!widening.fits_skill(shot));
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

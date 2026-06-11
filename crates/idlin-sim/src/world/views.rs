@@ -386,6 +386,7 @@ impl World {
             h.write_i32(p.remaining.raw());
             h.write_u32(p.source);
             h.write_u32(p.pierce);
+            h.write_u8(p.spell as u8);
         }
         for ob in &self.zone.obstacles {
             h.write_i32(ob.pos.x.raw());

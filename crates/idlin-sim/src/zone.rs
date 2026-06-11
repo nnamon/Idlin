@@ -42,6 +42,8 @@ pub struct Projectile {
     pub source_name: String,
     pub source_is_char: bool,
     pub hostile_to_players: bool,
+    /// Spell projectiles never miss via accuracy.
+    pub spell: bool,
     pub accuracy: i64,
     pub damage: [i64; crate::entity::DMG_COUNT],
     pub crit_bp: i64,

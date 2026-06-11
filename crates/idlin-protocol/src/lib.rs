@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 9;
+pub const PROTO_VERSION: u32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -78,12 +78,37 @@ pub struct EntityPatch {
 /// separately as authoritative HitFx).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ProjectileFx {
+    /// Caster, so the client can play the launch animation.
+    pub attacker: u32,
+    /// Spell projectiles get a cast animation; attacks a weapon swing.
+    pub spell: bool,
     /// Q16.16 raw launch position and per-tick velocity.
     pub x: i32,
     pub y: i32,
     pub vx: i32,
     pub vy: i32,
     /// Q16.16 raw travel budget.
+    pub range: i32,
+    pub dmg_type: u8,
+}
+
+/// A non-projectile skill went off: the client plays the right cast/swing
+/// animation and draws the shape (ring, cone, line) where it happened.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct SkillFx {
+    pub attacker: u32,
+    pub spell: bool,
+    /// 0 strike, 1 nova, 2 cone, 3 line, 4 point-AoE.
+    pub shape: u8,
+    /// Q16.16 raw: the shape's anchor (the caster, except point-AoE which
+    /// anchors at the blast point) and aim direction (normalized).
+    pub x: i32,
+    pub y: i32,
+    pub dx: i32,
+    pub dy: i32,
+    /// Q16.16 raw footprint: ring radius (nova/point-AoE), or the full
+    /// corridor width for lines.
+    pub radius: i32,
     pub range: i32,
     pub dmg_type: u8,
 }
@@ -159,6 +184,13 @@ pub enum GameEvent {
         id: u32,
         owner: String,
         gem: String,
+    },
+    /// A support refused a skill at socket time (tag mismatch).
+    GemRejected {
+        id: u32,
+        owner: String,
+        gem: String,
+        skill: String,
     },
     BuildDeclared {
         id: u32,
@@ -317,6 +349,7 @@ pub enum S2C {
         removed: Vec<u32>,
         hits: Vec<HitFx>,
         projectiles: Vec<ProjectileFx>,
+        skills: Vec<SkillFx>,
     },
     /// Batched narratable events for this tick.
     Events {
@@ -370,6 +403,18 @@ mod tests {
                 killed: false,
             }],
             projectiles: vec![],
+            skills: vec![SkillFx {
+                attacker: 1,
+                spell: true,
+                shape: 1,
+                x: 0,
+                y: 0,
+                dx: 65536,
+                dy: 0,
+                radius: 65536 * 3,
+                range: 0,
+                dmg_type: 2,
+            }],
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: S2C = serde_json::from_str(&json).unwrap();

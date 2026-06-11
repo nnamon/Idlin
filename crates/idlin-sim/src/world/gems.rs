@@ -74,6 +74,18 @@ impl World {
                     if sg.supports.len() >= support_slots_of(&sg.gem) {
                         return -1;
                     }
+                    // Tag gate: the support must fit the skill it joins.
+                    let sup = &self.content.gems[ch.pouch[pouch_idx].gem_idx as usize];
+                    let skill = &self.content.gems[sg.gem.gem_idx as usize];
+                    if !sup.fits_skill(skill) {
+                        events.push(SimEvent::GemRejected {
+                            id: net_id,
+                            owner,
+                            gem: sup.name.clone(),
+                            skill: skill.name.clone(),
+                        });
+                        return -1;
+                    }
                     plans.push((node, pouch_idx, true));
                 }
             }
@@ -99,13 +111,15 @@ impl World {
             // keeping this single-pass over current state is simpler and
             // deterministic; the grinder calls SocketGem every tick.)
             for (&node, sg) in &ch.sockets {
+                let skill = &self.content.gems[sg.gem.gem_idx as usize];
                 let mut free = support_slots_of(&sg.gem).saturating_sub(sg.supports.len());
                 while free > 0 {
-                    let found = ch
-                        .pouch
-                        .iter()
-                        .enumerate()
-                        .find(|(i, g)| !used.contains(i) && gem_kind_of(g) == GemKind::Support);
+                    // Tag gate: auto-socketing quietly skips misfits.
+                    let found = ch.pouch.iter().enumerate().find(|(i, g)| {
+                        !used.contains(i)
+                            && gem_kind_of(g) == GemKind::Support
+                            && self.content.gems[g.gem_idx as usize].fits_skill(skill)
+                    });
                     let Some((i, _)) = found else { break };
                     used.push(i);
                     plans.push((node, i, true));

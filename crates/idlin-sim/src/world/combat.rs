@@ -8,11 +8,14 @@
 //! on-hit riders (dot application).
 
 use super::{ES_RECHARGE_DELAY_TICKS, RESPAWN_TICKS, SimEvent, World, XP_SHARE_RADIUS, fx_from_cu};
-use crate::entity::{ActiveEffect, AttackIntent, DMG_COUNT, DMG_PHYS, LootPayload, SkillTarget};
+use crate::entity::{
+    ActiveEffect, AttackIntent, DMG_COUNT, DMG_PHYS, GemInstance, LootPayload, SkillTarget,
+    SocketedGem,
+};
 use crate::fixed::{Fx, FxV2};
 use crate::stats::{Grant, Stat, StatSheet, apply_resist, hit_chance_bp, mitigate_phys};
 use crate::zone::Projectile;
-use idlin_content::{GemKind, SkillKind, SkillShape};
+use idlin_content::{GemKind, SkillKind, SkillShape, SupportEffect};
 
 /// Base crit chance of the basic weapon attack (gems author their own).
 const BASIC_CRIT_BP: i64 = 500;
@@ -20,6 +23,67 @@ const BASIC_CRIT_BP: i64 = 500;
 const BASIC_PROJ_SPEED_CPS: i32 = 1600;
 /// Body radius of projectiles (collision sweep).
 const PROJ_RADIUS_CU: i32 = 25;
+/// Fan spread between extra projectiles: 12-degree steps (Q16.16 cos/sin,
+/// cos rounded DOWN so repeated rotation never lengthens the vector).
+const FAN_COS_RAW: i64 = 64103;
+const FAN_SIN_RAW: i64 = 13626;
+
+/// Rotate a normalized direction by `steps` fan increments (sign picks the
+/// side). Pure integer math, deterministic.
+fn rotate_fan(dir: FxV2, steps: i32) -> FxV2 {
+    let (mut x, mut y) = (dir.x.raw() as i64, dir.y.raw() as i64);
+    let s = if steps >= 0 {
+        FAN_SIN_RAW
+    } else {
+        -FAN_SIN_RAW
+    };
+    for _ in 0..steps.unsigned_abs() {
+        let nx = (x * FAN_COS_RAW - y * s) >> 16;
+        let ny = (x * s + y * FAN_COS_RAW) >> 16;
+        x = nx;
+        y = ny;
+    }
+    FxV2::new(Fx::from_raw(x as i32), Fx::from_raw(y as i32))
+}
+
+/// The i-th projectile of a fan rotates 0, +1, -1, +2, -2... steps.
+fn fan_step(i: u32) -> i32 {
+    if i == 0 {
+        0
+    } else {
+        let k = i.div_ceil(2) as i32;
+        if i % 2 == 1 { k } else { -k }
+    }
+}
+
+/// Every socketed support's behavior effects, folded down for one use.
+struct SupportMods {
+    /// Multiplicative per-type damage (10000 = unchanged).
+    more_bp: [i64; DMG_COUNT],
+    /// Flat typed damage added to the skill (scales with SUPPORT level).
+    added: [i64; DMG_COUNT],
+    attack_speed_bp: i64,
+    cast_speed_bp: i64,
+    extra_projectiles: u32,
+    pierce: u32,
+    aoe_bp: i64,
+    dot_duration_bp: i64,
+}
+
+impl Default for SupportMods {
+    fn default() -> Self {
+        SupportMods {
+            more_bp: [10000; DMG_COUNT],
+            added: [0; DMG_COUNT],
+            attack_speed_bp: 0,
+            cast_speed_bp: 0,
+            extra_projectiles: 0,
+            pierce: 0,
+            aoe_bp: 0,
+            dot_duration_bp: 0,
+        }
+    }
+}
 
 /// Everything one landed hit needs to resolve, independent of where it came
 /// from (direct swing, traveling projectile, or a ticking dot).
@@ -79,6 +143,77 @@ pub(crate) const SKILL_ERR_MODE: i32 = -7;
 pub(crate) const SKILL_ERR_TARGET: i32 = -8;
 
 impl World {
+    /// Fold the behavior effects of every support socketed into a skill.
+    fn support_mods(&self, supports: &[GemInstance]) -> SupportMods {
+        let mut m = SupportMods::default();
+        for sup in supports {
+            let def = &self.content.gems[sup.gem_idx as usize];
+            for ef in &def.effects {
+                match *ef {
+                    SupportEffect::MoreDamage { dtype, bp } => {
+                        let f = (10000 + bp).max(0);
+                        match dtype {
+                            Some(d) => m.more_bp[d.idx()] = m.more_bp[d.idx()] * f / 10000,
+                            None => {
+                                for v in m.more_bp.iter_mut() {
+                                    *v = *v * f / 10000;
+                                }
+                            }
+                        }
+                    }
+                    SupportEffect::AddedDamage { dtype, amount } => {
+                        m.added[dtype.idx()] += amount.at(sup.level).max(0);
+                    }
+                    SupportEffect::IncAttackSpeed { bp } => m.attack_speed_bp += bp,
+                    SupportEffect::IncCastSpeed { bp } => m.cast_speed_bp += bp,
+                    SupportEffect::ExtraProjectiles { count } => m.extra_projectiles += count,
+                    SupportEffect::Pierce { count } => m.pierce += count,
+                    SupportEffect::AoeInc { bp } => m.aoe_bp += bp,
+                    SupportEffect::DotDurationInc { bp } => m.dot_duration_bp += bp,
+                    // Folded by skill_mana_cost, where the syscall check
+                    // can reach it too.
+                    SupportEffect::ManaMult { .. } => {}
+                }
+            }
+        }
+        m
+    }
+
+    /// A skill's mana cost with support multipliers folded in. Shared by the
+    /// syscall validation and the executor so they cannot disagree.
+    pub(crate) fn skill_mana_cost(&self, sg: &SocketedGem) -> i64 {
+        let gem = &self.content.gems[sg.gem.gem_idx as usize];
+        let mut cost = gem.mana_cost.at(sg.gem.level).max(0);
+        for sup in &sg.supports {
+            for ef in &self.content.gems[sup.gem_idx as usize].effects {
+                if let SupportEffect::ManaMult { bp } = *ef {
+                    cost = cost * (10000 + bp).max(0) / 10000;
+                }
+            }
+        }
+        cost
+    }
+
+    /// Effective use-time commitment for one use of a socketed skill —
+    /// support speed effects included. Shared by the executor and
+    /// ReadSkills so the bot sees the same number the sim charges.
+    pub(crate) fn skill_use_ticks(
+        &self,
+        sg: &SocketedGem,
+        weapon_use: u32,
+        cast_speed: i64,
+    ) -> u64 {
+        let gem = &self.content.gems[sg.gem.gem_idx as usize];
+        let mods = self.support_mods(&sg.supports);
+        if gem.skill_kind == SkillKind::Spell {
+            let eff = cast_speed.max(1000) * (10000 + mods.cast_speed_bp).max(1000) / 10000;
+            (gem.cast_ticks.max(2) as i64 * 10000 / eff.max(1000)).max(2) as u64
+        } else {
+            let eff = (10000 + mods.attack_speed_bp).max(1000);
+            (weapon_use.max(2) as i64 * 10000 / eff).max(2) as u64
+        }
+    }
+
     /// Validate a skill use and queue the intent. The same checks rerun at
     /// execution (a tick later, the world may have moved), but validating
     /// here gives bots an honest, immediate diagnosis.
@@ -141,7 +276,7 @@ impl World {
                 return SKILL_ERR_COOLDOWN;
             }
             let gem = &self.content.gems[sg.gem.gem_idx as usize];
-            if c.mana < gem.mana_cost.at(sg.gem.level).max(0) {
+            if c.mana < self.skill_mana_cost(sg) {
                 return SKILL_ERR_MANA;
             }
             let mode_ok = matches!(
@@ -309,14 +444,18 @@ impl World {
                     let level = sg.gem.level;
                     let is_spell = gem_def.skill_kind == SkillKind::Spell;
 
+                    // Supports: behavior effects folded down, plus legacy
+                    // stat grants on a per-use sheet.
+                    let mods = self.support_mods(&sg.supports);
+
                     // Mana is validated here too (the syscall check may be a
                     // tick stale) and charged on a successful use below.
-                    let cost = gem_def.mana_cost.at(level).max(0);
+                    let cost = self.skill_mana_cost(sg);
                     if cost > 0 && c.mana < cost {
                         continue;
                     }
+                    let busy_ticks = self.skill_use_ticks(sg, weapon_use, cast_speed);
 
-                    // Support grants apply to this skill's damage.
                     let mut sheet = StatSheet::new();
                     for sup in &sg.supports {
                         let sdef = &self.content.gems[sup.gem_idx as usize];
@@ -348,20 +487,31 @@ impl World {
                         } else {
                             char_damage[i] * gem_def.coeff_bp / 10000
                         };
-                        damage[i] = sheet.value(stats[i], weapon_part + added[i]);
+                        damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
+                        damage[i] = damage[i] * mods.more_bp[i] / 10000;
                     }
 
-                    let range = if gem_def.range_cu > 0 {
+                    // AoE supports grow the skill's footprint: ring radius,
+                    // corridor width, and (for cones) the sector's reach.
+                    let aoe = |cu: i32| (cu as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32;
+                    let mut range = if gem_def.range_cu > 0 {
                         fx_from_cu(gem_def.range_cu)
                     } else {
                         weapon_range
                     };
-                    let radius = fx_from_cu(gem_def.radius_cu);
+                    if gem_def.shape == SkillShape::Cone && mods.aoe_bp != 0 {
+                        range = Fx::from_raw(
+                            (range.raw() as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32,
+                        );
+                    }
+                    let radius = fx_from_cu(aoe(gem_def.radius_cu));
+                    let width = fx_from_cu(aoe(gem_def.width_cu));
                     let dot = gem_def.dot.map(|d| {
                         (
                             d.dtype.idx() as u8,
                             d.per_second.at(level).max(0),
-                            d.duration_ticks,
+                            (d.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0)
+                                / 10000) as u32,
                             gem_idx,
                         )
                     });
@@ -461,7 +611,7 @@ impl World {
                                 range,
                                 gem_def.shape,
                                 gem_def.cone_cos_bp,
-                                fx_from_cu(gem_def.width_cu),
+                                width,
                                 attacker_faction,
                                 gem_def.max_targets,
                             );
@@ -472,17 +622,23 @@ impl World {
                             swung = true; // the sweep happens even on air
                         }
                         SkillShape::Projectile => {
-                            let spec = spec_template.clone_for_next_victim();
-                            self.launch_projectile(
-                                pos,
-                                aim_point,
-                                spec,
-                                gem_def.proj_speed_cps.max(400),
-                                range,
-                                gem_def.pierce,
-                                hostile_to_players,
-                                events,
-                            );
+                            // Extra projectiles fan out in 12-degree steps
+                            // around the aimed direction.
+                            for i in 0..=mods.extra_projectiles {
+                                let d = rotate_fan(dir_n, fan_step(i));
+                                let toward = FxV2::new(pos.x + d.x * range, pos.y + d.y * range);
+                                let spec = spec_template.clone_for_next_victim();
+                                self.launch_projectile(
+                                    pos,
+                                    toward,
+                                    spec,
+                                    gem_def.proj_speed_cps.max(400),
+                                    range,
+                                    gem_def.pierce + mods.pierce,
+                                    hostile_to_players,
+                                    events,
+                                );
+                            }
                             swung = true;
                         }
                     }
@@ -492,12 +648,48 @@ impl World {
                         if let Some(buff) = gem_def.buff.clone() {
                             self.apply_buff(slot, buff.grants, buff.duration_ticks);
                         }
-                        let busy = if is_spell {
-                            (gem_def.cast_ticks.max(2) as i64 * 10000 / cast_speed.max(1000)).max(2)
-                                as u64
-                        } else {
-                            weapon_use.max(2) as u64
-                        };
+                        // Cast/swing FX for non-projectile shapes (the fan
+                        // announces itself via ProjectileSpawned).
+                        if gem_def.shape != SkillShape::Projectile {
+                            let shape_code = match gem_def.shape {
+                                SkillShape::Target => 0u8,
+                                SkillShape::Nova => 1,
+                                SkillShape::Cone => 2,
+                                SkillShape::Line => 3,
+                                _ => 4,
+                            };
+                            let anchor = if gem_def.shape == SkillShape::PointAoe {
+                                aim_point
+                            } else {
+                                pos
+                            };
+                            let mut dtype = 0usize;
+                            for i in 1..DMG_COUNT {
+                                if damage[i] > damage[dtype] {
+                                    dtype = i;
+                                }
+                            }
+                            // Lines report their corridor width in the
+                            // radius field (it's the visual footprint).
+                            let fx_radius = if gem_def.shape == SkillShape::Line {
+                                width
+                            } else {
+                                radius
+                            };
+                            events.push(SimEvent::SkillFx {
+                                attacker: attacker_net,
+                                spell: is_spell,
+                                shape: shape_code,
+                                x: anchor.x.raw(),
+                                y: anchor.y.raw(),
+                                dx: dir_n.x.raw(),
+                                dy: dir_n.y.raw(),
+                                radius: fx_radius.raw(),
+                                range: range.raw(),
+                                dmg_type: dtype as u8,
+                            });
+                        }
+                        let busy = busy_ticks;
                         let cooldown = gem_def.cooldown_ticks;
                         if let Some(me) = self.zone.get_mut(slot) {
                             if let Some(c) = me.combat.as_mut() {
@@ -652,6 +844,8 @@ impl World {
             }
         }
         events.push(SimEvent::ProjectileSpawned {
+            attacker: spec.attacker_net,
+            spell: spec.is_spell,
             x: from.x.raw(),
             y: from.y.raw(),
             vx: vel.x.raw(),
@@ -668,6 +862,7 @@ impl World {
             source_name: spec.attacker_name,
             source_is_char: spec.attacker_is_char,
             hostile_to_players,
+            spell: spec.is_spell,
             accuracy: spec.accuracy,
             damage: spec.damage,
             crit_bp: spec.crit_bp,
@@ -734,7 +929,7 @@ impl World {
                     attacker_net: p.source,
                     attacker_name: p.source_name.clone(),
                     attacker_is_char: p.source_is_char,
-                    is_spell: false,
+                    is_spell: p.spell,
                     is_dot: false,
                     accuracy: p.accuracy,
                     damage: p.damage,
@@ -1167,5 +1362,194 @@ impl World {
             self.refresh_derived_stats(slot);
         }
         self.finish_kills(dead, loot, events);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::World;
+    use idlin_content::ContentDb;
+    use std::path::Path;
+
+    fn content() -> ContentDb {
+        ContentDb::load(Path::new("../../content")).expect("workspace content must load")
+    }
+
+    fn gem_idx(content: &ContentDb, id: &str) -> u32 {
+        content.gems.iter().position(|g| g.id == id).expect(id) as u32
+    }
+
+    fn instance(content: &ContentDb, id: &str, level: u32) -> GemInstance {
+        GemInstance {
+            gem_idx: gem_idx(content, id),
+            level,
+            xp: 0,
+        }
+    }
+
+    #[test]
+    fn fan_steps_alternate_sides() {
+        assert_eq!(
+            (0..5).map(fan_step).collect::<Vec<_>>(),
+            vec![0, 1, -1, 2, -2]
+        );
+    }
+
+    #[test]
+    fn rotate_fan_keeps_length_and_turns() {
+        let dir = FxV2::new(Fx::ONE, Fx::ZERO);
+        for steps in [-3, -1, 1, 3] {
+            let r = rotate_fan(dir, steps);
+            let len2 = r.x.raw() as i64 * r.x.raw() as i64 + r.y.raw() as i64 * r.y.raw() as i64;
+            let unit2 = 65536i64 * 65536;
+            // Integer rounding shaves a little length but never adds it.
+            assert!(len2 <= unit2 && len2 > unit2 * 98 / 100, "len2 {len2}");
+            // The sign of the turn matches the step sign.
+            assert_eq!(r.y.raw() > 0, steps > 0);
+            assert!(r.x.raw() < 65536);
+        }
+        // Symmetric steps mirror across the aim axis (floor-shift rounding
+        // may differ by one raw unit, 1/65536 u — invisible and harmless).
+        let l = rotate_fan(dir, 2);
+        let r = rotate_fan(dir, -2);
+        assert!((l.x.raw() - r.x.raw()).abs() <= 1);
+        assert!((l.y.raw() + r.y.raw()).abs() <= 1);
+    }
+
+    #[test]
+    fn support_mods_fold_effects() {
+        let content = content();
+        let world = World::new(1, &content);
+        let supports = vec![
+            instance(&content, "split_quiver", 1),
+            instance(&content, "heavier_blows", 1),
+            instance(&content, "added_embers", 3),
+        ];
+        let m = world.support_mods(&supports);
+        assert_eq!(m.extra_projectiles, 2);
+        // 25% less (all) then 20% more phys: 10000 → 7500 → 9000.
+        assert_eq!(m.more_bp[crate::entity::DMG_PHYS], 9000);
+        assert_eq!(m.more_bp[1], 7500);
+        // Added Embers at gem level 3: 4 + 2×2 = 8 flat fire.
+        assert_eq!(m.added[1], 8);
+        assert_eq!(m.added[crate::entity::DMG_PHYS], 0);
+    }
+
+    /// One fresh world: a character with (skill + supports) socketed,
+    /// teleported next to a live monster, intent queued. Returns events
+    /// from a single attacks() pass.
+    fn use_supported_skill(skill: &str, supports: &[&str]) -> Vec<super::SimEvent> {
+        let content = content();
+        let mut world = World::new(424_242, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+        });
+        let char_slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character spawned");
+        let (monster_net, monster_pos) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(_, e)| (e.net_id, e.pos))
+            .expect("a monster exists");
+        let socket_node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .expect("a socket node exists") as u32;
+
+        let sg = SocketedGem {
+            gem: instance(&content, skill, 1),
+            cooldown_left: 0,
+            supports: supports.iter().map(|s| instance(&content, s, 1)).collect(),
+        };
+        let e = world.zone.get_mut(char_slot).unwrap();
+        e.pos = FxV2::new(monster_pos.x + Fx::from_raw(0x4000), monster_pos.y);
+        e.character
+            .as_mut()
+            .unwrap()
+            .sockets
+            .insert(socket_node, sg);
+        let c = e.combat.as_mut().unwrap();
+        c.mana = 100;
+        e.intents.attack = Some(AttackIntent {
+            target: SkillTarget::Entity(monster_net),
+            skill: Some(socket_node),
+        });
+
+        let mut events = Vec::new();
+        world.attacks(&mut events);
+        events
+    }
+
+    #[test]
+    fn widened_nova_emits_grown_skill_fx() {
+        let events = use_supported_skill("cleave", &["widening"]);
+        let fx = events
+            .iter()
+            .find_map(|ev| match ev {
+                super::SimEvent::SkillFx { shape, radius, .. } => Some((*shape, *radius)),
+                _ => None,
+            })
+            .expect("nova use must emit SkillFx");
+        assert_eq!(fx.0, 1, "cleave is a nova");
+        // Cleave 320 cu, Widening +30% → 416 cu.
+        assert_eq!(fx.1, fx_from_cu(416).raw());
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, super::SimEvent::Hit { .. })),
+            "the adjacent monster is inside the nova"
+        );
+    }
+
+    #[test]
+    fn split_quiver_fans_three_projectiles() {
+        let events = use_supported_skill("power_shot", &["split_quiver"]);
+        let launches: Vec<(i32, i32)> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                super::SimEvent::ProjectileSpawned { vx, vy, spell, .. } => {
+                    assert!(!spell, "power shot is an attack");
+                    Some((*vx, *vy))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(launches.len(), 3, "1 + 2 extra projectiles");
+        // The fan spreads: no two directions equal.
+        assert!(launches[0] != launches[1] && launches[1] != launches[2]);
+        assert!(
+            !events
+                .iter()
+                .any(|ev| matches!(ev, super::SimEvent::SkillFx { .. })),
+            "projectile skills announce via ProjectileSpawned, not SkillFx"
+        );
+    }
+
+    #[test]
+    fn mana_mult_scales_skill_cost() {
+        let content = content();
+        let world = World::new(1, &content);
+        let bare = SocketedGem {
+            gem: instance(&content, "cleave", 1),
+            cooldown_left: 0,
+            supports: Vec::new(),
+        };
+        // Cleave: 4 mana. Split Quiver (130%) then Widening (115%):
+        // 4 → 5 → 5 with integer truncation at each step.
+        let mut supported = bare.clone();
+        supported
+            .supports
+            .push(instance(&content, "split_quiver", 1));
+        supported.supports.push(instance(&content, "widening", 1));
+        assert_eq!(world.skill_mana_cost(&bare), 4);
+        assert_eq!(world.skill_mana_cost(&supported), 5);
     }
 }

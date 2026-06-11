@@ -6,7 +6,7 @@ use crate::director::Director;
 use crate::runner::TickFrame;
 use idlin_protocol::{
     EntityKind, EntityMove, EntityPatch, EntityState, GameEvent, HitFx, ObstacleState,
-    ProjectileFx, S2C,
+    ProjectileFx, S2C, SkillFx,
 };
 use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
@@ -93,6 +93,8 @@ pub fn spawn_replication(
                 .iter()
                 .filter_map(|ev| match ev {
                     SimEvent::ProjectileSpawned {
+                        attacker,
+                        spell,
                         x,
                         y,
                         vx,
@@ -100,10 +102,42 @@ pub fn spawn_replication(
                         range,
                         dmg_type,
                     } => Some(ProjectileFx {
+                        attacker: *attacker,
+                        spell: *spell,
                         x: *x,
                         y: *y,
                         vx: *vx,
                         vy: *vy,
+                        range: *range,
+                        dmg_type: *dmg_type,
+                    }),
+                    _ => None,
+                })
+                .collect();
+            let skills: Vec<SkillFx> = frame
+                .events
+                .iter()
+                .filter_map(|ev| match ev {
+                    SimEvent::SkillFx {
+                        attacker,
+                        spell,
+                        shape,
+                        x,
+                        y,
+                        dx,
+                        dy,
+                        radius,
+                        range,
+                        dmg_type,
+                    } => Some(SkillFx {
+                        attacker: *attacker,
+                        spell: *spell,
+                        shape: *shape,
+                        x: *x,
+                        y: *y,
+                        dx: *dx,
+                        dy: *dy,
+                        radius: *radius,
                         range: *range,
                         dmg_type: *dmg_type,
                     }),
@@ -119,6 +153,7 @@ pub fn spawn_replication(
                 removed,
                 hits,
                 projectiles,
+                skills,
             };
             // broadcast::send only errs when no client is subscribed —
             // normal between viewers, not a fault.
@@ -342,6 +377,17 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             gem: gem.clone(),
         },
+        SimEvent::GemRejected {
+            id,
+            owner,
+            gem,
+            skill,
+        } => GameEvent::GemRejected {
+            id: *id,
+            owner: owner.clone(),
+            gem: gem.clone(),
+            skill: skill.clone(),
+        },
         SimEvent::BuildDeclared { id, owner, nodes } => GameEvent::BuildDeclared {
             id: *id,
             owner: owner.clone(),
@@ -365,6 +411,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
         },
         SimEvent::Hit { .. }
         | SimEvent::ProjectileSpawned { .. }
+        | SimEvent::SkillFx { .. }
         | SimEvent::BotDebug { .. }
         | SimEvent::JoinRejected { .. } => {
             return None;

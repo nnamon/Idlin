@@ -1,10 +1,12 @@
-// Support: the cluster's skill hits like a falling mast.
+// Support: the cluster's skill hits like a falling mast. Melee only.
 GemDef(
     id: "heavier_blows",
     name: "Heavier Blows",
     kind: support,
     weight: 80,
-    grants: [
-        (stat: damage_phys, layer: more, value: 2000),  // 20% MORE phys
+    requires_tags: [melee],
+    effects: [
+        more_damage(dtype: Some(phys), bp: 2000),   // 20% MORE phys
+        mana_mult(bp: 1000),                        // 110% mana cost
     ],
 )

@@ -1,10 +1,13 @@
-// Support: the cluster's skill carries fire.
+// Support: the supported skill carries stolen fire, growing as the
+// SUPPORT gem levels.
 GemDef(
     id: "added_embers",
     name: "Added Embers",
     kind: support,
     weight: 80,
-    grants: [
-        (stat: damage_fire, layer: added, value: 5),
+    requires_tags: [attack, spell],
+    effects: [
+        added_damage(dtype: fire, amount: (base: 4, per_level: 2)),
+        mana_mult(bp: 1000),            // 110% mana cost
     ],
 )

@@ -374,14 +374,31 @@ export class EntityVisual {
 
   /** Swing at a target: weapon-specific clip when we have one. */
   playAttack(targetPos: THREE.Vector3): void {
-    if (this.attacking || this.wasDead || !this.mixer) return;
-    const action =
-      this.actions.get(`attack:${this.weaponKey}`) ?? this.actions.get("attack");
-    if (!action) return;
+    this.playOneShot(
+      this.actions.get(`attack:${this.weaponKey}`) ?? this.actions.get("attack"),
+      targetPos,
+    );
+  }
+
+  /**
+   * A skill went off: spells play the cast clip, attacks the weapon swing.
+   * `aimPos` (world) turns the body toward the action; null keeps facing.
+   */
+  playSkill(spell: boolean, aimPos: THREE.Vector3 | null): void {
+    const action = spell
+      ? (this.actions.get("cast") ?? this.actions.get("attack"))
+      : (this.actions.get(`attack:${this.weaponKey}`) ?? this.actions.get("attack"));
+    this.playOneShot(action, aimPos);
+  }
+
+  private playOneShot(action: THREE.AnimationAction | undefined, aimPos: THREE.Vector3 | null): void {
+    if (this.attacking || this.wasDead || !this.mixer || !action) return;
     this.attacking = true;
-    const dx = targetPos.x - this.group.position.x;
-    const dz = targetPos.z - this.group.position.z;
-    if (dx * dx + dz * dz > 1e-6) this.targetAngle = Math.atan2(dx, dz);
+    if (aimPos) {
+      const dx = aimPos.x - this.group.position.x;
+      const dz = aimPos.z - this.group.position.z;
+      if (dx * dx + dz * dz > 1e-6) this.targetAngle = Math.atan2(dx, dz);
+    }
     const base = this.actions.get(this.baseRole);
     base?.fadeOut(FADE_S * 0.5);
     action.setLoop(THREE.LoopOnce, 1);

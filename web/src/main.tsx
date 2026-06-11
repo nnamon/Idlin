@@ -10,6 +10,9 @@ const client = new NetClient(`${wsProto}://${location.host}/ws`);
 client.onMessage((msg) => store.handle(msg));
 client.start();
 
+// Dev/probe handle: headless verification injects FX and reads state here.
+(window as unknown as { __idlin?: object }).__idlin = { store };
+
 new ZoneRenderer(document.getElementById("scene")!, store);
 
 createRoot(document.getElementById("overlay")!).render(

@@ -1,0 +1,12 @@
+// Support: the supported area swells wider. AoE skills only.
+GemDef(
+    id: "widening",
+    name: "Widening",
+    kind: support,
+    weight: 60,
+    requires_tags: [aoe],
+    effects: [
+        aoe_inc(bp: 3000),              // 30% increased area footprint
+        mana_mult(bp: 1500),            // 115% mana cost
+    ],
+)

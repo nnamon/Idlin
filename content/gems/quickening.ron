@@ -1,10 +1,11 @@
-// Support: the cluster's skill comes around faster.
+// Support: the supported attack comes around faster.
 GemDef(
     id: "quickening",
     name: "Quickening",
     kind: support,
     weight: 70,
-    grants: [
-        (stat: attack_speed, layer: increased, value: 2000),  // 20% increased rate
+    requires_tags: [attack],
+    effects: [
+        inc_attack_speed(bp: 2000),     // 20% increased attack rate
     ],
 )

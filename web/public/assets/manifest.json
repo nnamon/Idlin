@@ -7,6 +7,7 @@
         "idle": "Idle_Loop",
         "run": "Jog_Fwd_Loop",
         "attack": "Punch_Cross",
+        "cast": "Spell_Simple_Shoot",
         "death": "Death01",
         "pickup": "PickUp_Table"
       },

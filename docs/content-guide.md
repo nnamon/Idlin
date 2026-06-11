@@ -130,34 +130,62 @@ gems — one evaluator (see [mechanics.md](mechanics.md)).
 
 ```ron
 GemDef(
-    id: "cleave",
-    name: "Cleave",
-    kind: skill,              // skill | support
-    weight: 100,
-    // skill fields:
-    coeff_bp: 11000,          // 110% of weapon damage (all types)
-    added_phys: 0, added_ele: 0, added_chaos: 0,   // the gem's own damage
-    shape: nova,              // target | nova
-    projectile: false,
-    range_cu: 0,              // 0 = weapon range
-    radius_cu: 320,           // nova radius
-    max_targets: 5,
-    support_slots: 2,         // supports socket INTO the gem (PoE2-style)
-    cooldown_ticks: 14,       // gems only: special cooldown on top of use time
+    id: "ember_bolt",
+    name: "Ember Bolt",
+    kind: skill,                        // skill | support
+    skill_kind: spell,                  // attack | spell (default attack)
+    target_mode: entity,                // entity | point | direction
+    tags: [spell, projectile, fire],    // gate which supports fit
+    weight: 60,
+    // -- damage --
+    coeff_bp: 0,                        // attacks: % of weapon damage (bp)
+    added_fire: (base: 9, per_level: 3),// Formula: the gem's own damage
+                                        // (added_phys/cold/lightning/chaos too)
+    crit_bp: 600,                       // per-skill base crit chance
+    // -- costs & timing --
+    mana_cost: (base: 6, per_level: 1), // Formula
+    cast_ticks: 7,                      // spells only; attacks use the weapon
+    cooldown_ticks: 0,                  // SPECIALS only, on top of use time
+    // -- geometry (per shape) --
+    shape: projectile,    // target | nova | cone | line | point_aoe | projectile
+    range_cu: 900,        // 0 = weapon range
+    radius_cu: 0,         // nova/point_aoe radius
+    cone_cos_bp: 7000,    // cone: cos(half-angle) in bp (7000 ≈ 90° total)
+    width_cu: 0,          // line corridor width
+    proj_speed_cps: 1500, // projectile flight speed (centi-units/s)
+    pierce: 0,            // bodies a projectile passes through
+    max_targets: 1,
+    // -- riders --
+    dot: None,            // Some(DotDef(dtype, per_second: Formula, duration_ticks))
+    buff: None,           // Some(BuffDef(grants, duration_ticks)) — self-buff on use
+    support_slots: 2,     // supports socket INTO the gem (PoE2-style)
 )
 
 GemDef(
-    id: "heavier_blows",
-    name: "Heavier Blows",
+    id: "split_quiver",
+    name: "Split Quiver",
     kind: support,
-    grants: [ (stat: damage_phys, layer: more, value: 2000) ],
+    weight: 60,
+    requires_tags: [projectile],        // must share ≥1 tag with the skill
+    effects: [
+        extra_projectiles(count: 2),    // fan in 12° steps
+        more_damage(dtype: None, bp: -2500),   // 25% LESS, all types
+        mana_mult(bp: 3000),            // 130% mana cost
+    ],
+    // effects vocabulary: more_damage(dtype: Option, bp) ·
+    // added_damage(dtype, amount: Formula — at the SUPPORT's level) ·
+    // inc_attack_speed(bp) · inc_cast_speed(bp) · extra_projectiles(count) ·
+    // pierce(count) · aoe_inc(bp) · dot_duration_inc(bp) · mana_mult(bp)
+    // (legacy `grants:` stat lists still apply if present)
 )
 ```
 
-Gems drop (12% of drops), live in a 12-slot pouch, gain XP from kills
-(+4% effect per level, cap 20). A skill gem socketed in a `socket_skill`
-tree node becomes UseSkill slot 1..N; support gems in **adjacent**
-`socket_support` nodes modify that skill.
+Gems drop (12% of drops), live in the pouch, and gain half their owner's
+kill XP (cap level 20); every Formula field re-evaluates at the gem's
+level. A skill gem socketed in a `socket` tree node becomes UseSkill slot
+1..N; supports socket INTO that skill gem, and the tag gate is enforced
+at socket time (manual mismatch → −1 + a GemRejected event; auto skips
+misfits).
 
 ## `content/tree/*.ron` — the passive tree
 

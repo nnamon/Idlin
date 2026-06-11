@@ -1,0 +1,13 @@
+// Support: one shot becomes three, each flying lighter. Projectiles only.
+GemDef(
+    id: "split_quiver",
+    name: "Split Quiver",
+    kind: support,
+    weight: 60,
+    requires_tags: [projectile],
+    effects: [
+        extra_projectiles(count: 2),
+        more_damage(dtype: None, bp: -2500),    // 25% LESS damage, all types
+        mana_mult(bp: 3000),                    // 130% mana cost
+    ],
+)

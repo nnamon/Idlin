@@ -6,6 +6,14 @@
  */
 export type ProjectileFx = { 
 /**
+ * Caster, so the client can play the launch animation.
+ */
+attacker: number, 
+/**
+ * Spell projectiles get a cast animation; attacks a weapon swing.
+ */
+spell: boolean, 
+/**
  * Q16.16 raw launch position and per-tick velocity.
  */
 x: number, y: number, vx: number, vy: number, 

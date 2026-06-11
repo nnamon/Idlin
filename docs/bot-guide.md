@@ -221,7 +221,7 @@ address you supply and return a count/status.
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
 | 18 | `ReadSkills` | out_addr, max (≤8) | count |
-| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem (its own support_slots). Auto fills skills first, then supports. |
+| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem (its own support_slots). **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell) — a mismatched manual socket returns −1; auto mode (−1,−1) fills skills first, then only supports that fit. |
 **Attacks commit you.** A swing occupies your character for the weapon's
 use time (attack-speed scaled): movement and further actions wait until it
 finishes. Plan movement around your swings — or get caught flat-footed.
@@ -316,6 +316,9 @@ time for spells, your weapon's swing time for attacks), target_mode
 (0 entity / 1 point / 2 direction), skill_kind (0 attack / 1 spell),
 ready (1 = off cooldown, mana in pocket, not mid-use)`. Skill slots are
 1..N in tree-socket order; slot 0 is always the basic weapon attack.
+`mana_cost` and `use_ticks` are FINAL numbers — socketed support gems
+(mana multipliers, attack/cast speed) and your own cast speed are already
+folded in, so budget straight off the record.
 
 ## The param block (how chat reaches you)
 

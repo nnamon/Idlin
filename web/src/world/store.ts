@@ -36,11 +36,32 @@ export interface ActiveHit {
 
 /** A projectile in flight (client-side animation; hits are authoritative). */
 export interface ActiveProjectile {
+  /** Caster id, for the launch animation. */
+  attacker: number;
+  spell: boolean;
   x: number;
   y: number;
   vx: number;
   vy: number;
   /** Sim units of travel budget. */
+  range: number;
+  dmgType: number;
+  at: number;
+}
+
+/** A non-projectile skill use: cast animation + shape VFX. */
+export interface ActiveSkill {
+  attacker: number;
+  spell: boolean;
+  /** 0 strike, 1 nova, 2 cone, 3 line, 4 point-AoE. */
+  shape: number;
+  /** Shape anchor in sim units (caster, or the blast point for point-AoE). */
+  x: number;
+  y: number;
+  /** Normalized aim direction. */
+  dx: number;
+  dy: number;
+  radius: number;
   range: number;
   dmgType: number;
   at: number;
@@ -76,6 +97,7 @@ export class WorldStore {
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
   pendingProjectiles: ActiveProjectile[] = [];
+  pendingSkills: ActiveSkill[] = [];
   cue: Cue | null = null;
   /** Latest inspect reply (the focus panel); refreshed by Overlay polling. */
   sheet: CharacterSheet | null = null;
@@ -151,12 +173,29 @@ export class WorldStore {
         }
         for (const p of d.projectiles) {
           this.pendingProjectiles.push({
+            attacker: p.attacker,
+            spell: p.spell,
             x: p.x / 65536,
             y: p.y / 65536,
             vx: p.vx / 65536,
             vy: p.vy / 65536,
             range: p.range / 65536,
             dmgType: p.dmg_type,
+            at: now,
+          });
+        }
+        for (const s of d.skills) {
+          this.pendingSkills.push({
+            attacker: s.attacker,
+            spell: s.spell,
+            shape: s.shape,
+            x: s.x / 65536,
+            y: s.y / 65536,
+            dx: s.dx / 65536,
+            dy: s.dy / 65536,
+            radius: s.radius / 65536,
+            range: s.range / 65536,
+            dmgType: s.dmg_type,
             at: now,
           });
         }
@@ -202,6 +241,14 @@ export class WorldStore {
     if (this.pendingProjectiles.length === 0) return [];
     const out = this.pendingProjectiles;
     this.pendingProjectiles = [];
+    return out;
+  }
+
+  /** Renderer drains skill uses once per frame. */
+  drainSkills(): ActiveSkill[] {
+    if (this.pendingSkills.length === 0) return [];
+    const out = this.pendingSkills;
+    this.pendingSkills = [];
     return out;
   }
 
@@ -291,6 +338,12 @@ export class WorldStore {
         break;
       case "GemSocketed":
         push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#5adfdf");
+        break;
+      case "GemRejected":
+        push(
+          `⚠ ${ev.data.gem} refuses ${ev.data.owner}'s ${ev.data.skill} (wrong tags)`,
+          "#ffb36a",
+        );
         break;
       case "GemLevelUp":
         push(`◆ ${ev.data.owner}'s ${ev.data.gem} is now level ${ev.data.level}`, "#5adfdf");

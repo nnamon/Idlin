@@ -244,11 +244,26 @@ export class ZoneRenderer {
         const attacker = this.visuals.get(hit.attacker);
         const target = this.visuals.get(hit.target);
         if (!target) continue;
-        if (!hit.dot) attacker?.playAttack(target.group.position);
+        // Projectile hits already animated their launch; dots burn silently.
+        if (!hit.dot && !hit.projectile) attacker?.playAttack(target.group.position);
         this.fx.spawnHit(hit, target.group.position, now);
       }
       for (const p of this.store.drainProjectiles()) {
+        // The launch animation plays at fire time, aimed along the flight.
+        this.visuals
+          .get(p.attacker)
+          ?.playSkill(p.spell, new THREE.Vector3(p.x + p.vx, 0, p.y + p.vy));
         this.fx.spawnProjectile(p, (x, z) => this.terrain?.heightAt(x, z) ?? 0, now);
+      }
+      for (const s of this.store.drainSkills()) {
+        // Point blasts anchor away from the caster — face the blast, not
+        // the shape origin math.
+        const aim =
+          s.shape === 4
+            ? new THREE.Vector3(s.x, 0, s.y)
+            : new THREE.Vector3(s.x + s.dx, 0, s.y + s.dy);
+        this.visuals.get(s.attacker)?.playSkill(s.spell, aim);
+        this.fx.spawnSkill(s, (x, z) => this.terrain?.heightAt(x, z) ?? 0, now);
       }
     }
     this.fx.update(now);

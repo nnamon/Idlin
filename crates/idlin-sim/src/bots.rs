@@ -514,12 +514,15 @@ impl World {
                             idlin_content::SkillKind::Attack => 0,
                             idlin_content::SkillKind::Spell => 1,
                         };
-                        let cost = def.mana_cost.at(sg.gem.level).max(0);
-                        let use_ticks = if skill_kind == 1 {
-                            def.cast_ticks.max(2) as i32
-                        } else {
-                            c.map(|c| c.use_ticks as i32).unwrap_or(0)
-                        };
+                        // Final cost: support mana multipliers included.
+                        let cost = self.skill_mana_cost(sg);
+                        // Effective commitment: support speed effects and
+                        // your cast speed folded in, same as the executor.
+                        let use_ticks = self.skill_use_ticks(
+                            sg,
+                            c.map(|c| c.use_ticks).unwrap_or(0),
+                            c.map(|c| c.cast_speed).unwrap_or(10000),
+                        ) as i32;
                         let ready = (sg.cooldown_left == 0
                             && c.map(|c| c.mana >= cost && now >= c.busy_until)
                                 .unwrap_or(false)) as i32;
