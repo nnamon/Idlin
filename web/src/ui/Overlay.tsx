@@ -73,8 +73,19 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
 
   return (
     <>
-      {/* top-left: status */}
-      <div className="panel" style={{ position: "absolute", top: 12, left: 12 }}>
+      {/* left column: status plaque + the focused idler's stats */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          left: 12,
+          width: 252,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+      <div className="panel">
         <div style={{ fontWeight: 700, color: "#9a7bff", fontSize: 15, letterSpacing: 4 }}>
           IDLIN
         </div>
@@ -107,6 +118,8 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
         >
           ◈ tree map
         </button>
+      </div>
+      {sheet && <StatsPanel sheet={sheet} />}
       </div>
 
       {showTree && <TreeMap onClose={() => setShowTree(false)} />}
@@ -149,7 +162,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
             </>
           )}
         </div>
-        {sheet && <SheetPanel sheet={sheet} icons={store.icons} />}
+        {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
       </div>
 
       {/* bottom-left: event ticker */}
@@ -259,17 +272,8 @@ function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   );
 }
 
-/** The focus panel: paper-doll gear, stats, gems, obols, and the bag. */
-function SheetPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
-  const stat = (label: string, value: string) => (
-    <div key={label} className="row">
-      <span className="k">{label}</span>
-      <span className="v">{value}</span>
-    </div>
-  );
-  const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
-  const resPct = (bp: number) => Math.min(75, Math.round(bp / 100));
-  const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
+/** Right column: the paper-doll gear and the bag — the PoE inventory. */
+function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   const bySlot = new Map(sheet.equipment.map((g) => [g.slot.toLowerCase(), g]));
   return (
     <div className="panel" style={{ marginTop: 8, lineHeight: 1.5 }}>
@@ -290,7 +294,26 @@ function SheetPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
         <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
       </div>
-      <Header>Stats</Header>
+      <Header>Bag</Header>
+      <BagGrid sheet={sheet} icons={icons} />
+    </div>
+  );
+}
+
+/** Left column: the focused idler's numbers — stats, gems, obols. */
+function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
+  const stat = (label: string, value: string) => (
+    <div key={label} className="row">
+      <span className="k">{label}</span>
+      <span className="v">{value}</span>
+    </div>
+  );
+  const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
+  const resPct = (bp: number) => Math.min(75, Math.round(bp / 100));
+  const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
+  return (
+    <div className="panel" style={{ lineHeight: 1.5 }}>
+      <Header first>Stats</Header>
       {stat("life", `${Math.max(0, sheet.life)} / ${sheet.life_max}`)}
       {stat("mana", `${Math.max(0, sheet.mana)} / ${sheet.mana_max}`)}
       {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`)}
@@ -363,8 +386,6 @@ function SheetPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
           </div>
         </>
       )}
-      <Header>Bag</Header>
-      <BagGrid sheet={sheet} icons={icons} />
     </div>
   );
 }
