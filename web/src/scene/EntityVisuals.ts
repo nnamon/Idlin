@@ -313,8 +313,8 @@ export class EntityVisual {
     this.label = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0.92 }),
     );
-    this.label.scale.set(5.0, 1.25, 1);
-    this.label.position.y = this.height + 1.05;
+    this.label.scale.set(3.75, 0.94, 1);
+    this.label.position.y = this.height + 0.95;
     this.group.add(this.label);
   }
 
