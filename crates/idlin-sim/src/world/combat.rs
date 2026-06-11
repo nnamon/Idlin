@@ -1285,16 +1285,17 @@ impl World {
                     monster: monster_name,
                     level: monster_level,
                 });
-                // Loot roll (personal: owned by the killer).
-                if self.rng_loot.next_range(100) < 35
-                    && let Some(payload) = self.roll_drop(monster_level)
-                {
-                    loot_spawns.push((
-                        target_pos,
-                        payload,
-                        attacker_net,
-                        attacker_name.to_string(),
-                    ));
+                // Loot (personal: owned by the killer): quantity first,
+                // then per-drop rarity — both the killer's stats. Multiple
+                // drops scatter a little so pillars don't stack.
+                for payload in self.roll_kill_drops(monster_level, attacker_slot) {
+                    let dx = self.rng_loot.next_range(120) as i32 - 60;
+                    let dy = self.rng_loot.next_range(120) as i32 - 60;
+                    let pos = FxV2::new(
+                        target_pos.x + super::fx_from_cu(dx),
+                        target_pos.y + super::fx_from_cu(dy),
+                    );
+                    loot_spawns.push((pos, payload, attacker_net, attacker_name.to_string()));
                 }
                 if let Some(attacker_slot) = attacker_slot {
                     self.grant_xp(attacker_slot, xp, true, events);

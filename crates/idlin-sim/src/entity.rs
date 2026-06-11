@@ -95,6 +95,9 @@ pub struct CombatStats {
     /// Body radius for collision/separation.
     pub radius: Fx,
     pub projectile: bool,
+    /// Find factors (base 10000): the KILLER's values scale its drops.
+    pub item_rarity: i64,
+    pub item_quantity: i64,
     /// Last tick this entity dealt or took damage (drives out-of-combat regen).
     pub last_combat_tick: u64,
 }

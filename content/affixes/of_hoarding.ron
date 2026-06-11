@@ -1,0 +1,11 @@
+// "... of Hoarding" — the dead give up more of everything.
+AffixDef(
+    id: "of_hoarding",
+    name: "of Hoarding",
+    kind: suffix,
+    slots: [helm, offhand],
+    weight: 35,
+    stat: item_quantity,
+    layer: increased,
+    tiers: [(ilvl: 2, min: 400, max: 800), (ilvl: 6, min: 900, max: 1500)],
+)

@@ -320,6 +320,8 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         speed_per_tick: speed_from_cps(def.speed_cps),
         radius: fx_from_cu(def.radius_cu),
         projectile: def.projectile,
+        item_rarity: 10000,
+        item_quantity: 10000,
         last_combat_tick: 0,
     }
 }
@@ -381,6 +383,8 @@ pub fn universal_stats(level: u32) -> CombatStats {
         speed_per_tick: speed_from_cps(BASE_SPEED_CPS),
         radius: fx_from_cu(BASE_RADIUS_CU),
         projectile: false,
+        item_rarity: 10000,
+        item_quantity: 10000,
         last_combat_tick: 0,
     }
 }

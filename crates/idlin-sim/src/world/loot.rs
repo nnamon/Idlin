@@ -64,9 +64,82 @@ impl World {
         });
     }
 
-    /// What falls out of a monster: usually gear, sometimes a gem or an
-    /// obol of crafting currency.
-    pub(super) fn roll_drop(&mut self, monster_level: u32) -> Option<LootPayload> {
+    /// One kill's full drop set, the PoE way: QUANTITY first (the killer's
+    /// factor scales the number of drop rolls; whole overflow = guaranteed
+    /// extra drops), then each roll picks its class and — for gear — its
+    /// rarity under the killer's RARITY factor. Excess normal-rarity gear
+    /// (beyond the first per kill) compacts into a low-tier obol instead
+    /// of littering the shore.
+    pub(super) fn roll_kill_drops(
+        &mut self,
+        monster_level: u32,
+        killer_slot: Option<usize>,
+    ) -> Vec<LootPayload> {
+        let (quantity, rarity) = killer_slot
+            .and_then(|s| self.zone.get(s))
+            .and_then(|e| e.combat.as_ref())
+            .map(|c| (c.item_quantity.max(0), c.item_rarity.max(0)))
+            .unwrap_or((10000, 10000));
+        // Base 35% chance per kill, scaled: 10000 bp of "expected" per
+        // guaranteed drop, the remainder as one more bernoulli roll.
+        let expected = 3500i64 * quantity / 10000;
+        let mut rolls = (expected / 10000) as u32;
+        if (self.rng_loot.next_range(10000) as i64) < expected % 10000 {
+            rolls += 1;
+        }
+        let mut drops = Vec::new();
+        let mut normals = 0u32;
+        for _ in 0..rolls {
+            let Some(payload) = self.roll_drop(monster_level, rarity) else {
+                continue;
+            };
+            if let LootPayload::Gear(item) = &payload
+                && item.rarity == Rarity::Normal
+            {
+                normals += 1;
+                if normals > 1 {
+                    // Trash compaction: the shore stays readable and the
+                    // kill still pays something.
+                    if let Some(obol) = self.roll_trash_obol() {
+                        drops.push(LootPayload::Currency(obol));
+                        continue;
+                    }
+                }
+            }
+            drops.push(payload);
+        }
+        drops
+    }
+
+    /// A weighted low-tier obol (tier ≤ 1) for trash compaction.
+    fn roll_trash_obol(&mut self) -> Option<u32> {
+        let total: u32 = self
+            .content
+            .currency
+            .iter()
+            .filter(|c| c.tier <= 1)
+            .map(|c| c.weight)
+            .sum();
+        if total == 0 {
+            return None;
+        }
+        let mut roll = self.rng_loot.next_range(total);
+        for (i, def) in self.content.currency.iter().enumerate() {
+            if def.tier > 1 {
+                continue;
+            }
+            if roll < def.weight {
+                return Some(i as u32);
+            }
+            roll -= def.weight;
+        }
+        None
+    }
+
+    /// One drop roll: usually gear, sometimes a gem or an obol of crafting
+    /// currency. `rarity_bp` (killer's factor) scales the magic/rare/unique
+    /// weights of gear; the normal weight never moves.
+    pub(super) fn roll_drop(&mut self, monster_level: u32, rarity_bp: i64) -> Option<LootPayload> {
         if !self.content.currency.is_empty() && self.rng_loot.next_range(100) < 10 {
             let total: u32 = self.content.currency.iter().map(|c| c.weight).sum();
             if total > 0 {
@@ -98,12 +171,13 @@ impl World {
                 }));
             }
         }
-        self.roll_item(monster_level).map(LootPayload::Gear)
+        self.roll_item(monster_level, rarity_bp)
+            .map(LootPayload::Gear)
     }
 
     /// Roll a concrete item: weighted base pick, rarity, then affixes from
     /// the slot's pool with tiers gated by item level.
-    fn roll_item(&mut self, monster_level: u32) -> Option<Item> {
+    fn roll_item(&mut self, monster_level: u32, rarity_bp: i64) -> Option<Item> {
         let total: u32 = self.content.items.iter().map(|i| i.weight).sum();
         if total == 0 {
             return None;
@@ -117,12 +191,19 @@ impl World {
             }
             roll -= def.weight;
         }
-        let r = self.rng_loot.next_range(1000);
-        let rarity = if r < 700 {
+        // PoE-shaped rarity: normal's weight is fixed; the others scale
+        // with the killer's increased-rarity factor.
+        let w_normal = 700i64;
+        let w_magic = 250 * rarity_bp / 10000;
+        let w_rare = 45 * rarity_bp / 10000;
+        let w_unique = 5 * rarity_bp / 10000;
+        let total = (w_normal + w_magic + w_rare + w_unique).max(1) as u32;
+        let r = self.rng_loot.next_range(total) as i64;
+        let rarity = if r < w_normal {
             Rarity::Normal
-        } else if r < 950 {
+        } else if r < w_normal + w_magic {
             Rarity::Magic
-        } else if r < 995 {
+        } else if r < w_normal + w_magic + w_rare {
             Rarity::Rare
         } else {
             Rarity::Unique
@@ -424,7 +505,7 @@ mod tests {
         let mut world = World::new(0xD1CE, &content);
         let mut seen = [0usize; 4];
         for _ in 0..4000 {
-            let Some(LootPayload::Gear(item)) = world.roll_drop(5) else {
+            let Some(LootPayload::Gear(item)) = world.roll_drop(5, 10000) else {
                 continue;
             };
             seen[item.rarity as usize] += 1;
@@ -595,5 +676,90 @@ mod craft_tests {
         assert_eq!(item.rarity, Rarity::Normal);
         assert!(item.affixes.is_empty());
         assert_eq!(item.name, "Driftwood Bow");
+    }
+}
+
+#[cfg(test)]
+mod find_tests {
+    use super::*;
+    use crate::World;
+    use idlin_content::ContentDb;
+    use std::path::Path;
+
+    fn world() -> World {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        World::new(0xF1AD, &content)
+    }
+
+    #[test]
+    fn rarity_factor_shifts_the_tier_distribution() {
+        let mut base = world();
+        let mut juiced = world();
+        let (mut base_magic_plus, mut juiced_magic_plus) = (0, 0);
+        for _ in 0..4000 {
+            if let Some(LootPayload::Gear(i)) = base.roll_drop(5, 10000)
+                && i.rarity != Rarity::Normal
+            {
+                base_magic_plus += 1;
+            }
+            if let Some(LootPayload::Gear(i)) = juiced.roll_drop(5, 30000)
+                && i.rarity != Rarity::Normal
+            {
+                juiced_magic_plus += 1;
+            }
+        }
+        // +200% rarity roughly doubles-plus the magic+ rate (700 fixed vs
+        // 300 -> 900 scaled weight); demand a decisive separation.
+        assert!(
+            juiced_magic_plus as f64 > base_magic_plus as f64 * 1.6,
+            "rarity factor must bite: {juiced_magic_plus} vs {base_magic_plus}"
+        );
+    }
+
+    #[test]
+    fn quantity_overflow_guarantees_drops_and_normals_compact() {
+        let mut w = world();
+        // 600% quantity = 3500bp×6 = 21000bp ⇒ at least 2 drops per kill.
+        let killer = killer_with_factors(&mut w, 60000, 10000);
+        let mut total = 0;
+        let mut normals = 0;
+        let mut obols = 0;
+        for _ in 0..300 {
+            let drops = w.roll_kill_drops(5, killer);
+            assert!(drops.len() >= 2, "overflow guarantees drops");
+            let mut kill_normals = 0;
+            for d in &drops {
+                total += 1;
+                match d {
+                    LootPayload::Gear(i) if i.rarity == Rarity::Normal => {
+                        kill_normals += 1;
+                        normals += 1;
+                    }
+                    LootPayload::Currency(_) => obols += 1,
+                    _ => {}
+                }
+            }
+            assert!(kill_normals <= 1, "at most one normal per kill");
+        }
+        assert!(total >= 600);
+        assert!(normals > 0, "the first normal still drops");
+        assert!(obols > 0, "excess normals became obols");
+    }
+
+    /// Test helper: a throwaway character slot with chosen find factors.
+    fn killer_with_factors(w: &mut World, quantity: i64, rarity: i64) -> Option<usize> {
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        w.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Finder".into(),
+                program,
+            }],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| w.zone.get(s).is_some_and(|e| e.character.is_some()))?;
+        let c = w.zone.get_mut(slot)?.combat.as_mut()?;
+        c.item_quantity = quantity;
+        c.item_rarity = rarity;
+        Some(slot)
     }
 }

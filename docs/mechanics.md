@@ -132,6 +132,20 @@ empty slot wear nothing — fresh wretches wash ashore naked.
 
 ## Currency (the obols)
 
+Drops follow the PoE order, per kill: **quantity first** — the
+KILLER's `item_quantity` factor scales the number of drop rolls (base
+35% expectation; whole overflow becomes guaranteed drops, e.g. +500%
+quantity = 2 guaranteed + 10% chance of a third). Each roll then picks
+its class (currency ~10%, gems ~12%, gear otherwise); gear rolls
+rarity under the killer's `item_rarity` factor — the normal weight
+(700) never moves while magic (250), rare (45), and unique (5) weights
+scale — then affixes from the slot's pool, tiers gated by monster
+level. **Excess normal-rarity gear compacts**: at most one normal item
+drops per kill; the rest convert into low-tier obols, so the shore
+stays readable and trash kills still pay. Both find stats live on the
+ordinary grant engine ("of Plunder" = rarity, "of Hoarding" =
+quantity) and show on the focus panel.
+
 Crafting is PoE verbs over the affix engine, held as plain COUNTS (no
 bag space): **Transmute** (normal→magic), **Augment** (+1 affix on
 magic), **Alter** (reroll magic), **Regal** (magic→rare, +1, new name),

@@ -319,6 +319,8 @@ impl World {
         let crit_inc = sheet.value(Stat::CritChance, 10000).max(0);
         let crit_multi = (15000 + sheet.value(Stat::CritMulti, 0)).max(10000);
         let cast_speed = sheet.value(Stat::CastSpeed, 10000).max(1000);
+        let item_rarity = sheet.value(Stat::ItemRarity, 10000).max(0);
+        let item_quantity = sheet.value(Stat::ItemQuantity, 10000).max(0);
         let speed = Fx::from_raw(
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
@@ -354,6 +356,8 @@ impl World {
             c.use_ticks = use_ticks;
             c.speed_per_tick = speed;
             c.projectile = projectile;
+            c.item_rarity = item_rarity;
+            c.item_quantity = item_quantity;
         }
     }
 }

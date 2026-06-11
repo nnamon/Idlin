@@ -116,6 +116,8 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         resist_cold_bp: clamp_i32(v.resists[1]),
         resist_lightning_bp: clamp_i32(v.resists[2]),
         resist_chaos_bp: clamp_i32(v.resists[3]),
+        item_rarity_bp: clamp_i32((v.item_rarity - 10000).max(0)),
+        item_quantity_bp: clamp_i32((v.item_quantity - 10000).max(0)),
         equipment: v
             .equipment
             .into_iter()

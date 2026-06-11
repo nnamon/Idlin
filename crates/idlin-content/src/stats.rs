@@ -53,9 +53,14 @@ pub enum Stat {
     ResistCold,
     ResistLightning,
     ResistChaos,
+    // -- find (factors, base 10000; the KILLER's values drive drops) --
+    /// Scales the magic/rare/unique weights of the rarity roll.
+    ItemRarity,
+    /// Scales how many drop rolls a kill makes.
+    ItemQuantity,
 }
 
-pub const STAT_COUNT: usize = 29;
+pub const STAT_COUNT: usize = 31;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -88,6 +93,8 @@ impl Stat {
         Stat::ResistCold,
         Stat::ResistLightning,
         Stat::ResistChaos,
+        Stat::ItemRarity,
+        Stat::ItemQuantity,
     ];
 
     pub fn idx(self) -> usize {

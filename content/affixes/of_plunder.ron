@@ -1,0 +1,11 @@
+// "... of Plunder" — the dead give up better things.
+AffixDef(
+    id: "of_plunder",
+    name: "of Plunder",
+    kind: suffix,
+    slots: [helm, offhand, boots],
+    weight: 50,
+    stat: item_rarity,
+    layer: increased,
+    tiers: [(ilvl: 1, min: 800, max: 1500), (ilvl: 4, min: 1600, max: 2500)],
+)

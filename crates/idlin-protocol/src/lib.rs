@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 13;
+pub const PROTO_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -305,6 +305,9 @@ pub struct CharacterSheet {
     pub resist_cold_bp: i32,
     pub resist_lightning_bp: i32,
     pub resist_chaos_bp: i32,
+    /// Find factors in basis points over 10000 (0 = no bonus).
+    pub item_rarity_bp: i32,
+    pub item_quantity_bp: i32,
     pub equipment: Vec<GearSlotView>,
     pub inventory: Vec<InvItemView>,
     pub gems: Vec<GemView>,

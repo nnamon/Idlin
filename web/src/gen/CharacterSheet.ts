@@ -16,4 +16,8 @@ block_bp: number, kills: number, dmg_phys: number, dmg_fire: number, dmg_cold: n
 /**
  * Basis points (10000 = 100%); the cap is applied at use, not here.
  */
-resist_fire_bp: number, resist_cold_bp: number, resist_lightning_bp: number, resist_chaos_bp: number, equipment: Array<GearSlotView>, inventory: Array<InvItemView>, gems: Array<GemView>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };
+resist_fire_bp: number, resist_cold_bp: number, resist_lightning_bp: number, resist_chaos_bp: number, 
+/**
+ * Find factors in basis points over 10000 (0 = no bonus).
+ */
+item_rarity_bp: number, item_quantity_bp: number, equipment: Array<GearSlotView>, inventory: Array<InvItemView>, gems: Array<GemView>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };

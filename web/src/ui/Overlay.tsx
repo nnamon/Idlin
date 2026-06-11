@@ -168,6 +168,11 @@ function SheetPanel({ sheet }: { sheet: CharacterSheet }) {
       {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`)}
       {stat("armour", `${sheet.armour}`)}
       {stat("res f/c/l/ch", res)}
+      {(sheet.item_rarity_bp > 0 || sheet.item_quantity_bp > 0) &&
+        stat(
+          "find rar/qty",
+          `+${(sheet.item_rarity_bp / 100).toFixed(0)}% / +${(sheet.item_quantity_bp / 100).toFixed(0)}%`,
+        )}
       {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
       {sheet.gems.length > 0 && (
         <>

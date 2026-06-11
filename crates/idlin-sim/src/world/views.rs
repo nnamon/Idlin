@@ -27,6 +27,9 @@ pub struct CharacterSheetView {
     pub evasion: i64,
     pub armour: i64,
     pub resists: [i64; crate::entity::RES_COUNT],
+    /// Find factors (base 10000).
+    pub item_rarity: i64,
+    pub item_quantity: i64,
     /// (slot name, Some((item name, rarity)) or None when empty).
     pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
     /// (name, rarity, x, y, w, h) per bag item.
@@ -125,6 +128,8 @@ impl World {
             evasion: c.evasion,
             armour: c.armour,
             resists: c.resists,
+            item_rarity: c.item_rarity,
+            item_quantity: c.item_quantity,
             equipment,
             inventory,
             gems,
