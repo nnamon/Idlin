@@ -399,7 +399,11 @@ fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32,
         }
         let span = (tier.max - tier.min).max(0) as u32 + 1;
         let value = tier.min + rng.next_range(span) as i64;
-        item.affixes.push(RolledAffix { affix_idx, value, tier: tier_idx as u32 });
+        item.affixes.push(RolledAffix {
+            affix_idx,
+            value,
+            tier: tier_idx as u32,
+        });
     }
 }
 

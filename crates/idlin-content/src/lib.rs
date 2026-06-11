@@ -1662,13 +1662,23 @@ mod tests {
         );
         let db = ContentDb::load(&tc.0).unwrap();
         let zone = db.zone("den").unwrap();
-        assert_eq!((zone.width_u, zone.height_u), (5, 4), "dims come from the map");
+        assert_eq!(
+            (zone.width_u, zone.height_u),
+            (5, 4),
+            "dims come from the map"
+        );
         let grid = zone.tiles.as_ref().expect("grid attached");
         let ts = db.tileset("cave").unwrap();
         let tile = |x, y| &ts.tiles[grid.cell(x, y).unwrap() as usize];
-        assert!(!tile(0, 0).walkable && tile(0, 0).blocks_los, "corner is wall");
+        assert!(
+            !tile(0, 0).walkable && tile(0, 0).blocks_los,
+            "corner is wall"
+        );
         assert!(tile(1, 1).walkable, "interior floor walks");
-        assert!(!tile(2, 2).walkable && !tile(2, 2).blocks_los, "pool blocks feet, not sight");
+        assert!(
+            !tile(2, 2).walkable && !tile(2, 2).blocks_los,
+            "pool blocks feet, not sight"
+        );
     }
 
     #[test]
@@ -1713,11 +1723,12 @@ mod tests {
     fn tileset_validation_catches_bad_palettes_and_ecology() {
         let dup_glyph = TILESET_OK.replace("glyph: '~'", "glyph: '#'");
         let bad_ground = TILESET_OK.replace("ground: \"water\")", "ground: \"lava\")");
-        let ghost_mob = TILESET_OK.replace(
-            "palette:",
-            "natural_monsters: [\"kraken\"], palette:",
-        );
-        for (name, body) in [("dupglyph", &dup_glyph), ("ground", &bad_ground), ("mob", &ghost_mob)] {
+        let ghost_mob = TILESET_OK.replace("palette:", "natural_monsters: [\"kraken\"], palette:");
+        for (name, body) in [
+            ("dupglyph", &dup_glyph),
+            ("ground", &bad_ground),
+            ("mob", &ghost_mob),
+        ] {
             let tc = TempContent::new(name, &[("tilesets/cave.ron", body.as_str())]);
             match ContentDb::load(&tc.0) {
                 Err(ContentError::BadTileset { tileset, .. }) => assert_eq!(tileset, "cave"),

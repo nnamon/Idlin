@@ -519,8 +519,16 @@ fn grid_sight_blocked(grid: &crate::zone::SimGrid, a: FxV2, b: FxV2) -> bool {
     let (dx, dy) = (bx - ax, by - ay);
     let (sx, sy): (i64, i64) = (if dx >= 0 { 1 } else { -1 }, if dy >= 0 { 1 } else { -1 });
     // Raw distance from `a` to the next x/y cell boundary along the ray.
-    let mut to_bx = if dx >= 0 { (cx + 1) * CELL - ax } else { ax - cx * CELL };
-    let mut to_by = if dy >= 0 { (cy + 1) * CELL - ay } else { ay - cy * CELL };
+    let mut to_bx = if dx >= 0 {
+        (cx + 1) * CELL - ax
+    } else {
+        ax - cx * CELL
+    };
+    let mut to_by = if dy >= 0 {
+        (cy + 1) * CELL - ay
+    } else {
+        ay - cy * CELL
+    };
     let (adx, ady) = (dx.abs(), dy.abs());
     let mut steps = (grid.width + grid.height) as i64 + 4;
     while (cx, cy) != (ex, ey) && steps > 0 {

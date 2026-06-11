@@ -175,8 +175,14 @@ impl World {
     /// TEST HARNESS ONLY: line-of-sight between two unit coordinates.
     pub fn test_los_clear(&self, ax: i16, ay: i16, bx: i16, by: i16) -> bool {
         !self.los_blocked(
-            crate::fixed::FxV2::new(crate::fixed::Fx::from_int(ax), crate::fixed::Fx::from_int(ay)),
-            crate::fixed::FxV2::new(crate::fixed::Fx::from_int(bx), crate::fixed::Fx::from_int(by)),
+            crate::fixed::FxV2::new(
+                crate::fixed::Fx::from_int(ax),
+                crate::fixed::Fx::from_int(ay),
+            ),
+            crate::fixed::FxV2::new(
+                crate::fixed::Fx::from_int(bx),
+                crate::fixed::Fx::from_int(by),
+            ),
         )
     }
 
@@ -184,7 +190,12 @@ impl World {
     /// Zones without a grid always say yes.
     pub fn test_on_walkable(&self, net_id: u32) -> Option<bool> {
         let e = self.zone.get_net(net_id)?;
-        Some(self.zone.grid.as_ref().is_none_or(|g| g.walkable_pos(e.pos)))
+        Some(
+            self.zone
+                .grid
+                .as_ref()
+                .is_none_or(|g| g.walkable_pos(e.pos)),
+        )
     }
 
     /// TEST HARNESS ONLY: teleport an entity (whole units).

@@ -34,11 +34,17 @@ fn sight_obeys_the_authored_walls() {
     // Straight up the gate column: clear.
     assert!(world.test_los_clear(13, 16, 13, 3), "the gate sees through");
     // Straight up a walled column: blocked.
-    assert!(!world.test_los_clear(5, 16, 5, 3), "the rampart blocks sight");
+    assert!(
+        !world.test_los_clear(5, 16, 5, 3),
+        "the rampart blocks sight"
+    );
     // Across the pool: water blocks feet, not eyes.
     assert!(world.test_los_clear(17, 10, 22, 10), "water is transparent");
     // Through the room's doorway at y=10, not through its wall at y=9.
-    assert!(world.test_los_clear(4, 10, 10, 10), "the doorway sees through");
+    assert!(
+        world.test_los_clear(4, 10, 10, 10),
+        "the doorway sees through"
+    );
     assert!(!world.test_los_clear(4, 9, 10, 9), "the room wall blocks");
 }
 
@@ -103,7 +109,10 @@ fn bots_take_the_open_exit_and_the_loop_ferries_them_back() {
         }
     }
     assert!(departures >= 1, "a bot must choose the open exit");
-    assert!(joins > 2, "ferried bots must re-arrive (beyond the 2 boot joins)");
+    assert!(
+        joins > 2,
+        "ferried bots must re-arrive (beyond the 2 boot joins)"
+    );
 }
 
 #[test]

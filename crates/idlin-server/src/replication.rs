@@ -228,10 +228,8 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                         .iter()
                         .filter(|v| v.kind == KIND_CHARACTER)
                         .map(|v| {
-                            char_info.insert(
-                                v.name.clone(),
-                                (v.level, v.dead, frame.zone_name.clone()),
-                            );
+                            char_info
+                                .insert(v.name.clone(), (v.level, v.dead, frame.zone_name.clone()));
                             (v.id, v.name.clone())
                         })
                         .collect(),
@@ -303,8 +301,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 .focus_queue(tick, &views)
                 .into_iter()
                 .map(|q| {
-                    let (level, dead, zone) =
-                        char_info.get(&q.name).cloned().unwrap_or_default();
+                    let (level, dead, zone) = char_info.get(&q.name).cloned().unwrap_or_default();
                     FocusQueueEntry {
                         name: q.name,
                         zone,

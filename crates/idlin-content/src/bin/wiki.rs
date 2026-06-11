@@ -31,7 +31,11 @@ fn main() {
             .collect();
         let total: u32 = eligible.iter().map(|a| a.weight).sum();
         for a in &eligible {
-            let share = if total > 0 { a.weight as f64 * 100.0 / total as f64 } else { 0.0 };
+            let share = if total > 0 {
+                a.weight as f64 * 100.0 / total as f64
+            } else {
+                0.0
+            };
             let _ = writeln!(
                 s,
                 "### {} (`{}`) — {:?} · {:?} {:?} · weight {} ({share:.1}%)\n",
@@ -42,12 +46,20 @@ fn main() {
             let _ = writeln!(s, "|---|---|---|---|---|");
             // Tiers are authored low→high; display best-first like PoE.
             for (n, t) in a.tiers.iter().rev().enumerate() {
-                let pct = if tw > 0 { t.weight as f64 * 100.0 / tw as f64 } else { 0.0 };
+                let pct = if tw > 0 {
+                    t.weight as f64 * 100.0 / tw as f64
+                } else {
+                    0.0
+                };
                 let _ = writeln!(
                     s,
                     "| T{} | {} | {}+ | {}–{} | {} ({pct:.0}%) |",
                     n + 1,
-                    if t.name.is_empty() { a.name.as_str() } else { t.name.as_str() },
+                    if t.name.is_empty() {
+                        a.name.as_str()
+                    } else {
+                        t.name.as_str()
+                    },
                     t.ilvl,
                     t.min,
                     t.max,
@@ -118,11 +130,23 @@ fn main() {
             );
         }
         let vars: Vec<&str> = t.variants.iter().map(|v| v.id.as_str()).collect();
-        let _ = writeln!(s, "\nVariants: {}\n", if vars.is_empty() { "—".into() } else { vars.join(", ") });
+        let _ = writeln!(
+            s,
+            "\nVariants: {}\n",
+            if vars.is_empty() {
+                "—".into()
+            } else {
+                vars.join(", ")
+            }
+        );
         let _ = writeln!(
             s,
             "Natural monsters: {}\n",
-            if t.natural_monsters.is_empty() { "none (staged only)".into() } else { t.natural_monsters.join(", ") },
+            if t.natural_monsters.is_empty() {
+                "none (staged only)".into()
+            } else {
+                t.natural_monsters.join(", ")
+            },
         );
         let users: Vec<&str> = db
             .zones
@@ -130,7 +154,15 @@ fn main() {
             .filter(|z| z.tileset.as_deref() == Some(t.id.as_str()))
             .map(|z| z.id.as_str())
             .collect();
-        let _ = writeln!(s, "Zones using it: {}\n", if users.is_empty() { "—".into() } else { users.join(", ") });
+        let _ = writeln!(
+            s,
+            "Zones using it: {}\n",
+            if users.is_empty() {
+                "—".into()
+            } else {
+                users.join(", ")
+            }
+        );
     }
     write("tilesets.md", s);
 
@@ -155,7 +187,11 @@ fn main() {
     // -- passive tree --
     let mut s = String::from("# Passive tree\n\nGenerated from content/ — do not edit.\n\n");
     for n in &db.tree {
-        let _ = writeln!(s, "## {} (`{}`, num {})\n\n```\n{:#?}\n```\n", n.name, n.id, n.num, n.grants);
+        let _ = writeln!(
+            s,
+            "## {} (`{}`, num {})\n\n```\n{:#?}\n```\n",
+            n.name, n.id, n.num, n.grants
+        );
     }
     write("tree.md", s);
 

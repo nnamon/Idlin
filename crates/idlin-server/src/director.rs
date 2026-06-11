@@ -281,11 +281,22 @@ mod tests {
         let (a_ev, b_ev) = (vec![kill(1)], vec![death(1)]);
         let (a_ch, b_ch) = (chars(&[1]), vec![(1, "other".to_string())]);
         let worlds = [
-            WorldView { key: "a", events: &a_ev, characters: &a_ch },
-            WorldView { key: "b", events: &b_ev, characters: &b_ch },
+            WorldView {
+                key: "a",
+                events: &a_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "b",
+                events: &b_ev,
+                characters: &b_ch,
+            },
         ];
         let cue = d.update(1, &worlds).expect("a cue");
-        assert_eq!(cue.world_key, "b", "the death in world b outranks the kill in a");
+        assert_eq!(
+            cue.world_key, "b",
+            "the death in world b outranks the kill in a"
+        );
         assert_eq!(cue.reason, "death");
     }
 
@@ -298,8 +309,16 @@ mod tests {
         let mut t = 1;
         for _ in 0..40 {
             let worlds = [
-                WorldView { key: "a", events: &no_ev, characters: &a_ch },
-                WorldView { key: "b", events: &no_ev, characters: &b_ch },
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &no_ev,
+                    characters: &b_ch,
+                },
             ];
             if let Some(c) = d.update(t, &worlds)
                 && c.focus != OVERVIEW_FOCUS
@@ -335,14 +354,26 @@ mod tests {
         let no_ev: Vec<SimEvent> = vec![];
         let ch = chars(&[42]);
         let first = d
-            .update(1, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
+            .update(
+                1,
+                &[WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &ch,
+                }],
+            )
             .expect("initial cue");
         assert_eq!(first.focus, 42);
         let mut refreshed = false;
         for t in 2..200 {
-            if let Some(c) =
-                d.update(t, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
-            {
+            if let Some(c) = d.update(
+                t,
+                &[WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &ch,
+                }],
+            ) {
                 assert_eq!(c.focus, 42);
                 refreshed = true;
                 break;
@@ -357,17 +388,42 @@ mod tests {
         let no_ev: Vec<SimEvent> = vec![];
         let (a_ch, b_ch) = (chars(&[1, 2]), vec![(9, "zed".to_string())]);
         let worlds = [
-            WorldView { key: "a", events: &no_ev, characters: &a_ch },
-            WorldView { key: "b", events: &no_ev, characters: &b_ch },
+            WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "b",
+                events: &no_ev,
+                characters: &b_ch,
+            },
         ];
         let cue = d.update(1, &worlds).expect("initial cue");
         let q = d.focus_queue(1, &worlds);
         assert_eq!(q.len(), 3, "everyone everywhere is listed");
-        let focused: Vec<&str> = q.iter().filter(|e| e.focused).map(|e| e.name.as_str()).collect();
+        let focused: Vec<&str> = q
+            .iter()
+            .filter(|e| e.focused)
+            .map(|e| e.name.as_str())
+            .collect();
         assert_eq!(focused.len(), 1, "exactly one focused entry");
-        let by_id = |id: u32| if id == 9 { "zed".to_string() } else { format!("c{id}") };
-        assert_eq!(focused[0], by_id(cue.focus), "the focused row matches the cue");
-        assert!(q.iter().any(|e| e.world_key == "b"), "the other world is in the queue");
+        let by_id = |id: u32| {
+            if id == 9 {
+                "zed".to_string()
+            } else {
+                format!("c{id}")
+            }
+        };
+        assert_eq!(
+            focused[0],
+            by_id(cue.focus),
+            "the focused row matches the cue"
+        );
+        assert!(
+            q.iter().any(|e| e.world_key == "b"),
+            "the other world is in the queue"
+        );
         // The focused character just got a cooldown stamp.
         assert!(q.iter().find(|e| e.focused).unwrap().on_cooldown);
     }
@@ -377,13 +433,25 @@ mod tests {
         let mut d = Director::new();
         let no_ev: Vec<SimEvent> = vec![];
         let ch = chars(&[7]);
-        d.update(1, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
-            .expect("initial cue");
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &ch,
+            }],
+        )
+        .expect("initial cue");
         let mut saw_overview_at = None;
         for t in 2..OVERVIEW_EVERY + 200 {
-            if let Some(c) =
-                d.update(t, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
-                && c.focus == OVERVIEW_FOCUS
+            if let Some(c) = d.update(
+                t,
+                &[WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &ch,
+                }],
+            ) && c.focus == OVERVIEW_FOCUS
             {
                 saw_overview_at = Some(t);
                 break;
@@ -392,9 +460,14 @@ mod tests {
         let t0 = saw_overview_at.expect("a scheduled overview must fire");
         let mut returned = false;
         for t in t0 + 1..t0 + 200 {
-            if let Some(c) =
-                d.update(t, &[WorldView { key: "a", events: &no_ev, characters: &ch }])
-            {
+            if let Some(c) = d.update(
+                t,
+                &[WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &ch,
+                }],
+            ) {
                 assert_eq!(c.focus, 7, "people come back after the sweep");
                 returned = true;
                 break;
