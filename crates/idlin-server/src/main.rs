@@ -50,7 +50,7 @@ struct AppState {
 fn builtin_joins() -> anyhow::Result<TickInputs> {
     let program = idlin_botc::template_grinder()
         .map_err(|e| anyhow::anyhow!("grinder template failed to assemble: {e}"))?;
-    let joins = ["Kargan"]
+    let joins = ["Kargan", "Veles", "Mirra"]
         .into_iter()
         .map(|name| JoinRequest {
             name: name.into(),
