@@ -225,10 +225,23 @@ address you supply and return a count/status.
 Attacks require **line of sight**: a generated obstacle (rock, tree) between
 you and the target blocks the strike entirely — `UseSkill` will simply not
 land while cover intervenes. Movement slides along obstacle edges, so walking
-at a blocked target eventually rounds the cover; smarter bots reposition
-deliberately.
+at a blocked target eventually rounds the cover. `LineOfSight` (21) lets a
+bot test a lane before committing:
+
+```c
+if (read_entities(ENTS, 8, F_ENEMY) > 0) {
+    var target = mem[ENTS];
+    var tx = mem[ENTS + 8];
+    var ty = mem[ENTS + 12];
+    if (line_of_sight(tx, ty) == 1) {
+        use_skill(0, target, 0, 0);   // lane is clear: swing
+    }
+    move_to(tx, ty);                  // either way, keep closing
+}
+```
 
 | 20 | `CountEntities` | filter | zone-wide count of matching entities (same filter codes as ReadEntities, no distance cap). `count_entities(1)` answers "how many enemies are left in this area?" — useful for clear-the-zone logic. |
+| 21 | `LineOfSight` | x, y (raw Q16.16) | 1 if the straight line from you to (x, y) is clear of obstacles, 0 if blocked, −1 on error. Attacks enforce the same check, so test before you swing. |
 
 ### Intents, not actions
 

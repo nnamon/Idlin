@@ -99,7 +99,8 @@ and gear affixes can grant them). Each point converts:
   projectile, and each nova victim individually — requires unbroken line
   of sight from attacker to target; a rock between you and the enemy means
   no hit (and no cooldown spent). Movement slides around obstacles, so
-  repositioning is automatic but costs time.
+  repositioning is automatic but costs time. Bots can test a lane first
+  with the `LineOfSight` syscall (21).
 - Dead monsters leave corpses where they fell for **300 ticks** (30 s); a
   corpse is inert (no AI, untargetable, skipped by every system) and decays
   away on its own.

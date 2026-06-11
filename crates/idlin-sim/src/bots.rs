@@ -14,7 +14,7 @@
 //! +16 level, +20 xp, +24 map_w, +28 map_h, +32 flags (bit0 = dead),
 //! +36 anchor_x, +40 anchor_y, +44 aggro_radius, +48 attack_range.
 
-use crate::fixed::Fx;
+use crate::fixed::{Fx, FxV2};
 use crate::rng::Pcg32;
 use crate::world::{SimEvent, World};
 use idlin_vm::{DEFAULT_TICK_BUDGET, RunExit, Vm};
@@ -46,6 +46,7 @@ pub const SYS_DROP_ITEM: i32 = 17;
 pub const SYS_READ_SKILLS: i32 = 18;
 pub const SYS_SOCKET_GEM: i32 = 19;
 pub const SYS_COUNT_ENTITIES: i32 = 20;
+pub const SYS_LINE_OF_SIGHT: i32 = 21;
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
@@ -326,6 +327,18 @@ impl World {
                     }
                 }
                 n
+            }
+            SYS_LINE_OF_SIGHT => {
+                // Is the straight line from me to (x, y) clear of obstacle
+                // cover? 1 = clear, 0 = blocked. Attacks enforce the same
+                // check, so a bot can test a lane before committing.
+                let x = bot.vm.pop();
+                let y = bot.vm.pop();
+                let Some(me) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let target = FxV2::new(Fx::from_raw(x), Fx::from_raw(y));
+                (!self.los_blocked(me.pos, target)) as i32
             }
             SYS_MOVE_TO => {
                 let x = bot.vm.pop();

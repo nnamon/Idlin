@@ -28,6 +28,8 @@ ZoneDef(
     width_u: 60, height_u: 60,        // whole units
     spawn_x_u: 17, spawn_y_u: 122,    // idler spawn point
     spawn_radius_u: 7,                // spawn AREA: join/respawn scatter (0 = exact point)
+    gen_rocks: 16,                    // area generation: non-walkable obstacles placed
+    gen_trees: 9,                     //   with the zone (block movement AND line of sight)
     packs: [
         SpawnPack(monster: "drowned_shambler", count: 4,
                   x_u: 14, y_u: 16,   // pack anchor

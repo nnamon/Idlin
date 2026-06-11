@@ -59,13 +59,19 @@ fn main() {
     equip_best();
     socket_gem(-1, -1);
 
-    // Fight the nearest enemy.
+    // Fight the nearest enemy. Attacks are wasted intent without line of
+    // sight, so only swing when the lane is clear; either way keep closing
+    // distance — movement slides around cover.
     if (read_entities(ENTS, 8, F_ENEMY) > 0) {
         var target = mem[ENTS];
-        if (use_skill(1, target, 0, 0) != 0) {  // -1: no gem / on cooldown
-            use_skill(0, target, 0, 0);
+        var tx = mem[ENTS + 8];
+        var ty = mem[ENTS + 12];
+        if (line_of_sight(tx, ty) == 1) {
+            if (use_skill(1, target, 0, 0) != 0) {  // -1: no gem / on cooldown
+                use_skill(0, target, 0, 0);
+            }
         }
-        move_to(mem[ENTS + 8], mem[ENTS + 12]);
+        move_to(tx, ty);
         return;
     }
 
