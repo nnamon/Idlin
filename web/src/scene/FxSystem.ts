@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { ActiveHit, ActiveProjectile, ActiveSkill } from "../world/store";
 
 /** Damage-number colors by dominant component:
@@ -11,6 +12,7 @@ const FLASH_POOL = 48;
 const TRACER_POOL = 32;
 const NUMBER_POOL = 48;
 const SHAPE_POOL = 16;
+const LIGHT_POOL = 4;
 
 interface Flash {
   sprite: THREE.Sprite;
@@ -23,6 +25,9 @@ interface Flash {
 interface Tracer {
   sprite: THREE.Sprite;
   mat: THREE.SpriteMaterial;
+  /** Comet tail: a crossed-quad beam trailing the head. */
+  trail: THREE.Mesh;
+  trailMat: THREE.MeshBasicMaterial;
   from: THREE.Vector3;
   to: THREE.Vector3;
   bornAt: number;
@@ -58,9 +63,78 @@ interface ShapeFx {
   active: boolean;
 }
 
-/** Flat-on-the-ground ring (open annulus) lying in XZ, unit radius. */
-function ringGeo(): THREE.BufferGeometry {
-  return new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2);
+/** A brief point light so big skills illuminate the night around them. */
+interface SkillLight {
+  light: THREE.PointLight;
+  bornAt: number;
+  ttlMs: number;
+  peak: number;
+  active: boolean;
+}
+
+// ---- canvas-baked gradient textures (built once, tinted per use) ----
+
+/** Radial band: transparent center, hot ring at ~85% radius, soft edges. */
+function ringBandTex(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0.0, "rgba(255,255,255,0)");
+  g.addColorStop(0.62, "rgba(255,255,255,0.04)");
+  g.addColorStop(0.8, "rgba(255,255,255,0.55)");
+  g.addColorStop(0.88, "rgba(255,255,255,1)");
+  g.addColorStop(1.0, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+
+/** Hot at the apex (center of UV space), fading out to the rim. */
+function apexTex(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0.0, "rgba(255,255,255,1)");
+  g.addColorStop(0.35, "rgba(255,255,255,0.6)");
+  g.addColorStop(0.8, "rgba(255,255,255,0.18)");
+  g.addColorStop(1.0, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+
+/** Beam strip: hot core line along the length, soft sides, tapered tip. */
+function beamTex(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 64;
+  const ctx = c.getContext("2d")!;
+  const across = ctx.createLinearGradient(0, 0, 0, 64);
+  across.addColorStop(0.0, "rgba(255,255,255,0)");
+  across.addColorStop(0.42, "rgba(255,255,255,0.85)");
+  across.addColorStop(0.5, "rgba(255,255,255,1)");
+  across.addColorStop(0.58, "rgba(255,255,255,0.85)");
+  across.addColorStop(1.0, "rgba(255,255,255,0)");
+  ctx.fillStyle = across;
+  ctx.fillRect(0, 0, 256, 64);
+  const along = ctx.createLinearGradient(0, 0, 256, 0);
+  along.addColorStop(0.0, "rgba(255,255,255,0.35)");
+  along.addColorStop(0.12, "rgba(255,255,255,1)");
+  along.addColorStop(0.85, "rgba(255,255,255,1)");
+  along.addColorStop(1.0, "rgba(255,255,255,0)");
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = along;
+  ctx.fillRect(0, 0, 256, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+// ---- geometries (unit-sized, scaled per use) ----
+
+/** Flat unit disc in XZ; the ring-band texture turns it into a ring. */
+function discGeo(): THREE.BufferGeometry {
+  return new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2);
 }
 
 /** Filled ~90° sector in XZ opening along +X, unit reach. */
@@ -69,27 +143,51 @@ function sectorGeo(): THREE.BufferGeometry {
   return new THREE.CircleGeometry(1, 24, -Math.PI / 4, Math.PI / 2).rotateX(-Math.PI / 2);
 }
 
-/** Unit square in XZ centered at (0.5, 0): scaled to (length, width). */
+/**
+ * Corridor: a flat quad on the ground PLUS a vertical ribbon, crossed, so
+ * the beam reads at the low camera angle. Spans x 0..1; scaled to
+ * (length, 1, width); the ribbon stays a constant ~0.7 u tall.
+ */
 function corridorGeo(): THREE.BufferGeometry {
-  return new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
+  const flat = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0.02, 0);
+  const upright = new THREE.PlaneGeometry(1, 0.7).translate(0.5, 0.35, 0);
+  return mergeGeometries([flat, upright]);
+}
+
+/** Centered crossed quads for projectile comet tails (length along X). */
+function trailGeo(): THREE.BufferGeometry {
+  const flat = new THREE.PlaneGeometry(1, 0.22).rotateX(-Math.PI / 2);
+  const upright = new THREE.PlaneGeometry(1, 0.22);
+  return mergeGeometries([flat, upright]);
+}
+
+function easeOutCubic(a: number): number {
+  return 1 - (1 - a) ** 3;
 }
 
 /**
- * Combat feedback: impact flashes, traveling projectile tracers, floating
- * damage numbers, and skill-shape telegraphs (rings/cones/lines). Everything
- * is pooled — pools are allocated lazily up to a cap and reused forever; a
- * hit beyond the cap is simply skipped. Nothing here grows with session
- * length.
+ * Combat feedback: impact flashes, traveling projectiles (glow head +
+ * comet tail), floating damage numbers, skill shapes (expanding nova
+ * rings, cone flares, crossed-quad beams — gradient-baked, type-colored,
+ * bloomed), and brief point lights so big casts light up the night.
+ * Everything is pooled — pools are allocated lazily up to a cap and
+ * reused forever; an effect beyond the cap is simply skipped. Nothing
+ * here grows with session length.
  */
 export class FxSystem {
   private flashes: Flash[] = [];
   private tracers: Tracer[] = [];
   private numbers: DamageNumber[] = [];
   private shapes: ShapeFx[] = [];
+  private lights: SkillLight[] = [];
   private glowTex: THREE.Texture;
-  private ringGeo = ringGeo();
+  private ringTex = ringBandTex();
+  private apexTex = apexTex();
+  private beamTex = beamTex();
+  private discGeo = discGeo();
   private sectorGeo = sectorGeo();
   private corridorGeo = corridorGeo();
+  private trailGeo = trailGeo();
 
   constructor(private scene: THREE.Scene, glowTex: THREE.Texture) {
     this.glowTex = glowTex;
@@ -117,25 +215,27 @@ export class FxSystem {
 
   /**
    * A non-projectile skill use: draw the shape where the sim resolved it.
-   * Strikes (shape 0) get a small flash; rings expand; sweeps flare and fade.
+   * Strikes get a flash; rings burst outward; cones flare from the apex;
+   * lines fire a crossed-quad beam. Every shape briefly lights its ground.
    */
   spawnSkill(s: ActiveSkill, groundY: (x: number, z: number) => number, now: number): void {
     const color = PROJ_COLORS[s.dmgType] ?? PROJ_COLORS[0];
     const at = new THREE.Vector3(s.x, groundY(s.x, s.y) + 0.06, s.y);
     if (s.shape === 0) {
-      this.spawnFlash(at, color, 0.6, now, 160);
+      this.spawnFlash(at, color, 0.7, now, 180);
       return;
     }
     let sh = this.shapes.find((f) => !f.active);
     if (!sh) {
       if (this.shapes.length >= SHAPE_POOL) return;
       const mat = new THREE.MeshBasicMaterial({
+        map: this.ringTex,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
-      const mesh = new THREE.Mesh(this.ringGeo, mat);
+      const mesh = new THREE.Mesh(this.discGeo, mat);
       mesh.renderOrder = 1;
       this.scene.add(mesh);
       sh = { mesh, mat, kind: 1, size: 1, width: 1, bornAt: 0, ttlMs: 0, active: false };
@@ -143,23 +243,27 @@ export class FxSystem {
     }
     const ring = s.shape === 1 || s.shape === 4;
     sh.kind = ring ? 1 : s.shape;
-    sh.mesh.geometry = ring ? this.ringGeo : s.shape === 2 ? this.sectorGeo : this.corridorGeo;
+    sh.mesh.geometry = ring ? this.discGeo : s.shape === 2 ? this.sectorGeo : this.corridorGeo;
+    sh.mat.map = ring ? this.ringTex : s.shape === 2 ? this.apexTex : this.beamTex;
     sh.size = ring ? Math.max(0.4, s.radius) : Math.max(0.6, s.range);
     sh.width = Math.max(0.3, s.radius); // lines carry their width here
     sh.bornAt = now;
-    sh.ttlMs = ring ? 420 : 360;
+    sh.ttlMs = ring ? 520 : s.shape === 2 ? 420 : 460;
     sh.active = true;
     sh.mat.color.setHex(color);
-    sh.mat.opacity = 0.55;
     sh.mesh.visible = true;
     sh.mesh.position.copy(at);
     // Open along the aim direction (rings don't care, but it's harmless).
     sh.mesh.rotation.set(0, Math.atan2(-s.dy, s.dx), 0);
-    if (s.shape === 4) this.spawnFlash(at, color, 1.1, now, 240);
     this.applyShape(sh, 0);
+
+    // The punch: a center flash and a short-lived ground light.
+    const flashScale = ring ? Math.min(2.2, sh.size * 0.45) : 0.9;
+    this.spawnFlash(at, color, flashScale, now, ring ? 260 : 180, 0.6);
+    this.spawnLight(at, color, ring ? Math.min(9, sh.size * 1.8) : 6, now, sh.ttlMs);
   }
 
-  /** A sim-spawned projectile: animate its real flight path. */
+  /** A sim-spawned projectile: glow head + comet tail along the real path. */
   spawnProjectile(p: ActiveProjectile, groundY: (x: number, z: number) => number, now: number): void {
     const speed = Math.hypot(p.vx, p.vy); // units per tick
     if (speed <= 0) return;
@@ -170,10 +274,20 @@ export class FxSystem {
       groundY(p.x + (p.vx / speed) * p.range, p.y + (p.vy / speed) * p.range) + 1.0,
       p.y + (p.vy / speed) * p.range,
     );
-    this.spawnTracer(from, to, now, Math.min(flightMs, 2500), PROJ_COLORS[p.dmgType] ?? 0xffc06a);
+    const color = PROJ_COLORS[p.dmgType] ?? 0xffc06a;
+    this.spawnTracer(from, to, now, Math.min(flightMs, 2500), color);
+    // Muzzle flash at the launch point.
+    this.spawnFlash(from, color, 0.5, now, 120, 0);
   }
 
-  private spawnFlash(at: THREE.Vector3, color: number, scale: number, now: number, ttlMs: number): void {
+  private spawnFlash(
+    at: THREE.Vector3,
+    color: number,
+    scale: number,
+    now: number,
+    ttlMs: number,
+    lift = 1.1,
+  ): void {
     let f = this.flashes.find((f) => !f.active);
     if (!f) {
       if (this.flashes.length >= FLASH_POOL) return;
@@ -195,7 +309,29 @@ export class FxSystem {
     f.sprite.visible = true;
     f.sprite.scale.set(scale, scale, 1);
     f.sprite.position.copy(at);
-    f.sprite.position.y += 1.1;
+    f.sprite.position.y += lift;
+  }
+
+  /** A brief point light: big casts illuminate the shore around them. */
+  private spawnLight(at: THREE.Vector3, color: number, radius: number, now: number, ttlMs: number): void {
+    let l = this.lights.find((l) => !l.active);
+    if (!l) {
+      if (this.lights.length >= LIGHT_POOL) return;
+      const light = new THREE.PointLight(0xffffff, 0, 8, 2);
+      this.scene.add(light);
+      l = { light, bornAt: 0, ttlMs: 0, peak: 0, active: false };
+      this.lights.push(l);
+    }
+    l.active = true;
+    l.bornAt = now;
+    l.ttlMs = ttlMs;
+    l.peak = 14;
+    l.light.color.setHex(color);
+    l.light.distance = radius;
+    l.light.intensity = l.peak;
+    l.light.position.copy(at);
+    l.light.position.y += 1.2;
+    l.light.visible = true;
   }
 
   private spawnTracer(
@@ -215,17 +351,29 @@ export class FxSystem {
         depthTest: false,
         blending: THREE.AdditiveBlending,
       });
+      const trailMat = new THREE.MeshBasicMaterial({
+        map: this.beamTex,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const trail = new THREE.Mesh(this.trailGeo, trailMat);
+      trail.renderOrder = 1;
       t = {
         sprite: new THREE.Sprite(mat),
         mat,
+        trail,
+        trailMat,
         from: new THREE.Vector3(),
         to: new THREE.Vector3(),
         bornAt: 0,
         flightMs: 0,
         active: false,
       };
-      t.sprite.scale.set(0.28, 0.28, 1);
+      t.sprite.scale.set(0.34, 0.34, 1);
       this.scene.add(t.sprite);
+      this.scene.add(t.trail);
       this.tracers.push(t);
     }
     t.active = true;
@@ -237,6 +385,24 @@ export class FxSystem {
     t.mat.opacity = 1;
     t.sprite.visible = true;
     t.sprite.position.copy(t.from);
+    t.trailMat.color.setHex(color ?? 0xffc06a);
+    t.trailMat.opacity = 0.85;
+    t.trail.visible = true;
+    t.trail.rotation.y = Math.atan2(-(to.z - from.z), to.x - from.x);
+    this.placeTrail(t, 0);
+  }
+
+  /** Trail follows the head, stretching behind it along the flight line. */
+  private placeTrail(t: Tracer, a: number): void {
+    const dist = t.from.distanceTo(t.to);
+    const len = Math.min(1.5, dist * 0.3 + 0.3);
+    const head = t.sprite.position;
+    const dx = (t.to.x - t.from.x) / dist;
+    const dz = (t.to.z - t.from.z) / dist;
+    // Don't stretch past the launch point right after firing.
+    const behind = Math.min(len, a * dist + 0.2);
+    t.trail.scale.set(behind, 1, 1);
+    t.trail.position.set(head.x - (dx * behind) / 2, head.y, head.z - (dz * behind) / 2);
   }
 
   private spawnNumber(at: THREE.Vector3, text: string, color: string, big: boolean, now: number): void {
@@ -295,16 +461,19 @@ export class FxSystem {
 
   private applyShape(sh: ShapeFx, a: number): void {
     if (sh.kind === 1) {
-      // Ring expands outward and thins.
-      const r = sh.size * (0.35 + 0.65 * Math.min(1, a * 1.6));
+      // Ring bursts outward fast, then coasts (ease-out).
+      const r = sh.size * (0.2 + 0.8 * easeOutCubic(a));
       sh.mesh.scale.set(r, 1, r);
+      sh.mat.opacity = 0.95 * (1 - a) * (1 - a * 0.5);
     } else if (sh.kind === 2) {
-      // Sector flares to full reach almost immediately.
-      const r = sh.size * Math.min(1, 0.7 + a * 2);
+      // Sector flares from the apex to full reach almost immediately.
+      const r = sh.size * Math.min(1, 0.6 + easeOutCubic(a) * 1.4);
       sh.mesh.scale.set(r, 1, r);
+      sh.mat.opacity = 0.9 * (1 - a) ** 2;
     } else {
-      // Corridor: full length at once, width carried separately.
+      // Beam: full length at once, a hot pop that decays.
       sh.mesh.scale.set(sh.size, 1, sh.width);
+      sh.mat.opacity = 0.95 * (1 - a) ** 2;
     }
   }
 
@@ -325,10 +494,15 @@ export class FxSystem {
       if (a >= 1) {
         t.active = false;
         t.sprite.visible = false;
+        t.trail.visible = false;
+        // Spent without striking anything: fizzle where it died.
+        this.spawnFlash(t.to, t.mat.color.getHex(), 0.4, now, 140, 0);
         continue;
       }
       t.sprite.position.lerpVectors(t.from, t.to, a);
       t.sprite.position.y += Math.sin(a * Math.PI) * 0.35; // slight arc
+      this.placeTrail(t, a);
+      t.trailMat.opacity = 0.85 * (a < 0.8 ? 1 : 1 - (a - 0.8) / 0.2);
     }
     for (const sh of this.shapes) {
       if (!sh.active) continue;
@@ -339,7 +513,17 @@ export class FxSystem {
         continue;
       }
       this.applyShape(sh, a);
-      sh.mat.opacity = 0.55 * (1 - a * a);
+    }
+    for (const l of this.lights) {
+      if (!l.active) continue;
+      const a = (now - l.bornAt) / l.ttlMs;
+      if (a >= 1) {
+        l.active = false;
+        l.light.visible = false;
+        l.light.intensity = 0;
+        continue;
+      }
+      l.light.intensity = l.peak * (1 - a) ** 2;
     }
     for (const n of this.numbers) {
       if (!n.active) continue;
@@ -366,7 +550,9 @@ export class FxSystem {
     }
     for (const t of this.tracers) {
       t.sprite.removeFromParent();
+      t.trail.removeFromParent();
       t.mat.dispose();
+      t.trailMat.dispose();
     }
     for (const n of this.numbers) {
       n.sprite.removeFromParent();
@@ -377,12 +563,21 @@ export class FxSystem {
       sh.mesh.removeFromParent();
       sh.mat.dispose();
     }
-    this.ringGeo.dispose();
+    for (const l of this.lights) {
+      l.light.removeFromParent();
+      l.light.dispose();
+    }
+    this.ringTex.dispose();
+    this.apexTex.dispose();
+    this.beamTex.dispose();
+    this.discGeo.dispose();
     this.sectorGeo.dispose();
     this.corridorGeo.dispose();
+    this.trailGeo.dispose();
     this.flashes = [];
     this.tracers = [];
     this.numbers = [];
     this.shapes = [];
+    this.lights = [];
   }
 }

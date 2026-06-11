@@ -11,9 +11,9 @@ client.onMessage((msg) => store.handle(msg));
 client.start();
 
 // Dev/probe handle: headless verification injects FX and reads state here.
-(window as unknown as { __idlin?: object }).__idlin = { store };
+(window as unknown as { __idlin?: object }).__idlin = { store, get zr() { return zr; } };
 
-new ZoneRenderer(document.getElementById("scene")!, store);
+const zr = new ZoneRenderer(document.getElementById("scene")!, store);
 
 createRoot(document.getElementById("overlay")!).render(
   <Overlay client={client} store={store} />,

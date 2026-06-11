@@ -1534,6 +1534,64 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_supports_are_refused() {
+        let content = content();
+        let mut world = World::new(7, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character spawned");
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .expect("a socket node exists") as u32;
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.allocated.push(node);
+            ch.sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "cleave", 1),
+                    cooldown_left: 0,
+                    supports: vec![instance(&content, "heavier_blows", 1)],
+                },
+            );
+            ch.pouch.push(instance(&content, "heavier_blows", 1));
+        }
+        let mut ev = Vec::new();
+        // Manual: a second copy of the same support is refused outright.
+        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
+        // Auto: the duplicate is skipped (nothing sockets).
+        assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 0);
+        // A different fitting support still goes in.
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .pouch
+            .push(instance(&content, "quickening", 1));
+        assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 1);
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.sockets[&node].supports.len(), 2);
+    }
+
+    #[test]
     fn mana_mult_scales_skill_cost() {
         let content = content();
         let world = World::new(1, &content);

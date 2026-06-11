@@ -74,6 +74,14 @@ impl World {
                     if sg.supports.len() >= support_slots_of(&sg.gem) {
                         return -1;
                     }
+                    // One copy of a given support per skill (PoE rule).
+                    if sg
+                        .supports
+                        .iter()
+                        .any(|g| g.gem_idx == ch.pouch[pouch_idx].gem_idx)
+                    {
+                        return -1;
+                    }
                     // Tag gate: the support must fit the skill it joins.
                     let sup = &self.content.gems[ch.pouch[pouch_idx].gem_idx as usize];
                     let skill = &self.content.gems[sg.gem.gem_idx as usize];
@@ -112,16 +120,22 @@ impl World {
             // deterministic; the grinder calls SocketGem every tick.)
             for (&node, sg) in &ch.sockets {
                 let skill = &self.content.gems[sg.gem.gem_idx as usize];
+                // One copy of a given support per skill (PoE rule).
+                let mut have: Vec<u32> = sg.supports.iter().map(|g| g.gem_idx).collect();
                 let mut free = support_slots_of(&sg.gem).saturating_sub(sg.supports.len());
                 while free > 0 {
                     // Tag gate: auto-socketing quietly skips misfits.
                     let found = ch.pouch.iter().enumerate().find(|(i, g)| {
                         !used.contains(i)
                             && gem_kind_of(g) == GemKind::Support
+                            && !have.contains(&g.gem_idx)
                             && self.content.gems[g.gem_idx as usize].fits_skill(skill)
                     });
-                    let Some((i, _)) = found else { break };
+                    let Some((i, g)) = found.map(|(i, g)| (i, g.gem_idx)) else {
+                        break;
+                    };
                     used.push(i);
+                    have.push(g);
                     plans.push((node, i, true));
                     free -= 1;
                 }
