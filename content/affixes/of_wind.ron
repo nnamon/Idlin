@@ -8,7 +8,7 @@ AffixDef(
     stat: evasion,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 12, max: 25),
-        (ilvl: 4, min: 26, max: 50),
+        (ilvl: 1, min: 12, max: 25, name: "of Wind", weight: 100),
+        (ilvl: 4, min: 26, max: 50, name: "of Zephyrs", weight: 45),
     ],
 )

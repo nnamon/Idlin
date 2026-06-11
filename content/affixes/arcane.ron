@@ -8,8 +8,8 @@ AffixDef(
     stat: mana,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 6, max: 12),
-        (ilvl: 3, min: 13, max: 22),
-        (ilvl: 6, min: 23, max: 36),
+        (ilvl: 1, min: 6, max: 12, name: "Arcane", weight: 100),
+        (ilvl: 3, min: 13, max: 22, name: "Occult", weight: 45),
+        (ilvl: 6, min: 23, max: 36, name: "Eldritch", weight: 15),
     ],
 )

@@ -8,8 +8,8 @@ AffixDef(
     stat: resist_lightning,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 500, max: 900),
-        (ilvl: 3, min: 901, max: 1500),
-        (ilvl: 6, min: 1501, max: 2400),
+        (ilvl: 1, min: 500, max: 900, name: "of Storms", weight: 100),
+        (ilvl: 3, min: 901, max: 1500, name: "of Tempests", weight: 45),
+        (ilvl: 6, min: 1501, max: 2400, name: "of the Maelstrom", weight: 15),
     ],
 )

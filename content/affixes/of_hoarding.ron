@@ -7,5 +7,5 @@ AffixDef(
     weight: 35,
     stat: item_quantity,
     layer: increased,
-    tiers: [(ilvl: 2, min: 400, max: 800), (ilvl: 6, min: 900, max: 1500)],
+    tiers: [(ilvl: 2, min: 400, max: 800, name: "of Hoarding", weight: 100), (ilvl: 6, min: 900, max: 1500, name: "of Bounty", weight: 45)],
 )

@@ -277,11 +277,24 @@ pub enum AffixKind {
 }
 
 /// One rollable tier: eligible from `ilvl`, value rolled in `min..=max`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixTier {
     pub ilvl: u32,
     pub min: i64,
     pub max: i64,
+    /// THIS tier's display name — magic-item names are built from the
+    /// rolled tier ("Heavy" vs "Brutal"), PoE-style. Empty = fall back
+    /// to the affix family name.
+    #[serde(default)]
+    pub name: String,
+    /// Spawn weight among the item-level-eligible tiers of this affix
+    /// (higher tiers author lower weights). 0 = never rolls.
+    #[serde(default = "default_tier_weight")]
+    pub weight: u32,
+}
+
+fn default_tier_weight() -> u32 {
+    100
 }
 
 /// What a currency item does to gear when used (the orb verbs, mapped

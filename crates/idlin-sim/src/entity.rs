@@ -174,6 +174,10 @@ pub struct RolledAffix {
     pub affix_idx: u32,
     /// The rolled value (flat units or basis points per the affix layer).
     pub value: i64,
+    /// Which tier rolled (index into AffixDef::tiers) — names and rerolls
+    /// are tier-aware.
+    #[serde(default)]
+    pub tier: u32,
 }
 
 /// A concrete item instance.

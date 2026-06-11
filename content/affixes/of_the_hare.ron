@@ -8,7 +8,7 @@ AffixDef(
     stat: move_speed,
     layer: increased,
     tiers: [
-        (ilvl: 1, min: 500, max: 900),
-        (ilvl: 4, min: 1000, max: 1500),
+        (ilvl: 1, min: 500, max: 900, name: "of the Hare", weight: 100),
+        (ilvl: 4, min: 1000, max: 1500, name: "of the Stag", weight: 45),
     ],
 )

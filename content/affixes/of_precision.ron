@@ -8,7 +8,7 @@ AffixDef(
     stat: crit_chance,
     layer: increased,
     tiers: [
-        (ilvl: 1, min: 1000, max: 1800),
-        (ilvl: 4, min: 1801, max: 3000),
+        (ilvl: 1, min: 1000, max: 1800, name: "of Precision", weight: 100),
+        (ilvl: 4, min: 1801, max: 3000, name: "of the Marksman", weight: 45),
     ],
 )

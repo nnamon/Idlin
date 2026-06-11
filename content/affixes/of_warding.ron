@@ -8,7 +8,7 @@ AffixDef(
     stat: resist_fire,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 500, max: 1200),   // 5-12%
-        (ilvl: 4, min: 1300, max: 2200),
+        (ilvl: 1, min: 500, max: 1200, name: "of Warding", weight: 100),   // 5-12%
+        (ilvl: 4, min: 1300, max: 2200, name: "of Sanctuary", weight: 45),
     ],
 )

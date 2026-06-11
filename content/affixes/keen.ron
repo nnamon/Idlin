@@ -8,7 +8,7 @@ AffixDef(
     stat: accuracy,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 15, max: 30),
-        (ilvl: 4, min: 31, max: 60),
+        (ilvl: 1, min: 15, max: 30, name: "Keen", weight: 100),
+        (ilvl: 4, min: 31, max: 60, name: "Hawkeyed", weight: 45),
     ],
 )

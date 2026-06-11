@@ -369,17 +369,37 @@ fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32,
         }
         let affix_idx = pool.remove(chosen);
         let affix = &content.affixes[affix_idx as usize];
-        // Highest tier the item level allows.
-        let Some(tier) = affix.tiers.iter().rev().find(|t| t.ilvl <= item.item_level) else {
+        // Weighted pick among the tiers the item level allows — higher
+        // tiers author lower weights, so T1 stays a chase roll.
+        let eligible: Vec<usize> = affix
+            .tiers
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.ilvl <= item.item_level && t.weight > 0)
+            .map(|(ti, _)| ti)
+            .collect();
+        let tier_total: u32 = eligible.iter().map(|&ti| affix.tiers[ti].weight).sum();
+        if tier_total == 0 {
             continue;
-        };
+        }
+        let mut tpick = rng.next_range(tier_total);
+        let mut tier_idx = eligible[0];
+        for &ti in &eligible {
+            let w = affix.tiers[ti].weight;
+            if tpick < w {
+                tier_idx = ti;
+                break;
+            }
+            tpick -= w;
+        }
+        let tier = &affix.tiers[tier_idx];
         match affix.kind {
             AffixKind::Prefix => prefixes += 1,
             AffixKind::Suffix => suffixes += 1,
         }
         let span = (tier.max - tier.min).max(0) as u32 + 1;
         let value = tier.min + rng.next_range(span) as i64;
-        item.affixes.push(RolledAffix { affix_idx, value });
+        item.affixes.push(RolledAffix { affix_idx, value, tier: tier_idx as u32 });
     }
 }
 
@@ -395,9 +415,15 @@ fn compose_name(content: &ContentDb, rng: &mut Pcg32, item: &Item) -> String {
             let (mut prefix, mut suffix) = (None, None);
             for ra in &item.affixes {
                 let a = &content.affixes[ra.affix_idx as usize];
+                // The rolled TIER names the item; family name is fallback.
+                let n = a
+                    .tiers
+                    .get(ra.tier as usize)
+                    .filter(|t| !t.name.is_empty())
+                    .map_or(a.name.as_str(), |t| t.name.as_str());
                 match a.kind {
-                    AffixKind::Prefix => prefix = Some(a.name.as_str()),
-                    AffixKind::Suffix => suffix = Some(a.name.as_str()),
+                    AffixKind::Prefix => prefix = Some(n),
+                    AffixKind::Suffix => suffix = Some(n),
                 }
             }
             let mut s = String::new();

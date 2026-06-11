@@ -37,11 +37,22 @@ fn main() {
                 "### {} (`{}`) — {:?} · {:?} {:?} · weight {} ({share:.1}%)\n",
                 a.name, a.id, a.kind, a.stat, a.layer, a.weight,
             );
-            let _ = writeln!(s, "| tier | ilvl | roll |");
-            let _ = writeln!(s, "|---|---|---|");
+            let tw: u32 = a.tiers.iter().map(|t| t.weight).sum();
+            let _ = writeln!(s, "| tier | name | ilvl | roll | weight |");
+            let _ = writeln!(s, "|---|---|---|---|---|");
             // Tiers are authored low→high; display best-first like PoE.
             for (n, t) in a.tiers.iter().rev().enumerate() {
-                let _ = writeln!(s, "| T{} | {}+ | {}–{} |", n + 1, t.ilvl, t.min, t.max);
+                let pct = if tw > 0 { t.weight as f64 * 100.0 / tw as f64 } else { 0.0 };
+                let _ = writeln!(
+                    s,
+                    "| T{} | {} | {}+ | {}–{} | {} ({pct:.0}%) |",
+                    n + 1,
+                    if t.name.is_empty() { a.name.as_str() } else { t.name.as_str() },
+                    t.ilvl,
+                    t.min,
+                    t.max,
+                    t.weight,
+                );
             }
             let _ = writeln!(s);
         }

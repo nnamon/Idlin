@@ -8,7 +8,7 @@ AffixDef(
     stat: damage_fire,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 2, max: 5),
-        (ilvl: 4, min: 6, max: 11),
+        (ilvl: 1, min: 2, max: 5, name: "of Embers", weight: 100),
+        (ilvl: 4, min: 6, max: 11, name: "of Cinders", weight: 45),
     ],
 )

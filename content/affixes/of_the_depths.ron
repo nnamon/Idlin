@@ -8,8 +8,8 @@ AffixDef(
     stat: resist_cold,
     layer: added,
     tiers: [
-        (ilvl: 1, min: 500, max: 900),
-        (ilvl: 3, min: 901, max: 1500),
-        (ilvl: 6, min: 1501, max: 2400),
+        (ilvl: 1, min: 500, max: 900, name: "of the Depths", weight: 100),
+        (ilvl: 3, min: 901, max: 1500, name: "of the Abyss", weight: 45),
+        (ilvl: 6, min: 1501, max: 2400, name: "of the Drowned King", weight: 15),
     ],
 )

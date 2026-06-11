@@ -8,7 +8,7 @@ AffixDef(
     stat: damage_chaos,
     layer: added,
     tiers: [
-        (ilvl: 2, min: 2, max: 4),
-        (ilvl: 5, min: 5, max: 9),
+        (ilvl: 2, min: 2, max: 4, name: "of Venom", weight: 100),
+        (ilvl: 5, min: 5, max: 9, name: "of Blight", weight: 45),
     ],
 )
