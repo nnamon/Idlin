@@ -130,6 +130,17 @@ Worn rarity reads on the character: magic/rare/unique gear and weapons
 carry a tier-colored emissive glow on the worn mesh. Idlers with an
 empty slot wear nothing — fresh wretches wash ashore naked.
 
+## Monsters are characters
+
+Everything-is-a-bot extends to everything-is-a-character: a monster def
+can carry `mana` and a `skills:` kit — the same gem pool, fixed levels,
+supports included (`(gem: "arc", level: 2, supports: [...])`,
+validated at load against the same tag/duplicate rules). The kit
+resolves at spawn into the exact structure characters socket; the same
+executor, mana costs, cooldowns, and syscalls drive both. Monster gems
+never gain XP — the def is the build. Weapon gates don't apply to
+monsters (a monster IS its weapon).
+
 ## Experience and the passive tree
 
 - Kills grant the monster's XP to the killer (full, plus the kill credit);

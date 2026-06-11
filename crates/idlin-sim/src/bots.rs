@@ -481,15 +481,24 @@ impl World {
                 let Some(e) = self.zone.get(slot) else {
                     return -1;
                 };
-                let Some(ch) = &e.character else { return -1 };
-                let nodes = self.skill_nodes(ch);
+                // Characters read their socketed tree; monsters read their
+                // def kit — same records, same slot numbering.
+                let gems: Vec<&crate::entity::SocketedGem> = if let Some(ch) = &e.character {
+                    self.skill_nodes(ch)
+                        .iter()
+                        .map(|node| &ch.sockets[node])
+                        .collect()
+                } else if let Some(m) = &e.monster {
+                    m.skills.iter().collect()
+                } else {
+                    return -1;
+                };
                 let now = self.tick_count();
-                let records: Vec<[i32; 12]> = nodes
+                let records: Vec<[i32; 12]> = gems
                     .iter()
                     .take(max)
                     .enumerate()
-                    .map(|(i, node)| {
-                        let sg = &ch.sockets[node];
+                    .map(|(i, sg)| {
                         let def = &self.content_gems()[sg.gem.gem_idx as usize];
                         let c = e.combat.as_ref();
                         let range = if def.range_cu > 0 {
@@ -523,8 +532,13 @@ impl World {
                             c.map(|c| c.use_ticks).unwrap_or(0),
                             c.map(|c| c.cast_speed).unwrap_or(10000),
                         ) as i32;
+                        // Weapon gates apply to the armed only.
+                        let weapon_ok = e
+                            .character
+                            .as_ref()
+                            .is_none_or(|ch| self.weapon_eligible(def, ch));
                         let ready = (sg.cooldown_left == 0
-                            && self.weapon_eligible(def, ch)
+                            && weapon_ok
                             && c.map(|c| c.mana >= cost && now >= c.busy_until)
                                 .unwrap_or(false)) as i32;
                         [

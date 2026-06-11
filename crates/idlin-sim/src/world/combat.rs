@@ -146,6 +146,27 @@ pub(crate) const SKILL_ERR_MODE: i32 = -7;
 pub(crate) const SKILL_ERR_TARGET: i32 = -8;
 pub(crate) const SKILL_ERR_WEAPON: i32 = -9;
 
+/// The socketed gem a skill key refers to, for either kind of actor:
+/// characters key by tree node (the intent stores the node id); monsters
+/// key by index into their def-resolved kit.
+pub(crate) fn skill_of(e: &crate::entity::Entity, key: u32) -> Option<&SocketedGem> {
+    if let Some(ch) = &e.character {
+        ch.sockets.get(&key)
+    } else {
+        e.monster.as_ref().and_then(|m| m.skills.get(key as usize))
+    }
+}
+
+fn skill_of_mut(e: &mut crate::entity::Entity, key: u32) -> Option<&mut SocketedGem> {
+    if let Some(ch) = e.character.as_mut() {
+        ch.sockets.get_mut(&key)
+    } else {
+        e.monster
+            .as_mut()
+            .and_then(|m| m.skills.get_mut(key as usize))
+    }
+}
+
 impl World {
     /// Fold the behavior effects of every support socketed into a skill.
     fn support_mods(&self, supports: &[GemInstance]) -> SupportMods {
@@ -285,19 +306,28 @@ impl World {
             }
             None
         } else {
-            let Some(ch) = &e.character else {
+            // Characters: slot N = the Nth socketed tree node. Monsters:
+            // slot N = the Nth entry of their def kit.
+            let key = if let Some(ch) = &e.character {
+                let nodes = self.skill_nodes(ch);
+                match nodes.get(skill_slot as usize - 1) {
+                    Some(&node) => node,
+                    None => return SKILL_ERR_SLOT,
+                }
+            } else {
+                skill_slot as u32 - 1
+            };
+            let Some(sg) = skill_of(e, key) else {
                 return SKILL_ERR_SLOT;
             };
-            let nodes = self.skill_nodes(ch);
-            let Some(&node) = nodes.get(skill_slot as usize - 1) else {
-                return SKILL_ERR_SLOT;
-            };
-            let sg = &ch.sockets[&node];
             if sg.cooldown_left > 0 {
                 return SKILL_ERR_COOLDOWN;
             }
             let gem = &self.content.gems[sg.gem.gem_idx as usize];
-            if !self.weapon_eligible(gem, ch) {
+            // Weapon gates are for the armed: a monster IS its weapon.
+            if let Some(ch) = &e.character
+                && !self.weapon_eligible(gem, ch)
+            {
                 return SKILL_ERR_WEAPON;
             }
             if c.mana < self.skill_mana_cost(sg) {
@@ -340,7 +370,7 @@ impl World {
                     }
                 }
             }
-            Some(node)
+            Some(key)
         };
 
         if let Some(me) = self.zone.get_mut(slot) {
@@ -355,11 +385,16 @@ impl World {
         // Gem cooldowns tick down (the basic weapon is governed by the
         // use-time commitment, busy_until, instead).
         for slot in 0..self.zone.slot_count() {
-            if let Some(e) = self.zone.get_mut(slot)
-                && let Some(ch) = e.character.as_mut()
-            {
-                for sg in ch.sockets.values_mut() {
-                    sg.cooldown_left = sg.cooldown_left.saturating_sub(1);
+            if let Some(e) = self.zone.get_mut(slot) {
+                if let Some(ch) = e.character.as_mut() {
+                    for sg in ch.sockets.values_mut() {
+                        sg.cooldown_left = sg.cooldown_left.saturating_sub(1);
+                    }
+                }
+                if let Some(m) = e.monster.as_mut() {
+                    for sg in m.skills.iter_mut() {
+                        sg.cooldown_left = sg.cooldown_left.saturating_sub(1);
+                    }
                 }
             }
         }
@@ -453,9 +488,9 @@ impl World {
                     }
                 }
                 Some(node) => {
-                    // Socketed skill gem.
-                    let Some(ch) = &e.character else { continue };
-                    let Some(sg) = ch.sockets.get(&node) else {
+                    // Socketed skill gem — a character's tree socket or a
+                    // monster's def kit; one executor for both.
+                    let Some(sg) = skill_of(e, node) else {
                         continue;
                     };
                     if sg.cooldown_left > 0 {
@@ -465,7 +500,9 @@ impl World {
                     if gem_def.kind != GemKind::Skill {
                         continue;
                     }
-                    if !self.weapon_eligible(&gem_def, ch) {
+                    if let Some(ch) = &e.character
+                        && !self.weapon_eligible(&gem_def, ch)
+                    {
                         continue; // disarmed mid-queue, or the wrong tool
                     }
                     let gem_idx = sg.gem.gem_idx;
@@ -767,8 +804,7 @@ impl World {
                                 c.last_combat_tick = now;
                             }
                             if cooldown > 0
-                                && let Some(ch) = me.character.as_mut()
-                                && let Some(sg) = ch.sockets.get_mut(&node)
+                                && let Some(sg) = skill_of_mut(me, node)
                             {
                                 sg.cooldown_left = cooldown;
                             }
@@ -1693,6 +1729,81 @@ mod tests {
     }
 
     #[test]
+    fn monsters_cast_their_kit_through_the_same_pipeline() {
+        let content = content();
+        let mut world = World::new(0xBEEF, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Bait".into(),
+                program,
+            }],
+        });
+        let bait_slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let (husk_slot, husk_net, husk_pos, husk_mana) = world
+            .zone
+            .iter()
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| content.monsters[m.def_idx as usize].id == "tide_husk")
+            })
+            .map(|(s, e)| (s, e.net_id, e.pos, e.combat.as_ref().unwrap().mana))
+            .expect("a tide husk spawned");
+        assert!(husk_mana > 0, "husks carry mana now");
+        assert!(
+            !world
+                .zone
+                .get(husk_slot)
+                .unwrap()
+                .monster
+                .as_ref()
+                .unwrap()
+                .skills
+                .is_empty(),
+            "the def kit resolved at spawn"
+        );
+        // Drop unkillable bait next to it and let the brain work.
+        {
+            let e = world.zone.get_mut(bait_slot).unwrap();
+            e.pos = FxV2::new(husk_pos.x + Fx::from_int(3), husk_pos.y);
+            let c = e.combat.as_mut().unwrap();
+            c.life_max = 1_000_000;
+            c.life = 1_000_000;
+        }
+        let mut arced = false;
+        for _ in 0..100 {
+            let events = world.tick(&crate::TickInputs::default());
+            // Bait drifts from separation pushes; keep it close and alive.
+            if let Some(e) = world.zone.get_mut(bait_slot) {
+                let c = e.combat.as_mut().unwrap();
+                c.life = 1_000_000;
+            }
+            arced |= events.iter().any(|ev| {
+                matches!(
+                    ev,
+                    super::SimEvent::Hit { attacker, dmg_type: 3, .. } if *attacker == husk_net
+                )
+            });
+            if arced {
+                break;
+            }
+        }
+        assert!(arced, "the husk must land Arc (lightning) on the bait");
+        let mana_now = world
+            .zone
+            .get(husk_slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .mana;
+        assert!(mana_now < husk_mana, "casting spent monster mana");
+    }
+
+    #[test]
     fn war_cry_rallies_nearby_allies_and_lingers() {
         let content = content();
         let mut world = World::new(77_77, &content);
@@ -1817,12 +1928,10 @@ mod tests {
             e.combat.as_mut().unwrap().mana = 100;
         };
         {
-            let e = world.zone.get_mut(slot).unwrap();
             // Stand next to the monster so range/LoS never interfere.
             let mpos = world.zone.get_net(monster_net).unwrap().pos;
             let e = world.zone.get_mut(slot).unwrap();
             e.pos = FxV2::new(mpos.x + Fx::from_raw(0x4000), mpos.y);
-            let _ = e;
         }
         // Cleave demands melee: bare hands and a bow both refuse (−9);
         // the cleaver fires.

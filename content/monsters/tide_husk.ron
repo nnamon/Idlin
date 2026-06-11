@@ -11,6 +11,10 @@ MonsterDef(
     speed_cps: 195,
     radius_cu: 80,
     range_cu: 220,
+    mana: 40,
+    skills: [
+        (gem: "arc", level: 2),
+    ],
     use_ticks: 16,
     aggro_radius_cu: 1300,
     armour: 80,

@@ -390,6 +390,11 @@ impl World {
                 h.write_i32(m.anchor.x.raw());
                 h.write_i32(m.anchor.y.raw());
                 h.write_u64(m.decay_at.unwrap_or(0));
+                for sg in &m.skills {
+                    h.write_u32(sg.gem.gem_idx);
+                    h.write_u32(sg.gem.level);
+                    h.write_u32(sg.cooldown_left);
+                }
             }
             if let Some(l) = &e.loot {
                 h.write_u8(l.rarity as u8);

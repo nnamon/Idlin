@@ -126,6 +126,21 @@ resist_chaos` (attributes convert per
 [mechanics.md](mechanics.md)). The same vocabulary powers gear, tree nodes, and support
 gems — one evaluator (see [mechanics.md](mechanics.md)).
 
+### Monster skill kits
+
+MonsterDef takes `mana:` and `skills:` — the same gems characters use,
+cast through the same brain syscalls:
+
+```ron
+    mana: 40,
+    skills: [
+        (gem: "arc", level: 2, supports: [(gem: "widening", level: 1)]),
+    ],
+```
+
+Slot 1..N in list order for UseSkill/ReadSkills; load-time validation
+enforces real gems, right kinds, tag fit, and no duplicate supports.
+
 ## `content/gems/*.ron` — GemDef
 
 ```ron

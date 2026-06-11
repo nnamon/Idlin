@@ -294,6 +294,11 @@ pub struct MonsterState {
     pub hostile: bool,
     /// Set at death: the corpse lies where it fell until this tick.
     pub decay_at: Option<u64>,
+    /// The def's gem kit, resolved at spawn — the SAME structure characters
+    /// socket, so the executor and syscalls treat both alike (UseSkill
+    /// slot 1..N indexes this list; monster gems never gain XP).
+    #[serde(default)]
+    pub skills: Vec<SocketedGem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

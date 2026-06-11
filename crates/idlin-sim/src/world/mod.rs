@@ -277,8 +277,8 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
     CombatStats {
         life: def.life,
         life_max: def.life,
-        mana: 0,
-        mana_max: 0,
+        mana: def.mana,
+        mana_max: def.mana,
         es: 0,
         es_max: 0,
         es_recharge_at: 0,
@@ -314,6 +314,35 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         projectile: def.projectile,
         last_combat_tick: 0,
     }
+}
+
+/// Resolve a monster def's gem kit into the socketed structure characters
+/// use (names → indices; unknowns are impossible — content validates).
+pub(crate) fn resolve_monster_skills(
+    content: &idlin_content::ContentDb,
+    def: &idlin_content::MonsterDef,
+) -> Vec<crate::entity::SocketedGem> {
+    let gem_idx = |id: &str| content.gems.iter().position(|g| g.id == id).unwrap() as u32;
+    def.skills
+        .iter()
+        .map(|ms| crate::entity::SocketedGem {
+            gem: crate::entity::GemInstance {
+                gem_idx: gem_idx(&ms.gem),
+                level: ms.level,
+                xp: 0,
+            },
+            cooldown_left: 0,
+            supports: ms
+                .supports
+                .iter()
+                .map(|s| crate::entity::GemInstance {
+                    gem_idx: gem_idx(&s.gem),
+                    level: s.level,
+                    xp: 0,
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 pub fn universal_stats(level: u32) -> CombatStats {
@@ -917,6 +946,7 @@ impl World {
     fn spawn_monster(&mut self, monster_idx: u32, pack_idx: u32, pos: FxV2) {
         let def = &self.content.monsters[monster_idx as usize];
         let stats = monster_base_stats(def);
+        let skills = resolve_monster_skills(&self.content, def);
         let hostile = def.hostile;
         let program = self
             .content
@@ -950,6 +980,7 @@ impl World {
                 anchor: pos,
                 hostile,
                 decay_at: None,
+                skills,
             }),
             loot: None,
         });

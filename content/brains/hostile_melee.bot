@@ -1,5 +1,7 @@
 // Hostile NPC brain: leash to home, chase and attack the nearest
-// enemy within aggro range, wander when idle.
+// enemy within aggro range, wander when idle. If the def gave us a
+// skill kit, lead with slot 1 in its own targeting mode; the basic
+// attack is the fallback.
 //
 // NPCs run the exact same VM and syscalls as player bots —
 // behavior is content, not engine code. ReadEntities filter 1 is
@@ -7,6 +9,7 @@
 
 const SELF = 0xE000;
 const ENTS = 0xE100;
+const SKL = 0xE400;        // ReadSkills records (48 bytes each)
 const F_ENEMY = 1;
 const LEASH = 0x190000;    // 25 units (Q16.16) manhattan from home
 
@@ -28,10 +31,26 @@ fn main() {
 
     // Chase and hit anything inside our aggro radius.
     if (read_entities(ENTS, 4, F_ENEMY) > 0) {
-        if (dist_manhattan(mem[ENTS + 8], mem[ENTS + 12],
-                           mem[SELF], mem[SELF + 4]) <= mem[SELF + 44]) {
-            use_skill(0, mem[ENTS], 0, 0);
-            move_to(mem[ENTS + 8], mem[ENTS + 12]);
+        var target = mem[ENTS];
+        var tx = mem[ENTS + 8];
+        var ty = mem[ENTS + 12];
+        if (dist_manhattan(tx, ty, mem[SELF], mem[SELF + 4]) <= mem[SELF + 44]) {
+            // Lead with the kit when slot 1 is ready, aimed per its mode
+            // (+36 target_mode, +44 ready in the 12-word record).
+            var used = -1;
+            if (read_skills(SKL, 1) > 0) {
+                if (mem[SKL + 44] == 1) {
+                    if (mem[SKL + 36] == 0) { used = use_skill(1, target, 0, 0); }
+                    if (mem[SKL + 36] == 1) { used = use_skill_at(1, tx, ty); }
+                    if (mem[SKL + 36] == 2) {
+                        used = use_skill_dir(1, tx - mem[SELF], ty - mem[SELF + 4]);
+                    }
+                }
+            }
+            if (used != 0) {
+                use_skill(0, target, 0, 0);
+            }
+            move_to(tx, ty);
             return;
         }
     }

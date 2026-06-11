@@ -41,6 +41,8 @@ pub enum ContentError {
     },
     #[error("monster `{monster}` references unknown brain `{brain}`")]
     UnknownBrain { monster: String, brain: String },
+    #[error("monster `{monster}` skill kit is invalid: {msg}")]
+    BadMonsterSkills { monster: String, msg: String },
     #[error("tree node `{node}` links to unknown node `{link}`")]
     UnknownTreeNode { node: String, link: String },
     #[error("the passive tree has nodes but no `start` node")]
@@ -60,6 +62,23 @@ pub struct BrainDef {
     pub id: String,
     /// Assembled, versioned bytecode container.
     pub program: Vec<u8>,
+}
+
+/// A gem reference in a monster def: name + fixed level (monster gems
+/// don't earn XP — the def IS the build).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonsterGemRef {
+    pub gem: String,
+    pub level: u32,
+}
+
+/// One skill in a monster's kit, with its socketed supports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonsterSkillDef {
+    pub gem: String,
+    pub level: u32,
+    #[serde(default)]
+    pub supports: Vec<MonsterGemRef>,
 }
 
 /// A monster archetype. `model` picks the client-side visual; `brain` picks
@@ -117,6 +136,13 @@ pub struct MonsterDef {
     pub xp: i64,
     /// Ranged attack (client renders a projectile tracer).
     pub projectile: bool,
+    /// Mana pool (skills spend it; 2%/s inherent regen like characters).
+    #[serde(default)]
+    pub mana: i64,
+    /// The monster's gem kit — same gem pool as characters, fixed levels,
+    /// cast through the same syscalls (UseSkill slot 1..N in list order).
+    #[serde(default)]
+    pub skills: Vec<MonsterSkillDef>,
 }
 
 fn default_radius_cu() -> i32 {
@@ -820,6 +846,39 @@ impl ContentDb {
                     monster: monster.id.clone(),
                     brain: monster.brain.clone(),
                 });
+            }
+            // The skill kit obeys the same rules a character faces: real
+            // gems, right kinds, tag-fitting supports, no duplicates.
+            let bad = |msg: String| ContentError::BadMonsterSkills {
+                monster: monster.id.clone(),
+                msg,
+            };
+            for ms in &monster.skills {
+                let Some(skill) = db.gems.iter().find(|g| g.id == ms.gem) else {
+                    return Err(bad(format!("unknown gem `{}`", ms.gem)));
+                };
+                if skill.kind != GemKind::Skill {
+                    return Err(bad(format!("`{}` is not a skill gem", ms.gem)));
+                }
+                let mut seen: Vec<&str> = Vec::new();
+                for sup_ref in &ms.supports {
+                    let Some(sup) = db.gems.iter().find(|g| g.id == sup_ref.gem) else {
+                        return Err(bad(format!("unknown support `{}`", sup_ref.gem)));
+                    };
+                    if sup.kind != GemKind::Support {
+                        return Err(bad(format!("`{}` is not a support gem", sup_ref.gem)));
+                    }
+                    if !sup.fits_skill(skill) {
+                        return Err(bad(format!(
+                            "support `{}` doesn't fit `{}` (tags)",
+                            sup_ref.gem, ms.gem
+                        )));
+                    }
+                    if seen.contains(&sup_ref.gem.as_str()) {
+                        return Err(bad(format!("duplicate support `{}`", sup_ref.gem)));
+                    }
+                    seen.push(&sup_ref.gem);
+                }
             }
         }
         Ok(db)
