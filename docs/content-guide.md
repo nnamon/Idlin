@@ -206,6 +206,16 @@ socket INTO that skill gem (capacity 1, +1 at gem level 7, +1 at 14;
 one copy of each support), and the tag gate is enforced at socket time
 (manual mismatch → −1 + a GemRejected event; auto skips misfits).
 
+## Zones — declarative, with scripted beats
+
+Zones are pure data: extent, spawn point/scatter, area-gen counts
+(rocks/trees), and packs that respawn as units. The one scripted hook
+so far is `tutorial_drops: true` — in such a zone every character's
+FIRST kill drops a weighted weapon base and their SECOND drops a skill
+gem suited to whatever they're wielding by then (melee/bow gems gate
+on the class; wands and bare hands suit damage spells). Both arrive on
+top of the normal loot rolls.
+
 ## Affix pools — items subscribe
 
 Eligibility is a SUBSCRIPTION: every affix lives in exactly one named

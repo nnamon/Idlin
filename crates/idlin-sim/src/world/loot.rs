@@ -111,6 +111,107 @@ impl World {
         drops
     }
 
+    /// Scripted tutorial beats, by the killer's lifetime kill count
+    /// (PRE-increment): the first kill hands them a weapon, the second a
+    /// skill gem suited to whatever they're wielding by then.
+    pub(super) fn tutorial_drop(
+        &mut self,
+        kills_before: u64,
+        killer_slot: Option<usize>,
+    ) -> Option<LootPayload> {
+        match kills_before {
+            0 => {
+                // A weighted weapon base, plain — crafting it up is the game.
+                let weapons: Vec<u32> = self
+                    .content
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| d.weapon_class.is_some())
+                    .map(|(i, _)| i as u32)
+                    .collect();
+                let total: u32 = weapons
+                    .iter()
+                    .map(|&i| self.content.items[i as usize].weight)
+                    .sum();
+                if total == 0 {
+                    return None;
+                }
+                let mut roll = self.rng_loot.next_range(total);
+                let mut base_idx = *weapons.first()?;
+                for &i in &weapons {
+                    let w = self.content.items[i as usize].weight;
+                    if roll < w {
+                        base_idx = i;
+                        break;
+                    }
+                    roll -= w;
+                }
+                Some(LootPayload::Gear(Item {
+                    base_idx,
+                    rarity: Rarity::Normal,
+                    item_level: 1,
+                    affixes: Vec::new(),
+                    name: self.content.items[base_idx as usize].name.clone(),
+                }))
+            }
+            1 => {
+                // The wielded class picks the gem family: melee/bow gems
+                // gate on the class; wands (and bare hands) suit spells.
+                let class = killer_slot
+                    .and_then(|s| self.zone.get(s))
+                    .and_then(|e| e.character.as_ref())
+                    .and_then(|ch| ch.equipment[idlin_content::GearSlot::Weapon.idx()].as_ref())
+                    .and_then(|item| self.content.items[item.base_idx as usize].weapon_class);
+                let suited: Vec<u32> = self
+                    .content
+                    .gems
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, g)| {
+                        g.kind == idlin_content::GemKind::Skill
+                            && match class {
+                                Some(idlin_content::WeaponClass::Melee)
+                                | Some(idlin_content::WeaponClass::Bow) => {
+                                    g.weapon_classes.contains(&class.unwrap())
+                                }
+                                // Wand or unarmed: damage spells.
+                                _ => {
+                                    g.weapon_classes.is_empty()
+                                        && g.skill_kind == idlin_content::SkillKind::Spell
+                                        && g.buff.is_none()
+                                }
+                            }
+                    })
+                    .map(|(i, _)| i as u32)
+                    .collect();
+                let total: u32 = suited
+                    .iter()
+                    .map(|&i| self.content.gems[i as usize].weight)
+                    .sum();
+                if total == 0 {
+                    return None;
+                }
+                let mut roll = self.rng_loot.next_range(total);
+                let mut gem_idx = *suited.first()?;
+                for &i in &suited {
+                    let w = self.content.gems[i as usize].weight;
+                    if roll < w {
+                        gem_idx = i;
+                        break;
+                    }
+                    roll -= w;
+                }
+                Some(LootPayload::Gem(GemInstance {
+                    gem_idx,
+                    level: 1,
+                    xp: 0,
+                }))
+            }
+            _ => None,
+        }
+    }
+
     /// A weighted low-tier obol (tier ≤ 1) for trash compaction.
     fn roll_trash_obol(&mut self) -> Option<u32> {
         let total: u32 = self

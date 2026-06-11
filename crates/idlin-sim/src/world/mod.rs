@@ -460,6 +460,7 @@ impl World {
                     ),
                     Fx::from_int(def.spawn_radius_u as i16),
                 );
+                zone.tutorial_drops = def.tutorial_drops;
                 for pack in &def.packs {
                     let monster_idx = content
                         .monster_idx(&pack.monster)

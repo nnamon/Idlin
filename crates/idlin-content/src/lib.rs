@@ -672,6 +672,11 @@ pub struct ZoneDef {
     pub gen_rocks: u32,
     #[serde(default)]
     pub gen_trees: u32,
+    /// Scripted onboarding beats: each character's FIRST kill here drops
+    /// a weapon, and the SECOND drops a skill gem suited to whatever
+    /// weapon they're wielding by then.
+    #[serde(default)]
+    pub tutorial_drops: bool,
     pub packs: Vec<SpawnPack>,
 }
 

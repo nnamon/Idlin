@@ -132,6 +132,11 @@ empty slot wear nothing — fresh wretches wash ashore naked.
 
 ## Currency (the obols)
 
+Tutorial zones script the first beats: a character's first kill there
+always drops a weapon, and the second a skill gem suited to their
+wielded weapon class — onboarding without touching the loot math
+below.
+
 Drops follow the PoE order, per kill: **quantity first** — the
 KILLER's `item_quantity` factor scales the number of drop rolls (base
 35% expectation; whole overflow becomes guaranteed drops, e.g. +500%
