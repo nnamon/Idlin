@@ -45,9 +45,14 @@ export class ZoneRenderer {
   private timer = new THREE.Timer();
   private zoneBuilt = false;
   private onResize = () => this.resize();
-  /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character. */
+  /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character;
+   *  ?cam=x,y,z,tx,ty,tz pins it entirely (shot framing/verification). */
   private followOverride = new URLSearchParams(location.search).get("follow");
   private zoomOverride = Number(new URLSearchParams(location.search).get("zoom") ?? "0.55");
+  private camOverride = new URLSearchParams(location.search)
+    .get("cam")
+    ?.split(",")
+    .map(Number);
 
   constructor(
     private container: HTMLElement,
@@ -244,6 +249,14 @@ export class ZoneRenderer {
     this.fx.update(now);
 
     // -- camera + focus ring --
+    if (this.camOverride?.length === 6) {
+      const [x, y, z, tx, ty, tz] = this.camOverride;
+      this.camera.position.set(x, y, z);
+      this.camera.lookAt(tx, ty, tz);
+      this.focusRing.visible = false;
+      this.composer.render();
+      return;
+    }
     let focusId = this.store.cue?.focus;
     let zoom = 1;
     if (this.followOverride) {

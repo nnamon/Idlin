@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const FOLLOW_OFFSET = new THREE.Vector3(7, 8, 7);
+const FOLLOW_OFFSET = new THREE.Vector3(10, 11.5, 10);
 
 /**
  * Smooth camera rig: follows the director's focus with damped motion, or
