@@ -24,6 +24,9 @@ export interface ModelDef {
   tint?: string;
   /** Parts whose materials take the per-character name color. */
   nameTintParts?: string[];
+  /** Base-skin submeshes per paper-doll region, hidden when covered by a
+   * worn part (head is intentionally absent: always visible). */
+  baseRegions?: Record<string, string>;
 }
 
 export interface PartDef {

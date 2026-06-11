@@ -142,10 +142,80 @@ function sceneHeight(doc) {
   return max[1] - min[1];
 }
 
+/**
+ * Split the base skin into region submeshes (head/body/legs/feet) by each
+ * vertex's dominant joint. The client hides regions covered by outfit
+ * parts — without this the bare body clips through worn gear. Triangles
+ * vote by majority; attribute accessors are shared, only indices split.
+ */
+function splitBodyRegions(doc, meshNodeName) {
+  const root = doc.getRoot();
+  const node = root.listNodes().find((n) => n.getName() === meshNodeName);
+  if (!node) throw new Error(`splitBodyRegions: no node ${meshNodeName}`);
+  const mesh = node.getMesh();
+  const skin = node.getSkin();
+  const regionOf = (name) => {
+    if (name === "Head" || name.includes("neck")) return "head";
+    if (/pelvis|thigh|calf/.test(name)) return "legs";
+    if (/foot|ball/.test(name)) return "feet";
+    return "body";
+  };
+  const jointRegion = skin.listJoints().map((j) => regionOf(j.getName()));
+
+  const prim = mesh.listPrimitives()[0];
+  const joints = prim.getAttribute("JOINTS_0");
+  const weights = prim.getAttribute("WEIGHTS_0");
+  const indices = prim.getIndices();
+  const vertRegion = new Array(joints.getCount());
+  const j = [];
+  const w = [];
+  for (let i = 0; i < joints.getCount(); i++) {
+    joints.getElement(i, j);
+    weights.getElement(i, w);
+    let best = 0;
+    for (let k = 1; k < 4; k++) if (w[k] > w[best]) best = k;
+    vertRegion[i] = jointRegion[j[best]];
+  }
+
+  const buckets = { head: [], body: [], legs: [], feet: [] };
+  for (let t = 0; t < indices.getCount(); t += 3) {
+    const a = indices.getScalar(t);
+    const b = indices.getScalar(t + 1);
+    const c = indices.getScalar(t + 2);
+    const region = vertRegion[b] === vertRegion[c] ? vertRegion[b] : vertRegion[a];
+    buckets[region].push(a, b, c);
+  }
+
+  const buffer = root.listBuffers()[0];
+  const parent = node.getParentNode() ?? root.getDefaultScene();
+  for (const [region, tris] of Object.entries(buckets)) {
+    if (tris.length === 0) continue;
+    const acc = doc
+      .createAccessor(`base_${region}_indices`)
+      .setType("SCALAR")
+      .setArray(new Uint32Array(tris))
+      .setBuffer(buffer);
+    const p = doc
+      .createPrimitive()
+      .setIndices(acc)
+      .setMaterial(prim.getMaterial())
+      .setMode(prim.getMode());
+    for (const sem of prim.listSemantics()) p.setAttribute(sem, prim.getAttribute(sem));
+    const n = doc
+      .createNode(`Base_${region}`)
+      .setMesh(doc.createMesh(`Base_${region}`).addPrimitive(p))
+      .setSkin(skin);
+    parent.addChild(n);
+    console.log(`  Base_${region}: ${tris.length / 3} tris`);
+  }
+  node.dispose();
+}
+
 // ---- 1. body.glb: base character + every clip, retargeted by bone name ----
 {
   const doc = await io.read(BASE);
   for (const anim of doc.getRoot().listAnimations()) anim.dispose(); // base poses
+  splitBodyRegions(doc, "SuperHero_Male");
   const bodyScene = doc.getRoot().getDefaultScene();
 
   for (const [src, wanted] of [

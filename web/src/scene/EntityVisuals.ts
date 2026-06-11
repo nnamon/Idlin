@@ -42,6 +42,7 @@ export class EntityVisual {
   private modelRoot: THREE.Object3D | null = null;
   private boneByName = new Map<string, THREE.Bone>();
   private worn = new Map<string, WornPart>(); // region → part
+  private baseRegionMeshes = new Map<string, THREE.Object3D>(); // region → base skin
   private gearKey = "<unset>";
   private myName = "";
 
@@ -115,6 +116,10 @@ export class EntityVisual {
     if (inst.def.handSlot) {
       this.handBone = inst.root.getObjectByName(inst.def.handSlot) ?? null;
     }
+    for (const [region, meshName] of Object.entries(inst.def.baseRegions ?? {})) {
+      const mesh = inst.root.getObjectByName(meshName);
+      if (mesh) this.baseRegionMeshes.set(region, mesh);
+    }
 
     // Monsters with a spawn clip rise out of the ground; everyone else
     // idles, phase-shifted so packs don't move in lockstep.
@@ -148,6 +153,12 @@ export class EntityVisual {
     for (const part of gear) {
       const def = this.assets.partDef(part);
       if (def) desired.set(def.region, part);
+    }
+
+    // The base skin shows only where nothing is worn — otherwise the body
+    // clips through the clothes.
+    for (const [region, mesh] of this.baseRegionMeshes) {
+      mesh.visible = !desired.has(region);
     }
 
     // Remove parts whose region changed…
