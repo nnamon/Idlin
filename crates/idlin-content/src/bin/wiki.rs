@@ -1,0 +1,128 @@
+//! The internal wiki: generated FROM the RONs, so it can never drift.
+//! Run `cargo run -p idlin-content --bin wiki` from the repo root;
+//! pages land in docs/wiki/. Structured fields get real prose/tables;
+//! anything still evolving is shown via Debug so it stays honest.
+
+use idlin_content::ContentDb;
+use std::fmt::Write as _;
+use std::path::Path;
+
+fn main() {
+    let db = ContentDb::load(Path::new("content")).expect("content loads (run from repo root)");
+    let out = Path::new("docs/wiki");
+    std::fs::create_dir_all(out).expect("mkdir docs/wiki");
+    let write = |name: &str, body: String| {
+        std::fs::write(out.join(name), body).expect("write page");
+        println!("wrote docs/wiki/{name}");
+    };
+
+    // -- items & their affix pools --
+    let mut s = String::from("# Item bases\n\nGenerated from content/ — do not edit.\n\n");
+    for it in &db.items {
+        let _ = writeln!(s, "## {}\n\n```\n{:#?}\n```\n", it.id, it);
+    }
+    write("items.md", s);
+
+    let mut s = String::from("# Affixes by pool\n\nGenerated from content/ — do not edit.\n\n");
+    let mut pools: Vec<&str> = db.affixes.iter().map(|a| a.pool.as_str()).collect();
+    pools.sort_unstable();
+    pools.dedup();
+    for pool in pools {
+        let _ = writeln!(s, "## pool `{pool}`\n");
+        let subs: Vec<&str> = db
+            .items
+            .iter()
+            .filter(|i| i.affix_pools.iter().any(|p| p == pool))
+            .map(|i| i.id.as_str())
+            .collect();
+        let _ = writeln!(s, "Subscribed bases: {}\n", subs.join(", "));
+        for a in db.affixes.iter().filter(|a| a.pool == pool) {
+            let _ = writeln!(s, "### {}\n\n```\n{:#?}\n```\n", a.id, a);
+        }
+    }
+    write("affixes.md", s);
+
+    let mut s = String::from("# Gems\n\nGenerated from content/ — do not edit.\n\n");
+    for g in &db.gems {
+        let _ = writeln!(s, "## {}\n\n```\n{:#?}\n```\n", g.id, g);
+    }
+    write("gems.md", s);
+
+    let mut s = String::from("# Currency (obols)\n\nGenerated from content/ — do not edit.\n\n");
+    for c in &db.currency {
+        let _ = writeln!(s, "## {}\n\n```\n{:#?}\n```\n", c.id, c);
+    }
+    write("currency.md", s);
+
+    let mut s = String::from("# Monsters\n\nGenerated from content/ — do not edit.\n\n");
+    for m in &db.monsters {
+        let _ = writeln!(s, "## {}\n\n```\n{:#?}\n```\n", m.id, m);
+    }
+    write("monsters.md", s);
+
+    // -- tilesets: the themed families and their native ecology --
+    let mut s = String::from("# Tilesets\n\nGenerated from content/ — do not edit.\n\n");
+    for t in &db.tilesets {
+        let _ = writeln!(s, "## {}\n", t.id);
+        let _ = writeln!(s, "| glyph | tile | walk | LoS-block | ground | prop |");
+        let _ = writeln!(s, "|---|---|---|---|---|---|");
+        for tile in &t.tiles {
+            let _ = writeln!(
+                s,
+                "| `{}` | {} | {} | {} | {} | {} |",
+                tile.glyph,
+                tile.id,
+                tile.walkable,
+                tile.blocks_los,
+                tile.ground,
+                tile.prop.as_deref().unwrap_or("—"),
+            );
+        }
+        let vars: Vec<&str> = t.variants.iter().map(|v| v.id.as_str()).collect();
+        let _ = writeln!(s, "\nVariants: {}\n", if vars.is_empty() { "—".into() } else { vars.join(", ") });
+        let _ = writeln!(
+            s,
+            "Natural monsters: {}\n",
+            if t.natural_monsters.is_empty() { "none (staged only)".into() } else { t.natural_monsters.join(", ") },
+        );
+        let users: Vec<&str> = db
+            .zones
+            .iter()
+            .filter(|z| z.tileset.as_deref() == Some(t.id.as_str()))
+            .map(|z| z.id.as_str())
+            .collect();
+        let _ = writeln!(s, "Zones using it: {}\n", if users.is_empty() { "—".into() } else { users.join(", ") });
+    }
+    write("tilesets.md", s);
+
+    let mut s = String::from("# Zones\n\nGenerated from content/ — do not edit.\n\n");
+    for z in &db.zones {
+        let _ = writeln!(
+            s,
+            "## {} (`{}`)\n\n{}×{} u · kind {:?} · tileset {} · {} packs · {} exits · brain {}\n",
+            z.name,
+            z.id,
+            z.width_u,
+            z.height_u,
+            z.kind,
+            z.tileset.as_deref().unwrap_or("generated"),
+            z.packs.len(),
+            z.exits.len(),
+            z.brain.as_deref().unwrap_or("—"),
+        );
+    }
+    write("zones.md", s);
+
+    // -- passive tree --
+    let mut s = String::from("# Passive tree\n\nGenerated from content/ — do not edit.\n\n");
+    for n in &db.tree {
+        let _ = writeln!(s, "## {} (`{}`, num {})\n\n```\n{:#?}\n```\n", n.name, n.id, n.num, n.grants);
+    }
+    write("tree.md", s);
+
+    let index = "# Idlin wiki\n\nGenerated from the RONs by `cargo run -p idlin-content --bin wiki`.\n\n\
+        - [Item bases](items.md)\n- [Affixes by pool](affixes.md)\n- [Gems](gems.md)\n\
+        - [Currency](currency.md)\n- [Monsters](monsters.md)\n- [Tilesets](tilesets.md)\n\
+        - [Zones](zones.md)\n- [Passive tree](tree.md)\n";
+    write("README.md", index.to_string());
+}
