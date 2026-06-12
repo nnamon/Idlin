@@ -591,6 +591,12 @@ export class EntityVisual {
       this.hpFg.visible = !hide;
     }
 
+    // Nameplates: idlers keep theirs always; a monster's name dies with
+    // it (an elite corpse doesn't need an announcement).
+    if (this.label && er.state.kind === "Monster") {
+      this.label.visible = !er.state.dead;
+    }
+
     // -- death / respawn --
     if (er.state.dead !== this.wasDead) {
       this.wasDead = er.state.dead;
