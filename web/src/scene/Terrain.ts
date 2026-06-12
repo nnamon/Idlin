@@ -104,6 +104,8 @@ export class Terrain {
   private waterEdge: number[] | null = null;
   private wallMat: THREE.MeshStandardMaterial | null = null;
   private wallGeo: THREE.BoxGeometry | null = null;
+  private wallGeoV: THREE.BoxGeometry | null = null;
+  private wallCore: THREE.BoxGeometry | null = null;
   private hasWater = false;
   /** Opt-in cosmetic features from the tileset; legacy zones get all. */
   private features = new Set<string>();
@@ -405,21 +407,36 @@ export class Terrain {
             put("fence_wood", cx, cz, 1, 0);
             break;
           case "wall": {
-            // REAL GEOMETRY: a textured box fills the whole cell — walls
-            // tile along runs and join at corners by construction. The
-            // directional asset piece is retired (it could not).
+            // Center-targeted construction: every wall cell is a core
+            // post plus HALF-legs reaching only toward wall neighbors.
+            // Segments abut at cell edges instead of overlapping (the
+            // full-length slabs z-fought where runs met).
             if (!this.wallMat) {
               const tex = wallStoneTexture();
               this.wallMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
-              this.wallGeo = new THREE.BoxGeometry(1.001, 2.2, 1.001);
+              this.wallGeo = new THREE.BoxGeometry(0.5, 2.2, 0.42); // E/W half-leg
+              this.wallGeoV = new THREE.BoxGeometry(0.42, 2.2, 0.5); // N/S half-leg
+              this.wallCore = new THREE.BoxGeometry(0.42, 2.2, 0.42);
             }
-            const m = new THREE.Mesh(this.wallGeo!, this.wallMat);
-            m.position.set(cx, this.heightAt(cx, cz) + 1.04, cz);
-            m.castShadow = true;
-            m.receiveShadow = true;
-            m.userData.occRoot = m;
-            this.group.add(m);
-            this.occluders.push(m);
+            const wallAt = (xx: number, yy: number): boolean => {
+              if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false;
+              return this.byGlyph.get(rows[yy][xx])?.prop === "wall";
+            };
+            const yBase = this.heightAt(cx, cz) + 1.04;
+            const add = (geo: THREE.BoxGeometry, ox: number, oz: number) => {
+              const m = new THREE.Mesh(geo, this.wallMat!);
+              m.position.set(cx + ox, yBase, cz + oz);
+              m.castShadow = true;
+              m.receiveShadow = true;
+              m.userData.occRoot = m;
+              this.group.add(m);
+              this.occluders.push(m);
+            };
+            add(this.wallCore!, 0, 0);
+            if (wallAt(x + 1, y)) add(this.wallGeo!, 0.25, 0);
+            if (wallAt(x - 1, y)) add(this.wallGeo!, -0.25, 0);
+            if (wallAt(x, y + 1)) add(this.wallGeoV!, 0, 0.25);
+            if (wallAt(x, y - 1)) add(this.wallGeoV!, 0, -0.25);
             break;
           }
           default:
