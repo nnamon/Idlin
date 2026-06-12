@@ -8,7 +8,7 @@ ZoneDef(
     kind: town,
     // Dimensions come from map.txt; the count-based generator is dead here.
     spawn_x_u: 30,
-    spawn_y_u: 46,
+    spawn_y_u: 48,
     spawn_radius_u: 3,
     camp_radius_u: 90,      // the whole town is sanctuary
     tileset: Some("town"),
@@ -17,5 +17,11 @@ ZoneDef(
         "Saltmere. Fires that stay lit. Faces that stay alive.",
         "Another wretch crests the bluff. The camp counts one more.",
     ],
-    packs: [],
+    packs: [
+        // Townsfolk: non-hostile bots with errands and opinions.
+        (monster: "villager", count: 3, x_u: 30, y_u: 14, radius_u: 5, respawn_ticks: 9000),
+        (monster: "villager", count: 2, x_u: 30, y_u: 25, radius_u: 6, respawn_ticks: 9000),
+        (monster: "villager", count: 1, x_u: 25, y_u: 8,  radius_u: 2, respawn_ticks: 9000),
+        (monster: "villager", count: 1, x_u: 34, y_u: 8,  radius_u: 2, respawn_ticks: 9000),
+    ],
 )

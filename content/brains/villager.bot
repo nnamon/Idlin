@@ -1,0 +1,30 @@
+// ============================================================
+// Villager brain: town life. Strolls a little orbit around its
+// home anchor, pauses, occasionally has a word for whoever is
+// passing (the def's `lines:` table — rate-limited by the sim).
+// Non-hostile NPCs are still bots; the town is alive because
+// everything in it is.
+// ============================================================
+
+const SELF = 0xE000;
+
+var wx;
+var wy;
+var wt;
+
+fn main() {
+    self_status(SELF);
+    if (mem[SELF + 32] & 1) { return; }
+
+    if (wt <= 0) {
+        // A new errand within ~5u of home; mostly just standing about.
+        wx = mem[SELF + 36] - 0x50000 + ((random() & 0x7FFFFFFF) % 0xA0000);
+        wy = mem[SELF + 40] - 0x50000 + ((random() & 0x7FFFFFFF) % 0xA0000);
+        wt = 90 + ((random() & 0x7FFFFFFF) % 160);
+        if ((random() & 7) == 0) {
+            say((random() & 0x7FFFFFFF) % 6);
+        }
+    }
+    wt = wt - 1;
+    move_to(wx, wy);
+}
