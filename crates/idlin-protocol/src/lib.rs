@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 26;
+pub const PROTO_VERSION: u32 = 27;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -262,6 +262,20 @@ pub enum GameEvent {
         id: u32,
         owner: String,
         nodes: u32,
+    },
+    /// A Regret Obol bought a tree respec: allocated nodes re-walked a
+    /// new plan (orphaned sockets returned their gems; gear that leaned
+    /// on dropped attributes was shed).
+    TreeRespecced {
+        id: u32,
+        owner: String,
+    },
+    /// Equipped gear stopped meeting its requirements (respec, gear
+    /// loss, buff expiry) and was shed to the bag or the ground.
+    GearShed {
+        id: u32,
+        owner: String,
+        item: String,
     },
     BuildRejected {
         id: u32,

@@ -4,6 +4,7 @@ ItemDef(
     name: "Wader's Boots",
     model: "ranger_feet",
     slot: boots,
+    req_level: 2,
     w: 2,
     h: 2,
     evasion: 40,

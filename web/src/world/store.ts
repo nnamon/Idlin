@@ -503,6 +503,12 @@ export class WorldStore {
       case "BuildRejected":
         push(`⚠ ${ev.data.owner}'s build rejected: ${ev.data.reason}`, "#ffb36a");
         break;
+      case "TreeRespecced":
+        push(`✶ ${ev.data.owner} pays their regret — the tree re-walks`, "#ffd75a");
+        break;
+      case "GearShed":
+        push(`⚠ ${ev.data.owner} can no longer wield ${ev.data.item}`, "#ffb36a");
+        break;
       case "BuildDeclared":
         push(`◈ ${ev.data.owner} declares a build (${ev.data.nodes} nodes)`, "#9a7bff");
         break;

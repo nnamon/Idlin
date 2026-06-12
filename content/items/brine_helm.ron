@@ -4,6 +4,7 @@ ItemDef(
     name: "Brinescoured Helm",
     model: "ranger_hood",
     slot: helm,
+    req_level: 3,
     w: 2,
     h: 2,
     armour: 50,

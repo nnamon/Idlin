@@ -3,6 +3,7 @@ ItemDef(
     id: "driftwood_buckler",
     name: "Driftwood Buckler",
     slot: offhand,
+    req_level: 2,
     model: "shield_round",
     w: 2, h: 2,
     armour: 12,

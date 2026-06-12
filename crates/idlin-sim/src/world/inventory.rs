@@ -100,6 +100,143 @@ impl World {
     /// Host-computed gear optimization (the EquipBest syscall): for each gear
     /// slot, equip the highest-scoring item between what's worn and what's in
     /// the bag. Returns the number of swaps; emits ItemEquipped events.
+    /// Attribute totals (str, dex, int) for requirement checks: tree
+    /// nodes + active buffs + equipped gear affixes — optionally
+    /// excluding one gear slot, because an item's own affixes never
+    /// satisfy its own requirements.
+    pub(crate) fn attribute_totals(
+        &self,
+        slot: usize,
+        exclude_gear: Option<usize>,
+    ) -> (i64, i64, i64) {
+        use crate::stats::{Stat, StatSheet};
+        let Some(e) = self.zone.get(slot) else {
+            return (0, 0, 0);
+        };
+        let Some(ch) = &e.character else {
+            return (0, 0, 0);
+        };
+        let mut sheet = StatSheet::new();
+        for &node_idx in &ch.allocated {
+            if let Some(node) = self.content.tree.get(node_idx as usize) {
+                for g in &node.grants {
+                    sheet.apply(g);
+                }
+            }
+        }
+        for ef in &e.effects {
+            if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
+                for g in grants {
+                    sheet.apply(g);
+                }
+            }
+        }
+        for (i, slot_item) in ch.equipment.iter().enumerate() {
+            if Some(i) == exclude_gear {
+                continue;
+            }
+            let Some(item) = slot_item else { continue };
+            for ra in &item.affixes {
+                let a = &self.content.affixes[ra.affix_idx as usize];
+                sheet.apply(&crate::stats::Grant {
+                    stat: a.stat,
+                    layer: a.layer,
+                    value: ra.value,
+                });
+            }
+        }
+        (
+            sheet.value(Stat::Strength, 0),
+            sheet.value(Stat::Dexterity, 0),
+            sheet.value(Stat::Intelligence, 0),
+        )
+    }
+
+    /// Does this character MEET an item's requirements right now?
+    /// `exclude_gear` names the equipment slot the item would occupy (or
+    /// occupies) so its own grants don't count toward itself.
+    pub(crate) fn meets_requirements(
+        &self,
+        slot: usize,
+        item: &Item,
+        exclude_gear: Option<usize>,
+    ) -> bool {
+        let def = &self.content.items[item.base_idx as usize];
+        if def.req_level == 0 && def.req_str == 0 && def.req_dex == 0 && def.req_int == 0 {
+            return true; // the common case costs nothing
+        }
+        let level = self
+            .zone
+            .get(slot)
+            .and_then(|e| e.character.as_ref())
+            .map(|ch| ch.level)
+            .unwrap_or(0);
+        if level < def.req_level {
+            return false;
+        }
+        let (st, dx, iq) = self.attribute_totals(slot, exclude_gear);
+        st >= def.req_str && dx >= def.req_dex && iq >= def.req_int
+    }
+
+    /// Re-validate every equipped item against its requirements and SHED
+    /// what no longer qualifies (to the bag, or the ground when full).
+    /// Runs to a fixed point in slot order — shedding one attribute-
+    /// granting piece can invalidate the next. Call on every event that
+    /// can lower attributes: tree respec, gear changes, buff expiry.
+    pub(crate) fn enforce_gear_requirements(&mut self, slot: usize, events: &mut Vec<SimEvent>) {
+        for _ in 0..=GEAR_SLOTS {
+            let Some(e) = self.zone.get(slot) else { return };
+            let Some(ch) = &e.character else { return };
+            let (net_id, owner) = (e.net_id, ch.name.clone());
+            let mut shed: Option<usize> = None;
+            for (i, slot_item) in ch.equipment.iter().enumerate() {
+                let Some(item) = slot_item else { continue };
+                if !self.meets_requirements(slot, item, Some(i)) {
+                    shed = Some(i);
+                    break;
+                }
+            }
+            let Some(gear_idx) = shed else { return };
+            let me = self.zone.get_mut(slot).unwrap();
+            let ch_mut = me.character.as_mut().unwrap();
+            let Some(item) = ch_mut.equipment[gear_idx].take() else {
+                return;
+            };
+            let item_name = self.item_display(&item);
+            let (w, h) = {
+                let def = &self.content.items[item.base_idx as usize];
+                (def.w, def.h)
+            };
+            let spot = {
+                let e = self.zone.get(slot).unwrap();
+                self.first_fit(e.character.as_ref().unwrap(), w, h)
+            };
+            match spot {
+                Some((x, y)) => {
+                    let me = self.zone.get_mut(slot).unwrap();
+                    me.character
+                        .as_mut()
+                        .unwrap()
+                        .inventory
+                        .push(PlacedItem { item, x, y });
+                }
+                None => {
+                    let (pos, owner_net) = {
+                        let e = self.zone.get(slot).unwrap();
+                        (e.pos, e.net_id)
+                    };
+                    self.spawn_loot(pos, LootPayload::Gear(item), owner_net);
+                }
+            }
+            events.push(SimEvent::GearShed {
+                id: net_id,
+                owner,
+                item: item_name,
+            });
+            self.refresh_derived_stats(slot);
+        }
+    }
+
     pub(crate) fn equip_best(&mut self, slot: usize, events: &mut Vec<SimEvent>) -> i32 {
         let Some(e) = self.zone.get(slot) else {
             return -1;
@@ -125,6 +262,11 @@ impl World {
                     islot.idx() == gear_idx
                 };
                 if !fits {
+                    continue;
+                }
+                // Requirements gate candidacy: an item we couldn't KEEP
+                // equipped must not thrash on and off every tick.
+                if !self.meets_requirements(slot, &placed.item, Some(gear_idx)) {
                     continue;
                 }
                 let s = self.item_score(&placed.item);
@@ -182,6 +324,10 @@ impl World {
         if changes > 0 {
             self.refresh_derived_stats(slot);
         }
+        // A swap can REMOVE the attributes another piece leaned on —
+        // shed whatever stopped qualifying (also the every-tick
+        // self-heal for any invalidation path we didn't foresee).
+        self.enforce_gear_requirements(slot, events);
         changes
     }
 

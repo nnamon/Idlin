@@ -1,0 +1,10 @@
+// Regret, minted: SetBuild consumes one to RESPEC the passive tree —
+// allocated nodes reset and re-walk the new plan. Only the FIRST tree
+// (and pure append-steering) is free; changing your mind has a price.
+CurrencyDef(
+    id: "regret_obol",
+    name: "Regret Obol",
+    op: respec,
+    weight: 12,
+    tier: 2,
+)

@@ -1792,6 +1792,9 @@ impl World {
 
         for slot in needs_refresh {
             self.refresh_derived_stats(slot);
+            // An expired buff can drop the attributes a piece of gear
+            // leaned on — requirements re-validate here too.
+            self.enforce_gear_requirements(slot, events);
         }
         self.finish_kills(dead, loot, events);
     }

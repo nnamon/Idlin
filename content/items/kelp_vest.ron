@@ -4,6 +4,7 @@ ItemDef(
     name: "Kelp-Woven Vest",
     model: "ranger_body",
     slot: chest,
+    req_level: 2,
     w: 2,
     h: 3,
     armour: 60,

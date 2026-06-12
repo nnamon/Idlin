@@ -146,6 +146,30 @@ the grants already evaluate.) Damage comes in five types — **physical,
 fire, cold, lightning, chaos** — with four typed resistances (capped at
 75% at use); armour attenuates physical only.
 
+## Item requirements (and when they re-check)
+
+Bases may demand a level and attribute floors (`req_level`,
+`req_str/dex/int`). Meeting them is checked at equip — and RE-CHECKED
+on every event that can lower attributes: a tree respec, losing an
+attribute-granting piece, an attribute buff expiring. An equipped item
+that stops qualifying is SHED to the bag (or the ground when full),
+loudly (GearShed event). The check runs to a fixed point in slot
+order, and an item's own affixes never satisfy its own requirements.
+Starter scraps are requirement-free by design — a level-1 wretch has
+zero passive points, and the first-kill weapon must always lift.
+
+## The Regret Obol (tree respec)
+
+The FIRST tree is free, and so is pure steering (re-declaring a plan
+that keeps every allocated node — a redeploy aiming future points).
+Changing what's already allocated is a RESPEC: it consumes one
+**Regret Obol**, resets allocated nodes, re-walks the new plan with
+every banked point, returns gems from sockets you no longer own to
+the pouch (overflow drops at your feet), and re-validates gear
+requirements against the new attributes. Without the obol the
+re-declaration is rejected loudly. Swapping builds mid-map is thus a
+real, priced decision — not a free reroll.
+
 ## Item identity (names and affix budgets)
 
 PoE-style prefix/suffix items:

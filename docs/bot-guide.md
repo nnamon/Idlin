@@ -138,6 +138,12 @@ fn main() {                            // main() runs once per tick
 
 **Language summary**
 
+- `build [...]`: the FIRST declaration is free; re-declaring a plan
+  that keeps every allocated node (append-steering) stays free; a plan
+  that drops allocated nodes is a RESPEC — it consumes one Regret Obol
+  from your currency (rejected loudly without one) and resets/re-walks
+  the tree, unsocketing orphaned gems and shedding gear whose
+  requirements you no longer meet.
 - Top level: `const NAME = literal;`, `var name;` / `var name = expr;` /
   `var buf[N];` (word arrays), `fn name(params) { ... }`. A `fn main()` is
   required.

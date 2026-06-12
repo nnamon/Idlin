@@ -230,6 +230,19 @@ pub struct ItemDef {
     pub id: String,
     pub name: String,
     pub slot: GearSlot,
+    /// Requirements: a character must MEET these to equip — and to KEEP —
+    /// the item. Re-validated on every event that can lower attributes
+    /// (tree respec, gear loss, buff expiry); an item that fails is shed
+    /// to the bag (or the ground). An item's own affixes never satisfy
+    /// its own requirements.
+    #[serde(default)]
+    pub req_level: u32,
+    #[serde(default)]
+    pub req_str: i64,
+    #[serde(default)]
+    pub req_dex: i64,
+    #[serde(default)]
+    pub req_int: i64,
     /// Flasks: instant life restored per drink.
     #[serde(default)]
     pub flask_heal: i64,
@@ -353,6 +366,9 @@ pub enum CurrencyOp {
     ToNormal,
     /// Reroll every affix VALUE within its tier (Divine).
     RerollValues,
+    /// Not a crafting op: consumed by SetBuild to RESPEC the passive
+    /// tree (the Regret Obol). Using it on an item is always a no-op.
+    Respec,
 }
 
 /// A currency item: stored as a plain count, spent on gear in the bag.

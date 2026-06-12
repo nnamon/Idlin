@@ -720,6 +720,15 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             owner: owner.clone(),
             reason: reason.clone(),
         },
+        SimEvent::TreeRespecced { id, owner } => GameEvent::TreeRespecced {
+            id: *id,
+            owner: owner.clone(),
+        },
+        SimEvent::GearShed { id, owner, item } => GameEvent::GearShed {
+            id: *id,
+            owner: owner.clone(),
+            item: item.clone(),
+        },
         SimEvent::GemLevelUp {
             id,
             owner,

@@ -159,6 +159,19 @@ pub enum SimEvent {
         owner: String,
         reason: String,
     },
+    /// A respec went through (allocated nodes re-walked the new plan;
+    /// one Regret Obol consumed).
+    TreeRespecced {
+        id: u32,
+        owner: String,
+    },
+    /// Equipped gear stopped meeting its requirements and was shed to
+    /// the bag (or the ground).
+    GearShed {
+        id: u32,
+        owner: String,
+        item: String,
+    },
     GemSocketed {
         id: u32,
         owner: String,
