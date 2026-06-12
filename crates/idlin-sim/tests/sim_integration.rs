@@ -56,7 +56,9 @@ fn bots_grind_the_shore() {
         }
     }
 
-    assert!(kills >= 20, "bots should clear packs; got {kills} kills");
+    // The strand is FINITE now (one-shot packs, 17 mobs incl. the boss):
+    // a near-full clear in ten minutes is the tutorial working.
+    assert!(kills >= 15, "bots should clear the strand; got {kills} kills");
     assert!(
         level_ups >= 1,
         "someone should level in 10 minutes; got {level_ups}"
