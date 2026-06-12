@@ -3,7 +3,6 @@ import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
-import { TreeMap } from "./TreeMap";
 import "./overlay.css";
 
 type Icons = { icon(name: string, kind: string): string | null } | null;
@@ -29,7 +28,6 @@ function Header({ children, first }: { children: React.ReactNode; first?: boolea
 
 export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
   const [status, setStatus] = useState<NetStatus | null>(null);
-  const [showTree, setShowTree] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [, setVersion] = useState(0);
 
@@ -100,28 +98,9 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
         <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
           tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
         </div>
-        <button
-          onClick={() => setShowTree(true)}
-          style={{
-            marginTop: 6,
-            background: "#2e2516",
-            color: "#e0b75e",
-            border: "1px solid #5a4624",
-            borderRadius: 4,
-            padding: "3px 10px",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            fontSize: 12,
-            pointerEvents: "auto",
-          }}
-        >
-          ◈ tree map
-        </button>
       </div>
       {sheet && <StatsPanel sheet={sheet} />}
       </div>
-
-      {showTree && <TreeMap onClose={() => setShowTree(false)} />}
 
       {/* top-right: focus + leaderboard */}
       <div className={drawer ? "hud-right open" : "hud-right"}>
