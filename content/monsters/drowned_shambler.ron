@@ -6,8 +6,8 @@ MonsterDef(
     brain: "hostile_melee",
     hostile: true,
     level: 1,
-    life: 60,
-    damage: 6,
+    life: 45,
+    damage: 3,
     speed_cps: 250,        // 2.5 u/s — a hungry shamble
     radius_cu: 45,
     range_cu: 180,         // melee

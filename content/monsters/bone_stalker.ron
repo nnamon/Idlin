@@ -6,8 +6,8 @@ MonsterDef(
     brain: "hostile_melee",
     hostile: true,
     level: 2,
-    life: 40,
-    damage: 8,
+    life: 38,
+    damage: 4,
     speed_cps: 330,
     radius_cu: 40,
     range_cu: 750,          // 7.5 u ranged

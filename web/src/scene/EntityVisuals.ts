@@ -4,6 +4,8 @@ import type { EntityState } from "../gen/EntityState";
 import type { AssetLibrary, BodyVariant, ModelDef } from "./Assets";
 
 const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
+/** ?animdebug=1: log every animation decision to the console. */
+const ANIM_DEBUG = new URLSearchParams(location.search).has("animdebug");
 const FADE_S = 0.18;
 
 function strHash(s: string): number {
@@ -81,6 +83,7 @@ export class EntityVisual {
   ) {
     const { state } = er;
     this.myName = state.name;
+    this.modelKey = state.model;
     if (state.kind === "Loot") {
       this.buildLoot(state.model, state.rarity);
     } else {
@@ -373,10 +376,26 @@ export class EntityVisual {
 
   // ---- animation state machine ----
 
+  private modelKey = "";
+
   private playBase(role: string): void {
     if (this.baseRole === role) return;
     const next = this.actions.get(role);
-    if (!next) return;
+    if (!next) {
+      if (ANIM_DEBUG) {
+        console.log(
+          `[anim] #${this.id} ${this.myName} model=${this.modelKey} MISSING role=${role};` +
+            ` have=[${[...this.actions.keys()].join(", ")}]`,
+        );
+      }
+      return;
+    }
+    if (ANIM_DEBUG) {
+      console.log(
+        `[anim] #${this.id} ${this.myName} model=${this.modelKey} ` +
+          `${this.baseRole || "(bind)"} -> ${role}`,
+      );
+    }
     const prev = this.actions.get(this.baseRole);
     this.baseRole = role;
     if (prev) {
