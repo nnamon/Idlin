@@ -204,6 +204,8 @@ impl World {
             item_level,
             affixes: Vec::new(),
             name: String::new(),
+            // A fresh flask is a full flask.
+            charges: self.content.items[base_idx as usize].flask_charges,
         };
         roll_affixes(
             &self.content,
@@ -269,6 +271,8 @@ impl World {
             item_level: monster_level,
             affixes: Vec::new(),
             name: String::new(),
+            // A fresh flask is a full flask.
+            charges: self.content.items[base_idx as usize].flask_charges,
         };
         roll_affixes(
             &self.content,

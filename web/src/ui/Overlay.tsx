@@ -13,6 +13,7 @@ function bagKind(name: string, w: number, h: number): string {
   if (n.includes("boots") || n.includes("wader")) return "boots";
   if (n.includes("helm")) return "helm";
   if (n.includes("vest") || n.includes("chest") || n.includes("plate")) return "chest";
+  if (n.includes("flask")) return "flask";
   if (w === 1 && h === 1) return "gem";
   return "item";
 }
@@ -272,7 +273,7 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
           display: "grid",
           gridTemplateColumns: "60px 1fr 60px",
           gridTemplateRows: "46px 62px 40px",
-          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" "weapon boots offhand"`,
+          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" "weapon boots flask"`,
           gap: 5,
           marginBottom: 2,
         }}
@@ -282,6 +283,7 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         <SlotBox area="offhand" label="Offhand" gear={bySlot.get("offhand")} icons={icons} />
         <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
         <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
+        <SlotBox area="flask" label="Flask" gear={bySlot.get("flask")} icons={icons} />
       </div>
       <Header>Bag</Header>
       <BagGrid sheet={sheet} icons={icons} />

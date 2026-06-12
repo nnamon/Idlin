@@ -75,6 +75,11 @@ fn main() {
         say(2);
     }
 
+    // Below 40% life: drink. The flask is the survival lesson.
+    if (mem[SELF + 8] * 5 < mem[SELF + 12] * 2) {
+        use_flask();
+    }
+
     // Pick up our loot if any is in sight.
     if (read_entities(ENTS, 4, F_LOOT) > 0) {
         pick_up(mem[ENTS]);

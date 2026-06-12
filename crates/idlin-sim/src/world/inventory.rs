@@ -191,6 +191,10 @@ impl World {
                 value: ra.value,
             });
         }
+        if def.slot == GearSlot::Flask {
+            // Bigger heals win; charges are state, not quality.
+            return def.flask_heal;
+        }
         if def.slot == GearSlot::Weapon {
             let dmg = sheet.value(Stat::DamagePhys, def.damage_phys)
                 + sheet.value(Stat::DamageFire, def.damage_fire)

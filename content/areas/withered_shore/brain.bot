@@ -27,6 +27,7 @@ const SUP_SWIFT = 12;     // swift_casting
 const SUP_WIDENING = 14;
 const CUR_TRANSMUTE = 8;  // transmute_obol
 const MON_TIDEWARDEN = 3;
+const IT_FLASK = 6;       // small_life_flask
 
 // narration lines (zone.ron `lines:`)
 const L_WELCOME = 0;
@@ -83,6 +84,7 @@ fn main() {
                 if (w == 1) { base = IT_BOW; }
                 if (w == 2) { base = IT_WAND; }
                 drop_loot(0, base, x, y, net);
+                drop_loot(0, IT_FLASK, x, y, net);
                 narrate(L_FIRSTKILL, net);
             }
         }

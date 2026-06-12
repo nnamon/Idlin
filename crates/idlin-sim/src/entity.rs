@@ -194,6 +194,10 @@ pub struct Item {
     /// ("Vile Thorns"). Empty = fall back to the base name.
     #[serde(default)]
     pub name: String,
+    /// Flasks only: charges currently held (capped by the base's
+    /// flask_charges; kills refill while equipped).
+    #[serde(default)]
+    pub charges: u32,
 }
 
 /// An item sitting in the bag grid at (x, y); footprint comes from its base.

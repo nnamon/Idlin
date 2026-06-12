@@ -139,6 +139,28 @@ function silhouette(kind: string): string | null {
         g.lineTo(4, 18);
       }, "#4d4338");
       break;
+    case "flask":
+      // A potion bottle: bulb, neck, cork, red fill.
+      fill(() => {
+        g.moveTo(-7, -26);
+        g.lineTo(7, -26);
+        g.lineTo(7, -12);
+        g.lineTo(16, 2);
+        g.lineTo(16, 20);
+        g.lineTo(-16, 20);
+        g.lineTo(-16, 2);
+        g.lineTo(-7, -12);
+      }, "#6a7484");
+      fill(() => {
+        g.moveTo(11, 6);
+        g.lineTo(11, 15);
+        g.lineTo(-11, 15);
+        g.lineTo(-11, 6);
+      }, "#a8313b");
+      fill(() => {
+        g.rect(-6, -30, 12, 5);
+      }, "#5a452c");
+      break;
     case "gem":
       fill(() => {
         g.moveTo(0, -26);

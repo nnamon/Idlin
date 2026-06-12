@@ -190,10 +190,12 @@ pub enum GearSlot {
     Helm,
     Chest,
     Boots,
+    /// Utility slot: flasks (charges, drink on demand). PoE-style.
+    Flask,
 }
 
 impl GearSlot {
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 6;
 
     pub fn idx(self) -> usize {
         match self {
@@ -202,6 +204,7 @@ impl GearSlot {
             GearSlot::Helm => 2,
             GearSlot::Chest => 3,
             GearSlot::Boots => 4,
+            GearSlot::Flask => 5,
         }
     }
 }
@@ -212,6 +215,18 @@ pub struct ItemDef {
     pub id: String,
     pub name: String,
     pub slot: GearSlot,
+    /// Flasks: instant life restored per drink.
+    #[serde(default)]
+    pub flask_heal: i64,
+    /// Flasks: maximum charges held.
+    #[serde(default)]
+    pub flask_charges: u32,
+    /// Flasks: charges consumed per drink.
+    #[serde(default)]
+    pub flask_cost: u32,
+    /// Flasks: charges gained per kill while equipped.
+    #[serde(default)]
+    pub flask_gain: u32,
     /// Bag footprint (the inventory is a grid).
     #[serde(default = "default_dim")]
     pub w: u8,

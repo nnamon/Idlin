@@ -1,0 +1,10 @@
+// Flask suffix: the vessel holds more.
+AffixDef(
+    id: "of_sating", name: "of Sating", kind: suffix, pool: "flask",
+    weight: 100,
+    stat: life, layer: added,
+    tiers: [
+        (ilvl: 1, min: 5, max: 10, name: "of Sating", weight: 100),
+        (ilvl: 5, min: 11, max: 20, name: "of Plenty", weight: 40),
+    ],
+)

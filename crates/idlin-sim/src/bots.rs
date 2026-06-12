@@ -54,6 +54,7 @@ pub const SYS_USE_CURRENCY: i32 = 25;
 pub const SYS_SAY: i32 = 26;
 pub const SYS_READ_EXITS: i32 = 27;
 pub const SYS_USE_EXIT: i32 = 28;
+pub const SYS_USE_FLASK: i32 = 29;
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
@@ -457,6 +458,47 @@ impl World {
             SYS_SAY => {
                 let line = bot.vm.pop();
                 self.try_say(slot, line, events)
+            }
+            SYS_USE_FLASK => {
+                // Drink the equipped flask: instant life. 0 = healed;
+                // −1 no flask equipped; −2 not enough charges; −3 life
+                // already full. The bot decides WHEN — that's the skill.
+                let flask_slot = idlin_content::GearSlot::Flask.idx();
+                let Some(base_idx) = self
+                    .zone
+                    .get(slot)
+                    .and_then(|e| e.character.as_ref())
+                    .and_then(|ch| ch.equipment[flask_slot].as_ref())
+                    .map(|f| f.base_idx as usize)
+                else {
+                    return -1;
+                };
+                let (cost, heal) = {
+                    let def = &self.content_items()[base_idx];
+                    (def.flask_cost, def.flask_heal)
+                };
+                let Some(e) = self.zone.get_mut(slot) else {
+                    return -1;
+                };
+                let Some(c) = e.combat.as_ref() else {
+                    return -1;
+                };
+                if c.life >= c.life_max {
+                    return -3;
+                }
+                let Some(ch) = e.character.as_mut() else {
+                    return -1;
+                };
+                let Some(flask) = ch.equipment[flask_slot].as_mut() else {
+                    return -1;
+                };
+                if flask.charges < cost {
+                    return -2;
+                }
+                flask.charges -= cost;
+                let c = e.combat.as_mut().unwrap();
+                c.life = (c.life + heal).min(c.life_max);
+                0
             }
             SYS_READ_EXITS => {
                 // The zone's exits as 16-byte records: (x raw, y raw,

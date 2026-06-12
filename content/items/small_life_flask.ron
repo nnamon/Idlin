@@ -1,0 +1,13 @@
+// The first flask: kills refill it; drinking is the bot's own call.
+ItemDef(
+    id: "small_life_flask",
+    name: "Small Life Flask",
+    slot: flask,
+    w: 1,
+    h: 2,
+    flask_heal: 45,
+    flask_charges: 12,
+    flask_cost: 4,
+    flask_gain: 2,
+    affix_pools: ["flask"],
+)

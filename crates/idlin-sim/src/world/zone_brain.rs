@@ -184,6 +184,7 @@ impl World {
                             item_level: 1,
                             affixes: Vec::new(),
                             name: self.content.items[i].name.clone(),
+                            charges: self.content.items[i].flask_charges,
                         })
                     }
                     // A level-1 gem.
