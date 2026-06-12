@@ -532,7 +532,7 @@ fn apply_currency_op(
     };
     match op {
         // The Regret Obol reshapes TREES, not items (SetBuild consumes it).
-        Respec => return false,
+        Respec => false,
         ToMagic => {
             if item.rarity != Rarity::Normal {
                 return false;
