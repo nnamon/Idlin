@@ -18,6 +18,7 @@ export class TileTerrain {
   /** Tall meshes that can hide idlers from the camera; ZoneRenderer
    *  fades whichever stand between the lens and a character. */
   occluders: THREE.Object3D[] = [];
+  private water: THREE.Mesh | null = null;
 
   private tagOccluder(root: THREE.Object3D): void {
     root.traverse((o) => {
@@ -32,7 +33,13 @@ export class TileTerrain {
     return 0; // authored zones are flat; the sim plane IS the ground
   }
 
-  update(_t: number): void {}
+  update(t: number): void {
+    if (this.water) {
+      this.water.position.y = -0.32 + Math.sin(t * 0.7) * 0.045;
+      (this.water.material as THREE.MeshStandardMaterial).opacity =
+        0.74 + Math.sin(t * 1.1) * 0.05;
+    }
+  }
 
   build(assets: AssetLibrary): void {
     const { width: w, height: h, rows, legend } = this.tiles;
@@ -55,6 +62,18 @@ export class TileTerrain {
         const c = base.clone().offsetHSL(0, 0, jitter);
         ctx.fillStyle = `#${c.getHexString()}`;
         ctx.fillRect(x * px, y * px, px, px);
+        // Foam: a pale fleck band on walkable cells that touch water.
+        const nearWater = [
+          rows[y - 1]?.[x], rows[y + 1]?.[x], row[x - 1], row[x + 1],
+        ].some((gl) => gl !== undefined && byGlyph.get(gl)?.ground === "water");
+        if (nearWater && vis?.ground !== "water") {
+          ctx.fillStyle = "rgba(225,235,240,0.5)";
+          for (let f = 0; f < 6; f++) {
+            const fx2 = x * px + Math.floor(cellHash(x * 53 + f, y * 29 + f) * px);
+            const fy2 = y * px + Math.floor(cellHash(x * 71 + f, y * 11 + f) * px);
+            ctx.fillRect(fx2, fy2, 2, 1);
+          }
+        }
         // A few darker speckles per cell for grain.
         ctx.fillStyle = "rgba(0,0,0,0.10)";
         for (let s = 0; s < 3; s++) {
@@ -66,14 +85,57 @@ export class TileTerrain {
     }
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    // One vertex per cell corner: water cells SINK into a basin so the
+    // sea is a place, not a painted rectangle. A vertex drops if any of
+    // its four touching cells is water; the lit bank lip comes free from
+    // the normals.
+    const geo = new THREE.PlaneGeometry(w, h, w, h);
+    const pos = geo.attributes.position;
+    const isWater = (xx: number, yy: number): boolean => {
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false;
+      return byGlyph.get(rows[yy][xx])?.ground === "water";
+    };
+    for (let vy = 0; vy <= h; vy++) {
+      for (let vx = 0; vx <= w; vx++) {
+        const i = vy * (w + 1) + vx;
+        if (
+          isWater(vx, vy) || isWater(vx - 1, vy) ||
+          isWater(vx, vy - 1) || isWater(vx - 1, vy - 1)
+        ) {
+          pos.setZ(i, -0.75); // plane is XY before rotation; Z becomes -Y
+        }
+      }
+    }
+    geo.computeVertexNormals();
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h),
+      geo,
       new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(w / 2, 0, h / 2);
     ground.receiveShadow = true;
     this.group.add(ground);
+
+    // The water surface: one translucent sheet across the whole zone at
+    // basin height — it only shows where the ground dipped. update()
+    // gives it a slow breathing bob.
+    if (rows.some((r, yy) => [...r].some((_, xx) => isWater(xx, yy)))) {
+      this.water = new THREE.Mesh(
+        new THREE.PlaneGeometry(w + 8, h + 8),
+        new THREE.MeshStandardMaterial({
+          color: 0x2e5d8a,
+          emissive: 0x0c2038,
+          emissiveIntensity: 1.0,
+          transparent: true,
+          opacity: 0.72,
+          roughness: 0.15,
+          metalness: 0.1,
+        }),
+      );
+      this.water.rotation.x = -Math.PI / 2;
+      this.water.position.set(w / 2, -0.32, h / 2);
+      this.group.add(this.water);
+    }
 
     // An oversized dark apron so the zone edge doesn't fall into void.
     const apron = new THREE.Mesh(
