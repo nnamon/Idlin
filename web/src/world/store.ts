@@ -102,6 +102,9 @@ export class WorldStore {
     exits: { x: number; y: number; open: boolean }[];
   } | null = null;
   tick = 0;
+  /** Bumps on every ZoneSnapshot: a snapshot is a FULL state reset, and
+   *  the renderer must drop per-entity visuals (net ids are per-world). */
+  snapshotGen = 0;
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
   pendingProjectiles: ActiveProjectile[] = [];
@@ -140,6 +143,7 @@ export class WorldStore {
           })),
         };
         this.tick = d.tick;
+        this.snapshotGen++;
         this.entities.clear();
         const now = performance.now();
         for (const e of d.entities) this.upsert(e, now);
