@@ -15,6 +15,11 @@ TilesetDef(
         (glyph: 'R', id: "rock",    walkable: false, blocks_los: true,  ground: "dirt",   prop: Some("rock")),
         (glyph: 'b', id: "brazier", walkable: false, blocks_los: false, ground: "cobble", prop: Some("brazier")),
         (glyph: 'c', id: "crate",   walkable: false, blocks_los: false, ground: "plank",  prop: Some("crate")),
+        // Building footprint: collision only — the building MODEL comes
+        // from the area's props.ron set-piece layer.
+        (glyph: 'B', id: "building", walkable: false, blocks_los: true, ground: "dirt"),
+        (glyph: 'f', id: "fence",   walkable: false, blocks_los: false, ground: "grass", prop: Some("fence")),
+        (glyph: 'w', id: "wagon",   walkable: false, blocks_los: false, ground: "dirt",  prop: Some("wagon")),
     ],
     palette: [
         ("cobble", "#3b3b47"),

@@ -100,11 +100,19 @@ export class TileTerrain {
         const r = cellHash(x, y);
         switch (vis.prop) {
           case "wall": {
-            const m = new THREE.Mesh(wallGeo, wallMat);
-            m.position.set(cx, 0.75, cz);
-            m.castShadow = true;
-            m.receiveShadow = true;
-            this.group.add(m);
+            // Real rampart piece, grid-aligned (no random spin: walls
+            // must read as runs). Box fallback if the model is missing.
+            const obj = assets.instantiateProp("wall_town");
+            if (obj) {
+              obj.position.set(cx, -0.02, cz);
+              this.group.add(obj);
+            } else {
+              const m = new THREE.Mesh(wallGeo, wallMat);
+              m.position.set(cx, 0.75, cz);
+              m.castShadow = true;
+              m.receiveShadow = true;
+              this.group.add(m);
+            }
             break;
           }
           case "house": {
@@ -115,13 +123,26 @@ export class TileTerrain {
             break;
           }
           case "crate": {
-            const m = new THREE.Mesh(crateGeo, crateMat);
-            m.position.set(cx, 0.36, cz);
-            m.rotation.y = r * Math.PI;
-            m.castShadow = true;
-            this.group.add(m);
+            const obj = assets.instantiateProp("crate_town");
+            if (obj) {
+              obj.rotation.y = r * Math.PI;
+              obj.position.set(cx, -0.02, cz);
+              this.group.add(obj);
+            } else {
+              const m = new THREE.Mesh(crateGeo, crateMat);
+              m.position.set(cx, 0.36, cz);
+              m.rotation.y = r * Math.PI;
+              m.castShadow = true;
+              this.group.add(m);
+            }
             break;
           }
+          case "fence":
+            placeModel(["fence_wood"], cx, cz, 1, 0);
+            break;
+          case "wagon":
+            placeModel(["wagon"], cx, cz, 1, r);
+            break;
           case "brazier":
             this.brazierSpots.push([cx, cz]);
             break;
@@ -137,6 +158,21 @@ export class TileTerrain {
             break;
         }
       }
+    }
+
+    // -- authored set pieces (props.ron): whole buildings, landmarks --
+    for (const pr of this.tiles.props) {
+      const obj = assets.instantiateProp(pr.model);
+      if (!obj) continue;
+      obj.rotation.y = (pr.rot_deg * Math.PI) / 180;
+      obj.position.set(pr.x_u + 0.5, -0.02, pr.y_u + 0.5);
+      obj.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+      this.group.add(obj);
     }
   }
 }

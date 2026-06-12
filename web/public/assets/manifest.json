@@ -313,6 +313,36 @@
     },
     "crate": {
       "file": "models/props/crate.glb"
+    },
+    "crate_town": {
+      "file": "models/props/crate_town.glb"
+    },
+    "wagon": {
+      "file": "models/props/wagon.glb"
+    },
+    "fence_wood": {
+      "file": "models/props/fence_wood.glb"
+    },
+    "wall_town": {
+      "file": "models/props/wall_town.glb"
+    },
+    "house_1": {
+      "file": "models/props/house_1.glb"
+    },
+    "house_2": {
+      "file": "models/props/house_2.glb"
+    },
+    "house_3": {
+      "file": "models/props/house_3.glb"
+    },
+    "house_4": {
+      "file": "models/props/house_4.glb"
+    },
+    "inn": {
+      "file": "models/props/inn.glb"
+    },
+    "blacksmith": {
+      "file": "models/props/blacksmith.glb"
     }
   },
   "attachments": {

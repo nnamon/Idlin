@@ -6,14 +6,12 @@ ZoneDef(
     id: "saltmere",
     name: "Saltmere",
     kind: town,
-    width_u: 30,
-    height_u: 26,
+    // Dimensions come from map.txt; the count-based generator is dead here.
     spawn_x_u: 15,
     spawn_y_u: 20,
-    spawn_radius_u: 5,
+    spawn_radius_u: 3,
     camp_radius_u: 40,      // the whole town is sanctuary
-    gen_rocks: 5,
-    gen_trees: 4,
+    tileset: Some("town"),
     brain: Some("saltmere"),
     lines: [
         "Saltmere. Fires that stay lit. Faces that stay alive.",

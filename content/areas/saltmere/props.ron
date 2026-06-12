@@ -1,0 +1,12 @@
+// Saltmere's set pieces: whole buildings standing on the map's 'B'
+// footprints (collision lives in the tiles; these are pure visuals).
+PropsDef(
+    props: [
+        (model: "inn",        x_u: 4,  y_u: 3,  rot_deg: 180),
+        (model: "blacksmith", x_u: 25, y_u: 3,  rot_deg: 180),
+        (model: "house_1",    x_u: 3,  y_u: 10, rot_deg: 90),
+        (model: "house_2",    x_u: 25, y_u: 10, rot_deg: 270),
+        (model: "house_3",    x_u: 3,  y_u: 16, rot_deg: 90),
+        (model: "house_4",    x_u: 25, y_u: 16, rot_deg: 270),
+    ],
+)
