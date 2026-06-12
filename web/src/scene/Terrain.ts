@@ -60,6 +60,27 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/** Coursed-stone wall texture: offset blocks, mortar seams, night tones. */
+function wallStoneTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#33333f";
+  g.fillRect(0, 0, 128, 128);
+  for (let row = 0; row < 6; row++) {
+    const yo = row * 22;
+    const off = row % 2 ? 16 : 0;
+    for (let col = -1; col < 5; col++) {
+      const j = ((Math.sin(row * 37 + col * 91) * 43758.5) % 1 + 1) % 1;
+      g.fillStyle = `hsl(240, 9%, ${24 + j * 9}%)`;
+      g.fillRect(col * 32 + off + 2, yo + 2, 28, 18);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 interface FoamWave {
   mesh: THREE.Mesh;
   mat: THREE.MeshBasicMaterial;
@@ -81,6 +102,8 @@ export class Terrain {
   private byGlyph = new Map<string, TileVisual>();
   private groundColors = new Map<string, THREE.Color>();
   private waterEdge: number[] | null = null;
+  private wallMat: THREE.MeshStandardMaterial | null = null;
+  private wallGeo: THREE.BoxGeometry | null = null;
   private hasWater = false;
   /** Opt-in cosmetic features from the tileset; legacy zones get all. */
   private features = new Set<string>();
@@ -342,10 +365,6 @@ export class Terrain {
   private placeTileProps(assets: AssetLibrary, rng: () => number): void {
     const tiles = this.tiles!;
     const { width: w, height: h, rows } = tiles;
-    const walkAt = (xx: number, yy: number): boolean => {
-      if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false;
-      return !!this.byGlyph.get(rows[yy][xx])?.walkable;
-    };
     const put = (key: string, x: number, z: number, scale: number, rot: number) => {
       const obj = assets.instantiateProp(key);
       if (!obj) return null;
@@ -386,26 +405,21 @@ export class Terrain {
             put("fence_wood", cx, cz, 1, 0);
             break;
           case "wall": {
-            // Directional piece: face the walkable side; interior cells
-            // face the map center. Squeeze to tile per cell (1.54u run).
-            let rot = 0;
-            if (walkAt(x, y + 1)) rot = 0;
-            else if (walkAt(x, y - 1)) rot = Math.PI;
-            else if (walkAt(x + 1, y)) rot = -Math.PI / 2;
-            else if (walkAt(x - 1, y)) rot = Math.PI / 2;
-            else {
-              const dx = w / 2 - cx;
-              const dz = h / 2 - cz;
-              rot = Math.abs(dx) > Math.abs(dz)
-                ? (dx > 0 ? -Math.PI / 2 : Math.PI / 2)
-                : (dz > 0 ? 0 : Math.PI);
+            // REAL GEOMETRY: a textured box fills the whole cell — walls
+            // tile along runs and join at corners by construction. The
+            // directional asset piece is retired (it could not).
+            if (!this.wallMat) {
+              const tex = wallStoneTexture();
+              this.wallMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
+              this.wallGeo = new THREE.BoxGeometry(1.001, 2.2, 1.001);
             }
-            const obj = put("wall_town", cx, cz, 1, rot);
-            if (obj) {
-              obj.scale.x = 1 / 1.54;
-              obj.traverse((o) => (o.userData.occRoot = obj));
-              this.occluders.push(obj);
-            }
+            const m = new THREE.Mesh(this.wallGeo!, this.wallMat);
+            m.position.set(cx, this.heightAt(cx, cz) + 1.04, cz);
+            m.castShadow = true;
+            m.receiveShadow = true;
+            m.userData.occRoot = m;
+            this.group.add(m);
+            this.occluders.push(m);
             break;
           }
           default:
