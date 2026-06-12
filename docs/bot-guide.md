@@ -247,7 +247,7 @@ address you supply and return a count/status.
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
 | 18 | `ReadSkills` | out_addr, max (≤8) | count |
-| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first, then only supports that fit. |
+| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first (DAMAGE skills outrank pure utility buffs), then only supports that fit — and upgrades a supportless utility squatter out of its node when a damage skill waits in the pouch (the utility gem returns to the pouch). |
 **Attacks commit you.** A swing occupies your character for the weapon's
 use time (attack-speed scaled): movement and further actions wait until it
 finishes. Plan movement around your swings — or get caught flat-footed.
@@ -368,10 +368,10 @@ per tick, bound to no entity, with a zone-scoped syscall table:
 | 100 | `query_characters(out, max)` | 10-word records per idler: net, kills, level, x, y, weapon_class (−1/0 melee/1 bow/2 wand), life_pct, dead, build_len (0 = no declared build), archetype (0 melee / 1 bow / 2 wand / −1 unknown, classified from the declared plan) |
 | 101 | `poll_events(out, max)` | drains this tick's events as 4-word records: kind (1 kill / 2 equip / 3 socket / 4 level / 5 died / 6 pickup), char net, a, b (kill: a = monster def idx, b = level) |
 | 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone). Address lines by name: `narrate(line "welcome", net)` |
-| 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx` |
+| 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx`. Story drops never despawn — scripted loot is often a gate key |
 | 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns) |
 | 106 | `set_exit(idx, open)` | gate a ZoneDef exit open (1) or shut (0). Brains only GATE — characters take exits THEMSELVES with `use_exit`; forced transfers do not exist. |
-| 107 | `set_gate(idx, open)` | open (1) or shut (0) a ZoneDef gate — a rect of cells that blocks movement while shut (the tutorial's walls) |
+| 107 | `set_gate(idx, open)` | open (1) or shut (0) a ZoneDef gate — a rect of cells that blocks movement AND line of sight while shut (nothing strains at, or shoots through, an unearned lesson). Address by id: `set_gate(gate "start", 1)` |
 | 108 | `spawn_elite(def, x, y, rarity)` | a packless scripted spawn at forced rarity (1 = magic, 2 = rare) — fresh affixes rolled through the item affix system |
 
 Events are DATA the script drains — there are no callbacks; the VM

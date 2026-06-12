@@ -1297,12 +1297,15 @@ impl World {
             };
             let (monster_name, monster_level, xp) = (def.name.clone(), def.level, def.xp * xp_mult);
             dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
-            let pack = &mut self.zone.packs[pack_idx as usize];
-            pack.alive = pack.alive.saturating_sub(1);
-            // Packs respawn as a unit: the timer starts only once the
-            // whole pack has been wiped.
-            if pack.alive == 0 {
-                pack.respawn_timer = pack.def.respawn_ticks;
+            // Scripted spawns (spawn_monster/spawn_elite) belong to no
+            // pack — the sentinel index has no bookkeeping to update.
+            if let Some(pack) = self.zone.packs.get_mut(pack_idx as usize) {
+                pack.alive = pack.alive.saturating_sub(1);
+                // Packs respawn as a unit: the timer starts only once
+                // the whole pack has been wiped.
+                if pack.alive == 0 {
+                    pack.respawn_timer = pack.def.respawn_ticks;
+                }
             }
             if attacker_is_char {
                 events.push(SimEvent::MonsterKilled {
@@ -1816,6 +1819,11 @@ mod tests {
         let content = content();
         let mut world = World::new(0xA110, &content);
         world.tick(&crate::TickInputs::default()); // packs spawn
+        // The tutorial's shut gates block projectiles (correctly) — this
+        // test is about swept collision, so lift them out of the way.
+        for g in &mut world.zone.gates {
+            g.open = true;
+        }
         let (slot, pos) = world
             .zone
             .iter()

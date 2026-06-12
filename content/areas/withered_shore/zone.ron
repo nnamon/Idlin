@@ -33,31 +33,60 @@ ZoneDef(
         (id: "depart",    text: "You climb. Below, the shore keeps its dead. Above — firelight."),
         (id: "declare",   text: "Declare your path. The shore answers to intent, not to wandering."),
         (id: "pathset",   text: "A path chosen. The way opens."),
+        (id: "gauntlet",  text: "The sand ahead moves. Many hands, none strong — together, enough."),
+        (id: "flasklesson", text: "Your blood runs thin. The bottle on your belt is not a keepsake. DRINK."),
+        (id: "recovered", text: "Whole again. The shore respects a survivor; the way opens."),
+        (id: "elite",     text: "A witch of the shoals rises, wreathed in stolen light. She carries something you need."),
+        (id: "elitedown", text: "The witch breaks. Her gem hums with borrowed hunger — socket it, and feel the cost."),
+        (id: "manacost",  text: "Power borrowed is power paid for. The blue flask keeps the debt serviced. Onward."),
+        (id: "rare",      text: "Something old and angry stirs ahead. It has a NAME."),
     ],
     // Packs spawn (and respawn) as a unit: survivors hold their ground
     // until the whole pack is wiped, then the timer brings it back.
     // The opening is choreographed: a staked single, a pair, then a
     // ramp of 3/4/5 before the strand opens up.
+    // ONE-SHOT waves (no respawns), one per tutorial beat. The shore is
+    // hand-designed and DETERMINISTIC: no rarity chances ever — the
+    // scripted magic witch and the guaranteed rare come from the brain
+    // (spawn_elite).
     packs: [
-        // ONE-SHOT waves (no respawns): the tutorial is a finite walk —
-        // clear the strand, break the Tidewarden, take the bluff path.
+        // Beat 1: the staked first kill (pays weapon + life flask).
         SpawnPack(monster: "drowned_shambler", count: 1, x_u: 17, y_u: 110, radius_u: 0, respawn_ticks: 9000000),
-        SpawnPack(monster: "drowned_shambler", count: 2, x_u: 15, y_u: 104, radius_u: 2, respawn_ticks: 9000000),
-        SpawnPack(monster: "drowned_shambler", count: 3, x_u: 16, y_u: 95,  radius_u: 3, respawn_ticks: 9000000),
-        SpawnPack(monster: "bone_stalker",     count: 3, x_u: 14, y_u: 75,  radius_u: 4, respawn_ticks: 9000000),
-        SpawnPack(monster: "tide_husk",        count: 3, x_u: 16, y_u: 50,  radius_u: 4, respawn_ticks: 9000000),
+        // Beat 2: the second single (pays the suited skill gem).
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 16, y_u: 102, radius_u: 0, respawn_ticks: 9000000),
+        // Beat 3: the flask gauntlet — weak, many, relentless.
+        SpawnPack(monster: "grasping_drowned", count: 6, x_u: 16, y_u: 92,  radius_u: 2, respawn_ticks: 9000000),
+        // Beat 4: the open strand.
+        SpawnPack(monster: "drowned_shambler", count: 3, x_u: 15, y_u: 80,  radius_u: 3, respawn_ticks: 9000000),
+        SpawnPack(monster: "bone_stalker",     count: 3, x_u: 14, y_u: 68,  radius_u: 4, respawn_ticks: 9000000),
+        // Beat 6: past the midway gate, harder packs (+ the brain's rare).
+        // Stalkers, not husks: a level-3 pupil straight off the witch
+        // fight must be PRESSED here, never farmed for respawn walks.
+        SpawnPack(monster: "bone_stalker",     count: 3, x_u: 16, y_u: 44,  radius_u: 4, respawn_ticks: 9000000),
         SpawnPack(monster: "bone_stalker",     count: 4, x_u: 15, y_u: 30,  radius_u: 4, respawn_ticks: 9000000),
-        // The boss holds the bluff path.
+        // The pull: a last pair at the arena mouth, in line with the gap,
+        // so the strand funnels bots into the Tidewarden's sightline.
+        SpawnPack(monster: "tide_husk",        count: 2, x_u: 14, y_u: 14,  radius_u: 1, respawn_ticks: 9000000),
+        // Beat 7: the boss holds the bluff path.
         SpawnPack(monster: "tidewarden",       count: 1, x_u: 17, y_u: 6,   radius_u: 0, respawn_ticks: 9000000),
     ],
     // The bluff path up to Saltmere, behind the boss. Starts shut; the
     // brain opens it when the Tidewarden falls — walking through is the
     // killer's own bot's decision (use_exit).
-    // The "start" gate: the FIRST lesson — declare a build (your path)
-    // before the shore lets you at the dead. The brain lifts it on
-    // declaration (`gate "start"`).
+    // The lesson ladder: every gate is a beat the brain lifts when its
+    // lesson lands. Shut gates block movement AND sight, so nothing
+    // strains at (or shoots through) a lesson it hasn't earned.
     gates: [
-        (id: "start", x0: 2, y0: 117, x1: 19, y1: 118, open: false),
+        // Lesson 0: declare a build before the shore lets you at the dead.
+        (id: "start",    x0: 2, y0: 117, x1: 20, y1: 118, open: false),
+        // Lesson 1: first kill pays weapon + life flask.
+        (id: "first",    x0: 2, y0: 106, x1: 20, y1: 107, open: false),
+        // Lesson 2: second kill pays the suited skill gem.
+        (id: "second",   x0: 2, y0: 98,  x1: 20, y1: 99,  open: false),
+        // Lesson 3: the gauntlet — survive the swarm, drink, stand whole.
+        (id: "gauntlet", x0: 2, y0: 86,  x1: 20, y1: 87,  open: false),
+        // Lesson 5: kill the witch, socket her support gem, learn mana.
+        (id: "midway",   x0: 2, y0: 54,  x1: 20, y1: 55,  open: false),
     ],
     exits: [
         (x_u: 17, y_u: 2, dest: "saltmere", open: false),

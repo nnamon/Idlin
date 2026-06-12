@@ -1,9 +1,18 @@
 // ============================================================
 // Area brain: The Withered Shore. The dungeon master is a bot.
 //
-// Choreographs the onboarding: welcome narration, the scripted
-// first-weapon and suited-gem drops, the first obol, threshold
-// story beats up the strand, and the Tidewarden's hoard.
+// The GATED TUTORIAL: every gate is a lesson, lifted when it lands.
+//   0. Declare a build (the start gate answers intent)
+//   1. One staked kill  -> weapon + life flask, gate "first" lifts
+//   2. One more kill    -> suited skill gem,    gate "second" lifts
+//   3. The gauntlet     -> many weak biters force the flask; stand
+//                          whole again and gate "gauntlet" lifts
+//   4. The open strand  -> real packs
+//   5. The Shoal Witch  -> a scripted MAGIC elite pays a support gem
+//                          + mana flask; SOCKET it and gate "midway"
+//                          lifts (power borrowed is power paid for)
+//   6. Harder packs     -> with a guaranteed scripted RARE among them
+//   7. The Tidewarden   -> the hoard, and the bluff path to Saltmere
 //
 // Content is referenced BY NAME (`item "..."`, `line "..."`) and
 // resolved at load — adding content never shifts what this means.
@@ -11,11 +20,11 @@
 
 include "std/zone_lib.bot";
 
-// Content refs resolve BY NAME at load (the engine owns positions).
-// An unknown id refuses to load — adding content can't shift these.
 const IT_WAND = item "barnacle_wand";
 const IT_BOW = item "driftwood_bow";
 const IT_CLEAVER = item "rusted_cleaver";
+const IT_FLASK = item "small_life_flask";
+const IT_MANAFLASK = item "small_mana_flask";
 const GEM_ARC = gem "arc";
 const GEM_CLEAVE = gem "cleave";
 const GEM_EMBER = gem "ember_bolt";
@@ -28,7 +37,8 @@ const SUP_SWIFT = gem "swift_casting";
 const SUP_WIDENING = gem "widening";
 const CUR_TRANSMUTE = currency "transmute_obol";
 const MON_TIDEWARDEN = monster "tidewarden";
-const IT_FLASK = item "small_life_flask";
+const MON_WITCH = monster "shoal_witch";
+const MON_STALKER = monster "bone_stalker";
 
 // Narration (zone.ron `lines:`), by id.
 const L_WELCOME = line "welcome";
@@ -45,11 +55,23 @@ const L_BOSSWARN = line "bosswarn";
 const L_DEPART = line "depart";
 const L_DECLARE = line "declare";
 const L_PATHSET = line "pathset";
+const L_GAUNTLET = line "gauntlet";
+const L_FLASKLESSON = line "flasklesson";
+const L_RECOVERED = line "recovered";
+const L_ELITE = line "elite";
+const L_ELITEDOWN = line "elitedown";
+const L_MANACOST = line "manacost";
+const L_RARE = line "rare";
 
-// The bluff-path exit to Saltmere (by destination). The brain only
-// GATES it open — the killer's own bot walks through; no forced moves.
+// The lesson ladder (gates by id) and the bluff-path exit (by dest).
+// The brain only GATES things open — walking through is always the
+// character's own bot's decision (use_exit); no forced moves.
 const EXIT_SALTMERE = exit "saltmere";
 const GATE_START = gate "start";
+const GATE_FIRST = gate "first";
+const GATE_SECOND = gate "second";
+const GATE_GAUNTLET = gate "gauntlet";
+const GATE_MIDWAY = gate "midway";
 
 // beat flags (zl_once bits)
 const F_WELCOME = 1;
@@ -63,11 +85,22 @@ const F_Y70 = 128;
 const F_Y40 = 256;
 const F_BOSSWARN = 512;
 const F_PATH = 1024;
+const F_PATHSET = 2048;
+const F_GAUNTWARN = 4096;
+const F_HURT = 8192;
+const F_RECOVER = 16384;
+const F_ELITE = 32768;
+const F_ELITEDOWN = 65536;
+const F_MANACOST = 131072;
+
+// The gauntlet is cleared at this kill tally (beats 1+2 = 2, plus the
+// six grasping dead) — the gate waits for the tally AND full health.
+const GAUNTLET_KILLS = 8;
 
 fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
 
-    // -- state-driven beats: welcome, gated drops, threshold story --
+    // -- state-driven beats: the lesson ladder, south to north --
     var i = 0;
     while (i < nq) {
         var r = ZL_Q + i * QC_STRIDE;
@@ -75,6 +108,7 @@ fn main() {
         var kills = mem[r + QC_KILLS];
         var x = mem[r + QC_X];
         var y = mem[r + QC_Y];
+        var life = mem[r + QC_LIFE];
 
         zl_narrate_once(net, F_WELCOME, L_WELCOME);
 
@@ -86,7 +120,7 @@ fn main() {
             zl_narrate_once(net, F_PATH, L_DECLARE);
         }
         if (bl > 0) {
-            if (zl_once(net, F_PATH * 2) == 1) {
+            if (zl_once(net, F_PATHSET) == 1) {
                 set_gate(GATE_START, 1);
                 narrate(L_PATHSET, net);
             }
@@ -95,11 +129,11 @@ fn main() {
         // NOTE: && is EAGER in this language (both sides always run) —
         // side-effecting calls like zl_once must sit INSIDE the gate,
         // never beside it.
-        // First kill pays a weapon; what you keep decides your path.
+        // Lesson 1: the first kill pays a weapon + the life flask; the
+        // declared path picks the weapon, the undeclared get the tide's
+        // choice. The "first" gate lifts with the drop.
         if (kills >= 1) {
             if (zl_once(net, F_WEAPON) == 1) {
-                // The declared path picks the weapon; the undeclared
-                // get whatever the tide coughs up.
                 var base = IT_CLEAVER;
                 if (arch == 1) { base = IT_BOW; }
                 if (arch == 2) { base = IT_WAND; }
@@ -111,26 +145,50 @@ fn main() {
                 drop_loot(0, base, x, y, net);
                 drop_loot(0, IT_FLASK, x, y, net);
                 narrate(L_FIRSTKILL, net);
+                set_gate(GATE_FIRST, 1);
             }
         }
-        // Second kill pays a gem suited to the wielded class.
+        // Lesson 2: the second kill pays a gem suited to the wielded
+        // class; the "second" gate opens onto the gauntlet.
         if (kills >= 2) {
             if (zl_once(net, F_GEMDROP) == 1) {
                 var wc = mem[r + QC_WCLASS];
-                var gem = GEM_EMBER;
+                var g = GEM_EMBER;
                 if (wc == 0) {
-                    gem = GEM_CLEAVE;
-                    if ((random() & 1) == 1) { gem = GEM_HEAVY; }
+                    g = GEM_CLEAVE;
+                    if ((random() & 1) == 1) { g = GEM_HEAVY; }
                 }
-                if (wc == 1) { gem = GEM_SHOT; }
+                if (wc == 1) { g = GEM_SHOT; }
                 if (wc == 2 || wc == -1) {
                     var s = (random() & 0x7FFFFFFF) % 4;
-                    if (s == 1) { gem = GEM_FROST; }
-                    if (s == 2) { gem = GEM_ARC; }
-                    if (s == 3) { gem = GEM_PLAGUE; }
+                    if (s == 1) { g = GEM_FROST; }
+                    if (s == 2) { g = GEM_ARC; }
+                    if (s == 3) { g = GEM_PLAGUE; }
                 }
-                drop_loot(1, gem, x, y, net);
+                drop_loot(1, g, x, y, net);
                 narrate(L_GEM, net);
+                set_gate(GATE_SECOND, 1);
+            }
+        }
+        // Lesson 3: the gauntlet. Warn at its mouth; coach the flask the
+        // moment life runs low; lift the gate only for a survivor made
+        // WHOLE again (the kill tally proves the swarm is down).
+        if (y < 0x620000) { zl_narrate_once(net, F_GAUNTWARN, L_GAUNTLET); }
+        if (life <= 40) { zl_narrate_once(net, F_HURT, L_FLASKLESSON); }
+        if (kills >= GAUNTLET_KILLS) {
+            if (life >= 100) {
+                if (zl_once(net, F_RECOVER) == 1) {
+                    set_gate(GATE_GAUNTLET, 1);
+                    narrate(L_RECOVERED, net);
+                }
+            }
+        }
+        // Lesson 5 opener: the Shoal Witch rises as a MAGIC elite just
+        // before the midway gate, once the idler works down the strand.
+        if (y < 0x3C0000) {
+            if (zl_once(net, F_ELITE) == 1) {
+                spawn_elite(MON_WITCH, 0xF0000, 0x3A0000, 1);
+                narrate(L_ELITE, net);
             }
         }
         // The tenth corpse pays the ferryman.
@@ -147,7 +205,7 @@ fn main() {
         i = i + 1;
     }
 
-    // -- event-driven beats: first equip/socket/level, the boss hoard --
+    // -- event-driven beats: equips, sockets, the witch, the boss --
     var ne = poll_events(ZL_EVS, 32);
     var j = 0;
     while (j < ne) {
@@ -155,26 +213,64 @@ fn main() {
         var kind = mem[ev + PE_KIND];
         var who = mem[ev + PE_WHO];
         if (kind == EV_EQUIP) { zl_narrate_once(who, F_ARMED, L_ARMED); }
-        if (kind == EV_SOCKET) { zl_narrate_once(who, F_SOCKET, L_SOCKET); }
         if (kind == EV_LEVEL) { zl_narrate_once(who, F_LEVEL, L_LEVEL); }
+        if (kind == EV_SOCKET) {
+            zl_narrate_once(who, F_SOCKET, L_SOCKET);
+            // Lesson 5 close: a socket AFTER the witch's gem dropped is
+            // the support lesson landing — mana costs rise, the blue
+            // flask services the debt, and the midway gate lifts. The
+            // guaranteed RARE rises among the packs beyond.
+            var row = zl_state_row(who);
+            if ((mem[row + 4] & F_ELITEDOWN) != 0) {
+                if (zl_once(who, F_MANACOST) == 1) {
+                    set_gate(GATE_MIDWAY, 1);
+                    narrate(L_MANACOST, who);
+                    // A rare STALKER, not a husk: a real fight for a
+                    // level-3 pupil, not a respawn loop. Staked clear of
+                    // the husk pack so they can't gang up.
+                    spawn_elite(MON_STALKER, 0xE0000, 0x250000, 2);
+                    narrate(L_RARE, 0);
+                }
+            }
+        }
+        if (kind == EV_KILL && mem[ev + PE_A] == MON_WITCH) {
+            // Lesson 5 payoff: the witch's hoard — a support suited to
+            // the wielded class, and the mana flask that pays for it.
+            if (zl_once(who, F_ELITEDOWN) == 1) {
+                var k = 0;
+                while (k < nq) {
+                    var qr = ZL_Q + k * QC_STRIDE;
+                    if (mem[qr + QC_NET] == who) {
+                        var sup = SUP_QUICKENING;
+                        var wc2 = mem[qr + QC_WCLASS];
+                        if (wc2 == 2 || wc2 == -1) { sup = SUP_SWIFT; }
+                        drop_loot(1, sup, mem[qr + QC_X], mem[qr + QC_Y], who);
+                        drop_loot(0, IT_MANAFLASK, mem[qr + QC_X], mem[qr + QC_Y], who);
+                        k = nq;
+                    }
+                    k = k + 1;
+                }
+                narrate(L_ELITEDOWN, who);
+            }
+        }
         if (kind == EV_KILL && mem[ev + PE_A] == MON_TIDEWARDEN) {
             narrate(L_BOSSDOWN, 0);
-            // The hoard lands at the killer's feet: a rare and a support
-            // — and the bluff-path exit to Saltmere swings open. Walking
-            // through it is the killer's own decision (use_exit).
-            var k = 0;
-            while (k < nq) {
-                var qr = ZL_Q + k * QC_STRIDE;
-                if (mem[qr + QC_NET] == who) {
-                    drop_loot(3, 8, mem[qr + QC_X], mem[qr + QC_Y], who);
-                    var sup = (random() & 0x7FFFFFFF) % 3;
+            // The hoard lands at the killer's feet: a rolled rare and a
+            // support — and the bluff-path exit to Saltmere swings open.
+            // Walking through it is the killer's own decision (use_exit).
+            var k2 = 0;
+            while (k2 < nq) {
+                var qr2 = ZL_Q + k2 * QC_STRIDE;
+                if (mem[qr2 + QC_NET] == who) {
+                    drop_loot(3, 8, mem[qr2 + QC_X], mem[qr2 + QC_Y], who);
+                    var sup2 = (random() & 0x7FFFFFFF) % 3;
                     var sgem = SUP_QUICKENING;
-                    if (sup == 1) { sgem = SUP_SWIFT; }
-                    if (sup == 2) { sgem = SUP_WIDENING; }
-                    drop_loot(1, sgem, mem[qr + QC_X], mem[qr + QC_Y], who);
-                    k = nq;
+                    if (sup2 == 1) { sgem = SUP_SWIFT; }
+                    if (sup2 == 2) { sgem = SUP_WIDENING; }
+                    drop_loot(1, sgem, mem[qr2 + QC_X], mem[qr2 + QC_Y], who);
+                    k2 = nq;
                 }
-                k = k + 1;
+                k2 = k2 + 1;
             }
             set_exit(EXIT_SALTMERE, 1);
             narrate(L_DEPART, who);

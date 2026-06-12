@@ -9,9 +9,13 @@ MonsterDef(
     hostile: true,
     unique: true,
     level: 8,
-    life: 420,
-    damage: 13,
-    damage_cold: 4,
+    // The final exam must be PASSABLE at the tutorial's natural level
+    // (4-5): the strand is one-shot, so a pupil who can't break him has
+    // no XP left to grow on — he is a wall with no ladder. Drama comes
+    // from the flask economy, not raw numbers.
+    life: 340,
+    damage: 10,
+    damage_cold: 3,
     armour: 35,
     evasion: 20,
     resist_lightning: 4000,

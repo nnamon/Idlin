@@ -1,0 +1,22 @@
+// The flask lesson, embodied: a clutch of grasping dead. Each bite is
+// nothing; six at once are a slow drowning. Tuned so they CANNOT kill
+// a leveled idler outright — but they WILL drive one to the bottle,
+// which is the point of the gauntlet they fill.
+MonsterDef(
+    id: "grasping_drowned",
+    name: "Grasping Drowned",
+    model: "shambler",
+    brain: "hostile_melee",
+    hostile: true,
+    level: 1,
+    life: 16,
+    damage: 2,
+    speed_cps: 300,
+    radius_cu: 40,
+    range_cu: 180,
+    use_ticks: 8,          // fast little bites
+    aggro_radius_cu: 800,  // 8 u: they wait IN the gauntlet, not at its gate
+    armour: 0,
+    xp: 8,
+    projectile: false,
+)

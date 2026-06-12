@@ -343,3 +343,12 @@ and a character's bot must walk into reach and call `use_exit` to
 leave. Nothing ever force-moves a character. `max_players` on a zone
 (0 = unlimited) caps how many characters share one world of it —
 story zones run solo instances; towns are shared.
+
+GATES (`gates:` rects with an `id:`, toggled by the brain's
+`set_gate`) block movement AND line of sight while shut — to bots
+and monsters alike, nothing strains at or shoots through a lesson it
+hasn't earned. The Withered Shore is built from them: a ladder of
+beats (declare a build, first-kill weapon + flask, suited gem, the
+flask gauntlet, the Shoal Witch's support gem + mana flask, a
+guaranteed rare, the Tidewarden), each gate lifting when its lesson
+lands. Scripted story drops never despawn — they are often gate keys.

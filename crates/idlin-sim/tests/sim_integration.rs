@@ -38,7 +38,17 @@ fn bots_grind_the_shore() {
     let mut passives = 0u64;
     let mut gems_socketed = 0u64;
 
-    let mut events = world.tick(&join_inputs());
+    // The shore is a SOLO story zone (max_players: 1; the server boots
+    // one instance per idler) — its gated, one-shot tutorial beats are
+    // sized for exactly one character.
+    let program = idlin_botc::template_grinder().expect("template assembles");
+    let mut events = world.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Kargan".into(),
+            program,
+        }],
+        arrivals: Vec::new(),
+    });
     // 6000 ticks = 10 minutes of game time.
     for _ in 0..6000 {
         events.extend(world.tick(&TickInputs::default()));
@@ -90,7 +100,7 @@ fn bots_grind_the_shore() {
     let characters = views.iter().filter(|v| v.kind == 1).count();
     assert_eq!(
         characters + departures,
-        4,
+        1,
         "characters never vanish without a departure"
     );
     assert!(views.len() < 200, "entity leak? {} entities", views.len());
@@ -418,4 +428,165 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     assert_eq!(me.name, "Pilgrim");
     assert_eq!(me.kills, kills_at_departure, "the tally crossed the bluff");
     assert!(!me.weapon.is_empty(), "still armed in town");
+}
+
+/// The whole gated tutorial, unscripted: a single stock grinder must
+/// learn every lesson the brain teaches — declare, first kill, gem,
+/// the flask gauntlet, the witch's support gem, the rare, the boss —
+/// and walk out to Saltmere on its own. No teleports, no effigies:
+/// this is the real onboarding a viewer's idler lives.
+///
+/// Runs across SEVERAL seeds (including the production derivation for
+/// a builtin idler): the strand is one-shot, so a boss a pupil can't
+/// break on a bad seed is a wall with no ladder — seed luck must never
+/// strand the tutorial.
+#[test]
+fn the_gated_tutorial_teaches_a_stock_grinder_to_saltmere() {
+    let content = content();
+    // The server's per-instance seed for Kargan: base seed ^ FNV(name).
+    let kargan = {
+        let mut h = 0xcbf29ce484222325u64;
+        for b in "Kargan".bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        12648430 ^ h
+    };
+    for seed in [0x717, kargan, 0xBADC0DE, 0x5EED5] {
+        run_tutorial(&content, seed);
+    }
+}
+
+fn run_tutorial(content: &ContentDb, seed: u64) {
+    let mut shore = World::new_for_zone(seed, content, "withered_shore");
+    let program = idlin_botc::template_grinder().expect("template assembles");
+    shore.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Pupil".into(),
+            program,
+        }],
+        arrivals: Vec::new(),
+    });
+
+    let mut min_life = 100u8;
+    let mut witch_seen = false;
+    let mut rare_seen = false;
+    let mut deaths = 0u32;
+    let mut departed = None;
+    let empty = TickInputs::default();
+    for tick in 0..40_000u32 {
+        let events = shore.tick(&empty);
+        deaths += events
+            .iter()
+            .filter(|e| matches!(e, SimEvent::CharacterDied { .. }))
+            .count() as u32;
+        if std::env::var("IDLIN_TRACE").is_ok() {
+            for e in &events {
+                match e {
+                    SimEvent::LootDropped { item, .. } => println!("t{tick} DROP {item}"),
+                    SimEvent::ItemPickedUp { item, .. } => println!("t{tick} PICKUP {item}"),
+                    SimEvent::GemSocketed { gem, .. } => println!("t{tick} SOCKET {gem}"),
+                    SimEvent::GemRejected { gem, skill, .. } => {
+                        println!("t{tick} REJECT {gem} on {skill}")
+                    }
+                    SimEvent::MonsterKilled { monster, .. } => println!("t{tick} KILL {monster}"),
+                    _ => {}
+                }
+            }
+        }
+        // IDLIN_TRACE=1: tick-level telemetry for tuning sessions.
+        if tick % 500 == 0 && std::env::var("IDLIN_TRACE").is_ok() {
+            let mut pupil = String::new();
+            let mut loot = 0;
+            for v in shore.views() {
+                if v.kind == 1 {
+                    pupil = format!(
+                        "({:.1},{:.1}) kills {} lvl {} life {}%",
+                        v.x_raw as f64 / 65536.0,
+                        v.y_raw as f64 / 65536.0,
+                        v.kills,
+                        v.level,
+                        v.life_pct
+                    );
+                }
+                if v.kind == 3 {
+                    loot += 1;
+                }
+            }
+            println!("t{tick}: {pupil} loot-on-ground {loot}");
+        }
+        // Sample the world sparsely — the assertions only need trends.
+        if tick % 25 == 0 {
+            for v in shore.views() {
+                if v.kind == 1 && !v.dead {
+                    min_life = min_life.min(v.life_pct);
+                }
+                if v.name.contains("Shoal Witch") {
+                    witch_seen = true;
+                }
+                // The scripted rare wears a naming-pool name + base.
+                if v.kind == 2 && v.rarity == 2 {
+                    rare_seen = true;
+                }
+            }
+        }
+        let dep = shore.take_departures();
+        if let Some((bundle, dest)) = dep.into_iter().next() {
+            departed = Some((tick, bundle, dest));
+            break;
+        }
+    }
+    let (tick, bundle, dest) = departed.unwrap_or_else(|| {
+        // Dump the stuck world so the failure explains itself.
+        let mut dump = String::new();
+        for v in shore.views() {
+            if v.kind == 1 {
+                dump += &format!(
+                    "\n  pupil: ({:.1},{:.1}) kills {} lvl {} life {}% dead {}",
+                    v.x_raw as f64 / 65536.0,
+                    v.y_raw as f64 / 65536.0,
+                    v.kills,
+                    v.level,
+                    v.life_pct,
+                    v.dead
+                );
+            } else if v.kind == 2 && !v.dead {
+                dump += &format!(
+                    "\n  monster: {} ({:.0},{:.0}) {}%",
+                    v.name,
+                    v.x_raw as f64 / 65536.0,
+                    v.y_raw as f64 / 65536.0,
+                    v.life_pct
+                );
+            }
+        }
+        panic!("seed {seed:#x}: the tutorial must be completable by the stock grinder.{dump}")
+    });
+    assert_eq!(dest, "saltmere");
+    let ch = &bundle.character;
+    assert!(
+        ch.kills >= 15,
+        "seed {seed:#x}: cleared the strand ({} kills)",
+        ch.kills
+    );
+    assert!(
+        witch_seen,
+        "seed {seed:#x}: the scripted magic witch must rise"
+    );
+    assert!(rare_seen, "seed {seed:#x}: the guaranteed rare must rise");
+    // The gauntlet must BITE (the flask lesson needs stakes) — if this
+    // fails the grasping_drowned need sharper teeth, not the test.
+    assert!(
+        min_life <= 70,
+        "seed {seed:#x}: the gauntlet should hurt (min life seen: {min_life}%)"
+    );
+    // An occasional death is drama; a respawn LOOP is a broken exam.
+    assert!(
+        deaths <= 3,
+        "seed {seed:#x}: too many deaths ({deaths}) — the tutorial is overtuned"
+    );
+    println!(
+        "seed {seed:#x}: tutorial completed at tick {tick}: kills {}, level {}, min life {min_life}%, deaths {deaths}",
+        ch.kills, ch.level
+    );
 }

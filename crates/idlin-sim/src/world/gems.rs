@@ -48,8 +48,10 @@ impl World {
         let start_idx = self.content.tree_start;
         let owns = |node: u32| node == start_idx || ch.allocated.contains(&node);
 
-        // Work list: (node, pouch index, attach_as_support).
+        // Work list: (node, pouch index, attach_as_support) — plus skill
+        // SWAPS (node, pouch index): the squatter returns to the pouch.
         let mut plans: Vec<(u32, usize, bool)> = Vec::new();
+        let mut swaps: Vec<(u32, usize)> = Vec::new();
         if socket_sel >= 0 {
             let node = socket_sel as u32;
             let pouch_idx = pouch_sel.max(0) as usize;
@@ -98,8 +100,27 @@ impl World {
                 }
             }
         } else {
+            // A skill that deals damage ITSELF (weapon coeff, added
+            // damage, or a dot) outranks a pure utility buff — auto is
+            // a sensible default, like EquipBest. (A War Cry squatting
+            // in the only socket once cost a pupil the whole tutorial.)
+            let deals_damage = |gem: &GemInstance| {
+                let d = &self.content.gems[gem.gem_idx as usize];
+                d.coeff_bp > 0
+                    || d.dot.is_some()
+                    || [
+                        &d.added_phys,
+                        &d.added_fire,
+                        &d.added_cold,
+                        &d.added_lightning,
+                        &d.added_chaos,
+                    ]
+                    .iter()
+                    .any(|f| f.at(gem.level.max(1)) > 0)
+            };
             let mut used: Vec<usize> = Vec::new();
-            // Pass 1: empty socket nodes get skill gems (start included).
+            // Pass 1: empty socket nodes get skill gems (start included),
+            // damage-dealers first, then pouch order.
             for node in std::iter::once(start_idx).chain(ch.allocated.iter().copied()) {
                 if !is_socket_node(node) || ch.sockets.contains_key(&node) {
                     continue;
@@ -108,10 +129,27 @@ impl World {
                     .pouch
                     .iter()
                     .enumerate()
-                    .find(|(i, g)| !used.contains(i) && gem_kind_of(g) == GemKind::Skill);
+                    .filter(|(i, g)| !used.contains(i) && gem_kind_of(g) == GemKind::Skill)
+                    .min_by_key(|(i, g)| (!deals_damage(g), *i));
                 if let Some((i, _)) = found {
                     used.push(i);
                     plans.push((node, i, false));
+                }
+            }
+            // Pass 1.5: upgrade a UTILITY squatter — a socketed skill
+            // that deals no damage and carries no supports yields its
+            // node to a damage skill from the pouch (the utility gem
+            // returns to the pouch).
+            for (&node, sg) in &ch.sockets {
+                if deals_damage(&sg.gem) || !sg.supports.is_empty() {
+                    continue;
+                }
+                let found = ch.pouch.iter().enumerate().find(|(i, g)| {
+                    !used.contains(i) && gem_kind_of(g) == GemKind::Skill && deals_damage(g)
+                });
+                if let Some((i, _)) = found {
+                    used.push(i);
+                    swaps.push((node, i));
                 }
             }
             // Pass 2: socketed skills with free slots get supports. (Skills
@@ -141,34 +179,56 @@ impl World {
                 }
             }
         }
-        if plans.is_empty() {
+        if plans.is_empty() && swaps.is_empty() {
             return 0;
         }
 
-        // Apply: remove pouch gems highest-index-first so indices hold.
+        // Apply: remove pouch gems highest-index-first so indices hold;
+        // swapped-out squatters return to the pouch AFTER all removals.
         {
             let me = self.zone.get_mut(slot).unwrap();
             let ch = me.character.as_mut().unwrap();
-            let mut by_pouch = plans.clone();
+            let mut by_pouch: Vec<(u32, usize, Option<bool>)> = plans
+                .iter()
+                .map(|&(n, i, a)| (n, i, Some(a)))
+                .chain(swaps.iter().map(|&(n, i)| (n, i, None)))
+                .collect();
             by_pouch.sort_unstable_by_key(|p| std::cmp::Reverse(p.1));
+            let mut returned: Vec<GemInstance> = Vec::new();
             for (node, pouch_idx, attach) in by_pouch {
                 let gem = ch.pouch.remove(pouch_idx);
-                if attach {
-                    ch.sockets.get_mut(&node).unwrap().supports.push(gem);
-                } else {
-                    ch.sockets.insert(
-                        node,
-                        SocketedGem {
-                            gem,
-                            cooldown_left: 0,
-                            supports: Vec::new(),
-                        },
-                    );
+                match attach {
+                    Some(true) => ch.sockets.get_mut(&node).unwrap().supports.push(gem),
+                    Some(false) => {
+                        ch.sockets.insert(
+                            node,
+                            SocketedGem {
+                                gem,
+                                cooldown_left: 0,
+                                supports: Vec::new(),
+                            },
+                        );
+                    }
+                    // Swap: the damage skill takes the node, the utility
+                    // squatter goes home to the pouch.
+                    None => {
+                        let sg = ch.sockets.get_mut(&node).unwrap();
+                        returned.push(std::mem::replace(
+                            &mut sg.gem,
+                            GemInstance {
+                                gem_idx: gem.gem_idx,
+                                level: gem.level,
+                                xp: gem.xp,
+                            },
+                        ));
+                        sg.cooldown_left = 0;
+                    }
                 }
             }
+            ch.pouch.extend(returned);
         }
         // Event names via content (after the mutable borrow ends).
-        let count = plans.len() as i32;
+        let count = (plans.len() + swaps.len()) as i32;
         let mut gem_names: Vec<String> = Vec::new();
         {
             let e = self.zone.get(slot).unwrap();
@@ -184,6 +244,13 @@ impl World {
                     sg.gem.gem_idx
                 };
                 gem_names.push(self.content.gems[idx as usize].name.clone());
+            }
+            for (node, _) in &swaps {
+                gem_names.push(
+                    self.content.gems[ch.sockets[node].gem.gem_idx as usize]
+                        .name
+                        .clone(),
+                );
             }
         }
         for name in gem_names {

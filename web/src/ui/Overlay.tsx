@@ -74,15 +74,18 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   const now = performance.now();
   const ticker = store.ticker.filter((t) => now - t.at < 14000).slice(-8);
 
-  // Unique monsters near the focused idler announce themselves with a
-  // PoE boss bar, top-center; several in range stack.
+  // Unique monsters near the focused idler (or, in watch feeds without
+  // a director cue, near ANY idler) announce themselves with a PoE boss
+  // bar, top-center; several in range stack.
   const BOSS_RANGE = 24;
+  const bossAnchors = focused ? [focused] : chars;
   const bosses = [...store.entities.values()].filter((e) => {
     if (e.state.kind !== "Monster" || e.state.rarity !== 3 || e.state.dead) return false;
-    if (!focused) return true;
-    const dx = e.currX - focused.currX;
-    const dy = e.currY - focused.currY;
-    return dx * dx + dy * dy <= BOSS_RANGE * BOSS_RANGE;
+    return bossAnchors.some((c) => {
+      const dx = e.currX - c.currX;
+      const dy = e.currY - c.currY;
+      return dx * dx + dy * dy <= BOSS_RANGE * BOSS_RANGE;
+    });
   });
 
   return (

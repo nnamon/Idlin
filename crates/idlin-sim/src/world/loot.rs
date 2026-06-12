@@ -44,6 +44,19 @@ impl World {
     }
 
     pub(super) fn spawn_loot(&mut self, pos: FxV2, payload: LootPayload, owner: u32) {
+        self.spawn_loot_lasting(pos, payload, owner, LOOT_DESPAWN_TICKS);
+    }
+
+    /// Scripted STORY drops (zone-brain drop_loot) use a near-infinite
+    /// ttl: a tutorial's gate key must not evaporate because its owner
+    /// was busy fighting 60 seconds away — content waits, litter doesn't.
+    pub(super) fn spawn_loot_lasting(
+        &mut self,
+        pos: FxV2,
+        payload: LootPayload,
+        owner: u32,
+        ttl: u64,
+    ) {
         let net_id = self.alloc_net();
         let (rarity, _) = self.payload_display(&payload);
         self.zone.insert(Entity {
@@ -60,7 +73,7 @@ impl World {
                 payload,
                 rarity,
                 owner,
-                despawn_at: self.tick + LOOT_DESPAWN_TICKS,
+                despawn_at: self.tick + ttl,
             }),
         });
     }

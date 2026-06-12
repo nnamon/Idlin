@@ -1,0 +1,27 @@
+// The midway lesson-bearer: the brain stages her as a scripted MAGIC
+// elite (spawn_elite) at the support-gem gate; her death pays the
+// support gem and the mana flask. Her def id IS the brain's event hook
+// (EV_KILL matches by def) — no pack may ever use her.
+MonsterDef(
+    id: "shoal_witch",
+    name: "Shoal Witch",
+    model: "husk",
+    brain: "hostile_melee",
+    hostile: true,
+    level: 4,
+    life: 80,
+    damage: 5,
+    speed_cps: 240,
+    radius_cu: 60,
+    range_cu: 220,
+    mana: 60,
+    skills: [
+        (gem: "ember_bolt", level: 2),
+    ],
+    use_ticks: 16,
+    aggro_radius_cu: 1500,
+    armour: 10,
+    resist_fire: 2000,
+    xp: 90,
+    projectile: false,
+)

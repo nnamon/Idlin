@@ -245,7 +245,10 @@ impl World {
                     _ => return -1,
                 };
                 let (rarity, name) = self.payload_display(&payload);
-                self.spawn_loot(pos, payload, owner);
+                // Story drops don't expire: scripted loot is often a
+                // gate key (the witch's support gem), and the tutorial
+                // must survive its owner being busy elsewhere.
+                self.spawn_loot_lasting(pos, payload, owner, 100_000_000);
                 events.push(SimEvent::LootDropped {
                     owner_id: owner,
                     owner: String::new(),

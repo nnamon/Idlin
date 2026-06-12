@@ -95,9 +95,18 @@ fn main() {
         use_flask();
     }
 
-    // Pick up our loot if any is in sight.
+    // Loot: claim what's underfoot now; remember what's distant. If
+    // nothing needs fighting we WALK to it — drops despawn, and some
+    // (the witch's support gem) are literally gate keys.
+    var loot_x = 0;
+    var loot_y = 0;
+    var have_loot = 0;
     if (read_entities(ENTS, 4, F_LOOT) > 0) {
-        pick_up(mem[ENTS]);
+        if (pick_up(mem[ENTS]) != 0) {
+            have_loot = 1;
+            loot_x = mem[ENTS + 8];
+            loot_y = mem[ENTS + 12];
+        }
     }
 
     // Upkeep: gear and gems (passives allocate themselves per the build).
@@ -191,12 +200,17 @@ fn main() {
         return;
     }
 
-    // Nothing to fight: leave only once boredom commits us (the bot's
-    // own call — nothing forces a transfer), else EXPLORE: hold a wander
-    // target for a few seconds instead of re-rolling every tick, so an
-    // idle bot strolls the map like it lives there (towns especially —
-    // SelfStatus +64 carries the zone's content index when a brain wants
-    // zone-specific behavior).
+    // Nothing to fight: collect outstanding loot first (it expires),
+    // then leave only once boredom commits us (the bot's own call —
+    // nothing forces a transfer), else EXPLORE: hold a wander target
+    // for a few seconds instead of re-rolling every tick, so an idle
+    // bot strolls the map like it lives there (towns especially —
+    // SelfStatus +64 carries the zone's content index when a brain
+    // wants zone-specific behavior).
+    if (have_loot == 1) {
+        move_to(loot_x, loot_y);
+        return;
+    }
     if (open_ex == 1 && leaving == 1) {
         if (use_exit() == 0) { return; }
         move_to(ex, ey);

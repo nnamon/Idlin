@@ -517,14 +517,24 @@ fn generate_obstacles(zone: &mut crate::zone::Zone, seed: u64, rocks: u32, trees
 /// Amanatides–Woo with cross-multiplied boundary comparisons (raw coords
 /// < 2^23, distances < 2^17 raw per axis step — every product fits i64).
 /// Exact corner crossings check both side cells, so a diagonal wall seam
-/// never leaks sight.
-fn grid_sight_blocked(grid: &crate::zone::SimGrid, a: FxV2, b: FxV2) -> bool {
+/// never leaks sight. SHUT GATES block sight too: the barrier is a wall
+/// while it stands, so bots (and monsters) don't strain at — or shoot
+/// through — a lesson they haven't earned.
+fn grid_sight_blocked(
+    grid: &crate::zone::SimGrid,
+    gates: &[crate::zone::GateState],
+    a: FxV2,
+    b: FxV2,
+) -> bool {
+    let sight = |cx: i64, cy: i64| {
+        grid.sight_cell(cx, cy) || gates.iter().any(|g| !g.open && g.covers(cx, cy))
+    };
     const CELL: i64 = 65536;
     let (ax, ay) = (a.x.raw() as i64, a.y.raw() as i64);
     let (bx, by) = (b.x.raw() as i64, b.y.raw() as i64);
     let (mut cx, mut cy) = (ax.div_euclid(CELL), ay.div_euclid(CELL));
     let (ex, ey) = (bx.div_euclid(CELL), by.div_euclid(CELL));
-    if grid.sight_cell(cx, cy) {
+    if sight(cx, cy) {
         return true;
     }
     let (dx, dy) = (bx - ax, by - ay);
@@ -555,7 +565,7 @@ fn grid_sight_blocked(grid: &crate::zone::SimGrid, a: FxV2, b: FxV2) -> bool {
         } else {
             // The ray passes exactly through a cell corner: a wall on
             // either side of the diagonal seals it.
-            if grid.sight_cell(cx + sx, cy) || grid.sight_cell(cx, cy + sy) {
+            if sight(cx + sx, cy) || sight(cx, cy + sy) {
                 return true;
             }
             cx += sx;
@@ -563,7 +573,7 @@ fn grid_sight_blocked(grid: &crate::zone::SimGrid, a: FxV2, b: FxV2) -> bool {
             to_bx += CELL;
             to_by += CELL;
         }
-        if grid.sight_cell(cx, cy) {
+        if sight(cx, cy) {
             return true;
         }
     }
@@ -1258,7 +1268,7 @@ impl World {
     /// product fits i64.
     pub(crate) fn los_blocked(&self, a: FxV2, b: FxV2) -> bool {
         if let Some(grid) = &self.zone.grid {
-            return grid_sight_blocked(grid, a, b);
+            return grid_sight_blocked(grid, &self.zone.gates, a, b);
         }
         const S: i64 = 8;
         let ax = (a.x.raw() as i64) >> S;
