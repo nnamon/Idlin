@@ -204,8 +204,24 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("idlin-server v{SERVER_VERSION} listening on http://{addr} (ws at /ws)");
-    axum::serve(listener, app).await?;
-    Ok(())
+    // Hand-rolled accept loop so every connection gets TCP_NODELAY:
+    // axum::serve leaves Nagle ON, and a 10 Hz stream of small frames
+    // under Nagle + delayed ACKs arrives in 40-200 ms BURSTS — visible
+    // stagger, and ping reads inflated because the pong queues behind
+    // the same coalescing.
+    loop {
+        let (stream, _peer) = listener.accept().await?;
+        let _ = stream.set_nodelay(true);
+        let tower_svc = app.clone();
+        tokio::spawn(async move {
+            let socket = hyper_util::rt::TokioIo::new(stream);
+            let svc = hyper_util::service::TowerToHyperService::new(tower_svc);
+            let _ =
+                hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+                    .serve_connection_with_upgrades(socket, svc)
+                    .await;
+        });
+    }
 }
 
 /// The passive tree as JSON for the map page: nodes + resolved edges.

@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 axum = { version = "0.8.9", features = ["ws"] }
+hyper = { version = "1", features = ["server"] }
+hyper-util = { version = "0.1", features = ["server-auto", "tokio", "service"] }
+tower = "0.5"
 futures-util = "0.3.32"
 idlin-botc = { version = "0.0.1", path = "../idlin-botc" }
 idlin-chat = { version = "0.0.1", path = "../idlin-chat" }

@@ -542,6 +542,9 @@ export class ZoneRenderer {
 
     // -- sync entities (only once models are in; one frame of patience) --
     if (this.assets) {
+      // The playout clock first: positions and combat events both read
+      // from it, so jitter bends time instead of snapping the world.
+      this.store.advanceClock(now);
       const seen = new Set<number>();
       for (const [id, er] of this.store.entities) {
         seen.add(id);

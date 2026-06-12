@@ -6,14 +6,20 @@ import type { GameEvent } from "../gen/GameEvent";
 import type { TileMapState } from "../gen/TileMapState";
 
 const TICK_MS = 100; // 10 Hz sim; interpolation window
+/** Playout delay in ticks: jitter up to ~this much arrives invisibly.
+ *  ~220 ms of display latency — meaningless for a spectator feed. */
+const PLAYOUT_DELAY_TICKS = 2.2;
 
 export interface EntityRender {
   state: EntityState;
   prevX: number;
   prevY: number;
+  /** Latest authoritative position (sim units) — game logic reads these. */
   currX: number;
   currY: number;
   movedAt: number; // performance.now() when curr was set
+  /** Server-tick-stamped positions for the playout buffer (render path). */
+  samples: { tick: number; x: number; y: number }[];
 }
 
 export interface TickerItem {
@@ -36,6 +42,8 @@ export interface ActiveHit {
   /** The hit staggered (windup broken, brief lock); cold stuns FREEZE. */
   stun: boolean;
   freeze: boolean;
+  /** Server tick this landed — released by the playout clock. */
+  tick: number;
   at: number;
 }
 
@@ -49,6 +57,7 @@ export interface ActiveUse {
   /** Seconds of full commitment / until the blow lands. */
   useS: number;
   contactS: number;
+  tick: number;
   at: number;
 }
 
@@ -64,6 +73,7 @@ export interface ActiveProjectile {
   /** Sim units of travel budget. */
   range: number;
   dmgType: number;
+  tick: number;
   at: number;
 }
 
@@ -82,6 +92,7 @@ export interface ActiveSkill {
   radius: number;
   range: number;
   dmgType: number;
+  tick: number;
   at: number;
 }
 
@@ -121,6 +132,13 @@ export class WorldStore {
     gates: { x0: number; y0: number; x1: number; y1: number; open: boolean }[];
   } | null = null;
   tick = 0;
+  /** The PLAYOUT clock: rendering runs this many ticks behind the newest
+   *  delta, absorbing network jitter (bursty arrivals otherwise starve
+   *  the renderer, then dump a pile — visible stagger). Positions AND
+   *  combat events ride the same delayed clock, so #10's contact sync
+   *  survives buffering untouched. */
+  renderTick = 0;
+  private lastClockAt = 0;
   /** Bumps on every ZoneSnapshot: a snapshot is a FULL state reset, and
    *  the renderer must drop per-entity visuals (net ids are per-world). */
   snapshotGen = 0;
@@ -165,6 +183,7 @@ export class WorldStore {
           gates: (d.gates ?? []).map((g) => ({ ...g })),
         };
         this.tick = d.tick;
+        this.renderTick = d.tick - PLAYOUT_DELAY_TICKS;
         this.snapshotGen++;
         this.entities.clear();
         const now = performance.now();
@@ -191,6 +210,8 @@ export class WorldStore {
           er.movedAt = now;
           er.state.x = m.x;
           er.state.y = m.y;
+          er.samples.push({ tick: d.tick, x: er.currX, y: er.currY });
+          if (er.samples.length > 10) er.samples.shift();
         }
         for (const u of d.updated) {
           const er = this.entities.get(u.id);
@@ -218,6 +239,7 @@ export class WorldStore {
             killed: h.killed,
             stun: h.stun ?? false,
             freeze: h.freeze ?? false,
+            tick: d.tick,
             at: now,
           });
         }
@@ -231,6 +253,7 @@ export class WorldStore {
             vy: p.vy / 65536,
             range: p.range / 65536,
             dmgType: p.dmg_type,
+            tick: d.tick,
             at: now,
           });
         }
@@ -242,6 +265,7 @@ export class WorldStore {
             y: u.y / 65536,
             useS: u.use_ticks * (TICK_MS / 1000),
             contactS: u.contact_ticks * (TICK_MS / 1000),
+            tick: d.tick,
             at: now,
           });
         }
@@ -257,6 +281,7 @@ export class WorldStore {
             radius: s.radius / 65536,
             range: s.range / 65536,
             dmgType: s.dmg_type,
+            tick: d.tick,
             at: now,
           });
         }
@@ -297,42 +322,89 @@ export class WorldStore {
   /** Renderer drains hits once per frame. */
   drainHits(): ActiveHit[] {
     if (this.pendingHits.length === 0) return [];
-    const out = this.pendingHits;
-    this.pendingHits = [];
-    return out;
+    const due: ActiveHit[] = [];
+    const later: ActiveHit[] = [];
+    for (const e of this.pendingHits) {
+      (e.tick <= this.renderTick ? due : later).push(e);
+    }
+    this.pendingHits = later;
+    return due;
   }
 
   /** Renderer drains projectile launches once per frame. */
   drainProjectiles(): ActiveProjectile[] {
     if (this.pendingProjectiles.length === 0) return [];
-    const out = this.pendingProjectiles;
-    this.pendingProjectiles = [];
-    return out;
+    const due: ActiveProjectile[] = [];
+    const later: ActiveProjectile[] = [];
+    for (const e of this.pendingProjectiles) {
+      (e.tick <= this.renderTick ? due : later).push(e);
+    }
+    this.pendingProjectiles = later;
+    return due;
   }
 
   /** Renderer drains skill uses once per frame. */
   drainSkills(): ActiveSkill[] {
     if (this.pendingSkills.length === 0) return [];
-    const out = this.pendingSkills;
-    this.pendingSkills = [];
-    return out;
+    const due: ActiveSkill[] = [];
+    const later: ActiveSkill[] = [];
+    for (const e of this.pendingSkills) {
+      (e.tick <= this.renderTick ? due : later).push(e);
+    }
+    this.pendingSkills = later;
+    return due;
   }
 
   /** Renderer drains use-starts (windups) once per frame. */
   drainUses(): ActiveUse[] {
     if (this.pendingUses.length === 0) return [];
-    const out = this.pendingUses;
-    this.pendingUses = [];
-    return out;
+    const due: ActiveUse[] = [];
+    const later: ActiveUse[] = [];
+    for (const e of this.pendingUses) {
+      (e.tick <= this.renderTick ? due : later).push(e);
+    }
+    this.pendingUses = later;
+    return due;
   }
 
-  /** Interpolated render position (sim units). */
-  renderPos(er: EntityRender, now: number): { x: number; y: number } {
-    const a = Math.min(1, (now - er.movedAt) / TICK_MS);
-    return {
-      x: er.prevX + (er.currX - er.prevX) * a,
-      y: er.prevY + (er.currY - er.prevY) * a,
-    };
+  /** Advance the playout clock: call ONCE per rendered frame. Runs at
+   *  tick rate by wall clock, slewing gently toward (newest − delay) so
+   *  arrival jitter bends the clock instead of snapping positions. */
+  advanceClock(now: number): void {
+    if (this.lastClockAt === 0) this.lastClockAt = now;
+    const dt = Math.min(0.25, (now - this.lastClockAt) / 1000);
+    this.lastClockAt = now;
+    const target = this.tick - PLAYOUT_DELAY_TICKS;
+    const err = target - this.renderTick;
+    if (Math.abs(err) > 8) {
+      this.renderTick = target; // way off (stall/teleport): snap
+    } else {
+      // Free-run at 10 ticks/s, plus a gentle pull toward the target.
+      this.renderTick += dt * 10 + err * Math.min(1, dt * 2.5);
+    }
+    // Never render ahead of what the server has shown us.
+    this.renderTick = Math.min(this.renderTick, this.tick);
+  }
+
+  /** Buffered render position (sim units): interpolates the entity's
+   *  sample timeline at the playout clock. */
+  renderPos(er: EntityRender, _now: number): { x: number; y: number } {
+    const ss = er.samples;
+    if (ss.length === 0) return { x: er.currX, y: er.currY };
+    if (this.renderTick >= ss[ss.length - 1].tick) {
+      const last = ss[ss.length - 1];
+      return { x: last.x, y: last.y };
+    }
+    for (let i = ss.length - 1; i > 0; i--) {
+      const b = ss[i];
+      const a = ss[i - 1];
+      if (this.renderTick >= a.tick && this.renderTick <= b.tick) {
+        const span = b.tick - a.tick;
+        const f = span > 0 ? (this.renderTick - a.tick) / span : 1;
+        return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+      }
+    }
+    return { x: ss[0].x, y: ss[0].y };
   }
 
   characters(): EntityRender[] {
@@ -350,6 +422,8 @@ export class WorldStore {
       existing.currX = x;
       existing.currY = y;
       existing.movedAt = now;
+      existing.samples.push({ tick: this.tick, x, y });
+      if (existing.samples.length > 10) existing.samples.shift();
     } else {
       this.entities.set(e.id, {
         state: e,
@@ -358,6 +432,7 @@ export class WorldStore {
         currX: x,
         currY: y,
         movedAt: now,
+        samples: [{ tick: this.tick, x, y }],
       });
     }
   }
