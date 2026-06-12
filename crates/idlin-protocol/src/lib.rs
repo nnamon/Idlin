@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 19;
+pub const PROTO_VERSION: u32 = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -316,6 +316,9 @@ pub struct TileVisual {
     pub glyph: String,
     /// Ground paint, "#rrggbb".
     pub ground: String,
+    /// Ground KIND id ("water", "sand", "cobble"…) — the renderer shapes
+    /// terrain by kind, not by color.
+    pub ground_id: String,
     /// What stands on the tile (client recipe key): wall/house/rock/…
     pub prop: Option<String>,
     /// The client may path-preview/dim unwalkable ground.

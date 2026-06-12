@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import type { TileMapState } from "../gen/TileMapState";
+import type { TileVisual } from "../gen/TileVisual";
 import type { ZoneObstacle } from "../world/store";
 import type { AssetLibrary } from "./Assets";
 
@@ -66,9 +68,57 @@ interface FoamWave {
 
 export class Terrain {
   readonly group = new THREE.Group();
+  /** Tall meshes that can hide idlers (walls, buildings); ZoneRenderer
+   *  fades whichever stand between the lens and a character. */
+  readonly occluders: THREE.Object3D[] = [];
+  /** Brazier cells from an authored map; empty = caller's classic trail. */
+  readonly brazierSpots: Array<[number, number]> = [];
   private water: THREE.Mesh | null = null;
   private foam: FoamWave[] = [];
   private seed: number;
+  // -- authored-map drive (tiles own layout; this class owns beauty) --
+  private tiles: TileMapState | null = null;
+  private byGlyph = new Map<string, TileVisual>();
+  private groundColors = new Map<string, THREE.Color>();
+  private waterEdge: number[] | null = null;
+  private hasWater = false;
+
+  /** Drive the terrain from an authored tile map (call before build). */
+  setTiles(tiles: TileMapState): void {
+    this.tiles = tiles;
+    this.byGlyph = new Map(tiles.legend.map((l) => [l.glyph, l]));
+    for (const l of tiles.legend) {
+      this.groundColors.set(l.glyph, new THREE.Color(l.ground));
+    }
+    // Per-row x of the first water cell (the authored waterline), lightly
+    // smoothed so the heightmap meanders instead of stair-stepping.
+    const raw: number[] = [];
+    for (let z = 0; z < tiles.height; z++) {
+      let edge = tiles.width + 18;
+      const row = tiles.rows[z];
+      for (let x = 0; x < tiles.width; x++) {
+        if (this.byGlyph.get(row[x])?.ground_id === "water") {
+          edge = x;
+          break;
+        }
+      }
+      raw.push(edge);
+    }
+    this.hasWater = raw.some((e) => e <= tiles.width);
+    if (this.hasWater) {
+      this.waterEdge = raw.map((_, z) => {
+        let sum = 0;
+        let n = 0;
+        for (let dz = -2; dz <= 2; dz++) {
+          const v = raw[Math.min(raw.length - 1, Math.max(0, z + dz))];
+          sum += v;
+          n++;
+        }
+        return sum / n;
+      });
+    }
+  }
+
 
   constructor(
     private zoneW: number,
@@ -82,6 +132,11 @@ export class Terrain {
 
   /** Where the sea meets the sand, gently meandering along the strand. */
   waterlineX(z: number): number {
+    if (this.tiles) {
+      if (!this.waterEdge) return this.zoneW + PAD + 60; // dry map: no sea
+      const i = Math.min(this.waterEdge.length - 1, Math.max(0, Math.round(z)));
+      return this.waterEdge[i] + (vnoise(z * 0.05, 7.7, this.seed ^ 31) * 2 - 1) * 0.6;
+    }
     return this.zoneW + 1 + (vnoise(z * 0.045, 7.7, this.seed ^ 31) * 2 - 1) * 1.4;
   }
 
@@ -91,6 +146,13 @@ export class Terrain {
    */
   heightAt(x: number, z: number): number {
     const { zoneW: w, zoneH: h } = this;
+    if (this.tiles && !this.hasWater) {
+      // Dry authored ground (the town): a gentle plateau ringed by hills.
+      let y = vnoise(x * 0.08, z * 0.08, this.seed) * 0.22 - 0.08;
+      const out = Math.max(0, -x, x - w, -z, z - h);
+      y += smoothstep(2, PAD - 8, out) * (3.5 + vnoise(x * 0.09, z * 0.09, this.seed ^ 13) * 2.2);
+      return y;
+    }
     // Gentle dunes everywhere…
     let y = vnoise(x * 0.06, z * 0.06, this.seed) * 0.9 + vnoise(x * 0.22, z * 0.22, this.seed ^ 7) * 0.22 - 0.5;
     // …rising westward into ridged bluffs (strongest at and beyond x=0).
@@ -142,7 +204,14 @@ export class Terrain {
       const beach = smoothstep(xw - BEACH_DEPTH, xw - 4, x);
       const high = smoothstep(1.2, 4.0, y);
       const wetness = smoothstep(xw - 2.5, xw + 1, x);
-      tmp.copy(inland).lerp(sand, beach).lerp(rock, high).lerp(wet, wetness);
+      const tileCol = this.tiles ? this.groundColorAt(x, z) : null;
+      if (tileCol) {
+        // Authored ground: the tileset palette IS the base coat; the
+        // shore touches (wet sheen, rocky heights) layer on top.
+        tmp.copy(tileCol).lerp(rock, high).lerp(wet, wetness * (this.hasWater ? 1 : 0));
+      } else {
+        tmp.copy(inland).lerp(sand, beach).lerp(rock, high).lerp(wet, wetness);
+      }
       const grain = 0.92 + 0.16 * vnoise(x * 1.7, z * 1.7, this.seed ^ 99);
       colors[i * 3] = tmp.r * grain;
       colors[i * 3 + 1] = tmp.g * grain;
@@ -159,6 +228,7 @@ export class Terrain {
     this.group.add(ground);
 
     // -- the sea: a broad plane east of the waterline --
+    if (!this.tiles || this.hasWater) {
     this.water = new THREE.Mesh(
       new THREE.PlaneGeometry(PAD + 40, spanZ),
       new THREE.MeshStandardMaterial({
@@ -172,12 +242,14 @@ export class Terrain {
       }),
     );
     this.water.rotation.x = -Math.PI / 2;
-    this.water.position.set(w + (PAD + 40) / 2 - 6, WATER_Y, minZ + spanZ / 2);
+    const seaFrom = this.tiles ? Math.min(...(this.waterEdge ?? [w])) - 2 : w - 6;
+    this.water.position.set(seaFrom + (PAD + 46) / 2, WATER_Y, minZ + spanZ / 2);
     this.group.add(this.water);
+    }
 
     // -- lapping waves: foam strips that roll up the sand and fade --
     const foamTex = this.makeFoamTexture();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (!this.tiles || this.hasWater ? 3 : 0); i++) {
       const mat = new THREE.MeshBasicMaterial({
         map: foamTex,
         transparent: true,
@@ -245,8 +317,155 @@ export class Terrain {
     );
     this.group.add(stars);
 
-    this.scatterProps(assets, rng);
-    this.placeObstacles(assets, obstacles, rng);
+    if (this.tiles) {
+      this.scatterFringe(assets, rng);
+      this.placeTileProps(assets, rng);
+    } else {
+      this.scatterProps(assets, rng);
+      this.placeObstacles(assets, obstacles, rng);
+    }
+  }
+
+  private groundColorAt(x: number, z: number): THREE.Color | null {
+    if (!this.tiles) return null;
+    const tx = Math.min(this.tiles.width - 1, Math.max(0, Math.floor(x)));
+    const tz = Math.min(this.tiles.height - 1, Math.max(0, Math.floor(z)));
+    return this.groundColors.get(this.tiles.rows[tz][tx]) ?? null;
+  }
+
+  /** Authored maps: every cell's prop, plus the props.ron set pieces —
+   *  rendered onto the SCULPTED ground (tiles own layout, not looks). */
+  private placeTileProps(assets: AssetLibrary, rng: () => number): void {
+    const tiles = this.tiles!;
+    const { width: w, height: h, rows } = tiles;
+    const walkAt = (xx: number, yy: number): boolean => {
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false;
+      return !!this.byGlyph.get(rows[yy][xx])?.walkable;
+    };
+    const put = (key: string, x: number, z: number, scale: number, rot: number) => {
+      const obj = assets.instantiateProp(key);
+      if (!obj) return null;
+      obj.scale.setScalar(scale);
+      obj.rotation.y = rot;
+      obj.position.set(x, this.heightAt(x, z) - 0.06, z);
+      this.group.add(obj);
+      return obj;
+    };
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const vis = this.byGlyph.get(rows[y][x]);
+        if (!vis?.prop) continue;
+        const cx = x + 0.5;
+        const cz = y + 0.5;
+        const r = hash2(x, y, this.seed ^ 5);
+        switch (vis.prop) {
+          case "rock":
+            put(["rock_1", "rock_2", "rock_3"][Math.floor(r * 3) % 3], cx, cz, 0.45 + r * 0.3, r * Math.PI * 2);
+            break;
+          case "tree":
+          case "dead_tree":
+            put(["deadtree_1", "deadtree_2", "deadtree_3"][Math.floor(r * 3) % 3], cx, cz, 0.3 + r * 0.12, r * Math.PI * 2);
+            break;
+          case "tuft":
+            put(["grass_1", "grass_2"][Math.floor(r * 2) % 2], cx, cz, 0.7 + r * 0.4, r * Math.PI * 2);
+            break;
+          case "brazier":
+            this.brazierSpots.push([cx, cz]);
+            break;
+          case "crate":
+            put("crate_town", cx, cz, 1, r * Math.PI);
+            break;
+          case "wagon":
+            put("wagon", cx, cz, 1, r * Math.PI * 2);
+            break;
+          case "fence":
+            put("fence_wood", cx, cz, 1, 0);
+            break;
+          case "wall": {
+            // Directional piece: face the walkable side; interior cells
+            // face the map center. Squeeze to tile per cell (1.54u run).
+            let rot = 0;
+            if (walkAt(x, y + 1)) rot = 0;
+            else if (walkAt(x, y - 1)) rot = Math.PI;
+            else if (walkAt(x + 1, y)) rot = -Math.PI / 2;
+            else if (walkAt(x - 1, y)) rot = Math.PI / 2;
+            else {
+              const dx = w / 2 - cx;
+              const dz = h / 2 - cz;
+              rot = Math.abs(dx) > Math.abs(dz)
+                ? (dx > 0 ? -Math.PI / 2 : Math.PI / 2)
+                : (dz > 0 ? 0 : Math.PI);
+            }
+            const obj = put("wall_town", cx, cz, 1, rot);
+            if (obj) {
+              obj.scale.x = 1 / 1.54;
+              obj.traverse((o) => (o.userData.occRoot = obj));
+              this.occluders.push(obj);
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    }
+    // Set pieces (props.ron): whole buildings on their footprints.
+    for (const pr of tiles.props) {
+      const obj = assets.instantiateProp(pr.model);
+      if (!obj) continue;
+      obj.rotation.y = (pr.rot_deg * Math.PI) / 180;
+      const px = pr.x_u + 0.5;
+      const pz = pr.y_u + 0.5;
+      obj.position.set(px, this.heightAt(px, pz) - 0.04, pz);
+      obj.traverse((o) => {
+        o.userData.occRoot = obj;
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+      this.group.add(obj);
+      this.occluders.push(obj);
+    }
+    rng(); // keep the dressing stream warm for parity with legacy builds
+  }
+
+  /** Fringe dressing OUTSIDE the playable bounds — the part of the old
+   *  scatter that sells the world past the map's edge. */
+  private scatterFringe(assets: AssetLibrary, rng: () => number): void {
+    const { zoneW: w, zoneH: h } = this;
+    const placeOne = (key: string, x: number, z: number, scale: number) => {
+      const y = this.heightAt(x, z);
+      if (this.hasWater && y < WATER_Y + 0.1) return;
+      const obj = assets.instantiateProp(key);
+      if (!obj) return;
+      obj.scale.setScalar(scale);
+      obj.rotation.y = rng() * Math.PI * 2;
+      obj.position.set(x, y - 0.06, z);
+      this.group.add(obj);
+    };
+    const pick = (keys: string[]) => keys[Math.floor(rng() * keys.length)];
+    for (let i = 0; i < 40; i++) {
+      const side = rng();
+      const x = side < 0.4 ? -2 - rng() * 16 : side < 0.8 ? w + 2 + rng() * 14 : rng() * w;
+      const inside = x > -2 && x < w + 2;
+      const z = inside ? (rng() < 0.5 ? -12 + rng() * 10 : h + 2 + rng() * 10) : -12 + rng() * (h + 24);
+      if (this.hasWater && x > w) continue; // the sea owns the east
+      placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 0.35 + rng() * 0.9);
+    }
+    for (let i = 0; i < 14; i++) {
+      const x = -8 - rng() * 10;
+      const z = -8 + rng() * (h + 16);
+      placeOne(pick(["deadtree_1", "deadtree_2", "deadtree_3"]), x, z, 0.3 + rng() * 0.22);
+    }
+    if (this.hasWater) {
+      // The rocky headland in the surf, beyond the walkable bound.
+      for (let i = 0; i < 8; i++) {
+        const x = w + 0.8 + rng() * 4.5;
+        const z = h * 0.32 + rng() * (h * 0.06);
+        placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 1.0 + rng() * 1.3);
+      }
+    }
   }
 
   /**
@@ -387,7 +606,8 @@ export class Terrain {
       const p = (t / 6.5 + f.phase) % 1;
       // Roll from the sea up onto the sand, pause, and dissolve.
       const reach = 1 - Math.pow(1 - Math.min(1, p * 1.25), 2); // ease-out
-      const x = w + 5.5 - reach * 7.5;
+      const xw = this.waterlineX(h / 2);
+      const x = (this.tiles ? xw + 4.5 : w + 5.5) - reach * 7.5;
       f.mesh.position.set(x, WATER_Y + 0.16 + reach * 0.16, h / 2);
       f.mat.opacity = Math.sin(Math.min(1, p * 1.1) * Math.PI) * 0.55;
       (f.mat.map as THREE.Texture).offset.y = f.phase + t * 0.004;

@@ -15,6 +15,11 @@ glyph: string,
  */
 ground: string, 
 /**
+ * Ground KIND id ("water", "sand", "cobble"…) — the renderer shapes
+ * terrain by kind, not by color.
+ */
+ground_id: string, 
+/**
  * What stands on the tile (client recipe key): wall/house/rock/…
  */
 prop: string | null, 

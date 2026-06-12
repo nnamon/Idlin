@@ -13,7 +13,6 @@ import { EntityVisual, SharedResources } from "./EntityVisuals";
 import { FxSystem } from "./FxSystem";
 import { IconFactory } from "./IconFactory";
 import { Terrain } from "./Terrain";
-import { TileTerrain } from "./TileTerrain";
 
 const SKY_COLOR = 0x07070d;
 
@@ -59,7 +58,7 @@ export class ZoneRenderer {
   readonly director: DirectorCamera;
 
   private assets: AssetLibrary | null = null;
-  private terrain: Terrain | TileTerrain | null = null;
+  private terrain: Terrain | null = null;
   private shared = new SharedResources();
   private visuals = new Map<number, EntityVisual>();
   private fx: FxSystem;
@@ -203,26 +202,27 @@ export class ZoneRenderer {
     // Authored zones render from their tile map; generated zones keep the
     // heightmap-and-scatter look. Either way the sim stays 2D and
     // everything samples terrain.heightAt for its foot Y.
-    let brazierSpots: Array<[number, number]>;
-    if (zone.tiles) {
-      const tt = new TileTerrain(zone.tiles);
-      tt.build(this.assets);
-      this.terrain = tt;
-      brazierSpots = tt.brazierSpots; // authored cells, absolute coords
-    } else {
-      const terrain = new Terrain(w, h, zone.name);
-      terrain.build(this.assets, zone.obstacles);
-      this.terrain = terrain;
-      // The classic trail of braziers up the strand, in zone fractions.
-      brazierSpots = [
-        [0.5, 0.93], // the spawn camp
-        [0.3, 0.76],
-        [0.62, 0.58],
-        [0.34, 0.4],
-        [0.6, 0.22],
-        [0.44, 0.06], // the far end
-      ].map(([fx, fz]) => [w * fx, h * fz]);
-    }
+    // ONE renderer for every zone: the sculpted Terrain (heightmap, sea,
+    // foam, sky, fringe). Authored zones FEED it their tile map — tiles
+    // own layout and collision; this class owns beauty.
+    const terrain = new Terrain(w, h, zone.name);
+    if (zone.tiles) terrain.setTiles(zone.tiles);
+    terrain.build(this.assets, zone.obstacles);
+    this.terrain = terrain;
+    // Braziers: authored cells when the map names them, else the classic
+    // trail up the strand.
+    const brazierSpots: Array<[number, number]> = terrain.brazierSpots.length
+      ? terrain.brazierSpots
+      : (
+          [
+            [0.5, 0.93],
+            [0.3, 0.76],
+            [0.62, 0.58],
+            [0.34, 0.4],
+            [0.6, 0.22],
+            [0.44, 0.06],
+          ] as Array<[number, number]>
+        ).map(([fx, fz]) => [w * fx, h * fz] as [number, number]);
     this.scene.add(this.terrain.group);
 
     // Moon angled across the zone; shadow frustum sized to cover it.
@@ -290,7 +290,7 @@ export class ZoneRenderer {
   private fadeState = new Map<THREE.Object3D, { current: number; lastHit: number }>();
 
   private updateOcclusion(now: number): void {
-    const tt = this.terrain instanceof TileTerrain ? this.terrain : null;
+    const tt = this.terrain;
     if (!tt || tt.occluders.length === 0) return;
     const cam = this.camera.position;
     for (const [id, v] of this.visuals) {

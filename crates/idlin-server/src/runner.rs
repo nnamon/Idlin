@@ -86,6 +86,7 @@ pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMa
         .map(|t| TileVisual {
             glyph: t.glyph.to_string(),
             ground: color_of(&t.ground),
+            ground_id: t.ground.clone(),
             prop: t.prop.clone(),
             walkable: t.walkable,
         })
