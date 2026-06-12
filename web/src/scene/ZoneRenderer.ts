@@ -38,34 +38,47 @@ function zoneKey(zone: NonNullable<WorldStore["zone"]>): string {
   return `${zone.name}|${zone.width}x${zone.height}|${h}`;
 }
 
-/** Concentric blue spiral with streaky arms — the portal's surface. */
-function vortexTexture(): THREE.CanvasTexture {
+/** Ragged glowing oval OUTLINE — wispy strokes hugging an ellipse rim,
+ *  blue through violet, soft-bloomed. No spiral arms. */
+function portalRimTex(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const g = c.getContext("2d")!;
   g.translate(128, 128);
-  for (let arm = 0; arm < 26; arm++) {
-    const a0 = (arm / 26) * Math.PI * 2;
-    const hue = 200 + (arm % 5) * 6;
-    const light = 52 + (arm % 3) * 16;
-    g.strokeStyle = `hsla(${hue}, 95%, ${light}%, ${0.5 + (arm % 3) * 0.18})`;
-    g.lineWidth = 1.4 + (arm % 3);
+  for (let i = 0; i < 320; i++) {
+    const a = (i / 320) * Math.PI * 2;
+    const jitter = (Math.sin(i * 12.9898) * 43758.5453) % 1;
+    const r = 98 + (jitter - 0.5) * 18;
+    const hue = 195 + ((i * 7) % 75); // cyan → violet
+    g.fillStyle = `hsla(${hue}, 90%, ${55 + (i % 3) * 12}%, 0.5)`;
+    g.shadowColor = `hsla(${hue}, 95%, 65%, 0.9)`;
+    g.shadowBlur = 16;
     g.beginPath();
-    for (let r = 16; r < 124; r += 2.4) {
-      const a = a0 + r * 0.045;
-      const x = Math.cos(a) * r;
-      const y = Math.sin(a) * r;
-      if (r === 16) g.moveTo(x, y);
-      else g.lineTo(x, y);
-    }
-    g.stroke();
+    g.ellipse(Math.cos(a) * r, Math.sin(a) * r, 2.5 + (i % 4) * 1.6, 9 + (i % 3) * 4, a + 0.5, 0, Math.PI * 2);
+    g.fill();
   }
-  // Fade the center toward the dark throat and feather the edge.
-  const fade = g.createRadialGradient(0, 0, 0, 0, 0, 128);
-  fade.addColorStop(0, "rgba(0,0,0,1)");
-  fade.addColorStop(0.22, "rgba(0,0,0,0.55)");
-  fade.addColorStop(0.55, "rgba(0,0,0,0)");
-  fade.addColorStop(0.92, "rgba(0,0,0,0)");
+  return new THREE.CanvasTexture(c);
+}
+
+/** The interior: near-black with faint drifting energy clouds. */
+function portalShimmerTex(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.translate(128, 128);
+  for (let i = 0; i < 26; i++) {
+    const jx = ((Math.sin(i * 78.233) * 43758.5453) % 1) - 0.5;
+    const jy = ((Math.sin(i * 39.425) * 27183.1357) % 1) - 0.5;
+    const hue = 200 + ((i * 13) % 60);
+    const grad = g.createRadialGradient(jx * 130, jy * 130, 0, jx * 130, jy * 130, 26 + (i % 4) * 12);
+    grad.addColorStop(0, `hsla(${hue}, 85%, 55%, 0.16)`);
+    grad.addColorStop(1, "hsla(0, 0%, 0%, 0)");
+    g.fillStyle = grad;
+    g.fillRect(-128, -128, 256, 256);
+  }
+  // feather to transparent outside the oval
+  const fade = g.createRadialGradient(0, 0, 70, 0, 0, 120);
+  fade.addColorStop(0, "rgba(0,0,0,0)");
   fade.addColorStop(1, "rgba(0,0,0,1)");
   g.globalCompositeOperation = "destination-out";
   g.fillStyle = fade;
@@ -106,6 +119,7 @@ export class ZoneRenderer {
     rim: THREE.MeshBasicMaterial;
     light: THREE.PointLight;
     tex: THREE.CanvasTexture;
+    tex2: THREE.CanvasTexture;
   }> = [];
   private moon: THREE.DirectionalLight;
   private focusRing: THREE.Mesh;
@@ -287,42 +301,40 @@ export class ZoneRenderer {
     for (const exit of zone.exits) {
       const y = this.terrain.heightAt(exit.x, exit.y);
       const group = new THREE.Group();
-      const swirlTex = vortexTexture();
-      swirlTex.center.set(0.5, 0.5);
-      const swirlMat = new THREE.MeshBasicMaterial({
-        map: swirlTex,
+      const rimTex = portalRimTex();
+      rimTex.center.set(0.5, 0.5);
+      const shimmerTex = portalShimmerTex();
+      shimmerTex.center.set(0.5, 0.5);
+      const shimmerMat = new THREE.MeshBasicMaterial({
+        map: shimmerTex,
         transparent: true,
         opacity: 0,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
-      // The portal STANDS: a vertical oval floating just off the ground,
-      // leaning back a touch — a doorway, not a drain.
-      const swirl = new THREE.Mesh(new THREE.CircleGeometry(1.45, 40), swirlMat);
-      swirl.scale.set(0.78, 1.12, 1);
-      swirl.position.y = 1.62;
-      swirl.rotation.x = -0.1;
-      // The dark throat behind the swirl: reads as depth through it.
-      const throat = new THREE.Mesh(
-        new THREE.CircleGeometry(1.32, 32),
-        new THREE.MeshBasicMaterial({ color: 0x020208, side: THREE.DoubleSide }),
-      );
-      throat.scale.copy(swirl.scale);
-      throat.position.set(0, 1.62, -0.06);
-      throat.rotation.x = -0.1;
       const rimMat = new THREE.MeshBasicMaterial({
-        color: 0x4fc3ff,
+        map: rimTex,
         transparent: true,
         opacity: 0,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
       });
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.06, 8, 48), rimMat);
-      rim.scale.set(0.78, 1.12, 1);
-      rim.position.y = 1.62;
-      rim.rotation.x = -0.1;
-      // Light spill pooling on the ground beneath the doorway.
+      // The portal STANDS: a vertical oval floating off the ground.
+      const mk = (mat: THREE.Material, r: number, z: number) => {
+        const m = new THREE.Mesh(new THREE.CircleGeometry(r, 40), mat);
+        m.scale.set(0.74, 1.1, 1);
+        m.position.set(0, 1.62, z);
+        m.rotation.x = -0.1;
+        return m;
+      };
+      const throat = mk(
+        new THREE.MeshBasicMaterial({ color: 0x020208, side: THREE.DoubleSide }),
+        1.18,
+        -0.06,
+      );
+      const shimmer = mk(shimmerMat, 1.3, 0);
+      const rim = mk(rimMat, 1.55, 0.04);
+      // Light spill pooling beneath the doorway.
       const spill = new THREE.Mesh(
         new THREE.CircleGeometry(1.1, 24),
         new THREE.MeshBasicMaterial({
@@ -335,13 +347,12 @@ export class ZoneRenderer {
       );
       spill.rotation.x = -Math.PI / 2;
       spill.position.y = 0.06;
-      group.add(spill);
       const light = new THREE.PointLight(0x4fc3ff, 0, 9, 2);
       light.position.y = 1.6;
-      group.add(throat, swirl, rim, light);
+      group.add(throat, shimmer, rim, spill, light);
       group.position.set(exit.x, y, exit.y);
       this.scene.add(group);
-      this.exitMarkers.push({ group, swirl: swirlMat, rim: rimMat, light, tex: swirlTex });
+      this.exitMarkers.push({ group, swirl: shimmerMat, rim: rimMat, light, tex: rimTex, tex2: shimmerTex });
     }
 
     this.director.setZoneSize(w, h);
@@ -486,9 +497,12 @@ export class ZoneRenderer {
       const m = this.exitMarkers[i];
       const open = exits[i]?.open ?? false;
       const pulse = 0.82 + 0.18 * Math.sin(t * 2.4 + i);
-      m.tex.rotation = -t * (open ? 1.6 : 0.012);
-      m.swirl.opacity = open ? 0.95 * pulse : 0.1;
-      m.rim.opacity = open ? 0.85 * pulse : 0.06;
+      // Shimmer, not spin: the rim breathes and drifts barely; the
+      // interior clouds counter-drift. No spiral motion.
+      m.tex.rotation = t * (open ? 0.1 : 0.005);
+      m.tex2.rotation = -t * (open ? 0.16 : 0.008);
+      m.rim.opacity = open ? 0.9 * pulse : 0.08;
+      m.swirl.opacity = open ? 0.5 + 0.25 * Math.sin(t * 3.1 + i) : 0.05;
       m.light.intensity = open ? 13 * pulse : 0;
     }
 
