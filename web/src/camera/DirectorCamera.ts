@@ -14,8 +14,32 @@ export class DirectorCamera {
   private zoneW = 60;
   private zoneH = 60;
   private patrolT = 0;
+  /** Trauma-based shake: hits add trauma, it decays, offset ∝ trauma². */
+  private trauma = 0;
+  private shakeT = 0;
 
   constructor(private camera: THREE.PerspectiveCamera) {}
+
+  /** Add shake from an event AT a place — far-off fights don't rattle
+   *  the lens. Amounts are small; trauma squares into the offset. */
+  addTraumaAt(pos: THREE.Vector3, amount: number): void {
+    const d = pos.distanceTo(this.lookTarget);
+    if (d > 26) return;
+    const falloff = d < 12 ? 1 : 1 - (d - 12) / 14;
+    this.trauma = Math.min(1, this.trauma + amount * falloff);
+  }
+
+  /** Decaying positional noise, applied after lookAt each frame. */
+  private applyShake(dt: number): void {
+    if (this.trauma <= 0) return;
+    this.trauma = Math.max(0, this.trauma - dt * 1.7);
+    this.shakeT += dt;
+    const s = this.trauma * this.trauma * 0.42;
+    const t = this.shakeT;
+    this.camera.position.x += Math.sin(t * 39.7) * s;
+    this.camera.position.y += Math.sin(t * 47.3 + 1.7) * s * 0.6;
+    this.camera.position.z += Math.sin(t * 33.1 + 3.9) * s;
+  }
 
   setZoneSize(w: number, h: number): void {
     this.zoneW = w;
@@ -31,6 +55,7 @@ export class DirectorCamera {
     this.camera.position.lerp(desired, k);
     this.lookTarget.lerp(target.clone().setY(1), 1 - Math.exp(-dt * 3.5));
     this.camera.lookAt(this.lookTarget);
+    this.applyShake(dt);
   }
 
   idle(dt: number): void {
@@ -57,5 +82,6 @@ export class DirectorCamera {
     this.camera.position.lerp(desired, k);
     this.lookTarget.lerp(look, 1 - Math.exp(-dt * 2));
     this.camera.lookAt(this.lookTarget);
+    this.applyShake(dt);
   }
 }

@@ -574,6 +574,21 @@ export class ZoneRenderer {
         const target = this.visuals.get(hit.target);
         if (!target) continue;
         this.fx.spawnHit(hit, target.group.position, now);
+        if (!hit.dot) {
+          // The victim FEELS it: hitstop, squash, a shove along the
+          // blow. Significance scales with the number.
+          const attacker = this.visuals.get(hit.attacker);
+          const dirX = attacker ? target.group.position.x - attacker.group.position.x : 0;
+          const dirZ = attacker ? target.group.position.z - attacker.group.position.z : 1;
+          const sig = Math.min(1.6, Math.max(0.25, hit.amount / 45));
+          target.impact(dirX, dirZ, sig, hit.crit, hit.killed);
+          if (hit.crit) this.director.addTraumaAt(target.group.position, 0.16 + sig * 0.08);
+        }
+        if (hit.killed) {
+          const rarity = this.store.entities.get(hit.target)?.state.rarity ?? 0;
+          this.fx.spawnKill(target.group.position, hit.dmgType, rarity, now);
+          this.director.addTraumaAt(target.group.position, rarity >= 2 ? 0.45 : 0.2);
+        }
       }
       for (const p of this.store.drainProjectiles()) {
         // The windup already animated the launch; just fly the streak.

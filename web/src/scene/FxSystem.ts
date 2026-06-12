@@ -13,6 +13,8 @@ const TRACER_POOL = 32;
 const NUMBER_POOL = 48;
 const SHAPE_POOL = 16;
 const LIGHT_POOL = 4;
+const BURST_POOL = 8;
+const BURST_SPRITES = 12;
 
 interface Flash {
   sprite: THREE.Sprite;
@@ -45,6 +47,8 @@ interface DamageNumber {
   ctx: CanvasRenderingContext2D;
   baseY: number;
   driftX: number;
+  /** Magnitude-set scale; the settle-pop multiplies it per frame. */
+  baseS: number;
   bornAt: number;
   ttlMs: number;
   big: boolean;
@@ -60,6 +64,17 @@ interface ShapeFx {
   size: number;
   /** Corridor width (lines only). */
   width: number;
+  bornAt: number;
+  ttlMs: number;
+  active: boolean;
+}
+
+/** A kill burst: a clutch of glow shards flying outward from the corpse. */
+interface Burst {
+  sprites: THREE.Sprite[];
+  mats: THREE.SpriteMaterial[];
+  vels: THREE.Vector3[];
+  origin: THREE.Vector3;
   bornAt: number;
   ttlMs: number;
   active: boolean;
@@ -182,6 +197,7 @@ export class FxSystem {
   private numbers: DamageNumber[] = [];
   private shapes: ShapeFx[] = [];
   private lights: SkillLight[] = [];
+  private bursts: Burst[] = [];
   private glowTex: THREE.Texture;
   private ringTex = ringBandTex();
   private apexTex = apexTex();
@@ -208,23 +224,77 @@ export class FxSystem {
       }
       if (oldest) oldest.flightMs = Math.max(1, now - oldest.bornAt);
     }
+    // Significance: how hard this hit should READ. Amount-scaled with a
+    // soft knee — tutorial pokes whisper, crits and finishers shout.
+    const sig = Math.min(1.6, Math.max(0.25, hit.amount / 45));
     if (!hit.dot) {
       this.spawnFlash(
         to,
         hit.killed ? 0xff5a5a : 0xfff0c0,
-        hit.killed ? 1.6 : 0.7,
+        (hit.killed ? 1.6 : 0.55) + sig * 0.5,
         now,
         hit.killed ? 320 : 140,
       );
     }
     const color = DMG_COLORS[hit.dmgType] ?? DMG_COLORS[0];
     if (hit.amount > 0) {
-      // Crits read loud; dot burns read quiet and steady.
+      // Crits read loud (outlined, bigger); dots burn quiet and steady.
       const text = hit.crit ? `${hit.amount}!` : String(hit.amount);
-      this.spawnNumber(to, text, hit.dot ? `${color}b0` : color, hit.crit || hit.killed, now);
+      const mag = hit.dot ? 0 : sig;
+      this.spawnNumber(to, text, hit.dot ? `${color}b0` : color, hit.crit || hit.killed, now, mag, hit.crit);
     } else if (!hit.dot) {
       this.spawnNumber(to, "miss", MISS_COLOR, false, now);
     }
+  }
+
+  /**
+   * A kill: shards of the killing element burst from the corpse. Elites
+   * and uniques go louder (more shards, faster, brighter ground light).
+   */
+  spawnKill(at: THREE.Vector3, dmgType: number, rarity: number, now: number): void {
+    const color = PROJ_COLORS[dmgType] ?? PROJ_COLORS[0];
+    const big = rarity >= 2;
+    let b = this.bursts.find((b) => !b.active);
+    if (!b) {
+      if (this.bursts.length >= BURST_POOL) return;
+      const sprites: THREE.Sprite[] = [];
+      const mats: THREE.SpriteMaterial[] = [];
+      const vels: THREE.Vector3[] = [];
+      for (let i = 0; i < BURST_SPRITES; i++) {
+        const mat = new THREE.SpriteMaterial({
+          map: this.glowTex,
+          transparent: true,
+          depthTest: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const sp = new THREE.Sprite(mat);
+        sp.visible = false;
+        this.scene.add(sp);
+        sprites.push(sp);
+        mats.push(mat);
+        vels.push(new THREE.Vector3());
+      }
+      b = { sprites, mats, vels, origin: new THREE.Vector3(), bornAt: 0, ttlMs: 0, active: false };
+      this.bursts.push(b);
+    }
+    b.active = true;
+    b.bornAt = now;
+    b.ttlMs = big ? 620 : 460;
+    b.origin.copy(at).setY(at.y + 0.9);
+    const speed = big ? 5.2 : 3.4;
+    for (let i = 0; i < BURST_SPRITES; i++) {
+      const ang = (i / BURST_SPRITES) * Math.PI * 2 + Math.random() * 0.5;
+      const up = 1.4 + Math.random() * 2.2;
+      b.vels[i].set(Math.cos(ang) * speed * (0.5 + Math.random() * 0.6), up, Math.sin(ang) * speed * (0.5 + Math.random() * 0.6));
+      b.mats[i].color.setHex(color);
+      b.mats[i].opacity = 1;
+      const sc = (big ? 0.34 : 0.22) * (0.7 + Math.random() * 0.6);
+      b.sprites[i].scale.set(sc, sc, 1);
+      b.sprites[i].position.copy(b.origin);
+      b.sprites[i].visible = true;
+    }
+    this.spawnLight(at, color, big ? 10 : 6, now, b.ttlMs);
+    if (big) this.spawnFlash(at, color, 2.2, now, 380);
   }
 
   /**
@@ -422,7 +492,15 @@ export class FxSystem {
     t.trail.position.set(head.x - (dx * behind) / 2, head.y, head.z - (dz * behind) / 2);
   }
 
-  private spawnNumber(at: THREE.Vector3, text: string, color: string, big: boolean, now: number): void {
+  private spawnNumber(
+    at: THREE.Vector3,
+    text: string,
+    color: string,
+    big: boolean,
+    now: number,
+    mag = 0.6,
+    crit = false,
+  ): void {
     let n = this.numbers.find((n) => !n.active);
     if (!n) {
       if (this.numbers.length >= NUMBER_POOL) return;
@@ -440,6 +518,7 @@ export class FxSystem {
         ctx,
         baseY: 0,
         driftX: 0,
+        baseS: 1,
         bornAt: 0,
         ttlMs: 0,
         big: false,
@@ -456,6 +535,13 @@ export class FxSystem {
     ctx.shadowColor = "rgba(0,0,0,0.95)";
     ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 2;
+    if (crit) {
+      // Crits get an engraved outline so they read at any size.
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = "rgba(20,8,4,0.95)";
+      ctx.strokeText(text, 96, 58);
+    }
     ctx.fillStyle = color;
     ctx.fillText(text, 96, 58);
     ctx.shadowBlur = 0;
@@ -467,10 +553,12 @@ export class FxSystem {
     n.ttlMs = big ? 950 : 750;
     n.big = big;
     n.baseY = at.y + 1.7;
-    n.driftX = (Math.random() - 0.5) * 0.7;
+    n.driftX = (Math.random() - 0.5) * (crit ? 1.2 : 0.7);
     n.mat.opacity = 1;
     n.sprite.visible = true;
-    const s = big ? 1.5 : 1.05;
+    // Magnitude carries the size: a 6 whispers, a 70 shouts.
+    const s = (big ? 1.35 : 0.95) * (0.78 + mag * 0.45);
+    n.baseS = s;
     n.sprite.scale.set(2.4 * s * (192 / 160), s, 1);
     n.sprite.position.copy(at).setY(n.baseY);
     n.sprite.position.x += n.driftX * 0.2;
@@ -553,10 +641,31 @@ export class FxSystem {
       n.sprite.position.y = n.baseY + a * (n.big ? 1.5 : 1.1);
       n.sprite.position.x += n.driftX * 0.004;
       n.mat.opacity = a < 0.55 ? 1 : 1 - (a - 0.55) / 0.45;
-      // A quick settle-pop on arrival, then steady.
+      // A quick settle-pop on arrival, then steady — relative to the
+      // magnitude-set base scale.
       const pop = a < 0.14 ? 1.28 - (a / 0.14) * 0.28 : 1;
-      const s = (n.big ? 1.5 : 1.05) * pop;
+      const s = n.baseS * pop;
       n.sprite.scale.set(2.4 * s * (192 / 160), s, 1);
+    }
+    for (const b of this.bursts) {
+      if (!b.active) continue;
+      const a = (now - b.bornAt) / b.ttlMs;
+      if (a >= 1) {
+        b.active = false;
+        for (const sp of b.sprites) sp.visible = false;
+        continue;
+      }
+      const dt = b.ttlMs / 1000;
+      for (let i = 0; i < b.sprites.length; i++) {
+        const v = b.vels[i];
+        // Ballistic shards: rise, arc, fade.
+        b.sprites[i].position.set(
+          b.origin.x + v.x * a * dt,
+          Math.max(0.1, b.origin.y + (v.y * a - 7 * a * a) * dt),
+          b.origin.z + v.z * a * dt,
+        );
+        b.mats[i].opacity = (1 - a) ** 1.5;
+      }
     }
   }
 
@@ -584,6 +693,11 @@ export class FxSystem {
       l.light.removeFromParent();
       l.light.dispose();
     }
+    for (const b of this.bursts) {
+      for (const sp of b.sprites) sp.removeFromParent();
+      for (const m of b.mats) m.dispose();
+    }
+    this.bursts = [];
     this.ringTex.dispose();
     this.apexTex.dispose();
     this.beamTex.dispose();

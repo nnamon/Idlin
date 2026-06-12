@@ -74,6 +74,14 @@ export class EntityVisual {
   private label: THREE.Sprite | null = null;
   private weaponKey = "";
   private oneShot: THREE.AnimationAction | null = null;
+  // Impact feedback (decaying; all visual-root only — the sim position
+  // is never touched).
+  private hitstopMs = 0;
+  private punchMs = 0;
+  private punchMag = 0;
+  private kbX = 0;
+  private kbZ = 0;
+  private kbMs = 0;
   private weaponObj: THREE.Object3D | null = null;
   private handBone: THREE.Object3D | null = null;
   /** Bone-worn rigid gear (shields), keyed by gear key. */
@@ -475,6 +483,23 @@ export class EntityVisual {
   }
 
   /**
+   * Took a hit: a beat of hitstop (the body registers the blow), a
+   * scale punch, and a directional shove on the visual root. Strength
+   * is the hit's significance (~amount-scaled, 0.25..1.6).
+   */
+  impact(dirX: number, dirZ: number, strength: number, crit: boolean, killed: boolean): void {
+    if (this.lootMesh) return;
+    this.hitstopMs = Math.max(this.hitstopMs, killed ? 120 : crit ? 90 : 55);
+    this.punchMs = 130;
+    this.punchMag = Math.min(0.16, 0.05 + strength * 0.06) * (crit ? 1.5 : 1);
+    const len = Math.hypot(dirX, dirZ) || 1;
+    const shove = Math.min(0.3, 0.1 + strength * 0.1) * (killed ? 1.6 : 1);
+    this.kbX = (dirX / len) * shove;
+    this.kbZ = (dirZ / len) * shove;
+    this.kbMs = 140;
+  }
+
+  /**
    * A use BEGAN: play the windup in TRUE TIME. The clip is rate-scaled
    * so its contact frame lands exactly `contactS` seconds from now —
    * which is when the sim resolves the strike and HitFx arrives. The
@@ -507,6 +532,34 @@ export class EntityVisual {
 
   update(er: EntityRender, pos: { x: number; y: number }, dt: number, t: number, groundY = 0): void {
     this.group.position.set(pos.x, groundY, pos.y);
+
+    // -- impact feedback: knockback shove, scale punch, hitstop --
+    if (this.kbMs > 0) {
+      const a = this.kbMs / 140;
+      this.group.position.x += this.kbX * a;
+      this.group.position.z += this.kbZ * a;
+      this.kbMs -= dt * 1000;
+    }
+    if (this.modelRoot) {
+      const base = this.def?.scale ?? 1;
+      if (this.punchMs > 0) {
+        const a = this.punchMs / 130;
+        const sc = 1 + this.punchMag * a;
+        // Squash, not balloon: wider and slightly shorter, volume-ish.
+        this.modelRoot.scale.set(base * sc, base / Math.sqrt(sc), base * sc);
+        this.punchMs -= dt * 1000;
+      } else if (this.modelRoot.scale.x !== base) {
+        this.modelRoot.scale.setScalar(base);
+      }
+    }
+    if (this.mixer) {
+      if (this.hitstopMs > 0) {
+        this.mixer.timeScale = 0.06;
+        this.hitstopMs -= dt * 1000;
+      } else if (this.mixer.timeScale !== 1) {
+        this.mixer.timeScale = 1;
+      }
+    }
 
     if (this.lootMesh) {
       this.lootMesh.rotation.y += dt * 1.5;
