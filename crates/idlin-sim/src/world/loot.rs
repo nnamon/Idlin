@@ -249,6 +249,12 @@ impl World {
         } else {
             Rarity::Unique
         };
+        // A unique roll with NOTHING in the unique pool drops nothing —
+        // PoE-accurate (and honest: no rare cosplaying in orange). The
+        // pool fills when UniqueDefs land (task #68).
+        if rarity == Rarity::Unique {
+            return None;
+        }
         // PoE-style prefix/suffix budgets: magic carries at most one of
         // each; rare and unique up to three of each.
         let (affix_count, kind_cap) = match rarity {
