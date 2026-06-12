@@ -125,7 +125,18 @@ export class TileTerrain {
               else if (walkAt(x, y - 1)) rot = Math.PI;
               else if (walkAt(x + 1, y)) rot = -Math.PI / 2;
               else if (walkAt(x - 1, y)) rot = Math.PI / 2;
+              else {
+                // No walkable neighbor (wall interior/corner): face the
+                // town center along the dominant axis so runs stay coherent.
+                const dx = w / 2 - cx;
+                const dz = h / 2 - cz;
+                rot = Math.abs(dx) > Math.abs(dz)
+                  ? (dx > 0 ? -Math.PI / 2 : Math.PI / 2)
+                  : (dz > 0 ? 0 : Math.PI);
+              }
               obj.rotation.y = rot;
+              // The piece is ~1.54u along its run; squeeze to tile per cell.
+              obj.scale.x = 1 / 1.54;
               obj.position.set(cx, -0.02, cz);
               this.group.add(obj);
               this.tagOccluder(obj);
