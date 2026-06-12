@@ -19,6 +19,13 @@ export class TileTerrain {
    *  fades whichever stand between the lens and a character. */
   occluders: THREE.Object3D[] = [];
 
+  private tagOccluder(root: THREE.Object3D): void {
+    root.traverse((o) => {
+      o.userData.occRoot = root;
+    });
+    this.occluders.push(root);
+  }
+
   constructor(private tiles: TileMapState) {}
 
   heightAt(_x: number, _z: number): number {
@@ -107,9 +114,21 @@ export class TileTerrain {
             // must read as runs). Box fallback if the model is missing.
             const obj = assets.instantiateProp("wall_town");
             if (obj) {
+              // The piece is DIRECTIONAL: face it toward the walkable
+              // side so every edge reads as the wall's front.
+              const walkAt = (xx: number, yy: number): boolean => {
+                if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false;
+                return !!byGlyph.get(rows[yy][xx])?.walkable;
+              };
+              let rot = 0; // front faces +Z (south)
+              if (walkAt(x, y + 1)) rot = 0;
+              else if (walkAt(x, y - 1)) rot = Math.PI;
+              else if (walkAt(x + 1, y)) rot = -Math.PI / 2;
+              else if (walkAt(x - 1, y)) rot = Math.PI / 2;
+              obj.rotation.y = rot;
               obj.position.set(cx, -0.02, cz);
               this.group.add(obj);
-              this.occluders.push(obj);
+              this.tagOccluder(obj);
             } else {
               const m = new THREE.Mesh(wallGeo, wallMat);
               m.position.set(cx, 0.75, cz);
@@ -177,7 +196,7 @@ export class TileTerrain {
         }
       });
       this.group.add(obj);
-      this.occluders.push(obj);
+      this.tagOccluder(obj);
     }
   }
 }

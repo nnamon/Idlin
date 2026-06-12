@@ -280,16 +280,19 @@ export class ZoneRenderer {
 
 
   /**
-   * Anything standing between the lens and an idler goes ghost: ray from
-   * the camera to each character, fade the buildings/walls it pierces.
+   * Anything standing between the lens and an idler goes ghost — the
+   * WHOLE building, not just the mesh the ray grazed (partial fades read
+   * as broken). Opacity lerps toward its target and a hit stays sticky
+   * for a quarter second, so edge-grazing rays can't strobe the fade.
    * Materials are cloned per mesh on first fade (instances share GPU
    * materials, so mutating the shared one would ghost every copy).
    */
-  private updateOcclusion(): void {
+  private fadeState = new Map<THREE.Object3D, { current: number; lastHit: number }>();
+
+  private updateOcclusion(now: number): void {
     const tt = this.terrain instanceof TileTerrain ? this.terrain : null;
     if (!tt || tt.occluders.length === 0) return;
     const cam = this.camera.position;
-    const hidden = new Set<THREE.Object3D>();
     for (const [id, v] of this.visuals) {
       if (this.store.entities.get(id)?.state.kind !== "Character") continue;
       const target = v.group.position;
@@ -299,32 +302,46 @@ export class ZoneRenderer {
       this.occlusionRay.set(cam, this.occlusionDir.normalize());
       this.occlusionRay.far = dist - 0.8;
       for (const hit of this.occlusionRay.intersectObjects(tt.occluders, true)) {
-        hidden.add(hit.object);
+        const root = (hit.object.userData.occRoot as THREE.Object3D) ?? hit.object;
+        const st = this.fadeState.get(root) ?? { current: 1, lastHit: 0 };
+        st.lastHit = now;
+        this.fadeState.set(root, st);
       }
     }
     for (const root of tt.occluders) {
+      const st = this.fadeState.get(root);
+      if (!st) continue;
+      const want = now - st.lastHit < 250 ? 0.16 : 1;
+      st.current += (want - st.current) * 0.22;
+      if (st.current > 0.97 && want === 1) {
+        // fully solid again: restore shared materials and forget it
+        root.traverse((o) => {
+          if (o instanceof THREE.Mesh && o.userData.solidMat) {
+            o.material = o.userData.solidMat;
+          }
+        });
+        this.fadeState.delete(root);
+        continue;
+      }
       root.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
-        const ud = o.userData as {
-          solidMat?: THREE.Material | THREE.Material[];
-          ghostMat?: THREE.Material | THREE.Material[];
-        };
-        if (hidden.has(o)) {
-          if (!ud.ghostMat) {
-            ud.solidMat = o.material;
-            const ghost = (m: THREE.Material) => {
-              const g = m.clone();
-              g.transparent = true;
-              g.opacity = 0.18;
-              g.depthWrite = false;
-              return g;
-            };
-            ud.ghostMat = Array.isArray(o.material) ? o.material.map(ghost) : ghost(o.material);
-          }
-          o.material = ud.ghostMat;
-        } else if (ud.solidMat && o.material === ud.ghostMat) {
-          o.material = ud.solidMat;
+        if (!o.userData.ghostMat) {
+          o.userData.solidMat = o.material;
+          const ghost = (m: THREE.Material) => {
+            const g = m.clone();
+            g.transparent = true;
+            g.depthWrite = false;
+            return g;
+          };
+          o.userData.ghostMat = Array.isArray(o.material)
+            ? o.material.map(ghost)
+            : ghost(o.material);
         }
+        const mats = Array.isArray(o.userData.ghostMat)
+          ? (o.userData.ghostMat as THREE.Material[])
+          : [o.userData.ghostMat as THREE.Material];
+        for (const m of mats) m.opacity = st.current;
+        o.material = o.userData.ghostMat;
       });
     }
   }
@@ -371,7 +388,7 @@ export class ZoneRenderer {
       this.buildZone();
     }
     this.terrain?.update(t);
-    this.updateOcclusion();
+    this.updateOcclusion(now);
 
     for (const b of this.braziers) {
       b.light.intensity =
