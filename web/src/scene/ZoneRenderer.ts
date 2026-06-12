@@ -117,6 +117,7 @@ export class ZoneRenderer {
   private builtZoneKey: string | null = null;
   /** Snapshot generation the visuals were built against. */
   private builtSnapshotGen = -1;
+  private builtWorldKey: string | null = null;
   private onResize = () => this.resize();
   private occlusionRay = new THREE.Raycaster();
   private occlusionDir = new THREE.Vector3();
@@ -456,14 +457,20 @@ export class ZoneRenderer {
     if (this.store.zone && this.assets && zoneKey(this.store.zone) !== this.builtZoneKey) {
       this.buildZone();
     }
-    // EVERY snapshot is a full state reset: drop per-entity visuals even
-    // when the terrain didn't change — identical authored instances share
-    // a fingerprint, but their net ids name DIFFERENT idlers (a reused
-    // visual snaps between worlds wearing the wrong nameplate).
+    // A snapshot from a DIFFERENT world drops all per-entity visuals:
+    // identical authored instances share terrain, but their net ids name
+    // different idlers (a reused visual snaps between worlds wearing the
+    // wrong nameplate). Same-world snapshots (lag resync) keep visuals —
+    // purging those flashed bind poses on every director cut. Empty key
+    // (old recordings) falls back to purge-always: safe, just churnier.
     if (this.store.snapshotGen !== this.builtSnapshotGen) {
       this.builtSnapshotGen = this.store.snapshotGen;
-      for (const v of this.visuals.values()) v.dispose();
-      this.visuals.clear();
+      const wk = this.store.zone?.worldKey ?? "";
+      if (wk === "" || wk !== this.builtWorldKey) {
+        for (const v of this.visuals.values()) v.dispose();
+        this.visuals.clear();
+      }
+      this.builtWorldKey = wk;
     }
     this.terrain?.update(t);
     this.updateOcclusion(now);

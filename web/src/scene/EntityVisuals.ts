@@ -379,8 +379,16 @@ export class EntityVisual {
     if (!next) return;
     const prev = this.actions.get(this.baseRole);
     this.baseRole = role;
-    next.reset().fadeIn(FADE_S).play();
-    prev?.fadeOut(FADE_S);
+    if (prev) {
+      next.reset().fadeIn(FADE_S).play();
+      prev.fadeOut(FADE_S);
+    } else {
+      // FIRST activation: full weight immediately — fading in from
+      // nothing blends from the bind pose (a visible T-pose flash on
+      // every fresh visual).
+      next.reset().play();
+      next.setEffectiveWeight(1);
+    }
   }
 
   private onClipFinished(): void {
