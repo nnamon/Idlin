@@ -1626,6 +1626,7 @@ mod tests {
                 item_level: 1,
                 affixes: Vec::new(),
                 name: String::new(),
+                charges: 0,
             });
         }
         let c = e.combat.as_mut().unwrap();
@@ -2046,6 +2047,7 @@ mod tests {
                     item_level: 1,
                     affixes: Vec::new(),
                     name: String::new(),
+                    charges: 0,
                 });
             e.combat.as_mut().unwrap().mana = 100;
         };

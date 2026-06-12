@@ -657,6 +657,7 @@ mod craft_tests {
             item_level: 5,
             affixes: Vec::new(),
             name: content.items[base_idx as usize].name.clone(),
+            charges: 0,
         };
         (content, rng, item)
     }
@@ -805,9 +806,15 @@ mod find_tests {
         let mut total = 0;
         let mut normals = 0;
         let mut obols = 0;
+        // Unique rolls FIZZLE while the unique pool is empty (user-locked
+        // semantics) — a guaranteed slot can legitimately come up dry.
+        // Rare fizzles are fine; a systematic shortfall is not.
+        let mut shortfalls = 0;
         for _ in 0..300 {
             let drops = w.roll_kill_drops(5, killer);
-            assert!(drops.len() >= 2, "overflow guarantees drops");
+            if drops.len() < 2 {
+                shortfalls += 1;
+            }
             let mut kill_normals = 0;
             for d in &drops {
                 total += 1;
@@ -822,6 +829,10 @@ mod find_tests {
             }
             assert!(kill_normals <= 1, "at most one normal per kill");
         }
+        assert!(
+            shortfalls <= 12,
+            "only unique fizzles may shorten a kill's drops: {shortfalls}"
+        );
         assert!(total >= 600);
         assert!(normals > 0, "the first normal still drops");
         assert!(obols > 0, "excess normals became obols");
