@@ -293,16 +293,20 @@ export class ZoneRenderer {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
+      // The portal STANDS: a vertical oval floating just off the ground,
+      // leaning back a touch — a doorway, not a drain.
       const swirl = new THREE.Mesh(new THREE.CircleGeometry(1.45, 40), swirlMat);
-      swirl.rotation.x = -Math.PI / 2;
-      swirl.position.y = 0.07;
-      // The dark throat under the swirl: reads as depth.
+      swirl.scale.set(0.78, 1.12, 1);
+      swirl.position.y = 1.62;
+      swirl.rotation.x = -0.1;
+      // The dark throat behind the swirl: reads as depth through it.
       const throat = new THREE.Mesh(
-        new THREE.CircleGeometry(1.15, 32),
-        new THREE.MeshBasicMaterial({ color: 0x020208 }),
+        new THREE.CircleGeometry(1.32, 32),
+        new THREE.MeshBasicMaterial({ color: 0x020208, side: THREE.DoubleSide }),
       );
-      throat.rotation.x = -Math.PI / 2;
-      throat.position.y = 0.05;
+      throat.scale.copy(swirl.scale);
+      throat.position.set(0, 1.62, -0.06);
+      throat.rotation.x = -0.1;
       const rimMat = new THREE.MeshBasicMaterial({
         color: 0x4fc3ff,
         transparent: true,
@@ -311,11 +315,26 @@ export class ZoneRenderer {
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(1.38, 0.07, 8, 48), rimMat);
-      rim.rotation.x = -Math.PI / 2;
-      rim.position.y = 0.09;
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.06, 8, 48), rimMat);
+      rim.scale.set(0.78, 1.12, 1);
+      rim.position.y = 1.62;
+      rim.rotation.x = -0.1;
+      // Light spill pooling on the ground beneath the doorway.
+      const spill = new THREE.Mesh(
+        new THREE.CircleGeometry(1.1, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x4fc3ff,
+          transparent: true,
+          opacity: 0.1,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      spill.rotation.x = -Math.PI / 2;
+      spill.position.y = 0.06;
+      group.add(spill);
       const light = new THREE.PointLight(0x4fc3ff, 0, 9, 2);
-      light.position.y = 1.2;
+      light.position.y = 1.6;
       group.add(throat, swirl, rim, light);
       group.position.set(exit.x, y, exit.y);
       this.scene.add(group);
