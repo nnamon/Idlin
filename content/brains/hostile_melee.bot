@@ -30,42 +30,59 @@ fn main() {
         return;
     }
 
-    // Chase and hit anything inside our aggro radius.
-    if (read_entities(ENTS, 4, F_ENEMY) > 0) {
-        var target = mem[ENTS];
-        var tx = mem[ENTS + 8];
-        var ty = mem[ENTS + 12];
-        if (dist_manhattan(tx, ty, mem[SELF], mem[SELF + 4]) <= mem[SELF + 44]) {
-            // A word for the prey, now and then (defs without lines just
-            // fail the call — harmless).
-            taunt_timer = taunt_timer - 1;
-            if (taunt_timer <= 0) {
-                say((random() & 0x7FFFFFFF) % 8);
-                taunt_timer = 80 + (random() & 0x7FFFFFFF) % 120;
+    // Chase and hit the nearest enemy inside our aggro radius that we
+    // can SEE — prey behind a cliff would pin us against it (steering
+    // has no pathfinding), and a wall of straining monsters reads as
+    // "stuck", not "menacing".
+    var nen = read_entities(ENTS, 4, F_ENEMY);
+    var target = -1;
+    var tx = 0;
+    var ty = 0;
+    var k = 0;
+    while (k < nen) {
+        var cand = ENTS + k * 24;
+        var cx = mem[cand + 8];
+        var cy = mem[cand + 12];
+        if (dist_manhattan(cx, cy, mem[SELF], mem[SELF + 4]) <= mem[SELF + 44]) {
+            if (line_of_sight(cx, cy) == 1) {
+                target = mem[cand];
+                tx = cx;
+                ty = cy;
+                k = nen;
             }
-            // Lead with the first READY kit slot, aimed per its mode
-            // (+36 target_mode, +44 ready in the 12-word record).
-            var used = -1;
-            var n = read_skills(SKL, 4);
-            var i = 0;
-            while (i < n) {
-                var rec = SKL + i * 48;
-                if (mem[rec + 44] == 1) {
-                    if (mem[rec + 36] == 0) { used = use_skill(i + 1, target, 0, 0); }
-                    if (mem[rec + 36] == 1) { used = use_skill_at(i + 1, tx, ty); }
-                    if (mem[rec + 36] == 2) {
-                        used = use_skill_dir(i + 1, tx - mem[SELF], ty - mem[SELF + 4]);
-                    }
-                    if (used == 0) { i = n; }
-                }
-                i = i + 1;
-            }
-            if (used != 0) {
-                use_skill(0, target, 0, 0);
-            }
-            move_to(tx, ty);
-            return;
         }
+        k = k + 1;
+    }
+    if (target >= 0) {
+        // A word for the prey, now and then (defs without lines just
+        // fail the call — harmless).
+        taunt_timer = taunt_timer - 1;
+        if (taunt_timer <= 0) {
+            say((random() & 0x7FFFFFFF) % 8);
+            taunt_timer = 80 + (random() & 0x7FFFFFFF) % 120;
+        }
+        // Lead with the first READY kit slot, aimed per its mode
+        // (+36 target_mode, +44 ready in the 12-word record).
+        var used = -1;
+        var n = read_skills(SKL, 4);
+        var i = 0;
+        while (i < n) {
+            var rec = SKL + i * 48;
+            if (mem[rec + 44] == 1) {
+                if (mem[rec + 36] == 0) { used = use_skill(i + 1, target, 0, 0); }
+                if (mem[rec + 36] == 1) { used = use_skill_at(i + 1, tx, ty); }
+                if (mem[rec + 36] == 2) {
+                    used = use_skill_dir(i + 1, tx - mem[SELF], ty - mem[SELF + 4]);
+                }
+                if (used == 0) { i = n; }
+            }
+            i = i + 1;
+        }
+        if (used != 0) {
+            use_skill(0, target, 0, 0);
+        }
+        move_to(tx, ty);
+        return;
     }
 
     // Idle: pick a fresh wander point near home every 3-9 seconds.

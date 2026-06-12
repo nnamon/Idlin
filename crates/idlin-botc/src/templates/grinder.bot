@@ -124,20 +124,36 @@ fn main() {
         e = e + 1;
     }
 
+    // Fight the nearest enemy we can SEE. The query returns enemies
+    // through walls, and steering has no pathfinding — chasing a target
+    // behind rock pins the bot against the cliff forever (the Tidewarden
+    // arena wall taught us this). Sight ≈ path on tile maps; an enemy
+    // without line_of_sight is not our fight yet.
     var nen = read_entities(ENTS, 8, F_ENEMY);
-    if (nen > 0) {
+    var target = -1;
+    var tx = 0;
+    var ty = 0;
+    var k = 0;
+    while (k < nen) {
+        var cand = ENTS + k * 24;
+        if (line_of_sight(mem[cand + 8], mem[cand + 12]) == 1) {
+            target = mem[cand];
+            tx = mem[cand + 8];
+            ty = mem[cand + 12];
+            k = nen;
+        }
+        k = k + 1;
+    }
+
+    // Only VISIBLE enemies hold our interest; mobs behind walls don't
+    // stop the boredom clock (wandering will reveal them, or not).
+    if (target >= 0) {
         if (leaving == 0) { bored = 0; }
     }
-    if (nen <= 0) { bored = bored + 1; }
+    if (target < 0) { bored = bored + 1; }
     if (bored > 120) { leaving = 1; }
 
-    // Fight the nearest enemy. Attacks are wasted intent without line of
-    // sight, so only swing when the lane is clear; either way keep closing
-    // distance — movement slides around cover.
-    if (nen > 0) {
-        var target = mem[ENTS];
-        var tx = mem[ENTS + 8];
-        var ty = mem[ENTS + 12];
+    if (target >= 0) {
         // Heading out? Ignore enemies beyond ~6u (Chebyshev, raw Q16.16:
         // squaring raw deltas would overflow).
         if (open_ex == 1 && leaving == 1) {
@@ -151,27 +167,25 @@ fn main() {
                 return;
             }
         }
-        if (line_of_sight(tx, ty) == 1) {
-            // Mana budget: gem skills only above 20% mana — the basic
-            // attack is free, and the pool wants emergency headroom.
-            var used = -1;
-            if (mem[SELF + 52] * 5 >= mem[SELF + 56]) {
-                // First READY skill wins (+44; ready already folds
-                // cooldown, mana, use-time, and the weapon gate).
-                var n = read_skills(SKL, 4);
-                var i = 0;
-                while (i < n) {
-                    var rec = SKL + i * 48;
-                    if (mem[rec + 44] == 1) {
-                        used = fire_skill(rec, i + 1, target, tx, ty);
-                        if (used == 0) { i = n; }
-                    }
-                    i = i + 1;
+        // Mana budget: gem skills only above 20% mana — the basic
+        // attack is free, and the pool wants emergency headroom.
+        var used = -1;
+        if (mem[SELF + 52] * 5 >= mem[SELF + 56]) {
+            // First READY skill wins (+44; ready already folds
+            // cooldown, mana, use-time, and the weapon gate).
+            var n = read_skills(SKL, 4);
+            var i = 0;
+            while (i < n) {
+                var rec = SKL + i * 48;
+                if (mem[rec + 44] == 1) {
+                    used = fire_skill(rec, i + 1, target, tx, ty);
+                    if (used == 0) { i = n; }
                 }
+                i = i + 1;
             }
-            if (used != 0) {
-                use_skill(0, target, 0, 0);
-            }
+        }
+        if (used != 0) {
+            use_skill(0, target, 0, 0);
         }
         move_to(tx, ty);
         return;
