@@ -24,6 +24,9 @@ ZoneDef(
         // script only decides when and to whom.
         "You arrive.",
     ],
+    // exits: [(x_u: .., y_u: .., dest: "zone_id", open: false)],
+    // max_players: 1,   // 0/absent = unlimited; story zones run solo
+    // tileset: Some("shore"),  // + areas/<id>/map.txt and props.ron
     packs: [
         // radius_u: 0 stakes the spawn exactly on the anchor (scripted
         // prey, bosses). Packs respawn as a unit.

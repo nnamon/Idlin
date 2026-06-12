@@ -178,3 +178,46 @@ MonsterDef {
 }
 ```
 
+## villager
+
+```
+MonsterDef {
+    id: "villager",
+    name: "Survivor",
+    model: "idler",
+    brain: "villager",
+    hostile: false,
+    level: 1,
+    life: 50,
+    damage: 0,
+    damage_fire: 0,
+    damage_cold: 0,
+    damage_lightning: 0,
+    damage_chaos: 0,
+    armour: 0,
+    evasion: 0,
+    accuracy: 0,
+    resist_fire: 0,
+    resist_cold: 0,
+    resist_lightning: 0,
+    resist_chaos: 0,
+    speed_cps: 160,
+    radius_cu: 40,
+    range_cu: 100,
+    use_ticks: 20,
+    aggro_radius_cu: 0,
+    xp: 0,
+    projectile: false,
+    mana: 0,
+    lines: [
+        "Cold night again.",
+        "You came up from the shore? Then you've seen it.",
+        "The braziers stay lit. That's the rule.",
+        "Tide took the old town. We keep this one.",
+        "Mind the gate after dark.",
+        "The smith trades fair. The innkeep less so.",
+    ],
+    skills: [],
+}
+```
+

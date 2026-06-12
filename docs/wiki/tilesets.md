@@ -17,7 +17,7 @@ Variants: drowned
 
 Natural monsters: drowned_shambler, bone_stalker, tide_husk
 
-Zones using it: —
+Zones using it: withered_shore
 
 ## town
 
@@ -34,10 +34,13 @@ Zones using it: —
 | `R` | rock | false | true | dirt | rock |
 | `b` | brazier | false | false | cobble | brazier |
 | `c` | crate | false | false | plank | crate |
+| `B` | building | false | true | dirt | — |
+| `f` | fence | false | false | grass | fence |
+| `w` | wagon | false | false | dirt | wagon |
 
 Variants: lamplit
 
 Natural monsters: none (staged only)
 
-Zones using it: test_range
+Zones using it: saltmere, test_range
 

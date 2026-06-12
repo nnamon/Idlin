@@ -286,3 +286,28 @@ bit-exactly on every platform: integer-only math, hand-rolled PCG32 with
 independent streams per domain (AI, combat, loot, per-bot), fixed iteration
 order everywhere, and a canonical state hash checked by golden replay
 tests in CI.
+
+## Zones, tilesets, and exits
+
+Areas are AUTHORED: each bundle (`content/areas/<id>/`) carries a
+`map.txt` glyph grid (1 character = 1 sim unit; zone dimensions derive
+from it) and an optional `props.ron` set-piece layer (pure visuals —
+buildings stand on collision-only `B` footprint tiles). The glyph
+legend lives on a TILESET (`content/tilesets/<id>.ron`): a few themed
+families, PoE-style, each owning its palette, look-and-feel variants,
+its natural monster ecology, and its OPT-IN cosmetic `features` (sea,
+bluffs_west, edge_hills, stars, fringe_scatter) — the renderer builds
+only what a tileset declares.
+
+Collision is GRID-NATIVE: walkability and line-of-sight are tile
+lookups (integer supercover; projectiles collide with walls through
+the same path). The loader proves at load time that the spawn, every
+pack anchor, and every exit are walkable AND reachable (flood-fill
+from spawn) — unreachable content refuses to load.
+
+Exits are PLACES. A zone declares them (`exits:` with a destination
+zone id and an open flag); the zone brain gates them (`set_exit`);
+and a character's bot must walk into reach and call `use_exit` to
+leave. Nothing ever force-moves a character. `max_players` on a zone
+(0 = unlimited) caps how many characters share one world of it —
+story zones run solo instances; towns are shared.

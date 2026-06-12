@@ -265,6 +265,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 22 | `UseSkillAt` | slot, x, y (raw Q16.16) | point-aimed skills (ground-target AoE): cast at a location you compute. Same return codes as UseSkill. |
 | 23 | `UseSkillDir` | slot, dx, dy (raw Q16.16 vector) | direction-aimed skills (cones, lines, projectile volleys): sweep where you point. Same return codes as UseSkill. |
 | 26 | `Say` | line_idx | speak a speech-bubble line: monsters use their def's `lines:`, characters the global `content/speech.ron` set (index wraps — bots can NEVER inject arbitrary text). 0 ok; −1 no lines for you; −2 rate-limited (characters 10s, monsters 5s). |
+| 27 | `ReadExits` | out_addr, max | the zone's exits as 16-byte records: (x raw, y raw, open, reserved). Returns the count written. Exits are PLACES — walk to one and take it yourself. |
+| 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed. There are NO forced transfers — leaving is always the bot's own call. |
 | 24 | `ReadCurrency` | out_addr, max (≤16) | obol counts as u32 words in content order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. |
 | 25 | `UseCurrency` | currency_idx, inv_idx | spend one obol on the bag item at inv_idx. 0 ok; −1 bad index / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 
@@ -309,7 +311,7 @@ can never hit your own faction.
 
 ### Struct layouts
 
-**SelfStatus** (16 words, 64 bytes):
+**SelfStatus** (17 words, 68 bytes):
 
 | Offset | Field |
 |---|---|
@@ -323,6 +325,7 @@ can never hit your own faction.
 | +48 | attack range (Q16.16) |
 | +52 / +56 | mana, mana_max |
 | +60 | energy shield |
+| +64 | zone index (ContentDb::zones, sorted ids — branch your whole strategy on WHICH map you stand in) |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
@@ -357,6 +360,7 @@ per tick, bound to no entity, with a zone-scoped syscall table:
 | 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone) |
 | 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx` |
 | 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns) |
+| 106 | `set_exit(idx, open)` | gate a ZoneDef exit open (1) or shut (0). Brains only GATE — characters take exits THEMSELVES with `use_exit`; forced transfers do not exist. |
 
 Events are DATA the script drains — there are no callbacks; the VM
 stays one `main()` per tick. `content/brains/withered_shore.bot` is

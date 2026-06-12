@@ -4,7 +4,7 @@ Generated from content/ — do not edit.
 
 ## Saltmere (`saltmere`)
 
-30×26 u · kind Town · tileset generated · 0 packs · 0 exits · brain saltmere
+60×52 u · kind Town · tileset town · 4 packs · 0 exits · brain saltmere
 
 ## The Proving Grounds (`test_range`)
 
@@ -12,5 +12,5 @@ Generated from content/ — do not edit.
 
 ## The Withered Shore (`withered_shore`)
 
-34×130 u · kind Story · tileset generated · 12 packs · 1 exits · brain withered_shore
+22×130 u · kind Story · tileset shore · 7 packs · 1 exits · brain withered_shore
 
