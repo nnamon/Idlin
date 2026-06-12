@@ -1,22 +1,5 @@
-// Saltmere's set pieces: buildings fronting the square and the
-// streets that radiate from it.
+// Saltmere starts bare: a walled square and the bonfire. Set
+// pieces return one deliberate placement at a time.
 PropsDef(
-    props: [
-        (model: "inn", x_u: 25, y_u: 15, rot_deg: 180),
-        (model: "blacksmith", x_u: 34, y_u: 15, rot_deg: 180),
-        (model: "house_1", x_u: 18, y_u: 22, rot_deg: 90),
-        (model: "house_2", x_u: 42, y_u: 22, rot_deg: 270),
-        (model: "house_3", x_u: 18, y_u: 30, rot_deg: 90),
-        (model: "house_4", x_u: 42, y_u: 30, rot_deg: 270),
-        (model: "house_2", x_u: 25, y_u: 37, rot_deg: 0),
-        (model: "house_3", x_u: 35, y_u: 37, rot_deg: 0),
-        (model: "house_4", x_u: 25, y_u: 44, rot_deg: 0),
-        (model: "house_1", x_u: 35, y_u: 44, rot_deg: 0),
-        (model: "house_3", x_u: 25, y_u: 7, rot_deg: 180),
-        (model: "house_1", x_u: 35, y_u: 7, rot_deg: 180),
-        (model: "house_4", x_u: 10, y_u: 19, rot_deg: 90),
-        (model: "house_2", x_u: 48, y_u: 19, rot_deg: 270),
-        (model: "house_2", x_u: 10, y_u: 32, rot_deg: 90),
-        (model: "house_1", x_u: 48, y_u: 32, rot_deg: 270),
-    ],
+    props: [],
 )
