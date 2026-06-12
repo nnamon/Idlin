@@ -80,24 +80,24 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
       {/* left column: status plaque + the focused idler's stats */}
       <div className="hud-left">
       <div className="panel">
-        <div style={{ fontWeight: 700, color: "#c9a24a", fontSize: 15, letterSpacing: 4 }}>
+        <div style={{ fontWeight: 700, color: "#e0b75e", fontSize: 15, letterSpacing: 4 }}>
           IDLIN
         </div>
-        <div style={{ fontWeight: 700, color: "#c4b896", fontSize: 13.5 }}>
+        <div style={{ fontWeight: 700, color: "#d8cba6", fontSize: 13.5 }}>
           {store.zone?.name ?? "connecting…"}
           {store.zone?.worldKey.includes("#") && (
-            <span style={{ color: "#8a7d61", fontWeight: 400 }}>
+            <span style={{ color: "#ab9d7a", fontWeight: 400 }}>
               {" "}· {store.zone.worldKey.split("#")[1]}&rsquo;s
             </span>
           )}
         </div>
         <div style={{ fontSize: 12.5 }}>
-          <span style={{ color: "#8a7d61" }}>link </span>
+          <span style={{ color: "#ab9d7a" }}>link </span>
           <span style={{ color: status?.connected ? "#7bff9a" : "#ff6a6a" }}>
             {status?.connected ? `live · ${status.rttMs ?? "—"} ms` : "disconnected"}
           </span>
         </div>
-        <div style={{ color: "#8a7d61", fontSize: 12.5 }}>
+        <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
           tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
         </div>
         <button
@@ -105,7 +105,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           style={{
             marginTop: 6,
             background: "#2e2516",
-            color: "#c9a24a",
+            color: "#e0b75e",
             border: "1px solid #5a4624",
             borderRadius: 4,
             padding: "3px 10px",
@@ -133,11 +133,11 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
               </span>
               <span className="chip">{store.cue?.reason}</span>
             </div>
-            <div style={{ color: "#8a7d61", fontSize: 12.5 }}>
+            <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
             </div>
             <LifeBar pct={focused.state.life_pct} dead={focused.state.dead} />
-            <div style={{ fontSize: 12.5, color: "#8a7d61" }}>
+            <div style={{ fontSize: 12.5, color: "#ab9d7a" }}>
               {focused.state.kills} kills · {focused.state.items} items
             </div>
           </div>
@@ -157,7 +157,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
               {chars.map((c) => (
                 <LeaderRow key={c.state.id} c={c} focused={c.state.id === focusId} />
               ))}
-              {chars.length === 0 && <div style={{ color: "#6b6049" }}>none yet</div>}
+              {chars.length === 0 && <div style={{ color: "#8d8164" }}>none yet</div>}
             </>
           )}
         </div>
@@ -355,7 +355,7 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
             >
               <span style={{ whiteSpace: "nowrap" }}>
                 {g.support ? "↳ " : "◆ "}
-                {g.name} <span style={{ color: "#8a7d61" }}>lv{g.level}</span>
+                {g.name} <span style={{ color: "#ab9d7a" }}>lv{g.level}</span>
               </span>
               {g.xp_next > 0 ? (
                 <span
@@ -424,7 +424,7 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
         display: "flex",
         justifyContent: "space-between",
         fontSize: 13,
-        color: c.state.dead ? "#6b6049" : focused ? "#f0e6d2" : "#bdb194",
+        color: c.state.dead ? "#8d8164" : focused ? "#f0e6d2" : "#d2c5a3",
       }}
     >
       <span>
@@ -432,7 +432,7 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
         {c.state.name}
         {c.state.dead ? " ☠" : ""}
       </span>
-      <span style={{ color: "#9a8d72" }}>
+      <span style={{ color: "#b8aa87" }}>
         lv{c.state.level} · {c.state.kills}k
       </span>
     </div>
@@ -448,20 +448,20 @@ function QueueRow({ q, pos }: { q: FocusQueueEntry; pos: number | null }) {
         style={{
           display: "flex",
           justifyContent: "space-between",
-          color: q.dead ? "#6b6049" : q.focused ? "#f0e6d2" : "#bdb194",
+          color: q.dead ? "#8d8164" : q.focused ? "#f0e6d2" : "#d2c5a3",
         }}
       >
         <span>
-          <span style={{ color: "#c9a24a", display: "inline-block", width: 16 }}>
+          <span style={{ color: "#e0b75e", display: "inline-block", width: 16 }}>
             {q.focused ? "▸" : pos}
           </span>
           {q.name}
           {q.dead ? " ☠" : ""}
           {q.cooldown && !q.focused ? " ⧖" : ""}
         </span>
-        <span style={{ color: "#9a8d72" }}>lv{q.level}</span>
+        <span style={{ color: "#b8aa87" }}>lv{q.level}</span>
       </div>
-      <div style={{ color: "#6b6049", fontSize: 11, paddingLeft: 16, lineHeight: 1.25 }}>
+      <div style={{ color: "#8d8164", fontSize: 11, paddingLeft: 16, lineHeight: 1.25 }}>
         {q.zone}
       </div>
     </div>
