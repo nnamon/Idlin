@@ -5,8 +5,8 @@
 
 include "std/zone_lib.bot";
 
-const L_WELCOME = 0;        // to the arriving idler
-const L_ANNOUNCE = 1;       // to everyone else
+const L_WELCOME = line "welcome";    // to the arriving idler
+const L_ANNOUNCE = line "announce";  // to everyone else
 
 const F_WELCOMED = 1;
 

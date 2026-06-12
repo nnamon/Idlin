@@ -14,8 +14,8 @@ ZoneDef(
     tileset: Some("town"),
     brain: Some("saltmere"),
     lines: [
-        "Saltmere. Fires that stay lit. Faces that stay alive.",
-        "Another wretch crests the bluff. The camp counts one more.",
+        (id: "welcome",  text: "Saltmere. Fires that stay lit. Faces that stay alive."),
+        (id: "announce", text: "Another wretch crests the bluff. The camp counts one more."),
     ],
     packs: [
         // Townsfolk: non-hostile bots with errands and opinions.

@@ -249,10 +249,16 @@ sanctuary monsters never acquire characters inside), area-gen counts,
 and packs that respawn as units (radius 0 = staked on the anchor).
 Behavior belongs to the zone's `brain:` — a bot program with
 zone-scoped syscalls (see bot-guide) — and its narration text lives in
-the def's `lines:` list, fired by index. The Withered Shore's brain
-choreographs the whole tutorial: welcome beat, first-kill weapon,
-suited-gem second kill, the first obol, threshold story lines, and
-the Tidewarden's hoard.
+the def's `lines:` list as `(id: "welcome", text: "…")` entries the
+script fires BY NAME (`narrate(line "welcome", net)`), so inserting a
+line never scrambles the story. Gates carry an `id:` for the same
+reason (`set_gate(gate "start", 1)`); exits are addressed by their
+destination (`set_exit(exit "saltmere", 1)`). All other content is
+referenced by id too — `item "rusted_cleaver"`, `gem "arc"`,
+`monster "tidewarden"` — resolved to indices at load; a typo refuses
+to load. The Withered Shore's brain choreographs the whole tutorial:
+welcome beat, first-kill weapon, suited-gem second kill, the first
+obol, threshold story lines, and the Tidewarden's hoard.
 
 Monsters may also carry `lines:` — things they SAY as speech bubbles
 (the Say syscall); `content/speech.ron` holds the fixed set characters

@@ -587,7 +587,7 @@ impl World {
         let zone = match content.zone(zone_id).or_else(|| content.zones.first()) {
             Some(def) => {
                 // The zone's scripting brain, if the def names one.
-                zone_lines = def.lines.clone();
+                zone_lines = def.lines.iter().map(|l| l.text.clone()).collect();
                 let camp = Fx::from_int(def.camp_radius_u as i16);
                 if let Some(brain) = &def.brain
                     && let Some(i) = content.brain_idx(brain)

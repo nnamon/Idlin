@@ -319,6 +319,24 @@ Each base lists every affix its pools can roll. *Share* is the affix's weight ov
 | T1 | Quicksilver | 4+ | 1000–1600 | 45 (31%) |
 | T2 | Swift | 1+ | 500–900 | 100 (69%) |
 
+## small_life_flask — pools: flask
+
+### of Sating (`of_sating`) — Suffix · Life Added · weight 100 (100.0%)
+
+| tier | name | ilvl | roll | weight |
+|---|---|---|---|---|
+| T1 | of Plenty | 5+ | 11–20 | 40 (29%) |
+| T2 | of Sating | 1+ | 5–10 | 100 (71%) |
+
+## small_mana_flask — pools: flask
+
+### of Sating (`of_sating`) — Suffix · Life Added · weight 100 (100.0%)
+
+| tier | name | ilvl | roll | weight |
+|---|---|---|---|---|
+| T1 | of Plenty | 5+ | 11–20 | 40 (29%) |
+| T2 | of Sating | 1+ | 5–10 | 100 (71%) |
+
 ## wader_boots — pools: armour, stride, find
 
 ### Hale (`hale`) — Prefix · Life Added · weight 100 (13.4%)

@@ -31,6 +31,9 @@ mod ast;
 mod codegen;
 mod lexer;
 mod parser;
+mod resolve;
+
+pub use resolve::Resolver;
 
 use std::fmt;
 
@@ -58,9 +61,24 @@ impl fmt::Display for CompileError {
 impl std::error::Error for CompileError {}
 
 /// Compile `.bot` source into a versioned ILBC bytecode container.
+/// Content refs (`item "rusted_cleaver"`) are rejected — they need a
+/// database; use [`compile_with`] (the content loader does).
 pub fn compile(source: &str) -> Result<Vec<u8>, CompileError> {
+    compile_with(source, &|kind, id| {
+        Err(format!(
+            "content ref `{kind} \"{id}\"` needs the content database — \
+             only brains compiled at content load can use refs"
+        ))
+    })
+}
+
+/// Compile with a content resolver: every `kind "id"` ref becomes the
+/// integer the resolver returns, at compile time. Unknown ids fail the
+/// compile (and therefore the content load) with the resolver's message.
+pub fn compile_with(source: &str, resolver: Resolver) -> Result<Vec<u8>, CompileError> {
     let tokens = lexer::lex(source)?;
-    let program = parser::parse(tokens)?;
+    let mut program = parser::parse(tokens)?;
+    resolve::resolve(&mut program, resolver)?;
     let code = codegen::generate(&program)?;
     Ok(idlin_vm::wrap_program(&code))
 }

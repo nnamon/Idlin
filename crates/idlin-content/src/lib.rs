@@ -730,6 +730,10 @@ pub struct ExitDef {
 /// the gate is shut. Tutorials are built from these (set_gate syscall).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GateDef {
+    /// Name brains address the gate by (`gate "start"`); "" for gates no
+    /// script touches.
+    #[serde(default)]
+    pub id: String,
     pub x0: i32,
     pub y0: i32,
     pub x1: i32,
@@ -737,6 +741,14 @@ pub struct GateDef {
     /// Open from boot? Brains lift them as lessons complete.
     #[serde(default)]
     pub open: bool,
+}
+
+/// One authored narration line: brains fire it BY NAME (`line "welcome"`),
+/// never by position — inserting a line can't scramble the story.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineDef {
+    pub id: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -933,9 +945,10 @@ pub struct ZoneDef {
     #[serde(default)]
     pub brain: Option<String>,
     /// Authored narration lines the brain fires by index (Narrate syscall).
-    /// Text is content; WHEN it fires is script.
+    /// Text is content; WHEN it fires is script (brains address lines by
+    /// their `id`, never by position).
     #[serde(default)]
-    pub lines: Vec<String>,
+    pub lines: Vec<LineDef>,
     pub packs: Vec<SpawnPack>,
     /// Walk-up exits to other zones (bots confirm with UseExit).
     #[serde(default)]
@@ -1225,6 +1238,11 @@ impl ContentDb {
         // attach to zones (by area directory name == zone id) after the loop.
         let mut pending_maps: Vec<(String, String)> = Vec::new();
         let mut pending_props: Vec<(String, PropsDef)> = Vec::new();
+        // (brain id, file path, source — includes expanded, is_asm).
+        // Brains compile at the END of the load so content refs resolve
+        // against the fully sorted database.
+        type PendingBrain = (String, String, String, bool);
+        let mut pending_brains: Vec<PendingBrain> = Vec::new();
         for path in &files {
             let rel = path.strip_prefix(dir).unwrap_or(path);
             let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -1291,12 +1309,10 @@ impl ContentDb {
                             path: rel_str.clone(),
                             msg,
                         })?;
-                    let program =
-                        idlin_botc::compile(&expanded).map_err(|e| ContentError::Brain {
-                            path: rel_str.clone(),
-                            msg: e.to_string(),
-                        })?;
-                    db.brains.push(BrainDef { id, program });
+                    // Compilation is DEFERRED to the end of the load:
+                    // content refs (`item "x"`) resolve against the
+                    // sorted database.
+                    pending_brains.push((id, rel_str.clone(), expanded, false));
                 }
                 // Anything else under areas/ is the author's business.
             } else if rel_str.starts_with("brains/std/") {
@@ -1309,25 +1325,16 @@ impl ContentDb {
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let program = if rel_str.ends_with(".bot") {
+                if rel_str.ends_with(".bot") {
                     let expanded =
                         expand_includes(dir, &text, 0).map_err(|msg| ContentError::Brain {
                             path: rel_str.clone(),
                             msg,
                         })?;
-                    idlin_botc::compile(&expanded).map_err(|e| ContentError::Brain {
-                        path: rel_str.clone(),
-                        msg: e.to_string(),
-                    })?
+                    pending_brains.push((id, rel_str.clone(), expanded, false));
                 } else if rel_str.ends_with(".asm") {
-                    idlin_botc::assemble(&text).map_err(|e| ContentError::Brain {
-                        path: rel_str.clone(),
-                        msg: e.to_string(),
-                    })?
-                } else {
-                    continue;
-                };
-                db.brains.push(BrainDef { id, program });
+                    pending_brains.push((id, rel_str.clone(), text.into_owned(), true));
+                }
             }
             // Other directories (items/, skills/, ...) come with later phases;
             // they still feed the hash so changes are never invisible.
@@ -1336,7 +1343,6 @@ impl ContentDb {
 
         db.monsters.sort_by(|a, b| a.id.cmp(&b.id));
         db.zones.sort_by(|a, b| a.id.cmp(&b.id));
-        db.brains.sort_by(|a, b| a.id.cmp(&b.id));
         db.items.sort_by(|a, b| a.id.cmp(&b.id));
         db.currency.sort_by(|a, b| a.id.cmp(&b.id));
         db.tilesets.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1391,6 +1397,80 @@ impl ContentDb {
             }
         }
         db.build_tree()?;
+        // Brains compile LAST, with the whole sorted database in hand:
+        // content refs (`item "x"`, `gem "arc"`, `line "welcome"`) become
+        // indices HERE, so adding content can never silently shift what a
+        // script means — an unknown id refuses to load.
+        let mut brains = Vec::new();
+        for (id, path, source, is_asm) in &pending_brains {
+            let brain_err = |msg: String| ContentError::Brain {
+                path: path.clone(),
+                msg,
+            };
+            let program = if *is_asm {
+                idlin_botc::assemble(source).map_err(|e| brain_err(e.to_string()))?
+            } else {
+                // Zone-scoped refs (line/exit/gate) resolve against the
+                // one zone that names this brain.
+                let owners: Vec<&ZoneDef> = db
+                    .zones
+                    .iter()
+                    .filter(|z| z.brain.as_deref() == Some(id.as_str()))
+                    .collect();
+                let resolver = |kind: &str, rid: &str| -> Result<i32, String> {
+                    let found = |what: &str, idx: Option<usize>| {
+                        idx.map(|i| i as i32)
+                            .ok_or_else(|| format!("unknown {what} `{rid}`"))
+                    };
+                    match kind {
+                        "item" => found("item", db.items.iter().position(|d| d.id == rid)),
+                        "gem" => found("gem", db.gems.iter().position(|d| d.id == rid)),
+                        "monster" => found("monster", db.monsters.iter().position(|d| d.id == rid)),
+                        "zone" => found("zone", db.zones.iter().position(|d| d.id == rid)),
+                        "currency" => {
+                            found("currency", db.currency.iter().position(|d| d.id == rid))
+                        }
+                        "line" | "exit" | "gate" => {
+                            let zone = match owners.as_slice() {
+                                [one] => one,
+                                [] => {
+                                    return Err(format!(
+                                        "`{kind} \"{rid}\"` is zone-scoped, but no zone \
+                                         names this brain"
+                                    ));
+                                }
+                                many => {
+                                    return Err(format!(
+                                        "`{kind} \"{rid}\"` is ambiguous: {} zones share \
+                                         this brain",
+                                        many.len()
+                                    ));
+                                }
+                            };
+                            match kind {
+                                "line" => found(
+                                    "narration line",
+                                    zone.lines.iter().position(|l| l.id == rid),
+                                ),
+                                "exit" => found(
+                                    "exit (by dest)",
+                                    zone.exits.iter().position(|e| e.dest == rid),
+                                ),
+                                _ => found("gate", zone.gates.iter().position(|g| g.id == rid)),
+                            }
+                        }
+                        other => Err(format!("unknown ref kind `{other}`")),
+                    }
+                };
+                idlin_botc::compile_with(source, &resolver).map_err(|e| brain_err(e.to_string()))?
+            };
+            brains.push(BrainDef {
+                id: id.clone(),
+                program,
+            });
+        }
+        db.brains = brains;
+        db.brains.sort_by(|a, b| a.id.cmp(&b.id));
         for w in db.monsters.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
@@ -1422,6 +1502,26 @@ impl ContentDb {
                     return Err(ContentError::BadMap {
                         zone: zone.id.clone(),
                         msg: format!("exit leads to unknown zone `{}`", exit.dest),
+                    });
+                }
+            }
+            // Brains address lines and gates by id — duplicates would
+            // resolve to whichever comes first, silently.
+            let mut seen = std::collections::BTreeSet::new();
+            for l in &zone.lines {
+                if !seen.insert(&l.id) {
+                    return Err(ContentError::BadMap {
+                        zone: zone.id.clone(),
+                        msg: format!("duplicate narration line id `{}`", l.id),
+                    });
+                }
+            }
+            let mut seen = std::collections::BTreeSet::new();
+            for g in &zone.gates {
+                if !g.id.is_empty() && !seen.insert(&g.id) {
+                    return Err(ContentError::BadMap {
+                        zone: zone.id.clone(),
+                        msg: format!("duplicate gate id `{}`", g.id),
                     });
                 }
             }
@@ -1702,35 +1802,49 @@ mod tests {
         }
     }
 
-    /// The withered_shore zone brain hardcodes content indices (the VM
-    /// has no string lookups); this test pins them to reality so a content
-    /// add that shifts an index fails loudly instead of dropping the
-    /// wrong gem. UPDATE THE SCRIPT AND THIS TEST TOGETHER.
+    /// Content refs in brains resolve by NAME at load — and unknown ids
+    /// refuse to load. The index-pinning test this replaces ("UPDATE THE
+    /// SCRIPT AND THIS TEST TOGETHER") is dead: position is the engine's
+    /// business now.
     #[test]
-    fn zone_brain_content_indices_hold() {
-        let db = ContentDb::load(Path::new("../../content")).unwrap();
-        let item = |i: usize| db.items[i].id.as_str();
-        let gem = |i: usize| db.gems[i].id.as_str();
-        assert_eq!(item(0), "barnacle_wand");
-        assert_eq!(item(2), "driftwood_bow");
-        assert_eq!(item(5), "rusted_cleaver");
-        assert_eq!(gem(1), "arc");
-        assert_eq!(gem(2), "cleave");
-        assert_eq!(gem(3), "ember_bolt");
-        assert_eq!(gem(4), "frost_nova");
-        assert_eq!(gem(6), "heavy_swing");
-        assert_eq!(gem(8), "plague_cloud");
-        assert_eq!(gem(9), "power_shot");
-        assert_eq!(gem(10), "quickening");
-        assert_eq!(gem(12), "swift_casting");
-        assert_eq!(gem(14), "widening");
-        assert_eq!(db.currency[8].id, "transmute_obol");
-        assert_eq!(db.monsters[3].id, "tidewarden");
-        // transfer_character zone indices (ZONE_SALTMERE in the shore brain).
-        assert_eq!(db.zones[0].id, "coast");
-        assert_eq!(db.zones[1].id, "saltmere");
-        assert_eq!(db.zones[2].id, "test_range");
-        assert_eq!(db.zones[3].id, "withered_shore");
+    fn brain_content_refs_resolve_and_unknowns_fail() {
+        let zone = r#"ZoneDef(
+            id: "z", name: "Z", width_u: 20, height_u: 20,
+            spawn_x_u: 5, spawn_y_u: 5,
+            brain: Some("z"),
+            lines: [(id: "welcome", text: "hi")],
+            gates: [(id: "start", x0: 1, y0: 1, x1: 2, y1: 2)],
+            exits: [(x_u: 9, y_u: 9, dest: "z", open: true)],
+            packs: [],
+        )"#;
+        let brain_ok = r#"
+            const L = line "welcome";
+            const G = gate "start";
+            const E = exit "z";
+            const Z = zone "z";
+            fn main() { narrate(L, 0); set_gate(G, 1); set_exit(E, 1); }
+        "#;
+        let tc = TempContent::new(
+            "refs-ok",
+            &[("areas/z/zone.ron", zone), ("areas/z/brain.bot", brain_ok)],
+        );
+        let db = ContentDb::load(&tc.0).expect("refs resolve");
+        assert_eq!(db.brains.len(), 1);
+
+        let brain_bad = r#"
+            const L = line "nope";
+            fn main() { narrate(L, 0); }
+        "#;
+        let tc = TempContent::new(
+            "refs-bad",
+            &[("areas/z/zone.ron", zone), ("areas/z/brain.bot", brain_bad)],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::Brain { msg, .. }) => {
+                assert!(msg.contains("nope"), "error names the bad id: {msg}");
+            }
+            other => panic!("expected Brain error, got {other:?}"),
+        }
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

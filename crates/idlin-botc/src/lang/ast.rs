@@ -68,6 +68,15 @@ pub enum Expr {
         args: Vec<Expr>,
         line: usize,
     },
+    /// `item "rusted_cleaver"`, `gem "arc"`, `line "welcome"`, … — a
+    /// content reference resolved to its index at compile time (brains
+    /// compile at content load, with the database in hand). Position is
+    /// an engine detail; authors name things.
+    ContentRef {
+        kind: String,
+        id: String,
+        line: usize,
+    },
 }
 
 impl Expr {
@@ -81,7 +90,8 @@ impl Expr {
             | Expr::Index { line, .. }
             | Expr::Unary { line, .. }
             | Expr::Binary { line, .. }
-            | Expr::Call { line, .. } => *line,
+            | Expr::Call { line, .. }
+            | Expr::ContentRef { line, .. } => *line,
         }
     }
 }
@@ -176,11 +186,19 @@ pub enum BuildEntry {
     Name(String),
 }
 
+/// A `const` initializer: a literal, or a content ref resolved before
+/// codegen.
+#[derive(Debug, Clone)]
+pub enum ConstValue {
+    Num(i64),
+    Ref { kind: String, id: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct Program {
     /// Declared passive build: node refs in allocation order.
     pub build: Vec<(BuildEntry, usize)>,
-    pub consts: Vec<(String, i64, usize)>,
+    pub consts: Vec<(String, ConstValue, usize)>,
     /// Top-level vars: (name, array len or 1, optional init, line).
     pub globals: Vec<(String, u32, Option<Expr>, usize)>,
     pub fns: Vec<FnDecl>,

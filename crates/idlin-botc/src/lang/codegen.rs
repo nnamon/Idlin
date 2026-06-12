@@ -108,6 +108,13 @@ struct Gen {
 impl Gen {
     fn program(&mut self, program: &Program) -> Result<(), CompileError> {
         for (name, value, line) in &program.consts {
+            // Refs were rewritten to numbers by the resolve pass.
+            let ConstValue::Num(value) = value else {
+                return Err(CompileError::new(
+                    *line,
+                    format!("internal: const `{name}` ref survived resolution"),
+                ));
+            };
             if self.consts.insert(name.clone(), *value).is_some() {
                 return Err(CompileError::new(
                     *line,
@@ -543,6 +550,11 @@ impl Gen {
                 Ok(())
             }
             Expr::Call { name, args, line } => self.call(name, args, *line),
+            // Rewritten to Num by the resolve pass; reaching here is a bug.
+            Expr::ContentRef { kind, id, line } => Err(CompileError::new(
+                *line,
+                format!("internal: ref `{kind} \"{id}\"` survived resolution"),
+            )),
         }
     }
 

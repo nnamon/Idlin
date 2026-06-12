@@ -151,6 +151,16 @@ fn main() {                            // main() runs once per tick
   (`mem[arr + i*4]`); an array name alone is its address, and indexing a
   scalar treats its value as a base address (poor man's pointers).
 - Numbers: decimal or `0x` hex, 32-bit; `0xFFFFFFFF` is the i32 bit pattern.
+- **Content refs**: `item "rusted_cleaver"`, `gem "arc"`,
+  `monster "tidewarden"`, `zone "saltmere"`, `currency "transmute_obol"`,
+  `line "welcome"`, `exit "saltmere"`, `gate "start"` — each is an
+  expression that becomes the thing's INDEX, resolved by name when the
+  content database loads. Use them anywhere a number goes (most readably
+  in `const`s). Unknown ids refuse to load, so adding content can never
+  silently shift what a script means. `line`/`exit`/`gate` resolve
+  against the zone that names the brain (`exit` by destination zone id;
+  `gate` by its `id:` in zone.ron). Refs are a CONTENT-LOAD feature:
+  deploy-compiled player templates can't use them.
 - `include "std/zone_lib.bot";` splices another file (resolved under
   `content/brains/`, depth-capped) — expanded by the content loader
   before compilation. `content/brains/std/` holds shared libraries;
@@ -357,7 +367,7 @@ per tick, bound to no entity, with a zone-scoped syscall table:
 |---|---|---|
 | 100 | `query_characters(out, max)` | 10-word records per idler: net, kills, level, x, y, weapon_class (−1/0 melee/1 bow/2 wand), life_pct, dead, build_len (0 = no declared build), archetype (0 melee / 1 bow / 2 wand / −1 unknown, classified from the declared plan) |
 | 101 | `poll_events(out, max)` | drains this tick's events as 4-word records: kind (1 kill / 2 equip / 3 socket / 4 level / 5 died / 6 pickup), char net, a, b (kill: a = monster def idx, b = level) |
-| 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone) |
+| 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone). Address lines by name: `narrate(line "welcome", net)` |
 | 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx` |
 | 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns) |
 | 106 | `set_exit(idx, open)` | gate a ZoneDef exit open (1) or shut (0). Brains only GATE — characters take exits THEMSELVES with `use_exit`; forced transfers do not exist. |

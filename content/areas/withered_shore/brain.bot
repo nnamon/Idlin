@@ -5,50 +5,51 @@
 // first-weapon and suited-gem drops, the first obol, threshold
 // story beats up the strand, and the Tidewarden's hoard.
 //
-// Content indices below are pinned by a test in idlin-content —
-// if gems/items/monsters/currency change, update BOTH.
+// Content is referenced BY NAME (`item "..."`, `line "..."`) and
+// resolved at load — adding content never shifts what this means.
 // ============================================================
 
 include "std/zone_lib.bot";
 
-// content indices (sorted ids; pinned by content test)
-const IT_WAND = 0;        // barnacle_wand
-const IT_BOW = 2;         // driftwood_bow
-const IT_CLEAVER = 5;     // rusted_cleaver
-const GEM_ARC = 1;
-const GEM_CLEAVE = 2;
-const GEM_EMBER = 3;      // ember_bolt
-const GEM_FROST = 4;      // frost_nova
-const GEM_HEAVY = 6;      // heavy_swing
-const GEM_PLAGUE = 8;     // plague_cloud
-const GEM_SHOT = 9;       // power_shot
-const SUP_QUICKENING = 10;
-const SUP_SWIFT = 12;     // swift_casting
-const SUP_WIDENING = 14;
-const CUR_TRANSMUTE = 8;  // transmute_obol
-const MON_TIDEWARDEN = 3;
-const IT_FLASK = 6;       // small_life_flask
+// Content refs resolve BY NAME at load (the engine owns positions).
+// An unknown id refuses to load — adding content can't shift these.
+const IT_WAND = item "barnacle_wand";
+const IT_BOW = item "driftwood_bow";
+const IT_CLEAVER = item "rusted_cleaver";
+const GEM_ARC = gem "arc";
+const GEM_CLEAVE = gem "cleave";
+const GEM_EMBER = gem "ember_bolt";
+const GEM_FROST = gem "frost_nova";
+const GEM_HEAVY = gem "heavy_swing";
+const GEM_PLAGUE = gem "plague_cloud";
+const GEM_SHOT = gem "power_shot";
+const SUP_QUICKENING = gem "quickening";
+const SUP_SWIFT = gem "swift_casting";
+const SUP_WIDENING = gem "widening";
+const CUR_TRANSMUTE = currency "transmute_obol";
+const MON_TIDEWARDEN = monster "tidewarden";
+const IT_FLASK = item "small_life_flask";
 
-// narration lines (zone.ron `lines:`)
-const L_WELCOME = 0;
-const L_FIRSTKILL = 1;
-const L_ARMED = 2;
-const L_GEM = 3;
-const L_SOCKET = 4;
-const L_LEVEL = 5;
-const L_OBOL = 6;
-const L_WRECKS = 7;
-const L_STALKERS = 8;
-const L_BOSSDOWN = 9;
-const L_BOSSWARN = 10;
-const L_DEPART = 11;
-const L_DECLARE = 12;
-const L_PATHSET = 13;
+// Narration (zone.ron `lines:`), by id.
+const L_WELCOME = line "welcome";
+const L_FIRSTKILL = line "firstkill";
+const L_ARMED = line "armed";
+const L_GEM = line "gem";
+const L_SOCKET = line "socket";
+const L_LEVEL = line "level";
+const L_OBOL = line "obol";
+const L_WRECKS = line "wrecks";
+const L_STALKERS = line "stalkers";
+const L_BOSSDOWN = line "bossdown";
+const L_BOSSWARN = line "bosswarn";
+const L_DEPART = line "depart";
+const L_DECLARE = line "declare";
+const L_PATHSET = line "pathset";
 
-// The bluff-path exit to Saltmere (zone.ron exits[0]). The brain only
+// The bluff-path exit to Saltmere (by destination). The brain only
 // GATES it open — the killer's own bot walks through; no forced moves.
-const EXIT_SALTMERE = 0;
-const GATE_START = 0;
+const EXIT_SALTMERE = exit "saltmere";
+const GATE_START = gate "start";
 
 // beat flags (zl_once bits)
 const F_WELCOME = 1;

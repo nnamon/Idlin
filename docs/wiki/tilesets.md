@@ -12,12 +12,16 @@ Generated from content/ — do not edit.
 | `~` | sea | false | false | water | — |
 | `R` | rock | false | true | sand | rock |
 | `T` | tree | false | true | grass | dead_tree |
+| `^` | terrace | true | false | sand | — |
+| `;` | terrace_scrub | true | false | grass | — |
+| `h` | terrace_tuft | true | false | sand | tuft |
+| `K` | crag | false | true | sand | rock |
 
 Variants: drowned
 
 Natural monsters: drowned_shambler, bone_stalker, tide_husk
 
-Zones using it: withered_shore
+Zones using it: coast, withered_shore
 
 ## town
 

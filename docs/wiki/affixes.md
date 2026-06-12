@@ -349,6 +349,164 @@ AffixDef {
 }
 ```
 
+## pool `flask`
+
+Subscribed bases: small_life_flask, small_mana_flask
+
+### of_sating
+
+```
+AffixDef {
+    id: "of_sating",
+    name: "of Sating",
+    kind: Suffix,
+    pool: "flask",
+    weight: 100,
+    stat: Life,
+    layer: Added,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 5,
+            max: 10,
+            name: "of Sating",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 5,
+            min: 11,
+            max: 20,
+            name: "of Plenty",
+            weight: 40,
+        },
+    ],
+}
+```
+
+## pool `monster`
+
+Subscribed bases: 
+
+### hulking
+
+```
+AffixDef {
+    id: "hulking",
+    name: "Hulking",
+    kind: Prefix,
+    pool: "monster",
+    weight: 100,
+    stat: Life,
+    layer: Increased,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 4000,
+            max: 7000,
+            name: "Hulking",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 5,
+            min: 8000,
+            max: 12000,
+            name: "Monstrous",
+            weight: 35,
+        },
+    ],
+}
+```
+
+### of_haste_m
+
+```
+AffixDef {
+    id: "of_haste_m",
+    name: "of Haste",
+    kind: Suffix,
+    pool: "monster",
+    weight: 80,
+    stat: AttackSpeed,
+    layer: Increased,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 1500,
+            max: 2500,
+            name: "of Haste",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 5,
+            min: 3000,
+            max: 4500,
+            name: "of Frenzy",
+            weight: 35,
+        },
+    ],
+}
+```
+
+### of_wards
+
+```
+AffixDef {
+    id: "of_wards",
+    name: "of Wards",
+    kind: Suffix,
+    pool: "monster",
+    weight: 70,
+    stat: ResistFire,
+    layer: Added,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 2000,
+            max: 3000,
+            name: "of Wards",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 5,
+            min: 3500,
+            max: 5000,
+            name: "of Bastions",
+            weight: 35,
+        },
+    ],
+}
+```
+
+### savage
+
+```
+AffixDef {
+    id: "savage",
+    name: "Savage",
+    kind: Prefix,
+    pool: "monster",
+    weight: 90,
+    stat: DamagePhys,
+    layer: Increased,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 2500,
+            max: 4000,
+            name: "Savage",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 5,
+            min: 4500,
+            max: 7000,
+            name: "Bloodthirsty",
+            weight: 35,
+        },
+    ],
+}
+```
+
 ## pool `stride`
 
 Subscribed bases: wader_boots

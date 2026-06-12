@@ -15,23 +15,24 @@ ZoneDef(
     // Story zones are SOLO: one idler per instance, as content not code.
     max_players: 1,
     brain: Some("withered_shore"),
-    // Authored narration the brain fires by index (text = content,
-    // WHEN = script).
+    // Authored narration the brain fires BY NAME (`line "welcome"`):
+    // text = content, WHEN = script, and inserting a line can never
+    // scramble the story.
     lines: [
-        "The tide spits you onto the Withered Shore. Salt in your lungs. Get up.",
-        "It stops moving. The dead give up their tools — take them.",
-        "Armed. The shore feels smaller already.",
-        "Something hums in the wreck-sand — a gem, warm against your palm.",
-        "The gem takes. Your arm knows a new violence.",
-        "The shore concedes a little strength. Your build remembers itself.",
-        "An obol, salt-crusted. The dead paid the ferryman; you will spend it on steel.",
-        "Wrecks thicken. These dead drowned angrier.",
-        "Bone stalkers pace the dune line. Something north is feeding them.",
-        "The Tidewarden breaks. The path up the bluffs lies open.",
-        "The Tidewarden rises from the shallows, crowned in storm.",
-        "You climb. Below, the shore keeps its dead. Above — firelight.",
-        "Declare your path. The shore answers to intent, not to wandering.",
-        "A path chosen. The way opens.",
+        (id: "welcome",   text: "The tide spits you onto the Withered Shore. Salt in your lungs. Get up."),
+        (id: "firstkill", text: "It stops moving. The dead give up their tools — take them."),
+        (id: "armed",     text: "Armed. The shore feels smaller already."),
+        (id: "gem",       text: "Something hums in the wreck-sand — a gem, warm against your palm."),
+        (id: "socket",    text: "The gem takes. Your arm knows a new violence."),
+        (id: "level",     text: "The shore concedes a little strength. Your build remembers itself."),
+        (id: "obol",      text: "An obol, salt-crusted. The dead paid the ferryman; you will spend it on steel."),
+        (id: "wrecks",    text: "Wrecks thicken. These dead drowned angrier."),
+        (id: "stalkers",  text: "Bone stalkers pace the dune line. Something north is feeding them."),
+        (id: "bossdown",  text: "The Tidewarden breaks. The path up the bluffs lies open."),
+        (id: "bosswarn",  text: "The Tidewarden rises from the shallows, crowned in storm."),
+        (id: "depart",    text: "You climb. Below, the shore keeps its dead. Above — firelight."),
+        (id: "declare",   text: "Declare your path. The shore answers to intent, not to wandering."),
+        (id: "pathset",   text: "A path chosen. The way opens."),
     ],
     // Packs spawn (and respawn) as a unit: survivors hold their ground
     // until the whole pack is wiped, then the timer brings it back.
@@ -52,10 +53,11 @@ ZoneDef(
     // The bluff path up to Saltmere, behind the boss. Starts shut; the
     // brain opens it when the Tidewarden falls — walking through is the
     // killer's own bot's decision (use_exit).
-    // Gate 0: the FIRST lesson — declare a build (your path) before the
-    // shore lets you at the dead. The brain lifts it on declaration.
+    // The "start" gate: the FIRST lesson — declare a build (your path)
+    // before the shore lets you at the dead. The brain lifts it on
+    // declaration (`gate "start"`).
     gates: [
-        (x0: 2, y0: 117, x1: 19, y1: 118, open: false),
+        (id: "start", x0: 2, y0: 117, x1: 19, y1: 118, open: false),
     ],
     exits: [
         (x_u: 17, y_u: 2, dest: "saltmere", open: false),

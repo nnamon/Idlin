@@ -20,9 +20,9 @@ ZoneDef(
     gen_trees: 6,
     brain: Some("my_area"),     // = this area's directory name
     lines: [
-        // Narration the brain fires by index. Text lives HERE; the
-        // script only decides when and to whom.
-        "You arrive.",
+        // Narration the brain fires BY NAME (`line "welcome"`). Text
+        // lives HERE; the script only decides when and to whom.
+        (id: "welcome", text: "You arrive."),
     ],
     // exits: [(x_u: .., y_u: .., dest: "zone_id", open: false)],
     // max_players: 1,   // 0/absent = unlimited; story zones run solo

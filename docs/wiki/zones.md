@@ -2,9 +2,13 @@
 
 Generated from content/ — do not edit.
 
+## The Drowned Coast (`coast`)
+
+56×110 u · kind Map · tileset shore · 10 packs · 1 exits · brain —
+
 ## Saltmere (`saltmere`)
 
-60×52 u · kind Town · tileset town · 4 packs · 0 exits · brain saltmere
+60×52 u · kind Town · tileset town · 4 packs · 1 exits · brain saltmere
 
 ## The Proving Grounds (`test_range`)
 

@@ -150,21 +150,29 @@ impl Parser {
         Ok(program)
     }
 
-    /// Constant expressions: a literal with optional leading minus.
-    fn const_expr(&mut self) -> Result<i64, CompileError> {
+    /// Constant expressions: a literal with optional leading minus, or a
+    /// content ref (`item "rusted_cleaver"`).
+    fn const_expr(&mut self) -> Result<ConstValue, CompileError> {
         let line = self.line();
         match self.next() {
-            Some(Tok::Num(n)) => Ok(n),
+            Some(Tok::Num(n)) => Ok(ConstValue::Num(n)),
             Some(Tok::Minus) => match self.next() {
-                Some(Tok::Num(n)) => Ok(-n),
+                Some(Tok::Num(n)) => Ok(ConstValue::Num(-n)),
                 other => Err(CompileError::new(
                     line,
                     format!("expected number after `-`, found {other:?}"),
                 )),
             },
+            Some(Tok::Ident(kind)) if matches!(self.peek(), Some(Tok::Str(_))) => {
+                check_ref_kind(&kind, line)?;
+                let Some(Tok::Str(id)) = self.next() else {
+                    unreachable!("peeked Str");
+                };
+                Ok(ConstValue::Ref { kind, id })
+            }
             other => Err(CompileError::new(
                 line,
-                format!("expected a numeric constant, found {other:?}"),
+                format!("expected a numeric constant or content ref, found {other:?}"),
             )),
         }
     }
@@ -418,6 +426,20 @@ impl Parser {
                         line,
                     })
                 }
+                // `item "rusted_cleaver"` — a content ref. The kind word
+                // stays a normal identifier everywhere else; only an
+                // immediately following string forms a ref.
+                Some(Tok::Str(_)) => {
+                    check_ref_kind(&name, line)?;
+                    let Some(Tok::Str(id)) = self.next() else {
+                        unreachable!("peeked Str");
+                    };
+                    Ok(Expr::ContentRef {
+                        kind: name,
+                        id,
+                        line,
+                    })
+                }
                 _ => Ok(Expr::Ident { name, line }),
             },
             other => Err(CompileError::new(
@@ -443,6 +465,26 @@ impl Parser {
         self.eat(&Tok::RParen, "`)`")?;
         Ok(Expr::Call { name, args, line })
     }
+}
+
+/// The content-ref vocabulary. `line`/`exit`/`gate` are zone-scoped
+/// (resolved against the zone the brain is attached to); the rest are
+/// global content tables.
+pub const REF_KINDS: [&str; 8] = [
+    "item", "gem", "monster", "zone", "currency", "line", "exit", "gate",
+];
+
+fn check_ref_kind(kind: &str, line: usize) -> Result<(), CompileError> {
+    if REF_KINDS.contains(&kind) {
+        return Ok(());
+    }
+    Err(CompileError::new(
+        line,
+        format!(
+            "unknown content ref kind `{kind}` (one of: {})",
+            REF_KINDS.join(", ")
+        ),
+    ))
 }
 
 fn bin_op(tok: &Tok) -> Option<(BinOp, u8)> {

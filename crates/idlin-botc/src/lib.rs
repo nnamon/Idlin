@@ -19,7 +19,7 @@
 pub mod lang;
 mod templates;
 
-pub use lang::{CompileError, compile};
+pub use lang::{CompileError, Resolver, compile, compile_with};
 pub use templates::{TEMPLATE_GRINDER, template_grinder};
 
 use idlin_vm::Op;
