@@ -750,6 +750,11 @@ pub struct TilesetDef {
     /// wiki and authoring sanity now).
     #[serde(default)]
     pub natural_monsters: Vec<String>,
+    /// OPT-IN cosmetic features the renderer builds for zones of this
+    /// family ("sea", "bluffs_west", "edge_hills", "stars",
+    /// "fringe_scatter"). Nothing renders unless the tileset asks.
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 impl TilesetDef {
@@ -874,6 +879,11 @@ pub struct ZoneDef {
     /// Walk-up exits to other zones (bots confirm with UseExit).
     #[serde(default)]
     pub exits: Vec<ExitDef>,
+    /// Maximum characters simultaneously in one world of this zone
+    /// (0 = unlimited). The host opens fresh instances past the cap —
+    /// capacity is CONTENT, never server hardcode.
+    #[serde(default)]
+    pub max_players: u32,
     /// The tileset family this zone is authored in (zones with map.txt).
     #[serde(default)]
     pub tileset: Option<String>,
@@ -1063,6 +1073,44 @@ impl ContentDb {
                 if !walkable_at(exit.x_u, exit.y_u) {
                     return Err(bad(format!(
                         "exit {}x{} (to {}) is not walkable",
+                        exit.x_u, exit.y_u, exit.dest
+                    )));
+                }
+            }
+            // REACHABILITY: walkable isn't enough — a pack anchor or exit
+            // behind an unbroken rock line bricks the zone (it happened:
+            // the Tidewarden got walled in). Flood-fill from spawn;
+            // everything that matters must CONNECT.
+            let mut seen = vec![false; (grid.width * grid.height) as usize];
+            let mut queue = std::collections::VecDeque::new();
+            seen[(zone.spawn_y_u * grid.width + zone.spawn_x_u) as usize] = true;
+            queue.push_back((zone.spawn_x_u, zone.spawn_y_u));
+            while let Some((x, y)) = queue.pop_front() {
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let (nx, ny) = (x + dx, y + dy);
+                    if nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height {
+                        continue;
+                    }
+                    let i = (ny * grid.width + nx) as usize;
+                    if !seen[i] && walkable_at(nx, ny) {
+                        seen[i] = true;
+                        queue.push_back((nx, ny));
+                    }
+                }
+            }
+            let reachable = |x: i32, y: i32| seen[(y * grid.width + x) as usize];
+            for pack in &zone.packs {
+                if !reachable(pack.x_u, pack.y_u) {
+                    return Err(bad(format!(
+                        "pack anchor {}x{} ({}) is walkable but UNREACHABLE from spawn",
+                        pack.x_u, pack.y_u, pack.monster
+                    )));
+                }
+            }
+            for exit in &zone.exits {
+                if !reachable(exit.x_u, exit.y_u) {
+                    return Err(bad(format!(
+                        "exit {}x{} (to {}) is walkable but UNREACHABLE from spawn",
                         exit.x_u, exit.y_u, exit.dest
                     )));
                 }

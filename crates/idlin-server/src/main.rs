@@ -119,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
             zone_id: zone_id.clone(),
             world: World::new_for_zone(seed, &content, &zone_id),
             tiles: runner::resolve_tile_map(&content, &zone_id),
+            max_players: content.zone(&zone_id).map_or(0, |z| z.max_players),
             pending: builtin_joins()?,
         }]
     } else {
@@ -127,6 +128,7 @@ async fn main() -> anyhow::Result<()> {
             zone_id: "saltmere".into(),
             world: World::new_for_zone(seed, &content, "saltmere"),
             tiles: runner::resolve_tile_map(&content, "saltmere"),
+            max_players: content.zone("saltmere").map_or(0, |z| z.max_players),
             pending: TickInputs::default(),
         }];
         let joins = builtin_joins()?;
@@ -144,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
                 zone_id: "withered_shore".into(),
                 world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
                 tiles: runner::resolve_tile_map(&content, "withered_shore"),
+                max_players: content.zone("withered_shore").map_or(0, |z| z.max_players),
                 pending: TickInputs {
                     joins: vec![join],
                     arrivals: Vec::new(),

@@ -38,6 +38,41 @@ function zoneKey(zone: NonNullable<WorldStore["zone"]>): string {
   return `${zone.name}|${zone.width}x${zone.height}|${h}`;
 }
 
+/** Concentric blue spiral with streaky arms — the portal's surface. */
+function vortexTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.translate(128, 128);
+  for (let arm = 0; arm < 26; arm++) {
+    const a0 = (arm / 26) * Math.PI * 2;
+    const hue = 200 + (arm % 5) * 6;
+    const light = 52 + (arm % 3) * 16;
+    g.strokeStyle = `hsla(${hue}, 95%, ${light}%, ${0.5 + (arm % 3) * 0.18})`;
+    g.lineWidth = 1.4 + (arm % 3);
+    g.beginPath();
+    for (let r = 16; r < 124; r += 2.4) {
+      const a = a0 + r * 0.045;
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r;
+      if (r === 16) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  // Fade the center toward the dark throat and feather the edge.
+  const fade = g.createRadialGradient(0, 0, 0, 0, 0, 128);
+  fade.addColorStop(0, "rgba(0,0,0,1)");
+  fade.addColorStop(0.22, "rgba(0,0,0,0.55)");
+  fade.addColorStop(0.55, "rgba(0,0,0,0)");
+  fade.addColorStop(0.92, "rgba(0,0,0,0)");
+  fade.addColorStop(1, "rgba(0,0,0,1)");
+  g.globalCompositeOperation = "destination-out";
+  g.fillStyle = fade;
+  g.fillRect(-128, -128, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+
 interface Brazier {
   light: THREE.PointLight;
   baseIntensity: number;
@@ -67,9 +102,10 @@ export class ZoneRenderer {
   /** Zone exits (portals), index-aligned with store.zone.exits. */
   private exitMarkers: Array<{
     group: THREE.Group;
-    ring: THREE.MeshStandardMaterial;
-    beam: THREE.MeshBasicMaterial;
+    swirl: THREE.MeshBasicMaterial;
+    rim: THREE.MeshBasicMaterial;
     light: THREE.PointLight;
+    tex: THREE.CanvasTexture;
   }> = [];
   private moon: THREE.DirectionalLight;
   private focusRing: THREE.Mesh;
@@ -242,36 +278,48 @@ export class ZoneRenderer {
       this.addBrazier(bx, bz, this.terrain.heightAt(bx, bz));
     }
 
-    // Exits: a portal ring + beam per zone exit. Open state animates in
-    // the frame loop (a closed exit is a faint dark ring).
+    // Exits: a PoE-style ground vortex per exit — concentric blue swirl
+    // spinning into a dark center, with a bright rim. Open state spins
+    // and glows in the frame loop; closed is a faint dormant scar.
     for (const exit of zone.exits) {
       const y = this.terrain.heightAt(exit.x, exit.y);
       const group = new THREE.Group();
-      const ringMat = new THREE.MeshStandardMaterial({
-        color: 0x1a3a34,
-        emissive: 0x6fe3c1,
-        emissiveIntensity: 0.2,
-        roughness: 0.6,
+      const swirlTex = vortexTexture();
+      swirlTex.center.set(0.5, 0.5);
+      const swirlMat = new THREE.MeshBasicMaterial({
+        map: swirlTex,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
       });
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.1, 10, 28), ringMat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.08;
-      const beamMat = new THREE.MeshBasicMaterial({
-        color: 0x6fe3c1,
+      const swirl = new THREE.Mesh(new THREE.CircleGeometry(1.45, 40), swirlMat);
+      swirl.rotation.x = -Math.PI / 2;
+      swirl.position.y = 0.07;
+      // The dark throat under the swirl: reads as depth.
+      const throat = new THREE.Mesh(
+        new THREE.CircleGeometry(1.15, 32),
+        new THREE.MeshBasicMaterial({ color: 0x020208 }),
+      );
+      throat.rotation.x = -Math.PI / 2;
+      throat.position.y = 0.05;
+      const rimMat = new THREE.MeshBasicMaterial({
+        color: 0x4fc3ff,
         transparent: true,
         opacity: 0,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 5.5, 14, 1, true), beamMat);
-      beam.position.y = 2.8;
-      const light = new THREE.PointLight(0x6fe3c1, 0, 9, 2);
-      light.position.y = 1.4;
-      group.add(ring, beam, light);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(1.38, 0.07, 8, 48), rimMat);
+      rim.rotation.x = -Math.PI / 2;
+      rim.position.y = 0.09;
+      const light = new THREE.PointLight(0x4fc3ff, 0, 9, 2);
+      light.position.y = 1.2;
+      group.add(throat, swirl, rim, light);
       group.position.set(exit.x, y, exit.y);
       this.scene.add(group);
-      this.exitMarkers.push({ group, ring: ringMat, beam: beamMat, light });
+      this.exitMarkers.push({ group, swirl: swirlMat, rim: rimMat, light, tex: swirlTex });
     }
 
     this.director.setZoneSize(w, h);
@@ -395,15 +443,16 @@ export class ZoneRenderer {
         b.baseIntensity * (0.82 + 0.14 * Math.sin(t * 9 + b.phase) + 0.1 * Math.sin(t * 23 + b.phase * 3));
     }
 
-    // Portals breathe while open; closed ones sit as faint dark rings.
+    // Portals: the vortex spins while open; closed is a dormant scar.
     const exits = this.store.zone?.exits ?? [];
     for (let i = 0; i < this.exitMarkers.length; i++) {
       const m = this.exitMarkers[i];
       const open = exits[i]?.open ?? false;
-      const pulse = 0.75 + 0.25 * Math.sin(t * 2.2 + i);
-      m.ring.emissiveIntensity = open ? 1.6 * pulse : 0.15;
-      m.beam.opacity = open ? 0.16 * pulse : 0;
-      m.light.intensity = open ? 11 * pulse : 0;
+      const pulse = 0.82 + 0.18 * Math.sin(t * 2.4 + i);
+      m.tex.rotation = -t * (open ? 1.6 : 0.012);
+      m.swirl.opacity = open ? 0.95 * pulse : 0.1;
+      m.rim.opacity = open ? 0.85 * pulse : 0.06;
+      m.light.intensity = open ? 13 * pulse : 0;
     }
 
     // -- sync entities (only once models are in; one frame of patience) --

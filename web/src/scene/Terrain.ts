@@ -82,10 +82,13 @@ export class Terrain {
   private groundColors = new Map<string, THREE.Color>();
   private waterEdge: number[] | null = null;
   private hasWater = false;
+  /** Opt-in cosmetic features from the tileset; legacy zones get all. */
+  private features = new Set<string>();
 
   /** Drive the terrain from an authored tile map (call before build). */
   setTiles(tiles: TileMapState): void {
     this.tiles = tiles;
+    this.features = new Set(tiles.features);
     this.byGlyph = new Map(tiles.legend.map((l) => [l.glyph, l]));
     for (const l of tiles.legend) {
       this.groundColors.set(l.glyph, new THREE.Color(l.ground));
@@ -146,7 +149,7 @@ export class Terrain {
    */
   heightAt(x: number, z: number): number {
     const { zoneW: w, zoneH: h } = this;
-    if (this.tiles && !this.hasWater) {
+    if (this.tiles && !this.features.has("sea")) {
       // Dry authored ground (the town): a gentle plateau ringed by hills.
       let y = vnoise(x * 0.08, z * 0.08, this.seed) * 0.22 - 0.08;
       const out = Math.max(0, -x, x - w, -z, z - h);
@@ -228,7 +231,7 @@ export class Terrain {
     this.group.add(ground);
 
     // -- the sea: a broad plane east of the waterline --
-    if (!this.tiles || this.hasWater) {
+    if (!this.tiles || (this.hasWater && this.features.has("sea"))) {
     this.water = new THREE.Mesh(
       new THREE.PlaneGeometry(PAD + 40, spanZ),
       new THREE.MeshStandardMaterial({
@@ -249,7 +252,7 @@ export class Terrain {
 
     // -- lapping waves: foam strips that roll up the sand and fade --
     const foamTex = this.makeFoamTexture();
-    for (let i = 0; i < (!this.tiles || this.hasWater ? 3 : 0); i++) {
+    for (let i = 0; i < (!this.tiles || (this.hasWater && this.features.has("sea")) ? 3 : 0); i++) {
       const mat = new THREE.MeshBasicMaterial({
         map: foamTex,
         transparent: true,
@@ -304,6 +307,7 @@ export class Terrain {
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    const starsWanted = !this.tiles || this.features.has("stars");
     const stars = new THREE.Points(
       starGeo,
       new THREE.PointsMaterial({
@@ -315,10 +319,10 @@ export class Terrain {
         fog: false,
       }),
     );
-    this.group.add(stars);
+    if (starsWanted) this.group.add(stars);
 
     if (this.tiles) {
-      this.scatterFringe(assets, rng);
+      if (this.features.has("fringe_scatter")) this.scatterFringe(assets, rng);
       this.placeTileProps(assets, rng);
     } else {
       this.scatterProps(assets, rng);

@@ -58,6 +58,8 @@ pub struct ManagedWorld {
     pub world: World,
     /// Resolved tile map for authored zones (build once at boot).
     pub tiles: Option<Arc<TileMapState>>,
+    /// ZoneDef::max_players (0 = unlimited) — the ferry never overfills.
+    pub max_players: u32,
     /// Inputs queued for this world's next tick (joins at boot, then
     /// ferried arrivals).
     pub pending: TickInputs,
@@ -103,6 +105,7 @@ pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMa
         height: grid.height,
         rows,
         legend,
+        features: ts.features.clone(),
         props: def
             .props
             .iter()
@@ -150,10 +153,19 @@ pub fn spawn_tick_loop(
                 // (a returning idler rejoins an existing instance).
                 for (bundle, dest) in all_departures {
                     let name = bundle.character.name.clone();
+                    let has_room = |mw: &ManagedWorld| {
+                        mw.max_players == 0
+                            || (mw.world.views().iter().filter(|v| v.kind == 1).count() as u32)
+                                < mw.max_players
+                    };
                     let target = worlds
-                        .iter_mut()
-                        .position(|mw| mw.key == dest)
-                        .or_else(|| worlds.iter().position(|mw| mw.zone_id == dest));
+                        .iter()
+                        .position(|mw| mw.key == dest && has_room(mw))
+                        .or_else(|| {
+                            worlds
+                                .iter()
+                                .position(|mw| mw.zone_id == dest && has_room(mw))
+                        });
                     match target {
                         Some(i) => {
                             info!("ferrying {name} to {}", worlds[i].key);

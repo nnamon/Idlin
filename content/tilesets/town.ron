@@ -33,4 +33,5 @@ TilesetDef(
         (id: "lamplit", palette: [("cobble", "#46404e"), ("dirt", "#52463a")]),
     ],
     natural_monsters: [],
+    features: ["edge_hills", "stars", "fringe_scatter"],
 )

@@ -12,6 +12,8 @@ ZoneDef(
     spawn_radius_u: 7,
     // Sanctuary: monsters never acquire idlers resting at the camp.
     camp_radius_u: 10,
+    // Story zones are SOLO: one idler per instance, as content not code.
+    max_players: 1,
     brain: Some("withered_shore"),
     // Authored narration the brain fires by index (text = content,
     // WHEN = script).

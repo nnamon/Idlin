@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 20;
+pub const PROTO_VERSION: u32 = 21;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -343,6 +343,9 @@ pub struct TileMapState {
     pub rows: Vec<String>,
     pub legend: Vec<TileVisual>,
     pub props: Vec<PropState>,
+    /// The tileset's OPT-IN cosmetic features (sea, bluffs, stars…).
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 /// One idler on the global focus-queue roster (every world), listed in

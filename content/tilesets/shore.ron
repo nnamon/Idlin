@@ -22,4 +22,6 @@ TilesetDef(
         (id: "drowned", palette: [("sand", "#3e4046"), ("water", "#0e1c30")]),
     ],
     natural_monsters: ["drowned_shambler", "bone_stalker", "tide_husk"],
+    // The strand's look, OPT-IN: variants of this family compose from these.
+    features: ["sea", "bluffs_west", "edge_hills", "stars", "fringe_scatter"],
 )

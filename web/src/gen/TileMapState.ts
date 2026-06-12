@@ -6,4 +6,8 @@ import type { TileVisual } from "./TileVisual";
  * An authored zone's tile map, fully resolved for rendering. One char
  * per sim unit, rows top-to-bottom.
  */
-export type TileMapState = { width: number, height: number, rows: Array<string>, legend: Array<TileVisual>, props: Array<PropState>, };
+export type TileMapState = { width: number, height: number, rows: Array<string>, legend: Array<TileVisual>, props: Array<PropState>, 
+/**
+ * The tileset's OPT-IN cosmetic features (sea, bluffs, stars…).
+ */
+features: Array<string>, };
