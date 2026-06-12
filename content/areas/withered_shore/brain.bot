@@ -42,10 +42,13 @@ const L_STALKERS = 8;
 const L_BOSSDOWN = 9;
 const L_BOSSWARN = 10;
 const L_DEPART = 11;
+const L_DECLARE = 12;
+const L_PATHSET = 13;
 
 // The bluff-path exit to Saltmere (zone.ron exits[0]). The brain only
 // GATES it open — the killer's own bot walks through; no forced moves.
 const EXIT_SALTMERE = 0;
+const GATE_START = 0;
 
 // beat flags (zl_once bits)
 const F_WELCOME = 1;
@@ -58,6 +61,7 @@ const F_OBOL = 64;
 const F_Y70 = 128;
 const F_Y40 = 256;
 const F_BOSSWARN = 512;
+const F_PATH = 1024;
 
 fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
@@ -65,7 +69,7 @@ fn main() {
     // -- state-driven beats: welcome, gated drops, threshold story --
     var i = 0;
     while (i < nq) {
-        var r = ZL_Q + i * 32;
+        var r = ZL_Q + i * QC_STRIDE;
         var net = mem[r + QC_NET];
         var kills = mem[r + QC_KILLS];
         var x = mem[r + QC_X];
@@ -73,16 +77,36 @@ fn main() {
 
         zl_narrate_once(net, F_WELCOME, L_WELCOME);
 
+        // Lesson 0: declare a build. The starting gate answers intent —
+        // and the declared ARCHETYPE steers the weapon drop later.
+        var bl = mem[r + QC_BUILD];
+        var arch = mem[r + QC_ARCH];
+        if (bl == 0) {
+            zl_narrate_once(net, F_PATH, L_DECLARE);
+        }
+        if (bl > 0) {
+            if (zl_once(net, F_PATH * 2) == 1) {
+                set_gate(GATE_START, 1);
+                narrate(L_PATHSET, net);
+            }
+        }
+
         // NOTE: && is EAGER in this language (both sides always run) —
         // side-effecting calls like zl_once must sit INSIDE the gate,
         // never beside it.
         // First kill pays a weapon; what you keep decides your path.
         if (kills >= 1) {
             if (zl_once(net, F_WEAPON) == 1) {
-                var w = (random() & 0x7FFFFFFF) % 3;
+                // The declared path picks the weapon; the undeclared
+                // get whatever the tide coughs up.
                 var base = IT_CLEAVER;
-                if (w == 1) { base = IT_BOW; }
-                if (w == 2) { base = IT_WAND; }
+                if (arch == 1) { base = IT_BOW; }
+                if (arch == 2) { base = IT_WAND; }
+                if (arch < 0) {
+                    var w = (random() & 0x7FFFFFFF) % 3;
+                    if (w == 1) { base = IT_BOW; }
+                    if (w == 2) { base = IT_WAND; }
+                }
                 drop_loot(0, base, x, y, net);
                 drop_loot(0, IT_FLASK, x, y, net);
                 narrate(L_FIRSTKILL, net);
@@ -139,7 +163,7 @@ fn main() {
             // through it is the killer's own decision (use_exit).
             var k = 0;
             while (k < nq) {
-                var qr = ZL_Q + k * 32;
+                var qr = ZL_Q + k * QC_STRIDE;
                 if (mem[qr + QC_NET] == who) {
                     drop_loot(3, 8, mem[qr + QC_X], mem[qr + QC_Y], who);
                     var sup = (random() & 0x7FFFFFFF) % 3;

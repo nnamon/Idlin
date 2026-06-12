@@ -112,6 +112,8 @@ export class ZoneRenderer {
   private fx: FxSystem;
   private braziers: Brazier[] = [];
   private brazierGroups: THREE.Group[] = [];
+  /** Tutorial gates, index-aligned with store.zone.gates. */
+  private gateMarkers: Array<{ mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial }> = [];
   /** Zone exits (portals), index-aligned with store.zone.exits. */
   private exitMarkers: Array<{
     group: THREE.Group;
@@ -245,6 +247,8 @@ export class ZoneRenderer {
     this.braziers = [];
     for (const m of this.exitMarkers) m.group.removeFromParent();
     this.exitMarkers = [];
+    for (const g of this.gateMarkers) g.mesh.removeFromParent();
+    this.gateMarkers = [];
     // Entity visuals too: net ids are PER-WORLD (every instance's idler is
     // id 1), so reusing a visual across a cut would keep the old world's
     // baked name label — Kargan's nameplate riding on Veles.
@@ -293,6 +297,27 @@ export class ZoneRenderer {
     // Braziers: warm flickering counterpoints to the cold moonlight.
     for (const [bx, bz] of brazierSpots) {
       this.addBrazier(bx, bz, this.terrain.heightAt(bx, bz));
+    }
+
+    // Gates: a humming amber barrier across the rect while shut; it
+    // dissolves when the brain lifts it.
+    for (const gate of zone.gates) {
+      const w2 = gate.x1 - gate.x0 + 1;
+      const h2 = gate.y1 - gate.y0 + 1;
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xe0b75e,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w2, 1.8, h2), mat);
+      const gx = gate.x0 + w2 / 2;
+      const gz = gate.y0 + h2 / 2;
+      mesh.position.set(gx, this.terrain.heightAt(gx, gz) + 0.95, gz);
+      this.scene.add(mesh);
+      this.gateMarkers.push({ mesh, mat });
     }
 
     // Exits: a PoE-style ground vortex per exit — concentric blue swirl
@@ -489,6 +514,15 @@ export class ZoneRenderer {
     for (const b of this.braziers) {
       b.light.intensity =
         b.baseIntensity * (0.82 + 0.14 * Math.sin(t * 9 + b.phase) + 0.1 * Math.sin(t * 23 + b.phase * 3));
+    }
+
+    // Gates hum while shut, vanish when lifted.
+    const gates = this.store.zone?.gates ?? [];
+    for (let i = 0; i < this.gateMarkers.length; i++) {
+      const g = this.gateMarkers[i];
+      const open = gates[i]?.open ?? true;
+      g.mesh.visible = !open;
+      if (!open) g.mat.opacity = 0.28 + 0.1 * Math.sin(t * 3 + i);
     }
 
     // Portals: the vortex spins while open; closed is a dormant scar.

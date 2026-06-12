@@ -714,6 +714,19 @@ pub struct ExitDef {
     pub open: bool,
 }
 
+/// A brain-togglable barrier: a rect of cells that block movement while
+/// the gate is shut. Tutorials are built from these (set_gate syscall).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateDef {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    /// Open from boot? Brains lift them as lessons complete.
+    #[serde(default)]
+    pub open: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnPack {
     /// MonsterDef id.
@@ -900,6 +913,9 @@ pub struct ZoneDef {
     /// Walk-up exits to other zones (bots confirm with UseExit).
     #[serde(default)]
     pub exits: Vec<ExitDef>,
+    /// Brain-togglable barriers (tutorial gates).
+    #[serde(default)]
+    pub gates: Vec<GateDef>,
     /// Maximum characters simultaneously in one world of this zone
     /// (0 = unlimited). The host opens fresh instances past the cap —
     /// capacity is CONTENT, never server hardcode.

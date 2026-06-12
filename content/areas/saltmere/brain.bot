@@ -14,7 +14,7 @@ fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
     var i = 0;
     while (i < nq) {
-        var r = ZL_Q + i * 32;
+        var r = ZL_Q + i * QC_STRIDE;
         var net = mem[r + QC_NET];
         if (zl_once(net, F_WELCOMED) == 1) {
             narrate(L_WELCOME, net);

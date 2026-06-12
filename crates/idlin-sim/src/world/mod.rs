@@ -99,6 +99,14 @@ pub enum SimEvent {
     CharacterRespawned {
         id: u32,
     },
+    /// A tutorial gate opened or shut (zone brain's set_gate). Cell rect.
+    GateChanged {
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        open: bool,
+    },
     /// An exit opened or closed (zone brain's set_exit). Raw Q16.16 coords.
     ExitChanged {
         x: i32,
@@ -615,6 +623,15 @@ impl World {
                         monster_idx,
                         alive: 0,
                         respawn_timer: 0,
+                    });
+                }
+                for gate in &def.gates {
+                    zone.gates.push(crate::zone::GateState {
+                        x0: gate.x0,
+                        y0: gate.y0,
+                        x1: gate.x1,
+                        y1: gate.y1,
+                        open: gate.open,
                     });
                 }
                 for exit in &def.exits {
@@ -1182,7 +1199,9 @@ impl World {
             for oy in -1..=1i64 {
                 for ox in -1..=1i64 {
                     let (cx, cy) = (ccx + ox, ccy + oy);
-                    if !grid.solid_cell(cx, cy) {
+                    let solid = grid.solid_cell(cx, cy)
+                        || self.zone.gates.iter().any(|g| !g.open && g.covers(cx, cy));
+                    if !solid {
                         continue;
                     }
                     // Closest point on the cell's AABB to the entity.

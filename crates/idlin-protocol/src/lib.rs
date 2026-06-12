@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 22;
+pub const PROTO_VERSION: u32 = 23;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -143,6 +143,14 @@ pub enum GameEvent {
     CharacterJoined {
         id: u32,
         name: String,
+    },
+    /// A tutorial gate lifted or shut (cell rect).
+    GateChanged {
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        open: bool,
     },
     /// An exit opened or closed (raw Q16.16 coords — the client keys its
     /// portal visuals by position).
@@ -295,6 +303,16 @@ pub struct GemView {
     pub xp_next: i32,
     /// Support gems render indented under their skill.
     pub support: bool,
+}
+
+/// A tutorial gate: a rect of CELLS that blocks ground while shut.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct GateView {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    pub open: bool,
 }
 
 /// A walk-up zone exit (portal). Bots take these themselves; the client
@@ -473,6 +491,9 @@ pub enum S2C {
         /// Walk-up exits (portals), open state included.
         #[serde(default)]
         exits: Vec<ExitView>,
+        /// Tutorial gates (cell rects), open state included.
+        #[serde(default)]
+        gates: Vec<GateView>,
         entities: Vec<EntityState>,
     },
     /// Per-tick changes relative to the previous tick.

@@ -165,6 +165,15 @@ impl World {
         }
     }
 
+    /// The zone's gates as cell rects (x0, y0, x1, y1, open).
+    pub fn gate_views(&self) -> Vec<(i32, i32, i32, i32, bool)> {
+        self.zone
+            .gates
+            .iter()
+            .map(|g| (g.x0, g.y0, g.x1, g.y1, g.open))
+            .collect()
+    }
+
     /// The zone's exits as raw Q16.16 (x, y, open) for replication.
     pub fn exit_views(&self) -> Vec<(i32, i32, bool)> {
         self.zone
@@ -532,6 +541,9 @@ impl World {
             h.write_i32(ex.pos.x.raw());
             h.write_i32(ex.pos.y.raw());
             h.write_u8(ex.open as u8);
+        }
+        for g in &self.zone.gates {
+            h.write_u8(g.open as u8);
         }
         if let Some(b) = &self.zone_brain {
             for byte in b.vm.state_bytes() {

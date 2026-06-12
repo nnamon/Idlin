@@ -28,6 +28,10 @@ const QC_Y = 16;
 const QC_WCLASS = 20;
 const QC_LIFE = 24;
 const QC_DEAD = 28;
+const QC_BUILD = 32;   // declared build length (0 = no build yet)
+const QC_ARCH = 36;    // build archetype: 0 melee / 1 bow / 2 wand / -1 unknown
+// Record stride: 10 words per character.
+const QC_STRIDE = 40;
 
 // PollEvents record fields and kinds.
 const PE_KIND = 0;

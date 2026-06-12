@@ -53,6 +53,7 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("drop_loot", 103, 5),
     ("spawn_monster", 104, 3),
     ("set_exit", 106, 2),
+    ("set_gate", 107, 2),
 ];
 
 /// SetBuild is emitted by the compiler from the `build [...]` declaration,

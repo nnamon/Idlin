@@ -28,12 +28,13 @@ const SYS_NARRATE: i32 = 102;
 const SYS_DROP_LOOT: i32 = 103;
 const SYS_SPAWN_MONSTER: i32 = 104;
 const SYS_SET_EXIT: i32 = 106;
+const SYS_SET_GATE: i32 = 107;
 const SYS_DEBUG: i32 = 0;
 const SYS_RANDOM: i32 = 15;
 
 /// QueryCharacters record: net, kills, level, x, y, weapon_class, life_pct,
 /// dead — 8 words.
-const CHAR_RECORD_WORDS: u16 = 8;
+const CHAR_RECORD_WORDS: u16 = 10;
 
 impl World {
     /// Translate this tick's events for the brain, then run it. Runs at the
@@ -117,6 +118,29 @@ impl World {
                         .and_then(|i| self.content.items[i.base_idx as usize].weapon_class)
                         .map(|w| w as i32)
                         .unwrap_or(-1);
+                    // Declared-build signals: the gate that asks "who are
+                    // you going to be?" reads these. Archetype from the
+                    // build plan's limb sockets/keystones: 0 melee, 1 bow,
+                    // 2 wand, -1 undeclared/unclear.
+                    let arch = {
+                        let has = |num: u16| {
+                            ch.build_plan.iter().any(|&n| {
+                                self.content.tree_refs.get(n as usize).copied() == Some(num)
+                                    || n == num as u32
+                            })
+                        };
+                        if ch.build_plan.is_empty() {
+                            -1
+                        } else if has(26) || has(25) || has(36) || has(35) {
+                            0
+                        } else if has(56) || has(55) || has(66) || has(65) {
+                            1
+                        } else if has(86) || has(85) || has(96) || has(95) {
+                            2
+                        } else {
+                            -1
+                        }
+                    };
                     let rec: [i32; CHAR_RECORD_WORDS as usize] = [
                         e.net_id as i32,
                         ch.kills.min(i32::MAX as u64) as i32,
@@ -126,6 +150,8 @@ impl World {
                         wclass,
                         c.map(|c| c.life_pct() as i32).unwrap_or(0),
                         (!e.alive()) as i32,
+                        ch.build_plan.len() as i32,
+                        arch,
                     ];
                     let base = out.wrapping_add(n * CHAR_RECORD_WORDS * 4);
                     for (j, v) in rec.iter().enumerate() {
@@ -241,6 +267,29 @@ impl World {
                 // Scripted spawns belong to no pack (sentinel): they never
                 // respawn and don't disturb pack bookkeeping.
                 self.spawn_monster(i as u32, u32::MAX, pos);
+                0
+            }
+            SYS_SET_GATE => {
+                // Lift or shut a tutorial gate. Brains gate LESSONS, not
+                // people: the barrier blocks ground, never teleports.
+                let idx = bot.vm.pop();
+                let open = bot.vm.pop() != 0;
+                let Some(gate) = usize::try_from(idx)
+                    .ok()
+                    .and_then(|i| self.zone.gates.get_mut(i))
+                else {
+                    return -1;
+                };
+                if gate.open != open {
+                    gate.open = open;
+                    events.push(SimEvent::GateChanged {
+                        x0: gate.x0,
+                        y0: gate.y0,
+                        x1: gate.x1,
+                        y1: gate.y1,
+                        open,
+                    });
+                }
                 0
             }
             SYS_SET_EXIT => {

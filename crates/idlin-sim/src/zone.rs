@@ -97,6 +97,22 @@ impl SimGrid {
     }
 }
 
+/// A tutorial gate: a rect of cells the brain can open or shut.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateState {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    pub open: bool,
+}
+
+impl GateState {
+    pub fn covers(&self, cx: i64, cy: i64) -> bool {
+        cx >= self.x0 as i64 && cx <= self.x1 as i64 && cy >= self.y0 as i64 && cy <= self.y1 as i64
+    }
+}
+
 /// A walk-up exit: a character bot standing close enough takes it with
 /// the UseExit syscall — nothing ever forces a transfer. The zone brain
 /// gates `open`.
@@ -126,6 +142,8 @@ pub struct Zone {
     pub grid: Option<SimGrid>,
     /// Walk-up exits to other zones.
     pub exits: Vec<ExitState>,
+    /// Brain-togglable barriers: closed = the rect blocks movement.
+    pub gates: Vec<GateState>,
     /// Skill projectiles in flight.
     pub projectiles: Vec<Projectile>,
     pub packs: Vec<PackState>,
@@ -146,6 +164,7 @@ impl Zone {
             obstacles: Vec::new(),
             grid: None,
             exits: Vec::new(),
+            gates: Vec::new(),
             projectiles: Vec::new(),
             packs: Vec::new(),
             slots: Vec::new(),
@@ -202,6 +221,14 @@ impl Zone {
         self.free.push(slot as u32);
         self.free.sort_unstable_by(|a, b| b.cmp(a));
         Some(entity)
+    }
+
+    /// A cell blocked RIGHT NOW: static grid solidity or a shut gate.
+    pub fn cell_blocked(&self, cx: i64, cy: i64) -> bool {
+        if self.grid.as_ref().is_some_and(|g| g.solid_cell(cx, cy)) {
+            return true;
+        }
+        self.gates.iter().any(|g| !g.open && g.covers(cx, cy))
     }
 
     pub fn clamp_pos(&self, pos: FxV2) -> FxV2 {

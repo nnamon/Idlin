@@ -102,6 +102,7 @@ export class WorldStore {
     obstacles: ZoneObstacle[];
     tiles: TileMapState | null;
     exits: { x: number; y: number; open: boolean }[];
+    gates: { x0: number; y0: number; x1: number; y1: number; open: boolean }[];
   } | null = null;
   tick = 0;
   /** Bumps on every ZoneSnapshot: a snapshot is a FULL state reset, and
@@ -144,6 +145,7 @@ export class WorldStore {
             y: e.y / 65536,
             open: e.open,
           })),
+          gates: (d.gates ?? []).map((g) => ({ ...g })),
         };
         this.tick = d.tick;
         this.snapshotGen++;
@@ -337,6 +339,15 @@ export class WorldStore {
       case "CharacterRespawned": {
         const name = this.entities.get(ev.data.id)?.state.name ?? "someone";
         push(`✚ ${name} returns to the fight`, "#7bff9a");
+        break;
+      }
+      case "GateChanged": {
+        const d = ev.data;
+        const gate = this.zone?.gates.find(
+          (g) => g.x0 === d.x0 && g.y0 === d.y0 && g.x1 === d.x1 && g.y1 === d.y1,
+        );
+        if (gate) gate.open = d.open;
+        push(d.open ? "◈ A gate lifts" : "◈ A gate falls", "#e0b75e");
         break;
       }
       case "ExitChanged": {
