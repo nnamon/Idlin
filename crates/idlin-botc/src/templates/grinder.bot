@@ -59,6 +59,10 @@ var wander_left;           // ticks before we pick a new spot
 var bored;                 // ticks since anything was worth fighting
 var leaving;               // committed to an open exit (boredom latch)
 var last_zone;             // SelfStatus zone index; transfers reset intent
+var stuck_x;               // unstick: position memory + window counter
+var stuck_y;
+var stuck_t;
+var unstick;               // ticks left of forced wandering
 
 // Fire one skill slot at the target, honoring its declared targeting
 // mode (record +36; ready checked by the caller). 0 = it flies.
@@ -153,6 +157,44 @@ fn main() {
         }
         k = k + 1;
     }
+
+    // UNSTICK: sight is not always path. A target visible through a
+    // crack in a cliff pins us against it forever (we see it, so we
+    // chase; we chase, so we never get bored). If we hold a target
+    // BEYOND attack reach and barely move for 3 seconds, geometry is
+    // beating us — drop the target and wander hard for a few seconds
+    // to round the obstacle.
+    if (unstick > 0) {
+        unstick = unstick - 1;
+        target = -1;
+    }
+    if (target >= 0) {
+        stuck_t = stuck_t + 1;
+        if (stuck_t >= 30) {
+            var sdx = mem[SELF] - stuck_x;
+            if (sdx < 0) { sdx = 0 - sdx; }
+            var sdy = mem[SELF + 4] - stuck_y;
+            if (sdy < 0) { sdy = 0 - sdy; }
+            if (sdx < 0x8000 && sdy < 0x8000) {
+                // Within attack reach we WANT to stand still (we're
+                // swinging); beyond it, parked means pinned.
+                var reach = mem[SELF + 48] + 0x18000;
+                var tdx = tx - mem[SELF];
+                if (tdx < 0) { tdx = 0 - tdx; }
+                var tdy = ty - mem[SELF + 4];
+                if (tdy < 0) { tdy = 0 - tdy; }
+                if (tdx > reach || tdy > reach) {
+                    unstick = 40;
+                    wander_left = 0; // pick a fresh stroll target now
+                    target = -1;
+                }
+            }
+            stuck_x = mem[SELF];
+            stuck_y = mem[SELF + 4];
+            stuck_t = 0;
+        }
+    }
+    if (target < 0) { stuck_t = 0; }
 
     // Only VISIBLE enemies hold our interest; mobs behind walls don't
     // stop the boredom clock (wandering will reveal them, or not).
