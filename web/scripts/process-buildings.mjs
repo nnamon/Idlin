@@ -25,16 +25,16 @@ const GLTF_PROPS = [
   ["crate_town", "Prop_Crate.gltf", 0.8],
   ["wagon", "Prop_Wagon.gltf", 1.4],
   ["fence_wood", "Prop_WoodenFence_Single.gltf", 1.1],
-  ["wall_town", "Wall_UnevenBrick_Straight.gltf", 1.6],
+  ["wall_town", "Wall_UnevenBrick_Straight.gltf", 2.4],
 ];
 // Whole buildings (the older Village pack, FBX).
 const FBX_PROPS = [
-  ["house_1", "House_1.fbx", 3.4],
-  ["house_2", "House_2.fbx", 3.4],
-  ["house_3", "House_3.fbx", 3.2],
-  ["house_4", "House_4.fbx", 3.6],
-  ["inn", "Inn.fbx", 4.6],
-  ["blacksmith", "Blacksmith.fbx", 3.6],
+  ["house_1", "House_1.fbx", 6.5],
+  ["house_2", "House_2.fbx", 6.8],
+  ["house_3", "House_3.fbx", 6.2],
+  ["house_4", "House_4.fbx", 7.0],
+  ["inn", "Inn.fbx", 9.0],
+  ["blacksmith", "Blacksmith.fbx", 7.0],
 ];
 
 mkdirSync(outDir, { recursive: true });
