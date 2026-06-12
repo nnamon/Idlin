@@ -80,33 +80,33 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
       {/* left column: status plaque + the focused idler's stats */}
       <div className="hud-left">
       <div className="panel">
-        <div style={{ fontWeight: 700, color: "#9a7bff", fontSize: 15, letterSpacing: 4 }}>
+        <div style={{ fontWeight: 700, color: "#c9a24a", fontSize: 15, letterSpacing: 4 }}>
           IDLIN
         </div>
-        <div style={{ fontWeight: 700, color: "#a8a8c2", fontSize: 13.5 }}>
+        <div style={{ fontWeight: 700, color: "#c4b896", fontSize: 13.5 }}>
           {store.zone?.name ?? "connecting…"}
           {store.zone?.worldKey.includes("#") && (
-            <span style={{ color: "#70708a", fontWeight: 400 }}>
+            <span style={{ color: "#8a7d61", fontWeight: 400 }}>
               {" "}· {store.zone.worldKey.split("#")[1]}&rsquo;s
             </span>
           )}
         </div>
         <div style={{ fontSize: 12.5 }}>
-          <span style={{ color: "#70708a" }}>link </span>
+          <span style={{ color: "#8a7d61" }}>link </span>
           <span style={{ color: status?.connected ? "#7bff9a" : "#ff6a6a" }}>
             {status?.connected ? `live · ${status.rttMs ?? "—"} ms` : "disconnected"}
           </span>
         </div>
-        <div style={{ color: "#70708a", fontSize: 12.5 }}>
+        <div style={{ color: "#8a7d61", fontSize: 12.5 }}>
           tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
         </div>
         <button
           onClick={() => setShowTree(true)}
           style={{
             marginTop: 6,
-            background: "#26263a",
-            color: "#9a7bff",
-            border: "1px solid #44445a",
+            background: "#2e2516",
+            color: "#c9a24a",
+            border: "1px solid #5a4624",
             borderRadius: 4,
             padding: "3px 10px",
             cursor: "pointer",
@@ -133,11 +133,11 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
               </span>
               <span className="chip">{store.cue?.reason}</span>
             </div>
-            <div style={{ color: "#70708a", fontSize: 12.5 }}>
+            <div style={{ color: "#8a7d61", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
             </div>
             <LifeBar pct={focused.state.life_pct} dead={focused.state.dead} />
-            <div style={{ fontSize: 12.5, color: "#70708a" }}>
+            <div style={{ fontSize: 12.5, color: "#8a7d61" }}>
               {focused.state.kills} kills · {focused.state.items} items
             </div>
           </div>
@@ -157,7 +157,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
               {chars.map((c) => (
                 <LeaderRow key={c.state.id} c={c} focused={c.state.id === focusId} />
               ))}
-              {chars.length === 0 && <div style={{ color: "#55556a" }}>none yet</div>}
+              {chars.length === 0 && <div style={{ color: "#6b6049" }}>none yet</div>}
             </>
           )}
         </div>
@@ -208,7 +208,7 @@ function SlotBox({
   icons: Icons;
 }) {
   const filled = !!gear?.name;
-  const color = filled ? RARITY_TEXT[gear.rarity] : "#2a2a3e";
+  const color = filled ? RARITY_TEXT[gear.rarity] : "#3a2f1b";
   const src = filled ? icons?.icon(gear.name, label.toLowerCase()) : null;
   return (
     <div
@@ -224,7 +224,7 @@ function SlotBox({
           style={{
             fontWeight: 700,
             fontSize: 10,
-            color: filled ? color : "#2c2c40",
+            color: filled ? color : "#3a2f1b",
             textAlign: "center",
             padding: "8px 2px 0",
             wordBreak: "break-word",
@@ -248,8 +248,8 @@ function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         width: 12 * CELL + 1,
         height: 5 * CELL + 1,
         backgroundImage:
-          `repeating-linear-gradient(0deg, transparent, transparent ${CELL - 1}px, #181826 ${CELL - 1}px, #181826 ${CELL}px),` +
-          `repeating-linear-gradient(90deg, transparent, transparent ${CELL - 1}px, #181826 ${CELL - 1}px, #181826 ${CELL}px)`,
+          `repeating-linear-gradient(0deg, transparent, transparent ${CELL - 1}px, #221b0f ${CELL - 1}px, #221b0f ${CELL}px),` +
+          `repeating-linear-gradient(90deg, transparent, transparent ${CELL - 1}px, #221b0f ${CELL - 1}px, #221b0f ${CELL}px)`,
       }}
     >
       {sheet.inventory.map((it, i) => {
@@ -355,14 +355,14 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
             >
               <span style={{ whiteSpace: "nowrap" }}>
                 {g.support ? "↳ " : "◆ "}
-                {g.name} <span style={{ color: "#77778e" }}>lv{g.level}</span>
+                {g.name} <span style={{ color: "#8a7d61" }}>lv{g.level}</span>
               </span>
               {g.xp_next > 0 ? (
                 <span
                   style={{
                     flex: "0 0 44px",
                     height: 4,
-                    background: "#23233a",
+                    background: "#2c2415",
                     borderRadius: 2,
                     overflow: "hidden",
                   }}
@@ -424,7 +424,7 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
         display: "flex",
         justifyContent: "space-between",
         fontSize: 13,
-        color: c.state.dead ? "#55556a" : focused ? "#e8e8ff" : "#b0b0c8",
+        color: c.state.dead ? "#6b6049" : focused ? "#f0e6d2" : "#bdb194",
       }}
     >
       <span>
@@ -432,7 +432,7 @@ function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
         {c.state.name}
         {c.state.dead ? " ☠" : ""}
       </span>
-      <span style={{ color: "#8a8aa0" }}>
+      <span style={{ color: "#9a8d72" }}>
         lv{c.state.level} · {c.state.kills}k
       </span>
     </div>
@@ -448,20 +448,20 @@ function QueueRow({ q, pos }: { q: FocusQueueEntry; pos: number | null }) {
         style={{
           display: "flex",
           justifyContent: "space-between",
-          color: q.dead ? "#55556a" : q.focused ? "#e8e8ff" : "#b0b0c8",
+          color: q.dead ? "#6b6049" : q.focused ? "#f0e6d2" : "#bdb194",
         }}
       >
         <span>
-          <span style={{ color: "#9a7bff", display: "inline-block", width: 16 }}>
+          <span style={{ color: "#c9a24a", display: "inline-block", width: 16 }}>
             {q.focused ? "▸" : pos}
           </span>
           {q.name}
           {q.dead ? " ☠" : ""}
           {q.cooldown && !q.focused ? " ⧖" : ""}
         </span>
-        <span style={{ color: "#8a8aa0" }}>lv{q.level}</span>
+        <span style={{ color: "#9a8d72" }}>lv{q.level}</span>
       </div>
-      <div style={{ color: "#55556a", fontSize: 11, paddingLeft: 16, lineHeight: 1.25 }}>
+      <div style={{ color: "#6b6049", fontSize: 11, paddingLeft: 16, lineHeight: 1.25 }}>
         {q.zone}
       </div>
     </div>

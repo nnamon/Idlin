@@ -199,7 +199,7 @@ export class ZoneRenderer {
     // Focus ring marking the director's subject.
     this.focusRing = new THREE.Mesh(
       new THREE.RingGeometry(0.8, 1.0, 32),
-      new THREE.MeshBasicMaterial({ color: 0x9a7bff, transparent: true, opacity: 0.7 }),
+      new THREE.MeshBasicMaterial({ color: 0xc9a24a, transparent: true, opacity: 0.7 }),
     );
     this.focusRing.rotation.x = -Math.PI / 2;
     this.focusRing.position.y = 0.05;
