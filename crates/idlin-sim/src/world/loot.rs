@@ -71,16 +71,34 @@ impl World {
     /// rarity under the killer's RARITY factor. Excess normal-rarity gear
     /// (beyond the first per kill) compacts into a low-tier obol instead
     /// of littering the shore.
-    pub(super) fn roll_kill_drops(
+    /// The MONSTER'S rarity juices the killer's find factors on top —
+    /// elites drop more and better, same scale items use.
+    pub(super) fn roll_kill_drops_juiced(
         &mut self,
         monster_level: u32,
         killer_slot: Option<usize>,
+        monster_rarity: Rarity,
     ) -> Vec<LootPayload> {
-        let (quantity, rarity) = killer_slot
+        let (mut quantity, mut rarity) = killer_slot
             .and_then(|s| self.zone.get(s))
             .and_then(|e| e.combat.as_ref())
             .map(|c| (c.item_quantity.max(0), c.item_rarity.max(0)))
             .unwrap_or((10000, 10000));
+        match monster_rarity {
+            Rarity::Magic => {
+                quantity += 3000;
+                rarity += 4000;
+            }
+            Rarity::Rare => {
+                quantity += 8000;
+                rarity += 10000;
+            }
+            Rarity::Unique => {
+                quantity += 12000;
+                rarity += 15000;
+            }
+            Rarity::Normal => {}
+        }
         // Base 35% chance per kill, scaled: 10000 bp of "expected" per
         // guaranteed drop, the remainder as one more bernoulli roll.
         let expected = 3500i64 * quantity / 10000;
@@ -335,9 +353,32 @@ impl World {
 /// ones already present, prefix/suffix budgets shared with what's there,
 /// tiers gated by the item's level.
 fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32, kind_cap: u32) {
-    let pools = &content.items[item.base_idx as usize].affix_pools;
+    let pools = content.items[item.base_idx as usize].affix_pools.clone();
+    roll_affixes_into(
+        content,
+        rng,
+        &pools,
+        item.item_level,
+        &mut item.affixes,
+        add,
+        kind_cap,
+    );
+}
+
+/// The SAME roller for everything that rolls affixes — items and
+/// monsters both: weighted affix pick from subscribed pools, weighted
+/// tier pick under the level gate, prefix/suffix budgets.
+pub(crate) fn roll_affixes_into(
+    content: &ContentDb,
+    rng: &mut Pcg32,
+    pools: &[String],
+    item_level: u32,
+    affixes: &mut Vec<RolledAffix>,
+    add: u32,
+    kind_cap: u32,
+) {
     let (mut prefixes, mut suffixes) = (0u32, 0u32);
-    for ra in &item.affixes {
+    for ra in &(*affixes) {
         match content.affixes[ra.affix_idx as usize].kind {
             AffixKind::Prefix => prefixes += 1,
             AffixKind::Suffix => suffixes += 1,
@@ -348,7 +389,7 @@ fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32,
         .iter()
         .enumerate()
         .filter(|(i, a)| {
-            pools.contains(&a.pool) && !item.affixes.iter().any(|ra| ra.affix_idx == *i as u32)
+            pools.contains(&a.pool) && !(*affixes).iter().any(|ra| ra.affix_idx == *i as u32)
         })
         .map(|(i, _)| i as u32)
         .collect();
@@ -385,7 +426,7 @@ fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32,
             .tiers
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.ilvl <= item.item_level && t.weight > 0)
+            .filter(|(_, t)| t.ilvl <= item_level && t.weight > 0)
             .map(|(ti, _)| ti)
             .collect();
         let tier_total: u32 = eligible.iter().map(|&ti| affix.tiers[ti].weight).sum();
@@ -409,7 +450,7 @@ fn roll_affixes(content: &ContentDb, rng: &mut Pcg32, item: &mut Item, add: u32,
         }
         let span = (tier.max - tier.min).max(0) as u32 + 1;
         let value = tier.min + rng.next_range(span) as i64;
-        item.affixes.push(RolledAffix {
+        (*affixes).push(RolledAffix {
             affix_idx,
             value,
             tier: tier_idx as u32,
@@ -811,7 +852,7 @@ mod find_tests {
         // Rare fizzles are fine; a systematic shortfall is not.
         let mut shortfalls = 0;
         for _ in 0..300 {
-            let drops = w.roll_kill_drops(5, killer);
+            let drops = w.roll_kill_drops_juiced(5, killer, Rarity::Normal);
             if drops.len() < 2 {
                 shortfalls += 1;
             }

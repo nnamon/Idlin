@@ -1,0 +1,10 @@
+// Monster suffix: faster swings and feet.
+AffixDef(
+    id: "of_haste_m", name: "of Haste", kind: suffix, pool: "monster",
+    weight: 80,
+    stat: attack_speed, layer: increased,
+    tiers: [
+        (ilvl: 1, min: 1500, max: 2500, name: "of Haste", weight: 100),
+        (ilvl: 5, min: 3000, max: 4500, name: "of Frenzy", weight: 35),
+    ],
+)

@@ -34,12 +34,19 @@ ZoneDef(
         SpawnPack(monster: "drowned_shambler", count: 4,
                   x_u: 14, y_u: 16,   // pack anchor
                   radius_u: 5,        // spawn jitter
-                  respawn_ticks: 150),
+                  respawn_ticks: 150,
+                  magic_bp: 2000,     // rarity roll, ONCE per refill:
+                  rare_bp: 700),      //   20% whole-pack magic, 7% one rare
     ],
 )
 ```
 
 Packs respawn as a group `respawn_ticks` after first loss once wiped low.
+The rarity roll happens once per refill: magic raises the WHOLE pack
+under one shared affix set; rare raises a single rare leading normals;
+packs never roll unique (author `unique: true` on a def instead). Omit
+the chances (default 0) for hand-choreographed zones like the tutorial,
+where elites come from the brain's `spawn_elite`.
 
 ## `content/monsters/*.ron` — MonsterDef
 

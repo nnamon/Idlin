@@ -292,15 +292,20 @@ impl World {
                     )
                 } else if let Some(m) = &e.monster {
                     let def = self.monster_def(m.def_idx);
+                    let name = if m.display_name.is_empty() {
+                        def.name.clone()
+                    } else {
+                        m.display_name.clone()
+                    };
                     (
-                        def.name.clone(),
+                        name,
                         def.model.clone(),
                         String::new(),
                         0,
                         Vec::new(),
                         Vec::new(),
                         def.level,
-                        0,
+                        m.rarity as u8,
                         !e.alive(),
                         0,
                         0,

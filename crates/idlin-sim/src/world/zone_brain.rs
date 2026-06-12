@@ -29,6 +29,7 @@ const SYS_DROP_LOOT: i32 = 103;
 const SYS_SPAWN_MONSTER: i32 = 104;
 const SYS_SET_EXIT: i32 = 106;
 const SYS_SET_GATE: i32 = 107;
+const SYS_SPAWN_ELITE: i32 = 108;
 const SYS_DEBUG: i32 = 0;
 const SYS_RANDOM: i32 = 15;
 
@@ -267,6 +268,28 @@ impl World {
                 // Scripted spawns belong to no pack (sentinel): they never
                 // respawn and don't disturb pack bookkeeping.
                 self.spawn_monster(i as u32, u32::MAX, pos);
+                0
+            }
+            SYS_SPAWN_ELITE => {
+                // Scripted elite: spawn_elite(def, x, y, rarity) — the
+                // tutorial's guaranteed magic/rare encounters.
+                let def = bot.vm.pop();
+                let x = bot.vm.pop();
+                let y = bot.vm.pop();
+                let r = bot.vm.pop();
+                let i = usize::try_from(def).unwrap_or(usize::MAX);
+                if i >= self.content.monsters.len() {
+                    return -1;
+                }
+                let rarity = match r {
+                    1 => crate::entity::Rarity::Magic,
+                    2 => crate::entity::Rarity::Rare,
+                    _ => crate::entity::Rarity::Normal,
+                };
+                let pos = self
+                    .zone
+                    .clamp_pos(FxV2::new(Fx::from_raw(x), Fx::from_raw(y)));
+                self.spawn_monster_with(i as u32, u32::MAX, pos, rarity);
                 0
             }
             SYS_SET_GATE => {

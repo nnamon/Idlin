@@ -70,6 +70,10 @@ pub struct BrainDef {
     pub program: Vec<u8>,
 }
 
+fn default_monster_pools() -> Vec<String> {
+    vec!["monster".into()]
+}
+
 /// A gem reference in a monster def: name + fixed level (monster gems
 /// don't earn XP — the def IS the build).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +102,14 @@ pub struct MonsterDef {
     pub brain: String,
     /// Hostile NPCs fight players; non-hostile ones are scenery/services.
     pub hostile: bool,
+    /// Affix pools magic/rare spawns roll from — the same pool
+    /// subscription model items use.
+    #[serde(default = "default_monster_pools")]
+    pub affix_pools: Vec<String>,
+    /// Authored uniques (bosses): fixed identity, no random affixes,
+    /// a boss bar on screen.
+    #[serde(default)]
+    pub unique: bool,
     pub level: u32,
     pub life: i64,
     /// Physical attack damage.
@@ -739,6 +751,15 @@ pub struct SpawnPack {
     pub radius_u: i32,
     /// Ticks after a wipe before the pack respawns.
     pub respawn_ticks: u32,
+    /// Basis-point chance, rolled ONCE per pack refill, for the pack to
+    /// come up MAGIC (whole pack, one shared affix set) / RARE (a single
+    /// rare leading an otherwise-normal pack). Packs never roll Unique —
+    /// uniques are authored on the monster def. Defaults 0: tutorial
+    /// packs stay plain; zones author their juice.
+    #[serde(default)]
+    pub magic_bp: u32,
+    #[serde(default)]
+    pub rare_bp: u32,
 }
 
 /// One glyph in a tileset's palette: the authoring unit of map.txt.
@@ -756,6 +777,12 @@ pub struct TileDef {
     /// What stands on the tile (client visual recipe); None = bare ground.
     #[serde(default)]
     pub prop: Option<String>,
+    /// Terrain LEVEL (0 = base). Pure look: the client raises these cells
+    /// into terraces/bluffs; collision stays the flat walk grid, so level
+    /// edges must be authored with non-walkable cliff tiles (ramps are
+    /// simply gaps in the cliff line where the slope shows).
+    #[serde(default)]
+    pub elevation: u8,
 }
 
 /// A look-and-feel variant: the same structural kit under a different
@@ -1409,6 +1436,16 @@ impl ContentDb {
                 }
             }
         }
+        for m in &db.monsters {
+            for pool in &m.affix_pools {
+                if !db.affixes.iter().any(|a| &a.pool == pool) {
+                    return Err(ContentError::UnknownAffixPool {
+                        item: format!("monster {}", m.id),
+                        pool: pool.clone(),
+                    });
+                }
+            }
+        }
         for zone in &db.zones {
             if let Some(brain) = &zone.brain
                 && db.brain_idx(brain).is_none()
@@ -1629,7 +1666,11 @@ mod tests {
         }
         for affix in &db.affixes {
             assert!(
-                db.items.iter().any(|i| i.affix_pools.contains(&affix.pool)),
+                db.items.iter().any(|i| i.affix_pools.contains(&affix.pool))
+                    || db
+                        .monsters
+                        .iter()
+                        .any(|m| m.affix_pools.contains(&affix.pool)),
                 "affix {} sits in pool `{}` with no subscribers",
                 affix.id,
                 affix.pool
@@ -1686,9 +1727,10 @@ mod tests {
         assert_eq!(db.currency[8].id, "transmute_obol");
         assert_eq!(db.monsters[3].id, "tidewarden");
         // transfer_character zone indices (ZONE_SALTMERE in the shore brain).
-        assert_eq!(db.zones[0].id, "saltmere");
-        assert_eq!(db.zones[1].id, "test_range");
-        assert_eq!(db.zones[2].id, "withered_shore");
+        assert_eq!(db.zones[0].id, "coast");
+        assert_eq!(db.zones[1].id, "saltmere");
+        assert_eq!(db.zones[2].id, "test_range");
+        assert_eq!(db.zones[3].id, "withered_shore");
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

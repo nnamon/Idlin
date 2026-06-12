@@ -177,6 +177,30 @@ executor, mana costs, cooldowns, and syscalls drive both. Monster gems
 never gain XP — the def is the build. Weapon gates don't apply to
 monsters (a monster IS its weapon).
 
+### Monster rarity
+
+The same Normal / Magic / Rare / Unique ladder as items, riding the
+same affix system. A monster def subscribes to affix pools
+(`affix_pools:`, default `["monster"]`); magic spawns roll 1–2 affixes
+(≤1 per kind), rares 3–4 (≤3 per kind), applied through the ordinary
+grant engine on top of an inherent elite bulk (magic ×1.6 life, rare
+×2.6). Names come from the item machinery too: magic composes its
+rolled TIER names ("Hulking … of Haste"); rares draw from the rare
+naming pools.
+
+Packs roll **as a group**, once per refill, from the pack's authored
+`magic_bp` / `rare_bp` chances: a magic roll raises the WHOLE pack
+magic wearing ONE shared affix set; a rare roll raises a single rare
+leading an otherwise-normal pack. Pack rolls can never come up Unique —
+uniques are authored (`unique: true` on the def, e.g. the Tidewarden)
+and always spawn Unique. Brains can also stage elites directly
+(`spawn_elite`).
+
+Elites pay: ×2 XP for magic, ×4 for rare, and their rarity juices the
+killer's quantity/rarity find factors on the drop roll (up to
++120%/+150% for a unique). Uniques in view get stacked boss life bars
+top-center; magic/rare announce themselves with tinted nameplates.
+
 ## Experience and the passive tree
 
 - Kills grant the monster's XP to the killer (full, plus the kill credit);
@@ -298,6 +322,14 @@ families, PoE-style, each owning its palette, look-and-feel variants,
 its natural monster ecology, and its OPT-IN cosmetic `features` (sea,
 bluffs_west, edge_hills, stars, fringe_scatter) — the renderer builds
 only what a tileset declares.
+
+Tiles may carry an `elevation` level (0 = base): the client raises
+those cells into terraces (one level ≈ 2.6 world units, smoothed so
+level changes arrive as short slopes). Elevation is pure LOOK — the
+sim's walk grid stays flat — so level edges are authored with
+non-walkable cliff tiles (the shore tileset's crag `K`), and a ramp is
+simply a gap in the crag line where the slope shows. The Drowned
+Coast is the first two-level map.
 
 Collision is GRID-NATIVE: walkability and line-of-sight are tile
 lookups (integer supercover; projectiles collide with walls through

@@ -7,6 +7,7 @@ MonsterDef(
     model: "tidewarden",
     brain: "hostile_melee",
     hostile: true,
+    unique: true,
     level: 8,
     life: 420,
     damage: 13,

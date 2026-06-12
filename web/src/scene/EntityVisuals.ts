@@ -90,6 +90,11 @@ export class EntityVisual {
       this.buildModel(state.model, state.kind === "Monster");
       this.buildBars();
       if (state.kind === "Character") this.buildLabel(state.name);
+      // Elite monsters announce themselves: rarity-tinted nameplates,
+      // same ladder as loot (magic blue / rare gold / unique orange).
+      else if (state.kind === "Monster" && state.rarity > 0) {
+        this.buildLabel(state.name, RARITY_COLORS[state.rarity]);
+      }
       this.composeGear(this.dressed(state));
       this.setWeapon(state.weapon);
     }
@@ -339,17 +344,24 @@ export class EntityVisual {
     this.group.add(this.hpBg, this.hpFg);
   }
 
-  private buildLabel(text: string): void {
+  private buildLabel(text: string, tint?: number): void {
     const canvas = document.createElement("canvas");
     canvas.width = 512;
     canvas.height = 128;
     const ctx = canvas.getContext("2d")!;
-    ctx.font = 'bold 56px "Idlin Mono", ui-monospace, Menlo, monospace';
+    // Affix-composed elite names run long — shrink to fit the canvas.
+    let px = 56;
+    ctx.font = `bold ${px}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+    while (px > 30 && ctx.measureText(text).width > 492) {
+      px -= 4;
+      ctx.font = `bold ${px}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+    }
     ctx.textAlign = "center";
     ctx.shadowColor = "rgba(0,0,0,0.9)";
     ctx.shadowBlur = 9;
     ctx.shadowOffsetY = 3;
-    ctx.fillStyle = "#e9e4d4";
+    ctx.fillStyle =
+      tint !== undefined ? `#${tint.toString(16).padStart(6, "0")}` : "#e9e4d4";
     ctx.fillText(text, 256, 84);
     const tex = new THREE.CanvasTexture(canvas);
     this.label = new THREE.Sprite(

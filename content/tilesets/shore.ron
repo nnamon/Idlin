@@ -11,6 +11,13 @@ TilesetDef(
         (glyph: '~', id: "sea",   walkable: false, blocks_los: false, ground: "water"),
         (glyph: 'R', id: "rock",  walkable: false, blocks_los: true,  ground: "sand", prop: Some("rock")),
         (glyph: 'T', id: "tree",  walkable: false, blocks_los: true,  ground: "grass", prop: Some("dead_tree")),
+        // The UPPER level: terraces one full step above the strand. Level
+        // edges are authored with crag tiles (the cliff lip); ramps are
+        // simply gaps in the crag line where the slope shows.
+        (glyph: '^', id: "terrace",       walkable: true,  blocks_los: false, ground: "sand",  elevation: 1),
+        (glyph: ';', id: "terrace_scrub", walkable: true,  blocks_los: false, ground: "grass", elevation: 1),
+        (glyph: 'h', id: "terrace_tuft",  walkable: true,  blocks_los: false, ground: "sand",  prop: Some("tuft"), elevation: 1),
+        (glyph: 'K', id: "crag",          walkable: false, blocks_los: true,  ground: "sand",  prop: Some("rock"), elevation: 1),
     ],
     palette: [
         ("sand",  "#4e4a44"),

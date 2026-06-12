@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 23;
+pub const PROTO_VERSION: u32 = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -41,7 +41,8 @@ pub struct EntityState {
     pub name: String,
     /// Visual key: character class or monster model or "loot".
     pub model: String,
-    /// 0 normal, 1 magic, 2 rare, 3 unique (loot only).
+    /// 0 normal, 1 magic, 2 rare, 3 unique (loot drops AND monsters —
+    /// elite monsters tint their nameplates; uniques get boss bars).
     pub rarity: u8,
     /// Equipped weapon visual key ("" = unarmed; characters only).
     pub weapon: String,
@@ -341,6 +342,10 @@ pub struct TileVisual {
     pub prop: Option<String>,
     /// The client may path-preview/dim unwalkable ground.
     pub walkable: bool,
+    /// Terrain level (0 = base): the renderer raises these cells into
+    /// terraces; the sim's walk grid stays flat.
+    #[serde(default)]
+    pub elevation: u8,
 }
 
 /// One authored set-piece placement (props.ron).

@@ -26,4 +26,9 @@ prop: string | null,
 /**
  * The client may path-preview/dim unwalkable ground.
  */
-walkable: boolean, };
+walkable: boolean, 
+/**
+ * Terrain level (0 = base): the renderer raises these cells into
+ * terraces; the sim's walk grid stays flat.
+ */
+elevation: number, };

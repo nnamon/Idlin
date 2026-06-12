@@ -1287,8 +1287,15 @@ impl World {
         if let Some(m) = &t.monster {
             let (def_idx, pack_idx) = (m.def_idx, m.pack_idx);
             let target_bot = t.bot;
+            let m_rarity = m.rarity;
             let def = self.monster_def(def_idx);
-            let (monster_name, monster_level, xp) = (def.name.clone(), def.level, def.xp);
+            // Elites pay elite wages: 2x / 4x XP for magic / rare.
+            let xp_mult = match m_rarity {
+                crate::entity::Rarity::Magic => 2,
+                crate::entity::Rarity::Rare => 4,
+                _ => 1,
+            };
+            let (monster_name, monster_level, xp) = (def.name.clone(), def.level, def.xp * xp_mult);
             dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
             let pack = &mut self.zone.packs[pack_idx as usize];
             pack.alive = pack.alive.saturating_sub(1);
@@ -1308,7 +1315,7 @@ impl World {
                 // Loot (personal: owned by the killer): quantity first,
                 // then per-drop rarity — both the killer's stats. Multiple
                 // drops scatter a little so pillars don't stack.
-                for payload in self.roll_kill_drops(monster_level, attacker_slot) {
+                for payload in self.roll_kill_drops_juiced(monster_level, attacker_slot, m_rarity) {
                     let dx = self.rng_loot.next_range(120) as i32 - 60;
                     let dy = self.rng_loot.next_range(120) as i32 - 60;
                     let pos = FxV2::new(

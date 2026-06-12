@@ -1,0 +1,10 @@
+// Monster suffix: elemental shrugging.
+AffixDef(
+    id: "of_wards", name: "of Wards", kind: suffix, pool: "monster",
+    weight: 70,
+    stat: resist_fire, layer: added,
+    tiers: [
+        (ilvl: 1, min: 2000, max: 3000, name: "of Wards", weight: 100),
+        (ilvl: 5, min: 3500, max: 5000, name: "of Bastions", weight: 35),
+    ],
+)

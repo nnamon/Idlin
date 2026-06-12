@@ -8,9 +8,10 @@
 use crate::fixed::{Fx, FxV2};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[repr(u8)]
 pub enum Rarity {
+    #[default]
     Normal = 0,
     Magic = 1,
     Rare = 2,
@@ -314,6 +315,17 @@ pub struct MonsterState {
     pub hostile: bool,
     /// Set at death: the corpse lies where it fell until this tick.
     pub decay_at: Option<u64>,
+    /// Spawn rarity — the SAME enum items use, end to end.
+    #[serde(default)]
+    pub rarity: Rarity,
+    /// Rolled affixes (magic/rare spawns) — the same RolledAffix items
+    /// carry, applied through the same Grant machinery.
+    #[serde(default)]
+    pub affixes: Vec<RolledAffix>,
+    /// Magic spawns compose tier names; rares draw from the naming
+    /// pools. Empty = the def's plain name.
+    #[serde(default)]
+    pub display_name: String,
     /// The def's gem kit, resolved at spawn — the SAME structure characters
     /// socket, so the executor and syscalls treat both alike (UseSkill
     /// slot 1..N indexes this list; monster gems never gain XP).

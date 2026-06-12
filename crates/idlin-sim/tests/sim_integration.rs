@@ -367,7 +367,10 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
 
     let mut departed = None;
     let empty = TickInputs::default();
-    for _ in 0..600 {
+    // Generous budget: the grinder hunts every effigy in view first, then
+    // must sit out the ~12s boredom latch before it commits to the exit,
+    // then walk the whole strand back to the bluff gate.
+    for _ in 0..3000 {
         let events = shore.tick(&empty);
         let dep = shore.take_departures();
         if !dep.is_empty() {

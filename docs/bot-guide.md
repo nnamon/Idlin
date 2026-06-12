@@ -355,12 +355,14 @@ per tick, bound to no entity, with a zone-scoped syscall table:
 
 | # | builtin | what |
 |---|---|---|
-| 100 | `query_characters(out, max)` | 8-word records per idler: net, kills, level, x, y, weapon_class (−1/0 melee/1 bow/2 wand), life_pct, dead |
+| 100 | `query_characters(out, max)` | 10-word records per idler: net, kills, level, x, y, weapon_class (−1/0 melee/1 bow/2 wand), life_pct, dead, build_len (0 = no declared build), archetype (0 melee / 1 bow / 2 wand / −1 unknown, classified from the declared plan) |
 | 101 | `poll_events(out, max)` | drains this tick's events as 4-word records: kind (1 kill / 2 equip / 3 socket / 4 level / 5 died / 6 pickup), char net, a, b (kill: a = monster def idx, b = level) |
 | 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone) |
 | 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx` |
 | 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns) |
 | 106 | `set_exit(idx, open)` | gate a ZoneDef exit open (1) or shut (0). Brains only GATE — characters take exits THEMSELVES with `use_exit`; forced transfers do not exist. |
+| 107 | `set_gate(idx, open)` | open (1) or shut (0) a ZoneDef gate — a rect of cells that blocks movement while shut (the tutorial's walls) |
+| 108 | `spawn_elite(def, x, y, rarity)` | a packless scripted spawn at forced rarity (1 = magic, 2 = rare) — fresh affixes rolled through the item affix system |
 
 Events are DATA the script drains — there are no callbacks; the VM
 stays one `main()` per tick. `content/brains/withered_shore.bot` is

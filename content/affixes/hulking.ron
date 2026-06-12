@@ -1,0 +1,10 @@
+// Monster prefix: more life — the bread-and-butter elite mod.
+AffixDef(
+    id: "hulking", name: "Hulking", kind: prefix, pool: "monster",
+    weight: 100,
+    stat: life, layer: increased,
+    tiers: [
+        (ilvl: 1, min: 4000, max: 7000, name: "Hulking", weight: 100),
+        (ilvl: 5, min: 8000, max: 12000, name: "Monstrous", weight: 35),
+    ],
+)

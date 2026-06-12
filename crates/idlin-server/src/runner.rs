@@ -93,6 +93,7 @@ pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMa
             ground_id: t.ground.clone(),
             prop: t.prop.clone(),
             walkable: t.walkable,
+            elevation: t.elevation,
         })
         .collect();
     let rows = (0..grid.height)

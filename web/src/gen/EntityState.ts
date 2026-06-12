@@ -18,7 +18,8 @@ name: string,
  */
 model: string, 
 /**
- * 0 normal, 1 magic, 2 rare, 3 unique (loot only).
+ * 0 normal, 1 magic, 2 rare, 3 unique (loot drops AND monsters —
+ * elite monsters tint their nameplates; uniques get boss bars).
  */
 rarity: number, 
 /**

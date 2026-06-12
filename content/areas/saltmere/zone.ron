@@ -24,4 +24,11 @@ ZoneDef(
         (monster: "villager", count: 1, x_u: 25, y_u: 21,  radius_u: 2, respawn_ticks: 9000),
         (monster: "villager", count: 1, x_u: 34, y_u: 21,  radius_u: 2, respawn_ticks: 9000),
     ],
+    // The south gate road: out of town and down to the coastline. The
+    // shore behind an idler is THEIR finished tutorial; the way out
+    // leads to the shared Drowned Coast. Always open — leaving town is
+    // the bot's own call.
+    exits: [
+        (x_u: 29, y_u: 51, dest: "coast", open: true),
+    ],
 )

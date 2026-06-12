@@ -74,8 +74,33 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   const now = performance.now();
   const ticker = store.ticker.filter((t) => now - t.at < 14000).slice(-8);
 
+  // Unique monsters near the focused idler announce themselves with a
+  // PoE boss bar, top-center; several in range stack.
+  const BOSS_RANGE = 24;
+  const bosses = [...store.entities.values()].filter((e) => {
+    if (e.state.kind !== "Monster" || e.state.rarity !== 3 || e.state.dead) return false;
+    if (!focused) return true;
+    const dx = e.currX - focused.currX;
+    const dy = e.currY - focused.currY;
+    return dx * dx + dy * dy <= BOSS_RANGE * BOSS_RANGE;
+  });
+
   return (
     <>
+      {/* top-center: boss life bars */}
+      {bosses.length > 0 && (
+        <div className="hud-boss">
+          {bosses.map((b) => (
+            <div key={b.state.id}>
+              <div className="boss-name">{b.state.name}</div>
+              <div className="boss-track">
+                <div className="boss-fill" style={{ width: `${b.state.life_pct}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* left column: status plaque + the focused idler's stats */}
       <div className="hud-left">
       <div className="panel">

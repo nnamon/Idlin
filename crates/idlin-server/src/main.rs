@@ -123,14 +123,26 @@ async fn main() -> anyhow::Result<()> {
             pending: builtin_joins()?,
         }]
     } else {
-        let mut worlds = vec![runner::ManagedWorld {
-            key: "saltmere".into(),
-            zone_id: "saltmere".into(),
-            world: World::new_for_zone(seed, &content, "saltmere"),
-            tiles: runner::resolve_tile_map(&content, "saltmere"),
-            max_players: content.zone("saltmere").map_or(0, |z| z.max_players),
-            pending: TickInputs::default(),
-        }];
+        let mut worlds = vec![
+            runner::ManagedWorld {
+                key: "saltmere".into(),
+                zone_id: "saltmere".into(),
+                world: World::new_for_zone(seed, &content, "saltmere"),
+                tiles: runner::resolve_tile_map(&content, "saltmere"),
+                max_players: content.zone("saltmere").map_or(0, |z| z.max_players),
+                pending: TickInputs::default(),
+            },
+            // The shared grinding ground past town: one Drowned Coast
+            // for everyone, like the town itself.
+            runner::ManagedWorld {
+                key: "coast".into(),
+                zone_id: "coast".into(),
+                world: World::new_for_zone(seed ^ 0xC0A57, &content, "coast"),
+                tiles: runner::resolve_tile_map(&content, "coast"),
+                max_players: content.zone("coast").map_or(0, |z| z.max_players),
+                pending: TickInputs::default(),
+            },
+        ];
         let joins = builtin_joins()?;
         for join in joins.joins {
             let key = format!("withered_shore#{}", join.name);

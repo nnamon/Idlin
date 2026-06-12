@@ -20,6 +20,8 @@ const PAD = 34;
 const WATER_Y = -0.3;
 /** How far the beach band reaches inland from the waterline. */
 const BEACH_DEPTH = 13;
+/** World units per authored terrain level (TileVisual.elevation). */
+const LEVEL_H = 2.6;
 
 function hash2(ix: number, iz: number, seed: number): number {
   let h = (ix * 374761393 + iz * 668265263 + seed * 1442695041) >>> 0;
@@ -109,6 +111,8 @@ export class Terrain {
   private hasWater = false;
   /** Opt-in cosmetic features from the tileset; legacy zones get all. */
   private features = new Set<string>();
+  /** Blurred per-cell terrace levels; null on flat maps. */
+  private elevGrid: Float32Array | null = null;
 
   /** Drive the terrain from an authored tile map (call before build). */
   setTiles(tiles: TileMapState): void {
@@ -117,6 +121,42 @@ export class Terrain {
     this.byGlyph = new Map(tiles.legend.map((l) => [l.glyph, l]));
     for (const l of tiles.legend) {
       this.groundColors.set(l.glyph, new THREE.Color(l.ground));
+    }
+    // Authored terrace levels, box-blurred so a level change arrives as a
+    // short slope; authored crag lines hide the cliff edges, and gaps in
+    // them ARE the ramps.
+    const ew = tiles.width;
+    const eh = tiles.height;
+    const rawElev = new Float32Array(ew * eh);
+    let anyElev = false;
+    for (let z = 0; z < eh; z++) {
+      const row = tiles.rows[z];
+      for (let x = 0; x < ew; x++) {
+        const e = this.byGlyph.get(row[x])?.elevation ?? 0;
+        rawElev[z * ew + x] = e;
+        if (e > 0) anyElev = true;
+      }
+    }
+    this.elevGrid = null;
+    if (anyElev) {
+      const blur = new Float32Array(ew * eh);
+      const R = 2;
+      for (let z = 0; z < eh; z++) {
+        for (let x = 0; x < ew; x++) {
+          let sum = 0;
+          let n = 0;
+          for (let dz = -R; dz <= R; dz++) {
+            for (let dx = -R; dx <= R; dx++) {
+              const cx = Math.min(ew - 1, Math.max(0, x + dx));
+              const cz = Math.min(eh - 1, Math.max(0, z + dz));
+              sum += rawElev[cz * ew + cx];
+              n++;
+            }
+          }
+          blur[z * ew + x] = sum / n;
+        }
+      }
+      this.elevGrid = blur;
     }
     // Per-row x of the first water cell (the authored waterline), lightly
     // smoothed so the heightmap meanders instead of stair-stepping.
@@ -168,6 +208,26 @@ export class Terrain {
     return this.zoneW + 1 + (vnoise(z * 0.045, 7.7, this.seed ^ 31) * 2 - 1) * 1.4;
   }
 
+  /** Authored terrace lift (world units) at a position; 0 on flat maps. */
+  private terraceLift(x: number, z: number): number {
+    if (!this.elevGrid || !this.tiles) return 0;
+    const { width: w, height: h } = this.tiles;
+    // Cell centers sit at +0.5; sample the blurred grid bilinearly.
+    const fx = Math.min(w - 1.001, Math.max(0, x - 0.5));
+    const fz = Math.min(h - 1.001, Math.max(0, z - 0.5));
+    const x0 = Math.floor(fx);
+    const z0 = Math.floor(fz);
+    const ax = fx - x0;
+    const az = fz - z0;
+    const g = this.elevGrid;
+    const v00 = g[z0 * w + x0];
+    const v10 = g[z0 * w + x0 + 1];
+    const v01 = g[(z0 + 1) * w + x0];
+    const v11 = g[(z0 + 1) * w + x0 + 1];
+    const v = (v00 * (1 - ax) + v10 * ax) * (1 - az) + (v01 * (1 - ax) + v11 * ax) * az;
+    return v * LEVEL_H;
+  }
+
   /**
    * Ground height at a world position. The same function shapes the mesh,
    * so feet and geometry always agree.
@@ -179,7 +239,7 @@ export class Terrain {
       let y = vnoise(x * 0.08, z * 0.08, this.seed) * 0.22 - 0.08;
       const out = Math.max(0, -x, x - w, -z, z - h);
       y += smoothstep(2, PAD - 8, out) * (3.5 + vnoise(x * 0.09, z * 0.09, this.seed ^ 13) * 2.2);
-      return y;
+      return y + this.terraceLift(x, z);
     }
     // Gentle dunes everywhere…
     let y = vnoise(x * 0.06, z * 0.06, this.seed) * 0.9 + vnoise(x * 0.22, z * 0.22, this.seed ^ 7) * 0.22 - 0.5;
@@ -198,6 +258,8 @@ export class Terrain {
     const toSea = smoothstep(xw - 3, xw, x);
     y = y * (1 - toSea) + (WATER_Y + 0.12) * toSea; // ease to the waterline
     if (x > xw) y = WATER_Y + 0.12 - (x - xw) * 0.3; // seafloor falls away
+    // Authored terraces ride on top (0 everywhere on legacy maps).
+    y += this.terraceLift(x, z);
     return Math.max(y, WATER_Y - 3.2);
   }
 

@@ -1367,7 +1367,31 @@ impl World {
                 Fx::from_int(pack.def.y_u as i16),
             );
             let jitter_r = Fx::from_int(pack.def.radius_u as i16).raw() as u32;
-            for _ in 0..missing {
+            // Rarity is rolled ONCE per pack, PoE-style: a magic roll
+            // raises the WHOLE pack as magic sharing one affix set; a
+            // rare roll raises a single rare leading an otherwise-normal
+            // pack. Map packs never roll Unique — uniques are authored
+            // on the def and spawn Unique regardless.
+            let (magic_bp, rare_bp) = {
+                let d = &self.zone.packs[pack_idx].def;
+                (d.magic_bp, d.rare_bp)
+            };
+            let roll = self.rng_ai.next_range(10000);
+            let pack_rarity = if self.content.monsters[monster_idx as usize].unique {
+                Rarity::Unique
+            } else if roll < rare_bp {
+                Rarity::Rare
+            } else if roll < rare_bp + magic_bp {
+                Rarity::Magic
+            } else {
+                Rarity::Normal
+            };
+            let shared = if pack_rarity == Rarity::Magic {
+                Some(self.roll_monster_affixes(monster_idx, Rarity::Magic))
+            } else {
+                None
+            };
+            for member in 0..missing {
                 // Radius 0 = staked exactly on the anchor (tutorial prey,
                 // bosses). Authored zones retry draws that land in walls,
                 // falling back to the anchor (validated walkable at load).
@@ -1395,7 +1419,31 @@ impl World {
                         }
                     }
                 }
-                self.spawn_monster(monster_idx, pack_idx as u32, pos);
+                match (&shared, pack_rarity) {
+                    // Every member of a magic pack wears the SAME affixes.
+                    (Some((affixes, name)), _) => {
+                        self.spawn_monster_rolled(
+                            monster_idx,
+                            pack_idx as u32,
+                            pos,
+                            Rarity::Magic,
+                            affixes.clone(),
+                            name.clone(),
+                        );
+                    }
+                    // The rare leads the pack; the rest rise normal.
+                    (None, Rarity::Rare) => {
+                        let r = if member == 0 {
+                            Rarity::Rare
+                        } else {
+                            Rarity::Normal
+                        };
+                        self.spawn_monster_with(monster_idx, pack_idx as u32, pos, r);
+                    }
+                    (None, r) => {
+                        self.spawn_monster_with(monster_idx, pack_idx as u32, pos, r);
+                    }
+                }
             }
             self.zone.packs[pack_idx].alive = count;
         }
@@ -1422,8 +1470,157 @@ impl World {
     /// Spawn one monster: same entity shape as a character, with a brain
     /// program from content driving it and stats straight from its def.
     fn spawn_monster(&mut self, monster_idx: u32, pack_idx: u32, pos: FxV2) {
+        // Authored uniques always spawn Unique; everything else Normal
+        // unless the caller rolled better.
+        let rarity = if self.content.monsters[monster_idx as usize].unique {
+            Rarity::Unique
+        } else {
+            Rarity::Normal
+        };
+        self.spawn_monster_with(monster_idx, pack_idx, pos, rarity);
+    }
+
+    /// Spawn at an explicit rarity, rolling fresh affixes for this one
+    /// monster. Brain-summoned elites and lone rares come through here.
+    pub(crate) fn spawn_monster_with(
+        &mut self,
+        monster_idx: u32,
+        pack_idx: u32,
+        pos: FxV2,
+        rarity: Rarity,
+    ) {
+        let (affixes, display_name) = self.roll_monster_affixes(monster_idx, rarity);
+        self.spawn_monster_rolled(monster_idx, pack_idx, pos, rarity, affixes, display_name);
+    }
+
+    /// Roll a monster's affix set + display name for a rarity. Magic/rare
+    /// draw from the monster's subscribed pools with the SAME roller items
+    /// use, and name themselves the same way (tier names for magic, the
+    /// naming pools for rares). Separated from spawning so a magic PACK
+    /// can roll once and share the set across every member.
+    fn roll_monster_affixes(
+        &mut self,
+        monster_idx: u32,
+        rarity: Rarity,
+    ) -> (Vec<crate::entity::RolledAffix>, String) {
+        let mut affixes: Vec<crate::entity::RolledAffix> = Vec::new();
+        if !matches!(rarity, Rarity::Magic | Rarity::Rare) {
+            return (affixes, String::new());
+        }
         let def = &self.content.monsters[monster_idx as usize];
-        let stats = monster_base_stats(def);
+        let (add, cap) = match rarity {
+            Rarity::Magic => (1 + self.rng_ai.next_range(2), 1),
+            _ => (3 + self.rng_ai.next_range(2), 3),
+        };
+        let pools = def.affix_pools.clone();
+        let level = def.level;
+        crate::world::loot::roll_affixes_into(
+            &self.content,
+            &mut self.rng_ai,
+            &pools,
+            level,
+            &mut affixes,
+            add,
+            cap,
+        );
+        let def = &self.content.monsters[monster_idx as usize];
+        // Names: magic composes its rolled tier names; rares draw a
+        // name from the same pools rare ITEMS use.
+        let display_name = match rarity {
+            Rarity::Magic => {
+                let (mut pre, mut suf) = (None, None);
+                for ra in &affixes {
+                    let a = &self.content.affixes[ra.affix_idx as usize];
+                    let n = a
+                        .tiers
+                        .get(ra.tier as usize)
+                        .filter(|t| !t.name.is_empty())
+                        .map_or(a.name.as_str(), |t| t.name.as_str());
+                    match a.kind {
+                        idlin_content::AffixKind::Prefix => pre = Some(n),
+                        idlin_content::AffixKind::Suffix => suf = Some(n),
+                    }
+                }
+                let mut out = String::new();
+                if let Some(p2) = pre {
+                    out.push_str(p2);
+                    out.push(' ');
+                }
+                out.push_str(&def.name);
+                if let Some(sx) = suf {
+                    out.push(' ');
+                    out.push_str(sx);
+                }
+                out
+            }
+            _ => {
+                let pools2 = &self.content.naming;
+                if pools2.first.is_empty() || pools2.second.is_empty() {
+                    def.name.clone()
+                } else {
+                    let f = self.rng_ai.next_range(pools2.first.len() as u32) as usize;
+                    let s2 = self.rng_ai.next_range(pools2.second.len() as u32) as usize;
+                    format!("{} {}", pools2.first[f], pools2.second[s2])
+                }
+            }
+        };
+        (affixes, display_name)
+    }
+
+    /// Spawn with a pre-rolled affix set, applying it through the same
+    /// Grant machinery items use plus the inherent elite bulk.
+    fn spawn_monster_rolled(
+        &mut self,
+        monster_idx: u32,
+        pack_idx: u32,
+        pos: FxV2,
+        rarity: Rarity,
+        affixes: Vec<crate::entity::RolledAffix>,
+        display_name: String,
+    ) {
+        let def = &self.content.monsters[monster_idx as usize];
+        let mut stats = monster_base_stats(def);
+        if matches!(rarity, Rarity::Magic | Rarity::Rare) {
+            // Inherent elite bulk on TOP of affixes, PoE-style.
+            let bulk = if rarity == Rarity::Magic {
+                16000
+            } else {
+                26000
+            };
+            let mut sheet = crate::stats::StatSheet::new();
+            for ra in &affixes {
+                let a = &self.content.affixes[ra.affix_idx as usize];
+                sheet.apply(&crate::stats::Grant {
+                    stat: a.stat,
+                    layer: a.layer,
+                    value: ra.value,
+                });
+            }
+            stats.life_max = sheet.value(idlin_content::stats::Stat::Life, def.life) * bulk / 10000;
+            stats.life = stats.life_max;
+            for (i, base) in [
+                def.damage,
+                def.damage_fire,
+                def.damage_cold,
+                def.damage_lightning,
+                def.damage_chaos,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let st = [
+                    idlin_content::stats::Stat::DamagePhys,
+                    idlin_content::stats::Stat::DamageFire,
+                    idlin_content::stats::Stat::DamageCold,
+                    idlin_content::stats::Stat::DamageLightning,
+                    idlin_content::stats::Stat::DamageChaos,
+                ][i];
+                stats.damage[i] = sheet.value(st, base);
+            }
+            // (attack cadence lives on the def's use_ticks; the haste
+            // affix still applies wherever derived stats read it)
+        }
+        let def = &self.content.monsters[monster_idx as usize];
         let skills = resolve_monster_skills(&self.content, def);
         let hostile = def.hostile;
         let program = self
@@ -1460,9 +1657,93 @@ impl World {
                 anchor: pos,
                 hostile,
                 decay_at: None,
+                rarity,
+                affixes,
+                display_name,
                 skills,
             }),
             loot: None,
         });
+    }
+}
+
+#[cfg(test)]
+mod pack_rarity_tests {
+    use super::*;
+    use crate::entity::MonsterState;
+    use idlin_content::ContentDb;
+    use std::path::Path;
+
+    fn content() -> ContentDb {
+        ContentDb::load(Path::new("../../content")).expect("workspace content must load")
+    }
+
+    /// A fresh shore world with ONE multi-member non-unique pack forced
+    /// to the given rarity chances (every other pack stays plain), ticked
+    /// once so the initial refill runs. Returns the forced pack's index.
+    fn world_with_forced_pack(magic_bp: u32, rare_bp: u32) -> (World, u32) {
+        let content = content();
+        let mut w = World::new(7, &content);
+        let pack_idx = (0..w.zone.packs.len())
+            .find(|&i| {
+                let p = &w.zone.packs[i];
+                p.def.count >= 3 && !w.content.monsters[p.monster_idx as usize].unique
+            })
+            .expect("a multi-member non-unique pack exists") as u32;
+        for (i, p) in w.zone.packs.iter_mut().enumerate() {
+            let force = i as u32 == pack_idx;
+            p.def.magic_bp = if force { magic_bp } else { 0 };
+            p.def.rare_bp = if force { rare_bp } else { 0 };
+        }
+        w.tick(&TickInputs {
+            joins: Vec::new(),
+            arrivals: Vec::new(),
+        });
+        (w, pack_idx)
+    }
+
+    fn pack_members(w: &World, pack_idx: u32) -> Vec<&MonsterState> {
+        w.zone
+            .iter()
+            .filter_map(|(_, e)| e.monster.as_ref())
+            .filter(|m| m.pack_idx == pack_idx)
+            .collect()
+    }
+
+    /// A magic roll raises the WHOLE pack magic, every member wearing the
+    /// SAME affix set and name — packs roll as a group, not per member.
+    #[test]
+    fn magic_pack_rises_as_a_unit_with_shared_affixes() {
+        let (w, pack_idx) = world_with_forced_pack(10000, 0);
+        let members = pack_members(&w, pack_idx);
+        assert!(members.len() >= 3, "pack should have spawned in full");
+        let lead = members[0];
+        assert_eq!(lead.rarity, Rarity::Magic);
+        assert!(!lead.affixes.is_empty(), "magic members carry affixes");
+        assert!(!lead.display_name.is_empty());
+        for m in &members {
+            assert_eq!(m.rarity, Rarity::Magic);
+            assert_eq!(m.affixes, lead.affixes, "one shared roll per pack");
+            assert_eq!(m.display_name, lead.display_name);
+        }
+    }
+
+    /// A rare roll yields exactly ONE rare alongside an otherwise-normal
+    /// pack — and a pack roll can never come up Unique.
+    #[test]
+    fn rare_roll_spawns_a_single_rare_leading_normals() {
+        let (w, pack_idx) = world_with_forced_pack(0, 10000);
+        let members = pack_members(&w, pack_idx);
+        assert!(members.len() >= 3, "pack should have spawned in full");
+        let rares = members.iter().filter(|m| m.rarity == Rarity::Rare).count();
+        let normals = members
+            .iter()
+            .filter(|m| m.rarity == Rarity::Normal)
+            .count();
+        assert_eq!(rares, 1, "exactly one rare per rare pack");
+        assert_eq!(normals, members.len() - 1, "the rest rise normal");
+        let rare = members.iter().find(|m| m.rarity == Rarity::Rare).unwrap();
+        assert!(rare.affixes.len() >= 3, "rares roll at least three affixes");
+        assert!(!rare.display_name.is_empty(), "rares take a rolled name");
     }
 }
