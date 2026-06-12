@@ -112,6 +112,9 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
         </div>
         <div style={{ fontWeight: 700, color: "#d8cba6", fontSize: 13.5 }}>
           {store.zone?.name ?? "connecting…"}
+          {store.zone && (
+            <span style={{ color: "#ab9d7a", fontWeight: 400 }}> · lv {store.zone.level}</span>
+          )}
           {store.zone?.worldKey.includes("#") && (
             <span style={{ color: "#ab9d7a", fontWeight: 400 }}>
               {" "}· {store.zone.worldKey.split("#")[1]}&rsquo;s

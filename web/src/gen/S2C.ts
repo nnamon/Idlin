@@ -28,6 +28,10 @@ server_version: string,
  */
 server_tick: number, } } | { "type": "Pong", "data": { nonce: number, server_tick: number, } } | { "type": "ZoneSnapshot", "data": { tick: number, zone_name: string, 
 /**
+ * AREA LEVEL: the mob-scaling floor, shown beside the name.
+ */
+zone_level: number, 
+/**
  * Which WORLD this is ("saltmere", "withered_shore#Kargan") —
  * explicit identity, not inferred from appearance.
  */

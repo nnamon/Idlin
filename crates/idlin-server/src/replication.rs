@@ -196,6 +196,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 let snapshot = serialize(&S2C::ZoneSnapshot {
                     tick: frame.tick,
                     zone_name: frame.zone_name.clone(),
+                    zone_level: frame.zone_level,
                     world_key: frame.world_key.clone(),
                     width: frame.zone_width,
                     height: frame.zone_height,
@@ -548,6 +549,7 @@ fn empty_snapshot(zone_name: &str, width: i32, height: i32, obstacles: &[Obstacl
     serde_json::to_string(&S2C::ZoneSnapshot {
         tick: 0,
         zone_name: zone_name.to_string(),
+        zone_level: 1,
         world_key: String::new(),
         width,
         height,

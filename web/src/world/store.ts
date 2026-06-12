@@ -122,6 +122,8 @@ export class WorldStore {
   entities = new Map<number, EntityRender>();
   zone: {
     name: string;
+    /** Area level: the mob-scaling floor. */
+    level: number;
     /** Explicit world identity ("withered_shore#Kargan"). */
     worldKey: string;
     width: number;
@@ -165,6 +167,7 @@ export class WorldStore {
         const d = msg.data;
         this.zone = {
           name: d.zone_name,
+          level: d.zone_level ?? 1,
           worldKey: d.world_key ?? "",
           width: d.width / 65536,
           height: d.height / 65536,

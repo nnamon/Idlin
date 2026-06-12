@@ -799,6 +799,11 @@ impl World {
         self.content_hash
     }
 
+    /// The AREA LEVEL (ZoneDef.level) — shown on the HUD plaque.
+    pub fn zone_level(&self) -> u32 {
+        self.zone_level
+    }
+
     pub fn zone_name(&self) -> &str {
         &self.zone.name
     }

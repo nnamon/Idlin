@@ -29,6 +29,7 @@ pub struct TickFrame {
     pub world_key: String,
     pub tick: u64,
     pub zone_name: String,
+    pub zone_level: u32,
     pub zone_width: i32,
     pub zone_height: i32,
     pub obstacles: Vec<ObstacleState>,
@@ -208,6 +209,7 @@ pub fn spawn_tick_loop(
                         world_key: mw.key.clone(),
                         tick: mw.world.tick_count(),
                         zone_name: mw.world.zone_name().to_string(),
+                        zone_level: mw.world.zone_level(),
                         zone_width: zw,
                         zone_height: zh,
                         obstacles: mw
