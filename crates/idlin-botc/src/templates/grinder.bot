@@ -50,6 +50,9 @@ const F_ENEMY = 1;
 const F_LOOT = 3;
 
 var last_level;            // speech-bubble beat on level up
+var wander_x;              // exploration: the spot we're strolling toward
+var wander_y;
+var wander_left;           // ticks before we pick a new spot
 
 // Fire one skill slot at the target, honoring its declared targeting
 // mode (record +36; ready checked by the caller). 0 = it flies.
@@ -147,12 +150,21 @@ fn main() {
     }
 
     // The area is clear: take the open exit if there is one (the bot's
-    // own call — nothing forces a transfer), else wander.
+    // own call — nothing forces a transfer), else EXPLORE: hold a wander
+    // target for a few seconds instead of re-rolling every tick, so an
+    // idle bot strolls the map like it lives there (towns especially —
+    // SelfStatus +64 carries the zone's content index when a brain wants
+    // zone-specific behavior).
     if (open_ex == 1) {
         if (use_exit() == 0) { return; }
         move_to(ex, ey);
         return;
     }
-    move_to((random() & 0x7FFFFFFF) % mem[SELF + 24],
-            (random() & 0x7FFFFFFF) % mem[SELF + 28]);
+    if (wander_left <= 0) {
+        wander_x = (random() & 0x7FFFFFFF) % mem[SELF + 24];
+        wander_y = (random() & 0x7FFFFFFF) % mem[SELF + 28];
+        wander_left = 50 + ((random() & 0x7FFFFFFF) % 70);
+    }
+    wander_left = wander_left - 1;
+    move_to(wander_x, wander_y);
 }

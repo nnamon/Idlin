@@ -7,10 +7,10 @@ ZoneDef(
     name: "Saltmere",
     kind: town,
     // Dimensions come from map.txt; the count-based generator is dead here.
-    spawn_x_u: 15,
-    spawn_y_u: 20,
+    spawn_x_u: 30,
+    spawn_y_u: 46,
     spawn_radius_u: 3,
-    camp_radius_u: 40,      // the whole town is sanctuary
+    camp_radius_u: 90,      // the whole town is sanctuary
     tileset: Some("town"),
     brain: Some("saltmere"),
     lines: [

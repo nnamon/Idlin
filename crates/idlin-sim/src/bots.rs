@@ -264,6 +264,10 @@ impl World {
                     mana,
                     mana_max,
                     es,
+                    // Which map this is: the zone's content index (stable
+                    // sorted ids). Bot writers branch their whole strategy
+                    // on it — grind the shore, stroll the town.
+                    self.zone_idx as i32,
                 ];
                 for (i, v) in fields.into_iter().enumerate() {
                     bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);

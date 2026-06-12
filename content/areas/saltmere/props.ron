@@ -1,12 +1,18 @@
-// Saltmere's set pieces: whole buildings standing on the map's 'B'
-// footprints (collision lives in the tiles; these are pure visuals).
+// Saltmere's set pieces: buildings standing on the map's 'B'
+// footprints (collision in tiles; these are pure visuals).
 PropsDef(
     props: [
-        (model: "inn",        x_u: 4,  y_u: 3,  rot_deg: 180),
-        (model: "blacksmith", x_u: 25, y_u: 3,  rot_deg: 180),
-        (model: "house_1",    x_u: 3,  y_u: 10, rot_deg: 90),
-        (model: "house_2",    x_u: 25, y_u: 10, rot_deg: 270),
-        (model: "house_3",    x_u: 3,  y_u: 16, rot_deg: 90),
-        (model: "house_4",    x_u: 25, y_u: 16, rot_deg: 270),
+        (model: "inn", x_u: 7, y_u: 6, rot_deg: 180),
+        (model: "blacksmith", x_u: 51, y_u: 6, rot_deg: 180),
+        (model: "house_1", x_u: 23, y_u: 5, rot_deg: 180),
+        (model: "house_2", x_u: 36, y_u: 5, rot_deg: 180),
+        (model: "house_3", x_u: 6, y_u: 18, rot_deg: 90),
+        (model: "house_4", x_u: 6, y_u: 28, rot_deg: 90),
+        (model: "house_1", x_u: 6, y_u: 38, rot_deg: 90),
+        (model: "house_2", x_u: 52, y_u: 18, rot_deg: 270),
+        (model: "house_3", x_u: 52, y_u: 28, rot_deg: 270),
+        (model: "house_4", x_u: 52, y_u: 38, rot_deg: 270),
+        (model: "house_3", x_u: 23, y_u: 44, rot_deg: 0),
+        (model: "house_1", x_u: 37, y_u: 44, rot_deg: 0),
     ],
 )

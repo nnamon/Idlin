@@ -281,6 +281,9 @@ pub struct World {
     #[serde(skip)]
     content: ContentDb,
     pub(crate) zone: Zone,
+    /// Index of this zone in ContentDb::zones (sorted ids — the same
+    /// stable indices bot programs hardcode). Bots read it via SelfStatus.
+    pub(crate) zone_idx: u32,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -569,6 +572,10 @@ impl World {
     pub fn new_for_zone(seed: u64, content: &ContentDb, zone_id: &str) -> World {
         let mut zone_brain: Option<crate::bots::Bot> = None;
         let mut zone_lines: Vec<String> = Vec::new();
+        let zone_idx = content
+            .zones
+            .binary_search_by(|z| z.id.as_str().cmp(zone_id))
+            .unwrap_or(0) as u32;
         let zone = match content.zone(zone_id).or_else(|| content.zones.first()) {
             Some(def) => {
                 // The zone's scripting brain, if the def names one.
@@ -660,6 +667,7 @@ impl World {
             content_hash: content.content_hash,
             content: content.clone(),
             zone,
+            zone_idx,
             bots: BotArena::default(),
             next_net_id: 1,
             rng_ai: Pcg32::stream(seed, Domain::ZoneAi, 0),
