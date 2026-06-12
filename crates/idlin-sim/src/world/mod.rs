@@ -1197,8 +1197,15 @@ impl World {
                     if dist > Fx::from_raw(0x100) {
                         let need = (radius - dist).min(max_push);
                         let f = Fx::ONE / dist;
-                        push_x += (pos.x - nearest.x) * f * need;
-                        push_y += (pos.y - nearest.y) * f * need;
+                        let dirx = (pos.x - nearest.x) * f;
+                        let diry = (pos.y - nearest.y) * f;
+                        // Tangential bias (same trick as the old disc
+                        // pushout): a head-on shove also nudges sideways,
+                        // so an entity steering straight at cover SLIDES
+                        // around it instead of pinning against the face.
+                        let side = need / Fx::from_int(2);
+                        push_x += dirx * need - diry * side;
+                        push_y += diry * need + dirx * side;
                     } else {
                         // On or inside the solid cell: escape along the
                         // dominant axis away from the cell center
