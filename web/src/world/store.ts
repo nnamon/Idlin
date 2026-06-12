@@ -33,6 +33,9 @@ export interface ActiveHit {
   dot: boolean;
   projectile: boolean;
   killed: boolean;
+  /** The hit staggered (windup broken, brief lock); cold stuns FREEZE. */
+  stun: boolean;
+  freeze: boolean;
   at: number;
 }
 
@@ -213,6 +216,8 @@ export class WorldStore {
             dot: h.dot,
             projectile: h.projectile,
             killed: h.killed,
+            stun: h.stun ?? false,
+            freeze: h.freeze ?? false,
             at: now,
           });
         }

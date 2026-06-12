@@ -58,9 +58,16 @@ pub enum Stat {
     ItemRarity,
     /// Scales how many drop rolls a kill makes.
     ItemQuantity,
+    // -- hit reactions (see mechanics.md "Stun, freeze, knockback") --
+    /// Attacker: basis points easier to stun (shifts the victim's bar).
+    Stagger,
+    /// Defender: basis points harder to stun / shorter stuns.
+    Poise,
+    /// Attacker: flat knockback in centi-units added to every hit.
+    Knockback,
 }
 
-pub const STAT_COUNT: usize = 31;
+pub const STAT_COUNT: usize = 34;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -95,6 +102,9 @@ impl Stat {
         Stat::ResistChaos,
         Stat::ItemRarity,
         Stat::ItemQuantity,
+        Stat::Stagger,
+        Stat::Poise,
+        Stat::Knockback,
     ];
 
     pub fn idx(self) -> usize {

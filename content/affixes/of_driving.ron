@@ -1,0 +1,11 @@
+// Weapon suffix: flat knockback — every hit shoves the victim along
+// the blow (centi-units; walls and shut gates stop the slide).
+AffixDef(
+    id: "of_driving", name: "of Driving", kind: suffix, pool: "weapon",
+    weight: 50,
+    stat: knockback, layer: added,
+    tiers: [
+        (ilvl: 2, min: 25, max: 45, name: "of Driving", weight: 100),
+        (ilvl: 8, min: 46, max: 75, name: "of Hurling", weight: 35),
+    ],
+)

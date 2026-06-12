@@ -88,6 +88,11 @@ pub struct CombatStats {
     /// Typed resistances in basis points (capped at use); see RES_*.
     pub resists: [i64; RES_COUNT],
     pub range: Fx,
+    /// Hit reactions: basis points easier to stun victims / harder to be
+    /// stunned, and flat knockback (centi-units) shoved on every hit.
+    pub stagger: i64,
+    pub poise: i64,
+    pub knockback_cu: i64,
     /// Ticks one use of the basic weapon occupies (speed-scaled).
     pub use_ticks: u32,
     /// Occupied until this tick: no moving, no acting (use-time commitment).

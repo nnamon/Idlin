@@ -54,6 +54,9 @@ pub struct Projectile {
     pub dot: Option<(u8, i64, u32, u32)>,
     /// Victim rider: (grants, duration_ticks) applied on hit.
     pub debuff: Option<(Vec<crate::stats::Grant>, u32)>,
+    /// Hit reactions carried from the launcher.
+    pub stagger: i64,
+    pub knockback_cu: i64,
 }
 
 /// Grid collision for authored (tile-mapped) zones: one cell per sim

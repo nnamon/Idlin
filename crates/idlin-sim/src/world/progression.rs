@@ -328,6 +328,9 @@ impl World {
         let cast_speed = sheet.value(Stat::CastSpeed, 10000).max(1000);
         let item_rarity = sheet.value(Stat::ItemRarity, 10000).max(0);
         let item_quantity = sheet.value(Stat::ItemQuantity, 10000).max(0);
+        let stagger = sheet.value(Stat::Stagger, 0).max(0);
+        let poise = sheet.value(Stat::Poise, 0).max(0);
+        let knockback_cu = sheet.value(Stat::Knockback, 0).max(0);
         let speed = Fx::from_raw(
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
@@ -365,6 +368,9 @@ impl World {
             c.projectile = projectile;
             c.item_rarity = item_rarity;
             c.item_quantity = item_quantity;
+            c.stagger = stagger;
+            c.poise = poise;
+            c.knockback_cu = knockback_cu;
         }
     }
 }

@@ -119,6 +119,9 @@ pub(super) struct StrikeSpec {
     pub dot: Option<(u8, i64, u32, u32)>,
     /// On-hit rider applied to the VICTIM: timed stat grants (chill etc.).
     pub debuff: Option<(Vec<Grant>, u32)>,
+    /// Hit reactions (attacker-derived): bp easier to stun, flat shove cu.
+    pub stagger: i64,
+    pub knockback_cu: i64,
 }
 
 impl StrikeSpec {
@@ -139,6 +142,8 @@ impl StrikeSpec {
                 projectile: self.projectile,
                 dot: self.dot,
                 debuff: self.debuff.clone(),
+                stagger: self.stagger,
+                knockback_cu: self.knockback_cu,
             }
         }
     }
@@ -474,6 +479,7 @@ impl World {
         let (char_damage, accuracy, weapon_range, weapon_projectile, _weapon_use) =
             (c.damage, c.accuracy, c.range, c.projectile, c.use_ticks);
         let (crit_inc, crit_multi, _cast_speed) = (c.crit_inc, c.crit_multi, c.cast_speed);
+        let (a_stagger, a_knockback) = (c.stagger, c.knockback_cu);
         let hostile_to_players = matches!(attacker_faction, crate::entity::Faction::Hostile);
 
         match skill {
@@ -513,6 +519,8 @@ impl World {
                     projectile: weapon_projectile,
                     dot: None,
                     debuff: None,
+                    stagger: a_stagger,
+                    knockback_cu: a_knockback,
                 };
                 if weapon_projectile {
                     let toward = t.pos;
@@ -634,6 +642,8 @@ impl World {
                     projectile: gem_def.shape == SkillShape::Projectile,
                     dot,
                     debuff,
+                    stagger: a_stagger,
+                    knockback_cu: a_knockback,
                 };
 
                 // Aim: where is this skill pointed?
@@ -1160,6 +1170,8 @@ impl World {
             already_hit: Vec::new(),
             dot: spec.dot,
             debuff: spec.debuff,
+            stagger: spec.stagger,
+            knockback_cu: spec.knockback_cu,
         });
     }
 
@@ -1247,6 +1259,8 @@ impl World {
                     projectile: true,
                     dot: p.dot,
                     debuff: p.debuff.clone(),
+                    stagger: p.stagger,
+                    knockback_cu: p.knockback_cu,
                 };
                 self.strike(spec, ts, now, events, &mut dead, &mut loot);
                 p.already_hit.push(net);
@@ -1266,6 +1280,38 @@ impl World {
     }
 
     /// One landed strike. See the module docs for the pipeline order.
+    /// Knock the victim back along the hit line, stopping at walls and
+    /// shut gates — a real displacement, deterministic, in small steps.
+    fn shove(&mut self, slot: usize, from: FxV2, at: FxV2, dist_cu: i64) {
+        let len = from.dist(at);
+        let (dx, dy) = if len > Fx::from_raw(0x100) {
+            let f = Fx::ONE / len;
+            ((at.x - from.x) * f, (at.y - from.y) * f)
+        } else {
+            return; // point-blank overlap: no meaningful direction
+        };
+        let total = fx_from_cu(dist_cu.min(150) as i32);
+        let step = Fx::from_raw(total.raw() / 4);
+        let Some(e) = self.zone.get(slot) else { return };
+        let mut pos = e.pos;
+        for _ in 0..4 {
+            let cand = self
+                .zone
+                .clamp_pos(FxV2::new(pos.x + dx * step, pos.y + dy * step));
+            let (cx, cy) = (
+                (cand.x.raw() as i64).div_euclid(65536),
+                (cand.y.raw() as i64).div_euclid(65536),
+            );
+            if self.zone.cell_blocked(cx, cy) {
+                break;
+            }
+            pos = cand;
+        }
+        if let Some(e) = self.zone.get_mut(slot) {
+            e.pos = pos;
+        }
+    }
+
     pub(super) fn strike(
         &mut self,
         spec: StrikeSpec,
@@ -1282,9 +1328,11 @@ impl World {
             return; // an earlier strike this phase may have killed it
         }
         let target_net = t.net_id;
+        let target_pos = t.pos;
         let tc_ro = t.combat.as_ref().unwrap();
         let (t_evasion, t_armour, t_resists, t_block) =
             (tc_ro.evasion, tc_ro.armour, tc_ro.resists, tc_ro.block);
+        let (t_life_max, t_poise) = (tc_ro.life_max, tc_ro.poise);
 
         // Accuracy: attacks can miss; spells and dots cannot.
         let mut hit = spec.is_spell
@@ -1344,6 +1392,52 @@ impl World {
         }
         tc.last_combat_tick = now;
         let killed = tc.life <= 0;
+
+        // -- hit reactions: STUN (freeze when cold) and KNOCKBACK --
+        // Scaled by hit size RELATIVE TO MAX LIFE, so big things resist
+        // naturally. Stagger (attacker) inflates the effective size;
+        // poise (defender) shrinks it. Chance ramps 0→100% between 12%
+        // and 25% of max life; a stun interrupts the victim's committed
+        // windup (mana lost) and locks them briefly.
+        let mut stun = false;
+        let mut freeze = false;
+        let mut shove_cu = 0i64;
+        if hit && !spec.is_dot && !killed && amount > 0 {
+            let pct_bp = (amount * 10000 / t_life_max.max(1)) * (10000 + spec.stagger)
+                / (10000 + t_poise).max(1);
+            const STUN_FLOOR_BP: i64 = 1200;
+            const STUN_SURE_BP: i64 = 2500;
+            if pct_bp > STUN_FLOOR_BP {
+                let chance =
+                    ((pct_bp - STUN_FLOOR_BP) * 10000 / (STUN_SURE_BP - STUN_FLOOR_BP)).min(10000);
+                if (self.rng_combat.next_range(10000) as i64) < chance {
+                    stun = true;
+                    // A stunning COLD hit FREEZES: same lock, icy flavor,
+                    // a little longer.
+                    freeze = dmg_type == 2;
+                    let dur = if freeze { 6 } else { 4 };
+                    let tc = self
+                        .zone
+                        .get_mut(target_slot)
+                        .unwrap()
+                        .combat
+                        .as_mut()
+                        .unwrap();
+                    tc.busy_until = tc.busy_until.max(now + dur);
+                    self.pending_uses.retain(|p| p.attacker != target_net);
+                }
+            }
+            // Knockback: the attacker's flat stat, plus an inherent shove
+            // on crushing hits (≥30% of max life).
+            shove_cu = spec.knockback_cu + if pct_bp >= 3000 { 35 } else { 0 };
+        }
+        if shove_cu > 0
+            && let Some(a) = self.zone.get_net(spec.attacker_net)
+        {
+            let from = a.pos;
+            self.shove(target_slot, from, target_pos, shove_cu);
+        }
+
         events.push(SimEvent::Hit {
             attacker: spec.attacker_net,
             target: target_net,
@@ -1353,6 +1447,8 @@ impl World {
             dot: spec.is_dot,
             projectile: spec.projectile,
             killed,
+            stun,
+            freeze,
         });
 
         // On-hit rider: apply/refresh the skill's dot (strongest wins per
@@ -1662,6 +1758,8 @@ impl World {
                     projectile: false,
                     dot: None,
                     debuff: None,
+                    stagger: 0,
+                    knockback_cu: 0,
                 };
                 self.strike(spec, slot, now, events, &mut dead, &mut loot);
             }
@@ -1730,6 +1828,102 @@ mod tests {
             level,
             xp: 0,
         }
+    }
+
+    /// A crushing hit (past the sure-stun knee) STUNS — the victim's
+    /// committed windup is cancelled and busy extends — and an attacker
+    /// with flat Knockback SHOVES the victim along the blow.
+    #[test]
+    fn crushing_hits_stun_and_knockback_shoves() {
+        let content = content();
+        let mut world = World::new(0x57A6, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Crusher".into(),
+                program: halt,
+            }],
+        }); // packs spawn; one inert character joins
+        for g in &mut world.zone.gates {
+            g.open = true;
+        }
+        let (m_slot, m_net, m_pos) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.net_id, e.pos))
+            .expect("a monster stands somewhere");
+        // Beef the victim so the crusher doesn't kill it, and give it a
+        // committed windup to break.
+        {
+            let m = world.zone.get_mut(m_slot).unwrap();
+            let c = m.combat.as_mut().unwrap();
+            c.life = 400;
+            c.life_max = 400;
+        }
+        world.pending_uses.push(super::PendingUse {
+            attacker: m_net,
+            target: crate::entity::SkillTarget::Entity(9999),
+            skill: None,
+            resolve_at: world.tick + 50,
+        });
+        // Direction comes from the attacker's live position: park the
+        // character one unit west of the victim.
+        let ch_net = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .map(|(_, e)| e.net_id)
+            .expect("a character joined");
+        let attacker_pos = FxV2::new(m_pos.x - Fx::from_int(1), m_pos.y);
+        let ch_slot = world.zone.slot_of(ch_net).unwrap();
+        world.zone.get_mut(ch_slot).unwrap().pos = attacker_pos;
+
+        let spec = StrikeSpec {
+            attacker_slot: Some(ch_slot),
+            attacker_net: ch_net,
+            attacker_name: "Test".into(),
+            attacker_is_char: true,
+            is_spell: true, // never misses
+            is_dot: false,
+            accuracy: 0,
+            damage: [160, 0, 0, 0, 0], // 40% of 400: past the knee
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 60,
+        };
+        let now = world.tick;
+        let mut events = Vec::new();
+        let mut dead = Vec::new();
+        let mut loot = Vec::new();
+        world.strike(spec, m_slot, now, &mut events, &mut dead, &mut loot);
+
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, super::SimEvent::Hit { stun: true, .. })),
+            "a 40%-of-life hit must stun"
+        );
+        let m = world.zone.get(m_slot).unwrap();
+        assert!(
+            m.combat.as_ref().unwrap().busy_until >= now + 4,
+            "the stun locks the victim"
+        );
+        assert!(
+            !world.pending_uses.iter().any(|p| p.attacker == m_net),
+            "the victim's committed windup is interrupted"
+        );
+        assert!(
+            m.pos.x.raw() > m_pos.x.raw(),
+            "knockback shoves along the blow ({} -> {})",
+            m_pos.x.raw(),
+            m.pos.x.raw()
+        );
     }
 
     #[test]
@@ -2045,6 +2239,8 @@ mod tests {
             already_hit: Vec::new(),
             dot: None,
             debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
         });
         let mut events = Vec::new();
         world.step_projectiles(&mut events);

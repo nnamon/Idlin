@@ -191,6 +191,10 @@ pub enum SimEvent {
         /// Dominant damage component: 0 phys, 1 fire, 2 cold, 3 lightning,
         /// 4 chaos.
         dmg_type: u8,
+        /// The hit staggered its victim (windup interrupted, briefly
+        /// locked); a stunning cold hit reads as FROZEN instead.
+        stun: bool,
+        freeze: bool,
         crit: bool,
         /// True for damage-over-time burns (steady, once per second).
         dot: bool,
@@ -399,6 +403,9 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
             def.resist_chaos,
         ],
         range: fx_from_cu(def.range_cu),
+        stagger: 0,
+        poise: 0,
+        knockback_cu: 0,
         use_ticks: def.use_ticks,
         busy_until: 0,
         speed_per_tick: speed_from_cps(def.speed_cps),
@@ -462,6 +469,9 @@ pub fn universal_stats(level: u32) -> CombatStats {
         armour: 0,
         resists: [0; crate::entity::RES_COUNT],
         range: fx_from_cu(UNARMED_RANGE_CU),
+        stagger: 0,
+        poise: 0,
+        knockback_cu: 0,
         use_ticks: UNARMED_USE_TICKS,
         busy_until: 0,
         speed_per_tick: speed_from_cps(BASE_SPEED_CPS),
@@ -1642,6 +1652,20 @@ impl World {
                 ][i];
                 stats.damage[i] = sheet.value(st, base);
             }
+            // Typed resists and hit reactions roll on elites too — the
+            // SAME sheet items use (of Wards, of Staggering).
+            let res_stats = [
+                idlin_content::stats::Stat::ResistFire,
+                idlin_content::stats::Stat::ResistCold,
+                idlin_content::stats::Stat::ResistLightning,
+                idlin_content::stats::Stat::ResistChaos,
+            ];
+            for (i, st) in res_stats.into_iter().enumerate() {
+                stats.resists[i] = sheet.value(st, stats.resists[i]);
+            }
+            stats.stagger = sheet.value(idlin_content::stats::Stat::Stagger, 0).max(0);
+            stats.poise = sheet.value(idlin_content::stats::Stat::Poise, 0).max(0);
+            stats.knockback_cu = sheet.value(idlin_content::stats::Stat::Knockback, 0).max(0);
             // (attack cadence lives on the def's use_ticks; the haste
             // affix still applies wherever derived stats read it)
         }

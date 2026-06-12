@@ -236,6 +236,13 @@ export class FxSystem {
         hit.killed ? 320 : 140,
       );
     }
+    // Reaction reads: a freeze flashes ICE and lingers; a stagger snaps
+    // a brief amber crack over the victim.
+    if (hit.freeze) {
+      this.spawnFlash(to, 0x9adfff, 1.5, now, 460, 0.9);
+    } else if (hit.stun) {
+      this.spawnFlash(to, 0xffd75a, 1.0, now, 240, 0.9);
+    }
     const color = DMG_COLORS[hit.dmgType] ?? DMG_COLORS[0];
     if (hit.amount > 0) {
       // Crits read loud (outlined, bigger); dots burn quiet and steady.

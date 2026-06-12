@@ -48,6 +48,27 @@ contact frame lands exactly when HitFx (numbers, flashes, shape FX)
 arrives. Movement stays blocked for the full use; recovery is the
 remainder after contact.
 
+## Hit reactions: stun, freeze, knockback
+
+Reactions scale with hit size RELATIVE TO THE VICTIM'S MAX LIFE — big
+things resist naturally, no special-casing.
+
+- **Stun**: chance ramps 0→100% as the (post-mitigation) hit grows
+  from 12% to 25% of max life. A stun interrupts the victim's
+  committed windup (the mana stays spent) and locks them for 4 ticks.
+  A stunning COLD hit is a **freeze** instead: same lock, 6 ticks, icy
+  read on the client.
+- **Knockback**: an attacker's flat `knockback` stat (centi-units)
+  shoves the victim along the blow on every hit; crushing hits (≥30%
+  of max life) add an inherent 0.35 u shove. The slide is real sim
+  displacement — walls and shut gates stop it.
+- **Scaling**: `stagger` (attacker, increased) inflates the hit's
+  effective size against the stun bar; `poise` (defender, increased)
+  shrinks it. All three are ordinary stats — affixes roll them
+  (Jarring/Staggering weapons, "of Driving"/"of Hurling" knockback,
+  "of Poise" armour) and the monster pool carries "of Staggering" for
+  elites whose blows rattle.
+
 ## Hit resolution (per strike)
 
 1. **Hit roll**: chance = `10000·acc / (acc + eva/2)`, clamped to

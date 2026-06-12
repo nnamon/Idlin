@@ -581,7 +581,7 @@ export class ZoneRenderer {
           const dirX = attacker ? target.group.position.x - attacker.group.position.x : 0;
           const dirZ = attacker ? target.group.position.z - attacker.group.position.z : 1;
           const sig = Math.min(1.6, Math.max(0.25, hit.amount / 45));
-          target.impact(dirX, dirZ, sig, hit.crit, hit.killed);
+          target.impact(dirX, dirZ, sig, hit.crit, hit.killed, hit.stun, hit.freeze);
           if (hit.crit) this.director.addTraumaAt(target.group.position, 0.16 + sig * 0.08);
         }
         if (hit.killed) {

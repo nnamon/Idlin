@@ -372,6 +372,8 @@ fn collect_hits(events: &[SimEvent]) -> Vec<HitFx> {
                 dot,
                 projectile,
                 killed,
+                stun,
+                freeze,
             } => Some(HitFx {
                 attacker: *attacker,
                 target: *target,
@@ -381,6 +383,8 @@ fn collect_hits(events: &[SimEvent]) -> Vec<HitFx> {
                 dot: *dot,
                 projectile: *projectile,
                 killed: *killed,
+                stun: *stun,
+                freeze: *freeze,
             }),
             _ => None,
         })

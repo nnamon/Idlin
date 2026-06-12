@@ -1,0 +1,11 @@
+// Weapon prefix: stagger — your hits count as bigger against the
+// victim's stun bar (see mechanics.md "Use timing" / hit reactions).
+AffixDef(
+    id: "jarring", name: "Jarring", kind: prefix, pool: "weapon",
+    weight: 60,
+    stat: stagger, layer: increased,
+    tiers: [
+        (ilvl: 1, min: 1500, max: 2500, name: "Jarring", weight: 100),
+        (ilvl: 6, min: 2501, max: 4000, name: "Staggering", weight: 40),
+    ],
+)

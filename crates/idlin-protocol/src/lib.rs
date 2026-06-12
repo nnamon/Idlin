@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 25;
+pub const PROTO_VERSION: u32 = 26;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -151,6 +151,10 @@ pub struct HitFx {
     pub dot: bool,
     pub projectile: bool,
     pub killed: bool,
+    /// The hit STAGGERED its victim (windup interrupted, briefly locked);
+    /// a stunning cold hit reads as FROZEN instead.
+    pub stun: bool,
+    pub freeze: bool,
 }
 
 /// Narratable world events: the ticker, the director, and (later) chat
@@ -588,6 +592,8 @@ mod tests {
                 dot: false,
                 projectile: true,
                 killed: false,
+                stun: false,
+                freeze: false,
             }],
             projectiles: vec![],
             uses: Vec::new(),

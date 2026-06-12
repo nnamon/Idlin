@@ -12,4 +12,9 @@ dmg_type: number, crit: boolean,
 /**
  * A damage-over-time burn tick (steady, once per second).
  */
-dot: boolean, projectile: boolean, killed: boolean, };
+dot: boolean, projectile: boolean, killed: boolean, 
+/**
+ * The hit STAGGERED its victim (windup interrupted, briefly locked);
+ * a stunning cold hit reads as FROZEN instead.
+ */
+stun: boolean, freeze: boolean, };

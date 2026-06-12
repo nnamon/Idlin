@@ -487,11 +487,22 @@ export class EntityVisual {
    * scale punch, and a directional shove on the visual root. Strength
    * is the hit's significance (~amount-scaled, 0.25..1.6).
    */
-  impact(dirX: number, dirZ: number, strength: number, crit: boolean, killed: boolean): void {
+  impact(
+    dirX: number,
+    dirZ: number,
+    strength: number,
+    crit: boolean,
+    killed: boolean,
+    stun = false,
+    freeze = false,
+  ): void {
     if (this.lootMesh) return;
-    this.hitstopMs = Math.max(this.hitstopMs, killed ? 120 : crit ? 90 : 55);
+    // Stuns hold the body visibly (the sim locked it too); freezes
+    // longest — the model stands ICED until the lock releases.
+    const stop = freeze ? 480 : stun ? 300 : killed ? 120 : crit ? 90 : 55;
+    this.hitstopMs = Math.max(this.hitstopMs, stop);
     this.punchMs = 130;
-    this.punchMag = Math.min(0.16, 0.05 + strength * 0.06) * (crit ? 1.5 : 1);
+    this.punchMag = Math.min(0.16, 0.05 + strength * 0.06) * (crit || stun ? 1.5 : 1);
     const len = Math.hypot(dirX, dirZ) || 1;
     const shove = Math.min(0.3, 0.1 + strength * 0.1) * (killed ? 1.6 : 1);
     this.kbX = (dirX / len) * shove;
