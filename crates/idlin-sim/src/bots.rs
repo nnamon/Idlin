@@ -460,44 +460,50 @@ impl World {
                 self.try_say(slot, line, events)
             }
             SYS_USE_FLASK => {
-                // Drink the equipped flask: instant life. 0 = healed;
-                // −1 no flask equipped; −2 not enough charges; −3 life
-                // already full. The bot decides WHEN — that's the skill.
-                let flask_slot = idlin_content::GearSlot::Flask.idx();
-                let Some(base_idx) = self
-                    .zone
-                    .get(slot)
-                    .and_then(|e| e.character.as_ref())
-                    .and_then(|ch| ch.equipment[flask_slot].as_ref())
-                    .map(|f| f.base_idx as usize)
-                else {
-                    return -1;
-                };
-                let (cost, heal) = {
-                    let def = &self.content_items()[base_idx];
-                    (def.flask_cost, def.flask_heal)
+                // Drink a flask: 0 = restored; -1 no flask equipped;
+                // -2 all useful flasks empty; -3 nothing to restore.
+                // Resource-aware: picks the belt loop whose flask
+                // restores what you actually LACK. The bot decides WHEN.
+                let (need_life, need_mana) =
+                    match self.zone.get(slot).and_then(|e| e.combat.as_ref()) {
+                        Some(c) => (c.life < c.life_max, c.mana < c.mana_max),
+                        None => return -1,
+                    };
+                let mut found_any = false;
+                let mut pick: Option<(usize, u32, i64, i64)> = None;
+                if let Some(ch) = self.zone.get(slot).and_then(|e| e.character.as_ref()) {
+                    for fs in idlin_content::GearSlot::FLASK_SLOTS {
+                        let Some(f) = ch.equipment[fs].as_ref() else {
+                            continue;
+                        };
+                        found_any = true;
+                        let def = &self.content_items()[f.base_idx as usize];
+                        let useful =
+                            (def.flask_heal > 0 && need_life) || (def.flask_mana > 0 && need_mana);
+                        if useful && f.charges >= def.flask_cost && pick.is_none() {
+                            pick = Some((fs, def.flask_cost, def.flask_heal, def.flask_mana));
+                        }
+                    }
+                }
+                let Some((flask_slot, cost, heal, mana)) = pick else {
+                    if !found_any {
+                        return -1;
+                    }
+                    return if need_life || need_mana { -2 } else { -3 };
                 };
                 let Some(e) = self.zone.get_mut(slot) else {
                     return -1;
                 };
-                let Some(c) = e.combat.as_ref() else {
-                    return -1;
-                };
-                if c.life >= c.life_max {
-                    return -3;
-                }
                 let Some(ch) = e.character.as_mut() else {
                     return -1;
                 };
                 let Some(flask) = ch.equipment[flask_slot].as_mut() else {
                     return -1;
                 };
-                if flask.charges < cost {
-                    return -2;
-                }
-                flask.charges -= cost;
+                flask.charges = flask.charges.saturating_sub(cost);
                 let c = e.combat.as_mut().unwrap();
                 c.life = (c.life + heal).min(c.life_max);
+                c.mana = (c.mana + mana).min(c.mana_max);
                 0
             }
             SYS_READ_EXITS => {

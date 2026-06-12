@@ -283,7 +283,14 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         <SlotBox area="offhand" label="Offhand" gear={bySlot.get("offhand")} icons={icons} />
         <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
         <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
-        <SlotBox area="flask" label="Flask" gear={bySlot.get("flask")} icons={icons} />
+        <div style={{ gridArea: "flask", display: "flex", gap: 4 }}>
+          <div style={{ flex: 1, display: "grid" }}>
+            <SlotBox area="auto" label="Flask" gear={bySlot.get("flask")} icons={icons} />
+          </div>
+          <div style={{ flex: 1, display: "grid" }}>
+            <SlotBox area="auto" label="Flask" gear={bySlot.get("flask 2")} icons={icons} />
+          </div>
+        </div>
       </div>
       <Header>Bag</Header>
       <BagGrid sheet={sheet} icons={icons} />

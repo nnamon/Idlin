@@ -195,7 +195,7 @@ pub enum GearSlot {
 }
 
 impl GearSlot {
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 7;
 
     pub fn idx(self) -> usize {
         match self {
@@ -207,6 +207,9 @@ impl GearSlot {
             GearSlot::Flask => 5,
         }
     }
+
+    /// Equipment indices that accept flask items (two belt loops).
+    pub const FLASK_SLOTS: [usize; 2] = [5, 6];
 }
 
 /// An item base type. Rolled affixes provide everything beyond these bases.
@@ -218,6 +221,9 @@ pub struct ItemDef {
     /// Flasks: instant life restored per drink.
     #[serde(default)]
     pub flask_heal: i64,
+    /// Flasks: instant mana restored per drink.
+    #[serde(default)]
+    pub flask_mana: i64,
     /// Flasks: maximum charges held.
     #[serde(default)]
     pub flask_charges: u32,

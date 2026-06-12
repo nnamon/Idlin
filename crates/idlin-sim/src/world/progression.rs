@@ -33,11 +33,12 @@ impl World {
         };
         if credit_kill {
             ch.kills += 1;
-            // Kills refill the equipped flask (PoE-style charge gain).
-            let flask_slot = idlin_content::GearSlot::Flask.idx();
-            if let Some(flask) = ch.equipment[flask_slot].as_mut() {
-                let def = &self.content.items[flask.base_idx as usize];
-                flask.charges = (flask.charges + def.flask_gain).min(def.flask_charges);
+            // Kills refill BOTH equipped flasks (PoE-style charge gain).
+            for flask_slot in idlin_content::GearSlot::FLASK_SLOTS {
+                if let Some(flask) = ch.equipment[flask_slot].as_mut() {
+                    let def = &self.content.items[flask.base_idx as usize];
+                    flask.charges = (flask.charges + def.flask_gain).min(def.flask_charges);
+                }
             }
         }
         ch.xp += xp;

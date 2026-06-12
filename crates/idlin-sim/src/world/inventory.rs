@@ -117,7 +117,14 @@ impl World {
                 .unwrap_or(-1);
             let mut best: Option<(usize, i64)> = None;
             for (inv_idx, placed) in ch.inventory.iter().enumerate() {
-                if self.content.items[placed.item.base_idx as usize].slot.idx() != gear_idx {
+                let islot = self.content.items[placed.item.base_idx as usize].slot;
+                // Flask items fit EITHER belt loop; everything else maps 1:1.
+                let fits = if GearSlot::FLASK_SLOTS.contains(&gear_idx) {
+                    islot == GearSlot::Flask
+                } else {
+                    islot.idx() == gear_idx
+                };
+                if !fits {
                     continue;
                 }
                 let s = self.item_score(&placed.item);
