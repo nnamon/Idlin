@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 21;
+pub const PROTO_VERSION: u32 = 22;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -457,6 +457,10 @@ pub enum S2C {
         #[ts(type = "number")]
         tick: u64,
         zone_name: String,
+        /// Which WORLD this is ("saltmere", "withered_shore#Kargan") —
+        /// explicit identity, not inferred from appearance.
+        #[serde(default)]
+        world_key: String,
         /// Q16.16 raw zone extents.
         width: i32,
         height: i32,

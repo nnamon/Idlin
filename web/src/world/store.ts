@@ -95,6 +95,8 @@ export class WorldStore {
   entities = new Map<number, EntityRender>();
   zone: {
     name: string;
+    /** Explicit world identity ("withered_shore#Kargan"). */
+    worldKey: string;
     width: number;
     height: number;
     obstacles: ZoneObstacle[];
@@ -127,6 +129,7 @@ export class WorldStore {
         const d = msg.data;
         this.zone = {
           name: d.zone_name,
+          worldKey: d.world_key ?? "",
           width: d.width / 65536,
           height: d.height / 65536,
           obstacles: d.obstacles.map((o) => ({

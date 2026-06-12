@@ -26,6 +26,11 @@ server_version: string,
  */
 server_tick: number, } } | { "type": "Pong", "data": { nonce: number, server_tick: number, } } | { "type": "ZoneSnapshot", "data": { tick: number, zone_name: string, 
 /**
+ * Which WORLD this is ("saltmere", "withered_shore#Kargan") —
+ * explicit identity, not inferred from appearance.
+ */
+world_key: string, 
+/**
  * Q16.16 raw zone extents.
  */
 width: number, height: number, 
