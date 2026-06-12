@@ -57,7 +57,7 @@ TreeDef(
                     (stat: armour, layer: more, value: -1500),     // 15% LESS armour
                 ]),
         NodeDef(id: "socket_war", num: 26, name: "War Socket", pos: (-19, 8), kind: socket,
-                links: ["w1"], grants: []),
+                links: ["w5"], grants: []),
 
         // --- archetype: BULWARK (armour tank), south of Might ---
         NodeDef(id: "b1", num: 30, name: "Thick Skin", pos: (-12, 11), kind: travel, links: ["str3"],
@@ -80,7 +80,7 @@ TreeDef(
                     (stat: attack_speed, layer: more, value: -1000), // 10% LESS attack speed
                 ]),
         NodeDef(id: "socket_aegis", num: 36, name: "Aegis Socket", pos: (-9, 17), kind: socket,
-                links: ["b2"], grants: []),
+                links: ["b5"], grants: []),
 
         // ================= DEXTERITY trunk (southeast) =================
         NodeDef(id: "dex1", num: 40, name: "Dexterity", pos: (4, 2), kind: travel,
@@ -114,7 +114,7 @@ TreeDef(
                     (stat: evasion, layer: more, value: -1000), // 10% LESS evasion
                 ]),
         NodeDef(id: "socket_hunt", num: 56, name: "Hunt Socket", pos: (19, 8), kind: socket,
-                links: ["d1"], grants: []),
+                links: ["d5"], grants: []),
 
         // --- archetype: WIND DANCER (evasion/speed), south of Finesse ---
         NodeDef(id: "wd1", num: 60, name: "Poise", pos: (12, 11), kind: travel, links: ["dex3"],
@@ -137,7 +137,7 @@ TreeDef(
                     (stat: life, layer: more, value: -1200),   // 12% LESS life
                 ]),
         NodeDef(id: "socket_gale", num: 66, name: "Gale Socket", pos: (9, 17), kind: socket,
-                links: ["wd2"], grants: []),
+                links: ["wd5"], grants: []),
 
         // ================= INTELLIGENCE trunk (north) =================
         NodeDef(id: "int1", num: 70, name: "Intelligence", pos: (0, -5), kind: travel,
@@ -195,7 +195,7 @@ TreeDef(
                     (stat: armour, layer: more, value: -1000),    // 10% LESS armour
                 ]),
         NodeDef(id: "socket_flame", num: 86, name: "Flame Socket", pos: (-9, -16), kind: socket,
-                links: ["el1"], grants: []),
+                links: ["el5"], grants: []),
 
         // --- archetype: PLAGUECALLER (chaos), northeast of Insight ---
         NodeDef(id: "pl1", num: 90, name: "Fester", pos: (5, -18), kind: travel, links: ["int3"],
@@ -218,7 +218,7 @@ TreeDef(
                     (stat: life, layer: more, value: -1000),        // 10% LESS life
                 ]),
         NodeDef(id: "socket_rot", num: 96, name: "Rot Socket", pos: (9, -16), kind: socket,
-                links: ["pl1"], grants: []),
+                links: ["pl5"], grants: []),
 
         // ============ hybrid bridges between ADJACENT archetypes ============
         // (mid-limb travel links — mixed styles come from here, keystones

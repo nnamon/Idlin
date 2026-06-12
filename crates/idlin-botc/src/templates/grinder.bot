@@ -34,11 +34,14 @@ const N_FLEET = 61;
 
 // The declared build: allocated automatically as we level. The whole
 // plan is fixed at deploy — changing it means deploying a new bot.
+// Sockets sit DEEP now (behind each limb's fifth node): the second
+// skill slot is a post-shore milestone, not a tutorial snack.
 build [
     N_STR1, N_STR2, N_MIGHT,
-    N_HEFT, N_SOCKET_WAR, N_BRAWN, N_RHYTHM, N_BUTCHER,
-    N_THICK_SKIN, N_HARDY, N_SOCKET_AEGIS, N_STALWART, N_COLOSSUS,
-    N_OVERWHELM, N_BERSERKER, N_IRON_WILL,
+    N_HEFT, N_BRAWN, N_RHYTHM, N_BUTCHER, N_OVERWHELM,
+    N_BERSERKER, N_SOCKET_WAR,
+    N_THICK_SKIN, N_HARDY, N_STALWART, N_COLOSSUS, N_IRON_WILL,
+    N_SOCKET_AEGIS,
     N_SUREFOOT, N_FLEET, N_POISE,
 ];
 
