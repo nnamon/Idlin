@@ -19,9 +19,9 @@ ZoneDef(
     ],
     packs: [
         // Townsfolk: non-hostile bots with errands and opinions.
-        (monster: "villager", count: 3, x_u: 30, y_u: 14, radius_u: 5, respawn_ticks: 9000),
-        (monster: "villager", count: 2, x_u: 30, y_u: 25, radius_u: 6, respawn_ticks: 9000),
-        (monster: "villager", count: 1, x_u: 25, y_u: 8,  radius_u: 2, respawn_ticks: 9000),
-        (monster: "villager", count: 1, x_u: 34, y_u: 8,  radius_u: 2, respawn_ticks: 9000),
+        (monster: "villager", count: 3, x_u: 30, y_u: 25, radius_u: 5, respawn_ticks: 9000),
+        (monster: "villager", count: 2, x_u: 30, y_u: 26, radius_u: 5, respawn_ticks: 9000),
+        (monster: "villager", count: 1, x_u: 25, y_u: 21,  radius_u: 2, respawn_ticks: 9000),
+        (monster: "villager", count: 1, x_u: 34, y_u: 21,  radius_u: 2, respawn_ticks: 9000),
     ],
 )

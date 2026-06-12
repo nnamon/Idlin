@@ -15,6 +15,9 @@ export class TileTerrain {
   group = new THREE.Group();
   /** Brazier cells surface here; ZoneRenderer owns the lit brazier rig. */
   brazierSpots: Array<[number, number]> = [];
+  /** Tall meshes that can hide idlers from the camera; ZoneRenderer
+   *  fades whichever stand between the lens and a character. */
+  occluders: THREE.Object3D[] = [];
 
   constructor(private tiles: TileMapState) {}
 
@@ -106,6 +109,7 @@ export class TileTerrain {
             if (obj) {
               obj.position.set(cx, -0.02, cz);
               this.group.add(obj);
+              this.occluders.push(obj);
             } else {
               const m = new THREE.Mesh(wallGeo, wallMat);
               m.position.set(cx, 0.75, cz);
@@ -173,6 +177,7 @@ export class TileTerrain {
         }
       });
       this.group.add(obj);
+      this.occluders.push(obj);
     }
   }
 }

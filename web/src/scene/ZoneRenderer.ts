@@ -81,6 +81,8 @@ export class ZoneRenderer {
   /// obstacle layout, so the key folds the obstacles in too.
   private builtZoneKey: string | null = null;
   private onResize = () => this.resize();
+  private occlusionRay = new THREE.Raycaster();
+  private occlusionDir = new THREE.Vector3();
   /** Dev: ?follow=<name>[&zoom=0.3] locks the camera close on one character;
    *  ?cam=x,y,z,tx,ty,tz pins it entirely (shot framing/verification). */
   /** ?follow= pins the camera; ?watch= implies following its character. */
@@ -276,6 +278,57 @@ export class ZoneRenderer {
     this.builtZoneKey = zoneKey(zone);
   }
 
+
+  /**
+   * Anything standing between the lens and an idler goes ghost: ray from
+   * the camera to each character, fade the buildings/walls it pierces.
+   * Materials are cloned per mesh on first fade (instances share GPU
+   * materials, so mutating the shared one would ghost every copy).
+   */
+  private updateOcclusion(): void {
+    const tt = this.terrain instanceof TileTerrain ? this.terrain : null;
+    if (!tt || tt.occluders.length === 0) return;
+    const cam = this.camera.position;
+    const hidden = new Set<THREE.Object3D>();
+    for (const [id, v] of this.visuals) {
+      if (this.store.entities.get(id)?.state.kind !== "Character") continue;
+      const target = v.group.position;
+      this.occlusionDir.set(target.x - cam.x, target.y + 1 - cam.y, target.z - cam.z);
+      const dist = this.occlusionDir.length();
+      if (dist < 2) continue;
+      this.occlusionRay.set(cam, this.occlusionDir.normalize());
+      this.occlusionRay.far = dist - 0.8;
+      for (const hit of this.occlusionRay.intersectObjects(tt.occluders, true)) {
+        hidden.add(hit.object);
+      }
+    }
+    for (const root of tt.occluders) {
+      root.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const ud = o.userData as {
+          solidMat?: THREE.Material | THREE.Material[];
+          ghostMat?: THREE.Material | THREE.Material[];
+        };
+        if (hidden.has(o)) {
+          if (!ud.ghostMat) {
+            ud.solidMat = o.material;
+            const ghost = (m: THREE.Material) => {
+              const g = m.clone();
+              g.transparent = true;
+              g.opacity = 0.18;
+              g.depthWrite = false;
+              return g;
+            };
+            ud.ghostMat = Array.isArray(o.material) ? o.material.map(ghost) : ghost(o.material);
+          }
+          o.material = ud.ghostMat;
+        } else if (ud.solidMat && o.material === ud.ghostMat) {
+          o.material = ud.solidMat;
+        }
+      });
+    }
+  }
+
   private addBrazier(x: number, z: number, y: number): void {
     const group = new THREE.Group();
     const post = new THREE.Mesh(
@@ -318,6 +371,7 @@ export class ZoneRenderer {
       this.buildZone();
     }
     this.terrain?.update(t);
+    this.updateOcclusion();
 
     for (const b of this.braziers) {
       b.light.intensity =

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { EntityRender } from "../world/store";
+import type { EntityState } from "../gen/EntityState";
 import type { AssetLibrary, BodyVariant, ModelDef } from "./Assets";
 
 const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
@@ -86,7 +87,7 @@ export class EntityVisual {
       this.buildModel(state.model, state.kind === "Monster");
       this.buildBars();
       if (state.kind === "Character") this.buildLabel(state.name);
-      this.composeGear(state.gear);
+      this.composeGear(this.dressed(state));
       this.setWeapon(state.weapon);
     }
   }
@@ -160,6 +161,27 @@ export class EntityVisual {
    * The paper-doll: defaults fill each region, replicated gear overrides by
    * region. Bound to this body's skeleton — same rig, shared bind pose.
    */
+
+  /** Townsfolk (idler-model monsters) ship no gear over the wire: dress
+   *  them deterministically by net id, so the crowd varies in body sets,
+   *  hoods, and (via model variants) skin/hair — and never flickers. */
+  private dressed(state: EntityState): string[] {
+    if (state.kind !== "Monster" || state.model !== "idler" || state.gear.length) {
+      return state.gear;
+    }
+    let h = (state.id * 2654435761) >>> 0;
+    h ^= h >>> 13;
+    const sets = [
+      ["peasant_body", "peasant_legs", "peasant_feet"],
+      ["ranger_body", "ranger_legs", "ranger_feet"],
+      ["peasant_body", "ranger_legs", "peasant_feet"],
+      ["ranger_body", "peasant_legs", "peasant_feet"],
+    ];
+    const out = [...sets[(h >>> 3) % sets.length]];
+    if (((h >>> 9) & 3) === 0) out.push("ranger_hood");
+    return out;
+  }
+
   private composeGear(gear: string[]): void {
     const key = gear.join("|");
     if (key === this.gearKey || !this.def || !this.modelRoot) return;
@@ -506,7 +528,7 @@ export class EntityVisual {
     if (delta < -Math.PI) delta += Math.PI * 2;
     this.group.rotation.y += delta * Math.min(1, dt * 12);
 
-    this.composeGear(er.state.gear);
+    this.composeGear(this.dressed(er.state));
     this.setWeapon(er.state.weapon);
     this.mixer?.update(dt);
   }

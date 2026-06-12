@@ -1,18 +1,22 @@
-// Saltmere's set pieces: buildings standing on the map's 'B'
-// footprints, doors facing the streets they front.
+// Saltmere's set pieces: buildings fronting the square and the
+// streets that radiate from it.
 PropsDef(
     props: [
-        (model: "inn", x_u: 25, y_u: 4, rot_deg: 180),
-        (model: "blacksmith", x_u: 34, y_u: 4, rot_deg: 180),
-        (model: "house_1", x_u: 15, y_u: 11, rot_deg: 90),
-        (model: "house_2", x_u: 43, y_u: 11, rot_deg: 270),
-        (model: "house_3", x_u: 22, y_u: 31, rot_deg: 0),
-        (model: "house_4", x_u: 37, y_u: 31, rot_deg: 0),
-        (model: "house_1", x_u: 5, y_u: 32, rot_deg: 90),
-        (model: "house_2", x_u: 16, y_u: 32, rot_deg: 270),
-        (model: "house_3", x_u: 54, y_u: 32, rot_deg: 270),
-        (model: "house_4", x_u: 43, y_u: 38, rot_deg: 0),
-        (model: "house_2", x_u: 22, y_u: 44, rot_deg: 0),
-        (model: "house_1", x_u: 37, y_u: 44, rot_deg: 0),
+        (model: "inn", x_u: 25, y_u: 15, rot_deg: 180),
+        (model: "blacksmith", x_u: 34, y_u: 15, rot_deg: 180),
+        (model: "house_1", x_u: 18, y_u: 22, rot_deg: 90),
+        (model: "house_2", x_u: 42, y_u: 22, rot_deg: 270),
+        (model: "house_3", x_u: 18, y_u: 30, rot_deg: 90),
+        (model: "house_4", x_u: 42, y_u: 30, rot_deg: 270),
+        (model: "house_2", x_u: 25, y_u: 37, rot_deg: 0),
+        (model: "house_3", x_u: 35, y_u: 37, rot_deg: 0),
+        (model: "house_4", x_u: 25, y_u: 44, rot_deg: 0),
+        (model: "house_1", x_u: 35, y_u: 44, rot_deg: 0),
+        (model: "house_3", x_u: 25, y_u: 7, rot_deg: 180),
+        (model: "house_1", x_u: 35, y_u: 7, rot_deg: 180),
+        (model: "house_4", x_u: 10, y_u: 19, rot_deg: 90),
+        (model: "house_2", x_u: 48, y_u: 19, rot_deg: 270),
+        (model: "house_2", x_u: 10, y_u: 32, rot_deg: 90),
+        (model: "house_1", x_u: 48, y_u: 32, rot_deg: 270),
     ],
 )
