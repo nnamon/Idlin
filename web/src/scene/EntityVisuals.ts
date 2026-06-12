@@ -74,6 +74,9 @@ export class EntityVisual {
   private label: THREE.Sprite | null = null;
   private weaponKey = "";
   private oneShot: THREE.AnimationAction | null = null;
+  /** Inverted-hull cel outlines (magic/rare elites). */
+  private outlineHulls: THREE.Object3D[] = [];
+  private outlineMat: THREE.MeshBasicMaterial | null = null;
   // Impact feedback (decaying; all visual-root only — the sim position
   // is never touched).
   private hitstopMs = 0;
@@ -99,7 +102,7 @@ export class EntityVisual {
     if (state.kind === "Loot") {
       this.buildLoot(state.model, state.rarity);
     } else {
-      this.buildModel(state.model, state.kind === "Monster");
+      this.buildModel(state.model, state.kind === "Monster", state.rarity);
       this.buildBars();
       if (state.kind === "Character") this.buildLabel(state.name);
       // Elite monsters announce themselves: rarity-tinted nameplates,
@@ -112,7 +115,7 @@ export class EntityVisual {
     }
   }
 
-  private buildModel(model: string, isMonster: boolean): void {
+  private buildModel(model: string, isMonster: boolean, rarity = 0): void {
     // Cosmetic body variant: stable per character name; per entity id for
     // monsters so packs come out mixed. Pure client-side — not replicated.
     const def = this.assets.modelDef(model);
@@ -174,6 +177,53 @@ export class EntityVisual {
       this.playBase("idle");
       const idle = this.actions.get("idle");
       if (idle) idle.time = Math.random() * idle.getClip().duration;
+    }
+
+    // Cel outline for ELITES: an inverted hull in the rarity color —
+    // magic blue, rare gold. Uniques are deliberately NOT outlined:
+    // they are their own design, and they carry the boss bar.
+    if (isMonster && (rarity === 1 || rarity === 2)) {
+      this.addOutline(inst.root, RARITY_COLORS[rarity]);
+    }
+  }
+
+  /** Classic toon outline: back-face hulls pushed out along normals,
+   *  bound to the same skeleton so they deform with the body. */
+  private addOutline(root: THREE.Object3D, color: number): void {
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.BackSide,
+      toneMapped: false,
+    });
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace(
+        "#include <skinning_vertex>",
+        "#include <skinning_vertex>\n\ttransformed += objectNormal * 0.03;",
+      );
+    };
+    this.outlineMat = mat;
+    const sources: THREE.Mesh[] = [];
+    root.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) sources.push(o as THREE.Mesh);
+    });
+    for (const src of sources) {
+      let hull: THREE.Mesh;
+      const sm = src as THREE.SkinnedMesh;
+      if (sm.isSkinnedMesh) {
+        const h = new THREE.SkinnedMesh(sm.geometry, mat);
+        h.bind(sm.skeleton, sm.bindMatrix);
+        h.bindMode = sm.bindMode;
+        hull = h;
+      } else {
+        hull = new THREE.Mesh(src.geometry, mat);
+      }
+      hull.position.copy(src.position);
+      hull.quaternion.copy(src.quaternion);
+      hull.scale.copy(src.scale);
+      hull.visible = src.visible;
+      hull.frustumCulled = false;
+      src.parent?.add(hull);
+      this.outlineHulls.push(hull);
     }
   }
 
@@ -592,9 +642,13 @@ export class EntityVisual {
     }
 
     // Nameplates: idlers keep theirs always; a monster's name dies with
-    // it (an elite corpse doesn't need an announcement).
+    // it (an elite corpse doesn't need an announcement). Outlines die
+    // with their owner too.
     if (this.label && er.state.kind === "Monster") {
       this.label.visible = !er.state.dead;
+    }
+    if (er.state.dead && this.outlineHulls.length > 0) {
+      for (const o of this.outlineHulls) o.visible = false;
     }
 
     // -- death / respawn --
@@ -658,6 +712,7 @@ export class EntityVisual {
       mat.map?.dispose();
       mat.dispose();
     }
+    this.outlineMat?.dispose();
     (this.hpBg?.material as THREE.Material | undefined)?.dispose();
     (this.hpFg?.material as THREE.Material | undefined)?.dispose();
     if (this.bubble) {

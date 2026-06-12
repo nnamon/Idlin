@@ -304,7 +304,7 @@ impl World {
                         0,
                         Vec::new(),
                         Vec::new(),
-                        def.level,
+                        if m.level > 0 { m.level } else { def.level },
                         m.rarity as u8,
                         !e.alive(),
                         0,
@@ -513,6 +513,8 @@ impl World {
             }
             if let Some(m) = &e.monster {
                 h.write_u32(m.def_idx);
+                h.write_u8(m.rarity as u8);
+                h.write_u32(m.level);
                 h.write_u8(m.hostile as u8);
                 h.write_i32(m.anchor.x.raw());
                 h.write_i32(m.anchor.y.raw());

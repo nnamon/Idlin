@@ -1570,6 +1570,7 @@ impl World {
             let (def_idx, pack_idx) = (m.def_idx, m.pack_idx);
             let target_bot = t.bot;
             let m_rarity = m.rarity;
+            let m_level = m.level;
             let def = self.monster_def(def_idx);
             // Elites pay elite wages: 2x / 4x XP for magic / rare.
             let xp_mult = match m_rarity {
@@ -1577,7 +1578,14 @@ impl World {
                 crate::entity::Rarity::Rare => 4,
                 _ => 1,
             };
-            let (monster_name, monster_level, xp) = (def.name.clone(), def.level, def.xp * xp_mult);
+            // The EFFECTIVE level (area-scaled; 0 = legacy spawn) drives
+            // drop item levels and pays +10% XP per level over baseline.
+            let monster_level = if m_level > 0 { m_level } else { def.level };
+            let level_bp = 10000 + (monster_level as i64 - def.level as i64) * 1000;
+            let (monster_name, xp) = (
+                def.name.clone(),
+                def.xp * xp_mult * level_bp.max(2500) / 10000,
+            );
             dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
             // Scripted spawns (spawn_monster/spawn_elite) belong to no
             // pack — the sentinel index has no bookkeeping to update.

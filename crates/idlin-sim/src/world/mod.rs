@@ -320,6 +320,10 @@ pub struct World {
     /// Index of this zone in ContentDb::zones (sorted ids — the same
     /// stable indices bot programs hardcode). Bots read it via SelfStatus.
     pub(crate) zone_idx: u32,
+    /// AREA LEVEL (ZoneDef.level): normal mobs spawn at
+    /// max(def level, area level); magic +1, rare +2; uniques authored.
+    #[serde(default = "default_zone_level")]
+    pub(crate) zone_level: u32,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -347,6 +351,10 @@ pub struct World {
 }
 
 // ---- universal (classless) character bases ----
+
+fn default_zone_level() -> u32 {
+    1
+}
 
 fn base_life(level: u32) -> i64 {
     100 + 14 * (level as i64 - 1)
@@ -744,6 +752,7 @@ impl World {
             pending_departures: Vec::new(),
             pending_exits: Vec::new(),
             pending_uses: Vec::new(),
+            zone_level: content.zone(zone_id).map_or(1, |z| z.level),
         }
     }
 
@@ -1561,7 +1570,7 @@ impl World {
             _ => (3 + self.rng_ai.next_range(2), 3),
         };
         let pools = def.affix_pools.clone();
-        let level = def.level;
+        let level = self.effective_monster_level(monster_idx, rarity);
         crate::world::loot::roll_affixes_into(
             &self.content,
             &mut self.rng_ai,
@@ -1615,6 +1624,23 @@ impl World {
         (affixes, display_name)
     }
 
+    /// The level a spawn actually fights at: area level lifts normal
+    /// mobs to max(def, area) — the hand-designed shore keeps its
+    /// authored ramp — with +1 for magic, +2 for rare. Authored uniques
+    /// keep their own level (they are their own design).
+    fn effective_monster_level(&self, monster_idx: u32, rarity: Rarity) -> u32 {
+        let def = &self.content.monsters[monster_idx as usize];
+        if def.unique || rarity == Rarity::Unique {
+            return def.level;
+        }
+        let bump = match rarity {
+            Rarity::Magic => 1,
+            Rarity::Rare => 2,
+            _ => 0,
+        };
+        def.level.max(self.zone_level) + bump
+    }
+
     /// Spawn with a pre-rolled affix set, applying it through the same
     /// Grant machinery items use plus the inherent elite bulk.
     fn spawn_monster_rolled(
@@ -1628,6 +1654,21 @@ impl World {
     ) {
         let def = &self.content.monsters[monster_idx as usize];
         let mut stats = monster_base_stats(def);
+        // Level scaling FIRST: the area lifts the def's baseline before
+        // elite bulk and affixes compound on top. +12% life / +10%
+        // damage per level above the authored baseline.
+        let eff_level = self.effective_monster_level(monster_idx, rarity);
+        let delta = eff_level as i64 - def.level as i64;
+        let life_bp = (10000 + delta * 1200).max(2500);
+        let dmg_bp = (10000 + delta * 1000).max(2500);
+        let scaled_life = def.life * life_bp / 10000;
+        if delta != 0 {
+            stats.life_max = scaled_life.max(1);
+            stats.life = stats.life_max;
+            for d in stats.damage.iter_mut() {
+                *d = *d * dmg_bp / 10000;
+            }
+        }
         if matches!(rarity, Rarity::Magic | Rarity::Rare) {
             // Inherent elite bulk on TOP of affixes, PoE-style.
             let bulk = if rarity == Rarity::Magic {
@@ -1644,14 +1685,15 @@ impl World {
                     value: ra.value,
                 });
             }
-            stats.life_max = sheet.value(idlin_content::stats::Stat::Life, def.life) * bulk / 10000;
+            stats.life_max =
+                sheet.value(idlin_content::stats::Stat::Life, scaled_life) * bulk / 10000;
             stats.life = stats.life_max;
             for (i, base) in [
-                def.damage,
-                def.damage_fire,
-                def.damage_cold,
-                def.damage_lightning,
-                def.damage_chaos,
+                def.damage * dmg_bp / 10000,
+                def.damage_fire * dmg_bp / 10000,
+                def.damage_cold * dmg_bp / 10000,
+                def.damage_lightning * dmg_bp / 10000,
+                def.damage_chaos * dmg_bp / 10000,
             ]
             .into_iter()
             .enumerate()
@@ -1720,6 +1762,7 @@ impl World {
                 hostile,
                 decay_at: None,
                 rarity,
+                level: eff_level,
                 affixes,
                 display_name,
                 skills,
@@ -1807,5 +1850,59 @@ mod pack_rarity_tests {
         let rare = members.iter().find(|m| m.rarity == Rarity::Rare).unwrap();
         assert!(rare.affixes.len() >= 3, "rares roll at least three affixes");
         assert!(!rare.display_name.is_empty(), "rares take a rolled name");
+    }
+}
+
+#[cfg(test)]
+mod area_level_tests {
+    use super::*;
+    use idlin_content::ContentDb;
+    use std::path::Path;
+
+    /// The coast is a level-4 area: normal mobs fight at 4 (their def
+    /// baselines scale up), magic at 5, rare at 6 — and a mob's drops
+    /// carry its EFFECTIVE level. The hand-designed shore (level 1)
+    /// keeps every def's authored level via the max() rule.
+    #[test]
+    fn area_level_lifts_mobs_and_their_drops() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut coast = World::new_for_zone(0xA12A, &content, "coast");
+        coast.tick(&TickInputs::default());
+        let shambler_def = content.monster_idx("drowned_shambler").unwrap();
+        let base_life = content.monsters[shambler_def].life;
+        let mut saw_normal = false;
+        for (_, e) in coast.zone.iter() {
+            let Some(m) = &e.monster else { continue };
+            let def = &content.monsters[m.def_idx as usize];
+            match m.rarity {
+                Rarity::Normal => {
+                    assert_eq!(m.level, 4, "{}: normal = area level", def.id);
+                    if m.def_idx as usize == shambler_def {
+                        saw_normal = true;
+                        let c = e.combat.as_ref().unwrap();
+                        // def level 1 -> 4: +12%/level = +36% life.
+                        assert_eq!(c.life_max, base_life * 13600 / 10000);
+                    }
+                }
+                Rarity::Magic => assert_eq!(m.level, 5, "{}: magic = area +1", def.id),
+                Rarity::Rare => assert_eq!(m.level, 6, "{}: rare = area +2", def.id),
+                Rarity::Unique => assert_eq!(m.level, def.level, "uniques stay authored"),
+            }
+        }
+        assert!(saw_normal, "a normal shambler spawned");
+
+        let mut shore = World::new_for_zone(0xA12B, &content, "withered_shore");
+        shore.tick(&TickInputs::default());
+        for (_, e) in shore.zone.iter() {
+            let Some(m) = &e.monster else { continue };
+            let def = &content.monsters[m.def_idx as usize];
+            if m.rarity == Rarity::Normal {
+                assert_eq!(
+                    m.level, def.level,
+                    "shore (area 1) keeps {}'s authored level",
+                    def.id
+                );
+            }
+        }
     }
 }

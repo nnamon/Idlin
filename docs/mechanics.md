@@ -149,7 +149,11 @@ fire, cold, lightning, chaos** — with four typed resistances (capped at
 ## Item requirements (and when they re-check)
 
 Bases may demand a level and attribute floors (`req_level`,
-`req_str/dex/int`). Meeting them is checked at equip — and RE-CHECKED
+`req_str/dex/int`) — and an item's LEVEL requirement is the higher of
+its base floor and the highest rolled affix tier's ilvl: power demands
+the level that earns it. (Affix tiers themselves only roll on items of
+sufficient item level, which comes from the killed mob's effective
+level — the chain is closed end to end.) Meeting them is checked at equip — and RE-CHECKED
 on every event that can lower attributes: a tree respec, losing an
 attribute-granting piece, an attribute buff expiring. An equipped item
 that stops qualifying is SHED to the bag (or the ground when full),
@@ -235,6 +239,17 @@ resolves at spawn into the exact structure characters socket; the same
 executor, mana costs, cooldowns, and syscalls drive both. Monster gems
 never gain XP — the def is the build. Weapon gates don't apply to
 monsters (a monster IS its weapon).
+
+### Area levels
+
+Every zone declares a `level` (default 1). A normal mob fights at
+`max(its def's authored level, the area level)` — the max() keeps
+hand-designed ramps like the tutorial intact while real maps lift
+everything. **Magic spawns at +1, rare at +2; authored uniques keep
+their own level.** The effective level scales the def's baseline
+(+12% life and +10% damage per level over it), pays +10% XP per
+level, gates the elite's affix tiers, and stamps every drop's ITEM
+LEVEL — items of a level only fall from mobs of that level.
 
 ### Monster rarity
 

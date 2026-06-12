@@ -8,6 +8,10 @@ ZoneDef(
     id: "coast",
     name: "The Drowned Coast",
     kind: map,
+    // Area level 4: idlers arrive off the shore around 4-5. Normal
+    // packs fight at 4, magic at 5, rare at 6 — the defs' authored
+    // baselines scale up (+12% life / +10% damage per level).
+    level: 4,
     tileset: Some("shore"),
     tileset_variant: Some("drowned"),
     spawn_x_u: 31,

@@ -790,6 +790,10 @@ pub struct SpawnPack {
     pub rare_bp: u32,
 }
 
+fn default_zone_level() -> u32 {
+    1
+}
+
 /// One glyph in a tileset's palette: the authoring unit of map.txt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileDef {
@@ -931,6 +935,12 @@ pub struct PropsDef {
 pub struct ZoneDef {
     pub id: String,
     pub name: String,
+    /// AREA LEVEL: normal monsters spawn at this level (magic +1,
+    /// rare +2; authored uniques keep their own). Effective level
+    /// scales mob life/damage/xp from the def's authored baseline and
+    /// drives drop item levels. Default 1.
+    #[serde(default = "default_zone_level")]
+    pub level: u32,
     /// Zone extent in whole units (logical 2D plane). Zones with an
     /// authored map.txt derive these from the map and may omit them.
     #[serde(default)]

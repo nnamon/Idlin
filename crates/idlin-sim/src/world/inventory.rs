@@ -152,6 +152,20 @@ impl World {
         )
     }
 
+    /// An item's LEVEL requirement: the base's floor, or the highest
+    /// rolled affix tier's ilvl — power demands the level that earns it.
+    pub(crate) fn item_level_requirement(&self, item: &Item) -> u32 {
+        let def = &self.content.items[item.base_idx as usize];
+        let mut req = def.req_level;
+        for ra in &item.affixes {
+            let a = &self.content.affixes[ra.affix_idx as usize];
+            if let Some(t) = a.tiers.get(ra.tier as usize) {
+                req = req.max(t.ilvl);
+            }
+        }
+        req
+    }
+
     /// Does this character MEET an item's requirements right now?
     /// `exclude_gear` names the equipment slot the item would occupy (or
     /// occupies) so its own grants don't count toward itself.
@@ -162,7 +176,8 @@ impl World {
         exclude_gear: Option<usize>,
     ) -> bool {
         let def = &self.content.items[item.base_idx as usize];
-        if def.req_level == 0 && def.req_str == 0 && def.req_dex == 0 && def.req_int == 0 {
+        let req_level = self.item_level_requirement(item);
+        if req_level == 0 && def.req_str == 0 && def.req_dex == 0 && def.req_int == 0 {
             return true; // the common case costs nothing
         }
         let level = self
@@ -171,8 +186,11 @@ impl World {
             .and_then(|e| e.character.as_ref())
             .map(|ch| ch.level)
             .unwrap_or(0);
-        if level < def.req_level {
+        if level < req_level {
             return false;
+        }
+        if def.req_str == 0 && def.req_dex == 0 && def.req_int == 0 {
+            return true;
         }
         let (st, dx, iq) = self.attribute_totals(slot, exclude_gear);
         st >= def.req_str && dx >= def.req_dex && iq >= def.req_int

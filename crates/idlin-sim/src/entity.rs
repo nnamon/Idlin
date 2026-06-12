@@ -323,6 +323,10 @@ pub struct MonsterState {
     /// Spawn rarity — the SAME enum items use, end to end.
     #[serde(default)]
     pub rarity: Rarity,
+    /// EFFECTIVE level: area level (+1 magic, +2 rare); authored
+    /// uniques keep their def level. 0 = legacy (fall back to the def).
+    #[serde(default)]
+    pub level: u32,
     /// Rolled affixes (magic/rare spawns) — the same RolledAffix items
     /// carry, applied through the same Grant machinery.
     #[serde(default)]
