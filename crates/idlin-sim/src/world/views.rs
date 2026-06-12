@@ -372,6 +372,29 @@ impl World {
             h.write_u64(state);
             h.write_u64(inc);
         }
+        // Windups are state: a committed strike must replay identically.
+        h.write_u64(self.pending_uses.len() as u64);
+        for p in &self.pending_uses {
+            h.write_u32(p.attacker);
+            h.write_u64(p.resolve_at);
+            h.write_u32(p.skill.map(|n| n + 1).unwrap_or(0));
+            match p.target {
+                crate::entity::SkillTarget::Entity(id) => {
+                    h.write_u8(0);
+                    h.write_u32(id);
+                }
+                crate::entity::SkillTarget::Point(v) => {
+                    h.write_u8(1);
+                    h.write_i32(v.x.raw());
+                    h.write_i32(v.y.raw());
+                }
+                crate::entity::SkillTarget::Direction(v) => {
+                    h.write_u8(2);
+                    h.write_i32(v.x.raw());
+                    h.write_i32(v.y.raw());
+                }
+            }
+        }
         let fold_item = |h: &mut Fnv1a64, item: &Item| {
             h.write_u32(item.base_idx);
             h.write_u8(item.rarity as u8);

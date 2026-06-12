@@ -36,6 +36,19 @@ export interface ActiveHit {
   at: number;
 }
 
+/** A use began: the windup to animate; the strike lands at contact. */
+export interface ActiveUse {
+  attacker: number;
+  spell: boolean;
+  /** Aim point, sim units. */
+  x: number;
+  y: number;
+  /** Seconds of full commitment / until the blow lands. */
+  useS: number;
+  contactS: number;
+  at: number;
+}
+
 /** A projectile in flight (client-side animation; hits are authoritative). */
 export interface ActiveProjectile {
   /** Caster id, for the launch animation. */
@@ -112,6 +125,7 @@ export class WorldStore {
   pendingHits: ActiveHit[] = [];
   pendingProjectiles: ActiveProjectile[] = [];
   pendingSkills: ActiveSkill[] = [];
+  pendingUses: ActiveUse[] = [];
   cue: Cue | null = null;
   /** All idlers, all worlds, in upcoming-focus order (featured feed). */
   focusQueue: FocusQueueEntry[] = [];
@@ -215,6 +229,17 @@ export class WorldStore {
             at: now,
           });
         }
+        for (const u of d.uses ?? []) {
+          this.pendingUses.push({
+            attacker: u.attacker,
+            spell: u.spell,
+            x: u.x / 65536,
+            y: u.y / 65536,
+            useS: u.use_ticks * (TICK_MS / 1000),
+            contactS: u.contact_ticks * (TICK_MS / 1000),
+            at: now,
+          });
+        }
         for (const s of d.skills) {
           this.pendingSkills.push({
             attacker: s.attacker,
@@ -285,6 +310,14 @@ export class WorldStore {
     if (this.pendingSkills.length === 0) return [];
     const out = this.pendingSkills;
     this.pendingSkills = [];
+    return out;
+  }
+
+  /** Renderer drains use-starts (windups) once per frame. */
+  drainUses(): ActiveUse[] {
+    if (this.pendingUses.length === 0) return [];
+    const out = this.pendingUses;
+    this.pendingUses = [];
     return out;
   }
 

@@ -34,6 +34,20 @@ range, cooldown, projectile); class damage does not stack on top of weapon
 base — affixes and the tree do. Armour/evasion bases sum from equipped
 gear. Level-ups recompute everything and fully heal.
 
+## Use timing (windup → contact → recovery)
+
+Every use — basic attack, skill, cast — COMMITS up front: mana,
+cooldown, and the whole use time (`busy_until`) are paid the moment it
+starts, and a `UseStarted` event announces the windup. The strike
+itself resolves at the CONTACT tick — ~60% through an attack's use
+time; at cast completion for spells — where the target is judged
+FRESH: a victim that died or escaped past 1.5× range makes the blow
+WHIFF (no refunds; that is what commitment means). Slow heavies are
+therefore dodgeable, and the client rate-fits the swing clip so its
+contact frame lands exactly when HitFx (numbers, flashes, shape FX)
+arrives. Movement stays blocked for the full use; recovery is the
+remainder after contact.
+
 ## Hit resolution (per strike)
 
 1. **Hit roll**: chance = `10000·acc / (acc + eva/2)`, clamped to

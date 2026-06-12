@@ -10,7 +10,7 @@ use crate::director::{Director, WorldView};
 use crate::runner::TickBatch;
 use idlin_protocol::{
     EntityKind, EntityMove, EntityPatch, EntityState, FocusQueueEntry, GameEvent, HitFx,
-    ObstacleState, ProjectileFx, S2C, SkillFx,
+    ObstacleState, ProjectileFx, S2C, SkillFx, UseFx,
 };
 use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
@@ -178,6 +178,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     hits: collect_hits(&frame.events),
                     projectiles: collect_projectiles(&frame.events),
                     skills: collect_skills(&frame.events),
+                    uses: collect_uses(&frame.events),
                 });
                 let events: Vec<GameEvent> =
                     frame.events.iter().filter_map(to_game_event).collect();
@@ -408,6 +409,30 @@ fn collect_projectiles(events: &[SimEvent]) -> Vec<ProjectileFx> {
                 vy: *vy,
                 range: *range,
                 dmg_type: *dmg_type,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn collect_uses(events: &[SimEvent]) -> Vec<UseFx> {
+    events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::UseStarted {
+                id,
+                spell,
+                x,
+                y,
+                use_ticks,
+                contact_ticks,
+            } => Some(UseFx {
+                attacker: *id,
+                spell: *spell,
+                x: *x,
+                y: *y,
+                use_ticks: *use_ticks,
+                contact_ticks: *contact_ticks,
             }),
             _ => None,
         })
@@ -705,6 +730,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
         SimEvent::Hit { .. }
         | SimEvent::ProjectileSpawned { .. }
         | SimEvent::SkillFx { .. }
+        | SimEvent::UseStarted { .. }
         | SimEvent::BotDebug { .. }
         | SimEvent::JoinRejected { .. } => {
             return None;

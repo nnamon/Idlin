@@ -562,19 +562,21 @@ export class ZoneRenderer {
       }
 
       // -- combat feedback --
+      // Windups drive ALL attack/cast animation now: the clip is
+      // rate-fitted so its contact frame lands when the strike resolves
+      // — HitFx, numbers, and shape FX arrive ON the visible blow.
+      for (const u of this.store.drainUses()) {
+        this.visuals
+          .get(u.attacker)
+          ?.playUse(u.spell, new THREE.Vector3(u.x, 0, u.y), u.useS, u.contactS);
+      }
       for (const hit of this.store.drainHits()) {
-        const attacker = this.visuals.get(hit.attacker);
         const target = this.visuals.get(hit.target);
         if (!target) continue;
-        // Projectile hits already animated their launch; dots burn silently.
-        if (!hit.dot && !hit.projectile) attacker?.playAttack(target.group.position);
         this.fx.spawnHit(hit, target.group.position, now);
       }
       for (const p of this.store.drainProjectiles()) {
-        // The launch animation plays at fire time, aimed along the flight.
-        this.visuals
-          .get(p.attacker)
-          ?.playSkill(p.spell, new THREE.Vector3(p.x + p.vx, 0, p.y + p.vy));
+        // The windup already animated the launch; just fly the streak.
         this.fx.spawnProjectile(p, (x, z) => this.terrain?.heightAt(x, z) ?? 0, now);
       }
       // Speech bubbles: hand fresh lines to their visuals, expire old ones.
@@ -586,13 +588,8 @@ export class ZoneRenderer {
         this.visuals.get(id)?.showSpeech(s.text, s.at, now);
       }
       for (const s of this.store.drainSkills()) {
-        // Point blasts anchor away from the caster — face the blast, not
-        // the shape origin math.
-        const aim =
-          s.shape === 4
-            ? new THREE.Vector3(s.x, 0, s.y)
-            : new THREE.Vector3(s.x + s.dx, 0, s.y + s.dy);
-        this.visuals.get(s.attacker)?.playSkill(s.spell, aim);
+        // Shape FX land at the CONTACT tick (the windup already turned
+        // and animated the caster).
         this.fx.spawnSkill(s, (x, z) => this.terrain?.heightAt(x, z) ?? 0, now);
       }
     }

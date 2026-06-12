@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 24;
+pub const PROTO_VERSION: u32 = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -79,6 +79,23 @@ pub struct EntityPatch {
     /// Armor visual part keys; patched so upgrades show up mid-stream.
     pub gear: Vec<String>,
     pub gear_rarity: Vec<u8>,
+}
+
+/// A use BEGAN (any attack, skill, or cast): the windup the client
+/// animates. The strike resolves `contact_ticks` later — HitFx and
+/// shape FX land exactly on the contact frame.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct UseFx {
+    pub attacker: u32,
+    /// Spells play the cast clip; attacks the weapon swing.
+    pub spell: bool,
+    /// Aim point, raw Q16.16 — turns the body toward the action.
+    pub x: i32,
+    pub y: i32,
+    /// Full commitment (busy) in ticks; the entity recovers after.
+    pub use_ticks: u32,
+    /// Ticks from start to the blow landing (<= use_ticks).
+    pub contact_ticks: u32,
 }
 
 /// A projectile took flight; the client animates the streak (hits arrive
@@ -512,6 +529,10 @@ pub enum S2C {
         hits: Vec<HitFx>,
         projectiles: Vec<ProjectileFx>,
         skills: Vec<SkillFx>,
+        /// Windups that began this tick (the client animates from here;
+        /// the strike arrives `contact_ticks` later).
+        #[serde(default)]
+        uses: Vec<UseFx>,
     },
     /// Batched narratable events for this tick.
     Events {
@@ -569,6 +590,7 @@ mod tests {
                 killed: false,
             }],
             projectiles: vec![],
+            uses: Vec::new(),
             skills: vec![SkillFx {
                 attacker: 1,
                 spell: true,

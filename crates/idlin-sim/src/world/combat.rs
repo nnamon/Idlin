@@ -87,6 +87,18 @@ impl Default for SupportMods {
 
 /// Everything one landed hit needs to resolve, independent of where it came
 /// from (direct swing, traveling projectile, or a ticking dot).
+/// A committed use winding up: mana, cooldown, and the use-time itself
+/// were paid when it STARTED; the strike resolves — target re-validated
+/// fresh — at `resolve_at` (the contact tick). Hashed and serialized:
+/// windups are world state.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PendingUse {
+    pub attacker: u32,
+    pub target: SkillTarget,
+    pub skill: Option<u32>,
+    pub resolve_at: u64,
+}
+
 pub(super) struct StrikeSpec {
     pub attacker_slot: Option<usize>,
     pub attacker_net: u32,
@@ -403,6 +415,434 @@ impl World {
         let mut loot: LootList = Vec::new();
         let now = self.tick;
 
+        // Phase 1: CONTACT. Windups committed earlier resolve now, with
+        // the target re-validated fresh — a victim that died or stepped
+        // away makes the blow WHIFF (the mana and time were already
+        // paid; that is what commitment means). Slow heavy swings are
+        // dodgeable, and the client's contact frame is TRUE.
+        let mut due: Vec<PendingUse> = Vec::new();
+        self.pending_uses.retain(|p| {
+            if p.resolve_at <= now {
+                due.push(*p);
+                false
+            } else {
+                true
+            }
+        });
+        for p in due {
+            let Some(slot) = self.zone.slot_of(p.attacker) else {
+                continue; // departed or removed mid-windup
+            };
+            if !self.zone.get(slot).is_some_and(|e| e.alive()) {
+                continue; // died winding up
+            }
+            self.resolve_use(slot, p.target, p.skill, events, &mut dead, &mut loot);
+        }
+
+        // Phase 2: STARTS. Commit new uses (mana, cooldown, busy) and
+        // announce them — the client plays the windup from here.
+        self.start_uses(events);
+
+        self.finish_kills(dead, loot, events);
+    }
+
+    /// Resolve one committed use at its contact tick. Costs were paid at
+    /// start; every guard here is a WHIFF, not a refusal.
+    fn resolve_use(
+        &mut self,
+        slot: usize,
+        target: SkillTarget,
+        skill: Option<u32>,
+        events: &mut Vec<SimEvent>,
+        dead: &mut DeadList,
+        loot: &mut LootList,
+    ) {
+        let now = self.tick;
+        let Some(e) = self.zone.get(slot) else {
+            return;
+        };
+        let Some(c) = &e.combat else { return };
+        let attacker_net = e.net_id;
+        let attacker_faction = e.faction();
+        let attacker_name = match (&e.character, &e.monster) {
+            (Some(ch), _) => ch.name.clone(),
+            (_, Some(m)) => self.monster_def(m.def_idx).name.clone(),
+            _ => return,
+        };
+        let attacker_is_char = e.character.is_some();
+        let pos = e.pos;
+        let (char_damage, accuracy, weapon_range, weapon_projectile, _weapon_use) =
+            (c.damage, c.accuracy, c.range, c.projectile, c.use_ticks);
+        let (crit_inc, crit_multi, _cast_speed) = (c.crit_inc, c.crit_multi, c.cast_speed);
+        let hostile_to_players = matches!(attacker_faction, crate::entity::Faction::Hostile);
+
+        match skill {
+            None => {
+                // Basic weapon attack: always entity-aimed.
+                let SkillTarget::Entity(target_id) = target else {
+                    return;
+                };
+                let Some(target_slot) = self.zone.slot_of(target_id) else {
+                    return; // whiff: the victim is gone
+                };
+                let Some(t) = self.zone.get(target_slot) else {
+                    return;
+                };
+                // Half-range GRACE on contact: the windup was
+                // committed in range — only a real escape (or a slow
+                // heavy telegraph walked out of) whiffs it.
+                let grace = Fx::from_raw(weapon_range.raw() + weapon_range.raw() / 2);
+                if !t.alive()
+                    || !attacker_faction.is_enemy_of(t.faction())
+                    || pos.dist(t.pos) > grace
+                    || self.los_blocked(pos, t.pos)
+                {
+                    return; // whiff
+                }
+                let spec = StrikeSpec {
+                    attacker_slot: Some(slot),
+                    attacker_net,
+                    attacker_name,
+                    attacker_is_char,
+                    is_spell: false,
+                    is_dot: false,
+                    accuracy,
+                    damage: char_damage,
+                    crit_bp: BASIC_CRIT_BP * crit_inc / 10000,
+                    crit_multi,
+                    projectile: weapon_projectile,
+                    dot: None,
+                    debuff: None,
+                };
+                if weapon_projectile {
+                    let toward = t.pos;
+                    self.launch_projectile(
+                        pos,
+                        toward,
+                        spec,
+                        BASIC_PROJ_SPEED_CPS,
+                        weapon_range + Fx::from_int(2),
+                        0,
+                        hostile_to_players,
+                        events,
+                    );
+                } else {
+                    self.strike(spec, target_slot, now, events, dead, loot);
+                }
+            }
+            Some(node) => {
+                // Socketed skill gem — a character's tree socket or a
+                // monster's def kit; one executor for both. Cooldown
+                // and mana were committed at the START of the use.
+                let Some(sg) = skill_of(e, node) else {
+                    return;
+                };
+                let gem_def = self.content.gems[sg.gem.gem_idx as usize].clone();
+                if gem_def.kind != GemKind::Skill {
+                    return;
+                }
+                if let Some(ch) = &e.character
+                    && !self.weapon_eligible(&gem_def, ch)
+                {
+                    return; // disarmed mid-windup: the blow whiffs
+                }
+                let gem_idx = sg.gem.gem_idx;
+                let level = sg.gem.level;
+                let is_spell = gem_def.skill_kind == SkillKind::Spell;
+
+                // Supports: behavior effects folded down, plus legacy
+                // stat grants on a per-use sheet.
+                let mods = self.support_mods(&sg.supports);
+
+                let mut sheet = StatSheet::new();
+                for sup in &sg.supports {
+                    let sdef = &self.content.gems[sup.gem_idx as usize];
+                    for g in &sdef.grants {
+                        sheet.apply(g);
+                    }
+                }
+
+                // Damage: attacks scale the weapon plus the gem's own
+                // flat; spells are the gem's flat alone.
+                let added = [
+                    gem_def.added_phys.at(level),
+                    gem_def.added_fire.at(level),
+                    gem_def.added_cold.at(level),
+                    gem_def.added_lightning.at(level),
+                    gem_def.added_chaos.at(level),
+                ];
+                let stats = [
+                    Stat::DamagePhys,
+                    Stat::DamageFire,
+                    Stat::DamageCold,
+                    Stat::DamageLightning,
+                    Stat::DamageChaos,
+                ];
+                let mut damage = [0i64; DMG_COUNT];
+                for i in 0..DMG_COUNT {
+                    let weapon_part = if is_spell {
+                        0
+                    } else {
+                        char_damage[i] * gem_def.coeff_bp / 10000
+                    };
+                    damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
+                    damage[i] = damage[i] * mods.more_bp[i] / 10000;
+                }
+
+                // AoE supports grow the skill's footprint: ring radius,
+                // corridor width, and (for cones) the sector's reach.
+                let aoe = |cu: i32| (cu as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32;
+                let mut range = if gem_def.range_cu > 0 {
+                    fx_from_cu(gem_def.range_cu)
+                } else {
+                    weapon_range
+                };
+                if gem_def.shape == SkillShape::Cone && mods.aoe_bp != 0 {
+                    range = Fx::from_raw(
+                        (range.raw() as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32,
+                    );
+                }
+                let radius = fx_from_cu(aoe(gem_def.radius_cu));
+                let width = fx_from_cu(aoe(gem_def.width_cu));
+                let dot = gem_def.dot.map(|d| {
+                    (
+                        d.dtype.idx() as u8,
+                        d.per_second.at(level).max(0),
+                        (d.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000)
+                            as u32,
+                        gem_idx,
+                    )
+                });
+                let debuff = gem_def.debuff.clone().map(|b| {
+                    (
+                        b.grants,
+                        (b.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000)
+                            as u32,
+                    )
+                });
+                let spec_template = StrikeSpec {
+                    attacker_slot: Some(slot),
+                    attacker_net,
+                    attacker_name: attacker_name.clone(),
+                    attacker_is_char,
+                    is_spell,
+                    is_dot: false,
+                    accuracy,
+                    damage,
+                    crit_bp: gem_def.crit_bp * crit_inc / 10000,
+                    crit_multi,
+                    projectile: gem_def.shape == SkillShape::Projectile,
+                    dot,
+                    debuff,
+                };
+
+                // Aim: where is this skill pointed?
+                let aim_point: Option<FxV2> = match target {
+                    SkillTarget::Entity(id) => {
+                        self.zone.get_net(id).filter(|t| t.alive()).map(|t| t.pos)
+                    }
+                    SkillTarget::Point(p) => Some(p),
+                    SkillTarget::Direction(d) => {
+                        let origin = FxV2::new(Fx::ZERO, Fx::ZERO);
+                        let len = origin.dist(d);
+                        if len.raw() <= 0x100 {
+                            None
+                        } else {
+                            let f = Fx::ONE / len;
+                            Some(FxV2::new(pos.x + d.x * f * range, pos.y + d.y * f * range))
+                        }
+                    }
+                };
+                let Some(aim_point) = aim_point else { return };
+                let dir_len = pos.dist(aim_point);
+                let dir_n = if dir_len > Fx::from_raw(0x100) {
+                    let f = Fx::ONE / dir_len;
+                    FxV2::new((aim_point.x - pos.x) * f, (aim_point.y - pos.y) * f)
+                } else {
+                    FxV2::new(Fx::ONE, Fx::ZERO)
+                };
+
+                let mut swung = false;
+                match gem_def.shape {
+                    SkillShape::Target => {
+                        // Same half-range contact grace as basic
+                        // attacks: committed in range, only a real
+                        // escape whiffs.
+                        let grace = Fx::from_raw(range.raw() + range.raw() / 2);
+                        if let SkillTarget::Entity(id) = target
+                            && let Some(ts) = self.zone.slot_of(id)
+                            && let Some(t) = self.zone.get(ts)
+                            && t.alive()
+                            && attacker_faction.is_enemy_of(t.faction())
+                            && pos.dist(t.pos) <= grace
+                            && !self.los_blocked(pos, t.pos)
+                        {
+                            let spec = spec_template.clone_for_next_victim();
+                            self.strike(spec, ts, now, events, dead, loot);
+                            swung = true;
+                        }
+                    }
+                    SkillShape::Nova => {
+                        // Pure-utility novas (War Cry) carry no damage
+                        // and strike nobody — riders still fire below.
+                        if damage.iter().any(|d| *d > 0) {
+                            let victims = self.collect_victims_radius(
+                                pos,
+                                radius,
+                                attacker_faction,
+                                gem_def.max_targets,
+                                Some(pos),
+                            );
+                            for ts in victims {
+                                let spec = spec_template.clone_for_next_victim();
+                                self.strike(spec, ts, now, events, dead, loot);
+                            }
+                        }
+                        swung = true; // the sweep happens even on air
+                    }
+                    SkillShape::PointAoe => {
+                        if pos.dist(aim_point) <= range + radius
+                            && !self.los_blocked(pos, aim_point)
+                        {
+                            let victims = self.collect_victims_radius(
+                                aim_point,
+                                radius,
+                                attacker_faction,
+                                gem_def.max_targets,
+                                None,
+                            );
+                            for ts in victims {
+                                let spec = spec_template.clone_for_next_victim();
+                                self.strike(spec, ts, now, events, dead, loot);
+                            }
+                            swung = true; // the blast happens even on air
+                        }
+                    }
+                    SkillShape::Cone | SkillShape::Line => {
+                        let victims = self.collect_victims_directional(
+                            pos,
+                            dir_n,
+                            range,
+                            gem_def.shape,
+                            gem_def.cone_cos_bp,
+                            width,
+                            attacker_faction,
+                            gem_def.max_targets,
+                        );
+                        for ts in victims {
+                            let spec = spec_template.clone_for_next_victim();
+                            self.strike(spec, ts, now, events, dead, loot);
+                        }
+                        swung = true; // the sweep happens even on air
+                    }
+                    SkillShape::Projectile => {
+                        // Extra projectiles fan out in 12-degree steps
+                        // around the aimed direction.
+                        for i in 0..=mods.extra_projectiles {
+                            let d = rotate_fan(dir_n, fan_step(i));
+                            let toward = FxV2::new(pos.x + d.x * range, pos.y + d.y * range);
+                            let spec = spec_template.clone_for_next_victim();
+                            self.launch_projectile(
+                                pos,
+                                toward,
+                                spec,
+                                gem_def.proj_speed_cps.max(400),
+                                range,
+                                gem_def.pierce + mods.pierce,
+                                hostile_to_players,
+                                events,
+                            );
+                        }
+                        swung = true;
+                    }
+                }
+
+                if swung {
+                    // Buff rider: self always, plus allies inside the
+                    // skill's radius (War Cry rallies the line). The
+                    // duration support stretches it like other riders.
+                    if let Some(buff) = gem_def.buff.clone() {
+                        let duration = (buff.duration_ticks as i64
+                            * (10000 + mods.dot_duration_bp).max(0)
+                            / 10000) as u32;
+                        self.apply_buff(slot, buff.grants.clone(), duration);
+                        if radius.raw() > 0 {
+                            let rr = radius.raw() as i64 * radius.raw() as i64;
+                            let allies: Vec<usize> = self
+                                .zone
+                                .iter()
+                                .filter(|(s, a)| {
+                                    *s != slot
+                                        && a.alive()
+                                        && a.faction() == attacker_faction
+                                        && a.combat.is_some()
+                                        && {
+                                            let dx = (a.pos.x - pos.x).raw() as i64;
+                                            let dy = (a.pos.y - pos.y).raw() as i64;
+                                            dx * dx + dy * dy <= rr
+                                        }
+                                })
+                                .map(|(s, _)| s)
+                                .collect();
+                            for ally in allies {
+                                self.apply_buff(ally, buff.grants.clone(), duration);
+                            }
+                        }
+                    }
+                    // Cast/swing FX for non-projectile shapes (the fan
+                    // announces itself via ProjectileSpawned).
+                    if gem_def.shape != SkillShape::Projectile {
+                        let shape_code = match gem_def.shape {
+                            SkillShape::Target => 0u8,
+                            SkillShape::Nova => 1,
+                            SkillShape::Cone => 2,
+                            SkillShape::Line => 3,
+                            _ => 4,
+                        };
+                        let anchor = if gem_def.shape == SkillShape::PointAoe {
+                            aim_point
+                        } else {
+                            pos
+                        };
+                        let mut dtype = 0usize;
+                        for i in 1..DMG_COUNT {
+                            if damage[i] > damage[dtype] {
+                                dtype = i;
+                            }
+                        }
+                        // Lines report their corridor width in the
+                        // radius field (it's the visual footprint).
+                        let fx_radius = if gem_def.shape == SkillShape::Line {
+                            width
+                        } else {
+                            radius
+                        };
+                        events.push(SimEvent::SkillFx {
+                            attacker: attacker_net,
+                            spell: is_spell,
+                            shape: shape_code,
+                            x: anchor.x.raw(),
+                            y: anchor.y.raw(),
+                            dx: dir_n.x.raw(),
+                            dy: dir_n.y.raw(),
+                            radius: fx_radius.raw(),
+                            range: range.raw(),
+                            dmg_type: dtype as u8,
+                        });
+                    }
+                }
+                let _ = swung; // air swings still spent their windup
+            }
+        }
+    }
+
+    /// Phase 2 of attacks(): COMMIT new uses. An entity with an attack
+    /// intent, off busy, pays everything UP FRONT (mana, cooldown, the
+    /// use-time itself) and announces the windup — the strike resolves
+    /// at the contact tick (~60% through an attack; cast end for
+    /// spells), where the target is judged fresh.
+    fn start_uses(&mut self, events: &mut Vec<SimEvent>) {
+        let now = self.tick;
         for slot in 0..self.zone.slot_count() {
             let Some(e) = self.zone.get(slot) else {
                 continue;
@@ -419,402 +859,148 @@ impl World {
             }
             let attacker_net = e.net_id;
             let attacker_faction = e.faction();
-            let attacker_name = match (&e.character, &e.monster) {
-                (Some(ch), _) => ch.name.clone(),
-                (_, Some(m)) => self.monster_def(m.def_idx).name.clone(),
-                _ => continue,
-            };
-            let attacker_is_char = e.character.is_some();
             let pos = e.pos;
-            let (char_damage, accuracy, weapon_range, weapon_projectile, weapon_use) =
-                (c.damage, c.accuracy, c.range, c.projectile, c.use_ticks);
-            let (crit_inc, crit_multi, cast_speed) = (c.crit_inc, c.crit_multi, c.cast_speed);
-            let hostile_to_players = matches!(attacker_faction, crate::entity::Faction::Hostile);
+            let (weapon_range, weapon_use, cast_speed) = (c.range, c.use_ticks, c.cast_speed);
 
-            match skill {
-                None => {
-                    // Basic weapon attack: always entity-aimed.
-                    let SkillTarget::Entity(target_id) = target else {
-                        continue;
-                    };
-                    let Some(target_slot) = self.zone.slot_of(target_id) else {
-                        continue;
-                    };
-                    let Some(t) = self.zone.get(target_slot) else {
-                        continue;
-                    };
-                    if !t.alive()
-                        || !attacker_faction.is_enemy_of(t.faction())
-                        || pos.dist(t.pos) > weapon_range
-                        || self.los_blocked(pos, t.pos)
-                    {
-                        continue;
-                    }
-                    let spec = StrikeSpec {
-                        attacker_slot: Some(slot),
-                        attacker_net,
-                        attacker_name,
-                        attacker_is_char,
-                        is_spell: false,
-                        is_dot: false,
-                        accuracy,
-                        damage: char_damage,
-                        crit_bp: BASIC_CRIT_BP * crit_inc / 10000,
-                        crit_multi,
-                        projectile: weapon_projectile,
-                        dot: None,
-                        debuff: None,
-                    };
-                    if weapon_projectile {
-                        let toward = t.pos;
-                        self.launch_projectile(
-                            pos,
-                            toward,
-                            spec,
-                            BASIC_PROJ_SPEED_CPS,
-                            weapon_range + Fx::from_int(2),
-                            0,
-                            hostile_to_players,
-                            events,
-                        );
-                    } else {
-                        self.strike(spec, target_slot, now, events, &mut dead, &mut loot);
-                    }
-                    if let Some(me) = self.zone.get_mut(slot)
-                        && let Some(c) = me.combat.as_mut()
-                    {
-                        c.busy_until = now + weapon_use as u64;
-                        c.last_combat_tick = now;
-                    }
-                }
-                Some(node) => {
-                    // Socketed skill gem — a character's tree socket or a
-                    // monster's def kit; one executor for both.
-                    let Some(sg) = skill_of(e, node) else {
-                        continue;
-                    };
-                    if sg.cooldown_left > 0 {
-                        continue;
-                    }
-                    let gem_def = self.content.gems[sg.gem.gem_idx as usize].clone();
-                    if gem_def.kind != GemKind::Skill {
-                        continue;
-                    }
-                    if let Some(ch) = &e.character
-                        && !self.weapon_eligible(&gem_def, ch)
-                    {
-                        continue; // disarmed mid-queue, or the wrong tool
-                    }
-                    let gem_idx = sg.gem.gem_idx;
-                    let level = sg.gem.level;
-                    let is_spell = gem_def.skill_kind == SkillKind::Spell;
-
-                    // Supports: behavior effects folded down, plus legacy
-                    // stat grants on a per-use sheet.
-                    let mods = self.support_mods(&sg.supports);
-
-                    // Mana is validated here too (the syscall check may be a
-                    // tick stale) and charged on a successful use below.
-                    let cost = self.skill_mana_cost(sg);
-                    if cost > 0 && c.mana < cost {
-                        continue;
-                    }
-                    let busy_ticks = self.skill_use_ticks(sg, weapon_use, cast_speed);
-
-                    let mut sheet = StatSheet::new();
-                    for sup in &sg.supports {
-                        let sdef = &self.content.gems[sup.gem_idx as usize];
-                        for g in &sdef.grants {
-                            sheet.apply(g);
-                        }
-                    }
-
-                    // Damage: attacks scale the weapon plus the gem's own
-                    // flat; spells are the gem's flat alone.
-                    let added = [
-                        gem_def.added_phys.at(level),
-                        gem_def.added_fire.at(level),
-                        gem_def.added_cold.at(level),
-                        gem_def.added_lightning.at(level),
-                        gem_def.added_chaos.at(level),
-                    ];
-                    let stats = [
-                        Stat::DamagePhys,
-                        Stat::DamageFire,
-                        Stat::DamageCold,
-                        Stat::DamageLightning,
-                        Stat::DamageChaos,
-                    ];
-                    let mut damage = [0i64; DMG_COUNT];
-                    for i in 0..DMG_COUNT {
-                        let weapon_part = if is_spell {
-                            0
-                        } else {
-                            char_damage[i] * gem_def.coeff_bp / 10000
+            // What does this use cost, how long does it take, and where
+            // is it aimed? Refusals here are FREE (nothing committed).
+            let (is_spell, cost, busy_ticks, cooldown, aim): (bool, i64, u64, u32, FxV2) =
+                match skill {
+                    None => {
+                        // Basic attack: commit only against a live,
+                        // visible, in-range enemy — bots don't pay for
+                        // swings at air.
+                        let SkillTarget::Entity(target_id) = target else {
+                            continue;
                         };
-                        damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
-                        damage[i] = damage[i] * mods.more_bp[i] / 10000;
+                        let Some(t) = self.zone.get_net(target_id) else {
+                            continue;
+                        };
+                        if !t.alive()
+                            || !attacker_faction.is_enemy_of(t.faction())
+                            || pos.dist(t.pos) > weapon_range
+                            || self.los_blocked(pos, t.pos)
+                        {
+                            continue;
+                        }
+                        (false, 0, weapon_use as u64, 0, t.pos)
                     }
-
-                    // AoE supports grow the skill's footprint: ring radius,
-                    // corridor width, and (for cones) the sector's reach.
-                    let aoe = |cu: i32| (cu as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32;
-                    let mut range = if gem_def.range_cu > 0 {
-                        fx_from_cu(gem_def.range_cu)
-                    } else {
-                        weapon_range
-                    };
-                    if gem_def.shape == SkillShape::Cone && mods.aoe_bp != 0 {
-                        range = Fx::from_raw(
-                            (range.raw() as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32,
-                        );
-                    }
-                    let radius = fx_from_cu(aoe(gem_def.radius_cu));
-                    let width = fx_from_cu(aoe(gem_def.width_cu));
-                    let dot = gem_def.dot.map(|d| {
+                    Some(node) => {
+                        let Some(sg) = skill_of(e, node) else {
+                            continue;
+                        };
+                        if sg.cooldown_left > 0 {
+                            continue;
+                        }
+                        let gem_def = &self.content.gems[sg.gem.gem_idx as usize];
+                        if gem_def.kind != GemKind::Skill {
+                            continue;
+                        }
+                        if let Some(ch) = &e.character
+                            && !self.weapon_eligible(gem_def, ch)
+                        {
+                            continue;
+                        }
+                        let cost = self.skill_mana_cost(sg);
+                        if cost > 0 && c.mana < cost {
+                            continue;
+                        }
+                        let busy_ticks = self.skill_use_ticks(sg, weapon_use, cast_speed);
+                        let range = if gem_def.range_cu > 0 {
+                            fx_from_cu(gem_def.range_cu)
+                        } else {
+                            weapon_range
+                        };
+                        // Aim must resolve NOW (the windup needs a
+                        // facing); entity aims also gate on validity so
+                        // a dead target refuses the commit for free.
+                        let aim = match target {
+                            SkillTarget::Entity(id) => {
+                                let Some(t) = self.zone.get_net(id) else {
+                                    continue;
+                                };
+                                if !t.alive() {
+                                    continue;
+                                }
+                                if gem_def.shape == SkillShape::Target
+                                    && (!attacker_faction.is_enemy_of(t.faction())
+                                        || pos.dist(t.pos) > range
+                                        || self.los_blocked(pos, t.pos))
+                                {
+                                    continue;
+                                }
+                                t.pos
+                            }
+                            SkillTarget::Point(p) => {
+                                // Point blasts refuse unreachable aims
+                                // for free (same gate the old resolve
+                                // applied before swinging).
+                                if gem_def.shape == SkillShape::PointAoe
+                                    && (pos.dist(p) > range + fx_from_cu(gem_def.radius_cu)
+                                        || self.los_blocked(pos, p))
+                                {
+                                    continue;
+                                }
+                                p
+                            }
+                            SkillTarget::Direction(d) => {
+                                let origin = FxV2::new(Fx::ZERO, Fx::ZERO);
+                                if origin.dist(d).raw() <= 0x100 {
+                                    continue;
+                                }
+                                FxV2::new(pos.x + d.x, pos.y + d.y)
+                            }
+                        };
                         (
-                            d.dtype.idx() as u8,
-                            d.per_second.at(level).max(0),
-                            (d.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0)
-                                / 10000) as u32,
-                            gem_idx,
+                            gem_def.skill_kind == SkillKind::Spell,
+                            cost,
+                            busy_ticks,
+                            gem_def.cooldown_ticks,
+                            aim,
                         )
-                    });
-                    let debuff = gem_def.debuff.clone().map(|b| {
-                        (
-                            b.grants,
-                            (b.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0)
-                                / 10000) as u32,
-                        )
-                    });
-                    let spec_template = StrikeSpec {
-                        attacker_slot: Some(slot),
-                        attacker_net,
-                        attacker_name: attacker_name.clone(),
-                        attacker_is_char,
-                        is_spell,
-                        is_dot: false,
-                        accuracy,
-                        damage,
-                        crit_bp: gem_def.crit_bp * crit_inc / 10000,
-                        crit_multi,
-                        projectile: gem_def.shape == SkillShape::Projectile,
-                        dot,
-                        debuff,
-                    };
-
-                    // Aim: where is this skill pointed?
-                    let aim_point: Option<FxV2> = match target {
-                        SkillTarget::Entity(id) => {
-                            self.zone.get_net(id).filter(|t| t.alive()).map(|t| t.pos)
-                        }
-                        SkillTarget::Point(p) => Some(p),
-                        SkillTarget::Direction(d) => {
-                            let origin = FxV2::new(Fx::ZERO, Fx::ZERO);
-                            let len = origin.dist(d);
-                            if len.raw() <= 0x100 {
-                                None
-                            } else {
-                                let f = Fx::ONE / len;
-                                Some(FxV2::new(pos.x + d.x * f * range, pos.y + d.y * f * range))
-                            }
-                        }
-                    };
-                    let Some(aim_point) = aim_point else { continue };
-                    let dir_len = pos.dist(aim_point);
-                    let dir_n = if dir_len > Fx::from_raw(0x100) {
-                        let f = Fx::ONE / dir_len;
-                        FxV2::new((aim_point.x - pos.x) * f, (aim_point.y - pos.y) * f)
-                    } else {
-                        FxV2::new(Fx::ONE, Fx::ZERO)
-                    };
-
-                    let mut swung = false;
-                    match gem_def.shape {
-                        SkillShape::Target => {
-                            if let SkillTarget::Entity(id) = target
-                                && let Some(ts) = self.zone.slot_of(id)
-                                && let Some(t) = self.zone.get(ts)
-                                && t.alive()
-                                && attacker_faction.is_enemy_of(t.faction())
-                                && pos.dist(t.pos) <= range
-                                && !self.los_blocked(pos, t.pos)
-                            {
-                                let spec = spec_template.clone_for_next_victim();
-                                self.strike(spec, ts, now, events, &mut dead, &mut loot);
-                                swung = true;
-                            }
-                        }
-                        SkillShape::Nova => {
-                            // Pure-utility novas (War Cry) carry no damage
-                            // and strike nobody — riders still fire below.
-                            if damage.iter().any(|d| *d > 0) {
-                                let victims = self.collect_victims_radius(
-                                    pos,
-                                    radius,
-                                    attacker_faction,
-                                    gem_def.max_targets,
-                                    Some(pos),
-                                );
-                                for ts in victims {
-                                    let spec = spec_template.clone_for_next_victim();
-                                    self.strike(spec, ts, now, events, &mut dead, &mut loot);
-                                }
-                            }
-                            swung = true; // the sweep happens even on air
-                        }
-                        SkillShape::PointAoe => {
-                            if pos.dist(aim_point) <= range + radius
-                                && !self.los_blocked(pos, aim_point)
-                            {
-                                let victims = self.collect_victims_radius(
-                                    aim_point,
-                                    radius,
-                                    attacker_faction,
-                                    gem_def.max_targets,
-                                    None,
-                                );
-                                for ts in victims {
-                                    let spec = spec_template.clone_for_next_victim();
-                                    self.strike(spec, ts, now, events, &mut dead, &mut loot);
-                                }
-                                swung = true; // the blast happens even on air
-                            }
-                        }
-                        SkillShape::Cone | SkillShape::Line => {
-                            let victims = self.collect_victims_directional(
-                                pos,
-                                dir_n,
-                                range,
-                                gem_def.shape,
-                                gem_def.cone_cos_bp,
-                                width,
-                                attacker_faction,
-                                gem_def.max_targets,
-                            );
-                            for ts in victims {
-                                let spec = spec_template.clone_for_next_victim();
-                                self.strike(spec, ts, now, events, &mut dead, &mut loot);
-                            }
-                            swung = true; // the sweep happens even on air
-                        }
-                        SkillShape::Projectile => {
-                            // Extra projectiles fan out in 12-degree steps
-                            // around the aimed direction.
-                            for i in 0..=mods.extra_projectiles {
-                                let d = rotate_fan(dir_n, fan_step(i));
-                                let toward = FxV2::new(pos.x + d.x * range, pos.y + d.y * range);
-                                let spec = spec_template.clone_for_next_victim();
-                                self.launch_projectile(
-                                    pos,
-                                    toward,
-                                    spec,
-                                    gem_def.proj_speed_cps.max(400),
-                                    range,
-                                    gem_def.pierce + mods.pierce,
-                                    hostile_to_players,
-                                    events,
-                                );
-                            }
-                            swung = true;
-                        }
                     }
+                };
 
-                    if swung {
-                        // Buff rider: self always, plus allies inside the
-                        // skill's radius (War Cry rallies the line). The
-                        // duration support stretches it like other riders.
-                        if let Some(buff) = gem_def.buff.clone() {
-                            let duration = (buff.duration_ticks as i64
-                                * (10000 + mods.dot_duration_bp).max(0)
-                                / 10000) as u32;
-                            self.apply_buff(slot, buff.grants.clone(), duration);
-                            if radius.raw() > 0 {
-                                let rr = radius.raw() as i64 * radius.raw() as i64;
-                                let allies: Vec<usize> = self
-                                    .zone
-                                    .iter()
-                                    .filter(|(s, a)| {
-                                        *s != slot
-                                            && a.alive()
-                                            && a.faction() == attacker_faction
-                                            && a.combat.is_some()
-                                            && {
-                                                let dx = (a.pos.x - pos.x).raw() as i64;
-                                                let dy = (a.pos.y - pos.y).raw() as i64;
-                                                dx * dx + dy * dy <= rr
-                                            }
-                                    })
-                                    .map(|(s, _)| s)
-                                    .collect();
-                                for ally in allies {
-                                    self.apply_buff(ally, buff.grants.clone(), duration);
-                                }
-                            }
-                        }
-                        // Cast/swing FX for non-projectile shapes (the fan
-                        // announces itself via ProjectileSpawned).
-                        if gem_def.shape != SkillShape::Projectile {
-                            let shape_code = match gem_def.shape {
-                                SkillShape::Target => 0u8,
-                                SkillShape::Nova => 1,
-                                SkillShape::Cone => 2,
-                                SkillShape::Line => 3,
-                                _ => 4,
-                            };
-                            let anchor = if gem_def.shape == SkillShape::PointAoe {
-                                aim_point
-                            } else {
-                                pos
-                            };
-                            let mut dtype = 0usize;
-                            for i in 1..DMG_COUNT {
-                                if damage[i] > damage[dtype] {
-                                    dtype = i;
-                                }
-                            }
-                            // Lines report their corridor width in the
-                            // radius field (it's the visual footprint).
-                            let fx_radius = if gem_def.shape == SkillShape::Line {
-                                width
-                            } else {
-                                radius
-                            };
-                            events.push(SimEvent::SkillFx {
-                                attacker: attacker_net,
-                                spell: is_spell,
-                                shape: shape_code,
-                                x: anchor.x.raw(),
-                                y: anchor.y.raw(),
-                                dx: dir_n.x.raw(),
-                                dy: dir_n.y.raw(),
-                                radius: fx_radius.raw(),
-                                range: range.raw(),
-                                dmg_type: dtype as u8,
-                            });
-                        }
-                        let busy = busy_ticks;
-                        let cooldown = gem_def.cooldown_ticks;
-                        if let Some(me) = self.zone.get_mut(slot) {
-                            if let Some(c) = me.combat.as_mut() {
-                                if cost > 0 {
-                                    c.mana = (c.mana - cost).max(0);
-                                }
-                                c.busy_until = now + busy;
-                                c.last_combat_tick = now;
-                            }
-                            if cooldown > 0
-                                && let Some(sg) = skill_of_mut(me, node)
-                            {
-                                sg.cooldown_left = cooldown;
-                            }
-                        }
+            // Contact: spells land their effect when the cast completes;
+            // attacks connect ~60% through the swing, recovery after.
+            let busy_ticks = busy_ticks.max(1);
+            let contact = if is_spell {
+                busy_ticks
+            } else {
+                (busy_ticks * 3 / 5).max(1)
+            };
+
+            // COMMIT: everything is paid here, refunds don't exist.
+            if let Some(me) = self.zone.get_mut(slot) {
+                if let Some(c) = me.combat.as_mut() {
+                    if cost > 0 {
+                        c.mana = (c.mana - cost).max(0);
                     }
+                    c.busy_until = now + busy_ticks;
+                    c.last_combat_tick = now;
+                }
+                if cooldown > 0
+                    && let Some(node) = skill
+                    && let Some(sg) = skill_of_mut(me, node)
+                {
+                    sg.cooldown_left = cooldown;
                 }
             }
+            self.pending_uses.push(PendingUse {
+                attacker: attacker_net,
+                target,
+                skill,
+                resolve_at: now + contact,
+            });
+            events.push(SimEvent::UseStarted {
+                id: attacker_net,
+                spell: is_spell,
+                x: aim.x.raw(),
+                y: aim.y.raw(),
+                use_ticks: busy_ticks as u32,
+                contact_ticks: contact as u32,
+            });
         }
-
-        self.finish_kills(dead, loot, events);
     }
 
     /// Living enemies of `faction` within `radius` of `center`, nearest
@@ -1524,6 +1710,16 @@ mod tests {
         ContentDb::load(Path::new("../../content")).expect("workspace content must load")
     }
 
+    /// Uses WIND UP now: the first attacks() pass commits, the contact
+    /// pass resolves. Sixteen clock steps cover every contact in the
+    /// roster while staying short of a second swing's resolution.
+    fn run_attacks(world: &mut World, events: &mut Vec<super::SimEvent>) {
+        for _ in 0..16 {
+            world.attacks(events);
+            world.tick += 1;
+        }
+    }
+
     fn gem_idx(content: &ContentDb, id: &str) -> u32 {
         content.gems.iter().position(|g| g.id == id).expect(id) as u32
     }
@@ -1647,7 +1843,7 @@ mod tests {
         });
 
         let mut events = Vec::new();
-        world.attacks(&mut events);
+        run_attacks(&mut world, &mut events);
         events
     }
 
@@ -1997,7 +2193,7 @@ mod tests {
             });
         }
         let mut events = Vec::new();
-        world.attacks(&mut events);
+        run_attacks(&mut world, &mut events);
         assert!(
             !events
                 .iter()
@@ -2199,7 +2395,7 @@ mod tests {
             });
         }
         let mut events = Vec::new();
-        world.attacks(&mut events);
+        run_attacks(&mut world, &mut events);
         assert!(
             events
                 .iter()

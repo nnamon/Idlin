@@ -13,6 +13,7 @@ import type { ProjectileFx } from "./ProjectileFx";
 import type { Role } from "./Role";
 import type { SkillFx } from "./SkillFx";
 import type { TileMapState } from "./TileMapState";
+import type { UseFx } from "./UseFx";
 
 /**
  * Server → client.
@@ -51,4 +52,9 @@ exits: Array<ExitView>,
 /**
  * Tutorial gates (cell rects), open state included.
  */
-gates: Array<GateView>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, skills: Array<SkillFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
+gates: Array<GateView>, entities: Array<EntityState>, } } | { "type": "ZoneDelta", "data": { tick: number, spawned: Array<EntityState>, moved: Array<EntityMove>, updated: Array<EntityPatch>, removed: Array<number>, hits: Array<HitFx>, projectiles: Array<ProjectileFx>, skills: Array<SkillFx>, 
+/**
+ * Windups that began this tick (the client animates from here;
+ * the strike arrives `contact_ticks` later).
+ */
+uses: Array<UseFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };

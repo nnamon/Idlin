@@ -214,6 +214,17 @@ pub enum SimEvent {
     },
     /// A non-projectile skill went off: the client plays the cast/swing
     /// animation and draws the shape (ring, cone, line) where it happened.
+    /// A use BEGAN: the windup the client animates. The strike itself
+    /// resolves `contact_ticks` later (HitFx/SkillFx land there).
+    UseStarted {
+        id: u32,
+        spell: bool,
+        /// Aim point, raw Q16.16 (facing).
+        x: i32,
+        y: i32,
+        use_ticks: u32,
+        contact_ticks: u32,
+    },
     SkillFx {
         attacker: u32,
         spell: bool,
@@ -313,6 +324,9 @@ pub struct World {
     /// order after bots finish (an entity can't vanish mid-arena-walk).
     #[serde(skip)]
     pub(crate) pending_exits: Vec<(u32, String)>,
+    /// Committed uses winding up toward their contact tick.
+    #[serde(default)]
+    pub(crate) pending_uses: Vec<crate::world::combat::PendingUse>,
 }
 
 // ---- universal (classless) character bases ----
@@ -706,6 +720,7 @@ impl World {
             zone_brain_inbox: Vec::new(),
             pending_departures: Vec::new(),
             pending_exits: Vec::new(),
+            pending_uses: Vec::new(),
         }
     }
 

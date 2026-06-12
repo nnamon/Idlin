@@ -13,9 +13,9 @@ MonsterDef(
     // (4-5): the strand is one-shot, so a pupil who can't break him has
     // no XP left to grow on — he is a wall with no ladder. Drama comes
     // from the flask economy, not raw numbers.
-    life: 340,
-    damage: 10,
-    damage_cold: 3,
+    life: 320,
+    damage: 9,
+    damage_cold: 2,
     armour: 35,
     evasion: 20,
     resist_lightning: 4000,

@@ -4,6 +4,9 @@ import type { EntityState } from "../gen/EntityState";
 import type { AssetLibrary, BodyVariant, ModelDef } from "./Assets";
 
 const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
+/** Where an attack clip CONNECTS, as a fraction of its length. The
+ *  Quaternius swings land their blow just past mid-clip. */
+const CONTACT_FRAC = 0.45;
 /** ?animdebug=1: log every animation decision to the console. */
 const ANIM_DEBUG = new URLSearchParams(location.search).has("animdebug");
 const FADE_S = 0.18;
@@ -70,6 +73,7 @@ export class EntityVisual {
   private hpFg: THREE.Sprite | null = null;
   private label: THREE.Sprite | null = null;
   private weaponKey = "";
+  private oneShot: THREE.AnimationAction | null = null;
   private weaponObj: THREE.Object3D | null = null;
   private handBone: THREE.Object3D | null = null;
   /** Bone-worn rigid gear (shields), keyed by gear key. */
@@ -470,33 +474,31 @@ export class EntityVisual {
     }
   }
 
-  /** Swing at a target: weapon-specific clip when we have one. */
-  playAttack(targetPos: THREE.Vector3): void {
-    this.playOneShot(
-      this.actions.get(`attack:${this.weaponKey}`) ?? this.actions.get("attack"),
-      targetPos,
-    );
-  }
-
   /**
-   * A skill went off: spells play the cast clip, attacks the weapon swing.
-   * `aimPos` (world) turns the body toward the action; null keeps facing.
+   * A use BEGAN: play the windup in TRUE TIME. The clip is rate-scaled
+   * so its contact frame lands exactly `contactS` seconds from now —
+   * which is when the sim resolves the strike and HitFx arrives. The
+   * follow-through runs at the same rate; a new use interrupts it.
    */
-  playSkill(spell: boolean, aimPos: THREE.Vector3 | null): void {
+  playUse(spell: boolean, aimPos: THREE.Vector3 | null, _useS: number, contactS: number): void {
+    if (this.wasDead || !this.mixer) return;
     const action = spell
       ? (this.actions.get("cast") ?? this.actions.get("attack"))
       : (this.actions.get(`attack:${this.weaponKey}`) ?? this.actions.get("attack"));
-    this.playOneShot(action, aimPos);
-  }
-
-  private playOneShot(action: THREE.AnimationAction | undefined, aimPos: THREE.Vector3 | null): void {
-    if (this.attacking || this.wasDead || !this.mixer || !action) return;
-    this.attacking = true;
+    if (!action) return;
     if (aimPos) {
       const dx = aimPos.x - this.group.position.x;
       const dz = aimPos.z - this.group.position.z;
       if (dx * dx + dz * dz > 1e-6) this.targetAngle = Math.atan2(dx, dz);
     }
+    // Cadence is authoritative: a fresh windup cuts the previous
+    // follow-through (the sim's busy gate guarantees no true overlap).
+    if (this.oneShot && this.oneShot !== action) this.oneShot.stop();
+    this.oneShot = action;
+    const dur = action.getClip().duration;
+    const scale = (dur * CONTACT_FRAC) / Math.max(0.05, contactS);
+    action.timeScale = Math.min(3.5, Math.max(0.35, scale));
+    this.attacking = true;
     const base = this.actions.get(this.baseRole);
     base?.fadeOut(FADE_S * 0.5);
     action.setLoop(THREE.LoopOnce, 1);

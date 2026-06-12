@@ -64,9 +64,12 @@ ZoneDef(
         // fight must be PRESSED here, never farmed for respawn walks.
         SpawnPack(monster: "bone_stalker",     count: 3, x_u: 16, y_u: 44,  radius_u: 4, respawn_ticks: 9000000),
         SpawnPack(monster: "bone_stalker",     count: 4, x_u: 15, y_u: 30,  radius_u: 4, respawn_ticks: 9000000),
-        // The pull: a last pair at the arena mouth, in line with the gap,
-        // so the strand funnels bots into the Tidewarden's sightline.
-        SpawnPack(monster: "tide_husk",        count: 2, x_u: 14, y_u: 14,  radius_u: 1, respawn_ticks: 9000000),
+        // The pull: a pair at the arena mouth, in line with the gap, so
+        // the strand funnels bots into the Tidewarden's sightline. These
+        // RESPAWN — the Tidewarden keeps raising them — so every attempt
+        // on the boss refills flask charges and pays a little XP: retries
+        // grow stronger instead of looping identical.
+        SpawnPack(monster: "tide_husk",        count: 2, x_u: 14, y_u: 14,  radius_u: 1, respawn_ticks: 600),
         // Beat 7: the boss holds the bluff path.
         SpawnPack(monster: "tidewarden",       count: 1, x_u: 17, y_u: 6,   radius_u: 0, respawn_ticks: 9000000),
     ],
