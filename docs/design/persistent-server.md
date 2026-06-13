@@ -73,10 +73,12 @@ settled; this revision hardens it against two independent heavy reviews.
   `IDLIN_RECORD` journals the **output** wire stream, not an input-log.
 - **Known current bug the design must fix, not inherit:** a ferry to a full or
   unknown zone **silently drops the character** (`runner.rs:182`, "lost at sea")
-  — data loss. There is **no** `max_players`-driven auto-instancing today;
-  `ManagedWorld` is a bare struct with no `impl` on `main` (create/reap are
-  net-new; the `feat/07-world-layout` `ManagedWorld::create` is on the rejected
-  branch and not assumed here).
+  — data loss. There is **no** `max_players`-driven auto-instancing today
+  (despite a stale comment at `content/lib.rs:985` claiming "the host opens fresh
+  instances past the cap" — the runner actually drops); `ManagedWorld` is a bare
+  struct with no `impl` on `main` (create/reap are net-new; the
+  `feat/07-world-layout` `ManagedWorld::create` is on the rejected branch and not
+  assumed here).
 
 Single-process today means dupes are impossible by construction (#9's single
 writer). That guarantee is what sharding must preserve (§6).
@@ -171,6 +173,23 @@ boundary and the existing `ManagedWorld` granularity.
   saturating bot is *plausibly* hundreds of µs, but that is a **measurement
   target**, not an established fact. The model (cap per shard, many shards) does
   not depend on the exact number; the number sets the cap.
+- **Per-area capacity — what actually limits idlers in one zone (verified
+  against `main`):**
+  - **No hard count cap by design.** Entity storage is a dynamic
+    `Vec<Option<Entity>>` (`zone.rs:153`); `max_players` defaults to unlimited
+    (`lib.rs:989`) and is a *policy* knob, not a structural limit.
+  - **The one hard structural ceiling** is `net_id: u32`, monotonic and never
+    reused (`alloc_net`, `mod.rs:843`): ~4.29 B **lifetime** spawns per world —
+    a long-run limit for a forever-world with monster churn, **not** a
+    concurrency cap.
+  - **The binding practical limit is per-tick compute, and it is O(n²):**
+    all-pairs `separation()` (`mod.rs:1130`, no spatial index) + every bot's
+    `read_entities` linearly scanning all entities (`bots.rs:291`), all on the
+    single 10 Hz thread. So concurrent idlers per area is bounded by "what ticks
+    within 100 ms" — the unmeasured "low hundreds per shard" above.
+  - **Lever to raise the per-shard ceiling:** a spatial broadphase (grid-bucket
+    separation + entity queries, O(n²)→O(n·k)) — available independently of, and
+    in addition to, sharding. Per-shard `max_players` + many shards is the other.
 - **The cost of sharding (real work, not bullets):** (1) the featured director
   (`replication.rs:249`, `runner.rs:215`) and watcher re-routing become
   cross-process aggregation; (2) cross-shard ferry ordering reintroduces
