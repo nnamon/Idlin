@@ -464,6 +464,8 @@ pub enum GemTag {
     Lightning,
     Chaos,
     Physical,
+    /// Movement skills (dash/leap/blink) — opens movement-only supports.
+    Movement,
 }
 
 /// Damage types for skill payloads (indices match the sim's DMG_*).
@@ -573,6 +575,10 @@ pub enum SkillShape {
     /// A real traveling projectile (proj_speed_cps, pierce); collides with
     /// the first enemy or obstacle in its path.
     Projectile,
+    /// Self-displacement: at contact the CASTER is shoved to the aim
+    /// (dash/leap/blink), `range_cu` far, stopping at walls/gates. No
+    /// damage payload of its own.
+    Movement,
 }
 
 fn shape_target() -> SkillShape {

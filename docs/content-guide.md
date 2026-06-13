@@ -169,7 +169,7 @@ GemDef(
     cast_ticks: 7,                      // spells only; attacks use the weapon
     cooldown_ticks: 0,                  // SPECIALS only, on top of use time
     // -- geometry (per shape) --
-    shape: projectile,    // target | nova | cone | line | point_aoe | projectile
+    shape: projectile,    // target | nova | cone | line | point_aoe | projectile | movement
     range_cu: 900,        // 0 = weapon range
     radius_cu: 0,         // nova/point_aoe radius
     cone_cos_bp: 7000,    // cone: cos(half-angle) in bp (7000 ≈ 90° total)

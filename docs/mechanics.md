@@ -302,8 +302,11 @@ top-center; magic/rare announce themselves with tinted nameplates.
   body they hit (minus `pierce`), and are stopped by obstacles. Sidestep
   an arrow and it misses you.
 - **Shapes**: strike, self-nova, directional cone (`cone_cos_bp`),
-  directional line (`width_cu`), ground-target point-AoE, projectile.
-  Direction/point shapes are aimed BY THE BOT (UseSkillDir/UseSkillAt).
+  directional line (`width_cu`), ground-target point-AoE, projectile, and
+  **movement** (dash/leap/blink — at contact the CASTER is shoved to the
+  aim, `range_cu` far, stopping at walls/gates; no damage of its own; a
+  classic cooldown user). Direction/point shapes are aimed BY THE BOT
+  (UseSkillDir/UseSkillAt).
 - **Damage over time**: skills can apply typed dots (`dot:` in content)
   that burn once per second; strongest per source+skill wins, reapply
   refreshes. Dots skip accuracy, block, crit, and variance.

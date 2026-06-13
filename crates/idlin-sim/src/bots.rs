@@ -664,6 +664,7 @@ impl World {
                             idlin_content::SkillShape::Line => 3,
                             idlin_content::SkillShape::PointAoe => 4,
                             idlin_content::SkillShape::Projectile => 5,
+                            idlin_content::SkillShape::Movement => 6,
                         };
                         let target_mode = match def.target_mode {
                             idlin_content::TargetMode::Entity => 0,

@@ -1,0 +1,19 @@
+// Skill: a hard burst of movement — the wretch flings itself a few units
+// along the aimed line, stopping at walls. No damage; it's a gap-close or
+// an escape. Direction-aimed (use_skill_dir), so it needs no target. The
+// short cast is the windup: the dash LANDS at contact, so it reads and is
+// dodgeable like any other use. A real cooldown keeps it special.
+GemDef(
+    id: "dash",
+    name: "Dash",
+    kind: skill,
+    skill_kind: spell,
+    target_mode: direction,
+    tags: [movement],
+    weight: 40,
+    shape: movement,
+    range_cu: 600,          // ~6 units of leap
+    cast_ticks: 4,          // brief windup → the dash lands at contact
+    cooldown_ticks: 30,     // special: a 3-second cooldown
+    mana_cost: (base: 8, per_level: 0),
+)

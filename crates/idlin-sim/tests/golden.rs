@@ -10,7 +10,10 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0x2F83_F385_2C72_7695;
+/// Moved for #25: the new Dash gem (content/gems/dash.ron) shifts
+/// content_hash and the weighted gem-drop pool. Knockback's shove path is
+/// byte-identical (still 150cu / 4 steps).
+const GOLDEN_HASH: u64 = 0x1342_6079_EAC4_3E5D;
 
 #[test]
 fn golden_replay() {

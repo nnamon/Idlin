@@ -765,6 +765,24 @@ impl World {
                         }
                         swung = true;
                     }
+                    SkillShape::Movement => {
+                        // Dash/leap/blink: shove the CASTER to the aim,
+                        // up to range_cu, stopping at walls/gates. No
+                        // strike, no shape FX — `swung` stays false so the
+                        // strike-FX/buff block below is skipped; the visible
+                        // travel is the client interpolating the position
+                        // jump. Cap the distance at the target so a
+                        // point/entity aim lands ON it (direction aims are
+                        // already range away). More steps for a long dash
+                        // so it can't tunnel a thin wall.
+                        let dist_units = pos.dist(aim_point);
+                        let dist_cu =
+                            ((dist_units.raw() as i64 * 100) >> 16).min(gem_def.range_cu as i64);
+                        if dist_cu > 0 {
+                            let steps = (dist_cu / 40).clamp(4, 32) as i32;
+                            self.shove(slot, pos, aim_point, dist_cu, steps);
+                        }
+                    }
                 }
 
                 if swung {
@@ -1282,7 +1300,13 @@ impl World {
     /// One landed strike. See the module docs for the pipeline order.
     /// Knock the victim back along the hit line, stopping at walls and
     /// shut gates — a real displacement, deterministic, in small steps.
-    fn shove(&mut self, slot: usize, from: FxV2, at: FxV2, dist_cu: i64) {
+    /// Slide `slot` from `from` toward `at`, `dist_cu` total, in `steps`
+    /// micro-steps, stopping at the first solid cell (wall/gate). Used for
+    /// knockback (the victim, capped short) and movement skills (the
+    /// caster, longer — more steps so a long dash can't tunnel a wall).
+    /// The CALLER caps the distance (knockback ≤150cu); steps × step ==
+    /// total exactly, so the 4-step knockback path is byte-identical.
+    fn shove(&mut self, slot: usize, from: FxV2, at: FxV2, dist_cu: i64, steps: i32) {
         let len = from.dist(at);
         let (dx, dy) = if len > Fx::from_raw(0x100) {
             let f = Fx::ONE / len;
@@ -1290,11 +1314,12 @@ impl World {
         } else {
             return; // point-blank overlap: no meaningful direction
         };
-        let total = fx_from_cu(dist_cu.min(150) as i32);
-        let step = Fx::from_raw(total.raw() / 4);
+        let steps = steps.max(1);
+        let total = fx_from_cu(dist_cu as i32);
+        let step = Fx::from_raw(total.raw() / steps);
         let Some(e) = self.zone.get(slot) else { return };
         let mut pos = e.pos;
-        for _ in 0..4 {
+        for _ in 0..steps {
             let cand = self
                 .zone
                 .clamp_pos(FxV2::new(pos.x + dx * step, pos.y + dy * step));
@@ -1435,7 +1460,9 @@ impl World {
             && let Some(a) = self.zone.get_net(spec.attacker_net)
         {
             let from = a.pos;
-            self.shove(target_slot, from, target_pos, shove_cu);
+            // Knockback keeps its 1.5u cap + 4 micro-steps (byte-identical
+            // to before the shove distance was parameterized).
+            self.shove(target_slot, from, target_pos, shove_cu.min(150), 4);
         }
 
         events.push(SimEvent::Hit {
@@ -2425,6 +2452,94 @@ mod tests {
         assert!(
             buffed_phys > base_phys,
             "the rally raises ally phys: {buffed_phys} vs {base_phys}"
+        );
+    }
+
+    #[test]
+    fn movement_skill_dashes_the_caster_and_lands_at_contact() {
+        let content = content();
+        let mut world = World::new(0x5A5A_0D45, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Dasher".into(),
+                program,
+            }],
+        });
+        let caster = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        let start = world.zone.get(caster).unwrap().pos;
+        // Pick a cardinal direction with at least 2 open cells ahead (the
+        // spawn is reachable, so the strand lane has room somewhere) — so
+        // the dash has space to travel a meaningful distance.
+        let cell = |p: FxV2| {
+            (
+                (p.x.raw() as i64).div_euclid(65536),
+                (p.y.raw() as i64).div_euclid(65536),
+            )
+        };
+        let (cx, cy) = cell(start);
+        let dir = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .find(|(dx, dy)| {
+                !world.zone.cell_blocked(cx + dx, cy + dy)
+                    && !world.zone.cell_blocked(cx + 2 * dx, cy + 2 * dy)
+            })
+            .map(|(dx, dy)| FxV2::new(Fx::from_int(dx as i16), Fx::from_int(dy as i16)))
+            .expect("spawn has an open lane to dash into");
+        {
+            let e = world.zone.get_mut(caster).unwrap();
+            e.character.as_mut().unwrap().sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "dash", 1),
+                    cooldown_left: 0,
+                    supports: vec![],
+                },
+            );
+            e.combat.as_mut().unwrap().mana = 100;
+            e.intents.attack = Some(AttackIntent {
+                target: SkillTarget::Direction(dir),
+                skill: Some(node),
+            });
+        }
+        // One pass COMMITS the use (busy_until set) — but the dash LANDS at
+        // contact (cast_ticks later), not now. Position must be unchanged.
+        let mut events = Vec::new();
+        world.attacks(&mut events);
+        world.tick += 1;
+        let after_commit = world.zone.get(caster).unwrap().pos;
+        assert_eq!(
+            (after_commit.x.raw(), after_commit.y.raw()),
+            (start.x.raw(), start.y.raw()),
+            "the dash lands at contact, not on the commit tick"
+        );
+        // Run through contact: the caster displaces toward the aim, bounded
+        // by the gem's range (~6u), stopping at any wall.
+        for _ in 0..16 {
+            world.attacks(&mut events);
+            world.tick += 1;
+        }
+        let end = world.zone.get(caster).unwrap().pos;
+        let moved = start.dist(end);
+        assert!(
+            moved.raw() > Fx::from_int(1).raw(),
+            "the dash displaced the caster (moved {} raw)",
+            moved.raw()
+        );
+        // 6.5u in raw Q16.16 = 13 * 65536 / 2 (integer; the crate forbids
+        // float arithmetic).
+        assert!(
+            moved.raw() <= 13 * 65536 / 2,
+            "the dash is bounded by range (~6u), moved {} raw",
+            moved.raw()
         );
     }
 
