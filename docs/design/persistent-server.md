@@ -201,11 +201,15 @@ boundary and the existing `ManagedWorld` granularity.
   kill-thresholds read **lifetime** `kills` (`brain.bot:135,153`), so a graduated
   character entering a *fresh* shore instance would re-trigger the
   weapon/flask/gem/obol on tick 1 — a printer. The fix has two parts:
-  1. **Tutorial rewards are grant-once per `character_id`.** Eligibility is a
-     durable per-character flag (a `tutorial_grants` bitset on `CharacterState`),
-     consulted by the sim/brain — **not** `net_id` and **not** zone-brain memory
-     (which both reset per entry). The shore brain must read this persistent flag
-     before granting.
+  1. **Tutorial rewards are grant-once per character INCARNATION, not per
+     arrival.** Eligibility is a durable flag (a `tutorial_grants` bitset on
+     `CharacterState`), consulted by the sim/brain — **not** `net_id` and **not**
+     zone-brain memory (both reset per entry and were the v3 exploit). Because the
+     flag lives on `CharacterState`, **the full state wipe below clears it** — so
+     a refresh-mid-tutorial correctly starts a clean, fully-grantable fresh run,
+     while a *graduated* character (flag set, never wiped) can never re-trigger
+     the grants. The grant-once flag and the wipe are complementary, not in
+     tension.
   2. **The tutorial zone is non-re-enterable.** A graduated character (home town
      set) is never routed back to `withered_shore`; there is no town→shore path,
      and the design must not add one without (1) in place. ("Home town set" thus
