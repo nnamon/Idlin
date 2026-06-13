@@ -51,47 +51,73 @@ MapBase(
 
 ---
 
-## 2. Map mods — the `"map"` affix pool
+## 2. Map mods — the danger pool, and reward derived from danger
 
-Map affixes are rolled by the standard affix roller against the `"map"` pool,
-tiered by item level like every pool. They are **not** worn — at instance-build
-time they are scanned by `Stat` into a `MapMods` value the instance reads. Three
-families (values first-pass, tunable):
+**Every map affix makes the instance more dangerous. There are no "good" affixes
+to chase, and no prefix/suffix good-vs-bad division — reward is *derived* from
+danger.** You roll a chart the same way you craft gear (the shared roller + the
+obol currencies, unchanged); what you're chasing is a dense, high-tier set of
+dangers, because that is exactly what pays.
 
-**Difficulty (prefixes) — more danger:**
+Structurally, map affixes still occupy the normal prefix/suffix slots — that's
+only so the crafting verbs (transmute/augment/regal/exalt/scour/divine) and the
+roller's slot caps work on charts identically to gear. The prefix/suffix label is
+purely structural here; it carries **no** good/bad meaning, and both buckets hold
+danger mods.
 
-| Mod | Tiers (by ilvl) | Effect on the instance |
+**The danger pool** (rolled from `"map"`; the set grows — all of them add danger):
+
+| Affix | Effect on the instance |
+|---|---|
+| `map_pack_size` | more packs scattered |
+| `map_monster_life` | global MORE life on every monster |
+| `map_monster_damage` | global MORE damage on every monster |
+| `map_monster_resist` | monsters gain typed resistance |
+| `map_monster_speed` | faster monsters |
+| `map_extra_elemental` | monsters deal a slice of extra fire/cold/lightning |
+| `map_pack_magic` / `map_pack_rare` | packs roll magic / a rare leads, more often |
+| `map_area_level` | raises the instance level (nastier mobs, higher-ilvl drops) |
+| `map_player_max_resist` | lowers the runner's max resistances for the run |
+| `map_player_less_recovery` | the runner's flask/regen recovery is reduced |
+
+**Many tiers, ilvl-gated.** Each affix has a deep tier ladder; each tier is gated
+by an item-level requirement, so a higher-tier chart (higher `item_level`) rolls
+higher, nastier tiers — the exact gear-affix mechanism. Illustrative ladder for
+`map_monster_life`:
+
+| Tier | ilvl req | more life |
 |---|---|---|
-| `map_pack_size` | +12% / +20% / +30% | more packs scattered |
-| `map_monster_life` | +20% / +35% / +55% | global MORE life on every monster |
-| `map_monster_damage` | +15% / +25% / +40% | global MORE damage on every monster |
-| `map_area_level` | +1 / +2 | raises `zone_level` above the base tier |
-| `map_extra_portals` | +1 (rare: +2) | more lives for the run |
+| 1 | 1 | +25% |
+| 2 | 12 | +40% |
+| 3 | 25 | +60% |
+| 4 | 40 | +85% |
+| 5 | 58 | +115% |
+| 6 | 75 | +150% |
 
-**Reward (suffixes) — more loot:**
+### Reward is derived from danger
+A map's **item quantity** and **item rarity** are **not rolled affixes** — they
+are a **stat on the map, computed from its danger.** Every affix contributes some
+quantity and some rarity, scaled by its tier; those sum (over a small base) into
+the map's derived `item_quantity` / `item_rarity`, which become the runner's find
+factors *inside that instance only*. So:
 
-| Mod | Tiers | Effect |
-|---|---|---|
-| `map_item_quantity` | +20% / +40% / +60% | the runner's quantity find inside |
-| `map_item_rarity` | +15% / +30% / +50% | the runner's rarity find inside |
-| `map_pack_magic` | +% | per-pack chance to roll magic |
-| `map_pack_rare` | +% | per-pack chance a rare leads |
-| `map_currency_find` | +% | obol drop weight |
+- more affixes → more reward;
+- higher-tier (nastier) affixes → more reward;
+- a white chart pays little; a fully-rolled, high-tier rare chart pays a lot.
 
-**Risk-for-reward (suffixes) — harder, but charts that carry these tend to roll
-fatter reward mods:**
+The chase is clean: craft a chart as dangerous as you can survive, and the reward
+follows automatically — there is no separate "good mod" competing for slots.
+*(Exactly how much quantity/rarity each affix/tier contributes is a balance pass —
+TODO; the mechanism is a per-tier `quant_contribution` + `rarity_contribution` on
+each affix def, summed at open time.)*
 
-| Mod | Tiers | Effect |
-|---|---|---|
-| `map_monster_resist` | +20% / +30% / +40% | monsters gain typed resistance |
-| `map_player_max_resist` | −2% / −4% | the runner's max resistances are lowered for the run |
-
-`MapMods` mapping: `pack_size`/`pack_*` set the instance's pack count and rarity
-rolls; `monster_life`/`monster_damage`/`monster_resist` stack a MORE multiplier
-on top of the def's level-scaled stats; `item_quantity`/`item_rarity`/
-`currency_find` fold into the runner's find factors *inside the instance only*;
-`area_level` adds to `zone_level`; `extra_portals` adds to the run's portal
-count; `player_max_resist` applies a temporary debuff for the duration.
+**`MapMods` at open time:** the roller's result is scanned by `Stat` into a
+`MapMods` value the instance reads — `pack_size`/`pack_*` set pack count + rarity
+rolls; `monster_*` stack MORE multipliers on the def's level-scaled stats;
+`area_level` adds to `zone_level`; `player_*` apply run-duration debuffs; and the
+**derived** `item_quantity`/`item_rarity` set the in-instance find factors.
+(Lives are not a rolled affix — a "more portals" mod would *reduce* danger and
+break the model; portals come from the base + the atlas tree, §5.)
 
 ---
 
@@ -116,7 +142,9 @@ Opening a map creates one ephemeral, per-owner zone instance.
   count and rarity scaled by the map's `pack_size`/`pack_magic`/`pack_rare` mods;
   monster stats take the map's MORE multipliers. The map's **boss** is spawned at
   the arena (a unique, or a juiced generated rare at higher tiers).
-- **Portals (lives).** The run starts with `base_portals + map_extra_portals`.
+- **Portals (lives).** The run starts with `base_portals` (+ any atlas-tree
+  bonus, §5) — portals are deliberately *not* a rolled affix (a "more lives" mod
+  would reduce danger and break the danger-derives-reward model).
   Each **death** or **mid-run bot redeploy** consumes one portal and ejects the
   runner to the device; re-entry (within the lifecycle's grace window) resumes the
   same instance with the remaining portals. **0 portals ⇒ the run is over:** the
@@ -150,9 +178,10 @@ town is a shared, high-occupancy world; the device is where they launch from).
 ## 5. The ladder & atlas progression
 
 - **Maps sustain maps.** An instance drops map bases weighted toward its own
-  tier, with a chance — scaled by the runner's quantity find and atlas
-  progression — to drop the **next** tier. Baseline drop rates target ≥1 map per
-  map cleared at the boss, so a competent runner climbs rather than runs dry.
+  tier, with a chance — scaled by the map's derived quantity (so a more dangerous
+  chart sustains better) and by atlas progression — to drop the **next** tier.
+  Baseline drop rates target ≥1 map per map cleared at the boss, so a competent
+  runner climbs rather than runs dry.
 - **Bosses are the completion mark.** Every map ends at a boss; killing it is the
   run's headline reward (a hoard juiced by the map's quantity/rarity) and what
   unlocks higher tiers. **Pinnacle bosses** sit behind keys assembled from
@@ -161,8 +190,9 @@ town is a shared, high-occupancy world; the device is where they launch from).
 - **The atlas passive tree** is a **second, per-character tree**, separate from
   the build tree, earned by map completions and spent on *how you map* rather than
   on the character's body — e.g. "+pack size on all maps", "weight a specific
-  content type", "access tier N+", "bosses drop +quantity", "chance not to consume
-  a map". It is endless horizontal sidegrade: you re-weight your atlas, you never
+  content type", "access tier N+", "bosses drop +quantity", "+1 portal on all
+  maps", "chance not to consume a map". It is endless horizontal sidegrade: you
+  re-weight your atlas, you never
   reroll a character. (This is Arc 1 of the one-character long game,
   `one-character.md`.)
 
