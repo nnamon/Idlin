@@ -185,9 +185,14 @@ PoE-style prefix/suffix items:
 - **Rare**: 3–5 affixes (≤3 prefixes, ≤3 suffixes) and a generated
   two-word name drawn from `content/naming.ron` word pools ("Vile
   Thorns"); displays carry the base in parentheses.
-- **Unique**: fixed-name, fixed-affix items are planned; until real
-  unique defs exist they roll like extra-affix rares with generated
-  names.
+- **Unique**: authored items with a fixed name and a hand-set mod list,
+  defined in `content/uniques/*.ron` (built on an existing base, with a
+  `req_level`, a `drop_level` gate, and rolled-range `mods`). When the
+  roller lands on Unique rarity it picks a real unique whose `drop_level`
+  the killer's level clears; if NONE are eligible the roll fizzles —
+  nothing drops (no rare cosplaying in orange). A unique's mods bake onto
+  the instance as fixed grants (no affix tiers), fold into derived stats
+  exactly like affixes, and its `req_level` gates equipping it.
 
 Worn rarity reads on the character: magic/rare/unique gear and weapons
 carry a tier-colored emissive glow on the worn mesh. Idlers with an

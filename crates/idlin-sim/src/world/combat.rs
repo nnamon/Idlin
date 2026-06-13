@@ -2038,6 +2038,8 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_grants: Vec::new(),
+                req_level: 0,
             });
         }
         let c = e.combat.as_mut().unwrap();
@@ -2466,6 +2468,8 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_grants: Vec::new(),
+                    req_level: 0,
                 });
             e.combat.as_mut().unwrap().mana = 100;
         };

@@ -268,6 +268,8 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_grants: Vec::new(),
+                req_level: 0,
             });
         }
         world.refresh_derived_stats(slot);
@@ -359,6 +361,122 @@ mod tests {
             !events
                 .iter()
                 .any(|e| matches!(e, super::SimEvent::BuildRejected { .. }))
+        );
+    }
+
+    /// A unique's BAKED grants drive derived stats, and its req_level
+    /// gates equipping it — the two folds the loot pipeline relies on (#6).
+    #[test]
+    fn unique_grants_apply_and_gate_equip() {
+        use crate::stats::{Grant, Layer, Stat};
+        let (mut world, slot) = world_with_pupil();
+        let weapon_slot = idlin_content::GearSlot::Weapon.idx();
+        let cleaver = world
+            .content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+
+        // A level-4 pupil with no weapon: capture the baseline.
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .level = 4;
+        world.refresh_derived_stats(slot);
+        let base_life = world
+            .zone
+            .get(slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .life_max;
+        let (base_str, ..) = world.attribute_totals(slot, None);
+
+        // A unique cleaver granting +50 STR and +40 life, at a given req.
+        let make = |req_level: u32| crate::entity::Item {
+            base_idx: cleaver,
+            rarity: crate::entity::Rarity::Unique,
+            item_level: 4,
+            affixes: Vec::new(),
+            name: "Saltgrip".into(),
+            charges: 0,
+            unique_grants: vec![
+                Grant {
+                    stat: Stat::Strength,
+                    layer: Layer::Added,
+                    value: 50,
+                },
+                Grant {
+                    stat: Stat::Life,
+                    layer: Layer::Added,
+                    value: 40,
+                },
+            ],
+            req_level,
+        };
+
+        // Equip at met req (level 4 >= 4): grants fold into stats.
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .equipment[weapon_slot] = Some(make(4));
+        world.refresh_derived_stats(slot);
+        let (str_now, ..) = world.attribute_totals(slot, None);
+        assert_eq!(
+            str_now,
+            base_str + 50,
+            "unique STR grant folds into attributes"
+        );
+        let life_now = world
+            .zone
+            .get(slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .life_max;
+        assert!(
+            life_now > base_life,
+            "unique Life grant folds into derived life ({life_now} vs {base_life})"
+        );
+
+        // The gate: a req_level-9 unique on a level-4 pupil is refused...
+        assert!(
+            !world.meets_requirements(slot, &make(9), Some(weapon_slot)),
+            "req_level 9 > level 4 must be refused"
+        );
+        // ...and if forced on, revalidation sheds it.
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .equipment[weapon_slot] = Some(make(9));
+        let mut events = Vec::new();
+        world.enforce_gear_requirements(slot, &mut events);
+        assert!(
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .equipment[weapon_slot]
+                .is_none(),
+            "an under-level unique is shed on revalidation"
         );
     }
 }

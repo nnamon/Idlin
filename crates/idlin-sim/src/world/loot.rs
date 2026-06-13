@@ -237,6 +237,8 @@ impl World {
             name: String::new(),
             // A fresh flask is a full flask.
             charges: self.content.items[base_idx as usize].flask_charges,
+            unique_grants: Vec::new(),
+            req_level: 0,
         };
         roll_affixes(
             &self.content,
@@ -282,11 +284,35 @@ impl World {
         } else {
             Rarity::Unique
         };
-        // A unique roll with NOTHING in the unique pool drops nothing —
-        // PoE-accurate (and honest: no rare cosplaying in orange). The
-        // pool fills when UniqueDefs land (task #68).
+        // A unique roll resolves a REAL authored unique from the eligible
+        // pool (drop_level <= this mob's level). An empty eligible pool
+        // fizzles — PoE-accurate and honest: a high-level unique simply
+        // can't drop from a low mob; nothing cosplays in orange (#6).
         if rarity == Rarity::Unique {
-            return None;
+            let total: u32 = self
+                .content
+                .uniques
+                .iter()
+                .filter(|u| u.drop_level <= monster_level)
+                .map(|u| u.weight)
+                .sum();
+            if total == 0 {
+                return None;
+            }
+            let mut roll = self.rng_loot.next_range(total);
+            let mut picked = None;
+            for (i, u) in self.content.uniques.iter().enumerate() {
+                if u.drop_level > monster_level {
+                    continue;
+                }
+                if roll < u.weight {
+                    picked = Some(i);
+                    break;
+                }
+                roll -= u.weight;
+            }
+            // total > 0 guarantees a pick; the unwrap can't trip.
+            return Some(self.build_unique(picked.unwrap(), monster_level));
         }
         // PoE-style prefix/suffix budgets: magic carries at most one of
         // each; rare and unique up to three of each.
@@ -304,6 +330,8 @@ impl World {
             name: String::new(),
             // A fresh flask is a full flask.
             charges: self.content.items[base_idx as usize].flask_charges,
+            unique_grants: Vec::new(),
+            req_level: 0,
         };
         roll_affixes(
             &self.content,
@@ -314,6 +342,49 @@ impl World {
         );
         item.name = compose_name(&self.content, &mut self.rng_loot, &item);
         Some(item)
+    }
+
+    /// Build a concrete unique from its def: resolve the base, roll each
+    /// fixed mod in `min..=max` (one rng_loot draw per mod, in order),
+    /// and bake the grants onto the Item. Self-contained — no index into
+    /// any content table survives onto the instance.
+    fn build_unique(&mut self, uidx: usize, monster_level: u32) -> Item {
+        // Read everything off the def into locals FIRST so we don't hold
+        // `&self.content` across the `&mut self.rng_loot` draws below.
+        let (base_idx, name, charges, mods) = {
+            let u = &self.content.uniques[uidx];
+            let base_idx = self
+                .content
+                .item_idx(&u.base)
+                .expect("unique base validated at content load") as u32;
+            (
+                base_idx,
+                u.name.clone(),
+                self.content.items[base_idx as usize].flask_charges,
+                u.mods.clone(),
+            )
+        };
+        let req_level = self.content.uniques[uidx].req_level;
+        let mut unique_grants = Vec::with_capacity(mods.len());
+        for m in &mods {
+            let span = (m.max - m.min).max(0) as u32 + 1;
+            let value = m.min + self.rng_loot.next_range(span) as i64;
+            unique_grants.push(crate::stats::Grant {
+                stat: m.stat,
+                layer: m.layer,
+                value,
+            });
+        }
+        Item {
+            base_idx,
+            rarity: Rarity::Unique,
+            item_level: monster_level,
+            affixes: Vec::new(),
+            name,
+            charges,
+            unique_grants,
+            req_level,
+        }
     }
 
     /// Spend one obol on a bag item. Returns 0, −1 (bad indices / no
@@ -671,7 +742,7 @@ mod tests {
                         base
                     );
                 }
-                Rarity::Rare | Rarity::Unique => {
+                Rarity::Rare => {
                     assert!(prefixes <= 3 && suffixes <= 3);
                     assert!(
                         !item.name.contains(base.as_str()),
@@ -685,10 +756,135 @@ mod tests {
                         item.name
                     );
                 }
+                Rarity::Unique => {
+                    // Authored uniques: a fixed name and a baked grant
+                    // list, no rolled affixes (#6). At monster_level 5 the
+                    // coast uniques (drop_level <= 4) are eligible and DO
+                    // roll here — so this arm now actually fires.
+                    assert!(item.affixes.is_empty(), "uniques carry no affixes");
+                    assert!(
+                        !item.unique_grants.is_empty(),
+                        "a unique without grants is broken: {}",
+                        item.name
+                    );
+                    assert!(!item.name.is_empty(), "uniques have authored names");
+                    assert!(
+                        content.uniques.iter().any(|u| u.name == item.name),
+                        "unique name must come from the authored pool: {}",
+                        item.name
+                    );
+                }
             }
         }
         // The sample must actually cover the tiers we assert about.
         assert!(seen[0] > 100 && seen[1] > 50 && seen[2] > 10, "{seen:?}");
+    }
+
+    /// A unique roll at a mob level that clears a unique's drop gate
+    /// resolves a REAL authored unique: fixed name, baked grants in range,
+    /// no rolled affixes. Boost the rarity factor so uniques surface fast.
+    #[test]
+    fn unique_drops_resolve_from_the_pool() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        assert!(!content.uniques.is_empty(), "test needs authored uniques");
+        let mut world = World::new(0x171FA, &content);
+        let mut uniques_seen = 0;
+        for _ in 0..20000 {
+            // monster_level 5 clears the coast uniques (drop_level <= 4);
+            // a fat rarity factor makes the Unique branch fire often.
+            let Some(LootPayload::Gear(item)) = world.roll_drop(5, 2_000_000) else {
+                continue;
+            };
+            if item.rarity != Rarity::Unique {
+                continue;
+            }
+            uniques_seen += 1;
+            assert!(item.affixes.is_empty(), "uniques carry no rolled affixes");
+            assert!(!item.unique_grants.is_empty(), "a unique must have grants");
+            let def = content
+                .uniques
+                .iter()
+                .find(|u| u.name == item.name)
+                .unwrap_or_else(|| panic!("unknown unique name {}", item.name));
+            assert_eq!(item.req_level, def.req_level, "instance req = def req");
+            assert!(def.drop_level <= 5, "only eligible uniques may drop here");
+            // Each baked grant matches a def mod and rolled inside its range.
+            for g in &item.unique_grants {
+                let m = def
+                    .mods
+                    .iter()
+                    .find(|m| m.stat == g.stat && m.layer == g.layer)
+                    .expect("grant must come from a def mod");
+                assert!(
+                    g.value >= m.min && g.value <= m.max,
+                    "grant {:?} {} out of [{}, {}]",
+                    g.stat,
+                    g.value,
+                    m.min,
+                    m.max
+                );
+            }
+        }
+        assert!(uniques_seen > 0, "no unique ever rolled in 20k draws");
+    }
+
+    /// The user-locked fizzle: below every unique's drop level, a Unique
+    /// rarity roll produces NOTHING — even with the rarity factor pinned
+    /// so the roller keeps trying to hand out an orange.
+    #[test]
+    fn unique_fizzles_when_no_eligible_unique() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let min_drop = content.uniques.iter().map(|u| u.drop_level).min().unwrap();
+        assert!(min_drop > 0, "test assumes the lowest unique gates above 0");
+        let mut world = World::new(0xF1228E, &content);
+        for _ in 0..20000 {
+            if let Some(LootPayload::Gear(item)) = world.roll_drop(min_drop - 1, 2_000_000) {
+                assert_ne!(
+                    item.rarity,
+                    Rarity::Unique,
+                    "a unique dropped below every drop gate: {}",
+                    item.name
+                );
+            }
+        }
+    }
+
+    /// The two new Item fields survive a postcard round-trip (the same
+    /// serialization snapshots use) — so the hash fold and persistence
+    /// stay honest.
+    #[test]
+    fn unique_item_postcard_round_trips() {
+        use crate::entity::Item;
+        use crate::stats::{Grant, Layer, Stat};
+        let item = Item {
+            base_idx: 3,
+            rarity: Rarity::Unique,
+            item_level: 7,
+            affixes: Vec::new(),
+            name: "Saltgrip".into(),
+            charges: 0,
+            unique_grants: vec![
+                Grant {
+                    stat: Stat::DamagePhys,
+                    layer: Layer::Added,
+                    value: 14,
+                },
+                Grant {
+                    stat: Stat::Strength,
+                    layer: Layer::Added,
+                    value: 11,
+                },
+            ],
+            req_level: 4,
+        };
+        let bytes = postcard::to_allocvec(&item).expect("serialize");
+        let back: Item = postcard::from_bytes(&bytes).expect("deserialize");
+        assert_eq!(back.req_level, 4);
+        assert_eq!(back.unique_grants.len(), 2);
+        assert_eq!(back.unique_grants[0].stat, Stat::DamagePhys);
+        assert_eq!(back.unique_grants[0].value, 14);
+        assert_eq!(back.unique_grants[1].stat, Stat::Strength);
+        assert_eq!(back.name, "Saltgrip");
     }
 }
 
@@ -714,6 +910,8 @@ mod craft_tests {
             affixes: Vec::new(),
             name: content.items[base_idx as usize].name.clone(),
             charges: 0,
+            unique_grants: Vec::new(),
+            req_level: 0,
         };
         (content, rng, item)
     }

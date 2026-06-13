@@ -105,6 +105,51 @@ fn main() {
     }
     write("currency.md", s);
 
+    // -- uniques: the authored chase items and their fixed mods --
+    let mut s = String::from(
+        "# Uniques\n\nGenerated from content/ — do not edit.\n\nEach drops when the loot \
+         roller lands on Unique rarity AND the killer's level ≥ the unique's drop level; \
+         otherwise the roll fizzles (nothing drops).\n\n",
+    );
+    for u in &db.uniques {
+        let base = db
+            .items
+            .iter()
+            .find(|i| i.id == u.base)
+            .map(|i| i.name.as_str())
+            .unwrap_or(&u.base);
+        let _ = writeln!(
+            s,
+            "## {} — *{}* ({})\n",
+            u.name,
+            if u.flavor.is_empty() {
+                "—"
+            } else {
+                &u.flavor
+            },
+            base,
+        );
+        let _ = writeln!(
+            s,
+            "Req level {} · drops at level {}+ · weight {}\n",
+            u.req_level, u.drop_level, u.weight
+        );
+        let _ = writeln!(s, "| stat | layer | min | max |");
+        let _ = writeln!(s, "|---|---|---|---|");
+        for m in &u.mods {
+            let _ = writeln!(
+                s,
+                "| {:?} | {:?} | {} | {} |",
+                m.stat, m.layer, m.min, m.max
+            );
+        }
+        let _ = writeln!(s);
+    }
+    if db.uniques.is_empty() {
+        let _ = writeln!(s, "_No uniques authored yet._\n");
+    }
+    write("uniques.md", s);
+
     let mut s = String::from("# Monsters\n\nGenerated from content/ — do not edit.\n\n");
     for m in &db.monsters {
         let _ = writeln!(s, "## {}\n\n```\n{:#?}\n```\n", m.id, m);
@@ -197,7 +242,7 @@ fn main() {
 
     let index = "# Idlin wiki\n\nGenerated from the RONs by `cargo run -p idlin-content --bin wiki`.\n\n\
         - [Item bases](items.md)\n- [Affixes by pool](affixes.md)\n- [Gems](gems.md)\n\
-        - [Currency](currency.md)\n- [Monsters](monsters.md)\n- [Tilesets](tilesets.md)\n\
+        - [Currency](currency.md)\n- [Uniques](uniques.md)\n- [Monsters](monsters.md)\n- [Tilesets](tilesets.md)\n\
         - [Zones](zones.md)\n- [Passive tree](tree.md)\n";
     write("README.md", index.to_string());
 }

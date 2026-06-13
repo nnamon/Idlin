@@ -1,0 +1,19 @@
+// Tideskin — kelp armour cured by a cold that never fully leaves it. It
+// keeps the chill out by holding a little of it against your skin.
+UniqueDef(
+    id: "tideskin",
+    name: "Tideskin",
+    base: "kelp_vest",
+    flavor: "Cold can be worn, if you wear it first.",
+    req_level: 4,
+    drop_level: 3,
+    weight: 100,
+    mods: [
+        // Flat life — a survivable early chest.
+        (stat: life, layer: added, min: 20, max: 35),
+        // Cold resistance (basis points; 1000 = 10%).
+        (stat: resist_cold, layer: added, min: 800, max: 1400),
+        // A touch of movement speed (basis points of increase).
+        (stat: move_speed, layer: increased, min: 400, max: 800),
+    ],
+)

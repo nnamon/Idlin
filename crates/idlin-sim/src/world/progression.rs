@@ -205,6 +205,11 @@ impl World {
                     value: ra.value,
                 });
             }
+            // Uniques bake their fixed mods as Grants directly (no affix
+            // table to look through) — fold them the same way.
+            for g in &item.unique_grants {
+                sheet.apply(g);
+            }
             if i == GearSlot::Weapon.idx() {
                 weapon = Some(item);
             } else {

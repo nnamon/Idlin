@@ -57,6 +57,8 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
+    #[error("unique `{unique}`: {msg}")]
+    BadUnique { unique: String, msg: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -383,6 +385,40 @@ pub struct CurrencyDef {
     /// Display tier 0..3 — pillar/ticker color (rarer verbs glow louder).
     #[serde(default)]
     pub tier: u8,
+}
+
+/// An authored UNIQUE item: a fixed name and a hand-set mod list built
+/// on an existing base. Rolls one of these when the loot roller lands on
+/// Unique rarity and an eligible unique exists; an empty eligible pool
+/// fizzles (the user-locked rule — nothing cosplays in orange).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UniqueDef {
+    pub id: String,
+    /// The unique's fixed display name ("Saltgrip").
+    pub name: String,
+    /// ItemDef id this unique is built on (validated at load).
+    pub base: String,
+    /// Lore line (shown in the sheet/wiki).
+    #[serde(default)]
+    pub flavor: String,
+    /// Level required to EQUIP it.
+    pub req_level: u32,
+    /// Minimum monster level that may DROP it (the eligibility gate).
+    pub drop_level: u32,
+    /// Pick weight within the eligible unique pool.
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    pub mods: Vec<UniqueMod>,
+}
+
+/// One rolled-range mod on a unique. Unlike affixes these carry no pool
+/// or tier — a unique's mods are fixed by design, rolled in `min..=max`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UniqueMod {
+    pub stat: Stat,
+    pub layer: Layer,
+    pub min: i64,
+    pub max: i64,
 }
 
 /// The fixed set of things player bots may SAY (speech bubbles) — bots
@@ -1019,6 +1055,8 @@ pub struct ContentDb {
     pub naming: NamingDef,
     /// Sorted by id. Currency is COUNTED, not bag-stored.
     pub currency: Vec<CurrencyDef>,
+    /// Sorted by id. Authored uniques the loot roller can resolve.
+    pub uniques: Vec<UniqueDef>,
     /// Player-sayable speech lines (speech.ron).
     pub speech: SpeechDef,
     /// Sorted by id.
@@ -1300,6 +1338,9 @@ impl ContentDb {
             } else if rel_str.starts_with("currency/") {
                 db.currency
                     .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("uniques/") {
+                db.uniques
+                    .push(ron::from_str::<UniqueDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("tilesets/") {
                 db.tilesets
                     .push(ron::from_str::<TilesetDef>(&text).map_err(parse_err)?);
@@ -1371,6 +1412,7 @@ impl ContentDb {
         db.zones.sort_by(|a, b| a.id.cmp(&b.id));
         db.items.sort_by(|a, b| a.id.cmp(&b.id));
         db.currency.sort_by(|a, b| a.id.cmp(&b.id));
+        db.uniques.sort_by(|a, b| a.id.cmp(&b.id));
         db.tilesets.sort_by(|a, b| a.id.cmp(&b.id));
         db.attach_maps(pending_maps, pending_props)?;
         for w in db.items.windows(2) {
@@ -1620,6 +1662,36 @@ impl ContentDb {
                         return Err(bad(format!("duplicate support `{}`", sup_ref.gem)));
                     }
                     seen.push(&sup_ref.gem);
+                }
+            }
+        }
+        for w in db.uniques.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "uniques/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
+        for u in &db.uniques {
+            if db.item_idx(&u.base).is_none() {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("unknown base `{}`", u.base),
+                });
+            }
+            if u.mods.is_empty() {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: "has no mods".into(),
+                });
+            }
+            for m in &u.mods {
+                if m.min > m.max {
+                    return Err(ContentError::BadUnique {
+                        unique: u.id.clone(),
+                        msg: format!("mod {:?} has min > max ({} > {})", m.stat, m.min, m.max),
+                    });
                 }
             }
         }

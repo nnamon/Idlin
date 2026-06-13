@@ -204,6 +204,15 @@ pub struct Item {
     /// flask_charges; kills refill while equipped).
     #[serde(default)]
     pub charges: u32,
+    /// Uniques only: the rolled fixed mods, baked in as self-contained
+    /// Grants (no index into any content table — nothing to pin). Empty
+    /// for non-uniques. Folded into derived stats exactly like affixes.
+    #[serde(default)]
+    pub unique_grants: Vec<crate::stats::Grant>,
+    /// Instance LEVEL requirement override (uniques set this to the
+    /// UniqueDef's req_level). 0 = derive from base/affixes as usual.
+    #[serde(default)]
+    pub req_level: u32,
 }
 
 /// An item sitting in the bag grid at (x, y); footprint comes from its base.

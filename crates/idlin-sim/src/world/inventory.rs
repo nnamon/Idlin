@@ -144,6 +144,12 @@ impl World {
                     value: ra.value,
                 });
             }
+            // A unique's grants count toward the attributes it may itself
+            // demand — fold them here too, or a unique that supplies the
+            // STR/DEX/INT it needs could never satisfy its own requirement.
+            for g in &item.unique_grants {
+                sheet.apply(g);
+            }
         }
         (
             sheet.value(Stat::Strength, 0),
@@ -163,6 +169,9 @@ impl World {
                 req = req.max(t.ilvl);
             }
         }
+        // A unique's authored req_level gates it (uniques carry no affix
+        // tiers; their req comes from the instance field).
+        req = req.max(item.req_level);
         req
     }
 
@@ -361,6 +370,11 @@ impl World {
                 layer: a.layer,
                 value: ra.value,
             });
+        }
+        // Score a unique on its baked grants too — otherwise EquipBest
+        // rates the chase item on its bare base and bots never wear it.
+        for g in &item.unique_grants {
+            sheet.apply(g);
         }
         if def.slot == GearSlot::Flask {
             // Bigger heals win; charges are state, not quality.

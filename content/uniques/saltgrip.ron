@@ -1,0 +1,19 @@
+// Saltgrip — a cleaver some drowned butcher never let go of. The grip
+// has fused to bone and brine; it bites deep and drinks what it spills.
+UniqueDef(
+    id: "saltgrip",
+    name: "Saltgrip",
+    base: "rusted_cleaver",
+    flavor: "They buried the hand still holding it.",
+    req_level: 4,
+    drop_level: 3,
+    weight: 100,
+    mods: [
+        // Heavy flat phys — nearly doubles the rusted cleaver's bite.
+        (stat: damage_phys, layer: added, min: 10, max: 18),
+        // A little life leech (basis points of damage dealt).
+        (stat: leech_life, layer: added, min: 100, max: 250),
+        // Raw strength to swing it.
+        (stat: strength, layer: added, min: 8, max: 14),
+    ],
+)

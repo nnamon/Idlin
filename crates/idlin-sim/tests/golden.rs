@@ -10,7 +10,9 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0x2F83_F385_2C72_7695;
+/// Moved for #6: authored uniques/*.ron change content_hash (folded into
+/// state_hash) + the Item shape gained unique_grants/req_level.
+const GOLDEN_HASH: u64 = 0x65DD_B627_28BA_9076;
 
 #[test]
 fn golden_replay() {

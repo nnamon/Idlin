@@ -1,0 +1,19 @@
+// Drowned Star — a barnacle wand with a dead light caught in its tip,
+// the way deep water keeps the memory of a thing that fell into it.
+UniqueDef(
+    id: "drowned_star",
+    name: "Drowned Star",
+    base: "barnacle_wand",
+    flavor: "It still points at a sky it can no longer see.",
+    req_level: 4,
+    drop_level: 4,
+    weight: 100,
+    mods: [
+        // Flat lightning damage for the caster who finds it.
+        (stat: damage_lightning, layer: added, min: 8, max: 16),
+        // Faster casting (basis points of increase).
+        (stat: cast_speed, layer: increased, min: 600, max: 1000),
+        // A deeper mana pool to spend.
+        (stat: mana, layer: added, min: 15, max: 30),
+    ],
+)

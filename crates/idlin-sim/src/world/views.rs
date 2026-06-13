@@ -405,6 +405,13 @@ impl World {
                 h.write_u32(ra.affix_idx);
                 h.write_i64(ra.value);
             }
+            h.write_u64(item.unique_grants.len() as u64);
+            for g in &item.unique_grants {
+                h.write_u8(g.stat as u8);
+                h.write_u8(g.layer as u8);
+                h.write_i64(g.value);
+            }
+            h.write_u32(item.req_level);
         };
         for (slot, e) in self.zone.iter() {
             h.write_u64(slot as u64);
