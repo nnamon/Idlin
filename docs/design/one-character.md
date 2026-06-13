@@ -131,6 +131,39 @@ body re-shapeable; **the Atlas** gives that body somewhere infinite to go; and
 **the Bot** ladder turns *driving it well* into progression. Four threads, one
 idler, weeks of tending. That is the long game.
 
+## Breadth — parallel endgame systems (future direction)
+
+The three arcs are *depth*; the endgame also wants *breadth* — parallel systems
+that give the same idler different things to do. The governing rule, so breadth
+never fragments the one-character focus:
+
+> **A parallel system must tie into the maps loop both ways** — the main loop
+> feeds it a resource, and it feeds a reward back that improves your mapping —
+> and it must offer a **different moment-to-moment feel** while **reusing the
+> engine** (the instance lifecycle, the danger→reward model, bot-driven, and
+> watchable on the broadcast). A self-contained minigame competes with the spine;
+> a two-way-tied system deepens it. (This is how PoE's league mechanics all plug
+> into the atlas.)
+
+Two candidates, both future:
+
+- **The descent (a Delve-analog).** An infinite, linearly-deepening parallel
+  track — thematically an abyssal trench for the drowned world. Fed by a resource
+  dropped while mapping; spent to descend; **depth is the danger/reward dial**
+  (the same model maps use), and it feeds back a descent-only crafting material or
+  unique that improves mapping. Its *feel* is the opposite of maps — a relentless
+  one-way crawl into the dark (light-radius / pressure tension) rather than an
+  open arena. Mechanically it is "just another instance type" + another danger
+  curve, bot-driven, and excellent broadcast (a deep dive is drama).
+- **Lifestyle grinds (fishing, gathering, etc.) — later texture.** Low-APM and
+  idle-friendly by nature, **bot-driven** (you code your idler to fish), and they
+  reinforce the *living world* on the broadcast (idlers fishing the shore, mining
+  the deep — life beyond combat). A light tie-in (catches yield crafting mats / a
+  map mod / a rare line) keeps them from being busywork, but they are explicitly
+  flavor, post-atlas.
+
+This is breadth direction, not a committed arc — tracked in its own issue.
+
 ## Parked, deliberately
 
 - **Prestige / rebirth.** Rewards *ending* a character — directly against
