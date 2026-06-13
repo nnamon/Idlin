@@ -1,321 +1,360 @@
 # Persistent server: identity, character lifecycle, and the living world
 
-Status: **design RFC for review.** Supersedes the rejected #7 approach (which
-moved a demo roster into content and called it architecture). This settles *how
-Idlin becomes a real persistent server* — where characters come from, how they
-persist, how players attach to them, how the world set is shaped — before any of
-it is built.
+Status: **design RFC (v4), for review.** Supersedes the rejected #7 approach
+(which moved a demo roster into content and called it architecture). The model is
+settled; this revision hardens it against two independent heavy reviews.
 
-> This is the v2 of this doc. A heavy architecture review killed v1's central
-> thesis (a "character store as system-of-record, worlds as a flushed cache")
-> as **provably false** — a character bundle does not contain a world's RNG
-> streams, tick, live monsters, loot, or zone-brain state, all of which the
-> determinism hash folds, so "worlds are reconstructable from the store" cannot
-> be true. v2 inverts that: **the per-world snapshot stays the record for live
-> state; identity/routing is a thin index on top.** v1 also cited
-> `ManagedWorld::create` as a reusable seam — it exists only on the rejected #7
-> branch, not in trunk. v2 is grounded against `main`.
+> **Revision history.**
+> - **v1 — killed.** Thesis ("character store is system-of-record, worlds a
+>   flushed cache, worlds reconstructable from the store") was *provably false* —
+>   a `CharacterBundle` lacks the per-world RNG/tick/entity/zone-brain state the
+>   determinism hash folds — and it cited `ManagedWorld::create` as reusable infra
+>   when that exists only on the rejected #7 branch.
+> - **v2** — inverted the model (world snapshot = record; thin index on top),
+>   re-grounded against `main`.
+> - **v3** — folded in the live-review decisions (sharded demand-driven zones,
+>   frozen 15-min instances, native pluggable accounts, the lifecycle).
+> - **v4 (this)** — fixes the blockers found by *two* independent reviewers
+>   (Opus + GPT-5.5-xhigh, which converged): the "free-floating loot" falsehood,
+>   the inverted tutorial anti-farm gate, an underspecified/unsafe transfer
+>   protocol, the hand-waved ownership service, the non-existent
+>   `max_players` auto-instancing (the real behavior is a data-loss bug),
+>   over-claimed efficiency/latency, and migration ordering that stranded crash
+>   isolation. Honesty markers: claims about existing code are grounded against
+>   `main`; everything else is labelled net-new or future.
 
 ## 0. The realization that drives everything
 
 **Idlin is an idle game on a broadcast.** Two consequences:
 
-1. **The population is the set of registered CHARACTERS, not connected
-   viewers.** Your idler grinds while you sleep; the stream shows a living world
-   whether or not its inhabitants watch. "A player joins" means **registering a
-   character**; "a player connects" means **attaching to spectate/manage** an
-   already-running one. The current server has no notion of either — the only
-   way a character exists is a hardcoded boot roster.
-2. **Compute scales with simulated characters, not viewers.** This is the
-   central engineering reality and the main risk (§4, §7).
+1. **Population = registered CHARACTERS, not connected viewers.** Idlers grind
+   while you sleep; the stream shows a living world regardless of who's watching.
+   "Join" = register a character; "connect" = attach to spectate/manage one.
+   **Idlers are always somewhere — they never park**; a character is always in
+   some zone, always simulated.
+2. **Therefore compute ≈ active characters, and the ONLY scaling lever is
+   horizontal sharding** (spread zones across cores/processes/machines).
+   Demand-driven ticking and ephemeral maps are *efficiency/cleanup*, not a
+   scaling lever — since nobody parks, the aggregate doesn't shrink (see §4).
 
 ## 1. Where we are today (grounded against `main`)
 
-- **Topology.** `main.rs` builds, at boot: **two shared worlds with empty
-  pending** — `saltmere` (`main.rs:126-134`) and `coast` (`137-144`) — plus
-  **one private `withered_shore#<name>` instance per roster idler**, each with
-  that idler queued to join (`146-167`). The roster is hardcoded
-  `["Kargan","Veles","Mirra"]` in `builtin_joins()` (`main.rs:53`).
-- **Resume already exists.** On boot, each world swaps in its snapshot if one
-  exists (content-hash gated), carries mid-ferry arrivals, and **suppresses a
-  builtin join for any name already resident anywhere** (`main.rs:168-203`). So
-  a finished idler who climbed to town stays in town on restart.
-- **A character** is created by a `JoinRequest { name, program }`
-  (`world/mod.rs:62`); `apply_joins` spawns a fresh **level-1** `CharacterState`
-  (`world/mod.rs:987`). Identity is the **name string** — no account, no
-  ownership.
-- **The portable record** is `CharacterBundle { character, program, persist,
-  params, bot_version }` (`world/mod.rs:72`). It is a **progression record**,
-  not a world snapshot: on arrival, `apply_joins` allocates a **new net_id**,
-  builds a **fresh bot RNG stream** from the destination seed, resets transient
-  VM registers (persist block restored), and clears `respawn_at`
-  (`world/mod.rs:1010-1049`). Level/xp/items/gear/tree/persist survive; runtime
-  identity is deliberately re-derived.
-- **Persistence (#9)** is **per-world**: `save_managed` postcard-serializes the
-  **whole `World`** (RNG streams, tick, monsters, loot, zone brain,
-  `pending_uses`, and every character) per world key, content-hash gated
-  (`persist.rs:48,76`). The durable invariant: *a character is in exactly one
-  world's state or pending list at any instant* (`persist.rs:7-9`). `SAVE_
-  EVERY_TICKS = 300`, plus a graceful-shutdown save.
-- **Determinism.** Pure sim: per-domain seeded RNG (`rng.rs`); `content_hash`
-  folded into `state_hash` along with `tick`, `next_net_id`, all four world RNG
-  `(state,inc)` pairs, and `pending_uses` (`views.rs:364-402`); the golden test
-  pins one `(seed, content, input-stream)`. No wall-clock, no unseeded RNG.
-- **Identity/auth: none.** `C2S::Hello` carries an unused `token: String`
-  (`protocol/lib.rs:473`); `Role` is hardcoded `Owner` (`main.rs:364`). `C2S` is
-  **read-only** — no deploy, no create, no write path. `IDLIN_RECORD` records
-  the **output** wire stream (a replay-for-viewing), **not** an input-log.
+- **Topology.** `main.rs` builds at boot: two shared worlds with empty pending —
+  `saltmere` (`main.rs:126-134`) and `coast` (`137-144`) — plus one private
+  `withered_shore#<name>` per roster idler, each with that idler queued to join
+  (`146-167`). Roster hardcoded `["Kargan","Veles","Mirra"]` (`main.rs:53`).
+- **Resume** swaps each world's snapshot in if present (content-hash gated),
+  carries mid-ferry arrivals, suppresses a builtin join for any name already
+  resident (`main.rs:168-203`).
+- **Character creation:** `JoinRequest { name, program }` (`world/mod.rs:62`) →
+  `apply_joins` spawns a fresh level-1 `CharacterState` (`world/mod.rs:987`).
+  Identity is the **name string**; `CharacterState` has no owner/account field —
+  only `name` (`entity.rs:267`).
+- **Portable record:** `CharacterBundle { character, program, persist, params,
+  bot_version }` (`world/mod.rs:72`) — a **progression record**, not a world
+  snapshot. Arrival re-derives net_id / bot RNG / VM registers (persist
+  restored), clears `respawn_at` (`world/mod.rs:1010-1049`).
+- **Persistence (#9)** is per-world: `save_managed` postcards the whole `World`
+  (RNG, tick, entities incl. loot, zone brain, `pending_uses`, characters), per
+  key, content-hash gated (`persist.rs:48,76`). Saves at the **post-ferry
+  boundary** (`runner.rs:186`); `pending_departures` is `#[serde(skip)]`
+  (`world/mod.rs:340`). So the durable invariant is **"a character is in exactly
+  one world's state-or-pending at every persistence boundary"** — not at every
+  in-tick instant. `SAVE_EVERY_TICKS = 300` + a graceful-shutdown save.
+- **Determinism.** Pure sim; per-domain seeded RNG; `state_hash` folds
+  content_hash + tick + next_net_id + all four world RNG `(state,inc)` pairs +
+  `pending_uses` + the entire entity graph incl. ground loot
+  (`views.rs:364-553`) — so a `CharacterBundle` **cannot** reconstruct a world.
+- **Identity/auth: none.** `C2S::Hello` has an unused `token` (`protocol/lib.rs
+  :473`); `Role` hardcoded `Owner` (`main.rs:364`). `C2S` is read-only. The
+  director's featured pick lives in replication (`replication.rs:249`) with a
+  most-characters fallback in `runner.rs:215` (corpses included); `main.rs:435-455`
+  only re-routes a *watcher's* subscription, not the director decision.
+  `IDLIN_RECORD` journals the **output** wire stream, not an input-log.
+- **Known current bug the design must fix, not inherit:** a ferry to a full or
+  unknown zone **silently drops the character** (`runner.rs:182`, "lost at sea")
+  — data loss. There is **no** `max_players`-driven auto-instancing today;
+  `ManagedWorld` is a bare struct with no `impl` on `main` (create/reap are
+  net-new; the `feat/07-world-layout` `ManagedWorld::create` is on the rejected
+  branch and not assumed here).
 
-The gap is not "the roster is hardcoded." It is: **there is no owned, persistent
-character with a lifecycle (create → attach → relocate → retire) decoupled from
-the boot roster, and no client→server write path to manage one.**
+Single-process today means dupes are impossible by construction (#9's single
+writer). That guarantee is what sharding must preserve (§6).
 
-## 2. The model (corrected)
+## 2. The model
 
-Two tiers, plus a thin index. The world tier already exists and is correct; we
-add identity/routing on top and a real lifecycle.
+A runtime world tier (exists) + an identity/routing store (near-term) that grows
+into a full ownership authority **only when we shard** (§6).
 
 ```
-   IDENTITY + ROUTING INDEX  (new, small)
-     player_id  ⇄  one character_id              ← identity (§3)
-     character_id → current world_key            ← routing/location
-     character_id → progression projection        ← UI/ladder, cheap copy
-   ──────────────────────────────────────────────
-   WORLD TIER  (exists; system of record for LIVE state)   (§4,§5)
-     ManagedWorlds tick the sim; per-world snapshots are
-     the durable record (RNG, tick, monsters, loot, brain,
-     AND the characters living in them). #9, unchanged.
+  IDENTITY / ROUTING / OWNERSHIP  (phased — see §6/§10)
+    Phase 1-4 (single process): account_id ⇄ [character_id] (cap 1),
+      character_id → world_key, projection. A simple durable store.
+    Phase 5+ (sharded): the SAME store gains owner_shard + epoch fencing and
+      the transfer state machine — the consistency authority for hand-offs.
+  ──────────────────────────────────────────────────────────────────────
+  WORLD TIER  (exists; system of record for LIVE state)
+    one shard = one ManagedWorld = one zone instance; per-world snapshot is
+    the durable record (RNG, tick, entities incl. loot, brain, characters).
+    #9 unchanged.
 ```
 
-**The per-world snapshot remains the system of record for live state** — it is
-the only thing that contains the RNG/tick/entity/zone-brain state a world needs
-to resume exactly (the property #9 already guarantees and tests). We do **not**
-make a character store authoritative; that was v1's false move.
+- **The per-world snapshot is the system of record for live state** — the only
+  thing carrying the RNG/tick/entity/brain state needed to resume exactly. We do
+  not make a character store authoritative (v1's false move).
+- **The store owns only what snapshots can't reconstruct:** the **account ↔
+  character binding** (nothing in sim state carries an owner today) and, once
+  sharded, the **owner_shard + epoch**. `character_id → world_key` and the UI
+  projection are *rebuildable* cache (scan snapshots). The ownership/fencing
+  role is **not near-term** — phases 1-4 are single-process and need only the
+  binding + routing.
 
-**The index is a thin identity/routing layer**, not a world-reconstruction
-source. Its only jobs:
-- **Identity binding:** `player_id ⇄ character_id` (one character per player,
-  per #24).
-- **Location/routing:** `character_id → world_key` so a connecting player's
-  feed can find their character, and so the ferry/boot can place them. This is
-  the same information `main.rs`'s `routing` map already tracks for watched
-  characters (`main.rs:39-46`) — generalized and persisted.
-- **Cheap projection:** a small denormalized copy (name, level, last-seen,
-  ladder stats) for portal/ladder UI without loading a world.
+## 3. Identity & accounts (native, pluggable) — closed-alpha first
 
-Because every character is always *inside some persisted world* (§4), the
-durable character data lives in that world's snapshot; the index never needs to
-hold a bundle as a primary copy. Relocation between worlds is the **existing
-ferry** (departure→arrival moves the bundle; the index updates the location).
-Instance teardown is safe because **characters ferry out to a shared world
-before an empty instance is reaped** — they're never stranded in a deleted
-snapshot.
+- **A native, first-class account system is the foundation** (`account_id` = root
+  identity), independent of any external service.
+- **Auth providers are pluggable**: a credential resolves → `account_id`.
+  Providers — anonymous-token, Twitch OAuth, GitHub OAuth, … — *link to* an
+  account; none *is* the account.
+- **Anonymous tokens are OWNER-MINTED ONLY** (operator action) → **disposable**
+  characters (demo idlers, testing, early-access). No self-service minting. This
+  is **closed-alpha access control**, not a general Sybil solution: it works only
+  while the operator is the registration bottleneck. Bearer-token theft/sharing
+  is contained by disposability + **owner revocation** (tokens are revocable;
+  there is no self-rotation); real public registration arrives with the provider
+  plugins and brings the native account system's own rate-limit/verification.
+- `account_id → [character_id]` is **one-to-many with a registration cap (= 1
+  now)** — not a hard 1:1 field. UI shows one character and skips
+  character-select while the cap is 1; raising it later is config + a select
+  screen, not a schema migration. (The one-character *game-design* pillar, #24,
+  is separate and unchanged.)
+- We do **not** hard-gate the deploy loop (§8) behind OAuth: owner-restricted
+  minting handles closed-alpha abuse and disposability handles theft stakes.
+  `Role` finally means something: `Owner` (operator/director) vs `Player`
+  (scoped to their own character), enforced before serialization.
 
-This dissolves v1's store-vs-world consistency problem: there is one record
-(the world snapshot), and a small index that is a *projection/router*, allowed
-to be rebuilt or lag without losing character data.
+## 4. Compute & sharding
 
-## 3. Identity (build the shape before the OAuth — but honestly)
+**A shard is one `World` is one zone instance** — the natural determinism
+boundary and the existing `ManagedWorld` granularity.
 
-#17 names OAuth (Twitch/GitHub) as the eventual identity. We can build the
-server shape first, **if we are honest that early tokens are not real auth.**
+- **Reliability comes in two separable steps, and v3 wrongly merged them.**
+  1. **In-process per-world panic containment (ship EARLY).** Today one thread
+     runs every world (`runner.rs:126`); a panic anywhere kills the whole sim.
+     Wrapping each world's tick in `catch_unwind` + reload-from-snapshot gives
+     crash *containment* with **no** distributed machinery, and must land *with*
+     runtime instances (§10 phase 4) because those multiply the blast radius.
+  2. **Multi-process sharding (later).** Supervised per-shard processes for true
+     isolation + horizontal scale; this is what needs the ownership authority and
+     fenced transfer (§6).
+- **Demand-driven ticking is efficiency, not scaling.** A zone ticks only while
+  ≥1 idler is in it; empty shared zones idle down. Since idlers never park (§0),
+  this only removes **empty-zone overhead** — the aggregate is still ≈ active
+  idlers. Treat it as memory/cleanup, not the scaling answer. **Scaling is
+  horizontal sharding**, bounded per shard by `max_players`.
+- **`max_players` auto-instancing is NET-NEW and replaces a current bug.** Today a
+  full-zone ferry silently drops the character (`runner.rs:182`). The design
+  requires: a popular zone opens additional shard *instances* (or the ferry
+  queues/retries) — **never drops**. This is new work, not existing behavior.
+- **Per-tick budget (numbers grounded; latency is a TARGET to measure).** 10 Hz →
+  100 ms wall (`world/mod.rs:31`); a bot may burn `DEFAULT_TICK_BUDGET = 5000`
+  instructions (`vm/lib.rs:56`) + syscalls (`SYSCALL_COST=20`, `bots.rs:24`) +
+  its sim step. The per-character µs cost is **not yet measured** — a budget-
+  saturating bot is *plausibly* hundreds of µs, but that is a **measurement
+  target**, not an established fact. The model (cap per shard, many shards) does
+  not depend on the exact number; the number sets the cap.
+- **The cost of sharding (real work, not bullets):** (1) the featured director
+  (`replication.rs:249`, `runner.rs:215`) and watcher re-routing become
+  cross-process aggregation; (2) cross-shard ferry ordering reintroduces
+  nondeterminism that must be canonicalized (input-log, §9) and is the dupe
+  boundary (§6). Ship single-process first, measure, design the ferry as a queue
+  now, shard when the numbers demand it.
 
-- **Phase A — anonymous tokens, NO stealable value.** First connect with an
-  empty `Hello.token` mints an opaque `player_id`; the client stores and
-  replays it. **This is a bearer credential** — whoever holds the string is the
-  player. That is acceptable *only* while a character carries no value worth
-  stealing. Therefore: **the persisted, ownership-gated deploy loop (§6) does
-  NOT ship on anonymous tokens.** Anonymous-token characters are
-  early-access/disposable.
-- **Phase B — OAuth (#17) before persisted progression.** Real identity
-  (provider account → `player_id`) must land **before** Deploy/SetParams make a
-  character's accumulated build worth stealing. The `player_id ⇄ character_id`
-  binding underneath is identical; the issuer is a pluggable front end.
+### Instances (maps)
+- Created on first entry (per-owner shard, keyed by `character_id` — §5).
+- **Frozen when empty** (snapshot, stop ticking) the moment the last idler leaves.
+- **15-min wall-clock GC** from last-leave: re-enter within the window → resume
+  the same frozen instance (state + remaining portals); past it → reaped,
+  regenerated fresh next time.
+- **GC↔thaw is a compare-and-swap, not just an epoch bump.** Each instance has a
+  record `{ instance_id, epoch, state: frozen|thawing|live|reaping|reaped }`;
+  GC and re-entry both CAS that record, so a reaper can't delete a snapshot a
+  thaw is starting from (the loser aborts). (Single-process this is a mutex;
+  sharded it's a transaction on the ownership store.)
 
-**Abuse model (v1 omitted this entirely — it's a correctness requirement under
-always-on, not a nicety):**
-- **Sybil/DoS.** Free anonymous identity minting + always-on simulation (§4)
-  means N scripted empty-token connects = N permanently-simulated characters =
-  unbounded CPU + persistence growth on the single tick-thread. Mitigations:
-  rate-limit minting (per-IP / proof-of-work / invite), and **evict abandoned
-  characters** (never-connected or idle past a threshold) — which is also what
-  bounds always-on cost (§4). Eviction is mandatory, not optional.
-- **Token theft.** Anonymous bearer tokens can be copied (shared screen, logs,
-  localStorage). Contained by Phase A's "no stealable value" rule; fully closed
-  by OAuth (Phase B) before progression matters.
+## 5. Lifecycle (home town, death, the tutorial gate)
 
-Spectating stays open (no token to watch). A token is required only to
-own/manage. `Role` finally means something: `Owner` (operator/director) vs
-`Player` (scoped to their character), enforced server-side before serialization.
+- **Home town = last town visited**, set on entering any `ZoneKind::Town`. A new
+  persistent `home_town: zone_id` on `CharacterState` (travels in the bundle;
+  mutates `state_hash`/golden — a known, accepted change; it is set by a sim
+  event, so it stays deterministic).
+- **Death by zone kind:** *persistent area* → return to that area's **start**
+  (reposition only, no penalty for now); *map instance* → ejected to the **town
+  map device, −1 portal** on that map (portals-as-lives; 0 ⇒ map spent).
+- **Respawn-at-home-town triggers** are exactly two: **bot-code update** (treated
+  as a disconnect→reconnect) and **portal-obol use** (not implemented). **Not
+  death.**
+- **Tutorial anti-farm gate — corrected (this was inverted in v3).** v3 claimed
+  the shore brain's `zl_once` (keyed by `net_id` in zone-brain VM memory,
+  `zone_lib.bot:77`) gates the guaranteed drops. **That is the opposite of true:**
+  `net_id` is re-minted on every arrival (`world/mod.rs:1024`) and the brain's
+  kill-thresholds read **lifetime** `kills` (`brain.bot:135,153`), so a graduated
+  character entering a *fresh* shore instance would re-trigger the
+  weapon/flask/gem/obol on tick 1 — a printer. The fix has two parts:
+  1. **Tutorial rewards are grant-once per `character_id`.** Eligibility is a
+     durable per-character flag (a `tutorial_grants` bitset on `CharacterState`),
+     consulted by the sim/brain — **not** `net_id` and **not** zone-brain memory
+     (which both reset per entry). The shore brain must read this persistent flag
+     before granting.
+  2. **The tutorial zone is non-re-enterable.** A graduated character (home town
+     set) is never routed back to `withered_shore`; there is no town→shore path,
+     and the design must not add one without (1) in place. ("Home town set" thus
+     also means "tutorial graduated.")
+  - **Refresh-without-home = full state wipe + restart tutorial** (prevents
+    refresh-loop farming of first-time grants; identity persists, only character
+    *state* wipes, so the post-wipe run is a legitimate first run). After a town
+    is reached, refresh is a **soft reset to home that keeps progress.** Death in
+    the tutorial is reposition-to-start, never a wipe.
+- **Mid-map bot-refresh = a death-equivalent:** −1 portal + return to home town;
+  the instance freezes under the 15-min/CAS rule. No free panic-escape.
+- **The map device is the social hub:** in town (the high-occupancy shard), where
+  idlers congregate; **per-player portal visibility** — an idler sees/enters only
+  their own portals (instance keyed by owner). This is the atlas (#21) entry
+  point — `UseMap` opens *your* instance.
 
-## 4. The world tier — and THE decision: simulation policy
+## 6. Crash-safety & anti-dupe (the shard-boundary protocol)
 
-Shared zones come from content via `ZoneKind` (`Town | Map` → an always-on
-shared world), **minus any authored roster** — the salvageable idea from #7,
-done without the placeholder. Per-character story/atlas instances are created on
-demand and reaped when idle.
+Multi-process breaks #9's single-writer invariant. What keeps it tractable:
+**tradeable possessions live inside the `CharacterBundle`** (inventory,
+equipment, stash, currency on `CharacterState`). **Un-picked ground loot is a
+free-floating entity** (`LootState`/`Entity.loot`, `entity.rs:345-372`) — but it
+is **world-local**: it lives in the source world's snapshot, is removed
+atomically before inventory is credited on pickup (`inventory.rs:413`, single
+shard), and does **not** travel in the bundle (`process_exits` ships only
+`CharacterState`, `mod.rs:864`). So the dupe surface is:
 
-**Honest note on the create/reap primitives:** runtime world creation and
-teardown **do not exist in trunk today** (`main.rs` builds worlds with struct
-literals at boot; there is no `impl ManagedWorld`, and the tick loop never
-removes a world). A `ManagedWorld::create` appeared on the **rejected** #7
-branch but is *not* in `main` and is not assumed here — building a single
-create-path + a teardown/reap primitive is **net-new work** this design
-requires (and shares with the atlas, #21).
+1. **A character existing in two shards at once** (botched cross-shard hand-off).
+2. **A non-atomic generate/consume path** within a shard (none today — pickup,
+   craft, drop all resolve in one tick; future *trade* or *shared stash* would
+   add cross-character moves that must use the transfer protocol below).
 
-**The decision I need from you — character simulation policy:**
+### The ownership service (specify it, don't hand-wave it)
+The fenced transfer needs a consistency authority. **Near-term it is a single-node
+embedded store with `fsync` durability** — explicitly a **SPOF**, linearizable by
+being a single writer, **no partition tolerance** ("no cross-shard transfers
+while it is down"). This is acceptable because it arrives *with* multi-process
+sharding (§10 phase 5), not before. **Upgrade path:** replicate it (Raft/etcd-
+class) only when we run multiple nodes. We do not build a consensus system for a
+single-box demo.
 
-- **(A) Unbounded always-on.** Every registered character simulates 24/7. The
-  literal idle-game promise. **Not viable as stated:** the single deterministic
-  tick-thread (10 Hz, 100 ms wall) runs every world sequentially; each character
-  can burn a 5000-instruction bot budget + syscalls + its sim step. A
-  budget-saturating bot is hundreds of µs *before* sim; a few hundred active
-  characters plus their monster populations plausibly blow the 100 ms tick, and
-  overruns silently slow the **whole** broadcast (one shared thread). Unbounded
-  always-on is a fantasy without sharding, and sharding (below) is hard.
-- **(A′) Capped always-on + dormant long-tail — RECOMMENDED, and it IS the
-  architecture, not a knob.** A bounded set of "active" characters simulate
-  continuously (the broadcast-visible population); the long tail (abandoned /
-  long-idle / never-connected) is **dormant**: persisted, not ticked, and
-  evicted per §3. This bounds CPU to a known N, closes the Sybil/DoS hole, and
-  keeps a single-process featured-director honest. Dormancy needs a defined
-  wake rule (a returning owner re-activates their character) and, if we ever
-  want "you progressed while away," an explicit **offline-catch-up** model —
-  which I'd design separately and only if wanted (it's a second, non-
-  deterministic progression path; flagged, not assumed).
-- **(B) Active-window only.** Simulate only while the owner is connected.
-  Cheapest, but the broadcast is empty when few watch — that isn't Idlin.
-  Rejected as the primary model; (A′)'s dormancy borrows its mechanism for the
-  tail.
+### The transfer is a durable 2-phase state machine (not local optimism)
+Per character the service holds a state, and shards act **idempotently from the
+service state**, never from local assumption:
 
-**Sharding is not a free escape hatch.** "Shard by world" is clean for the sim
-*arithmetic* (worlds are independent except at ferry hand-off) but **breaks two
-things this design relies on**: (1) the **featured director** picks the most-
-alive world by scanning every world each tick and re-routes watchers globally
-(`runner.rs:220-229`, `main.rs:435-455`) — a cross-process aggregation problem;
-(2) **cross-shard ferry ordering** reintroduces nondeterminism the single thread
-currently avoids. So scale-out is a real research item, not a bullet point;
-(A′)'s bounded N is what lets us **defer** it credibly. We ship single-process,
-**instrument per-character per-tick cost**, commit to a target N, and shard only
-if the measured numbers force it — designing the ferry as a queue now so the
-seam exists.
+```
+source_owned
+  → departing(transfer_id, src_epoch, bundle)      [source marks intent, durable]
+  → destination_prepared(snapshot_ref)             [dest DURABLY persists the bundle]
+  → destination_owned(epoch = src_epoch+1)         [COMMIT: service flips owner]
+  → (source observes commit, drops its copy)
+```
 
-`max_players` per zone stays content-authored (the ferry already respects it).
+- **The commit point is `destination_owned`, and it requires
+  `destination_prepared` first** — the durable destination write precedes the
+  epoch flip, closing v3's flip-then-crash gap (no "owner-of-record with no
+  data"). The destination's prepared copy stays **fenced inactive** (not ticked)
+  until commit, so a pre-commit crash never yields a live duplicate.
+- **Idempotent + fenced:** `transfer_id` dedupes replays; a shard may only
+  tick/mutate a character it owns at the **current epoch**, so a stale source at
+  `src_epoch` is rejected once the service is at `src_epoch+1`. On recovery a
+  shard reads the service state and resumes deterministically: not-yet-committed
+  → source still owns, retry; committed → source drops, dest is authoritative.
+- **Everything crossing a shard boundary** (ferry; future trade/shared-stash)
+  uses this; nothing moves as a non-atomic copy.
 
-## 5. Persistence (keep #9; add an index; add reap-survival)
+### Single-shard & rollback
+- Single-shard activity is atomic per snapshot: a crash rolls back the whole
+  since-save window — gains **and** consumptions together. You lose progress,
+  never copy items.
+- **Crash-to-rollback** (undo a bad craft/death/spend) deterrent: the bounded
+  save window + you also lose good progress. For high-value irreversible commits
+  (craft, boss, trade) we can snapshot-on-commit or append an action log —
+  **strictness is your knob.**
+- **None of this is built before multi-process** — single-process #9 already
+  prevents dupes, so the transfer machinery is coupled to phase 5, not earlier.
 
-- **Keep per-world snapshots exactly as they are.** They are correct, tested,
-  and the only complete resume source. No inversion.
-- **Add the identity/routing index** as its own small durable store
-  (`data/index/`: `player_id ⇄ character_id`, `character_id → world_key`,
-  projection). Be precise about what is and isn't reconstructable: the
-  **`character_id → world_key` location map and the projection ARE rebuildable**
-  by scanning world snapshots (each character's name and location is in its
-  world), so those are pure cache. But the **`player_id ⇄ character_id` binding
-  is the index's OWN primary record** — today nothing in the sim carries an
-  owner: `CharacterState` has only a `name`, and `CharacterBundle` no owner at
-  all, so the binding is **not** reconstructable from snapshots and must be
-  durably persisted as authoritative (the one thing the index genuinely owns).
-  (Alternative: add `owner: player_id` to `CharacterState`/the bundle so the
-  world snapshot becomes the sole record — but that mutates sim state folded by
-  `state_hash`, a determinism/golden change; the cleaner first cut is to let the
-  index own the binding.) Start as a flat file / per-key files (mirrors #9, zero
-  new deps); swap to an embedded KV (sled/redb) later behind the same interface
-  **only if** scale needs it (YAGNI until then).
-- **Reap-survival rule (the one new persistence invariant):** *an instance is
-  reaped only when it holds no live characters.* Characters ferry out to a
-  shared world (which snapshots them) before teardown. This preserves #9's
-  "exactly one place" invariant and means no character ever lives solely in a
-  deleted snapshot.
-- **Crash window is unchanged and honest:** `SAVE_EVERY_TICKS` bounds loss to
-  ≤300 ticks for *all* live state (characters and world alike), exactly as
-  today. We are **not** claiming the index reduces this — it can't; the world
-  snapshot is the record and it saves on the same cadence.
+## 7. Persistence
+- **Keep #9's per-world snapshots as the live-state record** — unchanged.
+- **The identity/ownership store** is primary (not reconstructable) for the
+  account↔character binding and (when sharded) owner_shard+epoch; `world_key` +
+  projection are rebuildable cache. Files first (mirrors #9, zero deps); embedded
+  KV later behind the same interface (YAGNI). Its consistency model is §6.
+- **Reap-survival:** an instance is reaped only when it holds no live characters;
+  characters ferry out (flushing to a shared world's snapshot) before teardown,
+  under the GC↔thaw CAS (§4). Preserves the "exactly one place at a persistence
+  boundary" invariant.
+- **Crash window unchanged/honest:** loss bounded to ≤`SAVE_EVERY_TICKS` for all
+  live state; the store does not reduce this.
 
-## 6. The deploy path (closing the "build your idler" loop)
+## 8. The deploy path
+The portal (#17, PR #44) plans builds/params but can't push them (no write path).
+Add authenticated verbs:
+- `C2S::Deploy { program }` — replace the owner's character's bot program;
+  validate via `Vm::new`. **The home-town respawn / wipe-if-no-home / mid-map
+  −1-portal orchestration of §5 is NET-NEW** — `Bot::redeploy` (`bots.rs:98`)
+  only resets VM registers and bumps version (persist preserved); it does *not*
+  move the character, reset state, or cost a portal. Don't oversell it.
+- `C2S::SetParams { bytes }` — write the character's `0xF000` param block.
 
-The portal (#17, PR #44) plans builds and composes params but cannot push them —
-there is no write path. Add authenticated verbs:
+Both **owner-only** + rate-limited; available to any authenticated identity
+(abuse handled by owner-minting, §3). Makes the bot-as-progression arc (#24,
+Arc 2) real: iterate code on the same persisted character.
 
-- `C2S::Deploy { program }` — replace the owner's character's bot program.
-  Validate (`Vm::new` accepts the versioned container, as `apply_joins` does),
-  then **hot-redeploy the live bot** via `Bot::redeploy` (already preserves the
-  persist block + bumps version). The character keeps simulating across the
-  swap.
-- `C2S::SetParams { bytes }` — write the character's `0xF000` param block (the
-  chat-command channel; `Bot.params`).
+## 9. Determinism & replay (no overclaiming)
+- A live server is **not** one global deterministic replay. The sim stays pure;
+  the server stamps inputs with their tick. Determinism is **per-shard over
+  `(seed, content, input-log)`**, with a world **snapshot as the replay origin**.
+- You **cannot** reconstruct a world from bundles (v1's error). The golden
+  fixture stays as the regression test.
+- **The input-log does not exist yet** (`IDLIN_RECORD` is output-only). Its
+  format + snapshot-origin contract is defined in the **deploy/ferry phase** (it
+  records joins/arrivals/deploys/params and canonicalizes cross-shard ferry
+  order), not deferred to after sharding.
 
-Both **owner-only** (token resolves to that character) and rate-limited.
-**Gated on real identity (§3, Phase B):** the persisted-deploy loop ships with
-OAuth, not anonymous tokens, so an accumulating build is never protected by a
-copyable string. This is what makes the bot-as-progression arc (#24, Arc 2)
-real: iterate code on the *same* persisted character.
+## 10. Migration (sequenced; nothing strands the product or reliability)
+Each phase ships behind tests + the determinism fixture.
 
-## 7. Determinism & replay (no overclaiming)
+1. **Native accounts + registration — single-process, name-keyed compat.**
+   Account system + owner-minted anonymous provider; resolve `Hello.token` →
+   `account_id`; first registration creates a character in a shared entry world;
+   reconnect resumes via `world_key`. Replace `builtin_joins()` with
+   "store-routed population + an owner-minted dev seed." **Ships with tests
+   proving no empty broadcast.** Explicitly single-process; no sharding/ownership
+   semantics. *This is the proper replacement for the rejected #7.*
+2. **In-process per-world panic containment** (`catch_unwind` + reload) +
+   **fix the "lost at sea" ferry** (queue/retry, never drop). Reliability that
+   doesn't need distribution.
+3. **Lifecycle:** home town, death-by-zone-kind, the corrected tutorial gate
+   (grant-once by `character_id`), respawn-on-deploy.
+4. **Deploy / SetParams + the input-log** (§8, §9); the portal goes live. **Runtime
+   create/reap + frozen-15-min instances land here, so phase 2's panic
+   containment must already exist** (instances multiply the blast radius).
+5. **Multi-process sharding + the ownership service + the fenced transfer (§6),
+   when measured.** True isolation, horizontal scale, and the anti-dupe protocol
+   land together — only needed once there are multiple processes.
+6. **External providers (Twitch/GitHub)** on the account system's provider seam.
 
-- A live persistent server is **not** one global deterministic replay — joins,
-  arrivals, deploys, and params arrive at wall-clock-arbitrary ticks. The sim
-  stays pure; the server stamps each input with its tick.
-- **Exact replay requires a world SNAPSHOT as origin + the forward input-log** —
-  you cannot reconstruct a world from character bundles (v1's error). The golden
-  fixture (snapshot-free, fixed inputs from tick 0) stays as the determinism
-  regression test.
-- **The input-log does not exist yet.** `IDLIN_RECORD` records the *output* wire
-  stream (replay-for-viewing). A true per-world input-log (re-feedable to the
-  sim) is future work; until then, debugging a live world means resuming its
-  snapshot and replaying recorded inputs forward — call it what it is.
-
-## 8. The demo trio (what it should have been)
-
-`["Kargan","Veles","Mirra"]` is **scaffolding**. Correct treatment: a
-**dev/early-access seed** of AI idlers behind an explicit flag
-(`IDLIN_DEMO_IDLERS=...`), used to populate an empty broadcast before real
-registrations exist, and **never** written into content as first-class config.
-In production the population is registered characters. This is the specific #7
-mistake, foreclosed.
-
-## 9. Migration (sequenced so the product is never stranded)
-
-1. **Identity + registration, together.** Mint/resolve `player_id` from
-   `Hello.token`; first-connect creates a character (starter template) in a
-   shared entry world; reconnect resumes via the index→world_key. Replace
-   `builtin_joins()` with "index-routed population + dev seed (§8)." *These ship
-   as one phase* — splitting them (v1's mistake) strands production with an
-   empty broadcast between "roster deleted" and "registration works." This is
-   the proper replacement for the rejected #7.
-2. **Create/reap primitives.** A single world-create path + a teardown/reap with
-   the reap-survival rule (§5). Enables on-demand instances (shared with #21).
-3. **OAuth (#17).** Real identity, *before* step 4 makes builds valuable.
-4. **Deploy / SetParams.** The authenticated write path (§6); the portal goes
-   live on real auth.
-5. **Dormancy + eviction.** Implement (A′)'s dormant tail + abuse eviction (§3).
-   (Could move earlier if anonymous-token abuse bites in testing.)
-6. **Scale-out, only if measured.** Shard worlds behind the ferry queue, solving
-   the featured-director aggregation and cross-shard ferry ordering (§4) — a
-   real project, not a flag.
-
-## 10. Decisions I need from you
-
-1. **Simulation policy:** (A′) capped-always-on + dormant tail (my rec), or do
-   you want true unbounded always-on (accepting it forces sharding early), or
-   active-window (B)? This shapes everything downstream.
-2. **Offline catch-up:** if a character is dormant while its owner is away,
-   should it "progress while away" (a separate, non-deterministic model to
-   design) or simply be paused until they return? I lean *paused* for v1.
-3. **Identity ordering:** OK to gate the persisted-deploy loop on OAuth (so
-   anonymous early-access characters are disposable), rather than shipping
-   deploy on anonymous tokens?
-4. **One character per identity, hard rule?** #24 says yes; confirming, because
-   it removes the character-select screen forever and simplifies the index.
-
-## What this doc deliberately does NOT do
-
-- It does not promote any demo/placeholder to first-class config (#7's sin).
-- It does not invent content schema for population — population is runtime state
-  + a thin index, never authored content.
-- It does not claim a world is reconstructable from character bundles (v1's
-  false thesis), nor that a live server is one deterministic replay.
-- It does not cite rejected-branch code as established infrastructure: runtime
-  world create/reap is net-new work, not a "seam to reuse."
-- It does not block the foundation on OAuth — but it does refuse to ship
-  *valuable* progression on anonymous tokens.
+## 11. What this design deliberately does NOT do
+- Promote any demo/placeholder to first-class config (the #7 sin) — the trio is
+  an **owner-minted dev seed**, never authored content.
+- Invent content schema for population — it's runtime state + the store.
+- Claim a world is reconstructable from bundles, or that a live server is one
+  global replay.
+- Cite rejected-branch code as infra: world create/reap and `ManagedWorld::create`
+  are net-new.
+- Build distributed-transaction/anti-dupe machinery before there are multiple
+  processes (it's coupled to phase 5).
+- Treat owner-minted tokens as a general Sybil solution — they're closed-alpha
+  access control until real provider auth lands.
+- Block the foundation on external OAuth; it builds a native account system with
+  pluggable providers.
