@@ -21,6 +21,13 @@ use stats::{Grant, Layer, Stat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// FNV-1a 64-bit basis constants — the single owner shared by every
+/// FNV hash in the workspace (content_hash here, the sim's `Fnv1a64`, the
+/// server's per-instance seed / snapshot-dir hash). content is the lowest
+/// crate they all depend on.
+pub const FNV1A_OFFSET: u64 = 0xcbf29ce484222325;
+pub const FNV1A_PRIME: u64 = 0x100000001b3;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ContentError {
     #[error("io error reading content: {0}")]
@@ -1249,13 +1256,11 @@ impl ContentDb {
         collect_ron_files(dir, &mut files)?;
         files.sort();
 
-        const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-        const FNV_PRIME: u64 = 0x100000001b3;
-        let mut hash = FNV_OFFSET;
+        let mut hash = FNV1A_OFFSET;
         let write = |hash: &mut u64, bytes: &[u8]| {
             for &b in bytes {
                 *hash ^= b as u64;
-                *hash = hash.wrapping_mul(FNV_PRIME);
+                *hash = hash.wrapping_mul(FNV1A_PRIME);
             }
         };
 

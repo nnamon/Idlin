@@ -11,6 +11,10 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 pub const FRAC_BITS: u32 = 16;
+/// Q16.16 scale factor (`1 << FRAC_BITS`): one whole unit in raw fixed-point.
+/// The client divides replicated raw coords by this — exported to TS as
+/// `FX_SCALE` so the magic `/ 65536` lives in exactly one place.
+pub const FX_SCALE: i64 = 1 << FRAC_BITS;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
 #[serde(transparent)]

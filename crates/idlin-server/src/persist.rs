@@ -36,10 +36,10 @@ pub fn world_dir(base: &Path, world_key: &str) -> PathBuf {
             }
         })
         .collect();
-    let mut h = 0xcbf29ce484222325u64;
+    let mut h = idlin_content::FNV1A_OFFSET;
     for b in world_key.bytes() {
         h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
+        h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
     }
     base.join(format!("{safe}-{:08x}", (h >> 32) as u32))
 }

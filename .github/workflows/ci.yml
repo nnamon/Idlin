@@ -24,6 +24,7 @@ jobs:
       - name: Generated TS bindings are fresh
         run: |
           cargo test -p idlin-protocol export_typescript_bindings
+          cargo test -p idlin-server --test export_constants
           git diff --exit-code web/src/gen
 
   web:

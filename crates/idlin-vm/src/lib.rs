@@ -55,6 +55,45 @@ pub const PERSIST_BLOCK_LEN: usize = 0x400;
 /// Default per-tick instruction budget.
 pub const DEFAULT_TICK_BUDGET: u32 = 5_000;
 
+// Syscall numbers — the host/VM ABI, the SINGLE owner. Both the compiler
+// (idlin-botc BUILTINS) and the host (idlin-sim bots.rs / zone_brain.rs)
+// reference these so a number is defined exactly once. Entity bot syscalls
+// are 0..30; zone-brain syscalls are 100+.
+pub const SYS_DEBUG: i32 = 0;
+pub const SYS_SELF_STATUS: i32 = 1;
+pub const SYS_READ_ENTITIES: i32 = 2;
+pub const SYS_READ_INVENTORY: i32 = 5;
+pub const SYS_MOVE_TO: i32 = 6;
+pub const SYS_USE_SKILL: i32 = 7;
+pub const SYS_PICK_UP: i32 = 8;
+pub const SYS_EQUIP_BEST: i32 = 12;
+/// Emitted by the compiler from the `build [...]` declaration, not callable.
+pub const SYS_SET_BUILD: i32 = 14;
+pub const SYS_RANDOM: i32 = 15;
+pub const SYS_MOVE_ITEM: i32 = 16;
+pub const SYS_DROP_ITEM: i32 = 17;
+pub const SYS_READ_SKILLS: i32 = 18;
+pub const SYS_SOCKET_GEM: i32 = 19;
+pub const SYS_COUNT_ENTITIES: i32 = 20;
+pub const SYS_LINE_OF_SIGHT: i32 = 21;
+pub const SYS_USE_SKILL_AT: i32 = 22;
+pub const SYS_USE_SKILL_DIR: i32 = 23;
+pub const SYS_READ_CURRENCY: i32 = 24;
+pub const SYS_USE_CURRENCY: i32 = 25;
+pub const SYS_SAY: i32 = 26;
+pub const SYS_READ_EXITS: i32 = 27;
+pub const SYS_USE_EXIT: i32 = 28;
+pub const SYS_USE_FLASK: i32 = 29;
+// Zone-brain syscalls (no-ops for entity bots).
+pub const SYS_QUERY_CHARACTERS: i32 = 100;
+pub const SYS_POLL_EVENTS: i32 = 101;
+pub const SYS_NARRATE: i32 = 102;
+pub const SYS_DROP_LOOT: i32 = 103;
+pub const SYS_SPAWN_MONSTER: i32 = 104;
+pub const SYS_SET_EXIT: i32 = 106;
+pub const SYS_SET_GATE: i32 = 107;
+pub const SYS_SPAWN_ELITE: i32 = 108;
+
 /// Instruction set. Stack machine, RPN: operands are pushed, opcodes pop them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -559,6 +598,45 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Syscall numbers are a BINARY CONTRACT: deployed bot bytecode encodes
+    /// them. Pin the values so an accidental edit to a const is caught here,
+    /// not by a live bot silently calling the wrong host routine.
+    #[test]
+    fn syscall_numbers_are_pinned() {
+        assert_eq!(SYS_DEBUG, 0);
+        assert_eq!(SYS_SELF_STATUS, 1);
+        assert_eq!(SYS_READ_ENTITIES, 2);
+        assert_eq!(SYS_READ_INVENTORY, 5);
+        assert_eq!(SYS_MOVE_TO, 6);
+        assert_eq!(SYS_USE_SKILL, 7);
+        assert_eq!(SYS_PICK_UP, 8);
+        assert_eq!(SYS_EQUIP_BEST, 12);
+        assert_eq!(SYS_SET_BUILD, 14);
+        assert_eq!(SYS_RANDOM, 15);
+        assert_eq!(SYS_MOVE_ITEM, 16);
+        assert_eq!(SYS_DROP_ITEM, 17);
+        assert_eq!(SYS_READ_SKILLS, 18);
+        assert_eq!(SYS_SOCKET_GEM, 19);
+        assert_eq!(SYS_COUNT_ENTITIES, 20);
+        assert_eq!(SYS_LINE_OF_SIGHT, 21);
+        assert_eq!(SYS_USE_SKILL_AT, 22);
+        assert_eq!(SYS_USE_SKILL_DIR, 23);
+        assert_eq!(SYS_READ_CURRENCY, 24);
+        assert_eq!(SYS_USE_CURRENCY, 25);
+        assert_eq!(SYS_SAY, 26);
+        assert_eq!(SYS_READ_EXITS, 27);
+        assert_eq!(SYS_USE_EXIT, 28);
+        assert_eq!(SYS_USE_FLASK, 29);
+        assert_eq!(SYS_QUERY_CHARACTERS, 100);
+        assert_eq!(SYS_POLL_EVENTS, 101);
+        assert_eq!(SYS_NARRATE, 102);
+        assert_eq!(SYS_DROP_LOOT, 103);
+        assert_eq!(SYS_SPAWN_MONSTER, 104);
+        assert_eq!(SYS_SET_EXIT, 106);
+        assert_eq!(SYS_SET_GATE, 107);
+        assert_eq!(SYS_SPAWN_ELITE, 108);
+    }
 
     /// Run a program with a fresh VM and a generous budget; return the VM
     /// after it halts. Panics if it doesn't halt (tests use finite programs).

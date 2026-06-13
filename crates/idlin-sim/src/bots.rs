@@ -29,32 +29,15 @@ pub const MAX_QUERY_RESULTS: usize = 16;
 /// Size of one ReadEntities record in bytes.
 pub const ENTITY_RECORD_SIZE: u16 = 24;
 
-pub const SYS_DEBUG: i32 = 0;
-pub const SYS_SELF_STATUS: i32 = 1;
-pub const SYS_READ_ENTITIES: i32 = 2;
-pub const SYS_READ_INVENTORY: i32 = 5;
-pub const SYS_MOVE_TO: i32 = 6;
-pub const SYS_USE_SKILL: i32 = 7;
-pub const SYS_PICK_UP: i32 = 8;
-pub const SYS_EQUIP_BEST: i32 = 12;
-/// Declares the whole passive build at bot initialization; emitted by the
-/// compiler from the `build [...]` declaration.
-pub const SYS_SET_BUILD: i32 = 14;
-pub const SYS_RANDOM: i32 = 15;
-pub const SYS_MOVE_ITEM: i32 = 16;
-pub const SYS_DROP_ITEM: i32 = 17;
-pub const SYS_READ_SKILLS: i32 = 18;
-pub const SYS_SOCKET_GEM: i32 = 19;
-pub const SYS_COUNT_ENTITIES: i32 = 20;
-pub const SYS_LINE_OF_SIGHT: i32 = 21;
-pub const SYS_USE_SKILL_AT: i32 = 22;
-pub const SYS_USE_SKILL_DIR: i32 = 23;
-pub const SYS_READ_CURRENCY: i32 = 24;
-pub const SYS_USE_CURRENCY: i32 = 25;
-pub const SYS_SAY: i32 = 26;
-pub const SYS_READ_EXITS: i32 = 27;
-pub const SYS_USE_EXIT: i32 = 28;
-pub const SYS_USE_FLASK: i32 = 29;
+// Syscall numbers come from idlin_vm — the single ABI owner shared with
+// the compiler's BUILTINS table.
+use idlin_vm::{
+    SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP_BEST, SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM,
+    SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EXITS,
+    SYS_READ_INVENTORY, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SOCKET_GEM,
+    SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_USE_SKILL_DIR,
+};
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 

@@ -7,8 +7,9 @@ pub struct Fnv1a64 {
     state: u64,
 }
 
-pub const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-pub const FNV_PRIME: u64 = 0x100000001b3;
+// The FNV-1a basis constants live once in idlin-content (the lowest shared
+// crate); re-export under the local names so importers/tests are unchanged.
+pub use idlin_content::{FNV1A_OFFSET as FNV_OFFSET, FNV1A_PRIME as FNV_PRIME};
 
 impl Default for Fnv1a64 {
     fn default() -> Self {

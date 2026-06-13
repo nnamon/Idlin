@@ -21,17 +21,12 @@ pub const EV_LEVEL: i32 = 4; // a = new level
 pub const EV_DIED: i32 = 5;
 pub const EV_PICKUP: i32 = 6; // a = rarity
 
-// Zone-scoped syscalls (entity bots get -1 for these).
-const SYS_QUERY_CHARACTERS: i32 = 100;
-const SYS_POLL_EVENTS: i32 = 101;
-const SYS_NARRATE: i32 = 102;
-const SYS_DROP_LOOT: i32 = 103;
-const SYS_SPAWN_MONSTER: i32 = 104;
-const SYS_SET_EXIT: i32 = 106;
-const SYS_SET_GATE: i32 = 107;
-const SYS_SPAWN_ELITE: i32 = 108;
-const SYS_DEBUG: i32 = 0;
-const SYS_RANDOM: i32 = 15;
+// Syscall numbers come from idlin_vm — the single ABI owner. Zone-scoped
+// syscalls (100+) get -1 for entity bots; debug/random are shared.
+use idlin_vm::{
+    SYS_DEBUG, SYS_DROP_LOOT, SYS_NARRATE, SYS_POLL_EVENTS, SYS_QUERY_CHARACTERS, SYS_RANDOM,
+    SYS_SET_EXIT, SYS_SET_GATE, SYS_SPAWN_ELITE, SYS_SPAWN_MONSTER,
+};
 
 /// QueryCharacters record: net, kills, level, x, y, weapon_class, life_pct,
 /// dead — 8 words.

@@ -3,6 +3,7 @@ import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
+import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
 import "./overlay.css";
 
 type Icons = { icon(name: string, kind: string): string | null } | null;
@@ -18,9 +19,6 @@ function bagKind(name: string, w: number, h: number): string {
   return "item";
 }
 
-const RARITY_TEXT = ["#b8b8c8", "#5a8aff", "#ffd75a", "#ff9a3c"];
-
-const TICK_HZ = 10;
 
 /** Section header: the engraved small-caps rule used across every panel. */
 function Header({ children, first }: { children: React.ReactNode; first?: boolean }) {
@@ -219,7 +217,7 @@ function SlotBox({
   icons: Icons;
 }) {
   const filled = !!gear?.name;
-  const color = filled ? RARITY_TEXT[gear.rarity] : "#3a2f1b";
+  const color = filled ? RARITY_COLORS[gear.rarity] : "#3a2f1b";
   const src = filled ? icons?.icon(gear.name, label.toLowerCase()) : null;
   return (
     <div
@@ -264,7 +262,7 @@ function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
       }}
     >
       {sheet.inventory.map((it, i) => {
-        const color = RARITY_TEXT[it.rarity];
+        const color = RARITY_COLORS[it.rarity];
         const src = icons?.icon(it.name, bagKind(it.name, it.w, it.h));
         return (
           <div
@@ -408,7 +406,7 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
           <Header>Obols</Header>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
             {sheet.currency.map((c, i) => (
-              <span key={i} style={{ fontSize: 12.5, color: ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"][c.tier] ?? "#bfbfbf" }}>
+              <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>
                 {c.name.replace(" Obol", "")} ×{c.count}
               </span>
             ))}

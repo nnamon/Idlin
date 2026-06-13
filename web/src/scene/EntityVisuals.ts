@@ -2,8 +2,7 @@ import * as THREE from "three";
 import type { EntityRender } from "../world/store";
 import type { EntityState } from "../gen/EntityState";
 import type { AssetLibrary, BodyVariant, ModelDef } from "./Assets";
-
-const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
+import { RARITY_COLORS_NUM } from "../gen/constants";
 /** Where an attack clip CONNECTS, as a fraction of its length. The
  *  Quaternius swings land their blow just past mid-clip. */
 const CONTACT_FRAC = 0.45;
@@ -108,7 +107,7 @@ export class EntityVisual {
       // Elite monsters announce themselves: rarity-tinted nameplates,
       // same ladder as loot (magic blue / rare gold / unique orange).
       else if (state.kind === "Monster" && state.rarity > 0) {
-        this.buildLabel(state.name, RARITY_COLORS[state.rarity]);
+        this.buildLabel(state.name, RARITY_COLORS_NUM[state.rarity]);
       }
       this.composeGear(this.dressed(state));
       this.setWeapon(state.weapon);
@@ -183,7 +182,7 @@ export class EntityVisual {
     // magic blue, rare gold. Uniques are deliberately NOT outlined:
     // they are their own design, and they carry the boss bar.
     if (isMonster && (rarity === 1 || rarity === 2)) {
-      this.addOutline(inst.root, RARITY_COLORS[rarity]);
+      this.addOutline(inst.root, RARITY_COLORS_NUM[rarity]);
     }
   }
 
@@ -769,7 +768,7 @@ export class SharedResources {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 64, 64);
     this.glowTex = new THREE.CanvasTexture(c);
-    this.lootMats = RARITY_COLORS.map(
+    this.lootMats = RARITY_COLORS_NUM.map(
       (c) =>
         new THREE.MeshStandardMaterial({
           color: c,
@@ -808,12 +807,7 @@ export class SharedResources {
         depthWrite: false,
       });
     this.pillarMats = {
-      rarity: [
-        pillarMat(0xbfbfbf), // normal (unused; no pillar)
-        pillarMat(0x5a8aff), // magic
-        pillarMat(0xffd75a), // rare
-        pillarMat(0xff9a3c), // unique
-      ],
+      rarity: RARITY_COLORS_NUM.map(pillarMat), // [normal (unused), magic, rare, unique]
       gem: pillarMat(0x5adfdf),
     };
   }
