@@ -299,7 +299,7 @@ top-center; magic/rare announce themselves with tinted nameplates.
   per_level: 3)` formulas in content), never miss via accuracy, and cast
   in `cast_ticks` scaled by cast speed.
 - **Projectiles are real**: they travel tick by tick, stop on the first
-  body they hit (minus `pierce`), and are stopped by obstacles. Sidestep
+  body they hit (minus `pierce`), and are stopped by walls. Sidestep
   an arrow and it misses you.
 - **Shapes**: strike, self-nova, directional cone (`cone_cos_bp`),
   directional line (`width_cu`), ground-target point-AoE, projectile.
@@ -347,10 +347,10 @@ top-center; magic/rare announce themselves with tinted nameplates.
   damage, everything alive heals 2% max life per tick.
 - Characters respawn at the zone spawn **50 ticks** after death, full life,
   no XP or item loss.
-- **Walls**: generated obstacles block attacks. Every strike — melee,
+- **Walls**: solid map tiles block attacks. Every strike — melee,
   projectile, and each nova victim individually — requires unbroken line
-  of sight from attacker to target; a rock between you and the enemy means
-  no hit (and no cooldown spent). Movement slides around obstacles, so
+  of sight from attacker to target; a wall between you and the enemy means
+  no hit (and no cooldown spent). Movement slides along walls, so
   repositioning is automatic but costs time. Bots can test a lane first
   with the `LineOfSight` syscall (21).
 - Dead monsters leave corpses where they fell for **300 ticks** (30 s); a

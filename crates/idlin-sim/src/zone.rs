@@ -17,17 +17,6 @@ pub struct PackState {
     pub respawn_timer: u32,
 }
 
-/// A non-walkable disc generated with the area. Rendered by the client
-/// as the matching prop (rock, dead tree); the sim slides entities along
-/// its edge.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Obstacle {
-    pub pos: FxV2,
-    pub radius: Fx,
-    /// Visual kind: 0 = rock, 1 = dead tree.
-    pub kind: u8,
-}
-
 /// A skill projectile in flight. Stepped each tick; hits the first enemy
 /// (or wall) in its path and resolves through the normal strike pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,10 +127,8 @@ pub struct Zone {
     pub spawn_radius: Fx,
     /// Monsters never acquire characters inside this radius of `spawn`.
     pub camp_radius: Fx,
-    /// Generated with the area; constant for the zone's lifetime.
-    pub obstacles: Vec<Obstacle>,
-    /// Authored tile collision (zones with a map.txt); generated zones
-    /// use `obstacles` instead.
+    /// Authored tile collision (zones with a map.txt) — the one terrain
+    /// and collision system. `None` only for placeholder/test zones.
     pub grid: Option<SimGrid>,
     /// Walk-up exits to other zones.
     pub exits: Vec<ExitState>,
@@ -164,7 +151,6 @@ impl Zone {
             spawn,
             spawn_radius,
             camp_radius: Fx::ZERO,
-            obstacles: Vec::new(),
             grid: None,
             exits: Vec::new(),
             gates: Vec::new(),

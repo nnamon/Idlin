@@ -367,7 +367,7 @@ impl World {
                 n
             }
             SYS_LINE_OF_SIGHT => {
-                // Is the straight line from me to (x, y) clear of obstacle
+                // Is the straight line from me to (x, y) clear of wall
                 // cover? 1 = clear, 0 = blocked. Attacks enforce the same
                 // check, so a bot can test a lane before committing.
                 let x = bot.vm.pop();

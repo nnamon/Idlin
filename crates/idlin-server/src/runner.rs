@@ -6,7 +6,7 @@
 use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
-    ObstacleState, PropState, TileMapState, TileVisual,
+    PropState, TileMapState, TileVisual,
 };
 use idlin_sim::world::CharacterSheetView;
 use idlin_sim::{EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -32,7 +32,6 @@ pub struct TickFrame {
     pub zone_level: u32,
     pub zone_width: i32,
     pub zone_height: i32,
-    pub obstacles: Vec<ObstacleState>,
     /// Authored zones: the resolved tile map (static; shared by Arc).
     pub tiles: Option<Arc<TileMapState>>,
     /// Walk-up exits with live open state.
@@ -245,12 +244,6 @@ pub fn spawn_tick_loop(
                         zone_level: mw.world.zone_level(),
                         zone_width: zw,
                         zone_height: zh,
-                        obstacles: mw
-                            .world
-                            .obstacle_views()
-                            .into_iter()
-                            .map(|(x, y, radius, kind)| ObstacleState { x, y, radius, kind })
-                            .collect(),
                         tiles: mw.tiles.clone(),
                         exits: mw
                             .world

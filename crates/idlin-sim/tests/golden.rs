@@ -10,7 +10,11 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0x2F83_F385_2C72_7695;
+/// Moved for #8: deleting the dead disc generator edited the hashed file
+/// content/templates/area/zone.ron (dropped gen_rocks/gen_trees), shifting
+/// content_hash. Sim behavior is unchanged — obstacles never existed for
+/// the tile-mapped zones.
+const GOLDEN_HASH: u64 = 0xB8D5_17AC_804D_E6C3;
 
 #[test]
 fn golden_replay() {

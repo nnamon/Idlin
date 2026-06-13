@@ -103,13 +103,6 @@ export interface Cue {
   at: number;
 }
 
-/** Sim-generated non-walkable prop, in sim units. */
-export interface ZoneObstacle {
-  x: number;
-  y: number;
-  radius: number;
-  kind: number;
-}
 
 const RARITY_NAMES = ["common", "magic", "rare", "UNIQUE"];
 const RARITY_COLORS = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"];
@@ -128,7 +121,6 @@ export class WorldStore {
     worldKey: string;
     width: number;
     height: number;
-    obstacles: ZoneObstacle[];
     tiles: TileMapState | null;
     exits: { x: number; y: number; open: boolean }[];
     gates: { x0: number; y0: number; x1: number; y1: number; open: boolean }[];
@@ -171,12 +163,6 @@ export class WorldStore {
           worldKey: d.world_key ?? "",
           width: d.width / 65536,
           height: d.height / 65536,
-          obstacles: d.obstacles.map((o) => ({
-            x: o.x / 65536,
-            y: o.y / 65536,
-            radius: o.radius / 65536,
-            kind: o.kind,
-          })),
           tiles: d.tiles ?? null,
           exits: (d.exits ?? []).map((e) => ({
             x: e.x / 65536,
