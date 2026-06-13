@@ -10,20 +10,22 @@ issue (#18) asked for. Numbers below are a first draft — redline freely.
 Currency is COUNTED, not bag-stored; it drops (≈10% of drop rolls,
 weighted) and trash-compaction mints low-tier obols. Each obol is a
 verb applied to ONE bag item via `use_currency` (UseCurrency syscall).
-Sorted by id → the index a bot sees.
+The table is ordered by weight (common → rare); the **Idx** column is
+the index a bot reads (currency is sorted by id, so the bot index is
+the alphabetical order — see bot-guide).
 
-| Obol | Op | Tier | Weight | What it does |
-|---|---|---|---|---|
-| Transmute | to_magic | 1 | 100 | Normal → Magic (1–2 affixes) |
-| Augment | add_affix_magic | 1 | 90 | +1 affix on a Magic item with room |
-| Alter | reroll_magic | 1 | 80 | reroll a Magic item's affixes |
-| Scouring | to_normal | 1 | 40 | strip to Normal (start over) |
-| Regal | to_rare | 2 | 35 | Magic → Rare, +1 affix |
-| Alchemy | normal_to_rare | 2 | 30 | Normal → Rare (3–5 affixes) |
-| Chaotic | reroll_rare | 2 | 25 | reroll a Rare's affixes |
-| Regret | respec | 2 | 12 | (not an item op) buys a passive RESPEC |
-| Divine | reroll_values | 3 | 8 | reroll affix VALUES within their tiers |
-| Exalted | add_affix_rare | 3 | 6 | +1 affix on a Rare with room |
+| Idx | Obol | Op | Tier | Weight | What it does |
+|---|---|---|---|---|---|
+| 9 | Transmute | to_magic | 1 | 100 | Normal → Magic (1–2 affixes) |
+| 2 | Augment | add_affix_magic | 1 | 90 | +1 affix on a Magic item with room |
+| 1 | Alter | reroll_magic | 1 | 80 | reroll a Magic item's affixes |
+| 8 | Scouring | to_normal | 1 | 40 | strip to Normal (start over) |
+| 6 | Regal | to_rare | 2 | 35 | Magic → Rare, +1 affix |
+| 0 | Alchemy | normal_to_rare | 2 | 30 | Normal → Rare (3–5 affixes) |
+| 3 | Chaotic | reroll_rare | 2 | 25 | reroll a Rare's affixes |
+| 7 | Regret | respec | 2 | 12 | (not an item op) buys a passive RESPEC |
+| 4 | Divine | reroll_values | 3 | 8 | reroll affix VALUES within their tiers |
+| 5 | Exalted | add_affix_rare | 3 | 6 | +1 affix on a Rare with room |
 
 Tiers gate trash-compaction (≤1) and signal rarity/value. Acquisition
 is a smooth curve: tier-1 spam obols are common, tier-3 finishers rare.
