@@ -370,6 +370,44 @@ mod tests {
         assert_eq!(bounties[0][0], mon, "targets the tidewarden");
     }
 
+    /// END-TO-END: a bot PROGRAM (not a direct Rust call) compiles the
+    /// `vendor_sell` builtin and the sale happens through the VM syscall
+    /// path. Guards against the language and the sim drifting apart — the
+    /// builtins must be registered in idlin-botc's BUILTINS table, or this
+    /// fails to compile.
+    #[test]
+    fn a_bot_program_can_trade_through_the_syscalls() {
+        let content = content();
+        let program = idlin_botc::compile("fn main() { vendor_sell(0); }")
+            .expect("vendor builtins must be registered in the language");
+        let mut world = World::new_for_zone(0x00BA_2A11, &content, "saltmere");
+        world.tick(&TickInputs {
+            joins: vec![JoinRequest {
+                name: "Trader".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character joined");
+        at_smith(&mut world, slot);
+        give_normal_item(&mut world, slot, 1);
+        let tcur = currency_idx(&world, "transmute_obol");
+        // One tick: the bot runs `vendor_sell(0)` while standing on the smith.
+        world.tick(&TickInputs::default());
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert!(
+            ch.inventory.is_empty(),
+            "the program sold the item via the VM"
+        );
+        assert_eq!(
+            ch.currency.get(tcur).copied().unwrap_or(0),
+            1,
+            "paid in obols"
+        );
+    }
+
     #[test]
     fn nearest_vendor_picks_the_closer() {
         let (mut world, slot) = world_with_vendors();
