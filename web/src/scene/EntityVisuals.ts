@@ -7,6 +7,11 @@ const RARITY_COLORS = [0xbfbfbf, 0x5a8aff, 0xffd75a, 0xff9a3c];
 /** Where an attack clip CONNECTS, as a fraction of its length. The
  *  Quaternius swings land their blow just past mid-clip. */
 const CONTACT_FRAC = 0.45;
+/** The run clip's natural stride speed (u/s) — the body speed at which it
+ *  reads with no foot-slide. The default character move speed (mechanics.md).
+ *  Locomotion timeScale = measured render speed / this, so hasted legs
+ *  cycle faster and slowed legs slower. The one knob to tune by eye. */
+const STRIDE_SPEED = 3.3;
 /** ?animdebug=1: log every animation decision to the console. */
 const ANIM_DEBUG = new URLSearchParams(location.search).has("animdebug");
 const FADE_S = 0.18;
@@ -677,15 +682,32 @@ export class EntityVisual {
     }
 
     // -- locomotion + facing --
-    const moved =
-      !Number.isNaN(this.lastX) &&
-      Math.hypot(pos.x - this.lastX, pos.y - this.lastZ) > dt * 0.35;
-    if (moved) {
+    // Measure the body's on-screen speed from frame-to-frame displacement,
+    // and drive the run clip's rate from it so feet don't skate (worst on
+    // hasted/slowed entities). At the default move speed this is ≈1× — the
+    // common case is unchanged.
+    const dist = Number.isNaN(this.lastX)
+      ? 0
+      : Math.hypot(pos.x - this.lastX, pos.y - this.lastZ);
+    const speed = dt > 1e-4 ? dist / dt : STRIDE_SPEED; // u/s
+    if (!Number.isNaN(this.lastX) && dist > dt * 0.35) {
       this.targetAngle = Math.atan2(pos.x - this.lastX, pos.y - this.lastZ);
     }
     this.lastX = pos.x;
     this.lastZ = pos.y;
-    if (!this.attacking) this.playBase(moved ? "run" : "idle");
+    if (!this.attacking) {
+      // Run/idle with a hysteresis dead-band so speeds hovering at the
+      // threshold don't flicker; playBase crossfades either way.
+      const running = this.baseRole === "run";
+      const wantRun = dist > dt * 0.45 ? true : dist < dt * 0.25 ? false : running;
+      this.playBase(wantRun ? "run" : "idle");
+      if (this.baseRole === "run") {
+        const run = this.actions.get("run");
+        // Per-action timeScale is independent of mixer.timeScale (hitstop);
+        // run/attack are distinct clips, so this never fights playUse().
+        if (run) run.timeScale = Math.min(2.5, Math.max(0.5, speed / STRIDE_SPEED));
+      }
+    }
 
     // Shortest-arc turn toward where we're going (or who we're hitting).
     let delta = this.targetAngle - this.group.rotation.y;
