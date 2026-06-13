@@ -1,214 +1,201 @@
-# The Atlas — endgame design writeup
+# The Atlas — specification
 
-**Decision (issue #21, user-confirmed 2026-06-13):** the Atlas is the endgame
-spine. **Maps are ITEMS** that roll affixes from a dedicated pool through the
-same roller gear uses; a **town device** consumes a map and the host spins up a
-**generated instance** at the map's level with the map's mods; **higher maps
-drop higher maps** (sustain is the meta-game). **No private hideouts, ever.**
+The Atlas is Idlin's endgame: the system that gives a finished character somewhere
+endless to go. It is built on four commitments:
 
-> Per the issue's sequencing this is the **design writeup first** — map base
-> schema, mod pool, generation recipe, instance lifecycle. It is grounded in
-> the actual code seams (cited) and ends with a phased build plan. The build is
-> a later phase, gated on the persistent-server RFC's instance create/reap
-> primitives (its phase 4) and built behind the tutorial. This doc commits the
-> design; it ships no engine code.
+- **Maps are items.** A map is a bag item that drops, is crafted, traded, and
+  stashed exactly like gear. Its affixes *are* its difficulty and reward dials.
+- **The device opens them.** A device in town consumes a map and opens it into an
+  instanced zone built to that map's tier and mods.
+- **Higher maps drop higher maps.** Sustain — keeping your stock of charts
+  climbing — is the meta-game. There is no fixed "end."
+- **No private hideouts, ever.** The only personal space is a map you are
+  actively running; it is ephemeral and reaped when you leave.
 
-## What already exists (the seams we build on)
+Maps reuse the existing crafting economy (the shared affix roller and the obol
+currencies) and the persistent-server **instance lifecycle** (created on entry,
+frozen when empty, GC'd after a grace window — see `persistent-server.md`).
 
-- **Per-world granularity + key-derived seeds (the shape exists; runtime
-  create/reap does NOT).** A world is already one `ManagedWorld` = one zone
-  instance, and the intended per-world seed is `base_seed ^ fnv1a64(key)`. But
-  **spinning instances up and tearing them down at runtime is net-new** — it is
-  owned by the **persistent-server RFC** (phase-4 create/reap primitives + the
-  per-owner, frozen-15-min, reaped instance lifecycle the atlas reuses), *not* by
-  the rejected #7. There is no `impl ManagedWorld` on `main`; this is the atlas's
-  hard dependency on that RFC, listed here so the reuse is explicit.
-- **The ferry** (`runner.rs`): a character's `CharacterBundle` departs with a
-  `dest`; the tick loop routes it to the world whose `key == dest` (else any
-  world whose `zone_id == dest`) and pushes it as an arrival. `UseExit`
-  (syscall 28) stages the departure. This is exactly how a runner enters and
-  leaves a map instance.
-- **The affix roller** (`world/loot.rs::roll_affixes_into`): takes
-  `pools: &[String]` + `item_level` + prefix/suffix caps, filters affixes by
-  pool membership and tier `ilvl ≤ item_level`, weight-picks tiers and rolls
-  values. **Already shared by items and monsters** — maps are a third caller.
-- **"Place" syscalls** as the device model: exits (`ReadExits`/`UseExit`) and
-  the stash (#20: a `ZoneDef.stash` place, `near_stash` 2u gate, syscalls
-  30–32) show the proximity-gated-place pattern a map device copies.
-- **Tilesets as themed families** (`TilesetDef`): base tiles + palette +
-  `variants` + **`natural_monsters`** (the mob pool for a family) + cosmetic
-  `features`. The raw material for "pick family+variant, generate, scatter".
-- **Area level** drives everything: `World.zone_level` scales monster
-  life/damage/xp and drop item levels; the level→ilvl→affix-tier chain is
-  closed. A map's level feeds `zone_level` directly.
-- **Boss/pack spawning**: `SpawnPack` (authored packs, one-shared-rarity roll
-  per refill) and `spawn_elite` (zone-brain, explicit rarity) — the parts a
-  generated instance assembles.
+---
 
-## What does NOT exist yet (the net-new work)
+## 1. Map items
 
-1. **A procedural layout generator.** Every zone today is **authored** via a
-   `map.txt` + tileset; the old disc-scatter `generate_obstacles` is still
-   present on main as the no-tiles fallback (`world/mod.rs`) but is unreachable
-   by live content (every shipped zone is authored) and is slated for removal in
-   #8. Maps need either a seeded generator or an authored-template fallback
-   (below) — not the disc scatter.
-2. **Instance teardown.** Worlds live forever in a `Vec<ManagedWorld>`. Ephemeral
-   map instances must be created on demand and **reaped** when empty.
-3. **Map-mod interpretation.** Map affixes modify an INSTANCE, not a wearer —
-   a new read of rolled affixes at instance-build time (the roller is reused;
-   the *interpretation* is new).
-4. **The device syscall + map item base + map pool content.**
+A **map base** is an item with `map: true` — a 1×1 bag item, not worn gear, that
+carries rolled affixes.
 
-## 1. Map base schema (maps are items)
+```ron
+// content/maps/tidewashed_chart.ron
+MapBase(
+    id: "tidewashed_chart",
+    name: "Tidewashed Chart",
+    tier: 1,                       // difficulty rung (1..N)
+    tileset: "drowned_shore",      // the family the instance generates in
+    tileset_variant: Some("storm"),
+    area_level: 9,                 // feeds the instance's zone_level
+    base_portals: 6,               // lives per run (PoE convention)
+    boss: "tidewarden",            // the family boss spawned at the end
+    affix_pools: ["map"],          // what it rolls from
+)
+```
 
-A **map base** is an `ItemDef` flavored as a consumable chart, not worn gear:
+- **Rarity rolls like gear:** Normal (no mods) · Magic (1–2 mods) · Rare (3–6
+  mods) · Unique (fixed, authored). The full obol set applies — transmute a white
+  chart to magic, alchemy/chaos a rare one chasing a juicy combination, exalt to
+  add, scour a bricked roll, divine the values. **The crafting economy now
+  applies to *content itself*.**
+- **`item_level`** is set on drop from the dropping instance's level (the same
+  level → ilvl → affix-tier chain gear uses), so higher-tier instances drop
+  charts that can roll higher map-mod tiers.
+- Maps sit in the bag, so they travel in the character bundle and are protected
+  by the same anti-dupe transfer protocol as any possession (§6).
 
-- A new `GearSlot`-adjacent marker — recommend an `ItemKind`/`map: bool` flag on
-  `ItemDef` (NOT a wearable slot; maps live in the bag grid like other items so
-  they can carry rolled affixes and be crafted). Bases author `tileset` +
-  optional `tileset_variant` (the family the instance generates in), a base
-  `tier`, and `affix_pools: ["map"]`.
-- A dropped map is an `Item { base_idx, rarity, item_level, affixes, … }` exactly
-  like gear: `item_level` comes from the killing instance's level (the chain is
-  already closed), rarity rolls Normal→Unique, and affixes roll from the `"map"`
-  pool via the existing roller. **The whole crafting economy applies to content
-  itself**: transmute a white chart to magic, alchemy/chaos a rare one chasing
-  juicy instance mods, scour a bricked roll.
-- Example: `Tidewashed Chart` (tier 1, tileset `drowned_shore`), `item_level 9`,
-  rare, mods rolled from `"map"`.
+---
 
-## 2. The map mod pool (affixes that modify the instance)
+## 2. Map mods — the `"map"` affix pool
 
-A new `content/affixes/*.ron` set in pool **`"map"`**, tiered by ilvl like every
-pool. These affixes' `(stat, value)` are read by the **instance builder**, not
-folded into a character's `StatSheet`. Candidate mods (PoE-shaped):
+Map affixes are rolled by the standard affix roller against the `"map"` pool,
+tiered by item level like every pool. They are **not** worn — at instance-build
+time they are scanned by `Stat` into a `MapMods` value the instance reads. Three
+families (values first-pass, tunable):
 
-| Mod (prefix/suffix) | Effect on the instance |
-|---|---|
-| `area_level` (+1..+3, tiered) | bumps `zone_level` above the base tier |
-| `pack_size` | extra packs scattered |
-| `pack_magic` / `pack_rare` | raises per-pack magic/rare roll chance |
-| `monster_life` / `monster_damage` | flat-MORE on every mob (danger for reward) |
-| `item_quantity` / `item_rarity` | the RUNNER's find factors inside the instance |
-| `extra_boss` / `boss_rarity` | a tougher / additional boss |
+**Difficulty (prefixes) — more danger:**
 
-This needs a small `MapMods` struct populated by scanning the consumed map's
-rolled affixes (by `Stat`), passed into instance creation. Reusing the affix
-engine means tiers, weights, and ilvl-gating come for free; only the
-*interpretation* table above is new.
+| Mod | Tiers (by ilvl) | Effect on the instance |
+|---|---|---|
+| `map_pack_size` | +12% / +20% / +30% | more packs scattered |
+| `map_monster_life` | +20% / +35% / +55% | global MORE life on every monster |
+| `map_monster_damage` | +15% / +25% / +40% | global MORE damage on every monster |
+| `map_area_level` | +1 / +2 | raises `zone_level` above the base tier |
+| `map_extra_portals` | +1 (rare: +2) | more lives for the run |
 
-## 3. Generation recipe (instance layout + population)
+**Reward (suffixes) — more loot:**
 
-Two options; we commit to the **template fallback for v1**, the **seeded
-generator as the full vision**.
+| Mod | Tiers | Effect |
+|---|---|---|
+| `map_item_quantity` | +20% / +40% / +60% | the runner's quantity find inside |
+| `map_item_rarity` | +15% / +30% / +50% | the runner's rarity find inside |
+| `map_pack_magic` | +% | per-pack chance to roll magic |
+| `map_pack_rare` | +% | per-pack chance a rare leads |
+| `map_currency_find` | +% | obol drop weight |
 
-**v1 — authored map templates (zero new generator, ships fast).** Author a
-handful of `map_<family>_<n>` template zones per tileset family (a `map.txt`
-each, like the coast). On consume, pick a template for the map's family by the
-instance seed. The entire existing authored-zone path (`World::new_for_zone` →
-collision grid from tiles) is reused unchanged. Population: the template's
-authored `packs` reference the family's `natural_monsters`; the map's
-`pack_size`/`pack_*` mods scale counts/rarity; a boss is `spawn_elite`'d by the
-instance brain. Replayability is bounded by the template count — honest, and
-enough to prove the loop.
+**Risk-for-reward (suffixes) — harder, but charts that carry these tend to roll
+fatter reward mods:**
 
-**v2 — seeded procedural layout (the real Atlas).** A deterministic generator
-(`fn generate_map_layout(seed, tileset, area_level, mods) -> TileGrid + packs`):
-carve a connected walkable region from the family's ground tiles (seeded
-cellular/maze), scatter packs from `natural_monsters` weighted by `area_level`
-and `pack_size`, place a boss arena, set the return exit. Seeded by the
-instance key → fully deterministic and replayable. This is the larger build and
-where most engine work lives.
+| Mod | Tiers | Effect |
+|---|---|---|
+| `map_monster_resist` | +20% / +30% / +40% | monsters gain typed resistance |
+| `map_player_max_resist` | −2% / −4% | the runner's max resistances are lowered for the run |
 
-Either way the instance is just a `ManagedWorld` whose zone was built from a
-(template or generated) `TileGrid` + the map's `zone_level` + the runner's
-find-factor mods.
+`MapMods` mapping: `pack_size`/`pack_*` set the instance's pack count and rarity
+rolls; `monster_life`/`monster_damage`/`monster_resist` stack a MORE multiplier
+on top of the def's level-scaled stats; `item_quantity`/`item_rarity`/
+`currency_find` fold into the runner's find factors *inside the instance only*;
+`area_level` adds to `zone_level`; `extra_portals` adds to the run's portal
+count; `player_max_resist` applies a temporary debuff for the duration.
 
-## 4. The device + consume syscall
+---
 
-- **The device is a PLACE** in town: `ZoneDef.device: Option<(x,y)>` (mirror
-  `stash`), validated walkable+reachable at load, rendered as a prop. Saltmere
-  (and later the main hub) place one.
-- **`ReadMaps`** (new syscall): list the maps in the bag (base, tier, ilvl,
-  rarity) so a bot can choose — the inventory already exposes items; this is a
-  filtered view or a flag on `ReadInventory`.
-- **`UseMap(inv_idx)`** (new syscall, range-gated to the device like
-  `stash_deposit`): consume the map item and stage a departure to a fresh
-  instance. The bot must be at the device.
+## 3. The instance
 
-## 5. Instance lifecycle (create → run → reap)
+Opening a map creates one ephemeral, per-owner zone instance.
 
-1. **Create.** `UseMap` removes the map from the bag and stages a departure with
-   a destination describing the instance: key = `map#<char>#<base>#<ilvl>#<salt>`
-   and the rolled `MapMods` + tileset. The server, seeing a map-instance
-   destination the ferry can't resolve to an existing world, calls the
-   instance-create primitive (net-new; persistent-server RFC phase 4) with that
-   key → deterministic seed `base_seed ^ fnv1a64(key)`, builds the zone
-   (template or generated) at the
-   map's level with the mods, and pushes the character as an arrival.
-2. **Run.** The instance ticks like any world. Its brain scatters/juices packs
-   per the mods and places the boss; the boss hoard is juiced by the map's
-   `item_quantity`/`item_rarity`. A **return exit** (dest = town) lets the runner
-   leave; higher map bases drop here, feeding the ladder.
-3. **Reap.** Ephemeral instances are **not persisted** (unlike town/shore) and
-   are **torn down** when empty: the tick loop drops a `ManagedWorld` flagged
-   ephemeral once it has held zero characters for N ticks (a new, small teardown
-   path — the one piece of lifecycle the engine lacks today). If the runner
-   disconnects/dies, respawn returns them to town and the instance reaps.
+- **Identity & seed.** The instance key is `map#<character_id>#<map base>#<run
+  incarnation>`; its seed is `base_seed ^ fnv1a64(key)`. The same chart run by the
+  same character within an incarnation reproduces the same layout, packs, and loot
+  rolls — fully deterministic.
+- **Level.** `zone_level = map.area_level + map_area_level mod`. That drives
+  monster level (and thus their life/damage/xp) and the item level of everything
+  that drops — the chain is closed, so a tier-15 map is genuinely tier-15
+  dangerous and tier-15 rewarding.
+- **Layout.** The instance generates in the map base's tileset family + variant.
+  The target is a **seeded procedural generator**: carve a connected walkable
+  region from the family's ground tiles, place a boss arena and a return exit.
+  (Authored per-family templates are an acceptable bounded substitute when the
+  generator isn't ready — same instance path, fewer distinct layouts.)
+- **Population.** Packs are scattered from the tileset's `natural_monsters`, their
+  count and rarity scaled by the map's `pack_size`/`pack_magic`/`pack_rare` mods;
+  monster stats take the map's MORE multipliers. The map's **boss** is spawned at
+  the arena (a unique, or a juiced generated rare at higher tiers).
+- **Portals (lives).** The run starts with `base_portals + map_extra_portals`.
+  Each **death** or **mid-run bot redeploy** consumes one portal and ejects the
+  runner to the device; re-entry (within the lifecycle's grace window) resumes the
+  same instance with the remaining portals. **0 portals ⇒ the run is over:** the
+  instance is reaped and the map item is consumed.
+- **Lifecycle.** Instances are **not persisted long-term**; they follow the
+  persistent-server instance lifecycle — live while occupied, **frozen when
+  empty**, GC'd after the grace window, reaped on completion or portal-exhaustion.
 
-## 6. The ladder
+---
 
-Higher-tier instances drop higher-tier map bases (the `"map"` drop weighting
-tiers up with `zone_level`), so **sustain is the meta-game** — a good runner's
-program banks and re-rolls charts to keep climbing. Map **bosses** are
-`spawn_elite` uniques or generated rares with juiced hoards. The per-character
-**atlas progression** (the atlas passive tree, per #24's "Atlas" arc) is earned
-by completion and spent on *how you map* — endless sidegrade, no reroll.
+## 4. The device
 
-## 7. Determinism, content-hash, wire
+The map device is a **place** in town — the social hub where runners gather (the
+town is a shared, high-occupancy world; the device is where they launch from).
 
-- **Deterministic:** every instance is seeded by its key, so the same chart
-  consumed by the same character reproduces the same layout/packs/loot. No
-  wall-clock, no `Math.random` (the sim forbids both).
-- **content_hash / golden:** adding map bases, the `"map"` pool, and any
-  template zones moves `content_hash` → the golden re-pins (content-only if the
-  golden world doesn't run atlas content). Ephemeral instances seeded by key
-  keep replays exact.
-- **Wire/PROTO:** if maps surface in the inspect sheet or an instance HUD badge
-  ships, that's a `PROTO_VERSION` bump + regenerated TS bindings. The core loop
-  needs none (maps are bag items; instances are just worlds).
+- **A place, range-gated** (≈2u), rendered as a prop, authored on the town zone
+  (a `device` coordinate, validated walkable + reachable, mirroring the stash).
+- **Per-player portals.** A runner sees and opens **only their own** maps;
+  instances are keyed by owner, so no one enters another's run. The congregation
+  is social, the runs are private.
+- **Bot API** (proximity-gated to the device):
+  - `read_maps(out, max)` → the maps in the bag, one record each: base id, tier,
+    item level, rarity, remaining portals.
+  - `use_map(inv_idx)` → consume the map and depart into its instance. Errors:
+    out of device range; bad index; already at portal cap (re-entry of an active
+    run uses the device too).
+  - The instance carries a **return exit** (`UseExit`) back to the device.
 
-## 8. Prerequisites & phased build (post-design)
+---
 
-**Prereqs:** the **persistent-server RFC's instance create/reap primitives**
-(phase 4 — the per-owner, frozen-15-min, reaped instance lifecycle; net-new),
-the generated-zone layout (template fallback first, generator later), the `"map"`
-affix-pool content, and the device syscall + ferry-into/teardown-of ephemeral
-worlds.
+## 5. The ladder & atlas progression
 
-**Phases (each: tests + golden re-pin + docs):**
-1. **Map item + pool** — `ItemDef` map flag, `"map"` affix pool content, drops
-   roll charts; `MapMods` interpretation struct (no instances yet — a chart you
-   can roll/craft/stash).
-2. **Device + consume + template instances** — device place, `ReadMaps`/`UseMap`,
-   ferry into a freshly-created instance (the RFC's create primitive) from an
-   authored template, return exit, **teardown path**. The loop closes end-to-end
-   on templates.
-3. **Procedural generator** — seeded layout + pack scatter from
-   `natural_monsters`; retire the template fallback (or keep as set-pieces).
-4. **Boss hoards + the ladder** — juiced map bosses, higher-maps-drop-higher,
-   the atlas passive tree (#24 Arc 1).
+- **Maps sustain maps.** An instance drops map bases weighted toward its own
+  tier, with a chance — scaled by the runner's quantity find and atlas
+  progression — to drop the **next** tier. Baseline drop rates target ≥1 map per
+  map cleared at the boss, so a competent runner climbs rather than runs dry.
+- **Bosses are the completion mark.** Every map ends at a boss; killing it is the
+  run's headline reward (a hoard juiced by the map's quantity/rarity) and what
+  unlocks higher tiers. **Pinnacle bosses** sit behind keys assembled from
+  sustained mapping, and carry **per-character completion marks** — the trophies
+  one idler accumulates over weeks.
+- **The atlas passive tree** is a **second, per-character tree**, separate from
+  the build tree, earned by map completions and spent on *how you map* rather than
+  on the character's body — e.g. "+pack size on all maps", "weight a specific
+  content type", "access tier N+", "bosses drop +quantity", "chance not to consume
+  a map". It is endless horizontal sidegrade: you re-weight your atlas, you never
+  reroll a character. (This is Arc 1 of the one-character long game,
+  `one-character.md`.)
 
-## Concerns for redline
-- **v1 = authored templates** (bounded variety) vs jumping straight to the
-  procedural generator (much larger, the real vision). I recommend templates
-  first to close the loop, generator second — flagged.
-- **Runtime instance create AND reap are both net-new** and come from the
-  persistent-server RFC (phase 4) — the atlas consumes that lifecycle rather than
-  inventing its own; the map-specific work above (map item/pool, device, mod
-  interpretation, generation) is what's genuinely atlas-new.
-- **Map mods as a non-StatSheet interpretation** is the only new
-  affix-semantics layer; keeping the *roll* on the shared engine is deliberate.
-- Depends on the **persistent-server RFC** (instance lifecycle) and reads best
-  alongside **#24** (the Atlas is Arc 1 of the one-character long game).
+---
+
+## 6. Determinism & integrity
+
+- **Deterministic.** Every instance is seeded by its key; same chart + same
+  character + same incarnation ⇒ identical run. The sim uses only seeded RNG (no
+  wall-clock, no `Math.random`).
+- **No dupes.** Maps are possessions in the character bundle, so consuming a map
+  and opening its instance is a fenced transfer under the anti-dupe protocol
+  (`persistent-server.md` §6) — a crash mid-open never duplicates a chart or its
+  contents.
+- **Crafting integrity.** Rolling maps draws from the same dedicated deterministic
+  currency RNG stream as gear crafting, so chart-spam never perturbs loot luck.
+
+---
+
+## Open design choices (for redline)
+
+These are genuine design decisions, not implementation status:
+
+- **Procedural generator vs authored templates** as the shipping layout source
+  (variety vs effort) — the spec targets the generator; templates are the
+  fallback quality bar.
+- **The mod values and tier ladder above are first-pass** and want a balance pass
+  against real character power at each tier.
+- **Pinnacle-key design** — what assembles a key, how many bosses, the cadence.
+- **Atlas-tree scope** — size, the content-weighting axes, whether tier access is
+  gated by the tree or by boss completion.
+- **Trade of maps** — whether charts are tradeable between players from day one
+  (they are bundle items, so the machinery allows it; it's a design call).
+
+> Implementation status, dependencies, and the phased build are tracked in the
+> Atlas issue (#21) — this document is the standing target specification.
