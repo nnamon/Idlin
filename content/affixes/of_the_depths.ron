@@ -7,9 +7,10 @@ AffixDef(
     weight: 80,
     stat: resist_cold,
     layer: added,
+    // Compact tier shorthand: (ilvl, min, max, name, weight).
     tiers: [
-        (ilvl: 1, min: 500, max: 900, name: "of the Depths", weight: 100),
-        (ilvl: 3, min: 901, max: 1500, name: "of the Abyss", weight: 45),
-        (ilvl: 6, min: 1501, max: 2400, name: "of the Drowned King", weight: 15),
+        (1, 500, 900, "of the Depths", 100),
+        (3, 901, 1500, "of the Abyss", 45),
+        (6, 1501, 2400, "of the Drowned King", 15),
     ],
 )

@@ -57,6 +57,8 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
+    #[error("{who}: references unknown affix pool set `@{set}`")]
+    UnknownPoolSet { who: String, set: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -163,7 +165,9 @@ pub struct MonsterDef {
     pub lines: Vec<String>,
     /// The monster's gem kit — same gem pool as characters, fixed levels,
     /// cast through the same syscalls (UseSkill slot 1..N in list order).
-    #[serde(default)]
+    /// Authored as full structs OR the string shorthand
+    /// `"gem/level + support/level + ..."`.
+    #[serde(default, deserialize_with = "de_skills")]
     pub skills: Vec<MonsterSkillDef>,
 }
 
@@ -418,8 +422,160 @@ pub struct AffixDef {
     pub weight: u32,
     pub stat: Stat,
     pub layer: Layer,
-    /// Must be sorted by ilvl ascending.
+    /// Must be sorted by ilvl ascending. Authored as full structs OR the
+    /// compact tuple shorthand `(ilvl, min, max[, name[, weight]])`.
+    #[serde(deserialize_with = "de_tiers")]
     pub tiers: Vec<AffixTier>,
+}
+
+// ---- RON authoring shorthands (desugar at load; runtime schema unchanged) ----
+
+/// An affix tier, authored full (a struct/map) or compact (a tuple). The
+/// tuple omits trailing defaults: name "" and weight `default_tier_weight()`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TierEntry {
+    Quint(u32, i64, i64, String, u32),
+    Quad(u32, i64, i64, String),
+    Triple(u32, i64, i64),
+    Full(AffixTier),
+}
+
+fn de_tiers<'de, D>(d: D) -> Result<Vec<AffixTier>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Vec::<TierEntry>::deserialize(d)?;
+    Ok(raw
+        .into_iter()
+        .map(|e| match e {
+            TierEntry::Full(t) => t,
+            TierEntry::Triple(ilvl, min, max) => AffixTier {
+                ilvl,
+                min,
+                max,
+                name: String::new(),
+                weight: default_tier_weight(),
+            },
+            TierEntry::Quad(ilvl, min, max, name) => AffixTier {
+                ilvl,
+                min,
+                max,
+                name,
+                weight: default_tier_weight(),
+            },
+            TierEntry::Quint(ilvl, min, max, name, weight) => AffixTier {
+                ilvl,
+                min,
+                max,
+                name,
+                weight,
+            },
+        })
+        .collect())
+}
+
+/// A monster skill, authored full (a struct) or terse
+/// (`"gem/level + support/level + ..."`).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SkillEntry {
+    Terse(String),
+    Full(MonsterSkillDef),
+}
+
+/// Parse one `gem` or `gem/level` token (level defaults to 1).
+fn parse_gem_ref(tok: &str) -> Result<MonsterGemRef, String> {
+    let tok = tok.trim();
+    if tok.is_empty() {
+        return Err("empty gem token".into());
+    }
+    match tok.split_once('/') {
+        None => Ok(MonsterGemRef {
+            gem: tok.to_string(),
+            level: 1,
+        }),
+        Some((gem, lvl)) => {
+            let gem = gem.trim();
+            if gem.is_empty() {
+                return Err(format!("missing gem id in `{tok}`"));
+            }
+            let level = lvl
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| format!("bad level in `{tok}`"))?;
+            Ok(MonsterGemRef {
+                gem: gem.to_string(),
+                level,
+            })
+        }
+    }
+}
+
+fn de_skills<'de, D>(d: D) -> Result<Vec<MonsterSkillDef>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let raw = Vec::<SkillEntry>::deserialize(d)?;
+    let mut out = Vec::with_capacity(raw.len());
+    for e in raw {
+        match e {
+            SkillEntry::Full(s) => out.push(s),
+            SkillEntry::Terse(s) => {
+                let mut parts = s.split('+').map(str::trim).filter(|p| !p.is_empty());
+                let Some(skill_tok) = parts.next() else {
+                    return Err(D::Error::custom(format!("empty skill kit `{s}`")));
+                };
+                let skill = parse_gem_ref(skill_tok).map_err(D::Error::custom)?;
+                let supports = parts
+                    .map(parse_gem_ref)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(D::Error::custom)?;
+                out.push(MonsterSkillDef {
+                    gem: skill.gem,
+                    level: skill.level,
+                    supports,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Named affix-pool sets (`content/pool_sets.ron`): `affix_pools` entries
+/// of the form `@name` expand to the listed pools at load. Authoring-only —
+/// fully desugared before the runtime sees a ContentDb.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PoolSets(pub Vec<(String, Vec<String>)>);
+
+/// Expand `@name` pool-set references; plain pools pass through. Order is
+/// preserved and duplicates dropped (first occurrence wins).
+fn expand_pools(
+    raw: &[String],
+    sets: &std::collections::BTreeMap<String, Vec<String>>,
+    who: &str,
+) -> Result<Vec<String>, ContentError> {
+    let mut out: Vec<String> = Vec::new();
+    let push = |p: &str, out: &mut Vec<String>| {
+        if !out.iter().any(|e| e == p) {
+            out.push(p.to_string());
+        }
+    };
+    for entry in raw {
+        if let Some(name) = entry.strip_prefix('@') {
+            let set = sets.get(name).ok_or_else(|| ContentError::UnknownPoolSet {
+                who: who.to_string(),
+                set: name.to_string(),
+            })?;
+            for p in set {
+                push(p, &mut out);
+            }
+        } else {
+            push(entry, &mut out);
+        }
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1264,6 +1420,10 @@ impl ContentDb {
         // attach to zones (by area directory name == zone id) after the loop.
         let mut pending_maps: Vec<(String, String)> = Vec::new();
         let mut pending_props: Vec<(String, PropsDef)> = Vec::new();
+        // Affix-pool sets (authoring shorthand): collected during the loop,
+        // expanded into item/monster affix_pools after it.
+        let mut pool_sets: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
         // (brain id, file path, source — includes expanded, is_asm).
         // Brains compile at the END of the load so content refs resolve
         // against the fully sorted database.
@@ -1297,6 +1457,10 @@ impl ContentDb {
                 db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
             } else if rel_str == "speech.ron" {
                 db.speech = ron::from_str::<SpeechDef>(&text).map_err(parse_err)?;
+            } else if rel_str == "pool_sets.ron" {
+                for (name, pools) in ron::from_str::<PoolSets>(&text).map_err(parse_err)?.0 {
+                    pool_sets.insert(name, pools);
+                }
             } else if rel_str.starts_with("currency/") {
                 db.currency
                     .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
@@ -1552,6 +1716,15 @@ impl ContentDb {
                 }
             }
         }
+        // Expand `@set` affix-pool shorthands BEFORE validating pools, so
+        // the checks below (and the runtime) only ever see real pool names.
+        for item in &mut db.items {
+            item.affix_pools =
+                expand_pools(&item.affix_pools, &pool_sets, &format!("item {}", item.id))?;
+        }
+        for m in &mut db.monsters {
+            m.affix_pools = expand_pools(&m.affix_pools, &pool_sets, &format!("monster {}", m.id))?;
+        }
         for item in &db.items {
             for pool in &item.affix_pools {
                 if !db.affixes.iter().any(|a| &a.pool == pool) {
@@ -1731,6 +1904,121 @@ fn collect_ron_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_tiers_desugar_to_the_full_form() {
+        // The same ladder, authored full vs compact (Triple/Quad/Quint).
+        let full = r#"AffixDef(id:"x", name:"X", kind:prefix, pool:"p", stat:life, layer:added,
+            tiers:[
+                (ilvl:1, min:6, max:12),
+                (ilvl:3, min:13, max:22, name:"Occult"),
+                (ilvl:6, min:23, max:36, name:"Eldritch", weight:15),
+            ])"#;
+        let compact = r#"AffixDef(id:"x", name:"X", kind:prefix, pool:"p", stat:life, layer:added,
+            tiers:[ (1,6,12), (3,13,22,"Occult"), (6,23,36,"Eldritch",15) ])"#;
+        let a: AffixDef = ron::from_str(full).expect("full parses");
+        let b: AffixDef = ron::from_str(compact).expect("compact parses");
+        assert_eq!(a.tiers.len(), 3);
+        assert_eq!(b.tiers.len(), 3);
+        for (x, y) in a.tiers.iter().zip(&b.tiers) {
+            assert_eq!((x.ilvl, x.min, x.max), (y.ilvl, y.min, y.max));
+            assert_eq!(x.name, y.name);
+            assert_eq!(x.weight, y.weight);
+        }
+        // Triple defaults: empty name, default weight.
+        assert_eq!(b.tiers[0].name, "");
+        assert_eq!(b.tiers[0].weight, default_tier_weight());
+        // Quad: weight defaults, name set.
+        assert_eq!(b.tiers[1].name, "Occult");
+        assert_eq!(b.tiers[1].weight, default_tier_weight());
+        // Quint: both set.
+        assert_eq!(b.tiers[2].weight, 15);
+    }
+
+    #[test]
+    fn terse_skills_desugar_to_the_full_form() {
+        // Test the field desugar in isolation (MonsterDef has many required
+        // fields; the real-content test covers the full path).
+        #[derive(Deserialize)]
+        struct SkillsOnly {
+            #[serde(default, deserialize_with = "de_skills")]
+            skills: Vec<MonsterSkillDef>,
+        }
+        let full = r#"(skills:[ (gem:"arc", level:3, supports:[(gem:"swift_casting", level:1)]),
+                                 (gem:"ember_bolt", level:1) ])"#;
+        let terse = r#"(skills:[ "arc/3 + swift_casting/1", "ember_bolt" ])"#;
+        let a: SkillsOnly = ron::from_str(full).expect("full parses");
+        let b: SkillsOnly = ron::from_str(terse).expect("terse parses");
+        assert_eq!(a.skills.len(), 2);
+        assert_eq!(b.skills.len(), 2);
+        assert_eq!(b.skills[0].gem, "arc");
+        assert_eq!(b.skills[0].level, 3);
+        assert_eq!(b.skills[0].supports.len(), 1);
+        assert_eq!(b.skills[0].supports[0].gem, "swift_casting");
+        assert_eq!(b.skills[0].supports[0].level, 1);
+        // Bare "ember_bolt" → level defaults to 1, no supports.
+        assert_eq!(b.skills[1].gem, "ember_bolt");
+        assert_eq!(b.skills[1].level, 1);
+        assert!(b.skills[1].supports.is_empty());
+    }
+
+    #[test]
+    fn malformed_terse_skill_is_an_error() {
+        #[derive(Deserialize)]
+        struct SkillsOnly {
+            #[serde(default, deserialize_with = "de_skills")]
+            #[allow(dead_code)]
+            skills: Vec<MonsterSkillDef>,
+        }
+        assert!(ron::from_str::<SkillsOnly>(r#"(skills:[ "arc/notanumber" ])"#).is_err());
+        assert!(ron::from_str::<SkillsOnly>(r#"(skills:[ "" ])"#).is_err());
+    }
+
+    #[test]
+    fn pool_set_expansion_dedupes_and_errors() {
+        let mut sets = std::collections::BTreeMap::new();
+        sets.insert(
+            "armour_default".to_string(),
+            vec!["armour".to_string(), "arcana".to_string()],
+        );
+        let got = expand_pools(
+            &["@armour_default".into(), "find".into(), "armour".into()],
+            &sets,
+            "item x",
+        )
+        .unwrap();
+        // Expanded, passthrough, and the duplicate "armour" dropped.
+        assert_eq!(got, vec!["armour", "arcana", "find"]);
+        // Unknown set → error.
+        assert!(matches!(
+            expand_pools(&["@nope".into()], &sets, "item x"),
+            Err(ContentError::UnknownPoolSet { .. })
+        ));
+    }
+
+    #[test]
+    fn real_content_shorthands_resolve() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        // Pool mixin expanded back to the literal pools.
+        let kelp = db.items.iter().find(|i| i.id == "kelp_vest").unwrap();
+        assert_eq!(kelp.affix_pools, vec!["armour", "arcana"]);
+        let helm = db.items.iter().find(|i| i.id == "brine_helm").unwrap();
+        assert_eq!(helm.affix_pools, vec!["armour", "arcana", "find"]);
+        // String skill kit parsed correctly.
+        let tw = db.monsters.iter().find(|m| m.id == "tidewarden").unwrap();
+        let kit: Vec<(&str, u32)> = tw
+            .skills
+            .iter()
+            .map(|s| (s.gem.as_str(), s.level))
+            .collect();
+        assert_eq!(kit, vec![("arc", 3), ("frost_nova", 3), ("war_cry", 2)]);
+        // Compact tiers parsed to the right values.
+        let storms = db.affixes.iter().find(|a| a.id == "of_storms").unwrap();
+        assert_eq!(storms.tiers.len(), 3);
+        assert_eq!(storms.tiers[0].name, "of Storms");
+        assert_eq!((storms.tiers[2].min, storms.tiers[2].max), (1501, 2400));
+        assert_eq!(storms.tiers[2].weight, 15);
+    }
 
     #[test]
     fn missing_dir_is_empty_content() {

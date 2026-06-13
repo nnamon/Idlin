@@ -33,9 +33,5 @@ MonsterDef(
         "You crawled OUT? Crawl back.",
         "Every wreck on this shore is mine.",
     ],
-    skills: [
-        (gem: "arc", level: 3),
-        (gem: "frost_nova", level: 3),
-        (gem: "war_cry", level: 2),
-    ],
+    skills: ["arc/3", "frost_nova/3", "war_cry/2"],
 )

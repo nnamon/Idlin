@@ -133,6 +133,36 @@ resist_chaos` (attributes convert per
 [mechanics.md](mechanics.md)). The same vocabulary powers gear, tree nodes, and support
 gems — one evaluator (see [mechanics.md](mechanics.md)).
 
+### Authoring shorthands
+
+These desugar in the loader — the runtime schema is unchanged, so the full
+forms always still work.
+
+**Compact affix tiers.** A tier may be a tuple instead of a struct;
+trailing fields fall to their defaults (`name` empty, `weight` 100):
+
+```ron
+tiers: [
+    (1, 6, 12),                       // (ilvl, min, max)
+    (3, 13, 22, "Occult"),            // + name
+    (6, 23, 36, "Eldritch", 15),      // + name, weight
+]
+```
+
+**Monster skill kits as a string.** `"gem/level + support/level + ..."`
+(level defaults to 1 if omitted): `skills: ["arc/3 + swift_casting/1"]` is
+`(gem: "arc", level: 3, supports: [(gem: "swift_casting", level: 1)])`.
+
+**Affix pool mixins.** Define named sets once in `content/pool_sets.ron`:
+
+```ron
+PoolSets([ ("armour_default", ["armour", "arcana"]) ])
+```
+
+Then subscribe with `@name` (composes with plain pools; duplicates are
+dropped): `affix_pools: ["@armour_default", "find"]`. Grow a whole
+family's affix surface by editing the one set.
+
 ### Monster skill kits
 
 MonsterDef takes `mana:` and `skills:` — the same gems characters use,

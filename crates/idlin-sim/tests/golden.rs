@@ -10,7 +10,10 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0x2F83_F385_2C72_7695;
+/// Moved for #5: content RON migrated to the new authoring shorthands
+/// (pool mixins / string skills / compact tiers). The PARSED content is
+/// identical — only file bytes (and thus content_hash) changed.
+const GOLDEN_HASH: u64 = 0x47DD_3656_8EFB_4A8F;
 
 #[test]
 fn golden_replay() {

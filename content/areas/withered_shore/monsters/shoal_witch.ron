@@ -15,9 +15,7 @@ MonsterDef(
     radius_cu: 60,
     range_cu: 220,
     mana: 60,
-    skills: [
-        (gem: "ember_bolt", level: 2),
-    ],
+    skills: ["ember_bolt/2"],
     use_ticks: 16,
     aggro_radius_cu: 1500,
     armour: 10,

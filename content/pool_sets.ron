@@ -1,0 +1,8 @@
+// Named affix-pool sets. Items/monsters subscribe with `@name` in their
+// `affix_pools`; the loader expands these in place (authoring-only — the
+// runtime only ever sees real pool names). Grow a whole family's affix
+// surface in one place here.
+PoolSets([
+    // The default armour kit: defensive rolls plus a little arcana.
+    ("armour_default", ["armour", "arcana"]),
+])
