@@ -6,7 +6,7 @@
 use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
-    ObstacleState, PropState, TileMapState, TileVisual,
+    ObstacleState, PropState, SkillStatsView, TileMapState, TileVisual,
 };
 use idlin_sim::world::CharacterSheetView;
 use idlin_sim::{EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -368,12 +368,34 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         gems: v
             .gems
             .into_iter()
-            .map(|(name, level, xp, xp_next, support)| GemView {
+            .map(|(name, level, xp, xp_next, support, stats)| GemView {
                 name,
                 level,
                 xp: xp.clamp(0, i32::MAX as i64) as i32,
                 xp_next: xp_next.clamp(0, i32::MAX as i64) as i32,
                 support,
+                stats: stats.map(|s| SkillStatsView {
+                    kind_spell: s.kind_spell,
+                    shape: s.shape,
+                    dmg_phys: clamp_i32(s.damage[0]),
+                    dmg_fire: clamp_i32(s.damage[1]),
+                    dmg_cold: clamp_i32(s.damage[2]),
+                    dmg_lightning: clamp_i32(s.damage[3]),
+                    dmg_chaos: clamp_i32(s.damage[4]),
+                    dps: clamp_i32(s.dps),
+                    use_time_ms: clamp_i32(s.use_ticks as i64 * 1000 / TICK_HZ as i64),
+                    mana_cost: clamp_i32(s.mana_cost),
+                    crit_chance_bp: clamp_i32(s.crit_chance_bp),
+                    crit_multi_bp: clamp_i32(s.crit_multi_bp),
+                    range_u10: clamp_i32(s.range_u10),
+                    radius_u10: clamp_i32(s.radius_u10),
+                    width_u10: clamp_i32(s.width_u10),
+                    projectiles: s.projectiles,
+                    pierce: s.pierce,
+                    dot_dps: clamp_i32(s.dot_dps),
+                    dot_ms: clamp_i32(s.dot_ms),
+                    buff: s.buff,
+                }),
             })
             .collect(),
         currency: v

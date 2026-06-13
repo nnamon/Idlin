@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 28;
+pub const PROTO_VERSION: u32 = 29;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -339,6 +339,47 @@ pub struct GemView {
     pub xp_next: i32,
     /// Support gems render indented under their skill.
     pub support: bool,
+    /// Offensive readout for SKILL gems (None for supports). Computed by the
+    /// sim's shared skill resolver, so the panel matches what the skill deals.
+    #[serde(default)]
+    pub stats: Option<SkillStatsView>,
+}
+
+/// Per-skill offense for the focus panel, computed server-side from the same
+/// resolver the combat executor uses. Numbers are the PoE-tooltip convention:
+/// unmitigated, all-hits-land, single-target single-hit.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct SkillStatsView {
+    /// true = spell (cast time, ignores weapon); false = attack (weapon-scaled).
+    pub kind_spell: bool,
+    /// SkillShape discriminant: 0 strike, 1 nova, 2 cone, 3 line, 4 aoe, 5 projectile.
+    pub shape: u8,
+    /// Average per-type damage per hit (pre-crit, pre-mitigation, mean variance).
+    pub dmg_phys: i32,
+    pub dmg_fire: i32,
+    pub dmg_cold: i32,
+    pub dmg_lightning: i32,
+    pub dmg_chaos: i32,
+    /// Hit DPS: expected per-hit damage (crit folded in) × hits/sec.
+    pub dps: i32,
+    pub use_time_ms: i32,
+    pub mana_cost: i32,
+    /// Effective crit chance (basis points, capped at 9500 to match the sim).
+    pub crit_chance_bp: i32,
+    /// Crit damage multiplier in basis points (10000 = ×1.0).
+    pub crit_multi_bp: i32,
+    /// Reach / footprint in TENTHS of a sim unit (0 when N/A).
+    pub range_u10: i32,
+    pub radius_u10: i32,
+    pub width_u10: i32,
+    /// Projectiles per use (1 + extra) and pierce count.
+    pub projectiles: u32,
+    pub pierce: u32,
+    /// Damage-over-time: per-second (pre-mitigation) and total duration (ms).
+    pub dot_dps: i32,
+    pub dot_ms: i32,
+    /// Carries a buff/debuff rider.
+    pub buff: bool,
 }
 
 /// A tutorial gate: a rect of CELLS that blocks ground while shut.

@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
+import type { SkillStatsView } from "../gen/SkillStatsView";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
 import "./overlay.css";
 
 type Icons = { icon(name: string, kind: string): string | null } | null;
+
+// Five damage types, mirroring DMG_COLORS in web/src/scene/FxSystem.ts
+// (phys / fire / cold / lightning / chaos) so the gem readout reads the same
+// as the floating damage numbers.
+const DMG_COLORS = ["#ffe9c8", "#ff8a5a", "#6ab8e8", "#ffe96a", "#c08aff"];
+const DMG_LABELS = ["phys", "fire", "cold", "lightning", "chaos"];
+// SkillShape discriminant order (idlin-content SkillShape; bots.rs ReadSkills).
+const SHAPE_NAMES = ["strike", "nova", "cone", "line", "aoe", "projectile"];
 
 /** Best-guess silhouette family for a bag item (until items carry kinds). */
 function bagKind(name: string, w: number, h: number): string {
@@ -329,8 +338,64 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   );
 }
 
+/** The expanded body of a skill gem: type-split damage bar + offense rows.
+ *  All numbers are server-computed (PoE-tooltip convention: unmitigated,
+ *  all-hits-land, single-target single-hit). */
+function SkillDetail({ s }: { s: SkillStatsView }) {
+  const dmg = [s.dmg_phys, s.dmg_fire, s.dmg_cold, s.dmg_lightning, s.dmg_chaos];
+  const total = dmg.reduce((a, b) => a + b, 0);
+  const costPerSec = s.use_time_ms > 0 ? Math.round((s.mana_cost * 1000) / s.use_time_ms) : 0;
+  const u = (tenths: number) => (tenths / 10).toFixed(1);
+  const row = (k: string, v: string) => (
+    <div key={k} className="row" style={{ fontSize: 11.5 }}>
+      <span className="k" style={{ color: "#8a9a9a" }}>{k}</span>
+      <span className="v" style={{ color: "#cdd9d9" }}>{v}</span>
+    </div>
+  );
+  return (
+    <div style={{ paddingLeft: 16, paddingBottom: 4 }}>
+      {total > 0 && (
+        <div
+          title={dmg.map((d, i) => `${DMG_LABELS[i]} ${d}`).join("   ")}
+          style={{ display: "flex", height: 5, borderRadius: 2, overflow: "hidden", margin: "3px 0 5px" }}
+        >
+          {dmg.map((d, i) =>
+            d > 0 ? (
+              <span key={i} style={{ width: `${(d / total) * 100}%`, background: DMG_COLORS[i] }} />
+            ) : null,
+          )}
+        </div>
+      )}
+      {row("use", `${(s.use_time_ms / 1000).toFixed(2)}s`)}
+      {s.mana_cost > 0 && row("mana", `${s.mana_cost} (${costPerSec}/s)`)}
+      {s.crit_chance_bp > 0 &&
+        row("crit", `${(s.crit_chance_bp / 100).toFixed(1)}% × ${(s.crit_multi_bp / 10000).toFixed(2)}`)}
+      {row(
+        "shape",
+        `${SHAPE_NAMES[s.shape] ?? "?"}${s.range_u10 > 0 ? ` · ${u(s.range_u10)}u` : ""}`,
+      )}
+      {s.radius_u10 > 0 && row("radius", `${u(s.radius_u10)}u`)}
+      {s.width_u10 > 0 && row("width", `${u(s.width_u10)}u`)}
+      {(s.projectiles > 1 || s.pierce > 0) &&
+        row("projectiles", `×${s.projectiles}${s.pierce > 0 ? ` · pierce ${s.pierce}` : ""}`)}
+      {s.dot_dps > 0 && row("dot", `${s.dot_dps}/s for ${(s.dot_ms / 1000).toFixed(1)}s`)}
+    </div>
+  );
+}
+
 /** Left column: the focused idler's numbers — stats, gems, obols. */
 function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
+  // Expandable skill cards: which gem rows (by index) are open.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // A new character clears the open set (stale indices would mislead).
+  useEffect(() => setExpanded(new Set()), [sheet.id]);
+  const toggle = (i: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
   const stat = (label: string, value: string) => (
     <div key={label} className="row">
       <span className="k">{label}</span>
@@ -360,47 +425,62 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
       {sheet.gems.length > 0 && (
         <>
           <Header>Gems</Header>
-          {sheet.gems.map((g, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: 12.5,
-                color: "#5adfdf",
-                paddingLeft: g.support ? 12 : 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span style={{ whiteSpace: "nowrap" }}>
-                {g.support ? "↳ " : "◆ "}
-                {g.name} <span style={{ color: "#ab9d7a" }}>lv{g.level}</span>
-              </span>
-              {g.xp_next > 0 ? (
-                <span
+          {sheet.gems.map((g, i) => {
+            const s = g.stats;
+            const open = expanded.has(i);
+            // Headline DPS: hit DPS, or DoT/s for pure damage-over-time skills.
+            const headline = s ? (s.dps > 0 ? `${s.dps} dps` : s.dot_dps > 0 ? `${s.dot_dps} dot/s` : "") : "";
+            return (
+              <div key={i}>
+                <div
+                  onClick={s ? () => toggle(i) : undefined}
                   style={{
-                    flex: "0 0 44px",
-                    height: 4,
-                    background: "#2c2415",
-                    borderRadius: 2,
-                    overflow: "hidden",
+                    fontSize: 12.5,
+                    color: "#5adfdf",
+                    paddingLeft: g.support ? 12 : 0,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    cursor: s ? "pointer" : "default",
                   }}
-                  title={`${g.xp} / ${g.xp_next} xp`}
                 >
-                  <span
-                    style={{
-                      display: "block",
-                      height: "100%",
-                      width: `${Math.min(100, Math.round((g.xp / g.xp_next) * 100))}%`,
-                      background: "#5adfdf",
-                    }}
-                  />
-                </span>
-              ) : (
-                <span style={{ color: "#ffd75a", fontSize: 10.5, letterSpacing: 1 }}>MAX</span>
-              )}
-            </div>
-          ))}
+                  <span style={{ whiteSpace: "nowrap" }}>
+                    {g.support ? "↳ " : s ? (open ? "▾ " : "▸ ") : "◆ "}
+                    {g.name} <span style={{ color: "#ab9d7a" }}>lv{g.level}</span>
+                  </span>
+                  {headline && (
+                    <span style={{ color: "#ffd75a", fontSize: 11.5, whiteSpace: "nowrap" }}>
+                      {headline}
+                    </span>
+                  )}
+                  {g.xp_next > 0 ? (
+                    <span
+                      style={{
+                        flex: "0 0 44px",
+                        height: 4,
+                        background: "#2c2415",
+                        borderRadius: 2,
+                        overflow: "hidden",
+                      }}
+                      title={`${g.xp} / ${g.xp_next} xp`}
+                    >
+                      <span
+                        style={{
+                          display: "block",
+                          height: "100%",
+                          width: `${Math.min(100, Math.round((g.xp / g.xp_next) * 100))}%`,
+                          background: "#5adfdf",
+                        }}
+                      />
+                    </span>
+                  ) : (
+                    <span style={{ color: "#ffd75a", fontSize: 10.5, letterSpacing: 1 }}>MAX</span>
+                  )}
+                </div>
+                {s && open && <SkillDetail s={s} />}
+              </div>
+            );
+          })}
         </>
       )}
       {sheet.currency.length > 0 && (

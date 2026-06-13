@@ -2,9 +2,32 @@
 //! the canonical FNV-1a state hash that pins replays, snapshots, and CI.
 
 use super::{EntityView, World};
-use crate::entity::{Item, LootPayload};
+use crate::entity::{CombatStats, Item, LootPayload, SocketedGem};
 use crate::hash::Fnv1a64;
-use idlin_content::GearSlot;
+use idlin_content::{GearSlot, GemKind, SkillShape};
+
+/// Per-skill offense for the focus panel, computed from the sim's shared
+/// `resolve_skill` so the displayed numbers match what the skill deals.
+/// PoE-tooltip convention: unmitigated, all-hits-land, single-target.
+pub struct SkillStatsView {
+    pub kind_spell: bool,
+    pub shape: u8,
+    pub damage: [i64; crate::entity::DMG_COUNT],
+    pub dps: i64,
+    pub use_ticks: u64,
+    pub mana_cost: i64,
+    pub crit_chance_bp: i64,
+    pub crit_multi_bp: i64,
+    /// Footprint in tenths of a sim unit.
+    pub range_u10: i64,
+    pub radius_u10: i64,
+    pub width_u10: i64,
+    pub projectiles: u32,
+    pub pierce: u32,
+    pub dot_dps: i64,
+    pub dot_ms: i64,
+    pub buff: bool,
+}
 
 /// Inspection snapshot of one character (the server maps this onto the
 /// protocol's CharacterSheet for the focus panel).
@@ -34,9 +57,9 @@ pub struct CharacterSheetView {
     pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
     /// (name, rarity, x, y, w, h) per bag item.
     pub inventory: Vec<(String, u8, u8, u8, u8, u8)>,
-    /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
-    /// follow their skill.
-    pub gems: Vec<(String, u32, i64, i64, bool)>,
+    /// (name, level, xp, xp_to_next: 0 at cap, is_support, skill stats) —
+    /// supports follow their skill; only skill rows carry stats.
+    pub gems: Vec<(String, u32, i64, i64, bool, Option<SkillStatsView>)>,
     /// (name, count, tier) per owned obol kind (nonzero only).
     pub currency: Vec<(String, u64, u8)>,
     pub passive_allocated: u32,
@@ -96,9 +119,11 @@ impl World {
         };
         let mut gems = Vec::new();
         for sg in ch.sockets.values() {
-            gems.push(gem_row(&sg.gem, false));
+            let (name, level, xp, next, support) = gem_row(&sg.gem, false);
+            gems.push((name, level, xp, next, support, self.skill_stats_view(c, sg)));
             for sup in &sg.supports {
-                gems.push(gem_row(sup, true));
+                let (name, level, xp, next, support) = gem_row(sup, true);
+                gems.push((name, level, xp, next, support, None));
             }
         }
         let currency = ch
@@ -139,6 +164,64 @@ impl World {
             passive_allocated: ch.allocated.len() as u32,
             passive_unspent: ch.passive_points(),
             build_len: ch.build_plan.len() as u32,
+        })
+    }
+
+    /// Compute the panel's offensive readout for one socketed skill, using the
+    /// same `resolve_skill` the executor uses. DPS folds the expected crit
+    /// multiplier into the mean hit (variance averages to 1.0) and divides by
+    /// use time; mitigation, accuracy, and multi-projectile totals are left
+    /// out by design (the PoE-tooltip convention). Returns None for non-skill
+    /// gems.
+    fn skill_stats_view(&self, c: &CombatStats, sg: &SocketedGem) -> Option<SkillStatsView> {
+        let gem_def = &self.content.gems[sg.gem.gem_idx as usize];
+        if gem_def.kind != GemKind::Skill {
+            return None;
+        }
+        let r = self.resolve_skill(c, sg);
+        // Mirror strike()'s clamps so the panel shows the real applied crit.
+        let crit_chance_bp = r.crit_bp.clamp(0, 9500);
+        let crit_multi_bp = c.crit_multi.max(10000);
+        let sum: i64 = r.damage.iter().sum();
+        let avg_mult_bp = 10000 + crit_chance_bp * (crit_multi_bp - 10000) / 10000;
+        let avg_hit = sum * avg_mult_bp / 10000;
+        let use_ticks = self.skill_use_ticks(sg, c.use_ticks, c.cast_speed);
+        let dps = if use_ticks > 0 {
+            avg_hit * super::TICK_HZ as i64 / use_ticks as i64
+        } else {
+            0
+        };
+        // Q16.16 raw → tenths of a sim unit.
+        let to_u10 = |f: crate::fixed::Fx| f.raw() as i64 * 10 / 65536;
+        let (dot_dps, dot_ms) = r
+            .dot
+            .map(|(_, ps, ticks, _)| (ps, ticks as i64 * 100))
+            .unwrap_or((0, 0));
+        let shape = match r.shape {
+            SkillShape::Target => 0,
+            SkillShape::Nova => 1,
+            SkillShape::Cone => 2,
+            SkillShape::Line => 3,
+            SkillShape::PointAoe => 4,
+            SkillShape::Projectile => 5,
+        };
+        Some(SkillStatsView {
+            kind_spell: r.is_spell,
+            shape,
+            damage: r.damage,
+            dps,
+            use_ticks,
+            mana_cost: self.skill_mana_cost(sg),
+            crit_chance_bp,
+            crit_multi_bp,
+            range_u10: to_u10(r.range),
+            radius_u10: to_u10(r.radius),
+            width_u10: to_u10(r.width),
+            projectiles: r.projectiles,
+            pierce: r.pierce,
+            dot_dps,
+            dot_ms,
+            buff: r.buff.is_some() || r.debuff.is_some(),
         })
     }
 
