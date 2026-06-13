@@ -9,4 +9,5 @@ Generated from the RONs by `cargo run -p idlin-content --bin wiki`.
 - [Monsters](monsters.md)
 - [Tilesets](tilesets.md)
 - [Zones](zones.md)
+- [Brains](brains.md)
 - [Passive tree](tree.md)
