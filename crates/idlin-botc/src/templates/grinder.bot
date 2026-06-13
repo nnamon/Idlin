@@ -49,8 +49,14 @@ const SELF = 0xE000;       // SelfStatus buffer
 const ENTS = 0xE100;       // entity query buffer (24-byte records)
 const SKL = 0xE400;        // ReadSkills records (48 bytes each)
 const EXITS = 0xE700;      // ReadExits records (16 bytes each)
+const CUR = 0xE800;        // ReadCurrency counts (u32 words, content order)
 const F_ENEMY = 1;
 const F_LOOT = 3;
+// Currency index (content-sorted by id). Alchemy sorts FIRST and is the
+// big upgrade (Normal -> Rare). Player templates compile with no content
+// database, so unlike brains they CANNOT use `currency "alchemy_obol"`
+// name refs — this index is hardcoded; see docs/bot-guide.md.
+const CUR_ALCHEMY = 0;
 
 var last_level;            // speech-bubble beat on level up
 var wander_x;              // exploration: the spot we're strolling toward
@@ -116,6 +122,24 @@ fn main() {
     // Upkeep: gear and gems (passives allocate themselves per the build).
     equip_best();
     socket_gem(-1, -1);
+
+    // CRAFT: gamble an Alchemy obol on a white bag item (Normal -> Rare).
+    // The rare may beat what we wield — equip_best grabs it next tick. We
+    // only ever touch BAG items (equipped gear is safe), and Normal->Rare
+    // can't re-fire on the same item, so this never thrashes. Currency is
+    // carried, so we craft anywhere. One craft per tick.
+    if (read_currency(CUR, 16) > CUR_ALCHEMY) {
+        if (mem[CUR + CUR_ALCHEMY * 4] > 0) {
+            var ninv2 = read_inventory(ENTS, 12);
+            var ci = 0;
+            while (ci < ninv2) {
+                if (mem[ENTS + ci * 32 + 8] == 0) {   // rarity == Normal
+                    if (use_currency(CUR_ALCHEMY, ci) == 0) { ci = ninv2; }
+                }
+                ci = ci + 1;
+            }
+        }
+    }
 
     // Find an open exit, but don't rush it: grind zones keep feeding us.
     // Departures are earned by BOREDOM — ~12s with nothing in sight to
