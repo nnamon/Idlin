@@ -3,13 +3,13 @@
 //! zone instances — ticking them all and ferrying zone transfers between
 //! them; the async side only ever sees the FEATURED world's `TickFrame`s.
 
-use idlin_content::ContentDb;
+use idlin_content::{ContentDb, ZoneKind};
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
     ObstacleState, PropState, TileMapState, TileVisual,
 };
 use idlin_sim::world::CharacterSheetView;
-use idlin_sim::{EntityView, SimEvent, TICK_HZ, TickInputs, World};
+use idlin_sim::{EntityView, JoinRequest, SimEvent, TICK_HZ, TickInputs, World};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -66,6 +66,63 @@ pub struct ManagedWorld {
     /// Inputs queued for this world's next tick (joins at boot, then
     /// ferried arrivals).
     pub pending: TickInputs,
+}
+
+impl ManagedWorld {
+    /// Build one managed world for `zone_id` under `key`, with a
+    /// key-derived deterministic seed (`base_seed ^ fnv1a64(key)`). The
+    /// single world-construction path — boot layout and (later, #21) the
+    /// atlas's on-demand map instances both go through here.
+    pub fn create(content: &ContentDb, base_seed: u64, key: String, zone_id: &str) -> ManagedWorld {
+        let seed = base_seed ^ idlin_sim::hash::fnv1a64(key.as_bytes());
+        ManagedWorld {
+            key,
+            zone_id: zone_id.to_string(),
+            world: World::new_for_zone(seed, content, zone_id),
+            tiles: resolve_tile_map(content, zone_id),
+            max_players: content.zone(zone_id).map_or(0, |z| z.max_players),
+            pending: TickInputs::default(),
+        }
+    }
+}
+
+/// The initial managed-world set, derived from content + world.ron: one
+/// shared world per town/map zone (key = zone id), one entry-zone
+/// instance per roster idler (key = "<entry>#<name>") with that idler
+/// queued to join. Replaces the old hardcoded saltmere/coast/per-idler
+/// layout in main.rs. `program` is the idler bot template.
+pub fn build_initial_worlds(
+    content: &ContentDb,
+    base_seed: u64,
+    program: &[u8],
+) -> Vec<ManagedWorld> {
+    let mut worlds = Vec::new();
+    // Shared worlds: every town/map zone. `content.zones` is sorted by
+    // id (loader), so the order is deterministic.
+    for z in &content.zones {
+        if matches!(z.kind, ZoneKind::Town | ZoneKind::Map) {
+            worlds.push(ManagedWorld::create(
+                content,
+                base_seed,
+                z.id.clone(),
+                &z.id,
+            ));
+        }
+    }
+    // Per-idler instances of the entry story zone.
+    let entry = &content.world.entry_zone;
+    if !entry.is_empty() {
+        for name in &content.world.idlers {
+            let key = format!("{entry}#{name}");
+            let mut mw = ManagedWorld::create(content, base_seed, key, entry);
+            mw.pending.joins.push(JoinRequest {
+                name: name.clone(),
+                program: program.to_vec(),
+            });
+            worlds.push(mw);
+        }
+    }
+    worlds
 }
 
 /// Resolve a zone's authored map into wire form: tileset + variant
@@ -388,5 +445,72 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         passive_allocated: v.passive_allocated,
         passive_unspent: v.passive_unspent,
         build_len: v.build_len,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn content() -> ContentDb {
+        ContentDb::load(Path::new("../../content")).expect("workspace content must load")
+    }
+
+    /// The layout derives from content: town/map zones become shared
+    /// worlds, the entry story zone gets a per-idler instance each, and
+    /// non-entry story zones (test_range) get NO world. Seeds are exactly
+    /// key-derived — pinning FULL-KEY hashing so a regression to the old
+    /// name-only idler seed fails loudly.
+    #[test]
+    fn build_initial_worlds_matches_content() {
+        let content = content();
+        let program = idlin_botc::template_grinder().expect("template");
+        let worlds = build_initial_worlds(&content, 7, &program);
+
+        let keys: std::collections::BTreeSet<&str> =
+            worlds.iter().map(|w| w.key.as_str()).collect();
+        let expected: std::collections::BTreeSet<&str> = [
+            "saltmere",
+            "coast",
+            "withered_shore#Kargan",
+            "withered_shore#Veles",
+            "withered_shore#Mirra",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(keys, expected, "exactly today's 5 worlds, derived");
+        assert!(
+            !keys.contains("test_range"),
+            "a non-entry story zone gets no boot world"
+        );
+
+        for w in &worlds {
+            if w.key.contains('#') {
+                // Per-idler instances seed their idler to join.
+                assert_eq!(w.pending.joins.len(), 1, "{} has its idler queued", w.key);
+                let name = w.key.split('#').nth(1).unwrap();
+                assert_eq!(w.pending.joins[0].name, name);
+            } else {
+                assert!(
+                    w.pending.joins.is_empty(),
+                    "{} (shared) has no joins",
+                    w.key
+                );
+            }
+        }
+
+        // EXACT key-derived seeds (not just distinct): full-key FNV.
+        let seed_of = |k: &str| worlds.iter().find(|w| w.key == k).unwrap().world.seed();
+        assert_eq!(seed_of("coast"), 7 ^ idlin_sim::hash::fnv1a64(b"coast"));
+        assert_eq!(
+            seed_of("withered_shore#Kargan"),
+            7 ^ idlin_sim::hash::fnv1a64(b"withered_shore#Kargan")
+        );
+        assert_ne!(
+            seed_of("withered_shore#Kargan"),
+            seed_of("withered_shore#Veles"),
+            "distinct instances, distinct seeds"
+        );
     }
 }

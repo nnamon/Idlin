@@ -53,6 +53,15 @@ impl Fnv1a64 {
     }
 }
 
+/// One-shot FNV-1a of a byte slice. The shared hash for any
+/// stable-string→u64 need (world-instance seeds, snapshot dir names) so
+/// there is exactly ONE implementation.
+pub fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h = Fnv1a64::new();
+    h.write_bytes(bytes);
+    h.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

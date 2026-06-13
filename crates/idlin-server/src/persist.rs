@@ -36,11 +36,7 @@ pub fn world_dir(base: &Path, world_key: &str) -> PathBuf {
             }
         })
         .collect();
-    let mut h = 0xcbf29ce484222325u64;
-    for b in world_key.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
-    }
+    let h = idlin_sim::hash::fnv1a64(world_key.as_bytes());
     base.join(format!("{safe}-{:08x}", (h >> 32) as u32))
 }
 

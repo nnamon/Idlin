@@ -46,21 +46,17 @@ struct AppState {
     tree_json: Arc<str>,
 }
 
-/// The built-in characters a fresh world starts with.
-fn builtin_joins() -> anyhow::Result<TickInputs> {
-    let program = idlin_botc::template_grinder()
-        .map_err(|e| anyhow::anyhow!("grinder template failed to assemble: {e}"))?;
-    let joins = ["Kargan", "Veles", "Mirra"]
-        .into_iter()
+/// JoinRequests for the content roster (content/world.ron `idlers`).
+fn roster_joins(content: &ContentDb, program: &[u8]) -> Vec<JoinRequest> {
+    content
+        .world
+        .idlers
+        .iter()
         .map(|name| JoinRequest {
-            name: name.into(),
-            program: program.clone(),
+            name: name.clone(),
+            program: program.to_vec(),
         })
-        .collect();
-    Ok(TickInputs {
-        joins,
-        arrivals: Vec::new(),
-    })
+        .collect()
 }
 
 #[tokio::main]
@@ -103,13 +99,15 @@ async fn main() -> anyhow::Result<()> {
         "idlin starting"
     );
 
-    // The multi-world layout: one SHARED town (Saltmere) plus a private
-    // shore instance per built-in idler. Transfers ferry characters from
-    // their instance into the town when the Tidewarden falls. Each world
-    // RESUMES from its snapshot when one exists for this content hash.
-    // Dev escape hatch: IDLIN_WORLD_OVERRIDE=<zone_id> runs ONE shared
-    // world of that zone with every built-in idler in it (no
+    // The multi-world layout is DERIVED FROM CONTENT (zone kinds +
+    // world.ron): every town/map zone is one shared world; each roster
+    // idler gets a per-idler instance of the entry story zone. Each
+    // world RESUMES from its snapshot when one exists for this content
+    // hash. Dev escape hatch: IDLIN_WORLD_OVERRIDE=<zone_id> runs ONE
+    // shared world of that zone with the whole roster in it (no
     // persistence) — how new zones get eyeballed before going live.
+    let program = idlin_botc::template_grinder()
+        .map_err(|e| anyhow::anyhow!("grinder template failed to assemble: {e}"))?;
     let mut persistence: Option<PathBuf> = Some(snapshot_dir.clone());
     let worlds = if let Ok(zone_id) = std::env::var("IDLIN_WORLD_OVERRIDE") {
         persistence = None;
@@ -120,51 +118,13 @@ async fn main() -> anyhow::Result<()> {
             world: World::new_for_zone(seed, &content, &zone_id),
             tiles: runner::resolve_tile_map(&content, &zone_id),
             max_players: content.zone(&zone_id).map_or(0, |z| z.max_players),
-            pending: builtin_joins()?,
+            pending: TickInputs {
+                joins: roster_joins(&content, &program),
+                arrivals: Vec::new(),
+            },
         }]
     } else {
-        let mut worlds = vec![
-            runner::ManagedWorld {
-                key: "saltmere".into(),
-                zone_id: "saltmere".into(),
-                world: World::new_for_zone(seed, &content, "saltmere"),
-                tiles: runner::resolve_tile_map(&content, "saltmere"),
-                max_players: content.zone("saltmere").map_or(0, |z| z.max_players),
-                pending: TickInputs::default(),
-            },
-            // The shared grinding ground past town: one Drowned Coast
-            // for everyone, like the town itself.
-            runner::ManagedWorld {
-                key: "coast".into(),
-                zone_id: "coast".into(),
-                world: World::new_for_zone(seed ^ 0xC0A57, &content, "coast"),
-                tiles: runner::resolve_tile_map(&content, "coast"),
-                max_players: content.zone("coast").map_or(0, |z| z.max_players),
-                pending: TickInputs::default(),
-            },
-        ];
-        let joins = builtin_joins()?;
-        for join in joins.joins {
-            let key = format!("withered_shore#{}", join.name);
-            // Per-instance seed: every idler gets their own deterministic
-            // shore.
-            let mut h = 0xcbf29ce484222325u64;
-            for b in join.name.bytes() {
-                h ^= b as u64;
-                h = h.wrapping_mul(0x100000001b3);
-            }
-            worlds.push(runner::ManagedWorld {
-                key,
-                zone_id: "withered_shore".into(),
-                world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
-                tiles: runner::resolve_tile_map(&content, "withered_shore"),
-                max_players: content.zone("withered_shore").map_or(0, |z| z.max_players),
-                pending: TickInputs {
-                    joins: vec![join],
-                    arrivals: Vec::new(),
-                },
-            });
-        }
+        let mut worlds = runner::build_initial_worlds(&content, seed, &program);
         // RESUME: swap in snapshots where they exist (content-hash
         // gated), carry mid-ferry arrivals, and only join a builtin
         // idler if they exist NOWHERE (state, pendings, or another

@@ -1,0 +1,9 @@
+// The WORLD plan: the server derives its multi-world layout from this
+// plus the zone kinds — every town/map zone runs as ONE shared world;
+// each roster idler gets a private instance of the entry story zone.
+// Other story zones (and, later, atlas map instances) are created on
+// demand. Per-world seeds are key-derived (base_seed ^ fnv1a64(key)).
+WorldDef(
+    idlers: ["Kargan", "Veles", "Mirra"],
+    entry_zone: "withered_shore",
+)

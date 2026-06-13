@@ -57,6 +57,8 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
+    #[error("world.ron: {msg}")]
+    BadWorld { msg: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -794,6 +796,21 @@ fn default_zone_level() -> u32 {
     1
 }
 
+/// The WORLD plan (content/world.ron): which idlers exist and where a
+/// new character's story begins. The server derives its multi-world
+/// layout from this plus the zone kinds — town/map zones become shared
+/// worlds, the entry story zone gets a per-idler instance for each
+/// roster name. The seam #21 (the atlas) extends with map instances.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WorldDef {
+    /// Built-in idler roster (until real viewer accounts exist).
+    #[serde(default)]
+    pub idlers: Vec<String>,
+    /// The story zone a brand-new character starts in.
+    #[serde(default)]
+    pub entry_zone: String,
+}
+
 /// One glyph in a tileset's palette: the authoring unit of map.txt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileDef {
@@ -1021,6 +1038,8 @@ pub struct ContentDb {
     pub currency: Vec<CurrencyDef>,
     /// Player-sayable speech lines (speech.ron).
     pub speech: SpeechDef,
+    /// The world plan (world.ron): roster + entry zone.
+    pub world: WorldDef,
     /// Sorted by id.
     pub gems: Vec<GemDef>,
     /// Sorted by id. The few themed families every authored map builds from.
@@ -1297,6 +1316,8 @@ impl ContentDb {
                 db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
             } else if rel_str == "speech.ron" {
                 db.speech = ron::from_str::<SpeechDef>(&text).map_err(parse_err)?;
+            } else if rel_str == "world.ron" {
+                db.world = ron::from_str::<WorldDef>(&text).map_err(parse_err)?;
             } else if rel_str.starts_with("currency/") {
                 db.currency
                     .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
@@ -1623,6 +1644,27 @@ impl ContentDb {
                 }
             }
         }
+        // The world plan's entry zone, if set, must be a real STORY zone:
+        // the server spawns a per-idler instance of it, and instancing a
+        // shared town/map zone would run it twice. Empty (tests) skips.
+        if !db.world.entry_zone.is_empty() {
+            match db.zone(&db.world.entry_zone) {
+                None => {
+                    return Err(ContentError::BadWorld {
+                        msg: format!("entry_zone `{}` is not a known zone", db.world.entry_zone),
+                    });
+                }
+                Some(z) if z.kind != ZoneKind::Story => {
+                    return Err(ContentError::BadWorld {
+                        msg: format!(
+                            "entry_zone `{}` must be a story zone (is {:?})",
+                            db.world.entry_zone, z.kind
+                        ),
+                    });
+                }
+                _ => {}
+            }
+        }
         Ok(db)
     }
 
@@ -1871,6 +1913,65 @@ mod tests {
             }
             other => panic!("expected Brain error, got {other:?}"),
         }
+    }
+
+    /// world.ron's entry_zone must name a real STORY zone: an unknown
+    /// or a non-story (town/map) entry zone is a load error — instancing
+    /// a shared zone would run it twice.
+    #[test]
+    fn world_entry_zone_must_be_a_story_zone() {
+        let town = r#"ZoneDef(
+            id: "hub", name: "Hub", kind: town, width_u: 20, height_u: 20,
+            spawn_x_u: 5, spawn_y_u: 5, packs: [],
+        )"#;
+        let story = r#"ZoneDef(
+            id: "start", name: "Start", kind: story, width_u: 20, height_u: 20,
+            spawn_x_u: 5, spawn_y_u: 5, packs: [],
+        )"#;
+
+        // Unknown entry zone → BadWorld.
+        let tc = TempContent::new(
+            "world-unknown",
+            &[
+                ("areas/hub/zone.ron", town),
+                (
+                    "world.ron",
+                    r#"WorldDef(idlers: ["A"], entry_zone: "nope")"#,
+                ),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadWorld { msg }) => assert!(msg.contains("nope")),
+            other => panic!("expected BadWorld, got {other:?}"),
+        }
+
+        // Town entry zone → BadWorld (must be story).
+        let tc = TempContent::new(
+            "world-town-entry",
+            &[
+                ("areas/hub/zone.ron", town),
+                ("world.ron", r#"WorldDef(idlers: ["A"], entry_zone: "hub")"#),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadWorld { msg }) => assert!(msg.contains("story")),
+            other => panic!("expected BadWorld, got {other:?}"),
+        }
+
+        // A real story entry zone loads.
+        let tc = TempContent::new(
+            "world-ok",
+            &[
+                ("areas/start/zone.ron", story),
+                (
+                    "world.ron",
+                    r#"WorldDef(idlers: ["A"], entry_zone: "start")"#,
+                ),
+            ],
+        );
+        let db = ContentDb::load(&tc.0).expect("valid world plan loads");
+        assert_eq!(db.world.idlers, vec!["A".to_string()]);
+        assert_eq!(db.world.entry_zone, "start");
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.

@@ -264,6 +264,26 @@ Monsters may also carry `lines:` — things they SAY as speech bubbles
 (the Say syscall); `content/speech.ron` holds the fixed set characters
 may say.
 
+## `content/world.ron` — the world plan
+
+The server's multi-world layout is DERIVED from content, not server
+code: every `kind: town` or `kind: map` zone runs as one shared world,
+and `world.ron` names the idler roster plus the `entry_zone` (a story
+zone) each gets a private instance of:
+
+```ron
+WorldDef(
+    idlers: ["Kargan", "Veles", "Mirra"],
+    entry_zone: "withered_shore",
+)
+```
+
+Per-world seeds are key-derived (`base_seed ^ fnv1a64(world_key)`), so
+adding a town/map zone needs no server edit — it just appears as a
+shared world. The `entry_zone` must be a `kind: story` zone (validated
+at load). Non-entry story zones get no boot world (reached via exits or,
+later, the atlas).
+
 ## Affix pools — items subscribe
 
 Eligibility is a SUBSCRIPTION: every affix lives in exactly one named
