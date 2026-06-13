@@ -9,15 +9,20 @@ drop higher maps** (sustain is the meta-game). **No private hideouts, ever.**
 > Per the issue's sequencing this is the **design writeup first** — map base
 > schema, mod pool, generation recipe, instance lifecycle. It is grounded in
 > the actual code seams (cited) and ends with a phased build plan. The build is
-> a later phase, gated on #7 landing and built behind the tutorial. This doc
-> commits the design; it ships no engine code.
+> a later phase, gated on the persistent-server RFC's instance create/reap
+> primitives (its phase 4) and built behind the tutorial. This doc commits the
+> design; it ships no engine code.
 
 ## What already exists (the seams we build on)
 
-- **Dynamic instance creation** — `ManagedWorld::create(content, base_seed, key,
-  zone_id)` lands via **#7** (PR #27): the single world-construction path, seed
-  `= base_seed ^ fnv1a64(key)`. Boot layout and (now) the atlas's on-demand
-  instances both go through it. *Not yet on main — #7 is the hard dep.*
+- **Per-world granularity + key-derived seeds (the shape exists; runtime
+  create/reap does NOT).** A world is already one `ManagedWorld` = one zone
+  instance, and the intended per-world seed is `base_seed ^ fnv1a64(key)`. But
+  **spinning instances up and tearing them down at runtime is net-new** — it is
+  owned by the **persistent-server RFC** (phase-4 create/reap primitives + the
+  per-owner, frozen-15-min, reaped instance lifecycle the atlas reuses), *not* by
+  the rejected #7. There is no `impl ManagedWorld` on `main`; this is the atlas's
+  hard dependency on that RFC, listed here so the reuse is explicit.
 - **The ferry** (`runner.rs`): a character's `CharacterBundle` departs with a
   `dest`; the tick loop routes it to the world whose `key == dest` (else any
   world whose `zone_id == dest`) and pushes it as an arrival. `UseExit`
@@ -137,9 +142,10 @@ find-factor mods.
 1. **Create.** `UseMap` removes the map from the bag and stages a departure with
    a destination describing the instance: key = `map#<char>#<base>#<ilvl>#<salt>`
    and the rolled `MapMods` + tileset. The server, seeing a map-instance
-   destination the ferry can't resolve to an existing world, calls
-   `ManagedWorld::create` (#7) with that key → deterministic seed
-   `base_seed ^ fnv1a64(key)`, builds the zone (template or generated) at the
+   destination the ferry can't resolve to an existing world, calls the
+   instance-create primitive (net-new; persistent-server RFC phase 4) with that
+   key → deterministic seed `base_seed ^ fnv1a64(key)`, builds the zone
+   (template or generated) at the
    map's level with the mods, and pushes the character as an arrival.
 2. **Run.** The instance ticks like any world. Its brain scatters/juices packs
    per the mods and places the boss; the boss hoard is juiced by the map's
@@ -175,8 +181,9 @@ by completion and spent on *how you map* — endless sidegrade, no reroll.
 
 ## 8. Prerequisites & phased build (post-design)
 
-**Prereqs:** **#7** (ManagedWorld::create — the instance seam; merge first), the
-generated-zone layout (template fallback first, generator later), the `"map"`
+**Prereqs:** the **persistent-server RFC's instance create/reap primitives**
+(phase 4 — the per-owner, frozen-15-min, reaped instance lifecycle; net-new),
+the generated-zone layout (template fallback first, generator later), the `"map"`
 affix-pool content, and the device syscall + ferry-into/teardown-of ephemeral
 worlds.
 
@@ -185,8 +192,9 @@ worlds.
    roll charts; `MapMods` interpretation struct (no instances yet — a chart you
    can roll/craft/stash).
 2. **Device + consume + template instances** — device place, `ReadMaps`/`UseMap`,
-   ferry into a `ManagedWorld::create`'d instance from an authored template,
-   return exit, **teardown path**. The loop closes end-to-end on templates.
+   ferry into a freshly-created instance (the RFC's create primitive) from an
+   authored template, return exit, **teardown path**. The loop closes end-to-end
+   on templates.
 3. **Procedural generator** — seeded layout + pack scatter from
    `natural_monsters`; retire the template fallback (or keep as set-pieces).
 4. **Boss hoards + the ladder** — juiced map bosses, higher-maps-drop-higher,
@@ -196,9 +204,11 @@ worlds.
 - **v1 = authored templates** (bounded variety) vs jumping straight to the
   procedural generator (much larger, the real vision). I recommend templates
   first to close the loop, generator second — flagged.
-- **Teardown** is the one genuinely-missing lifecycle primitive; everything else
-  reuses existing seams.
+- **Runtime instance create AND reap are both net-new** and come from the
+  persistent-server RFC (phase 4) — the atlas consumes that lifecycle rather than
+  inventing its own; the map-specific work above (map item/pool, device, mod
+  interpretation, generation) is what's genuinely atlas-new.
 - **Map mods as a non-StatSheet interpretation** is the only new
   affix-semantics layer; keeping the *roll* on the shared engine is deliberate.
-- Depends on **#7** (instance seam) and reads best alongside **#24** (the Atlas
-  is Arc 1 of the one-character long game).
+- Depends on the **persistent-server RFC** (instance lifecycle) and reads best
+  alongside **#24** (the Atlas is Arc 1 of the one-character long game).
