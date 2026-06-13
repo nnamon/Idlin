@@ -1,0 +1,24 @@
+// Aura: toggled, it RESERVES a slice of max mana and hardens everyone
+// nearby — the caster and any allies in earshot get more armour and
+// evasion for as long as it's on. Re-use it to switch it off and reclaim
+// the mana. Direction-aimed so a bot can flip it without a target.
+GemDef(
+    id: "stone_skin_aura",
+    name: "Stone Skin",
+    kind: skill,
+    skill_kind: spell,
+    target_mode: direction,
+    tags: [aoe],
+    weight: 35,
+    shape: nova,
+    radius_cu: 500,             // who it hardens (caster + allies in range)
+    reservation_bp: 3500,       // reserves 35% of max mana while on
+    mana_cost: (base: 0, per_level: 0),  // reservation IS the cost
+    buff: Some(BuffDef(
+        grants: [
+            (stat: armour, layer: increased, value: 4000),   // +40% armour
+            (stat: evasion, layer: increased, value: 4000),  // +40% evasion
+        ],
+        duration_ticks: 0,      // ignored for auras (refreshed while on)
+    )),
+)

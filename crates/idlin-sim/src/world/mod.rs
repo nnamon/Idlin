@@ -396,6 +396,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         life_max: def.life,
         mana: def.mana,
         mana_max: def.mana,
+        reserved_mana: 0,
         es: 0,
         es_max: 0,
         es_recharge_at: 0,
@@ -473,6 +474,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         life_max: base_life(level),
         mana: base_mana(level),
         mana_max: base_mana(level),
+        reserved_mana: 0,
         es: 0,
         es_max: 0,
         es_recharge_at: 0,
@@ -833,6 +835,7 @@ impl World {
         self.step_projectiles(&mut events);
         self.attacks(&mut events);
         self.effects_tick(&mut events);
+        self.auras_tick();
         self.pickups(&mut events);
         self.regen();
         self.respawns(&mut events);
@@ -998,6 +1001,7 @@ impl World {
                     pouch: Vec::new(),
                     currency: vec![0; self.content.currency.len()],
                     sockets: std::collections::BTreeMap::new(),
+                    active_auras: Vec::new(),
                 }),
                 monster: None,
                 loot: None,
@@ -1050,11 +1054,12 @@ impl World {
                 monster: None,
                 loot: None,
             });
-            // Re-derive from gear/tree, then arrive rested: full pools.
+            // Re-derive from gear/tree, then arrive rested: full pools
+            // (mana up to the unreserved ceiling — auras keep their hold).
             self.refresh_derived_stats(slot);
             if let Some(c) = self.zone.get_mut(slot).and_then(|e| e.combat.as_mut()) {
                 c.life = c.life_max;
-                c.mana = c.mana_max;
+                c.mana = c.available_mana();
                 c.es = c.es_max;
             }
             events.push(SimEvent::CharacterJoined { id: net_id, name });
@@ -1367,9 +1372,9 @@ impl World {
                 if c.life < c.life_max && c.life_regen > 0 {
                     c.life = (c.life + c.life_regen).min(c.life_max);
                 }
-                if c.mana < c.mana_max {
+                if c.mana < c.available_mana() {
                     let rate = (c.mana_max * 200 / 10000).max(1) + c.mana_regen;
-                    c.mana = (c.mana + rate).min(c.mana_max);
+                    c.mana = (c.mana + rate).min(c.available_mana());
                 }
                 if c.es < c.es_max && now >= c.es_recharge_at {
                     let rate = (c.es_max * 1000 / 10000).max(1);
@@ -1400,7 +1405,7 @@ impl World {
                 me.character.as_mut().unwrap().respawn_at = None;
                 let c = me.combat.as_mut().unwrap();
                 c.life = c.life_max;
-                c.mana = c.mana_max;
+                c.mana = c.available_mana();
                 c.es = c.es_max;
                 c.busy_until = 0;
                 events.push(SimEvent::CharacterRespawned { id });

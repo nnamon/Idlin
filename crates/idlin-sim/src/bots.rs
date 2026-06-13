@@ -466,7 +466,10 @@ impl World {
                 // restores what you actually LACK. The bot decides WHEN.
                 let (need_life, need_mana) =
                     match self.zone.get(slot).and_then(|e| e.combat.as_ref()) {
-                        Some(c) => (c.life < c.life_max, c.mana < c.mana_max),
+                        // Compare against the UNRESERVED ceiling so an
+                        // aura'd bot doesn't loop drinking to fill mana it
+                        // can never hold.
+                        Some(c) => (c.life < c.life_max, c.mana < c.available_mana()),
                         None => return -1,
                     };
                 let mut found_any = false;
@@ -503,7 +506,9 @@ impl World {
                 flask.charges = flask.charges.saturating_sub(cost);
                 let c = e.combat.as_mut().unwrap();
                 c.life = (c.life + heal).min(c.life_max);
-                c.mana = (c.mana + mana).min(c.mana_max);
+                // Cap at the unreserved ceiling — a flask can't refill mana
+                // an active aura has reserved.
+                c.mana = (c.mana + mana).min(c.available_mana());
                 0
             }
             SYS_READ_EXITS => {
@@ -634,22 +639,25 @@ impl World {
                 };
                 // Characters read their socketed tree; monsters read their
                 // def kit — same records, same slot numbering.
-                let gems: Vec<&crate::entity::SocketedGem> = if let Some(ch) = &e.character {
-                    self.skill_nodes(ch)
-                        .iter()
-                        .map(|node| &ch.sockets[node])
-                        .collect()
-                } else if let Some(m) = &e.monster {
-                    m.skills.iter().collect()
-                } else {
-                    return -1;
-                };
+                // Carry the socket node id (characters) so an aura's ready
+                // flag can test whether it's already toggled ON.
+                let gems: Vec<(Option<u32>, &crate::entity::SocketedGem)> =
+                    if let Some(ch) = &e.character {
+                        self.skill_nodes(ch)
+                            .iter()
+                            .map(|&node| (Some(node), &ch.sockets[&node]))
+                            .collect()
+                    } else if let Some(m) = &e.monster {
+                        m.skills.iter().map(|sg| (None, sg)).collect()
+                    } else {
+                        return -1;
+                    };
                 let now = self.tick_count();
                 let records: Vec<[i32; 12]> = gems
                     .iter()
                     .take(max)
                     .enumerate()
-                    .map(|(i, sg)| {
+                    .map(|(i, (node, sg))| {
                         let def = &self.content_gems()[sg.gem.gem_idx as usize];
                         let c = e.combat.as_ref();
                         let range = if def.range_cu > 0 {
@@ -688,10 +696,32 @@ impl World {
                             .character
                             .as_ref()
                             .is_none_or(|ch| self.weapon_eligible(def, ch));
-                        let ready = (sg.cooldown_left == 0
-                            && weapon_ok
-                            && c.map(|c| c.mana >= cost && now >= c.busy_until)
-                                .unwrap_or(false)) as i32;
+                        // An AURA is "ready" to fire when it is OFF and has
+                        // mana headroom — so a naive bot toggles it on once
+                        // and leaves it (re-using would toggle it off).
+                        // Toggling off is an explicit use_skill for smart
+                        // brains. Otherwise the usual cooldown+mana gate.
+                        let ready = if def.reservation_bp > 0 {
+                            let active = node
+                                .zip(e.character.as_ref())
+                                .is_some_and(|(n, ch)| ch.active_auras.contains(&n));
+                            let fits = c
+                                .map(|c| {
+                                    c.reserved_mana + c.mana_max * def.reservation_bp as i64 / 10000
+                                        <= c.mana_max
+                                })
+                                .unwrap_or(false);
+                            (!active
+                                && fits
+                                && weapon_ok
+                                && c.map(|c| now >= c.busy_until).unwrap_or(false))
+                                as i32
+                        } else {
+                            (sg.cooldown_left == 0
+                                && weapon_ok
+                                && c.map(|c| c.mana >= cost && now >= c.busy_until)
+                                    .unwrap_or(false)) as i32
+                        };
                         [
                             (i + 1) as i32,
                             sg.gem.gem_idx as i32,

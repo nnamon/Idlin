@@ -10,7 +10,10 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0x2F83_F385_2C72_7695;
+/// Moved for #26: the new Stone Skin aura gem shifts content_hash and the
+/// weighted gem-drop pool. The aura ENGINE is dormant unless socketed —
+/// non-aura play (incl. the golden replay) is behavior-unchanged.
+const GOLDEN_HASH: u64 = 0x259D_446E_C56D_CE6A;
 
 #[test]
 fn golden_replay() {

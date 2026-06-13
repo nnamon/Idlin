@@ -60,6 +60,12 @@ pub struct CombatStats {
     /// Spent by skills (costs land with the skill executor); regenerates.
     pub mana: i64,
     pub mana_max: i64,
+    /// Mana RESERVED by active auras: the spendable pool is `mana_max -
+    /// reserved_mana`. Derived in `refresh_character_stats` from the
+    /// character's `active_auras`; current mana is capped to the remainder
+    /// everywhere it's set, so reserved mana is genuinely unspendable.
+    #[serde(default)]
+    pub reserved_mana: i64,
     /// Depletes before life; recharges after a delay untouched.
     pub es: i64,
     pub es_max: i64,
@@ -111,6 +117,11 @@ pub struct CombatStats {
 impl CombatStats {
     pub fn alive(&self) -> bool {
         self.life > 0
+    }
+
+    /// The spendable mana ceiling: max minus what active auras reserve.
+    pub fn available_mana(&self) -> i64 {
+        (self.mana_max - self.reserved_mana).max(0)
     }
 
     pub fn life_pct(&self) -> u8 {
@@ -293,6 +304,11 @@ pub struct CharacterState {
     /// Gems socketed into allocated tree socket nodes (keyed by node index;
     /// BTreeMap for deterministic iteration).
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,
+    /// Socket nodes of currently-ON aura skills. Reserves mana + grants its
+    /// buff while present; toggled by re-using the skill. Persists across
+    /// zone transfer, respawn, and save (so an aura re-asserts).
+    #[serde(default)]
+    pub active_auras: Vec<u32>,
 }
 
 /// Total passive points earned by a level: 2 per level-up, with every

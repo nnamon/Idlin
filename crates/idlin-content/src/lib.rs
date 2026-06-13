@@ -663,6 +663,13 @@ pub struct GemDef {
     /// blind, exposure). Strongest-equal-grants reapply refreshes.
     #[serde(default)]
     pub debuff: Option<BuffDef>,
+    /// AURAS only (`> 0`): the skill TOGGLES instead of striking — while on
+    /// it RESERVES `mana_max * reservation_bp / 10000` of the caster's max
+    /// mana (the effective pool shrinks; not a per-cast cost) and applies
+    /// its `buff` grants to the caster + allies within `radius_cu` every
+    /// few ticks. Toggling again releases it.
+    #[serde(default)]
+    pub reservation_bp: u32,
     /// Attack skills: weapon classes this skill fires with (empty = any,
     /// and spells never care). Wielding anything else — or nothing — is
     /// use error −9.

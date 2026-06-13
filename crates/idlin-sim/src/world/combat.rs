@@ -341,6 +341,41 @@ impl World {
                 return SKILL_ERR_COOLDOWN;
             }
             let gem = &self.content.gems[sg.gem.gem_idx as usize];
+            // AURAS toggle instead of striking: reserve/release a slice of
+            // max mana and (on) apply the buff. No use-time, cooldown, or
+            // per-cast cost — the reservation IS the cost. Characters only
+            // (monster auras are a follow-up; active_auras lives on the
+            // character).
+            if gem.reservation_bp > 0 && e.character.is_some() {
+                let reservation_bp = gem.reservation_bp as i64;
+                let mana_max = c.mana_max;
+                let reserved = c.reserved_mana;
+                let node = key;
+                let is_active = e
+                    .character
+                    .as_ref()
+                    .is_some_and(|ch| ch.active_auras.contains(&node));
+                // The e/c/sg/gem borrows end here; mutate via fresh borrows.
+                if is_active {
+                    if let Some(ch) = self.zone.get_mut(slot).and_then(|m| m.character.as_mut()) {
+                        ch.active_auras.retain(|&n| n != node);
+                    }
+                    self.refresh_derived_stats(slot);
+                    return 0;
+                }
+                if reserved + mana_max * reservation_bp / 10000 > mana_max {
+                    return SKILL_ERR_MANA; // not enough max-mana headroom
+                }
+                if let Some(ch) = self.zone.get_mut(slot).and_then(|m| m.character.as_mut())
+                    && !ch.active_auras.contains(&node)
+                {
+                    ch.active_auras.push(node);
+                    ch.active_auras.sort_unstable();
+                }
+                self.refresh_derived_stats(slot);
+                self.apply_aura(slot, node);
+                return 0;
+            }
             // Weapon gates are for the armed: a monster IS its weapon.
             if let Some(ch) = &e.character
                 && !self.weapon_eligible(gem, ch)
@@ -1527,7 +1562,7 @@ impl World {
                 }
                 if leech_mana > 0 {
                     let gain = (amount * leech_mana / 10000).min(ac.mana_max / 10);
-                    ac.mana = (ac.mana + gain).min(ac.mana_max);
+                    ac.mana = (ac.mana + gain).min(ac.available_mana());
                 }
             }
         }
@@ -1683,6 +1718,86 @@ impl World {
     }
 
     /// Apply (or refresh) a self-buff and re-derive stats.
+    /// (Re)apply an active aura's buff to the caster + same-faction allies
+    /// within its radius, as a short timed buff. Called on toggle-on and
+    /// re-called on an interval by `auras_tick` so the buff never lapses
+    /// while the aura is on; it fades ~AURA_BUFF_TICKS after toggle-off.
+    /// Mirrors the War Cry ally-sweep.
+    fn apply_aura(&mut self, slot: usize, node: u32) {
+        /// Buff lifetime per re-application — must exceed the auras_tick
+        /// interval so an active aura's buff is continuous.
+        const AURA_BUFF_TICKS: u32 = 15;
+        let Some(e) = self.zone.get(slot) else { return };
+        let pos = e.pos;
+        let faction = e.faction();
+        let Some(grants) = e
+            .character
+            .as_ref()
+            .and_then(|ch| ch.sockets.get(&node))
+            .map(|sg| self.content.gems[sg.gem.gem_idx as usize].clone())
+            .and_then(|gem| gem.buff)
+            .map(|b| b.grants)
+        else {
+            return;
+        };
+        let radius = self
+            .zone
+            .get(slot)
+            .and_then(|e| e.character.as_ref())
+            .and_then(|ch| ch.sockets.get(&node))
+            .map(|sg| fx_from_cu(self.content.gems[sg.gem.gem_idx as usize].radius_cu))
+            .unwrap_or(Fx::ZERO);
+        // self always; allies inside the radius.
+        self.apply_buff(slot, grants.clone(), AURA_BUFF_TICKS);
+        if radius.raw() > 0 {
+            let rr = radius.raw() as i64 * radius.raw() as i64;
+            let allies: Vec<usize> = self
+                .zone
+                .iter()
+                .filter(|(s, a)| {
+                    *s != slot && a.alive() && a.faction() == faction && a.combat.is_some() && {
+                        let dx = (a.pos.x - pos.x).raw() as i64;
+                        let dy = (a.pos.y - pos.y).raw() as i64;
+                        dx * dx + dy * dy <= rr
+                    }
+                })
+                .map(|(s, _)| s)
+                .collect();
+            for ally in allies {
+                self.apply_buff(ally, grants.clone(), AURA_BUFF_TICKS);
+            }
+        }
+    }
+
+    /// Maintain active auras: on a 10-tick interval, re-apply each active
+    /// aura's buff (15-tick lifetime > the interval, so it never lapses
+    /// while on). Toggle-on applies immediately; this keeps it alive and
+    /// re-sweeps allies as they move in/out of range.
+    pub(super) fn auras_tick(&mut self) {
+        if !self.tick.is_multiple_of(10) {
+            return;
+        }
+        let mut to_apply: Vec<(usize, u32)> = Vec::new();
+        for slot in 0..self.zone.slot_count() {
+            let Some(e) = self.zone.get(slot) else {
+                continue;
+            };
+            if !e.alive() {
+                continue;
+            }
+            if let Some(ch) = &e.character {
+                for &node in &ch.active_auras {
+                    if ch.sockets.contains_key(&node) {
+                        to_apply.push((slot, node));
+                    }
+                }
+            }
+        }
+        for (slot, node) in to_apply {
+            self.apply_aura(slot, node);
+        }
+    }
+
     fn apply_buff(&mut self, slot: usize, grants: Vec<Grant>, duration_ticks: u32) {
         if let Some(e) = self.zone.get_mut(slot) {
             for ef in e.effects.iter_mut() {
@@ -2425,6 +2540,279 @@ mod tests {
         assert!(
             buffed_phys > base_phys,
             "the rally raises ally phys: {buffed_phys} vs {base_phys}"
+        );
+    }
+
+    /// Socket the aura, toggle it on (reserves mana + hardens the caster),
+    /// toggle it off (releases the reservation; the buff lapses).
+    #[test]
+    fn aura_toggles_reservation_and_buff() {
+        let content = content();
+        let mut world = World::new(0x00A0_002A, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Auramancer".into(),
+                program,
+            }],
+        });
+        let caster = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        {
+            let e = world.zone.get_mut(caster).unwrap();
+            e.character.as_mut().unwrap().sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "stone_skin_aura", 1),
+                    cooldown_left: 0,
+                    supports: vec![],
+                },
+            );
+            e.combat.as_mut().unwrap().mana = 100;
+        }
+        world.refresh_derived_stats(caster);
+        // Evasion has a non-zero base at level 1 (armour is 0, so its
+        // +40% increased wouldn't show), so the aura's effect reads there.
+        let base_eva = world
+            .zone
+            .get(caster)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .evasion;
+        let mana_max = world
+            .zone
+            .get(caster)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .mana_max;
+
+        // Toggle ON: reserves 35% of max mana and hardens the caster.
+        let r = world.try_use_skill(
+            caster,
+            1,
+            SkillTarget::Direction(FxV2::new(Fx::ONE, Fx::ZERO)),
+        );
+        assert_eq!(r, 0, "toggle on succeeds");
+        {
+            let c = world.zone.get(caster).unwrap().combat.as_ref().unwrap();
+            assert_eq!(c.reserved_mana, mana_max * 3500 / 10000, "35% reserved");
+            assert!(
+                c.mana <= c.available_mana(),
+                "current mana capped to unreserved"
+            );
+            assert!(
+                c.evasion > base_eva,
+                "aura hardens: {} vs {}",
+                c.evasion,
+                base_eva
+            );
+        }
+        assert!(
+            world
+                .zone
+                .get(caster)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .active_auras
+                .contains(&node)
+        );
+
+        // Toggle OFF: reservation released; the buff lapses within ~15 ticks.
+        let r = world.try_use_skill(
+            caster,
+            1,
+            SkillTarget::Direction(FxV2::new(Fx::ONE, Fx::ZERO)),
+        );
+        assert_eq!(r, 0, "toggle off succeeds");
+        assert_eq!(
+            world
+                .zone
+                .get(caster)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .reserved_mana,
+            0,
+            "reservation released"
+        );
+        let mut events = Vec::new();
+        for _ in 0..20 {
+            world.effects_tick(&mut events);
+            world.tick += 1;
+        }
+        let after = world
+            .zone
+            .get(caster)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .evasion;
+        assert_eq!(after, base_eva, "buff lapsed after toggle off");
+    }
+
+    /// Reserved mana stays unspendable over time: with an aura on, regen
+    /// never refills current mana past the unreserved ceiling. (The mana
+    /// flask path caps the same way — see bots.rs use_flask.)
+    #[test]
+    fn aura_reservation_holds_against_regen() {
+        let content = content();
+        let mut world = World::new(0x00A0_004A, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Steady".into(),
+                program,
+            }],
+        });
+        let caster = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        world
+            .zone
+            .get_mut(caster)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .sockets
+            .insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "stone_skin_aura", 1),
+                    cooldown_left: 0,
+                    supports: vec![],
+                },
+            );
+        world.refresh_derived_stats(caster);
+        assert_eq!(
+            world.try_use_skill(
+                caster,
+                1,
+                SkillTarget::Direction(FxV2::new(Fx::ONE, Fx::ZERO))
+            ),
+            0
+        );
+        // Drain mana, then let regen run for a while.
+        world
+            .zone
+            .get_mut(caster)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .mana = 0;
+        for _ in 0..150 {
+            world.tick(&crate::TickInputs::default());
+        }
+        let c = world.zone.get(caster).unwrap().combat.as_ref().unwrap();
+        assert!(c.reserved_mana > 0, "aura still reserving");
+        assert!(
+            c.mana <= c.available_mana(),
+            "regen respects reservation: mana {} > available {}",
+            c.mana,
+            c.available_mana()
+        );
+        assert!(c.mana < c.mana_max, "reserved band stays unfilled");
+    }
+
+    #[test]
+    fn active_auras_survive_serde() {
+        let mut ch = crate::entity::CharacterState {
+            name: "X".into(),
+            level: 1,
+            xp: 0,
+            respawn_at: None,
+            kills: 0,
+            items: 0,
+            inventory: Vec::new(),
+            equipment: Default::default(),
+            allocated: Vec::new(),
+            build_plan: Vec::new(),
+            pouch: Vec::new(),
+            currency: Vec::new(),
+            sockets: std::collections::BTreeMap::new(),
+            active_auras: Vec::new(),
+        };
+        ch.active_auras = vec![3, 7];
+        let bytes = postcard::to_allocvec(&ch).expect("serialize");
+        let back: crate::entity::CharacterState =
+            postcard::from_bytes(&bytes).expect("deserialize");
+        assert_eq!(back.active_auras, vec![3, 7]);
+    }
+
+    #[test]
+    fn aura_refused_without_mana_headroom() {
+        let content = content();
+        let mut world = World::new(0x00A0_003A, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Broke".into(),
+                program,
+            }],
+        });
+        let caster = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        {
+            let e = world.zone.get_mut(caster).unwrap();
+            e.character.as_mut().unwrap().sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "stone_skin_aura", 1),
+                    cooldown_left: 0,
+                    supports: vec![],
+                },
+            );
+            // Simulate the pool already (nearly) fully reserved by something
+            // else — no headroom for another 35%.
+            let c = e.combat.as_mut().unwrap();
+            c.reserved_mana = c.mana_max;
+        }
+        let r = world.try_use_skill(
+            caster,
+            1,
+            SkillTarget::Direction(FxV2::new(Fx::ONE, Fx::ZERO)),
+        );
+        assert_eq!(r, SKILL_ERR_MANA, "no headroom → −4");
+        assert!(
+            world
+                .zone
+                .get(caster)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .active_auras
+                .is_empty(),
+            "the aura did not turn on"
         );
     }
 

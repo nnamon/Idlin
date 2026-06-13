@@ -335,6 +335,27 @@ impl World {
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
 
+        // Mana RESERVED by active auras (computed before the &mut borrow —
+        // it reads the character's auras + sockets). Each active aura
+        // reserves a basis-point slice of mana_max; the spendable pool is
+        // the remainder, and current mana is capped to it below.
+        let reserved: i64 = self
+            .zone
+            .get(slot)
+            .and_then(|e| e.character.as_ref())
+            .map(|ch| {
+                ch.active_auras
+                    .iter()
+                    .filter_map(|n| ch.sockets.get(n))
+                    .map(|sg| {
+                        mana_max * self.content.gems[sg.gem.gem_idx as usize].reservation_bp as i64
+                            / 10000
+                    })
+                    .sum()
+            })
+            .unwrap_or(0);
+        let available = (mana_max - reserved).max(0);
+
         if let Some(me) = self.zone.get_mut(slot)
             && let Some(c) = me.combat.as_mut()
         {
@@ -345,7 +366,8 @@ impl World {
             }
             let mana_delta = mana_max - c.mana_max;
             c.mana_max = mana_max;
-            c.mana = (c.mana + mana_delta.max(0)).clamp(0, mana_max);
+            c.reserved_mana = reserved;
+            c.mana = (c.mana + mana_delta.max(0)).clamp(0, available);
             let es_delta = es_max - c.es_max;
             c.es_max = es_max;
             c.es = (c.es + es_delta.max(0)).clamp(0, es_max);

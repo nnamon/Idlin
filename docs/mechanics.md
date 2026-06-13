@@ -104,6 +104,21 @@ Player↔Hostile faction pair; Neutral entities can't hit or be hit.
 - Nova/AoE skills hit up to `max_targets` nearest enemies, in
   deterministic (distance, id) order.
 
+## Auras (reservation buffs)
+
+An aura gem (`reservation_bp > 0`) is TOGGLED, not cast: using it flips it
+on/off. While on it **reserves** `mana_max · reservation_bp / 10000` of the
+caster's maximum mana — the spendable pool shrinks (`available = mana_max −
+reserved`), and current mana is capped to it everywhere (regen, leech,
+flask, full-heals), so reserved mana is genuinely unspendable and other
+skills' cost checks see less. While on, the aura's `buff` grants apply to
+the caster **and** same-faction allies within `radius_cu`, refreshed on a
+short interval so the buff is continuous (it lapses ~1.5s after toggle-off).
+Turning it on with no max-mana headroom fails (−4). Toggle state lives on
+the character and survives zone transfer, respawn, and save. `ReadSkills`
+reports an aura as "ready" only while it's OFF and affordable, so a naive
+bot turns it on and leaves it.
+
 ## Support gems
 
 Supports socket INTO a skill gem and apply only to that skill. Capacity
