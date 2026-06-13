@@ -60,8 +60,21 @@ pub const SYS_USE_FLASK: i32 = 29;
 pub const SYS_READ_STASH: i32 = 30;
 pub const SYS_STASH_DEPOSIT: i32 = 31;
 pub const SYS_STASH_WITHDRAW: i32 = 32;
+pub const SYS_READ_VENDORS: i32 = 33;
+pub const SYS_READ_SHOP: i32 = 34;
+pub const SYS_VENDOR_SELL: i32 = 35;
+pub const SYS_VENDOR_BUY: i32 = 36;
+pub const SYS_READ_BOUNTIES: i32 = 37;
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
+
+/// ReadVendors record bytes: net_id, x_raw, y_raw, vendor_def_idx.
+pub const VENDOR_RECORD_SIZE: u16 = 16;
+/// ReadShop record bytes: item_base_idx, currency_idx, price, w, h.
+pub const SHOP_RECORD_SIZE: u16 = 20;
+/// ReadBounties record bytes: target_monster_idx, count, reward_currency_idx,
+/// reward_count.
+pub const BOUNTY_RECORD_SIZE: u16 = 16;
 
 /// Size of one ReadSkills record in bytes:
 /// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
@@ -666,6 +679,73 @@ impl World {
                     return -1;
                 }
                 self.stash_withdraw(slot, stash_idx as usize)
+            }
+            SYS_READ_VENDORS => {
+                // Nearby vendor NPCs (read_entities can't see neutrals).
+                // Record: net_id, x_raw, y_raw, vendor_def_idx.
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_QUERY_RESULTS as i32) as usize;
+                let records = self.nearby_vendor_records(slot, max);
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * VENDOR_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_READ_SHOP => {
+                // Stock of the NEAREST in-range vendor. Record:
+                // item_base_idx, currency_idx, price, w, h. -2 if none near.
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_INVENTORY_RESULTS as i32) as usize;
+                let Some(records) = self.shop_records(slot, max) else {
+                    return -2;
+                };
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * SHOP_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_VENDOR_SELL => {
+                let inv_idx = bot.vm.pop();
+                if inv_idx < 0 {
+                    return -1;
+                }
+                self.vendor_sell(slot, inv_idx as usize)
+            }
+            SYS_VENDOR_BUY => {
+                let stock_idx = bot.vm.pop();
+                if stock_idx < 0 {
+                    return -1;
+                }
+                self.vendor_buy(slot, stock_idx as usize)
+            }
+            SYS_READ_BOUNTIES => {
+                // The current zone's bounty board. Record: target_monster_idx,
+                // count, reward_currency_idx, reward_count. The human pitch is
+                // narration (a zone line), not part of this payload.
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_QUERY_RESULTS as i32) as usize;
+                if self
+                    .zone
+                    .get(slot)
+                    .and_then(|e| e.character.as_ref())
+                    .is_none()
+                {
+                    return -1;
+                }
+                let records = self.bounty_records(max);
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * BOUNTY_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
             }
             SYS_EQUIP_BEST => self.equip_best(slot, events),
             SYS_SET_BUILD => {

@@ -1,0 +1,27 @@
+// The Smith: a neutral, stationary shopkeeper. `shop` makes it a VENDOR —
+// bots within reach trade through the town syscalls. Everything is a bot, so
+// the smith is just an NPC that happens to buy and sell.
+MonsterDef(
+    id: "vendor_smith",
+    name: "the Smith",
+    model: "idler",
+    brain: "vendor",
+    hostile: false,
+    shop: Some("smith"),
+    level: 1,
+    life: 100,
+    damage: 0,
+    speed_cps: 0,          // stands at the forge
+    radius_cu: 40,
+    range_cu: 100,
+    use_ticks: 20,
+    aggro_radius_cu: 0,
+    armour: 0,
+    xp: 0,
+    projectile: false,
+    lines: [
+        "Bring me your trash. I'll pay in obols.",
+        "A blade's only rust until someone swings it true.",
+        "First weapon's nearly free. After that, you earn it.",
+    ],
+)

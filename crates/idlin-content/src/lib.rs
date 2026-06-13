@@ -51,6 +51,12 @@ pub enum ContentError {
     NoStartNode,
     #[error("duplicate id `{id}` in {path}")]
     DuplicateId { path: String, id: String },
+    #[error("{ctx}: unknown {what} `{id}`")]
+    UnknownRef {
+        ctx: String,
+        what: String,
+        id: String,
+    },
     #[error("affix `{affix}`: {msg}")]
     BadAffixTiers { affix: String, msg: String },
     #[error("tile map for `{zone}`: {msg}")]
@@ -102,6 +108,10 @@ pub struct MonsterDef {
     pub brain: String,
     /// Hostile NPCs fight players; non-hostile ones are scenery/services.
     pub hostile: bool,
+    /// A non-hostile NPC with a `shop` is a VENDOR (the id names a VendorDef):
+    /// bots within reach buy/sell through the town syscalls. None = no trade.
+    #[serde(default)]
+    pub shop: Option<String>,
     /// Affix pools magic/rare spawns roll from — the same pool
     /// subscription model items use.
     #[serde(default = "default_monster_pools")]
@@ -383,6 +393,49 @@ pub struct CurrencyDef {
     /// Display tier 0..3 — pillar/ticker color (rarer verbs glow louder).
     #[serde(default)]
     pub tier: u8,
+}
+
+/// A town VENDOR: a neutral NPC that buys a character's trash for currency
+/// and sells a small stock of basics. Referenced from a `MonsterDef.shop`;
+/// the NPC stands at an authored spot and bots trade with it by proximity
+/// (the read_shop / vendor_sell / vendor_buy syscalls), range-gated like the
+/// stash. Saltmere teaches selling as its first town lesson.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VendorDef {
+    pub id: String,
+    /// The currency PAID OUT when a character sells an item here.
+    pub pays_currency: String,
+    /// Payout by the sold item's rarity (index 0..3: normal/magic/rare/unique).
+    pub pays_amount: [u32; 4],
+    /// The basics this vendor SELLS (empty = buy-only).
+    #[serde(default)]
+    pub stock: Vec<VendorStock>,
+}
+
+/// One thing a vendor sells: a base item, the currency it costs, the price.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VendorStock {
+    pub item: String,
+    pub currency: String,
+    pub price: u32,
+}
+
+/// A bounty on a zone's board: an ask (kill N of a monster) and its reward.
+/// The board is READABLE (read_bounties); the human-facing pitch is a
+/// narration `line` the brain fires. v1 has no automatic turn-in/payout —
+/// completing a cross-zone bounty needs persistent per-character progress
+/// (a separate subsystem); see docs/design/saltmere.md.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BountyDef {
+    pub id: String,
+    /// Authoring/UI description (NOT emitted by the syscall — the brain
+    /// narrates via a zone `line`).
+    #[serde(default)]
+    pub text: String,
+    pub target_monster: String,
+    pub count: u32,
+    pub reward_currency: String,
+    pub reward_count: u32,
 }
 
 /// The fixed set of things player bots may SAY (speech bubbles) — bots
@@ -992,6 +1045,10 @@ pub struct ZoneDef {
     /// capacity is CONTENT, never server hardcode.
     #[serde(default)]
     pub max_players: u32,
+    /// The zone's bounty board (read_bounties). Towns post a starter quest;
+    /// most zones leave it empty.
+    #[serde(default)]
+    pub bounties: Vec<BountyDef>,
     /// The tileset family this zone is authored in (zones with map.txt).
     #[serde(default)]
     pub tileset: Option<String>,
@@ -1024,6 +1081,8 @@ pub struct ContentDb {
     pub naming: NamingDef,
     /// Sorted by id. Currency is COUNTED, not bag-stored.
     pub currency: Vec<CurrencyDef>,
+    /// Sorted by id. Town vendor catalogs (referenced by MonsterDef.shop).
+    pub vendors: Vec<VendorDef>,
     /// Player-sayable speech lines (speech.ron).
     pub speech: SpeechDef,
     /// Sorted by id.
@@ -1057,6 +1116,18 @@ impl ContentDb {
 
     pub fn item_idx(&self, id: &str) -> Option<usize> {
         self.items.binary_search_by(|i| i.id.as_str().cmp(id)).ok()
+    }
+
+    pub fn currency_idx(&self, id: &str) -> Option<usize> {
+        self.currency
+            .binary_search_by(|c| c.id.as_str().cmp(id))
+            .ok()
+    }
+
+    pub fn vendor_idx(&self, id: &str) -> Option<usize> {
+        self.vendors
+            .binary_search_by(|v| v.id.as_str().cmp(id))
+            .ok()
     }
 
     pub fn tree_node_idx(&self, id: &str) -> Option<usize> {
@@ -1317,6 +1388,9 @@ impl ContentDb {
             } else if rel_str.starts_with("currency/") {
                 db.currency
                     .push(ron::from_str::<CurrencyDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("vendors/") {
+                db.vendors
+                    .push(ron::from_str::<VendorDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("tilesets/") {
                 db.tilesets
                     .push(ron::from_str::<TilesetDef>(&text).map_err(parse_err)?);
@@ -1437,6 +1511,75 @@ impl ContentDb {
                     path: "gems/".into(),
                     id: w[0].id.clone(),
                 });
+            }
+        }
+        db.vendors.sort_by(|a, b| a.id.cmp(&b.id));
+        for w in db.vendors.windows(2) {
+            if w[0].id == w[1].id {
+                return Err(ContentError::DuplicateId {
+                    path: "vendors/".into(),
+                    id: w[0].id.clone(),
+                });
+            }
+        }
+        // Vendor catalogs reference currency + item ids; resolve them now so
+        // a typo refuses to load instead of breaking a trade at runtime.
+        for v in &db.vendors {
+            let ctx = || format!("vendor `{}`", v.id);
+            if db.currency_idx(&v.pays_currency).is_none() {
+                return Err(ContentError::UnknownRef {
+                    ctx: ctx(),
+                    what: "currency".into(),
+                    id: v.pays_currency.clone(),
+                });
+            }
+            for s in &v.stock {
+                if db.item_idx(&s.item).is_none() {
+                    return Err(ContentError::UnknownRef {
+                        ctx: ctx(),
+                        what: "item".into(),
+                        id: s.item.clone(),
+                    });
+                }
+                if db.currency_idx(&s.currency).is_none() {
+                    return Err(ContentError::UnknownRef {
+                        ctx: ctx(),
+                        what: "currency".into(),
+                        id: s.currency.clone(),
+                    });
+                }
+            }
+        }
+        // Every shop a monster names must exist; every bounty's targets must
+        // resolve. (Monsters/zones are already sorted above.)
+        for m in &db.monsters {
+            if let Some(shop) = &m.shop
+                && db.vendor_idx(shop).is_none()
+            {
+                return Err(ContentError::UnknownRef {
+                    ctx: format!("monster `{}`", m.id),
+                    what: "vendor (shop)".into(),
+                    id: shop.clone(),
+                });
+            }
+        }
+        for z in &db.zones {
+            for b in &z.bounties {
+                let ctx = || format!("zone `{}` bounty `{}`", z.id, b.id);
+                if db.monster_idx(&b.target_monster).is_none() {
+                    return Err(ContentError::UnknownRef {
+                        ctx: ctx(),
+                        what: "monster".into(),
+                        id: b.target_monster.clone(),
+                    });
+                }
+                if db.currency_idx(&b.reward_currency).is_none() {
+                    return Err(ContentError::UnknownRef {
+                        ctx: ctx(),
+                        what: "currency".into(),
+                        id: b.reward_currency.clone(),
+                    });
+                }
             }
         }
         db.build_tree()?;

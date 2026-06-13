@@ -1,0 +1,25 @@
+// The Quartermaster: neutral, stationary; sells flasks, buys salvage.
+MonsterDef(
+    id: "vendor_quartermaster",
+    name: "the Quartermaster",
+    model: "idler",
+    brain: "vendor",
+    hostile: false,
+    shop: Some("quartermaster"),
+    level: 1,
+    life: 100,
+    damage: 0,
+    speed_cps: 0,          // minds the stores
+    radius_cu: 40,
+    range_cu: 100,
+    use_ticks: 20,
+    aggro_radius_cu: 0,
+    armour: 0,
+    xp: 0,
+    projectile: false,
+    lines: [
+        "Flasks here. You'll want them full before the shore.",
+        "Sell me what you won't carry. Coin beats clutter.",
+        "Red for blood, blue for the spark. Take both.",
+    ],
+)

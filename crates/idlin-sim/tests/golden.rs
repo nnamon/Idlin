@@ -10,7 +10,12 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-const GOLDEN_HASH: u64 = 0xAE3E_66E0_BEA1_BAD9;
+/// 0x6DE9… (#23): content_hash-only move. The golden runs `withered_shore`;
+/// #23 adds Saltmere vendor/bounty content + a rewritten Saltmere brain, none
+/// of which ticks in the shore world. Every shore-resident monster sorts
+/// before the new `vendor_*` defs, so no state-folded `def_idx` shifted; the
+/// hash moves solely because `content_hash` folds the new files.
+const GOLDEN_HASH: u64 = 0x6DE9_0AE2_7CFF_353F;
 
 #[test]
 fn golden_replay() {

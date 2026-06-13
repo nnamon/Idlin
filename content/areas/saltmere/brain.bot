@@ -1,14 +1,35 @@
-// Area brain: Saltmere, the Act 1 town. Quiet by design — it greets
-// each arrival personally and announces them to the camp. Vendors,
-// stash, and the map device come later; they'll be syscalls and
-// script, like everything else.
+// ============================================================
+// Area brain: Saltmere, the Act 1 TOWN. Where the shore taught
+// combat, Saltmere teaches town MECHANICS — one lesson at a time,
+// the same gated-curriculum shape the shore uses, minus the gates
+// (town is open; the lessons are narration, paced by a timer).
+//
+//   arrive  -> welcome + announce the camp
+//   then, a few seconds apart:
+//     1. VENDORS  — sell your trash to the Smith/Quartermaster
+//     2. STASH    — bank what you can't lift yet (the plaza chest)
+//     3. CRAFT    — spend an obol to wake a base item's magic
+//     4. BOUNTY   — the board wants the Tidewarden; read it, head down
+//
+// The MECHANICS are real syscalls (read_shop/vendor_sell/vendor_buy,
+// stash_deposit, use_currency, read_bounties); this brain just
+// teaches them. Content is referenced BY NAME and resolved at load.
+// ============================================================
 
 include "std/zone_lib.bot";
 
 const L_WELCOME = line "welcome";    // to the arriving idler
 const L_ANNOUNCE = line "announce";  // to everyone else
+const L_SELL = line "sell";
+const L_STASH = line "stash";
+const L_CRAFT = line "craft";
+const L_BOUNTY = line "bounty";
 
 const F_WELCOMED = 1;
+
+// Ticks between lessons (10 Hz sim) — a calm, readable drip, not a
+// wall of text on arrival.
+const LESSON_GAP = 50;
 
 fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
@@ -16,9 +37,30 @@ fn main() {
     while (i < nq) {
         var r = ZL_Q + i * QC_STRIDE;
         var net = mem[r + QC_NET];
+
+        // Greet on arrival and start the lesson clock.
         if (zl_once(net, F_WELCOMED) == 1) {
             narrate(L_WELCOME, net);
             narrate(L_ANNOUNCE, 0);
+            zl_timer_set(net, LESSON_GAP);
+        }
+
+        // One lesson each time the timer fires; `spare` (row+12) is the
+        // stage cursor. Re-arm until the curriculum is done.
+        if (zl_timer_fired(net) == 1) {
+            var row = zl_state_row(net);
+            var stage = mem[row + 12];
+            if (stage == 0) { narrate(L_SELL, net); }
+            if (stage == 1) { narrate(L_STASH, net); }
+            if (stage == 2) { narrate(L_CRAFT, net); }
+            if (stage == 3) { narrate(L_BOUNTY, net); }
+            // TODO(#23 follow-up): bounty turn-in/payout. Completing
+            // "clear the coast" is cross-zone and needs persistent
+            // per-character progress that survives the ferry (net ids
+            // are reassigned on re-entry). Until then the board is
+            // read-only (read_bounties) and this is just the pitch.
+            mem[row + 12] = stage + 1;
+            if (stage < 3) { zl_timer_set(net, LESSON_GAP); }
         }
         i = i + 1;
     }

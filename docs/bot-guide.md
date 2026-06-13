@@ -288,6 +288,28 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 30 | `ReadStash` | out_addr, max | the town STASH contents as 32-byte records, identical layout to ReadInventory (base_idx, slot, rarity, item_level, x, y, w, h). Returns the count, or −2 if not within reach of the stash (SelfStatus +68/+72; stash is a PLACE in town). |
 | 31 | `StashDeposit` | inv_idx | move bag item inv_idx into the stash (first-fit). 0 ok; −1 bad index; −2 out of range (walk to the stash); −3 stash full. |
 | 32 | `StashWithdraw` | stash_idx | move stash item stash_idx into the bag (first-fit). 0 ok; −1 bad index; −2 out of range; −3 bag full. |
+| 33 | `ReadVendors` | out_addr, max (≤16) | nearby town VENDORS as 16-byte records: (net_id, x raw, y raw, vendor_def_idx), nearest first. Vendors are neutral NPCs — `ReadEntities` can't see them, so this is how you find a shop. Returns the count. |
+| 34 | `ReadShop` | out_addr, max | the NEAREST in-reach vendor's stock as 20-byte records: (item_base_idx, currency_idx, price, w, h). Returns the count, or −2 if no vendor is within reach (2u — walk up to one from ReadVendors). |
+| 35 | `VendorSell` | inv_idx | sell bag item inv_idx to the nearest in-reach vendor; you're paid in the vendor's currency, scaled by the item's rarity. 0 ok; −1 bad index; −2 no vendor in reach. Trash → obols: the first town lesson. |
+| 36 | `VendorBuy` | stock_idx | buy stock line stock_idx (from ReadShop) from the nearest in-reach vendor. 0 ok; −1 bad index; −2 no vendor in reach; −3 bag full; −4 can't afford. The bought base is a clean Normal item (flasks come full). |
+| 37 | `ReadBounties` | out_addr, max (≤16) | the current zone's bounty board as 16-byte records: (target_monster_idx, count, reward_currency_idx, reward_count). The human pitch is narration. Returns the count. (v1 is read-only — automatic turn-in is a planned follow-up.) |
+
+#### Town services
+
+Towns (Saltmere) post services as PLACES, like the stash. To trade:
+find a vendor (`ReadVendors`), walk into reach, then `ReadShop` to see its
+stock and `VendorSell` / `VendorBuy` to deal — all range-gated to 2u, the
+same deliberate-stop pattern as the stash and exits.
+
+```c
+var nv = read_vendors(VND, 8);
+if (nv > 0) {
+    var vx = mem[VND + 4];          // nearest vendor's position
+    var vy = mem[VND + 8];
+    move_to(vx, vy);                // walk up
+    if (vendor_sell(0) == 0) { }    // sell bag slot 0 once in reach
+}
+```
 
 ### Skill-use return codes
 

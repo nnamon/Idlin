@@ -15,6 +15,7 @@ mod loot;
 mod progression;
 mod stash;
 mod tree;
+mod vendors;
 mod views;
 mod zone_brain;
 

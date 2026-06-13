@@ -1,0 +1,11 @@
+// The Quartermaster: buys salvage and sells the two flasks every idler
+// needs before the next descent.
+VendorDef(
+    id: "quartermaster",
+    pays_currency: "transmute_obol",
+    pays_amount: (1, 2, 4, 8),
+    stock: [
+        (item: "small_life_flask", currency: "transmute_obol", price: 1),
+        (item: "small_mana_flask", currency: "transmute_obol", price: 1),
+    ],
+)

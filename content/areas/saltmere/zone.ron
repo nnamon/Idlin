@@ -16,6 +16,11 @@ ZoneDef(
     lines: [
         (id: "welcome",  text: "Saltmere. Fires that stay lit. Faces that stay alive."),
         (id: "announce", text: "Another wretch crests the bluff. The camp counts one more."),
+        // The curriculum: town mechanics taught one lesson at a time.
+        (id: "sell",   text: "The Smith and Quartermaster buy what you won't wear. Walk up and sell your strand-trash for obols."),
+        (id: "stash",  text: "The plaza chest keeps what you can't lift yet. Bank the boss-hoard until you've grown into it."),
+        (id: "craft",  text: "An obol can wake the latent magic in plain gear. Spend one and watch a base item turn."),
+        (id: "bounty", text: "The board wants the Tidewarden's head again. Read it, take the south road, and come back richer."),
     ],
     packs: [
         // Townsfolk: non-hostile bots with errands and opinions.
@@ -23,6 +28,23 @@ ZoneDef(
         (monster: "villager", count: 2, x_u: 30, y_u: 31, radius_u: 5, respawn_ticks: 9000),
         (monster: "villager", count: 1, x_u: 25, y_u: 21,  radius_u: 2, respawn_ticks: 9000),
         (monster: "villager", count: 1, x_u: 34, y_u: 21,  radius_u: 2, respawn_ticks: 9000),
+        // The vendors: stationary shopkeepers flanking the stash plaza.
+        // Neutral, so they can never be wiped — the long respawn is moot.
+        (monster: "vendor_smith",         count: 1, x_u: 26, y_u: 40, radius_u: 0, respawn_ticks: 999999),
+        (monster: "vendor_quartermaster", count: 1, x_u: 34, y_u: 40, radius_u: 0, respawn_ticks: 999999),
+    ],
+    // The bounty board: a starter quest pointing back down to the coast.
+    // v1 posts the ask (read_bounties + brain narration); automatic turn-in
+    // is a follow-up — see docs/design/saltmere.md.
+    bounties: [
+        (
+            id: "warden",
+            text: "Break the Tidewarden again and the camp pays in regal obols.",
+            target_monster: "tidewarden",
+            count: 1,
+            reward_currency: "regal_obol",
+            reward_count: 1,
+        ),
     ],
     // The south gate road: out of town and down to the coastline. The
     // shore behind an idler is THEIR finished tutorial; the way out

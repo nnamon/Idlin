@@ -1,0 +1,10 @@
+// The Smith: buys a newcomer's strand-scavenged trash and sells one honest
+// starter weapon. Payout scales with the item's rarity (normal..unique).
+VendorDef(
+    id: "smith",
+    pays_currency: "transmute_obol",
+    pays_amount: (1, 2, 4, 8),
+    stock: [
+        (item: "rusted_cleaver", currency: "transmute_obol", price: 1),
+    ],
+)

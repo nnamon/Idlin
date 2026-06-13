@@ -341,6 +341,45 @@ fn the_shore_brain_choreographs_the_opening() {
 }
 
 #[test]
+fn the_saltmere_brain_teaches_the_town_curriculum() {
+    // Saltmere drips its town-mechanics lessons after the welcome, one
+    // every LESSON_GAP (50) ticks. An inert (halt) character stays put so
+    // the whole curriculum plays out.
+    let content = content();
+    let mut world = World::new_for_zone(0x005A_17EE, &content, "saltmere");
+    let halt = idlin_botc::assemble("halt\n").expect("halt assembles");
+    let mut events = world.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Newcomer".into(),
+            program: halt,
+        }],
+        arrivals: Vec::new(),
+    });
+    for _ in 0..300 {
+        events.extend(world.tick(&TickInputs::default()));
+    }
+    let narrations: Vec<&str> = events
+        .iter()
+        .filter_map(|ev| match ev {
+            SimEvent::Narration { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    for needle in [
+        "Fires that stay lit", // welcome
+        "sell your strand-trash",
+        "plaza chest",
+        "wake the latent magic",
+        "board wants the Tidewarden",
+    ] {
+        assert!(
+            narrations.iter().any(|t| t.contains(needle)),
+            "curriculum beat `{needle}` must fire; got {narrations:?}"
+        );
+    }
+}
+
+#[test]
 fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     let content = content();
     // Two worlds, one host (this test): a private shore and the shared town.

@@ -229,6 +229,33 @@ stand on the shore under tier-colored pillars, and are spent through
 `UseCurrency` on bag items only. Every roll draws from a dedicated
 deterministic stream, so crafting spam never shifts loot luck.
 
+## Towns and services (vendors, stash, bounties)
+
+Saltmere is the act-1 town: not the main hub (that arrives with the
+atlas), but a teaching CAMP where town mechanics are introduced as
+lessons the way the shore teaches combat. Each service is a PLACE you
+walk up to, range-gated to 2u like the stash and exits — never a menu.
+
+- **Vendors** are neutral NPCs (a non-hostile monster whose def names a
+  `VendorDef`). They **buy** your trash — selling a bag item pays the
+  vendor's currency scaled by the item's rarity — and **sell** a small
+  stock of basics for a fixed obol price. Find one with `ReadVendors`
+  (they're invisible to the enemy/character queries), then `ReadShop`,
+  `VendorSell`, `VendorBuy`. A bought base is a clean Normal item at the
+  zone's level (flasks come full).
+- **Stash** is per-character long-term storage at a town place: bank the
+  level-gated boss hoard you can't wear yet (`StashDeposit` /
+  `StashWithdraw`).
+- **The bounty board** posts a zone's quests (`ReadBounties`): an ask
+  (kill N of a monster) and a reward. v1 is the readable board plus the
+  brain's narrated pitch; automatic turn-in/payout is a follow-up (it
+  needs persistent per-character quest progress across the ferry).
+
+The Saltmere brain choreographs these as a timed curriculum — welcome,
+then one lesson every few seconds (sell → stash → craft → bounty) — the
+same gated-tutorial shape as the shore, minus the gates (a town is
+open; the lessons are narration).
+
 ## Monsters are characters
 
 Everything-is-a-bot extends to everything-is-a-character: a monster def

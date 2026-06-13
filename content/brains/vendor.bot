@@ -1,0 +1,18 @@
+// ============================================================
+// Vendor brain: a shopkeeper that stands at its post and has the
+// occasional word for whoever's passing (the def's `lines:` table,
+// rate-limited by the sim). Trade itself is the CUSTOMER's doing —
+// bots walk into reach and call read_shop / vendor_sell / vendor_buy.
+// A vendor is just a non-hostile bot that never moves.
+// ============================================================
+
+const SELF = 0xE000;
+
+fn main() {
+    self_status(SELF);
+    if (mem[SELF + 32] & 1) { return; }   // dead (never, but be safe)
+    // A rare aside; the say() rate-limit in the sim does the real gating.
+    if ((random() & 0xFF) == 0) {
+        say((random() & 0x7FFFFFFF) % 3);
+    }
+}
