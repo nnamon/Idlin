@@ -9,6 +9,7 @@ const PROJ_COLORS = [0xffe9c8, 0xff8a5a, 0x6ab8e8, 0xffe96a, 0xc08aff];
 const MISS_COLOR = "#8a8a99";
 
 const FLASH_POOL = 48;
+const CHARGE_POOL = 24;
 const TRACER_POOL = 32;
 const NUMBER_POOL = 48;
 const SHAPE_POOL = 16;
@@ -21,6 +22,17 @@ interface Flash {
   mat: THREE.SpriteMaterial;
   bornAt: number;
   ttlMs: number;
+  active: boolean;
+}
+
+/** A cast telegraph: a glow that GROWS at the caster over a spell's windup,
+ *  handing off to the shape/hit FX at contact. */
+interface Charge {
+  sprite: THREE.Sprite;
+  mat: THREE.SpriteMaterial;
+  bornAt: number;
+  ttlMs: number;
+  peak: number;
   active: boolean;
 }
 
@@ -193,6 +205,7 @@ function easeOutCubic(a: number): number {
  */
 export class FxSystem {
   private flashes: Flash[] = [];
+  private charges: Charge[] = [];
   private tracers: Tracer[] = [];
   private numbers: DamageNumber[] = [];
   private shapes: ShapeFx[] = [];
@@ -403,6 +416,34 @@ export class FxSystem {
     f.sprite.position.y += lift;
   }
 
+  /** Cast telegraph: a glow that BUILDS at the caster over `ttlMs` (the
+   *  spell's windup), then hands off to the shape/hit FX at contact — so a
+   *  cast reads as cast, not as appearing. Additive + pooled; no-op unless
+   *  spawned (spell uses only). */
+  spawnCharge(at: THREE.Vector3, color: number, ttlMs: number, now: number): void {
+    let c = this.charges.find((c) => !c.active);
+    if (!c) {
+      if (this.charges.length >= CHARGE_POOL) return;
+      const mat = new THREE.SpriteMaterial({
+        map: this.glowTex,
+        transparent: true,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+      });
+      c = { sprite: new THREE.Sprite(mat), mat, bornAt: 0, ttlMs: 0, peak: 1, active: false };
+      this.scene.add(c.sprite);
+      this.charges.push(c);
+    }
+    c.active = true;
+    c.bornAt = now;
+    c.ttlMs = ttlMs;
+    c.peak = 1.6;
+    c.mat.color.setHex(color);
+    c.mat.opacity = 0;
+    c.sprite.visible = true;
+    c.sprite.position.copy(at);
+  }
+
   /** A brief point light: big casts illuminate the shore around them. */
   private spawnLight(at: THREE.Vector3, color: number, radius: number, now: number, ttlMs: number): void {
     let l = this.lights.find((l) => !l.active);
@@ -600,6 +641,19 @@ export class FxSystem {
       }
       f.mat.opacity = 0.9 * (1 - age);
     }
+    for (const c of this.charges) {
+      if (!c.active) continue;
+      const a = (now - c.bornAt) / c.ttlMs;
+      if (a >= 1) {
+        c.active = false;
+        c.sprite.visible = false;
+        continue;
+      }
+      // Build toward contact: brighten and grow.
+      c.mat.opacity = 0.85 * a;
+      const s = c.peak * (0.25 + 0.75 * a);
+      c.sprite.scale.set(s, s, 1);
+    }
     for (const t of this.tracers) {
       if (!t.active) continue;
       const a = (now - t.bornAt) / t.flightMs;
@@ -681,6 +735,10 @@ export class FxSystem {
       f.sprite.removeFromParent();
       f.mat.dispose();
     }
+    for (const c of this.charges) {
+      c.sprite.removeFromParent();
+      c.mat.dispose();
+    }
     for (const t of this.tracers) {
       t.sprite.removeFromParent();
       t.trail.removeFromParent();
@@ -713,6 +771,7 @@ export class FxSystem {
     this.corridorGeo.dispose();
     this.trailGeo.dispose();
     this.flashes = [];
+    this.charges = [];
     this.tracers = [];
     this.numbers = [];
     this.shapes = [];

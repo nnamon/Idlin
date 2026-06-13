@@ -569,9 +569,14 @@ export class ZoneRenderer {
       // rate-fitted so its contact frame lands when the strike resolves
       // — HitFx, numbers, and shape FX arrive ON the visible blow.
       for (const u of this.store.drainUses()) {
-        this.visuals
-          .get(u.attacker)
-          ?.playUse(u.spell, new THREE.Vector3(u.x, 0, u.y), u.useS, u.contactS);
+        const caster = this.visuals.get(u.attacker);
+        caster?.playUse(u.spell, new THREE.Vector3(u.x, 0, u.y), u.useS, u.contactS);
+        // Cast telegraph: a glow builds at the caster through a spell's
+        // windup (the element isn't known until the hit, so a neutral
+        // channel tone). Attacks (spell=false) get none.
+        if (u.spell && caster && u.contactS > 0.05) {
+          this.fx.spawnCharge(caster.group.position.clone().setY(1.1), 0x9adfff, u.contactS * 1000, now);
+        }
       }
       for (const hit of this.store.drainHits()) {
         const target = this.visuals.get(hit.target);
