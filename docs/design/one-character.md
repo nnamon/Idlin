@@ -1,136 +1,151 @@
-# One character, forever — the committed long arc
+# One character, forever — progression specification
 
-**Decision (issue #24):** Idlin has **no leagues and no stable of alts**. One
-idler is the long-term object of play — PoE-style solitary depth. Every
-progression system must deepen a SINGLE character rather than invite a reroll.
-This doc settles which arcs we commit to.
+Idlin's long game is a **single idler, tended for weeks or months**. There are no
+alts and no leagues. This document specifies how one character stays worth
+investing in indefinitely — the progression model the rest of the design serves.
 
-> Scope note: this is a design commitment, not an implementation. It picks the
-> arcs and says how they reinforce one-character focus. Items marked **shipped
-> (on main)** exist today (cited); items marked **committed via #N** are real but
-> live on an open PR not yet merged; items marked **arc** are the committed plan.
-> The choice of three arcs is the author's discretion under #24 — flagged for
-> redline.
+## The thesis
 
-## The base mountain (committed via #22): exponential to 100
+- **The object of play is one persistent character.** The broadcast follows an
+  idler whose story *accrues* — its gear, its skills, its trophies, its code. A
+  stable of alts or a seasonal reset fragments that attention and throws away the
+  investment the stream is built on.
+- **The failure mode we design against is "maxed → reroll."** Every system must
+  give a reason to keep pouring into the *same* idler rather than start a new one.
+- **The answer is depth on three axes that all converge on one character**, paced
+  by a base time-mountain:
+  - **WHERE** it can go — the Atlas (§Arc 1).
+  - **WHAT** it is — Reformation (§Arc 3).
+  - **HOW** it's driven — the Bot (§Arc 2).
 
-The level curve is the spine everything hangs on. **#22** (PR open, not yet on
-main — main is still the plain quadratic `80 + 40·L²`) makes levelling a true
-long climb: a hybrid curve `(80 + 40·L²)·1.08^max(0,L−5)`, identical to today's
-curve through L5, reaching **~5.7 billion** cumulative XP at level 100. Levels
-1–5 stay gentle (onboarding untouched); the back half is a mountain measured in
-weeks, not an afternoon. This is the timebase that makes the arcs below *long*
-instead of *grindy-then-done*, so we commit to it as the base.
+PoE-style solitary depth: you re-weight, re-form, and out-code a single
+character; you never re-roll one.
 
-Gems ride the same clock at a deliberately slower gear: gem XP-to-next is
-`60 + 30·L²` with a **cap of 20** (`GEM_LEVEL_CAP`), and a skill's support
-capacity unlocks at gem level **7** (2nd) and **14** (3rd). A character's
-*skills* therefore keep maturing long after its *level* slows — a second,
-overlapping climb on one idler. (Both shipped.)
+## The clock — the base mountain
 
-## The three committed arcs
+Two overlapping climbs give one character a long timebase *before* the arcs even
+begin.
 
-We commit to **three** arcs. Each is endless-by-sidegrade (choice, not a wall),
-each is bound to one character, and together they cover the three axes a solo
-character grows along: **where** it can go, **what** it is, and **how** it
-thinks.
+- **Levels (the body) — an exponential mountain.** XP-to-next follows
+  `(80 + 40·L²) · 1.08^max(0, L−5)`: identical to a gentle quadratic through
+  level 5 (onboarding untouched), then compounding into a back half measured in
+  **weeks** — roughly **5.7 billion** cumulative XP to level 100. Base life
+  starts at `100 + 14·(L−1)` and gear + the tree multiply it; level-ups recompute
+  everything and fully heal.
+- **Gems (the skills) — a slower, overlapping clock.** Each kill feeds **half**
+  its XP to the character's socketed gems; gem XP-to-next is `60 + 30·L²` with a
+  **cap of 20**. A skill's support capacity is *earned*: 1 support slot, a 2nd at
+  gem level **7**, a 3rd at **14**. So a character's *skills keep maturing long
+  after its level slows* — a build deepens over weeks as its gems crawl toward 20
+  and open their third support.
 
-### Arc 1 — The Atlas (WHERE): map tiers + a per-character atlas tree
+The body front-loads, the skills long-tail. One idler is already two progressions
+deep before the endgame arcs apply.
 
-*Status: arc (the capstone, tracked as #21).*
+## Arc 1 — The Atlas (WHERE)
 
-A PoE2-style atlas is the spatial endgame. Maps are items that open instanced
-zones at a **tier**; clearing them unlocks higher tiers and earns points in a
-**per-character atlas passive tree** — a second tree, separate from the build
-tree, spent on *where and how you map* (pack size, rarity, specific content
-weighting) rather than on the character's body. It is endless sidegrade choice
-with **no reroll**: you re-weight your atlas, you don't start over.
+The spatial endgame: ever-harder, ever-more-rewarding content for the same
+character, with its own character-bound progression. Specified in full in
+`atlas.md`; in one-character terms:
 
-Folded into this arc:
-- **Pinnacle bosses** behind assembled keys (drops from sustained mapping),
-  with **per-character completion marks** — the trophies a single idler
-  accumulates.
-- The atlas tree is the natural home for the "deepest content" pressure that
-  makes higher tiers matter.
+- **Maps are items**; a town device opens them into instanced zones at a tier.
+  Clearing them sustains higher-tier maps — the climb has no fixed end.
+- **A per-character atlas passive tree** — a *second* tree, separate from the
+  build tree, earned by map completions and spent on *how you map* (pack size,
+  content weighting, tier access, boss rewards) rather than on the character's
+  body. Endless horizontal sidegrade: you re-weight your atlas, you never reroll.
+- **Pinnacle bosses** behind keys assembled from sustained mapping, carrying
+  **per-character completion marks** — the trophies one idler accumulates.
 
-Why it fits one-character: an atlas is *the* PoE answer to "what do I do at
-endgame without rerolling" — horizontal, character-bound, infinite.
+Why it fits one character: it is the answer to "what do I do at endgame without
+rerolling" — infinite, horizontal, and bound to this character's atlas.
 
-### Arc 2 — The Bot (HOW): the program is progression
+## Arc 2 — The Bot (HOW)
 
-*Status: arc (Idlin-native; the part no other ARPG has).*
+The Idlin-native arc, and the one no other ARPG has: **the character is a
+program, so the deepest progression is the code getting better.** The same idler,
+driven by an increasingly sophisticated brain.
 
-In Idlin the character *is a program*. So the deepest, most Idlin-true
-progression is the **code itself getting better** — the same idler running an
-increasingly sophisticated brain. We commit to making that legible and
-rewarding:
+- **The iteration loop.** The grinder template is the floor; a hand-written brain
+  is the ceiling. The portal (build planner + bot-prefs + templates) is the
+  on-ramp; you **deploy a better program onto the same character** — a redeploy
+  preserves the character's identity and its persistent memory, so improving the
+  code *is* improving the character, with no reroll.
+- **Per-character ladder stats — the character's story, written by its code.**
+  Persisted on the character and surfaced on the portal and the broadcast HUD:
+  - deepest map tier reached,
+  - longest deathless streak,
+  - fastest pinnacle-boss kill,
+  - total kills / uptime,
+  - peak effective DPS.
+  These make "better code" *legible and competitive* — the reason to keep
+  iterating one idler rather than starting over.
+- **What better code buys:** surviving deeper maps, faster clears, deathless
+  runs, tighter loot/craft loops. The skill ceiling is "write a better idler,"
+  and it lives entirely on one character.
 
-- **Per-character ladder stats** that record what the bot achieved: deepest map
-  tier, deathless streak, fastest pinnacle kill, longest unbroken uptime. These
-  are the character's *story*, written by its code.
-- The grinder template is the floor, not the ceiling: the build planner +
-  templates (the portal, **#17**) are the on-ramp; the ladder is the reason to
-  iterate.
-- Crucially this needs **no reroll either** — you redeploy a better program onto
-  the SAME character (`Bot::redeploy` already preserves the persist block and
-  identity across swaps). Improving the code is improving the character.
+## Arc 3 — Reformation (WHAT)
 
-Why it fits one-character: it turns the skill ceiling from "make a new build" to
-"write a better idler" — depth that lives entirely on one character.
+Identity is a **dial you turn, not a slot you fill**. One idler becomes a
+different idler *in place* — so a new playstyle is never a reason for a new save.
 
-### Arc 3 — Reformation (WHAT): re-form one character, never re-roll
-
-*Status: mostly shipped on main (respec, the crafting-currency engine, the
-rare hunt); uniques land via #6. This arc commits to keeping identity fluid
-WITHIN one character so alts are never the answer.*
-
-The gear/skill/tree systems already let one idler become a different idler
-without starting over — we commit to that as a pillar, not an accident:
-
-- **Gear chase** — uniques (**committed via #6**, PR open: `UniqueDef` + fixed
-  grants; on main the unique pool still fizzles), dropped **rares of 3–5
-  affixes** (`loot.rs` rolls `3 + rng(3)`) that **crafting can push to 6** (the
-  Exalted op, capped at 6), over the full PoE-verb **crafting currency**
-  (transmute → divine — the affix-engine spend is **shipped on main**; **#18**
-  adds the grinder's spend loop + its design doc) — together an unbounded item
-  hunt.
-- **The Regret Obol respec** (shipped) makes the *build tree* re-formable: drop
+- **Gear chase.** Uniques (fixed-identity items with build-defining grants),
+  dropped rares of **3–5 affixes** that **crafting can push to 6**, over the full
+  PoE-verb currency economy — transmute, augment, alter, regal, alchemy, chaos,
+  exalt, scour, divine — applied to the affix engine. An unbounded item hunt with
+  no top.
+- **Tree respec.** The **Regret Obol** re-forms the build tree in place: drop
   allocated nodes, re-walk, and the sim un-sockets orphaned gems and sheds gear
-  you no longer qualify for. You change what your character *is* in place.
-- **Gem maturation** (above) is the slow half of identity: which skills you grow
-  and which supports you marry to them. Future depth (gem **quality**,
-  **corruption**) extends this without adding characters.
+  you no longer qualify for. You change *what the character is* without a reroll.
+- **Gem identity.** Which skills you grow and which supports you marry to them
+  (the gem clock above) is the slow half of identity. Future depth — gem
+  **quality** and **corruption** — extends this on the same character.
 
-Why it fits one-character: identity is a dial you turn, not a slot you fill. A
-new playstyle is a respec + a gear swap, never a new save.
-
-## Parked / out of scope (deliberately)
-
-- **Prestige / rebirth** — parked. It rewards *ending* a character, which fights
-  one-character focus. Only revisit if reframed as a within-character cycle
-  (e.g., an atlas-tree "ascendancy" that keeps the same idler).
-- **Leagues / seasonal ladders** — none for now (the user's call); the ladder in
-  Arc 2 is permanent and per-character, not seasonal.
-- **Community / town goals** — KIV; revisit after the atlas lands (the main hub
-  town arrives with it).
+Net: a wholesale playstyle change is a respec + a gear swap + a re-socket, never a
+new character.
 
 ## How the arcs interlock
 
-The base curve (#22) sets the clock. **Level** climbs the body; **gems** mature
-the skills; **Reformation** keeps both re-shapeable so you never reroll;
-**the Atlas** gives that ever-stronger character somewhere endless to go; and
-**the Bot** ladder makes *getting better at driving it* its own progression.
-Three axes — where, what, how — all converging on a single idler that a viewer
-tends for weeks. That is the game's long game.
+```
+        the clock (levels + gems)  ── paces everything ──┐
+                                                          ▼
+   Reformation (WHAT)  re-shapes the character  ◄──►  the Atlas (WHERE)
+        gear · tree respec · gems                     gives it endless
+                                                      places to test itself
+                          ▲                                  ▲
+                          └──────── the Bot (HOW) ───────────┘
+              better code drives all of it; the ladder makes
+              "getting better at driving one idler" its own progression
+```
 
-## Concerns for redline
+The clock sets the pace; **Level** climbs the body; **Reformation** keeps the
+body re-shapeable; **the Atlas** gives that body somewhere infinite to go; and
+**the Bot** ladder turns *driving it well* into progression. Four threads, one
+idler, weeks of tending. That is the long game.
 
-- **Three vs two arcs.** #24 asks for 2–3; I committed to three because dropping
-  any one collapses an axis (drop Atlas → no spatial endgame; drop Bot → lose
-  the Idlin-native hook; drop Reformation → alts creep back in). If a tighter
-  scope is wanted, **Atlas + Bot** are the two I'd keep (Reformation is mostly
-  shipped and can ride as "a pillar we maintain" rather than a headline arc).
-- **Atlas is the biggest build** by far (#21) and gates the town/community work.
-- **Ladder stats** (Arc 2) are new server state (per-character records,
-  persisted + shown on the portal/stream) — modest but not free; the smallest
-  first slice is "deepest map tier + deathless streak."
+## Parked, deliberately
+
+- **Prestige / rebirth.** Rewards *ending* a character — directly against
+  one-character focus. Revisit only if reframed as a *within-character* cycle
+  (e.g., an atlas-tree "ascendancy" on the same idler).
+- **Leagues / seasonal ladders.** None. The Bot ladder (Arc 2) is **permanent and
+  per-character**, not a season that wipes.
+- **Community / town goals.** Held until the atlas hub town exists.
+
+## Open design choices (for redline)
+
+- **Three arcs vs two.** Three are committed (each owns an axis; dropping one
+  collapses it). If a tighter scope is wanted, **Atlas + Bot** are the two to
+  keep — Reformation can ride as a maintained pillar rather than a headline arc.
+- **The ladder stat set** and whether it's purely permanent/per-character or ever
+  gains a competitive/seasonal layer (currently: permanent only).
+- **Tier-access gating** — does the atlas tree gate higher tiers, or does boss
+  completion?
+- **Gem quality / corruption** scope and when it lands.
+- **Death penalty** — currently reposition-only, no XP loss; whether the endgame
+  wants stakes (map portals already provide them; the open world may not).
+
+> Implementation status, dependencies, and per-arc tracking live in the
+> one-character issue (#24); the arcs reference their own specs (`atlas.md`,
+> and the Bot ladder / Reformation systems). This document is the standing
+> target.
