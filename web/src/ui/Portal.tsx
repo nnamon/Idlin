@@ -88,7 +88,7 @@ function BuildPlanner() {
   }, [data]);
 
   if (!data) return <div style={{ color: MUTED, padding: 20 }}>loading tree…</div>;
-  if (data.nodes.length === 0)
+  if (data.nodes.length === 0 || startIdx < 0)
     return <div style={{ color: MUTED, padding: 20 }}>no passive tree in this content set.</div>;
 
   // A node is allocatable iff it neighbours the start or an already-picked node.
