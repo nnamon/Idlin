@@ -155,23 +155,37 @@ Opening a map creates one ephemeral, per-owner zone instance.
 
 ---
 
-## 4. The device
+## 4. The device — a departure gate
 
-The map device is a **place** in town — the social hub where runners gather (the
-town is a shared, high-occupancy world; the device is where they launch from).
+The map device is the population's funnel and the broadcast's centerpiece, so it
+is designed as a **departure gate**, not a crowd standing on a tile: idlers
+arrive, a rift opens, they step through and are *gone* into their instance. The
+town is **flow, not accumulation**. (The watchable layer — the rift spectacle,
+the director, the HUD — is specified in `broadcast-presentation.md`; this section
+covers the gameplay.)
 
-- **A place, range-gated** (≈2u), rendered as a prop, authored on the town zone
-  (a `device` coordinate, validated walkable + reachable, mirroring the stash).
-- **Per-player portals.** A runner sees and opens **only their own** maps;
-  instances are keyed by owner, so no one enters another's run. The congregation
-  is social, the runs are private.
-- **Bot API** (proximity-gated to the device):
+- **A portal *plaza*, not a point.** A ring of portal-pads around a central
+  atlas-structure, each pad its own small interaction spot. The crowd spreads
+  across pads instead of piling on one tile (which the O(n²) separation would
+  churn into a mosh). Authored on the town zone (the pads' coordinates,
+  validated walkable + reachable), rendered as the town's iconic structure.
+- **Transit, not lingering.** `use_map` runs a short windup (the rift forms) and
+  then **phases the runner out** to their instance — idlers don't *stand* at the
+  gate, they *pass through* it, so density is bounded by arrival rate × windup,
+  not by population. Idle-between-runs life happens elsewhere in town (vendors,
+  stash, the bench), never on the gate.
+- **Per-owner gameplay, spectator-omniscient presentation.** A runner sees and
+  enters **only their own** maps (instances are keyed by owner — no one enters
+  another's run); but the *broadcast* may show everyone's portals opening at once
+  (presentation ≠ gameplay; see `broadcast-presentation.md`). The congregation is
+  social; the runs are private.
+- **Bot API** (proximity-gated to a pad):
   - `read_maps(out, max)` → the maps in the bag, one record each: base id, tier,
     item level, rarity, remaining portals.
   - `use_map(inv_idx)` → consume the map and depart into its instance. Errors:
-    out of device range; bad index; already at portal cap (re-entry of an active
-    run uses the device too).
-  - The instance carries a **return exit** (`UseExit`) back to the device.
+    out of range of a pad; bad index; already at portal cap (re-entry of an
+    active run uses the device too).
+  - The instance carries a **return exit** (`UseExit`) back to the device plaza.
 
 ---
 
