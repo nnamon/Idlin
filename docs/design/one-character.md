@@ -30,8 +30,9 @@ begin.
   `(80 + 40·L²) · 1.08^max(0, L−5)`: identical to a gentle quadratic through
   level 5 (onboarding untouched), then compounding into a back half measured in
   **weeks** — roughly **5.7 billion** cumulative XP to level 100. Base life
-  starts at `100 + 14·(L−1)` and gear + the tree multiply it; level-ups recompute
-  everything and fully heal.
+  starts at `100 + 14·(L−1)`; gear, the tree, and attributes (Strength adds flat
+  life) feed it through the added → increased → more stat pipeline. A level-up
+  recomputes every stat and refills life to full.
 - **Gems (the skills) — a slower, overlapping clock.** Each kill feeds **half**
   its XP to the character's socketed gems; gem XP-to-next is `60 + 30·L²` with a
   **cap of 20**. A skill's support capacity is *earned*: 1 support slot, a 2nd at
@@ -49,7 +50,9 @@ character, with its own character-bound progression. Specified in full in
 `atlas.md`; in one-character terms:
 
 - **Maps are items**; a town device opens them into instanced zones at a tier.
-  Clearing them sustains higher-tier maps — the climb has no fixed end.
+  Clearing them sustains higher-tier maps — the climb is open-ended (the tier
+  ceiling and how higher tiers are gated are atlas design choices; see
+  `atlas.md`).
 - **A per-character atlas passive tree** — a *second* tree, separate from the
   build tree, earned by map completions and spent on *how you map* (pack size,
   content weighting, tier access, boss rewards) rather than on the character's
@@ -68,32 +71,34 @@ driven by an increasingly sophisticated brain.
 
 - **The iteration loop.** The grinder template is the floor; a hand-written brain
   is the ceiling. The portal (build planner + bot-prefs + templates) is the
-  on-ramp; you **deploy a better program onto the same character** — a redeploy
-  preserves the character's identity and its persistent memory, so improving the
-  code *is* improving the character, with no reroll.
-- **Per-character ladder stats — the character's story, written by its code.**
-  Persisted on the character and surfaced on the portal and the broadcast HUD:
-  - deepest map tier reached,
-  - longest deathless streak,
-  - fastest pinnacle-boss kill,
-  - total kills / uptime,
-  - peak effective DPS.
-  These make "better code" *legible and competitive* — the reason to keep
-  iterating one idler rather than starting over.
-- **What better code buys:** surviving deeper maps, faster clears, deathless
-  runs, tighter loot/craft loops. The skill ceiling is "write a better idler,"
-  and it lives entirely on one character.
+  on-ramp, and the **authenticated deploy path** (target — the persistent-server
+  write verb, `persistent-server.md`) pushes a better program onto the *same*
+  character. The primitive it builds on already exists: a redeploy preserves the
+  character's identity and persistent memory, so improving the code *is* improving
+  the character, with no reroll.
+- **The progression is expanding capability; the ladder makes it legible.**
+  Better code buys *real* progress — surviving deeper maps, faster clears,
+  deathless runs, tighter loot/craft loops — which is genuine character
+  advancement (deeper, richer content reached), not merely a number. **Per-
+  character ladder stats** (target — today only `kills`/`items` exist) record and
+  surface that story on the portal + broadcast HUD: deepest map tier, longest
+  deathless streak, fastest pinnacle kill, uptime, peak DPS. *Open: whether ladder
+  milestones also grant something mechanical (cosmetic/prestige, or a nod toward
+  atlas access) or stay a pure competitive scoreboard.*
+- The skill ceiling is "write a better idler," and it lives entirely on one
+  character.
 
 ## Arc 3 — Reformation (WHAT)
 
 Identity is a **dial you turn, not a slot you fill**. One idler becomes a
 different idler *in place* — so a new playstyle is never a reason for a new save.
 
-- **Gear chase.** Uniques (fixed-identity items with build-defining grants),
-  dropped rares of **3–5 affixes** that **crafting can push to 6**, over the full
+- **Gear chase.** Uniques (fixed-identity items with build-defining grants — a
+  target of the gear design), dropped rares that **request** 3–5 affixes (the
+  actual count is bounded by the base's eligible affix pools), which **crafting
+  can push toward 6** (Exalted, budget and pool permitting), over the full
   PoE-verb currency economy — transmute, augment, alter, regal, alchemy, chaos,
-  exalt, scour, divine — applied to the affix engine. An unbounded item hunt with
-  no top.
+  exalt, scour, divine — applied to the affix engine. An unbounded item hunt.
 - **Tree respec.** The **Regret Obol** re-forms the build tree in place: drop
   allocated nodes, re-walk, and the sim un-sockets orphaned gems and sheds gear
   you no longer qualify for. You change *what the character is* without a reroll.
@@ -102,7 +107,10 @@ different idler *in place* — so a new playstyle is never a reason for a new sa
   **quality** and **corruption** — extends this on the same character.
 
 Net: a wholesale playstyle change is a respec + a gear swap + a re-socket, never a
-new character.
+new character — with one honest caveat: a change of *skills* re-incurs the gem
+clock (the new skills' gems start low and must re-mature). That is the one slow
+part of reformation; whether off-build or swapped-in gems get catch-up XP is an
+open knob.
 
 ## How the arcs interlock
 
@@ -134,9 +142,9 @@ idler, weeks of tending. That is the long game.
 
 ## Open design choices (for redline)
 
-- **Three arcs vs two.** Three are committed (each owns an axis; dropping one
-  collapses it). If a tighter scope is wanted, **Atlas + Bot** are the two to
-  keep — Reformation can ride as a maintained pillar rather than a headline arc.
+- **Scope — decided: three arcs.** Each owns an axis; dropping one collapses it.
+  Fallback you can invoke if you want it leaner: keep **Atlas + Bot** and let
+  Reformation ride as a maintained pillar rather than a headline arc.
 - **The ladder stat set** and whether it's purely permanent/per-character or ever
   gains a competitive/seasonal layer (currently: permanent only).
 - **Tier-access gating** — does the atlas tree gate higher tiers, or does boss
