@@ -24,8 +24,8 @@ pub mod zone;
 
 pub use entity::{KIND_CHARACTER, KIND_LOOT, KIND_MONSTER, Rarity};
 pub use world::{
-    EntityView, JoinRequest, LOOT_DESPAWN_TICKS, RESPAWN_TICKS, SimEvent, TICK_HZ, TickInputs,
-    World, universal_stats,
+    CharacterBundle, EntityView, JoinRequest, LOOT_DESPAWN_TICKS, RESPAWN_TICKS, SimEvent, TICK_HZ,
+    TickInputs, World, universal_stats,
 };
 
 #[cfg(test)]

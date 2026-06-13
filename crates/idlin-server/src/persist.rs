@@ -2,19 +2,74 @@
 //! every bot VM's memory), so a snapshot plus determinism equals an exact
 //! resume. Writes are atomic (temp file + rename).
 //!
-//! PARKED in multi-world mode: per-world snapshot/resume (the town and
-//! every instance saved under its world key) comes back with the
-//! persistence pass; until then every boot is a fresh act.
-#![allow(dead_code)]
+//! MULTI-WORLD: every managed world saves under its own key —
+//! `data/snapshots/<sanitized-key>-<fnv8>/` — at a consistent point
+//! (after the ferry, so every character is in exactly one world's
+//! state or pending list), every SAVE_EVERY_TICKS and on graceful
+//! shutdown. Pending arrivals persist alongside the world: a character
+//! mid-ferry survives the restart.
 
 use anyhow::Context;
 use idlin_content::ContentDb;
-use idlin_sim::World;
+use idlin_sim::{CharacterBundle, World};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 const SNAP_NAME: &str = "world.snap";
+const PENDING_NAME: &str = "pending.snap";
+
+/// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
+/// this is only the crash-loss window.
+pub const SAVE_EVERY_TICKS: u64 = 300;
+
+/// A world key's snapshot directory: filesystem-safe name plus a short
+/// hash so sanitization can never collide two keys.
+pub fn world_dir(base: &Path, world_key: &str) -> PathBuf {
+    let safe: String = world_key
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let mut h = 0xcbf29ce484222325u64;
+    for b in world_key.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    base.join(format!("{safe}-{:08x}", (h >> 32) as u32))
+}
+
+/// Save a managed world: state plus any not-yet-arrived ferries.
+pub fn save_managed(
+    world: &World,
+    pending_arrivals: &[CharacterBundle],
+    dir: &Path,
+) -> anyhow::Result<()> {
+    save_world(world, dir)?;
+    let bytes = postcard::to_allocvec(pending_arrivals).context("serialize pendings")?;
+    let tmp = dir.join(format!("{PENDING_NAME}.tmp"));
+    fs::write(&tmp, &bytes).context("write pendings temp")?;
+    fs::rename(&tmp, dir.join(PENDING_NAME)).context("publish pendings")?;
+    Ok(())
+}
+
+/// Load a managed world and its in-flight arrivals; None = start fresh.
+pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<CharacterBundle>)> {
+    let world = load_world(content, dir)?;
+    let pendings = match fs::read(dir.join(PENDING_NAME)) {
+        Ok(bytes) => postcard::from_bytes(&bytes).unwrap_or_else(|e| {
+            warn!("pending arrivals unreadable ({e}); dropping them");
+            Vec::new()
+        }),
+        Err(_) => Vec::new(),
+    };
+    Some((world, pendings))
+}
 
 pub fn save_world(world: &World, dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(dir).context("create snapshot dir")?;

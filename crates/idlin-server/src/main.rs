@@ -105,14 +105,14 @@ async fn main() -> anyhow::Result<()> {
 
     // The multi-world layout: one SHARED town (Saltmere) plus a private
     // shore instance per built-in idler. Transfers ferry characters from
-    // their instance into the town when the Tidewarden falls.
-    // (Snapshot resume is disabled in multi-world mode for now: every
-    // boot is a fresh act.)
-    let _ = &snapshot_dir;
+    // their instance into the town when the Tidewarden falls. Each world
+    // RESUMES from its snapshot when one exists for this content hash.
     // Dev escape hatch: IDLIN_WORLD_OVERRIDE=<zone_id> runs ONE shared
-    // world of that zone with every built-in idler in it — how the tile
-    // test range (and any future zone) gets eyeballed before going live.
+    // world of that zone with every built-in idler in it (no
+    // persistence) — how new zones get eyeballed before going live.
+    let mut persistence: Option<PathBuf> = Some(snapshot_dir.clone());
     let worlds = if let Ok(zone_id) = std::env::var("IDLIN_WORLD_OVERRIDE") {
+        persistence = None;
         info!("IDLIN_WORLD_OVERRIDE: running a single {zone_id} world");
         vec![runner::ManagedWorld {
             key: zone_id.clone(),
@@ -165,6 +165,41 @@ async fn main() -> anyhow::Result<()> {
                 },
             });
         }
+        // RESUME: swap in snapshots where they exist (content-hash
+        // gated), carry mid-ferry arrivals, and only join a builtin
+        // idler if they exist NOWHERE (state, pendings, or another
+        // world — a finished pupil lives in town, not on the shore).
+        let mut resident: Vec<String> = Vec::new();
+        for mw in &mut worlds {
+            let dir = persist::world_dir(&snapshot_dir, &mw.key);
+            if let Some((world, pendings)) = persist::load_managed(&content, &dir) {
+                info!(
+                    "resuming {} at tick {} (+{} in-flight arrivals)",
+                    mw.key,
+                    world.tick_count(),
+                    pendings.len()
+                );
+                mw.world = world;
+                mw.pending.arrivals.extend(pendings);
+            }
+            for v in mw.world.views() {
+                if v.kind == 1 {
+                    resident.push(v.name);
+                }
+            }
+            for b in &mw.pending.arrivals {
+                resident.push(b.character.name.clone());
+            }
+        }
+        for mw in &mut worlds {
+            mw.pending.joins.retain(|j| {
+                let fresh = !resident.contains(&j.name);
+                if !fresh {
+                    info!("{} already exists; skipping boot join", j.name);
+                }
+                fresh
+            });
+        }
         worlds
     };
     info!(
@@ -180,7 +215,39 @@ async fn main() -> anyhow::Result<()> {
     let server_tick = Arc::new(AtomicU64::new(0));
     let (frame_tx, frame_rx) = mpsc::unbounded_channel();
     let (inspect_tx, inspect_rx) = mpsc::unbounded_channel();
-    runner::spawn_tick_loop(worlds, frame_tx, inspect_rx, server_tick.clone());
+    // Graceful shutdown: SIGINT/SIGTERM flag the tick thread, which
+    // saves every world and exits — a deploy's pkill loses nothing.
+    let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let flag = shutdown.clone();
+        tokio::spawn(async move {
+            let ctrl_c = tokio::signal::ctrl_c();
+            #[cfg(unix)]
+            {
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("install SIGTERM handler");
+                tokio::select! {
+                    _ = ctrl_c => {}
+                    _ = term.recv() => {}
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = ctrl_c.await;
+            }
+            tracing::info!("shutdown signal: saving worlds…");
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+    }
+    runner::spawn_tick_loop(
+        worlds,
+        frame_tx,
+        inspect_rx,
+        server_tick.clone(),
+        persistence,
+        shutdown,
+    );
     let handles = replication::spawn_replication(frame_rx);
 
     let tree_json: Arc<str> = Arc::from(tree_to_json(&content));

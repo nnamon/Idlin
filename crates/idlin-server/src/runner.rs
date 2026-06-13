@@ -128,13 +128,17 @@ pub fn spawn_tick_loop(
     frames: UnboundedSender<TickBatch>,
     mut inspect_rx: UnboundedReceiver<InspectRequest>,
     server_tick: Arc<AtomicU64>,
+    snapshot_base: Option<std::path::PathBuf>,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
 ) {
     std::thread::Builder::new()
         .name("idlin-sim".into())
         .spawn(move || {
             let tick_interval = Duration::from_millis(1000 / TICK_HZ as u64);
+            let mut ticks_since_save = 0u64;
             loop {
                 let started = std::time::Instant::now();
+                let stopping = shutdown.load(Ordering::Relaxed);
 
                 // Tick every world, collecting its events and departures.
                 let mut all_departures = Vec::new();
@@ -177,6 +181,35 @@ pub fn spawn_tick_loop(
                         }
                         None => warn!("{name} departed for unknown zone {dest}; lost at sea"),
                     }
+                }
+
+                // PERSISTENCE: save at the post-ferry boundary — every
+                // character is in exactly one world's state or pending
+                // list at this instant, so a restart can never duplicate
+                // or lose one. Interval saves bound crash loss; a
+                // graceful shutdown (SIGINT/SIGTERM) saves and exits.
+                ticks_since_save += 1;
+                if let Some(base) = &snapshot_base
+                    && (ticks_since_save >= crate::persist::SAVE_EVERY_TICKS || stopping)
+                {
+                    ticks_since_save = 0;
+                    for mw in &worlds {
+                        let dir = crate::persist::world_dir(base, &mw.key);
+                        if let Err(e) =
+                            crate::persist::save_managed(&mw.world, &mw.pending.arrivals, &dir)
+                        {
+                            warn!("snapshot for {} failed: {e:#}", mw.key);
+                        }
+                    }
+                    if stopping {
+                        info!("all worlds saved; shutting down");
+                        std::process::exit(0);
+                    }
+                }
+                if stopping {
+                    // No persistence configured: just exit cleanly.
+                    info!("shutting down (no persistence)");
+                    std::process::exit(0);
                 }
 
                 // Feature the world with the most characters — corpses
