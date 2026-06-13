@@ -17,8 +17,19 @@ export class DirectorCamera {
   /** Trauma-based shake: hits add trauma, it decays, offset ∝ trauma². */
   private trauma = 0;
   private shakeT = 0;
+  /** Kill-beat push-in: a focused kill nudges the lens IN, then it eases
+   *  back. 0 at rest (no framing change). */
+  private pulse = 0;
+  /** Boss framing: eases toward a wider/raised frame when a unique is in
+   *  range so both combatants fit. 1 at rest. */
+  private widen = 1;
 
   constructor(private camera: THREE.PerspectiveCamera) {}
+
+  /** A focused idler's kill nudges the camera in; bigger for elites. */
+  addKillBeat(amount: number): void {
+    this.pulse = Math.min(0.5, this.pulse + amount);
+  }
 
   /** Add shake from an event AT a place — far-off fights don't rattle
    *  the lens. Amounts are small; trauma squares into the offset. */
@@ -49,8 +60,15 @@ export class DirectorCamera {
     this.lookTarget.copy(this.center);
   }
 
-  follow(target: THREE.Vector3, dt: number, zoom = 1): void {
-    const desired = target.clone().addScaledVector(FOLLOW_OFFSET, zoom);
+  follow(target: THREE.Vector3, dt: number, zoom = 1, bossNear = false): void {
+    // Ease the boss frame in/out (wider + raised when a unique is near);
+    // decay the kill-beat push-in. Both settle to a no-op at rest.
+    this.widen += ((bossNear ? 1.35 : 1) - this.widen) * (1 - Math.exp(-dt * 2));
+    this.pulse = Math.max(0, this.pulse - dt * 1.1);
+    // eff scales the whole offset: >1 pulls back AND raises (boss), <1
+    // pushes in (kill beat). Always positive, so the lens never collapses.
+    const eff = zoom * this.widen * (1 - this.pulse);
+    const desired = target.clone().addScaledVector(FOLLOW_OFFSET, eff);
     const k = 1 - Math.exp(-dt * 2.2);
     this.camera.position.lerp(desired, k);
     this.lookTarget.lerp(target.clone().setY(1), 1 - Math.exp(-dt * 3.5));

@@ -540,6 +540,19 @@ export class ZoneRenderer {
       m.light.intensity = open ? 13 * pulse : 0;
     }
 
+    // Who is the director watching? Resolved once: a focused kill punches
+    // the lens (in the hit loop below), and the camera section reuses it.
+    let focusId = this.store.cue?.focus;
+    if (this.followOverride) {
+      const name = this.followOverride.toLowerCase();
+      for (const er of this.store.entities.values()) {
+        if (er.state.name.toLowerCase() === name) {
+          focusId = er.state.id;
+          break;
+        }
+      }
+    }
+
     // -- sync entities (only once models are in; one frame of patience) --
     if (this.assets) {
       // The playout clock first: positions and combat events both read
@@ -591,6 +604,11 @@ export class ZoneRenderer {
           const rarity = this.store.entities.get(hit.target)?.state.rarity ?? 0;
           this.fx.spawnKill(target.group.position, hit.dmgType, rarity, now);
           this.director.addTraumaAt(target.group.position, rarity >= 2 ? 0.45 : 0.2);
+          // Kill beat: when the WATCHED idler lands the kill, punch the
+          // lens in — harder (and so held longer) for an elite/unique.
+          if (hit.attacker === focusId) {
+            this.director.addKillBeat(rarity >= 2 ? 0.3 : 0.12);
+          }
         }
       }
       for (const p of this.store.drainProjectiles()) {
@@ -622,17 +640,8 @@ export class ZoneRenderer {
       this.composer.render();
       return;
     }
-    let focusId = this.store.cue?.focus;
+    // focusId was resolved above (shared with the kill-beat).
     const zoom = this.zoomOverride;
-    if (this.followOverride) {
-      const name = this.followOverride.toLowerCase();
-      for (const er of this.store.entities.values()) {
-        if (er.state.name.toLowerCase() === name) {
-          focusId = er.state.id;
-          break;
-        }
-      }
-    }
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;
     if (focus) {
       this.focusRing.visible = true;
@@ -643,7 +652,20 @@ export class ZoneRenderer {
       );
       const pulse = 1 + Math.sin(t * 4) * 0.12;
       this.focusRing.scale.set(pulse, pulse, 1);
-      this.director.follow(focus.group.position, dt, zoom);
+      // Boss framing: if a UNIQUE (rarity 3) is near the focus, widen/raise
+      // so both combatants fit. Cheap per-frame scan; no-op otherwise.
+      let bossNear = false;
+      const fp = focus.group.position;
+      for (const er of this.store.entities.values()) {
+        if (er.state.rarity === 3 && er.state.kind === "Monster" && !er.state.dead) {
+          const v = this.visuals.get(er.state.id);
+          if (v && v.group.position.distanceTo(fp) < 18) {
+            bossNear = true;
+            break;
+          }
+        }
+      }
+      this.director.follow(focus.group.position, dt, zoom, bossNear);
     } else {
       this.focusRing.visible = false;
       this.director.idle(dt);
