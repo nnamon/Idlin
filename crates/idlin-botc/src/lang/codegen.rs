@@ -44,6 +44,9 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("read_exits", 27, 2),
     ("use_exit", 28, 0),
     ("use_flask", 29, 0),
+    ("read_stash", 30, 2),
+    ("stash_deposit", 31, 1),
+    ("stash_withdraw", 32, 1),
     // Zone-brain syscalls (no-ops for entity bots). There is NO forced
     // character transfer: bots take exits themselves (use_exit); brains
     // only gate whether an exit is open.

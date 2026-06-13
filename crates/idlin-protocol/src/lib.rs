@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 28;
+pub const PROTO_VERSION: u32 = 29;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -458,6 +458,12 @@ pub struct CharacterSheet {
     pub item_quantity_bp: i32,
     pub equipment: Vec<GearSlotView>,
     pub inventory: Vec<InvItemView>,
+    /// Town stash contents (long-term storage).
+    #[serde(default)]
+    pub stash: Vec<InvItemView>,
+    /// Within reach of the stash place — the client can show the panel.
+    #[serde(default)]
+    pub near_stash: bool,
     pub gems: Vec<GemView>,
     pub currency: Vec<CurrencyView>,
     pub passive_allocated: u32,

@@ -34,6 +34,10 @@ pub struct CharacterSheetView {
     pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
     /// (name, rarity, x, y, w, h) per bag item.
     pub inventory: Vec<(String, u8, u8, u8, u8, u8)>,
+    /// (name, rarity, x, y, w, h) per STASH item (town storage).
+    pub stash: Vec<(String, u8, u8, u8, u8, u8)>,
+    /// Is the inspected character within reach of the stash place?
+    pub near_stash: bool,
     /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
     /// follow their skill.
     pub gems: Vec<(String, u32, i64, i64, bool)>,
@@ -65,21 +69,28 @@ impl World {
                 )
             })
             .collect();
-        let inventory = ch
-            .inventory
-            .iter()
-            .map(|p| {
-                let def = &self.content.items[p.item.base_idx as usize];
-                (
-                    self.item_display(&p.item),
-                    p.item.rarity as u8,
-                    p.x,
-                    p.y,
-                    def.w,
-                    def.h,
-                )
-            })
-            .collect();
+        let grid_view = |placed: &[crate::entity::PlacedItem]| {
+            placed
+                .iter()
+                .map(|p| {
+                    let def = &self.content.items[p.item.base_idx as usize];
+                    (
+                        self.item_display(&p.item),
+                        p.item.rarity as u8,
+                        p.x,
+                        p.y,
+                        def.w,
+                        def.h,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let inventory = grid_view(&ch.inventory);
+        let stash = grid_view(&ch.stash);
+        let near_stash = self
+            .zone
+            .slot_of(net_id)
+            .is_some_and(|s| self.near_stash(s));
         let gem_row = |gem: &crate::entity::GemInstance, support: bool| {
             let next = if gem.level >= crate::entity::GEM_LEVEL_CAP {
                 0
@@ -134,6 +145,8 @@ impl World {
             item_quantity: c.item_quantity,
             equipment,
             inventory,
+            stash,
+            near_stash,
             gems,
             currency,
             passive_allocated: ch.allocated.len() as u32,
@@ -446,6 +459,14 @@ impl World {
                 h.write_u64(ch.items);
                 h.write_u64(ch.inventory.len() as u64);
                 for placed in &ch.inventory {
+                    h.write_u8(placed.x);
+                    h.write_u8(placed.y);
+                    fold_item(&mut h, &placed.item);
+                }
+                // The stash is character state — fold it like the bag, for
+                // every character, so snapshots and replays never diverge.
+                h.write_u64(ch.stash.len() as u64);
+                for placed in &ch.stash {
                     h.write_u8(placed.x);
                     h.write_u8(placed.y);
                     fold_item(&mut h, &placed.item);

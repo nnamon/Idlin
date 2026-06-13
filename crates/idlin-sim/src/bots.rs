@@ -12,7 +12,9 @@
 //!
 //! SelfStatus layout (i32 words): +0 x, +4 y, +8 life, +12 life_max,
 //! +16 level, +20 xp, +24 map_w, +28 map_h, +32 flags (bit0 = dead),
-//! +36 anchor_x, +40 anchor_y, +44 aggro_radius, +48 attack_range.
+//! +36 anchor_x, +40 anchor_y, +44 aggro_radius, +48 attack_range,
+//! +52 mana, +56 mana_max, +60 es, +64 zone_idx, +68 stash_x,
+//! +72 stash_y (stash_x = -1 when the zone has no stash).
 
 use crate::fixed::{Fx, FxV2};
 use crate::rng::Pcg32;
@@ -55,6 +57,9 @@ pub const SYS_SAY: i32 = 26;
 pub const SYS_READ_EXITS: i32 = 27;
 pub const SYS_USE_EXIT: i32 = 28;
 pub const SYS_USE_FLASK: i32 = 29;
+pub const SYS_READ_STASH: i32 = 30;
+pub const SYS_STASH_DEPOSIT: i32 = 31;
+pub const SYS_STASH_WITHDRAW: i32 = 32;
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
@@ -248,6 +253,13 @@ impl World {
                 let es = combat
                     .map(|c| c.es.clamp(0, i32::MAX as i64) as i32)
                     .unwrap_or(0);
+                // Stash place (Q16.16), or -1/-1 if this zone has none —
+                // so a bot can navigate to it and deposit.
+                let (stash_x, stash_y) = self
+                    .zone
+                    .stash
+                    .map(|s| (s.x.raw(), s.y.raw()))
+                    .unwrap_or((-1, -1));
                 let fields = [
                     e.pos.x.raw(),
                     e.pos.y.raw(),
@@ -269,6 +281,8 @@ impl World {
                     // sorted ids). Bot writers branch their whole strategy
                     // on it — grind the shore, stroll the town.
                     self.zone_idx as i32,
+                    stash_x, // +68
+                    stash_y, // +72
                 ];
                 for (i, v) in fields.into_iter().enumerate() {
                     bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);
@@ -600,6 +614,58 @@ impl World {
                     }
                 }
                 records.len() as i32
+            }
+            SYS_READ_STASH => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_INVENTORY_RESULTS as i32) as usize;
+                if !self.near_stash(slot) {
+                    return -2; // out of range / no stash here
+                }
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let Some(ch) = &e.character else { return -1 };
+                // Same 32-byte record as ReadInventory: base_idx, slot,
+                // rarity, item_level, x, y, w, h.
+                let records: Vec<[i32; 8]> = ch
+                    .stash
+                    .iter()
+                    .take(max)
+                    .map(|placed| {
+                        let def = &self.content_items()[placed.item.base_idx as usize];
+                        [
+                            placed.item.base_idx as i32,
+                            def.slot.idx() as i32,
+                            placed.item.rarity as i32,
+                            placed.item.item_level as i32,
+                            placed.x as i32,
+                            placed.y as i32,
+                            def.w as i32,
+                            def.h as i32,
+                        ]
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * INVENTORY_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_STASH_DEPOSIT => {
+                let inv_idx = bot.vm.pop();
+                if inv_idx < 0 {
+                    return -1;
+                }
+                self.stash_deposit(slot, inv_idx as usize)
+            }
+            SYS_STASH_WITHDRAW => {
+                let stash_idx = bot.vm.pop();
+                if stash_idx < 0 {
+                    return -1;
+                }
+                self.stash_withdraw(slot, stash_idx as usize)
             }
             SYS_EQUIP_BEST => self.equip_best(slot, events),
             SYS_SET_BUILD => {

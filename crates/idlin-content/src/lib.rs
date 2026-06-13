@@ -982,6 +982,11 @@ pub struct ZoneDef {
     /// Brain-togglable barriers (tutorial gates).
     #[serde(default)]
     pub gates: Vec<GateDef>,
+    /// The stash PLACE (whole-unit cell): bots within reach deposit and
+    /// withdraw. Towns set one; wilderness/story zones leave it None.
+    /// Validated walkable + reachable at load.
+    #[serde(default)]
+    pub stash: Option<(i32, i32)>,
     /// Maximum characters simultaneously in one world of this zone
     /// (0 = unlimited). The host opens fresh instances past the cap —
     /// capacity is CONTENT, never server hardcode.
@@ -1180,6 +1185,11 @@ impl ContentDb {
                     )));
                 }
             }
+            if let Some((sx, sy)) = zone.stash
+                && !walkable_at(sx, sy)
+            {
+                return Err(bad(format!("stash {sx}x{sy} is not walkable")));
+            }
             // REACHABILITY: walkable isn't enough — a pack anchor or exit
             // behind an unbroken rock line bricks the zone (it happened:
             // the Tidewarden got walled in). Flood-fill from spawn;
@@ -1217,6 +1227,13 @@ impl ContentDb {
                         exit.x_u, exit.y_u, exit.dest
                     )));
                 }
+            }
+            if let Some((sx, sy)) = zone.stash
+                && !reachable(sx, sy)
+            {
+                return Err(bad(format!(
+                    "stash {sx}x{sy} is walkable but UNREACHABLE from spawn"
+                )));
             }
             let zone = &mut self.zones[zi];
             zone.width_u = grid.width;

@@ -253,6 +253,28 @@ fn main() {
         move_to(loot_x, loot_y);
         return;
     }
+    // BANK the can't-wear-yet hoard: when this zone has a stash (towns
+    // do — SelfStatus +68 = -1 elsewhere), walk to it and deposit any
+    // bag item whose item_level (ReadInventory +12) exceeds our level
+    // (SelfStatus +16). One per tick; stash_deposit succeeds only in
+    // reach, so this naturally walks us over and clears the boss hoard.
+    if (mem[SELF + 68] != 0xFFFFFFFF) {
+        var ninv = read_inventory(ENTS, 8);
+        var bi = 0;
+        var over = -1;
+        while (bi < ninv) {
+            if (mem[ENTS + bi * 32 + 12] > mem[SELF + 16]) {
+                over = bi;
+                bi = ninv;
+            }
+            bi = bi + 1;
+        }
+        if (over >= 0) {
+            if (stash_deposit(over) == 0) { return; }   // deposited (in reach)
+            move_to(mem[SELF + 68], mem[SELF + 72]);     // walk to the stash
+            return;
+        }
+    }
     if (open_ex == 1 && leaving == 1) {
         if (use_exit() == 0) { return; }
         move_to(ex, ey);

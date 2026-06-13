@@ -13,6 +13,7 @@ mod gems;
 mod inventory;
 mod loot;
 mod progression;
+mod stash;
 mod tree;
 mod views;
 mod zone_brain;
@@ -703,6 +704,14 @@ impl World {
                         open: exit.open,
                     });
                 }
+                // The stash place (cell-centered, like exits).
+                if let Some((sx, sy)) = def.stash {
+                    const HALF: Fx = Fx::from_raw(0x8000);
+                    zone.stash = Some(FxV2::new(
+                        Fx::from_int(sx as i16) + HALF,
+                        Fx::from_int(sy as i16) + HALF,
+                    ));
+                }
                 match (&def.tiles, &def.tileset) {
                     // Authored zones: collision IS the map; nothing is
                     // generated. Tileset presence was validated at load.
@@ -998,6 +1007,7 @@ impl World {
                     pouch: Vec::new(),
                     currency: vec![0; self.content.currency.len()],
                     sockets: std::collections::BTreeMap::new(),
+                    stash: Vec::new(),
                 }),
                 monster: None,
                 loot: None,

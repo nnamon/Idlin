@@ -264,6 +264,12 @@ Monsters may also carry `lines:` — things they SAY as speech bubbles
 (the Say syscall); `content/speech.ron` holds the fixed set characters
 may say.
 
+A town zone may set `stash: Some((x, y))` — a walkable, reachable cell
+(validated at load) where idlers bank long-term storage. Bots walk into
+reach and use ReadStash / StashDeposit / StashWithdraw; the location is
+exposed to them via SelfStatus (+68/+72). The stash travels with the
+character and persists in snapshots.
+
 ## Affix pools — items subscribe
 
 Eligibility is a SUBSCRIPTION: every affix lives in exactly one named

@@ -285,6 +285,9 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed. There are NO forced transfers — leaving is always the bot's own call. |
 | 24 | `ReadCurrency` | out_addr, max (≤16) | obol counts as u32 words in content order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. |
 | 25 | `UseCurrency` | currency_idx, inv_idx | spend one obol on the bag item at inv_idx. 0 ok; −1 bad index / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
+| 30 | `ReadStash` | out_addr, max | the town STASH contents as 32-byte records, identical layout to ReadInventory (base_idx, slot, rarity, item_level, x, y, w, h). Returns the count, or −2 if not within reach of the stash (SelfStatus +68/+72; stash is a PLACE in town). |
+| 31 | `StashDeposit` | inv_idx | move bag item inv_idx into the stash (first-fit). 0 ok; −1 bad index; −2 out of range (walk to the stash); −3 stash full. |
+| 32 | `StashWithdraw` | stash_idx | move stash item stash_idx into the bag (first-fit). 0 ok; −1 bad index; −2 out of range; −3 bag full. |
 
 ### Skill-use return codes
 
@@ -327,7 +330,7 @@ can never hit your own faction.
 
 ### Struct layouts
 
-**SelfStatus** (17 words, 68 bytes):
+**SelfStatus** (19 words, 76 bytes):
 
 | Offset | Field |
 |---|---|
@@ -342,6 +345,7 @@ can never hit your own faction.
 | +52 / +56 | mana, mana_max |
 | +60 | energy shield |
 | +64 | zone index (ContentDb::zones, sorted ids — branch your whole strategy on WHICH map you stand in) |
+| +68 / +72 | stash x, y (Q16.16) — the town stash PLACE, or −1/−1 when this zone has none. Walk here and StashDeposit. |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**

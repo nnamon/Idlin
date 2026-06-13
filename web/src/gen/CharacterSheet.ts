@@ -20,4 +20,12 @@ resist_fire_bp: number, resist_cold_bp: number, resist_lightning_bp: number, res
 /**
  * Find factors in basis points over 10000 (0 = no bonus).
  */
-item_rarity_bp: number, item_quantity_bp: number, equipment: Array<GearSlotView>, inventory: Array<InvItemView>, gems: Array<GemView>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };
+item_rarity_bp: number, item_quantity_bp: number, equipment: Array<GearSlotView>, inventory: Array<InvItemView>, 
+/**
+ * Town stash contents (long-term storage).
+ */
+stash: Array<InvItemView>, 
+/**
+ * Within reach of the stash place — the client can show the panel.
+ */
+near_stash: boolean, gems: Array<GemView>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };

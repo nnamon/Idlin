@@ -145,6 +145,10 @@ pub struct Zone {
     pub grid: Option<SimGrid>,
     /// Walk-up exits to other zones.
     pub exits: Vec<ExitState>,
+    /// The stash PLACE (cell-centered): bots within reach deposit/withdraw.
+    /// None = no stash here (most zones; towns have one).
+    #[serde(default)]
+    pub stash: Option<FxV2>,
     /// Brain-togglable barriers: closed = the rect blocks movement.
     pub gates: Vec<GateState>,
     /// Skill projectiles in flight.
@@ -167,6 +171,7 @@ impl Zone {
             obstacles: Vec::new(),
             grid: None,
             exits: Vec::new(),
+            stash: None,
             gates: Vec::new(),
             projectiles: Vec::new(),
             packs: Vec::new(),

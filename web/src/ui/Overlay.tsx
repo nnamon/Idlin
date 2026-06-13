@@ -173,6 +173,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           )}
         </div>
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
+        {sheet && <StashPanel sheet={sheet} icons={store.icons} />}
         {/* phones hide the left column; the drawer carries the numbers */}
         {sheet && (
           <div className="mobile-only">
@@ -250,20 +251,24 @@ function SlotBox({
 }
 
 /** The bag: a dark 12×5 vault; items are art spanning their footprint. */
-function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
+type GridItem = { name: string; rarity: number; x: number; y: number; w: number; h: number };
+
+/** A footprint grid (the 12×5 bag or the 12×12 stash), parameterized by
+ *  size so one renderer serves both. */
+function ItemGrid({ items, cols, rows, icons }: { items: GridItem[]; cols: number; rows: number; icons: Icons }) {
   const CELL = 21;
   return (
     <div
       className="bag"
       style={{
-        width: 12 * CELL + 1,
-        height: 5 * CELL + 1,
+        width: cols * CELL + 1,
+        height: rows * CELL + 1,
         backgroundImage:
           `repeating-linear-gradient(0deg, transparent, transparent ${CELL - 1}px, #221b0f ${CELL - 1}px, #221b0f ${CELL}px),` +
           `repeating-linear-gradient(90deg, transparent, transparent ${CELL - 1}px, #221b0f ${CELL - 1}px, #221b0f ${CELL}px)`,
       }}
     >
-      {sheet.inventory.map((it, i) => {
+      {items.map((it, i) => {
         const color = RARITY_TEXT[it.rarity];
         const src = icons?.icon(it.name, bagKind(it.name, it.w, it.h));
         return (
@@ -289,6 +294,22 @@ function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
+  return <ItemGrid items={sheet.inventory} cols={12} rows={5} icons={icons} />;
+}
+
+/** The town stash — shown when the focused idler is at it or it holds
+ *  anything. A 12×12 grid via the shared renderer. */
+function StashPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
+  if (!sheet.near_stash && sheet.stash.length === 0) return null;
+  return (
+    <div className="panel" style={{ marginTop: 8 }}>
+      <Header first>Stash{sheet.near_stash ? " · at the chest" : ""}</Header>
+      <ItemGrid items={sheet.stash} cols={12} rows={12} icons={icons} />
     </div>
   );
 }

@@ -31,4 +31,7 @@ ZoneDef(
     exits: [
         (x_u: 29, y_u: 51, dest: "coast", open: true),
     ],
+    // The stash: a plaza chest where idlers bank what they can't carry
+    // (level-gated boss hoards). Walk into reach and deposit/withdraw.
+    stash: Some((30, 40)),
 )

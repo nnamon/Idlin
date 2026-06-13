@@ -9,28 +9,42 @@ use crate::stats::{Grant, Stat, StatSheet};
 use idlin_content::GearSlot;
 
 impl World {
-    /// First-fit placement scan (row-major). Returns (x, y) or None.
+    /// First-fit placement scan (row-major) in the bag. Returns (x, y).
     fn first_fit(&self, ch: &CharacterState, w: u8, h: u8) -> Option<(u8, u8)> {
-        if w == 0 || h == 0 || w > BAG_W || h > BAG_H {
+        self.fit_in_grid(&ch.inventory, w, h, BAG_W, BAG_H)
+    }
+
+    /// First top-left spot a `w×h` item fits in a `gw×gh` grid already
+    /// holding `placed`. The ONE placement algorithm — the bag (12×5)
+    /// and the stash (12×12) both call it.
+    pub(crate) fn fit_in_grid(
+        &self,
+        placed: &[PlacedItem],
+        w: u8,
+        h: u8,
+        gw: u8,
+        gh: u8,
+    ) -> Option<(u8, u8)> {
+        if w == 0 || h == 0 || w > gw || h > gh {
             return None;
         }
-        let mut occupied = [[false; BAG_W as usize]; BAG_H as usize];
-        for placed in &ch.inventory {
-            let def = &self.content.items[placed.item.base_idx as usize];
+        let mut occupied = vec![false; gw as usize * gh as usize];
+        for p in placed {
+            let def = &self.content.items[p.item.base_idx as usize];
             for dy in 0..def.h {
                 for dx in 0..def.w {
-                    let (px, py) = ((placed.x + dx) as usize, (placed.y + dy) as usize);
-                    if py < BAG_H as usize && px < BAG_W as usize {
-                        occupied[py][px] = true;
+                    let (px, py) = ((p.x + dx) as usize, (p.y + dy) as usize);
+                    if py < gh as usize && px < gw as usize {
+                        occupied[py * gw as usize + px] = true;
                     }
                 }
             }
         }
-        for y in 0..=(BAG_H - h) {
-            'spot: for x in 0..=(BAG_W - w) {
+        for y in 0..=(gh - h) {
+            'spot: for x in 0..=(gw - w) {
                 for dy in 0..h {
                     for dx in 0..w {
-                        if occupied[(y + dy) as usize][(x + dx) as usize] {
+                        if occupied[(y + dy) as usize * gw as usize + (x + dx) as usize] {
                             continue 'spot;
                         }
                     }

@@ -262,6 +262,9 @@ pub fn support_slots(level: u32) -> usize {
 /// Bag grid dimensions (PoE proportions; item footprints are content).
 pub const BAG_W: u8 = 12;
 pub const BAG_H: u8 = 5;
+/// The stash grid (town storage): a generous single grid for v1.
+pub const STASH_W: u8 = 12;
+pub const STASH_H: u8 = 12;
 pub const GEAR_SLOTS: usize = idlin_content::GearSlot::COUNT;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +296,11 @@ pub struct CharacterState {
     /// Gems socketed into allocated tree socket nodes (keyed by node index;
     /// BTreeMap for deterministic iteration).
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,
+    /// Long-term storage, accessed at a stash PLACE in town. Travels with
+    /// the character (it's in this struct, so the CharacterBundle carries
+    /// it) and persists in snapshots. A larger grid than the bag.
+    #[serde(default)]
+    pub stash: Vec<PlacedItem>,
 }
 
 /// Total passive points earned by a level: 2 per level-up, with every

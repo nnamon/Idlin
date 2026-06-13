@@ -365,6 +365,19 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                 h,
             })
             .collect(),
+        stash: v
+            .stash
+            .into_iter()
+            .map(|(name, rarity, x, y, w, h)| InvItemView {
+                name,
+                rarity,
+                x,
+                y,
+                w,
+                h,
+            })
+            .collect(),
+        near_stash: v.near_stash,
         gems: v
             .gems
             .into_iter()
