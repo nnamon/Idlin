@@ -162,7 +162,7 @@ Two candidates, both future:
   map mod / a rare line) keeps them from being busywork, but they are explicitly
   flavor, post-atlas.
 
-This is breadth direction, not a committed arc — tracked in its own issue.
+This is breadth direction, not a committed arc — tracked in #48.
 
 ## Parked, deliberately
 
