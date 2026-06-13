@@ -335,3 +335,37 @@ evaluated identically to gear.
 `num` is the stable u16 reference compiled bots use in `build [...]`
 declarations: unique, and **never reuse a number for a different node** —
 deployed bots may still reference it.
+
+## Validating content — the `check` tool
+
+Run the whole load — parse, cross-references, maps, brains — without
+booting the server, and get every problem in one pass:
+
+```sh
+cargo run -p idlin-content --bin check            # checks ./content
+cargo run -p idlin-content --bin check some/dir   # a specific directory
+cargo run -p idlin-content --bin check --strict   # warnings make it exit 2 (CI)
+```
+
+It uses the exact load path the server uses, so "loads in `check`" means
+"loads in the server". Two severities:
+
+- **errors** (exit 1, the server would refuse the load too): the existing
+  hard checks — unknown monster/brain/affix-pool refs, unreachable pack
+  anchors or exits, duplicate ids — plus **out-of-range brain syscall
+  arguments** with statically-known indices: `drop_loot(kind, idx, …)`
+  into the item/gem/currency tables (kind 0/1/2; kind 3 is a rolled-rare
+  item level, not an index), `spawn_monster`/`spawn_elite` def indices,
+  and raw-integer `narrate` line indices against the owning zone's lines.
+  (Named refs — `item "x"`, `line "welcome"` — are already validated when
+  they resolve.)
+- **warnings** (exit 0, the content still loads): mistakes the runtime
+  survives but you probably want to know about — a `say(idx)` that reaches
+  past a monster's `lines` (the runtime wraps with `idx % len`), a pack
+  whose `count` exceeds the walkable cells within its spawn radius (they
+  spawn stacked), or a prop sitting on a non-walkable tile.
+
+Only **constant** and `constant`-modulo arguments are checkable; a
+`say(some_var)` or `drop_loot(kind, computed_idx, …)` is dynamic and left
+to the runtime's own bounds guards (every one of these syscalls already
+returns `-1` or wraps rather than crashing).

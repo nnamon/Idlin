@@ -57,6 +57,24 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
+    #[error("brain `{brain}`{at}: {msg}")]
+    BadBrainCall {
+        brain: String,
+        /// " line N" when known, else empty.
+        at: String,
+        msg: String,
+    },
+}
+
+/// A non-fatal content lint: surfaced by the `check` dry-run tool and
+/// returned from [`ContentDb::load_checked`], but never fails a load. For
+/// mistakes the runtime survives (a `say` index that wraps, a dense pack)
+/// but an author probably wants to know about.
+#[derive(Debug, Clone)]
+pub struct ContentWarning {
+    /// What it's about — a brain id, zone id, etc.
+    pub origin: String,
+    pub msg: String,
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -1078,6 +1096,7 @@ impl ContentDb {
         &mut self,
         maps: Vec<(String, String)>,
         props: Vec<(String, PropsDef)>,
+        warnings: &mut Vec<ContentWarning>,
     ) -> Result<(), ContentError> {
         for ts in &self.tilesets {
             let bad = |msg: String| ContentError::BadTileset {
@@ -1218,6 +1237,31 @@ impl ContentDb {
                     )));
                 }
             }
+            // PACK DENSITY (lint): a pack jitters within radius_u of its
+            // anchor; if there aren't even `count` walkable cells in that
+            // box, the mobs spawn stacked on each other. Heuristic, so a
+            // warning, not a load failure.
+            for pack in &zone.packs {
+                let r = pack.radius_u.max(0);
+                let mut walkable_cells: u32 = 0;
+                for cy in (pack.y_u - r)..=(pack.y_u + r) {
+                    for cx in (pack.x_u - r)..=(pack.x_u + r) {
+                        if walkable_at(cx, cy) {
+                            walkable_cells += 1;
+                        }
+                    }
+                }
+                if walkable_cells < pack.count {
+                    warnings.push(ContentWarning {
+                        origin: format!("zone {}", zone.id),
+                        msg: format!(
+                            "pack `{}` ×{} at {}x{} has only {} walkable cell(s) within \
+                             radius {} — they'll spawn stacked",
+                            pack.monster, pack.count, pack.x_u, pack.y_u, walkable_cells, r
+                        ),
+                    });
+                }
+            }
             let zone = &mut self.zones[zi];
             zone.width_u = grid.width;
             zone.height_u = grid.height;
@@ -1239,12 +1283,66 @@ impl ContentDb {
                     msg: "props.ron has no zone.ron with the area's id".into(),
                 });
             };
+            // PROP PLACEMENT: off the map is always wrong (hard); on a
+            // non-walkable tile is usually wrong but may be intentional
+            // decor (a buoy on water), so a lint. Re-derive walkability
+            // from the now-attached grid + tileset (the maps-loop closure
+            // is out of scope here).
+            if let (Some(grid), Some(ts)) = (
+                self.zones[zi].tiles.as_ref(),
+                self.zones[zi]
+                    .tileset
+                    .as_deref()
+                    .and_then(|t| self.tileset(t)),
+            ) {
+                for p in &def.props {
+                    let in_bounds =
+                        p.x_u >= 0 && p.y_u >= 0 && p.x_u < grid.width && p.y_u < grid.height;
+                    if !in_bounds {
+                        return Err(ContentError::BadMap {
+                            zone: self.zones[zi].id.clone(),
+                            msg: format!(
+                                "prop `{}` at {}x{} is off the {}x{} map",
+                                p.model, p.x_u, p.y_u, grid.width, grid.height
+                            ),
+                        });
+                    }
+                    let walkable = grid
+                        .cell(p.x_u, p.y_u)
+                        .is_some_and(|c| ts.tiles[c as usize].walkable);
+                    if !walkable {
+                        warnings.push(ContentWarning {
+                            origin: format!("zone {}", self.zones[zi].id),
+                            msg: format!(
+                                "prop `{}` at {}x{} sits on a non-walkable tile",
+                                p.model, p.x_u, p.y_u
+                            ),
+                        });
+                    }
+                }
+            }
             self.zones[zi].props = def.props;
         }
         Ok(())
     }
 
+    /// Load content, failing on any hard error. Non-fatal lints
+    /// ([`ContentWarning`]) are discarded — use [`load_checked`] (and the
+    /// `check` bin) to see them.
+    ///
+    /// [`load_checked`]: ContentDb::load_checked
     pub fn load(dir: &Path) -> Result<ContentDb, ContentError> {
+        Self::load_checked(dir).map(|(db, _)| db)
+    }
+
+    /// Load content AND collect non-fatal lints. Same load path and the
+    /// same hard errors as [`load`]; additionally returns warnings (say
+    /// indices that wrap, dense packs, props off the walkable map) for
+    /// the dry-run validator.
+    ///
+    /// [`load`]: ContentDb::load
+    pub fn load_checked(dir: &Path) -> Result<(ContentDb, Vec<ContentWarning>), ContentError> {
+        let mut warnings: Vec<ContentWarning> = Vec::new();
         let mut files = Vec::new();
         collect_ron_files(dir, &mut files)?;
         files.sort();
@@ -1372,7 +1470,7 @@ impl ContentDb {
         db.items.sort_by(|a, b| a.id.cmp(&b.id));
         db.currency.sort_by(|a, b| a.id.cmp(&b.id));
         db.tilesets.sort_by(|a, b| a.id.cmp(&b.id));
-        db.attach_maps(pending_maps, pending_props)?;
+        db.attach_maps(pending_maps, pending_props, &mut warnings)?;
         for w in db.items.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
@@ -1488,7 +1586,19 @@ impl ContentDb {
                         other => Err(format!("unknown ref kind `{other}`")),
                     }
                 };
-                idlin_botc::compile_with(source, &resolver).map_err(|e| brain_err(e.to_string()))?
+                let program = idlin_botc::compile_with(source, &resolver)
+                    .map_err(|e| brain_err(e.to_string()))?;
+                // Same front-end, second pass: collect the brain's bounded
+                // syscall calls and range-check the static ones against the
+                // content tables (the discipline the map BFS already sets).
+                let uses = idlin_botc::analyze_with(source, &resolver)
+                    .map_err(|e| brain_err(e.to_string()))?;
+                let owner_zone = match owners.as_slice() {
+                    [one] => Some(*one),
+                    _ => None,
+                };
+                check_brain_calls(id, &uses, &db, owner_zone, &mut warnings)?;
+                program
             };
             brains.push(BrainDef {
                 id: id.clone(),
@@ -1623,7 +1733,7 @@ impl ContentDb {
                 }
             }
         }
-        Ok(db)
+        Ok((db, warnings))
     }
 
     /// Sort nodes, resolve links into a symmetric adjacency list, find start.
@@ -1709,6 +1819,114 @@ fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String,
     Ok(out)
 }
 
+/// Range-check a brain's statically-known syscall arguments against the
+/// content tables. Closed-set index typos (drop_loot/spawn/narrate) are
+/// hard errors; `say` over-indexing is a wrapping no-op at runtime, so a
+/// warning. `owner_zone` is the single zone that names this brain (for
+/// zone-scoped `narrate` lines), if exactly one does.
+fn check_brain_calls(
+    brain_id: &str,
+    uses: &[idlin_botc::SyscallUse],
+    db: &ContentDb,
+    owner_zone: Option<&ZoneDef>,
+    warnings: &mut Vec<ContentWarning>,
+) -> Result<(), ContentError> {
+    use idlin_botc::ArgBound;
+    let bad = |line: usize, msg: String| ContentError::BadBrainCall {
+        brain: brain_id.to_string(),
+        at: format!(" line {line}"),
+        msg,
+    };
+    let oob = |i: i64, len: usize| i < 0 || i as usize >= len;
+    for u in uses {
+        match u.name.as_str() {
+            // drop_loot(kind, idx, x, y, owner). kind 0/1/2 index
+            // items/gems/currency; kind 3 is "rolled rare at ilvl idx"
+            // (not a table) and anything else is a runtime no-op.
+            "drop_loot" => {
+                if let (Some(ArgBound::Const(kind)), Some(ArgBound::Const(i))) =
+                    (u.args.first(), u.args.get(1))
+                {
+                    let table = match kind {
+                        0 => Some(("item", db.items.len())),
+                        1 => Some(("gem", db.gems.len())),
+                        2 => Some(("currency", db.currency.len())),
+                        _ => None,
+                    };
+                    if let Some((what, len)) = table
+                        && oob(*i, len)
+                    {
+                        return Err(bad(
+                            u.line,
+                            format!("drop_loot {what} index {i} out of range (0..{len})"),
+                        ));
+                    }
+                }
+            }
+            // spawn_monster(def, …) / spawn_elite(def, …): def indexes monsters.
+            "spawn_monster" | "spawn_elite" => {
+                if let Some(ArgBound::Const(i)) = u.args.first()
+                    && oob(*i, db.monsters.len())
+                {
+                    return Err(bad(
+                        u.line,
+                        format!(
+                            "{} def index {i} out of range (0..{})",
+                            u.name,
+                            db.monsters.len()
+                        ),
+                    ));
+                }
+            }
+            // narrate(line, target): line indexes the OWNING zone's lines.
+            "narrate" => {
+                if let (Some(ArgBound::Const(i)), Some(zone)) = (u.args.first(), owner_zone)
+                    && oob(*i, zone.lines.len())
+                {
+                    return Err(bad(
+                        u.line,
+                        format!(
+                            "narrate line index {i} out of range (0..{}) for zone `{}`",
+                            zone.lines.len(),
+                            zone.id
+                        ),
+                    ));
+                }
+            }
+            // say(idx): a monster brain indexes its own monster's lines.
+            // Runtime wraps (lines[idx % len]) and 0-line defs no-op, so an
+            // over-index is a lint, not a failure — flag owners that have
+            // FEWER lines than the brain assumes.
+            "say" => {
+                let assumed_top = match u.args.first() {
+                    Some(ArgBound::Const(n)) => Some(*n),
+                    Some(ArgBound::ModuloMax(m)) => Some(*m - 1),
+                    _ => None,
+                };
+                if let Some(top) = assumed_top
+                    && top >= 0
+                {
+                    for m in db.monsters.iter().filter(|m| m.brain == brain_id) {
+                        let l = m.lines.len();
+                        if l > 0 && (l as i64) <= top {
+                            warnings.push(ContentWarning {
+                                origin: format!("brain {brain_id}"),
+                                msg: format!(
+                                    "line {}: say reaches index {top} but monster `{}` has \
+                                     only {l} line(s) (runtime wraps)",
+                                    u.line, m.id
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn collect_ron_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     if !dir.exists() {
         return Ok(());
@@ -1749,6 +1967,95 @@ mod tests {
             .zone("withered_shore")
             .expect("withered_shore must exist");
         assert!(!zone.packs.is_empty());
+    }
+
+    #[test]
+    fn real_content_loads_clean_with_the_say_lint() {
+        // load_checked succeeds (no hard errors) and surfaces the known
+        // lint: hostile_melee's say(% 8) over the 3-line Tidewarden.
+        let (_db, warnings) = ContentDb::load_checked(Path::new("../../content")).unwrap();
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.msg.contains("tidewarden") && w.msg.contains("say")),
+            "expected the tidewarden say-lines warning; got {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn out_of_range_brain_indices_are_hard_errors() {
+        use idlin_botc::{ArgBound, SyscallUse};
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let mut warnings = Vec::new();
+        let dynamic = || ArgBound::Dynamic;
+
+        // drop_loot(0, 9999, …): item index way past the real table.
+        let uses = vec![SyscallUse {
+            name: "drop_loot".into(),
+            line: 1,
+            args: vec![
+                ArgBound::Const(0),
+                ArgBound::Const(9999),
+                dynamic(),
+                dynamic(),
+                dynamic(),
+            ],
+        }];
+        assert!(matches!(
+            check_brain_calls("b", &uses, &db, None, &mut warnings),
+            Err(ContentError::BadBrainCall { .. })
+        ));
+
+        // spawn_monster(9999, …).
+        let uses = vec![SyscallUse {
+            name: "spawn_monster".into(),
+            line: 2,
+            args: vec![ArgBound::Const(9999), dynamic(), dynamic()],
+        }];
+        assert!(matches!(
+            check_brain_calls("b", &uses, &db, None, &mut warnings),
+            Err(ContentError::BadBrainCall { .. })
+        ));
+
+        // narrate(9999, target) against a real zone's lines.
+        let zone = db.zone("withered_shore").unwrap();
+        let uses = vec![SyscallUse {
+            name: "narrate".into(),
+            line: 3,
+            args: vec![ArgBound::Const(9999), dynamic()],
+        }];
+        assert!(matches!(
+            check_brain_calls("b", &uses, &db, Some(zone), &mut warnings),
+            Err(ContentError::BadBrainCall { .. })
+        ));
+
+        // A valid in-range drop_loot is fine, and kind 3 (ilvl, not a
+        // table index) is never range-checked.
+        let uses = vec![
+            SyscallUse {
+                name: "drop_loot".into(),
+                line: 4,
+                args: vec![
+                    ArgBound::Const(0),
+                    ArgBound::Const(0),
+                    dynamic(),
+                    dynamic(),
+                    dynamic(),
+                ],
+            },
+            SyscallUse {
+                name: "drop_loot".into(),
+                line: 5,
+                args: vec![
+                    ArgBound::Const(3),
+                    ArgBound::Const(9999),
+                    dynamic(),
+                    dynamic(),
+                    dynamic(),
+                ],
+            },
+        ];
+        assert!(check_brain_calls("b", &uses, &db, None, &mut warnings).is_ok());
     }
 
     #[test]

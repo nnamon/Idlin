@@ -27,12 +27,14 @@
 //! - Integers are the VM's i32 words; positions are Q16.16 (use
 //!   `mulfx`/`divfx` builtins for fixed-point math).
 
+mod analyze;
 mod ast;
 mod codegen;
 mod lexer;
 mod parser;
 mod resolve;
 
+pub use analyze::{ArgBound, SyscallUse, analyze_with};
 pub use resolve::Resolver;
 
 use std::fmt;
