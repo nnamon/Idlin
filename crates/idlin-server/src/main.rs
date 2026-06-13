@@ -26,7 +26,7 @@ use idlin_content::ContentDb;
 use idlin_protocol::{C2S, PROTO_VERSION, Role, S2C};
 use idlin_sim::{JoinRequest, TickInputs, World};
 use tokio::sync::{broadcast, mpsc, watch};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{info, warn};
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -263,6 +263,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .route("/api/tree", get(tree_handler))
         .route("/healthz", get(|| async { "ok" }))
+        // The portal (build planner / bot-prefs / templates) is a client
+        // route in the same SPA bundle; serve the shell so it boots there.
+        .route_service("/portal", ServeFile::new("web/dist/index.html"))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
         .fallback_service(ServeDir::new("web/dist"))
