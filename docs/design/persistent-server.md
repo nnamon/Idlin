@@ -108,6 +108,14 @@ into a full ownership authority **only when we shard** (§6).
   projection are *rebuildable* cache (scan snapshots). The ownership/fencing
   role is **not near-term** — phases 1-4 are single-process and need only the
   binding + routing.
+- **Durable keys (net-new — today identity is only the `name` string,
+  `entity.rs:267`):** `character_id` is the stable per-character key the store
+  routes and binds on; `incarnation_id` distinguishes a character/instance that
+  was wiped-and-restarted (the tutorial reset, §5) from its prior life, so stale
+  references can't bleed across a reset. Phase 1 introduces `character_id` and
+  migrates the current name-keyed worlds onto it (name → `character_id` map; the
+  per-idler world key `withered_shore#<name>` becomes
+  `…#<character_id>#<incarnation_id>`).
 
 ## 3. Identity & accounts (native, pluggable) — closed-alpha first
 
@@ -188,9 +196,12 @@ boundary and the existing `ManagedWorld` granularity.
   persistent `home_town: zone_id` on `CharacterState` (travels in the bundle;
   mutates `state_hash`/golden — a known, accepted change; it is set by a sim
   event, so it stays deterministic).
-- **Death by zone kind:** *persistent area* → return to that area's **start**
-  (reposition only, no penalty for now); *map instance* → ejected to the **town
-  map device, −1 portal** on that map (portals-as-lives; 0 ⇒ map spent).
+- **Death by `ZoneKind` (the enum is `Story | Map | Town`,
+  `content/lib.rs`):** **`Story`** (persistent areas, incl. the tutorial
+  `withered_shore`) → return to that area's **start** (reposition only, no
+  penalty for now); **`Map`** (instances) → ejected to the **town map device,
+  −1 portal** on that map (portals-as-lives; 0 ⇒ map spent); **`Town`** →
+  sanctuary, no death.
 - **Respawn-at-home-town triggers** are exactly two: **bot-code update** (treated
   as a disconnect→reconnect) and **portal-obol use** (not implemented). **Not
   death.**
@@ -214,13 +225,22 @@ boundary and the existing `ManagedWorld` granularity.
      set) is never routed back to `withered_shore`; there is no town→shore path,
      and the design must not add one without (1) in place. ("Home town set" thus
      also means "tutorial graduated.")
-  - **Refresh-without-home = full state wipe + restart tutorial** (prevents
-    refresh-loop farming of first-time grants; identity persists, only character
-    *state* wipes, so the post-wipe run is a legitimate first run). After a town
-    is reached, refresh is a **soft reset to home that keeps progress.** Death in
-    the tutorial is reposition-to-start, never a wipe.
+  - **Refresh-without-home = full RESET to a fresh tutorial — character state AND
+    world instance.** A `CharacterState`-only wipe is *not* enough: tutorial
+    freshness also depends on **world-local** state (the zone brain's per-net_id
+    `zl_once` flags, gate open/shut, pack alive/respawn, un-picked ground loot),
+    all of which live in the `World`, not `CharacterState`. So the reset must:
+    (a) wipe the character to level-1 (clearing `tutorial_grants`), and (b) reap
+    the idler's tutorial instance and spawn a fresh one — an `incarnation_id`
+    bump on the per-character instance key (`withered_shore#<char>#<incarnation>`).
+    Identity (`account_id`/`character_id`) persists; the character state and the
+    world both reset → a genuinely fresh run, drops and all, and no farm (each
+    refresh costs everything). After a town is reached, refresh is instead a
+    **soft reset to home that keeps progress.** Death in the tutorial is
+    reposition-to-start, never a wipe.
 - **Mid-map bot-refresh = a death-equivalent:** −1 portal + return to home town;
-  the instance freezes under the 15-min/CAS rule. No free panic-escape.
+  the instance freezes under the 15-min/CAS rule. No free panic-escape. (When the
+  return-to-home crosses shards, it is a §6 transfer, not a local move.)
 - **The map device is the social hub:** in town (the high-occupancy shard), where
   idlers congregate; **per-player portal visibility** — an idler sees/enters only
   their own portals (instance keyed by owner). This is the atlas (#21) entry
@@ -230,12 +250,13 @@ boundary and the existing `ManagedWorld` granularity.
 
 Multi-process breaks #9's single-writer invariant. What keeps it tractable:
 **tradeable possessions live inside the `CharacterBundle`** (inventory,
-equipment, stash, currency on `CharacterState`). **Un-picked ground loot is a
-free-floating entity** (`LootState`/`Entity.loot`, `entity.rs:345-372`) — but it
-is **world-local**: it lives in the source world's snapshot, is removed
-atomically before inventory is credited on pickup (`inventory.rs:413`, single
-shard), and does **not** travel in the bundle (`process_exits` ships only
-`CharacterState`, `mod.rs:864`). So the dupe surface is:
+equipment, and currency on `CharacterState`; **stash too, once #20 lands — there
+is no stash field on `main` yet**). **Un-picked ground loot is a free-floating
+entity** (`LootState`/`Entity.loot`, `entity.rs:345-372`) — but it is
+**world-local**: it lives in the source world's snapshot, is removed atomically
+before inventory is credited on pickup (`inventory.rs:413`, single shard), and
+does **not** travel in the bundle (`process_exits` ships only `CharacterState`,
+`mod.rs:864`). So the dupe surface is:
 
 1. **A character existing in two shards at once** (botched cross-shard hand-off).
 2. **A non-atomic generate/consume path** within a shard (none today — pickup,
@@ -257,24 +278,48 @@ service state**, never from local assumption:
 
 ```
 source_owned
-  → departing(transfer_id, src_epoch, bundle)      [source marks intent, durable]
-  → destination_prepared(snapshot_ref)             [dest DURABLY persists the bundle]
-  → destination_owned(epoch = src_epoch+1)         [COMMIT: service flips owner]
-  → (source observes commit, drops its copy)
+  → departing(transfer_id, src_epoch, bundle)   [source SUSPENDS the character:
+       removes it from the live set (no further ticks/mutation) and captures the
+       bundle durably AT THIS INSTANT; it keeps only an inactive fallback copy]
+  → destination_prepared(snapshot_ref)          [dest DURABLY persists the bundle,
+       fenced inactive — not ticked; the snapshot is LEASED by transfer_id]
+  → destination_owned(epoch = src_epoch+1)      [COMMIT: service flips owner]
+  → (source observes commit, drops its inactive fallback)
 ```
 
+- **`departing` is a hard suspend, not "source keeps running."** This closes a
+  stale-bundle bug: the captured bundle is frozen at `departing`, and because the
+  source no longer ticks the character, it cannot pick up loot / craft / level /
+  die after capture and thereby commit a stale bundle at the destination. (This
+  matches today's ferry, where a departed character is already removed from its
+  world's live set, `pending_departures`.)
 - **The commit point is `destination_owned`, and it requires
   `destination_prepared` first** — the durable destination write precedes the
   epoch flip, closing v3's flip-then-crash gap (no "owner-of-record with no
-  data"). The destination's prepared copy stays **fenced inactive** (not ticked)
-  until commit, so a pre-commit crash never yields a live duplicate.
+  data"). The prepared copy stays **fenced inactive** until commit, so a
+  pre-commit crash never yields a live duplicate.
 - **Idempotent + fenced:** `transfer_id` dedupes replays; a shard may only
   tick/mutate a character it owns at the **current epoch**, so a stale source at
   `src_epoch` is rejected once the service is at `src_epoch+1`. On recovery a
-  shard reads the service state and resumes deterministically: not-yet-committed
-  → source still owns, retry; committed → source drops, dest is authoritative.
-- **Everything crossing a shard boundary** (ferry; future trade/shared-stash)
-  uses this; nothing moves as a non-atomic copy.
+  shard reads the service state and resumes deterministically: **not-yet-committed
+  → the source's suspended fallback is reactivated and retries** (the bundle was
+  frozen at `departing`, so reactivation loses nothing and commits nothing
+  stale); committed → source drops the fallback, dest is authoritative.
+- **The `destination_prepared` snapshot is leased by `transfer_id`** and is NOT
+  reapable by the instance GC (§4) until the transfer commits or aborts — so an
+  abandoned transfer (source dies permanently, or a retry repoints the dest)
+  leaves a leased copy that an explicit abort/TTL sweep reclaims, never an
+  orphan an in-flight recovery still needs.
+- **The transfer commit — not any world's save cadence — is the durability
+  boundary for a character crossing shards.** Per-world snapshots save worlds
+  sequentially and are not a global atomic checkpoint, so cross-shard
+  consistency must NOT rely on two world saves lining up; the ownership-service
+  commit is the single atomic fact. (If we ever need cross-world point-in-time
+  consistency beyond per-character transfers, that needs a checkpoint
+  generation + manifest — flagged, not built.)
+- **Everything crossing a shard boundary** (ferry; cross-shard home-town
+  respawn, §5; future trade/shared-stash) uses this; nothing moves as a
+  non-atomic copy.
 
 ### Single-shard & rollback
 - Single-shard activity is atomic per snapshot: a crash rolls back the whole
@@ -338,8 +383,11 @@ Each phase ships behind tests + the determinism fixture.
 2. **In-process per-world panic containment** (`catch_unwind` + reload) +
    **fix the "lost at sea" ferry** (queue/retry, never drop). Reliability that
    doesn't need distribution.
-3. **Lifecycle:** home town, death-by-zone-kind, the corrected tutorial gate
-   (grant-once by `character_id`), respawn-on-deploy.
+3. **Lifecycle:** home town, death-by-`ZoneKind`, the corrected tutorial gate
+   (grant-once + fresh-instance reset), respawn-on-deploy. **Adds `home_town` and
+   `tutorial_grants` to `CharacterState`** — both are folded by `state_hash`, so
+   **this phase re-blesses the golden fixture** (a deliberate, called-out content
+   change, not a determinism leak).
 4. **Deploy / SetParams + the input-log** (§8, §9); the portal goes live. **Runtime
    create/reap + frozen-15-min instances land here, so phase 2's panic
    containment must already exist** (instances multiply the blast radius).
