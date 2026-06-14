@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 29;
+pub const PROTO_VERSION: u32 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -477,6 +477,12 @@ pub enum C2S {
     /// Request the inspect sheet for a character (the focus panel).
     Inspect {
         id: u32,
+        /// The world the client is CURRENTLY displaying (`zone.worldKey`).
+        /// net ids are per-world and overlap, so the sheet must be resolved
+        /// in this exact world — not a server-side guess at what's featured.
+        /// Empty = let the server fall back to the followed/featured world.
+        #[serde(default)]
+        world_key: String,
     },
 }
 
