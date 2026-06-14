@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "augment_obol",
+    public: true,
     name: "Augment Obol",
     op: add_affix_magic,
     weight: 90,

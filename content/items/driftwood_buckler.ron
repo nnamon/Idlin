@@ -1,6 +1,7 @@
 // A round of waterlogged planking, banded with salvaged iron.
 ItemDef(
     id: "driftwood_buckler",
+    public: true,
     name: "Driftwood Buckler",
     slot: offhand,
     req_level: 2,

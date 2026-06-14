@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "divine_obol",
+    public: true,
     name: "Divine Obol",
     op: reroll_values,
     weight: 8,

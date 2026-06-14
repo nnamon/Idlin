@@ -1,6 +1,7 @@
 // "... of Venom" — flat chaos damage on weapons.
 AffixDef(
     id: "of_venom",
+    public: true,
     name: "of Venom",
     kind: suffix,
     pool: "weapon",

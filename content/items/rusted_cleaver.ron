@@ -1,6 +1,7 @@
 // A salt-eaten butcher's blade. Heavy, slow, mean.
 ItemDef(
     id: "rusted_cleaver",
+    public: true,
     name: "Rusted Cleaver",
     model: "cleaver",
     slot: weapon,

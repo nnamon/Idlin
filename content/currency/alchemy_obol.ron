@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "alchemy_obol",
+    public: true,
     name: "Alchemy Obol",
     op: normal_to_rare,
     weight: 30,

@@ -2,6 +2,7 @@
 // the blow (centi-units; walls and shut gates stop the slide).
 AffixDef(
     id: "of_driving", name: "of Driving", kind: suffix, pool: "weapon",
+    public: true,
     weight: 50,
     stat: knockback, layer: added,
     tiers: [

@@ -1,6 +1,7 @@
 // "... of Iron" — flat armour.
 AffixDef(
     id: "of_iron",
+    public: true,
     name: "of Iron",
     kind: suffix,
     pool: "armour",

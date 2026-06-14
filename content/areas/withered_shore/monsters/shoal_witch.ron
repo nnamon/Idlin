@@ -4,6 +4,7 @@
 // (EV_KILL matches by def) — no pack may ever use her.
 MonsterDef(
     id: "shoal_witch",
+    public: true,
     name: "Shoal Witch",
     model: "husk",
     brain: "hostile_melee",

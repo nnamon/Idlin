@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "chaotic_obol",
+    public: true,
     name: "Chaotic Obol",
     op: reroll_rare,
     weight: 25,

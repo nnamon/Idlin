@@ -1,6 +1,7 @@
 // "... of Warding" — elemental resistance.
 AffixDef(
     id: "of_warding",
+    public: true,
     name: "of Warding",
     kind: suffix,
     pool: "armour",

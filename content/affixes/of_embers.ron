@@ -1,6 +1,7 @@
 // "... of Embers" — flat elemental damage on weapons.
 AffixDef(
     id: "of_embers",
+    public: true,
     name: "of Embers",
     kind: suffix,
     pool: "weapon",

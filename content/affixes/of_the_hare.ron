@@ -1,6 +1,7 @@
 // "... of the Hare" — movement speed on boots.
 AffixDef(
     id: "of_the_hare",
+    public: true,
     name: "of the Hare",
     kind: suffix,
     pool: "stride",

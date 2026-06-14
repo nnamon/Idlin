@@ -2,6 +2,7 @@
 // victim's stun bar (see mechanics.md "Use timing" / hit reactions).
 AffixDef(
     id: "jarring", name: "Jarring", kind: prefix, pool: "weapon",
+    public: true,
     weight: 60,
     stat: stagger, layer: increased,
     tiers: [

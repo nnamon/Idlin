@@ -1,6 +1,7 @@
 // "... of the Wind" — flat evasion.
 AffixDef(
     id: "of_wind",
+    public: true,
     name: "of the Wind",
     kind: suffix,
     pool: "armour",

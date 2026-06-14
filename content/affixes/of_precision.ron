@@ -1,6 +1,7 @@
 // "... of Precision" — increased critical strike chance on weapons.
 AffixDef(
     id: "of_precision",
+    public: true,
     name: "of Precision",
     kind: suffix,
     pool: "weapon",

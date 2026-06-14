@@ -2,6 +2,7 @@
 // bigger against YOUR stun bar. Spicy on fast attackers.
 AffixDef(
     id: "of_staggering_m", name: "of Staggering", kind: suffix, pool: "monster",
+    public: true,
     weight: 40,
     stat: stagger, layer: increased,
     tiers: [

@@ -4,6 +4,7 @@
 // which is the point of the gauntlet they fill.
 MonsterDef(
     id: "grasping_drowned",
+    public: true,
     name: "Grasping Drowned",
     model: "shambler",
     brain: "hostile_melee",

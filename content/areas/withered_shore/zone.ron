@@ -4,6 +4,7 @@
 // everything else) choreographs the opening beats and the boss.
 ZoneDef(
     id: "withered_shore",
+    public: true,
     name: "The Withered Shore",
     kind: story,
     tileset: Some("shore"),

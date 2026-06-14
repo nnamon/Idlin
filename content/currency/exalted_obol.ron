@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "exalted_obol",
+    public: true,
     name: "Exalted Obol",
     op: add_affix_rare,
     weight: 6,

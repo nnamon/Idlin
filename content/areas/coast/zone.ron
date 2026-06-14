@@ -6,6 +6,7 @@
 // rares leading normal packs — the proving ground for mob generation.
 ZoneDef(
     id: "coast",
+    public: true,
     name: "The Drowned Coast",
     kind: map,
     // Area level 4: idlers arrive off the shore around 4-5. Normal
