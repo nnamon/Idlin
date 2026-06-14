@@ -43,11 +43,18 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   // in frame (cheap: one small message per second).
   useEffect(() => {
     if (focusId === undefined) return;
-    const ask = () => client.send({ type: "Inspect", data: { id: focusId } });
+    // Send the world we're DISPLAYING: net ids are per-world and overlap, so the
+    // server must resolve the sheet in this exact world, not its featured guess
+    // (#52). Empty until the first snapshot — the server falls back then.
+    const ask = () =>
+      client.send({
+        type: "Inspect",
+        data: { id: focusId, world_key: store.zone?.worldKey ?? "" },
+      });
     ask();
     const h = setInterval(ask, 1000);
     return () => clearInterval(h);
-  }, [client, focusId]);
+  }, [client, focusId, store.zone?.worldKey]);
   // The sheet renders only while the focused idler is actually PRESENT
   // and matches by name as well as id — net ids are per-world (every
   // instance's idler is id 1), so a cross-world cut, a departure, or an

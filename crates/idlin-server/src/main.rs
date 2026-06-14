@@ -330,6 +330,21 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Resp
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
+/// Choose which world an Inspect resolves against. The client knows exactly
+/// which world it is displaying and sends it (`zone.worldKey`); honor that —
+/// net ids are per-world and overlap, so resolving in any other world returns a
+/// different character's sheet (#52). Only when the client sends nothing do we
+/// fall back to this connection's followed world, then the director's featured.
+fn inspect_world_key(provided: &str, current: Option<&str>, featured: &str) -> Option<String> {
+    if !provided.is_empty() {
+        return Some(provided.to_string());
+    }
+    if let Some(c) = current {
+        return Some(c.to_string());
+    }
+    (!featured.is_empty()).then(|| featured.to_string())
+}
+
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut tx, mut rx) = socket.split();
 
@@ -373,14 +388,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         server_tick: state.server_tick.load(Ordering::Relaxed),
                     },
                     Ok(C2S::DirectorMode { .. }) => continue, // client-side concern in Phase 1
-                    Ok(C2S::Inspect { id }) => {
-                        // Featured viewers inspect in whichever world the
-                        // director's camera is on RIGHT NOW — the runner's
-                        // own fallback pick can disagree with the broadcast.
-                        let key = current_key.clone().or_else(|| {
-                            let f = routing.borrow().featured.clone();
-                            (!f.is_empty()).then_some(f)
-                        });
+                    Ok(C2S::Inspect { id, world_key }) => {
+                        // Resolve in the world the CLIENT is displaying — it
+                        // sends its own zone.worldKey. net ids are per-world and
+                        // overlap, so the director's current featured pick can
+                        // name a DIFFERENT character (wrong sheet). Fall back to
+                        // the followed/featured world only when none was sent.
+                        let key = inspect_world_key(
+                            &world_key,
+                            current_key.as_deref(),
+                            &routing.borrow().featured,
+                        );
                         let (tx_r, rx_r) = tokio::sync::oneshot::channel();
                         let _ = state.inspect.send((key, id, tx_r));
                         match tokio::time::timeout(std::time::Duration::from_millis(300), rx_r)
@@ -475,5 +493,40 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inspect_world_key;
+
+    #[test]
+    fn inspect_resolves_in_the_clients_displayed_world() {
+        // The client names its displayed world → use it, even when the director
+        // has rotated to a different featured world (the #52 bug: a per-world
+        // net id resolved against the wrong world = another character's sheet).
+        assert_eq!(
+            inspect_world_key("withered_shore#Kargan", None, "withered_shore#Veles"),
+            Some("withered_shore#Kargan".to_string()),
+        );
+        // ...and even over an explicit follow.
+        assert_eq!(
+            inspect_world_key("withered_shore#Kargan", Some("saltmere"), "coast"),
+            Some("withered_shore#Kargan".to_string()),
+        );
+    }
+
+    #[test]
+    fn inspect_falls_back_when_client_sends_no_world() {
+        // No client world → this connection's followed world, then featured.
+        assert_eq!(
+            inspect_world_key("", Some("saltmere"), "coast"),
+            Some("saltmere".to_string()),
+        );
+        assert_eq!(
+            inspect_world_key("", None, "coast"),
+            Some("coast".to_string())
+        );
+        assert_eq!(inspect_world_key("", None, ""), None);
     }
 }

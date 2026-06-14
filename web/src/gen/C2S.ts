@@ -10,4 +10,11 @@ export type C2S = { "type": "Hello", "data": { token: string, proto_version: num
  * that character, following them across zone transfers.
  * Permission gating arrives with real auth.
  */
-watch: string | null, } } | { "type": "Ping", "data": { nonce: number, } } | { "type": "DirectorMode", "data": { auto: boolean, } } | { "type": "Inspect", "data": { id: number, } };
+watch: string | null, } } | { "type": "Ping", "data": { nonce: number, } } | { "type": "DirectorMode", "data": { auto: boolean, } } | { "type": "Inspect", "data": { id: number, 
+/**
+ * The world the client is CURRENTLY displaying (`zone.worldKey`).
+ * net ids are per-world and overlap, so the sheet must be resolved
+ * in this exact world — not a server-side guess at what's featured.
+ * Empty = let the server fall back to the followed/featured world.
+ */
+world_key: string, } };
