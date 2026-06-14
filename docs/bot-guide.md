@@ -167,10 +167,11 @@ fn main() {                            // main() runs once per tick
   against the zone that names the brain (`exit` by destination zone id;
   `gate` by its `id:` in zone.ron). Refs are a CONTENT-LOAD feature:
   deploy-compiled player templates can't use them.
-- `include "std/zone_lib.bot";` splices another file (resolved under
-  `content/brains/`, depth-capped) — expanded by the content loader
-  before compilation. `content/brains/std/` holds shared libraries;
-  they are never brains themselves.
+- `include "zone_lib.bot";` splices another file (resolved under
+  `content/lib/`, depth-capped) — expanded by the content loader
+  before compilation. `content/lib/` holds shared libraries
+  (`zone_lib.bot`, the generated `gen_ids.bot`); they are never brains
+  themselves.
 
 **Semantics that matter**
 

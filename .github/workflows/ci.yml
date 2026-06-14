@@ -26,10 +26,10 @@ jobs:
           cargo test -p idlin-protocol export_typescript_bindings
           cargo test -p idlin-server --test export_constants
           git diff --exit-code web/src/gen
-      - name: Generated wiki docs are fresh
+      - name: Generated content ids/consts/docs are fresh
         run: |
-          cargo run -p idlin-content --bin wiki
-          git diff --exit-code docs/wiki
+          cargo run -p idlin-content --bin gen
+          git diff --exit-code content/ids.ron content/lib/gen_ids.bot web/public/content-docs.json
 
   web:
     runs-on: ubuntu-latest

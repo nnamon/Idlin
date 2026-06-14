@@ -7,7 +7,7 @@
 // The std library provides per-character beat state (zl_once /
 // zl_narrate_once) and record offsets — see its header for layout.
 
-include "std/zone_lib.bot";
+include "zone_lib.bot";
 
 // Narration refs resolve against zone.ron `lines:` BY ID at load.
 const L_WELCOME = line "welcome";

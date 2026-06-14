@@ -14,6 +14,7 @@
 //! Every load computes a content hash embedded in snapshots and replays: a
 //! replay is only meaningful against the exact content it was recorded with.
 
+pub mod ids;
 pub mod stats;
 
 use serde::{Deserialize, Serialize};
@@ -1340,9 +1341,9 @@ impl ContentDb {
                     pending_brains.push((id, rel_str.clone(), expanded, false));
                 }
                 // Anything else under areas/ is the author's business.
-            } else if rel_str.starts_with("brains/std/") {
-                // Shared script libraries: include-able, never brains
-                // themselves (no main()); hashed like everything else.
+            } else if rel_str.starts_with("lib/") {
+                // Shared script libraries (`include "..."`): include-able, never
+                // brains themselves (no main()); hashed like everything else.
             } else if rel_str.starts_with("templates/") {
                 // Copy-me skeletons: hashed but never loaded as content.
             } else if rel_str.starts_with("brains/") {
@@ -1696,7 +1697,7 @@ fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String,
             if rel.contains("..") {
                 return Err(format!("include escapes content/: {rel}"));
             }
-            let path = content_root.join("brains").join(rel);
+            let path = content_root.join("lib").join(rel);
             let text = fs::read_to_string(&path).map_err(|e| format!("include {rel}: {e}"))?;
             out.push_str(&expand_includes(content_root, &text, depth + 1)?);
             out.push('\n');

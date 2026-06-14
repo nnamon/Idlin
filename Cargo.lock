@@ -457,6 +457,7 @@ dependencies = [
  "idlin-botc",
  "ron",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
