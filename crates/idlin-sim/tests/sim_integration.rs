@@ -445,10 +445,10 @@ fn the_gated_tutorial_teaches_a_stock_grinder_to_saltmere() {
     let content = content();
     // The server's per-instance seed for Kargan: base seed ^ FNV(name).
     let kargan = {
-        let mut h = 0xcbf29ce484222325u64;
+        let mut h = idlin_content::FNV1A_OFFSET;
         for b in "Kargan".bytes() {
             h ^= b as u64;
-            h = h.wrapping_mul(0x100000001b3);
+            h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
         }
         12648430 ^ h
     };

@@ -4,8 +4,8 @@ import type { EntityState } from "../gen/EntityState";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { GameEvent } from "../gen/GameEvent";
 import type { TileMapState } from "../gen/TileMapState";
+import { TICK_MS, FX_SCALE, RARITY_NAMES, RARITY_COLORS } from "../gen/constants";
 
-const TICK_MS = 100; // 10 Hz sim; interpolation window
 /** Playout delay in ticks: jitter up to ~this much arrives invisibly.
  *  ~220 ms of display latency — meaningless for a spectator feed. */
 const PLAYOUT_DELAY_TICKS = 2.2;
@@ -111,9 +111,6 @@ export interface ZoneObstacle {
   kind: number;
 }
 
-const RARITY_NAMES = ["common", "magic", "rare", "UNIQUE"];
-const RARITY_COLORS = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"];
-
 /**
  * Client-side mirror of the replicated zone. The renderer reads it every
  * frame; React polls it via `version`.
@@ -169,18 +166,18 @@ export class WorldStore {
           name: d.zone_name,
           level: d.zone_level ?? 1,
           worldKey: d.world_key ?? "",
-          width: d.width / 65536,
-          height: d.height / 65536,
+          width: d.width / FX_SCALE,
+          height: d.height / FX_SCALE,
           obstacles: d.obstacles.map((o) => ({
-            x: o.x / 65536,
-            y: o.y / 65536,
-            radius: o.radius / 65536,
+            x: o.x / FX_SCALE,
+            y: o.y / FX_SCALE,
+            radius: o.radius / FX_SCALE,
             kind: o.kind,
           })),
           tiles: d.tiles ?? null,
           exits: (d.exits ?? []).map((e) => ({
-            x: e.x / 65536,
-            y: e.y / 65536,
+            x: e.x / FX_SCALE,
+            y: e.y / FX_SCALE,
             open: e.open,
           })),
           gates: (d.gates ?? []).map((g) => ({ ...g })),
@@ -208,8 +205,8 @@ export class WorldStore {
           if (!er) continue;
           er.prevX = er.currX;
           er.prevY = er.currY;
-          er.currX = m.x / 65536;
-          er.currY = m.y / 65536;
+          er.currX = m.x / FX_SCALE;
+          er.currY = m.y / FX_SCALE;
           er.movedAt = now;
           er.state.x = m.x;
           er.state.y = m.y;
@@ -250,11 +247,11 @@ export class WorldStore {
           this.pendingProjectiles.push({
             attacker: p.attacker,
             spell: p.spell,
-            x: p.x / 65536,
-            y: p.y / 65536,
-            vx: p.vx / 65536,
-            vy: p.vy / 65536,
-            range: p.range / 65536,
+            x: p.x / FX_SCALE,
+            y: p.y / FX_SCALE,
+            vx: p.vx / FX_SCALE,
+            vy: p.vy / FX_SCALE,
+            range: p.range / FX_SCALE,
             dmgType: p.dmg_type,
             tick: d.tick,
             at: now,
@@ -264,8 +261,8 @@ export class WorldStore {
           this.pendingUses.push({
             attacker: u.attacker,
             spell: u.spell,
-            x: u.x / 65536,
-            y: u.y / 65536,
+            x: u.x / FX_SCALE,
+            y: u.y / FX_SCALE,
             useS: u.use_ticks * (TICK_MS / 1000),
             contactS: u.contact_ticks * (TICK_MS / 1000),
             tick: d.tick,
@@ -277,12 +274,12 @@ export class WorldStore {
             attacker: s.attacker,
             spell: s.spell,
             shape: s.shape,
-            x: s.x / 65536,
-            y: s.y / 65536,
-            dx: s.dx / 65536,
-            dy: s.dy / 65536,
-            radius: s.radius / 65536,
-            range: s.range / 65536,
+            x: s.x / FX_SCALE,
+            y: s.y / FX_SCALE,
+            dx: s.dx / FX_SCALE,
+            dy: s.dy / FX_SCALE,
+            radius: s.radius / FX_SCALE,
+            range: s.range / FX_SCALE,
             dmgType: s.dmg_type,
             tick: d.tick,
             at: now,
@@ -415,8 +412,8 @@ export class WorldStore {
   }
 
   private upsert(e: EntityState, now: number): void {
-    const x = e.x / 65536;
-    const y = e.y / 65536;
+    const x = e.x / FX_SCALE;
+    const y = e.y / FX_SCALE;
     const existing = this.entities.get(e.id);
     if (existing) {
       existing.state = e;
@@ -469,8 +466,8 @@ export class WorldStore {
       case "ExitChanged": {
         // Flip the matching portal's state in place (snapshots carry the
         // full list; this keeps live viewers current between them).
-        const ex = ev.data.x / 65536;
-        const ey = ev.data.y / 65536;
+        const ex = ev.data.x / FX_SCALE;
+        const ey = ev.data.y / FX_SCALE;
         const exit = this.zone?.exits.find(
           (e) => Math.abs(e.x - ex) < 0.01 && Math.abs(e.y - ey) < 0.01,
         );
