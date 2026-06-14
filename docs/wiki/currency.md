@@ -86,6 +86,18 @@ CurrencyDef {
 }
 ```
 
+## regret_obol
+
+```
+CurrencyDef {
+    id: "regret_obol",
+    name: "Regret Obol",
+    op: Respec,
+    weight: 12,
+    tier: 2,
+}
+```
+
 ## scouring_obol
 
 ```
