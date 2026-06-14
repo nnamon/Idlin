@@ -1,6 +1,7 @@
 // Skill: a lance of lightning down a line — aim it (UseSkillDir).
 GemDef(
     id: "arc",
+    public: true,
     name: "Arc",
     kind: skill,
     skill_kind: spell,

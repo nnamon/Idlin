@@ -2,6 +2,7 @@
 // one body, and stops on walls.
 GemDef(
     id: "power_shot",
+    public: true,
     name: "Power Shot",
     kind: skill,
     skill_kind: attack,

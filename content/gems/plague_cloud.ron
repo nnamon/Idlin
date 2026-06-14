@@ -2,6 +2,7 @@
 // The touch is nothing; the rot is the point.
 GemDef(
     id: "plague_cloud",
+    public: true,
     name: "Plague Cloud",
     kind: skill,
     skill_kind: spell,

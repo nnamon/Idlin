@@ -1,6 +1,7 @@
 // Skill: one slow, honest hit — the whole weapon behind it.
 GemDef(
     id: "heavy_swing",
+    public: true,
     name: "Heavy Swing",
     kind: skill,
     skill_kind: attack,

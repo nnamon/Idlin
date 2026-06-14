@@ -3,7 +3,7 @@
 // stash, and the map device come later; they'll be syscalls and
 // script, like everything else.
 
-include "std/zone_lib.bot";
+include "zone_lib.bot";
 
 const L_WELCOME = line "welcome";    // to the arriving idler
 const L_ANNOUNCE = line "announce";  // to everyone else

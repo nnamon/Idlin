@@ -14,6 +14,7 @@
 //! Every load computes a content hash embedded in snapshots and replays: a
 //! replay is only meaningful against the exact content it was recorded with.
 
+pub mod ids;
 pub mod stats;
 
 use serde::{Deserialize, Serialize};
@@ -103,6 +104,10 @@ pub struct MonsterSkillDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonsterDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub model: String,
     /// BrainDef id driving this NPC.
@@ -235,6 +240,10 @@ impl GearSlot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub slot: GearSlot,
     /// Requirements: a character must MEET these to equip — and to KEEP —
@@ -382,6 +391,10 @@ pub enum CurrencyOp {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurrencyDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub op: CurrencyOp,
     /// Relative drop weight within the currency pool.
@@ -414,6 +427,10 @@ pub struct NamingDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     /// Display: prefixes prepend ("Heavy ..."), suffixes append ("... of X").
     pub name: String,
     pub kind: AffixKind,
@@ -596,6 +613,10 @@ fn default_max_targets() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GemDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub kind: GemKind,
     #[serde(default = "default_weight")]
@@ -715,6 +736,10 @@ pub enum NodeKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     /// Stable numeric reference (u16) used by compiled bots. Unique,
     /// author-assigned, NEVER reused for a different node.
     pub num: u16,
@@ -841,6 +866,10 @@ pub struct TilesetVariant {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TilesetDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub tiles: Vec<TileDef>,
     /// Base ground palette: ground id → "#rrggbb".
     pub palette: Vec<(String, String)>,
@@ -941,6 +970,10 @@ pub struct PropsDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     /// AREA LEVEL: normal monsters spawn at this level (magic +1,
     /// rare +2; authored uniques keep their own). Effective level
@@ -1340,9 +1373,9 @@ impl ContentDb {
                     pending_brains.push((id, rel_str.clone(), expanded, false));
                 }
                 // Anything else under areas/ is the author's business.
-            } else if rel_str.starts_with("brains/std/") {
-                // Shared script libraries: include-able, never brains
-                // themselves (no main()); hashed like everything else.
+            } else if rel_str.starts_with("lib/") {
+                // Shared script libraries (`include "..."`): include-able, never
+                // brains themselves (no main()); hashed like everything else.
             } else if rel_str.starts_with("templates/") {
                 // Copy-me skeletons: hashed but never loaded as content.
             } else if rel_str.starts_with("brains/") {
@@ -1681,7 +1714,7 @@ impl ContentDb {
 }
 
 /// Expand `include "path";` lines in a .bot source — paths resolve under
-/// `content/brains/` (the std library home). Textual splice, depth-capped;
+/// `content/lib/` (the shared-library home). Textual splice, depth-capped;
 /// included files feed the content hash as themselves, so a library edit
 /// always changes the world's content identity.
 fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String, String> {
@@ -1696,7 +1729,7 @@ fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String,
             if rel.contains("..") {
                 return Err(format!("include escapes content/: {rel}"));
             }
-            let path = content_root.join("brains").join(rel);
+            let path = content_root.join("lib").join(rel);
             let text = fs::read_to_string(&path).map_err(|e| format!("include {rel}: {e}"))?;
             out.push_str(&expand_includes(content_root, &text, depth + 1)?);
             out.push('\n');

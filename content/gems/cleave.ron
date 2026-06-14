@@ -1,6 +1,7 @@
 // Skill: a sweeping melee arc around the wielder.
 GemDef(
     id: "cleave",
+    public: true,
     name: "Cleave",
     kind: skill,
     skill_kind: attack,

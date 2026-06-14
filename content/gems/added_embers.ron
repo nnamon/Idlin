@@ -2,6 +2,7 @@
 // SUPPORT gem levels.
 GemDef(
     id: "added_embers",
+    public: true,
     name: "Added Embers",
     kind: support,
     weight: 80,

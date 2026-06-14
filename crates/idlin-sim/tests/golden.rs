@@ -10,11 +10,12 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Moved for #8: deleting the dead disc generator edited the hashed file
-/// content/templates/area/zone.ron (dropped gen_rocks/gen_trees), shifting
-/// content_hash. Sim behavior is unchanged — obstacles never existed for
-/// the tile-mapped zones.
-const GOLDEN_HASH: u64 = 0xB8D5_17AC_804D_E6C3;
+/// Moved for #54 (stable-id foundation): the generator adds two hashed files
+/// under content/ (content/ids.ron, content/lib/gen_ids.bot), shared bot
+/// includes moved content/brains/std/ → content/lib/, and the gem RONs gained
+/// `public: true` (the new per-def publish flag) — all shifting content_hash.
+/// Sim behavior is unchanged: nothing consumes the ids yet.
+const GOLDEN_HASH: u64 = 0xA15E_3B3B_6E0F_C4CE;
 
 #[test]
 fn golden_replay() {

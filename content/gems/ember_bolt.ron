@@ -2,6 +2,7 @@
 // growing with the gem, and it cannot miss.
 GemDef(
     id: "ember_bolt",
+    public: true,
     name: "Ember Bolt",
     kind: skill,
     skill_kind: spell,

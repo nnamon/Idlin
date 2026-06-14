@@ -1,6 +1,7 @@
 // Support: the supported attack comes around faster.
 GemDef(
     id: "quickening",
+    public: true,
     name: "Quickening",
     kind: support,
     weight: 70,

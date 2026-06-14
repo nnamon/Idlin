@@ -3,6 +3,7 @@
 // Direction-aimed so it needs no enemy to fire (use_skill_dir).
 GemDef(
     id: "war_cry",
+    public: true,
     name: "War Cry",
     kind: skill,
     skill_kind: spell,

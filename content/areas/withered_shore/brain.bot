@@ -18,7 +18,7 @@
 // resolved at load — adding content never shifts what this means.
 // ============================================================
 
-include "std/zone_lib.bot";
+include "zone_lib.bot";
 
 const IT_WAND = item "barnacle_wand";
 const IT_BOW = item "driftwood_bow";

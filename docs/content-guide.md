@@ -244,8 +244,8 @@ areas/withered_shore/
 
 Start a new area by copying `content/templates/area/` (the loader
 ignores `templates/`). Scripts DRY via the include directive —
-`include "std/zone_lib.bot";` resolves under `content/brains/`, where
-`std/` holds shared libraries (include-only, never brains themselves):
+`include "zone_lib.bot";` resolves under `content/lib/`, which
+holds shared libraries (include-only, never brains themselves):
 `zone_lib.bot` provides the per-character beat table (`zl_once`,
 `zl_narrate_once`) and the record-offset constants. Included files
 hash like any content, so a library edit changes the world's content

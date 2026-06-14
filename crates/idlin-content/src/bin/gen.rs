@@ -1,0 +1,259 @@
+//! The content generator (RFC #54): one pass over every def produces the three
+//! committed artifacts that form the bot↔engine contract.
+//!
+//!   1. `content/ids.ron`              — the locked id registry (string→seq)
+//!   2. `content/lib/gen_ids.bot`      — generated consts bots reference
+//!   3. `web/public/content-docs.json` — the name⇄num reference for the site
+//!
+//! Run from the repo root: `cargo run -p idlin-content --bin gen`. CI runs it
+//! and `git diff --exit-code` over those paths — so the contract and the docs
+//! can never silently drift from content. Ids are append-only and locked: a new
+//! def gets the next free sequence in its category; a removed def is tombstoned
+//! (its sequence retired, never reused). Node sequences are seeded from the
+//! author-assigned `NodeDef.num` so existing bot references never move.
+//!
+//! The REGISTRY assigns a num to EVERY def (internal identity). The consts and
+//! docs expose only `public: true` defs — the bot-facing contract; private
+//! (the default) defs get an internal num but are not published.
+
+use idlin_content::ContentDb;
+use idlin_content::ids::{Category, CategoryIds, Registry, RegistryChange, SEQ_BITS, compose};
+use std::fmt::Write as _;
+use std::path::Path;
+
+const REGISTRY: &str = "content/ids.ron";
+const CONSTS: &str = "content/lib/gen_ids.bot";
+const DOCS: &str = "web/public/content-docs.json";
+
+fn const_body(id: &str) -> String {
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn main() {
+    let db = ContentDb::load(Path::new("content")).expect("content loads (run from repo root)");
+
+    // Every bot-referenceable collection → (string id, optional seed). Only
+    // nodes seed a sequence (their author-assigned num); everything else is
+    // tool-assigned next-free. The registry covers ALL defs.
+    let present: Vec<CategoryIds> = vec![
+        (
+            Category::Gem,
+            db.gems.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+        (
+            Category::Item,
+            db.items.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+        (
+            Category::Affix,
+            db.affixes.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+        (
+            Category::Monster,
+            db.monsters.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+        (
+            Category::Node,
+            db.tree
+                .iter()
+                .map(|d| (d.id.clone(), Some(d.num as i32)))
+                .collect(),
+        ),
+        (
+            Category::Zone,
+            db.zones.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+        (
+            Category::Currency,
+            db.currency.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+        (
+            Category::Tileset,
+            db.tilesets.iter().map(|d| (d.id.clone(), None)).collect(),
+        ),
+    ];
+
+    // Public defs only feed the consts + docs (the bot-facing contract). The
+    // registry above still numbers every def; `public: true` opts a def in.
+    let public_rows = vec![
+        (
+            Category::Gem,
+            db.gems
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Item,
+            db.items
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Affix,
+            db.affixes
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Monster,
+            db.monsters
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Node,
+            db.tree
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Zone,
+            db.zones
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Currency,
+            db.currency
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.name.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Category::Tileset,
+            db.tilesets
+                .iter()
+                .filter(|d| d.public)
+                .map(|d| (d.id.clone(), d.id.clone()))
+                .collect::<Vec<_>>(),
+        ),
+    ];
+
+    let prev: Registry = match std::fs::read_to_string(REGISTRY) {
+        Ok(text) => ron::from_str(&text).expect("content/ids.ron is malformed"),
+        Err(_) => Registry::default(),
+    };
+    let (next, changes) = prev.regenerate(&present).unwrap_or_else(|e| {
+        eprintln!("id registry violation (append-only broken): {e:?}");
+        std::process::exit(1);
+    });
+
+    // 1. registry (every def)
+    let ron = ron::ser::to_string_pretty(&next, ron::ser::PrettyConfig::default())
+        .expect("serialize registry");
+    std::fs::write(
+        REGISTRY,
+        format!(
+            "// AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit.\n{ron}\n"
+        ),
+    )
+    .expect("write registry");
+
+    // 2. consts include (public defs only)
+    let mut consts = String::from(
+        "// AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit.\n\
+         // Stable content ids (RFC #54): num = (category << ID_SEQ_BITS) | sequence.\n\
+         // Only public defs appear here.\n",
+    );
+    let _ = writeln!(consts, "const ID_SEQ_BITS = {SEQ_BITS};");
+    for cat in Category::ALL {
+        let _ = writeln!(
+            consts,
+            "const CAT_{} = {};",
+            const_body(cat.key()),
+            cat.code()
+        );
+    }
+    for (cat, rows) in &public_rows {
+        if rows.is_empty() {
+            continue;
+        }
+        let _ = writeln!(consts, "\n// {}", cat.key());
+        for (id, _) in rows {
+            let num = next.num(*cat, id).expect("public id is registered");
+            let _ = writeln!(
+                consts,
+                "const {}_{} = {num};",
+                const_body(cat.key()),
+                const_body(id)
+            );
+        }
+    }
+    std::fs::write(CONSTS, consts).expect("write consts");
+
+    // 3. docs JSON — public defs only; minimal (num, id, name) for now (#67).
+    let mut cats = serde_json::Map::new();
+    for (cat, rows) in &public_rows {
+        let arr: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(id, name)| {
+                serde_json::json!({ "num": next.num(*cat, id).expect("registered"), "id": id, "name": name })
+            })
+            .collect();
+        cats.insert(cat.key().to_string(), serde_json::Value::Array(arr));
+    }
+    let docs = serde_json::json!({
+        "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit.",
+        "fingerprint": next.fingerprint,
+        "seq_bits": SEQ_BITS,
+        "categories": cats,
+    });
+    std::fs::write(
+        DOCS,
+        format!("{}\n", serde_json::to_string_pretty(&docs).unwrap()),
+    )
+    .expect("write docs");
+
+    // summary
+    let total: usize = present.iter().map(|(_, v)| v.len()).sum();
+    let public: usize = public_rows.iter().map(|(_, v)| v.len()).sum();
+    println!(
+        "registry fingerprint {} — {total} ids ({public} public) across {} categories",
+        next.fingerprint,
+        Category::ALL.len()
+    );
+    for c in &changes {
+        match c {
+            RegistryChange::Assigned { cat, id, seq } => {
+                println!(
+                    "  + assigned {cat}.{id} = {} (seq {seq})",
+                    compose_from(cat, *seq)
+                )
+            }
+            RegistryChange::Tombstoned { cat, id, seq } => {
+                println!("  ~ tombstoned {cat}.{id} (seq {seq}) — num retired, never reused")
+            }
+        }
+    }
+}
+
+/// Compose for the human-readable summary (the registry stores sequences).
+fn compose_from(cat_key: &str, seq: i32) -> i32 {
+    let cat = Category::ALL
+        .iter()
+        .find(|c| c.key() == cat_key)
+        .copied()
+        .unwrap();
+    compose(cat, seq)
+}

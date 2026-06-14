@@ -2,6 +2,7 @@
 // genuinely slower to move and to swing.
 GemDef(
     id: "frost_nova",
+    public: true,
     name: "Frost Nova",
     kind: skill,
     skill_kind: spell,
