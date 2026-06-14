@@ -114,6 +114,36 @@ AffixDef {
 }
 ```
 
+### of_poise
+
+```
+AffixDef {
+    id: "of_poise",
+    name: "of Poise",
+    kind: Suffix,
+    pool: "armour",
+    weight: 70,
+    stat: Poise,
+    layer: Increased,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 1500,
+            max: 2500,
+            name: "of Poise",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 7,
+            min: 2501,
+            max: 4500,
+            name: "of Iron Poise",
+            weight: 35,
+        },
+    ],
+}
+```
+
 ### of_storms
 
 ```
@@ -447,6 +477,29 @@ AffixDef {
 }
 ```
 
+### of_staggering_m
+
+```
+AffixDef {
+    id: "of_staggering_m",
+    name: "of Staggering",
+    kind: Suffix,
+    pool: "monster",
+    weight: 40,
+    stat: Stagger,
+    layer: Increased,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 2000,
+            max: 3500,
+            name: "of Staggering",
+            weight: 100,
+        },
+    ],
+}
+```
+
 ### of_wards
 
 ```
@@ -619,6 +672,36 @@ AffixDef {
 }
 ```
 
+### jarring
+
+```
+AffixDef {
+    id: "jarring",
+    name: "Jarring",
+    kind: Prefix,
+    pool: "weapon",
+    weight: 60,
+    stat: Stagger,
+    layer: Increased,
+    tiers: [
+        AffixTier {
+            ilvl: 1,
+            min: 1500,
+            max: 2500,
+            name: "Jarring",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 6,
+            min: 2501,
+            max: 4000,
+            name: "Staggering",
+            weight: 40,
+        },
+    ],
+}
+```
+
 ### keen
 
 ```
@@ -644,6 +727,36 @@ AffixDef {
             max: 60,
             name: "Hawkeyed",
             weight: 45,
+        },
+    ],
+}
+```
+
+### of_driving
+
+```
+AffixDef {
+    id: "of_driving",
+    name: "of Driving",
+    kind: Suffix,
+    pool: "weapon",
+    weight: 50,
+    stat: Knockback,
+    layer: Added,
+    tiers: [
+        AffixTier {
+            ilvl: 2,
+            min: 25,
+            max: 45,
+            name: "of Driving",
+            weight: 100,
+        },
+        AffixTier {
+            ilvl: 8,
+            min: 46,
+            max: 75,
+            name: "of Hurling",
+            weight: 35,
         },
     ],
 }
