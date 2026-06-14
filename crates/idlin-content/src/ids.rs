@@ -67,8 +67,20 @@ impl Category {
     }
 }
 
-/// Compose a tagged num from a category + per-category sequence.
+/// Compose a tagged num from a category + per-category sequence. Both must fit
+/// their fields: a `seq` past `SEQ_MASK` or a `cat` past 8 bits would silently
+/// overlap another num or flip the sign bit, so it's a hard invariant (the
+/// registry's overflow guard upholds it; this asserts in dev/test).
 pub fn compose(cat: Category, seq: i32) -> i32 {
+    debug_assert!(
+        (0..=SEQ_MASK).contains(&seq),
+        "sequence {seq} exceeds the {SEQ_BITS}-bit field"
+    );
+    debug_assert!(
+        (0..=0xFF).contains(&cat.code()),
+        "category code {} exceeds 8 bits",
+        cat.code()
+    );
     (cat.code() << SEQ_BITS) | (seq & SEQ_MASK)
 }
 
@@ -124,6 +136,17 @@ pub enum RegistryError {
         a: String,
         b: String,
     },
+    /// A seeded id (e.g. a tree node) is in the registry with a sequence that no
+    /// longer matches its authoritative seed — the committed registry was edited
+    /// away from `NodeDef.num`. Catches a hand-tampered renumber for seeds.
+    SeedMismatch {
+        cat: &'static str,
+        id: String,
+        expected: i32,
+        found: i32,
+    },
+    /// A category's sequence counter overflowed its field (> ~8.4M live ids).
+    SequenceOverflow { cat: &'static str, seq: i32 },
 }
 
 /// Per category, the live ids in content — each with an optional seeded
@@ -157,12 +180,30 @@ impl Registry {
             // tombstoned sequence (still present here) is never reissued.
             let mut next_seq = section.values().copied().max().map(|m| m + 1).unwrap_or(0);
             for (id, seed) in ids {
-                if section.contains_key(id) {
-                    continue; // locked — carried over unchanged
+                if let Some(&existing) = section.get(id) {
+                    // Locked. A seeded id (node) has an authoritative source, so
+                    // re-verify the committed registry still matches it.
+                    if let Some(s) = seed
+                        && existing != *s
+                    {
+                        return Err(RegistryError::SeedMismatch {
+                            cat: cat.key(),
+                            id: id.clone(),
+                            expected: *s,
+                            found: existing,
+                        });
+                    }
+                    continue; // carried over unchanged
                 }
                 let seq = match seed {
                     Some(s) => *s, // author-pinned (nodes)
                     None => {
+                        if next_seq > SEQ_MASK {
+                            return Err(RegistryError::SequenceOverflow {
+                                cat: cat.key(),
+                                seq: next_seq,
+                            });
+                        }
                         let s = next_seq;
                         next_seq += 1;
                         s
@@ -177,19 +218,29 @@ impl Registry {
             }
         }
 
-        // Tombstones: registry entries with no matching present id.
-        for (cat, ids) in present {
-            if let Some(section) = next.ids.get(cat.key()) {
-                let live: std::collections::BTreeSet<&str> =
-                    ids.iter().map(|(id, _)| id.as_str()).collect();
-                for (id, &seq) in section {
-                    if !live.contains(id.as_str()) {
-                        changes.push(RegistryChange::Tombstoned {
-                            cat: cat.key(),
-                            id: id.clone(),
-                            seq,
-                        });
-                    }
+        // Tombstones: registry entries with no matching present id. Iterate the
+        // REGISTRY (not `present`), so a category dropped from `present` is still
+        // scanned and its retired ids surfaced.
+        let live: BTreeMap<&str, std::collections::BTreeSet<&str>> = present
+            .iter()
+            .map(|(cat, ids)| (cat.key(), ids.iter().map(|(id, _)| id.as_str()).collect()))
+            .collect();
+        for (cat_key, section) in &next.ids {
+            let cat_static = Category::ALL
+                .iter()
+                .find(|c| c.key() == cat_key)
+                .map(|c| c.key())
+                .unwrap_or("?");
+            for (id, &seq) in section {
+                let is_live = live
+                    .get(cat_key.as_str())
+                    .is_some_and(|l| l.contains(id.as_str()));
+                if !is_live {
+                    changes.push(RegistryChange::Tombstoned {
+                        cat: cat_static,
+                        id: id.clone(),
+                        seq,
+                    });
                 }
             }
         }
@@ -237,5 +288,109 @@ impl Registry {
             }
         }
         format!("{h:016x}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ids(items: &[(&str, Option<i32>)]) -> Vec<(String, Option<i32>)> {
+        items
+            .iter()
+            .map(|(s, seed)| (s.to_string(), *seed))
+            .collect()
+    }
+
+    #[test]
+    fn compose_round_trips_and_stays_positive() {
+        for (cat, seq) in [
+            (Category::Gem, 0),
+            (Category::Item, 5),
+            (Category::Tileset, SEQ_MASK),
+        ] {
+            let num = compose(cat, seq);
+            assert!(num > 0, "nums must stay positive (the VM word is i32)");
+            assert_eq!(category_code(num), cat.code());
+            assert_eq!(sequence(num), seq);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn compose_rejects_overflowing_sequence() {
+        let _ = compose(Category::Gem, SEQ_MASK + 1); // doesn't fit 23 bits
+    }
+
+    #[test]
+    fn assigns_sequentially_then_locks() {
+        let (r1, c1) = Registry::default()
+            .regenerate(&[(Category::Gem, ids(&[("a", None), ("b", None)]))])
+            .unwrap();
+        assert_eq!(r1.num(Category::Gem, "a"), Some(compose(Category::Gem, 0)));
+        assert_eq!(r1.num(Category::Gem, "b"), Some(compose(Category::Gem, 1)));
+        assert_eq!(c1.len(), 2);
+        // Re-run: existing locked, only the new id assigned.
+        let (r2, c2) = r1
+            .regenerate(&[(Category::Gem, ids(&[("a", None), ("b", None), ("c", None)]))])
+            .unwrap();
+        assert_eq!(r2.num(Category::Gem, "a"), Some(compose(Category::Gem, 0)));
+        assert_eq!(r2.num(Category::Gem, "c"), Some(compose(Category::Gem, 2)));
+        assert_eq!(
+            c2.iter()
+                .filter(|c| matches!(c, RegistryChange::Assigned { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn tombstones_retire_a_sequence_forever() {
+        let (r1, _) = Registry::default()
+            .regenerate(&[(Category::Gem, ids(&[("a", None), ("b", None)]))])
+            .unwrap();
+        // Drop "a", add "c": "a" tombstoned (kept), "c" gets seq 2 not the freed 0.
+        let (r2, changes) = r1
+            .regenerate(&[(Category::Gem, ids(&[("b", None), ("c", None)]))])
+            .unwrap();
+        assert!(
+            changes
+                .iter()
+                .any(|c| matches!(c, RegistryChange::Tombstoned { id, .. } if id == "a"))
+        );
+        assert_eq!(r2.num(Category::Gem, "a"), Some(compose(Category::Gem, 0)));
+        assert_eq!(r2.num(Category::Gem, "c"), Some(compose(Category::Gem, 2)));
+    }
+
+    #[test]
+    fn seed_mismatch_is_rejected() {
+        // A tampered registry has node "n" at 99, but its seed (NodeDef.num) is 10.
+        let mut reg = Registry::default();
+        reg.ids
+            .entry("node".into())
+            .or_default()
+            .insert("n".into(), 99);
+        let err = reg.regenerate(&[(Category::Node, ids(&[("n", Some(10))]))]);
+        assert!(matches!(
+            err,
+            Err(RegistryError::SeedMismatch {
+                expected: 10,
+                found: 99,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn duplicate_sequence_is_rejected() {
+        let mut reg = Registry::default();
+        let s = reg.ids.entry("gem".into()).or_default();
+        s.insert("a".into(), 0);
+        s.insert("b".into(), 0); // tampered: same sequence
+        let err = reg.regenerate(&[(Category::Gem, ids(&[("a", None), ("b", None)]))]);
+        assert!(matches!(
+            err,
+            Err(RegistryError::SequenceReused { seq: 0, .. })
+        ));
     }
 }

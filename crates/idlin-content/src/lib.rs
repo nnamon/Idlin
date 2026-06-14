@@ -1714,7 +1714,7 @@ impl ContentDb {
 }
 
 /// Expand `include "path";` lines in a .bot source — paths resolve under
-/// `content/brains/` (the std library home). Textual splice, depth-capped;
+/// `content/lib/` (the shared-library home). Textual splice, depth-capped;
 /// included files feed the content hash as themselves, so a library edit
 /// always changes the world's content identity.
 fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String, String> {
