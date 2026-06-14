@@ -116,7 +116,12 @@ impl World {
             name: ch.name.clone(),
             level: ch.level,
             xp: ch.xp,
-            xp_next: super::progression::xp_to_next(ch.level),
+            // 0 at the cap (parity with gem rows) — there is no next level.
+            xp_next: if ch.level >= 100 {
+                0
+            } else {
+                super::progression::xp_to_next(ch.level)
+            },
             life: c.life,
             life_max: c.life_max,
             mana: c.mana,

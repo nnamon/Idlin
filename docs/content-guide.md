@@ -47,6 +47,22 @@ packs never roll unique (author `unique: true` on a def instead). Omit
 the chances (default 0) for hand-choreographed zones like the tutorial,
 where elites come from the brain's `spawn_elite`.
 
+### Previewing a map
+
+Authoring `map.txt` is no longer blind — render a zone to a PNG without
+booting the server:
+
+```sh
+cargo run -p idlin-content --bin preview -- coast          # -> target/preview/coast.png
+cargo run -p idlin-content --bin preview -- coast out.png --cell 16
+```
+
+It draws the tileset ground palette (variant-aware), elevation banding,
+props, the spawn point + radius (green), pack anchors + jitter radii
+(orange), exits (cyan), gates (magenta), and washes any walkable cell
+**unreachable from spawn** in red — so a pocket walled off behind rock
+(the Tidewarden bug) jumps out before it ships.
+
 ## `content/monsters/*.ron` — MonsterDef
 
 ```ron

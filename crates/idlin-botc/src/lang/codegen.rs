@@ -19,47 +19,44 @@ const GLOBALS_BASE: u32 = 0xC000;
 /// Globals must stay clear of the param block at 0xF000.
 const GLOBALS_END: u32 = 0xF000;
 
-/// Syscall builtins: (name, syscall number, arity).
+/// Syscall builtins: (name, syscall number, arity). Numbers are the single
+/// owner in `idlin_vm` (the same consts the host dispatches on).
 pub const BUILTINS: &[(&str, i32, usize)] = &[
-    ("debug", 0, 1),
-    ("self_status", 1, 1),
-    ("read_entities", 2, 3),
-    ("read_inventory", 5, 2),
-    ("move_to", 6, 2),
-    ("use_skill", 7, 4),
-    ("pick_up", 8, 1),
-    ("equip_best", 12, 0),
-    ("random", 15, 0),
-    ("move_item", 16, 3),
-    ("drop_item", 17, 1),
-    ("read_skills", 18, 2),
-    ("socket_gem", 19, 2),
-    ("count_entities", 20, 1),
-    ("line_of_sight", 21, 2),
-    ("use_skill_at", 22, 3),
-    ("use_skill_dir", 23, 3),
-    ("read_currency", 24, 2),
-    ("use_currency", 25, 2),
-    ("say", 26, 1),
-    ("read_exits", 27, 2),
-    ("use_exit", 28, 0),
-    ("use_flask", 29, 0),
+    ("debug", idlin_vm::SYS_DEBUG, 1),
+    ("self_status", idlin_vm::SYS_SELF_STATUS, 1),
+    ("read_entities", idlin_vm::SYS_READ_ENTITIES, 3),
+    ("read_inventory", idlin_vm::SYS_READ_INVENTORY, 2),
+    ("move_to", idlin_vm::SYS_MOVE_TO, 2),
+    ("use_skill", idlin_vm::SYS_USE_SKILL, 4),
+    ("pick_up", idlin_vm::SYS_PICK_UP, 1),
+    ("equip_best", idlin_vm::SYS_EQUIP_BEST, 0),
+    ("random", idlin_vm::SYS_RANDOM, 0),
+    ("move_item", idlin_vm::SYS_MOVE_ITEM, 3),
+    ("drop_item", idlin_vm::SYS_DROP_ITEM, 1),
+    ("read_skills", idlin_vm::SYS_READ_SKILLS, 2),
+    ("socket_gem", idlin_vm::SYS_SOCKET_GEM, 2),
+    ("count_entities", idlin_vm::SYS_COUNT_ENTITIES, 1),
+    ("line_of_sight", idlin_vm::SYS_LINE_OF_SIGHT, 2),
+    ("use_skill_at", idlin_vm::SYS_USE_SKILL_AT, 3),
+    ("use_skill_dir", idlin_vm::SYS_USE_SKILL_DIR, 3),
+    ("read_currency", idlin_vm::SYS_READ_CURRENCY, 2),
+    ("use_currency", idlin_vm::SYS_USE_CURRENCY, 2),
+    ("say", idlin_vm::SYS_SAY, 1),
+    ("read_exits", idlin_vm::SYS_READ_EXITS, 2),
+    ("use_exit", idlin_vm::SYS_USE_EXIT, 0),
+    ("use_flask", idlin_vm::SYS_USE_FLASK, 0),
     // Zone-brain syscalls (no-ops for entity bots). There is NO forced
     // character transfer: bots take exits themselves (use_exit); brains
     // only gate whether an exit is open.
-    ("query_characters", 100, 2),
-    ("poll_events", 101, 2),
-    ("narrate", 102, 2),
-    ("drop_loot", 103, 5),
-    ("spawn_monster", 104, 3),
-    ("set_exit", 106, 2),
-    ("set_gate", 107, 2),
-    ("spawn_elite", 108, 4),
+    ("query_characters", idlin_vm::SYS_QUERY_CHARACTERS, 2),
+    ("poll_events", idlin_vm::SYS_POLL_EVENTS, 2),
+    ("narrate", idlin_vm::SYS_NARRATE, 2),
+    ("drop_loot", idlin_vm::SYS_DROP_LOOT, 5),
+    ("spawn_monster", idlin_vm::SYS_SPAWN_MONSTER, 3),
+    ("set_exit", idlin_vm::SYS_SET_EXIT, 2),
+    ("set_gate", idlin_vm::SYS_SET_GATE, 2),
+    ("spawn_elite", idlin_vm::SYS_SPAWN_ELITE, 4),
 ];
-
-/// SetBuild is emitted by the compiler from the `build [...]` declaration,
-/// never called directly from source.
-const SYS_SET_BUILD: i64 = 14;
 
 #[derive(Clone, Copy)]
 struct VarSlot {
@@ -165,7 +162,7 @@ impl Gen {
             build_table_fix = Some(self.out.len());
             self.out.extend_from_slice(&0i32.to_le_bytes());
             self.push_value(2);
-            self.push_value(SYS_SET_BUILD);
+            self.push_value(idlin_vm::SYS_SET_BUILD as i64);
             self.op(Op::Syscall);
             self.op(Op::Pop);
         }

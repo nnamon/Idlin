@@ -18,6 +18,12 @@ pub enum Rarity {
     Unique = 3,
 }
 
+/// The rarity ladder's display names and colors — the single owner,
+/// generated into `web/src/gen/constants.ts` so client and sim never
+/// drift. Indexed by `Rarity as usize`.
+pub const RARITY_NAMES: [&str; 4] = ["common", "magic", "rare", "UNIQUE"];
+pub const RARITY_COLORS: [&str; 4] = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"];
+
 /// Who fights whom. Attacks are only legal across the Player↔Hostile pair;
 /// Neutral entities (service NPCs, tavern-dwellers) can neither hit nor be hit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

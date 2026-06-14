@@ -22,7 +22,8 @@ pub mod stats;
 pub mod world;
 pub mod zone;
 
-pub use entity::{KIND_CHARACTER, KIND_LOOT, KIND_MONSTER, Rarity};
+pub use entity::{KIND_CHARACTER, KIND_LOOT, KIND_MONSTER, RARITY_COLORS, RARITY_NAMES, Rarity};
+pub use fixed::FX_SCALE;
 pub use world::{
     CharacterBundle, EntityView, JoinRequest, LOOT_DESPAWN_TICKS, RESPAWN_TICKS, SimEvent, TICK_HZ,
     TickInputs, World, universal_stats,

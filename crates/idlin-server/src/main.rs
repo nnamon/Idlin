@@ -148,10 +148,10 @@ async fn main() -> anyhow::Result<()> {
             let key = format!("withered_shore#{}", join.name);
             // Per-instance seed: every idler gets their own deterministic
             // shore.
-            let mut h = 0xcbf29ce484222325u64;
+            let mut h = idlin_content::FNV1A_OFFSET;
             for b in join.name.bytes() {
                 h ^= b as u64;
-                h = h.wrapping_mul(0x100000001b3);
+                h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
             }
             worlds.push(runner::ManagedWorld {
                 key,

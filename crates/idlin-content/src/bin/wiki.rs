@@ -166,23 +166,122 @@ fn main() {
     }
     write("tilesets.md", s);
 
-    let mut s = String::from("# Zones\n\nGenerated from content/ — do not edit.\n\n");
+    let mut s = String::from(
+        "# Zones\n\nGenerated from content/ — do not edit.\n\n\
+         Preview a zone's map with `cargo run -p idlin-content --bin preview -- <id>`.\n\n",
+    );
     for z in &db.zones {
         let _ = writeln!(
             s,
-            "## {} (`{}`)\n\n{}×{} u · kind {:?} · tileset {} · {} packs · {} exits · brain {}\n",
+            "## {} (`{}`)\n\n{}×{} u · kind {:?} · tileset {} · spawn {},{} (r{}) · brain {}\n",
             z.name,
             z.id,
             z.width_u,
             z.height_u,
             z.kind,
             z.tileset.as_deref().unwrap_or("generated"),
-            z.packs.len(),
-            z.exits.len(),
+            z.spawn_x_u,
+            z.spawn_y_u,
+            z.spawn_radius_u,
             z.brain.as_deref().unwrap_or("—"),
         );
+        if !z.packs.is_empty() {
+            let _ = writeln!(s, "**Packs:**\n");
+            for p in &z.packs {
+                let _ = writeln!(
+                    s,
+                    "- `{}` ×{} @ {},{} (r{}){}",
+                    p.monster,
+                    p.count,
+                    p.x_u,
+                    p.y_u,
+                    p.radius_u,
+                    if p.magic_bp > 0 || p.rare_bp > 0 {
+                        format!(" — magic {}bp / rare {}bp", p.magic_bp, p.rare_bp)
+                    } else {
+                        String::new()
+                    },
+                );
+            }
+            let _ = writeln!(s);
+        }
+        if !z.exits.is_empty() {
+            let _ = writeln!(s, "**Exits:**\n");
+            for e in &z.exits {
+                let _ = writeln!(
+                    s,
+                    "- → `{}` @ {},{} ({})",
+                    e.dest,
+                    e.x_u,
+                    e.y_u,
+                    if e.open { "open" } else { "closed at boot" },
+                );
+            }
+            let _ = writeln!(s);
+        }
+        if !z.gates.is_empty() {
+            let _ = writeln!(s, "**Gates:**\n");
+            for g in &z.gates {
+                let _ = writeln!(
+                    s,
+                    "- {} ({},{})–({},{}) ({})",
+                    if g.id.is_empty() { "(unnamed)" } else { &g.id },
+                    g.x0,
+                    g.y0,
+                    g.x1,
+                    g.y1,
+                    if g.open { "open" } else { "closed at boot" },
+                );
+            }
+            let _ = writeln!(s);
+        }
+        if !z.lines.is_empty() {
+            let ids: Vec<&str> = z.lines.iter().map(|l| l.id.as_str()).collect();
+            let _ = writeln!(s, "**Narration lines** (by id): {}\n", ids.join(", "));
+        }
     }
     write("zones.md", s);
+
+    // -- brains: who runs each compiled .bot program --
+    let mut s = String::from(
+        "# Brains\n\nGenerated from content/ — do not edit.\n\nEach `.bot`/`.asm` brain, its \
+         compiled size, and what runs it. Brains are the same VM as player bots.\n\n",
+    );
+    for b in &db.brains {
+        let monsters: Vec<&str> = db
+            .monsters
+            .iter()
+            .filter(|m| m.brain == b.id)
+            .map(|m| m.id.as_str())
+            .collect();
+        let zones: Vec<&str> = db
+            .zones
+            .iter()
+            .filter(|z| z.brain.as_deref() == Some(b.id.as_str()))
+            .map(|z| z.id.as_str())
+            .collect();
+        let _ = writeln!(s, "## `{}`\n", b.id);
+        let _ = writeln!(s, "{} bytes of compiled bytecode.\n", b.program.len());
+        let _ = writeln!(
+            s,
+            "- Monsters: {}",
+            if monsters.is_empty() {
+                "—".into()
+            } else {
+                monsters.join(", ")
+            }
+        );
+        let _ = writeln!(
+            s,
+            "- Zone brain for: {}\n",
+            if zones.is_empty() {
+                "—".into()
+            } else {
+                zones.join(", ")
+            }
+        );
+    }
+    write("brains.md", s);
 
     // -- passive tree --
     let mut s = String::from("# Passive tree\n\nGenerated from content/ — do not edit.\n\n");
@@ -198,6 +297,6 @@ fn main() {
     let index = "# Idlin wiki\n\nGenerated from the RONs by `cargo run -p idlin-content --bin wiki`.\n\n\
         - [Item bases](items.md)\n- [Affixes by pool](affixes.md)\n- [Gems](gems.md)\n\
         - [Currency](currency.md)\n- [Monsters](monsters.md)\n- [Tilesets](tilesets.md)\n\
-        - [Zones](zones.md)\n- [Passive tree](tree.md)\n";
+        - [Zones](zones.md)\n- [Brains](brains.md)\n- [Passive tree](tree.md)\n";
     write("README.md", index.to_string());
 }

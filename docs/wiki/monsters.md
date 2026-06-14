@@ -88,6 +88,92 @@ MonsterDef {
 }
 ```
 
+## grasping_drowned
+
+```
+MonsterDef {
+    id: "grasping_drowned",
+    name: "Grasping Drowned",
+    model: "shambler",
+    brain: "hostile_melee",
+    hostile: true,
+    affix_pools: [
+        "monster",
+    ],
+    unique: false,
+    level: 1,
+    life: 16,
+    damage: 2,
+    damage_fire: 0,
+    damage_cold: 0,
+    damage_lightning: 0,
+    damage_chaos: 0,
+    armour: 0,
+    evasion: 0,
+    accuracy: 0,
+    resist_fire: 0,
+    resist_cold: 0,
+    resist_lightning: 0,
+    resist_chaos: 0,
+    speed_cps: 300,
+    radius_cu: 40,
+    range_cu: 180,
+    use_ticks: 8,
+    aggro_radius_cu: 800,
+    xp: 8,
+    projectile: false,
+    mana: 0,
+    lines: [],
+    skills: [],
+}
+```
+
+## shoal_witch
+
+```
+MonsterDef {
+    id: "shoal_witch",
+    name: "Shoal Witch",
+    model: "husk",
+    brain: "hostile_melee",
+    hostile: true,
+    affix_pools: [
+        "monster",
+    ],
+    unique: false,
+    level: 4,
+    life: 80,
+    damage: 5,
+    damage_fire: 0,
+    damage_cold: 0,
+    damage_lightning: 0,
+    damage_chaos: 0,
+    armour: 10,
+    evasion: 0,
+    accuracy: 0,
+    resist_fire: 2000,
+    resist_cold: 0,
+    resist_lightning: 0,
+    resist_chaos: 0,
+    speed_cps: 240,
+    radius_cu: 60,
+    range_cu: 220,
+    use_ticks: 16,
+    aggro_radius_cu: 1500,
+    xp: 90,
+    projectile: false,
+    mana: 60,
+    lines: [],
+    skills: [
+        MonsterSkillDef {
+            gem: "ember_bolt",
+            level: 2,
+            supports: [],
+        },
+    ],
+}
+```
+
 ## tide_husk
 
 ```
@@ -148,10 +234,10 @@ MonsterDef {
     ],
     unique: true,
     level: 8,
-    life: 420,
-    damage: 13,
+    life: 320,
+    damage: 9,
     damage_fire: 0,
-    damage_cold: 4,
+    damage_cold: 2,
     damage_lightning: 0,
     damage_chaos: 0,
     armour: 35,

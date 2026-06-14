@@ -24,7 +24,12 @@ jobs:
       - name: Generated TS bindings are fresh
         run: |
           cargo test -p idlin-protocol export_typescript_bindings
+          cargo test -p idlin-server --test export_constants
           git diff --exit-code web/src/gen
+      - name: Generated wiki docs are fresh
+        run: |
+          cargo run -p idlin-content --bin wiki
+          git diff --exit-code docs/wiki
 
   web:
     runs-on: ubuntu-latest
