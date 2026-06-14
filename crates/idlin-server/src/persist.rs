@@ -19,6 +19,20 @@ use tracing::{info, warn};
 const SNAP_NAME: &str = "world.snap";
 const PENDING_NAME: &str = "pending.snap";
 
+/// Magic prefix stamped on every snapshot file, checked before any decode so an
+/// incompatible or foreign file is refused cleanly instead of being fed to
+/// postcard (which is non-self-describing and would either error mid-decode or,
+/// worse, silently mis-decode misaligned bytes into a plausible-but-corrupt
+/// `World`).
+const SNAP_MAGIC: [u8; 4] = *b"IDLN";
+
+/// On-disk snapshot format version. BUMP whenever any serialized type reachable
+/// from `World` or `CharacterBundle` changes layout (fields added, removed,
+/// reordered, or retyped). Same manual discipline as `GOLDEN_HASH` and
+/// `PROTO_VERSION`: an old snapshot carrying a different version is refused
+/// cleanly (the world starts fresh), never mis-decoded.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 1;
+
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
 pub const SAVE_EVERY_TICKS: u64 = 300;
@@ -44,6 +58,37 @@ pub fn world_dir(base: &Path, world_key: &str) -> PathBuf {
     base.join(format!("{safe}-{:08x}", (h >> 32) as u32))
 }
 
+/// Prepend the 8-byte format header (`SNAP_MAGIC` ++ version, little-endian) to
+/// a postcard payload. No payload checksum — postcard decode plus the existing
+/// content-hash gate already catch body corruption; the header's only job is
+/// format *identity*.
+fn frame(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + payload.len());
+    out.extend_from_slice(&SNAP_MAGIC);
+    out.extend_from_slice(&SNAPSHOT_FORMAT_VERSION.to_le_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Validate a snapshot header and return the payload slice, or a noun-phrase
+/// reason that reads as `"<file>: <reason>"`. Legacy headerless files (raw
+/// postcard, no header) fail the magic check.
+fn unframe(bytes: &[u8]) -> Result<&[u8], String> {
+    if bytes.len() < 8 {
+        return Err("truncated header".to_string());
+    }
+    if bytes[..4] != SNAP_MAGIC {
+        return Err("bad magic (not an Idlin snapshot)".to_string());
+    }
+    let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    if version != SNAPSHOT_FORMAT_VERSION {
+        return Err(format!(
+            "format v{version} (build expects v{SNAPSHOT_FORMAT_VERSION})"
+        ));
+    }
+    Ok(&bytes[8..])
+}
+
 /// Save a managed world: state plus any not-yet-arrived ferries.
 pub fn save_managed(
     world: &World,
@@ -51,7 +96,7 @@ pub fn save_managed(
     dir: &Path,
 ) -> anyhow::Result<()> {
     save_world(world, dir)?;
-    let bytes = postcard::to_allocvec(pending_arrivals).context("serialize pendings")?;
+    let bytes = frame(&postcard::to_allocvec(pending_arrivals).context("serialize pendings")?);
     let tmp = dir.join(format!("{PENDING_NAME}.tmp"));
     fs::write(&tmp, &bytes).context("write pendings temp")?;
     fs::rename(&tmp, dir.join(PENDING_NAME)).context("publish pendings")?;
@@ -62,10 +107,16 @@ pub fn save_managed(
 pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<CharacterBundle>)> {
     let world = load_world(content, dir)?;
     let pendings = match fs::read(dir.join(PENDING_NAME)) {
-        Ok(bytes) => postcard::from_bytes(&bytes).unwrap_or_else(|e| {
-            warn!("pending arrivals unreadable ({e}); dropping them");
-            Vec::new()
-        }),
+        Ok(bytes) => match unframe(&bytes) {
+            Ok(payload) => postcard::from_bytes(payload).unwrap_or_else(|e| {
+                warn!("pending arrivals unreadable ({e}); dropping them");
+                Vec::new()
+            }),
+            Err(why) => {
+                warn!("pending arrivals: {why}; dropping them");
+                Vec::new()
+            }
+        },
         Err(_) => Vec::new(),
     };
     Some((world, pendings))
@@ -73,7 +124,7 @@ pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<Chara
 
 pub fn save_world(world: &World, dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(dir).context("create snapshot dir")?;
-    let bytes = postcard::to_allocvec(world).context("serialize world")?;
+    let bytes = frame(&postcard::to_allocvec(world).context("serialize world")?);
     let tmp = dir.join(format!("{SNAP_NAME}.tmp"));
     let path = dir.join(SNAP_NAME);
     fs::write(&tmp, &bytes).context("write snapshot temp file")?;
@@ -86,7 +137,14 @@ pub fn save_world(world: &World, dir: &Path) -> anyhow::Result<()> {
 pub fn load_world(content: &ContentDb, dir: &Path) -> Option<World> {
     let path = dir.join(SNAP_NAME);
     let bytes = fs::read(&path).ok()?;
-    let mut world: World = match postcard::from_bytes(&bytes) {
+    let payload = match unframe(&bytes) {
+        Ok(p) => p,
+        Err(why) => {
+            warn!("snapshot at {}: {why}; starting fresh", path.display());
+            return None;
+        }
+    };
+    let mut world: World = match postcard::from_bytes(payload) {
         Ok(w) => w,
         Err(e) => {
             warn!(
@@ -153,10 +211,41 @@ mod tests {
 
     #[test]
     fn corrupt_snapshot_is_refused_not_fatal() {
+        // Garbage now fails the magic check before any decode is attempted.
         let dir = temp_dir("corrupt");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(SNAP_NAME), b"not a postcard world").unwrap();
         assert!(load_world(&ContentDb::empty(), &dir).is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn version_mismatch_is_refused() {
+        // A snapshot stamped with a future format version is refused at the
+        // header, before any decode — never mis-decoded.
+        let content = ContentDb::empty();
+        let world = World::new(7, &content);
+        let dir = temp_dir("version-mismatch");
+        fs::create_dir_all(&dir).unwrap();
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&SNAP_MAGIC);
+        bytes.extend_from_slice(&(SNAPSHOT_FORMAT_VERSION + 1).to_le_bytes());
+        bytes.extend_from_slice(&postcard::to_allocvec(&world).unwrap());
+        fs::write(dir.join(SNAP_NAME), &bytes).unwrap();
+        assert!(load_world(&content, &dir).is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_headerless_snapshot_is_refused() {
+        // Pre-versioning snapshots were raw postcard with no header; they fail
+        // the magic check cleanly instead of mis-decoding.
+        let content = ContentDb::empty();
+        let world = World::new(7, &content);
+        let dir = temp_dir("legacy-headerless");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(SNAP_NAME), postcard::to_allocvec(&world).unwrap()).unwrap();
+        assert!(load_world(&content, &dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 
