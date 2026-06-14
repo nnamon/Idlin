@@ -1,6 +1,7 @@
 // Support: the cluster's skill hits like a falling mast. Melee only.
 GemDef(
     id: "heavier_blows",
+    public: true,
     name: "Heavier Blows",
     kind: support,
     weight: 80,

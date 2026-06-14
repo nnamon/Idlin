@@ -104,6 +104,10 @@ pub struct MonsterSkillDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonsterDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub model: String,
     /// BrainDef id driving this NPC.
@@ -236,6 +240,10 @@ impl GearSlot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub slot: GearSlot,
     /// Requirements: a character must MEET these to equip — and to KEEP —
@@ -383,6 +391,10 @@ pub enum CurrencyOp {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurrencyDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub op: CurrencyOp,
     /// Relative drop weight within the currency pool.
@@ -415,6 +427,10 @@ pub struct NamingDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     /// Display: prefixes prepend ("Heavy ..."), suffixes append ("... of X").
     pub name: String,
     pub kind: AffixKind,
@@ -597,6 +613,10 @@ fn default_max_targets() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GemDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     pub kind: GemKind,
     #[serde(default = "default_weight")]
@@ -716,6 +736,10 @@ pub enum NodeKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     /// Stable numeric reference (u16) used by compiled bots. Unique,
     /// author-assigned, NEVER reused for a different node.
     pub num: u16,
@@ -842,6 +866,10 @@ pub struct TilesetVariant {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TilesetDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub tiles: Vec<TileDef>,
     /// Base ground palette: ground id → "#rrggbb".
     pub palette: Vec<(String, String)>,
@@ -942,6 +970,10 @@ pub struct PropsDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneDef {
     pub id: String,
+    /// Exposed in the generated consts + docs (the bot-facing contract)
+    /// only when true; private (the default) defs get an internal num only.
+    #[serde(default)]
+    pub public: bool,
     pub name: String,
     /// AREA LEVEL: normal monsters spawn at this level (magic +1,
     /// rare +2; authored uniques keep their own). Effective level

@@ -1,6 +1,7 @@
 // Support: one shot becomes three, each flying lighter. Projectiles only.
 GemDef(
     id: "split_quiver",
+    public: true,
     name: "Split Quiver",
     kind: support,
     weight: 60,

@@ -1,6 +1,7 @@
 // Support: the supported area swells wider. AoE skills only.
 GemDef(
     id: "widening",
+    public: true,
     name: "Widening",
     kind: support,
     weight: 60,

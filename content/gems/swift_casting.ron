@@ -1,6 +1,7 @@
 // Support: the supported spell leaves the hands faster.
 GemDef(
     id: "swift_casting",
+    public: true,
     name: "Swift Casting",
     kind: support,
     weight: 70,

@@ -2,6 +2,7 @@
 // dots, buffs, and debuffs all stretch.
 GemDef(
     id: "lingering",
+    public: true,
     name: "Lingering",
     kind: support,
     weight: 60,
