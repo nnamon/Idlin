@@ -10,7 +10,7 @@ use crate::director::{Director, WorldView};
 use crate::runner::TickBatch;
 use idlin_protocol::{
     EntityKind, EntityMove, EntityPatch, EntityState, FocusQueueEntry, GameEvent, HitFx,
-    ObstacleState, ProjectileFx, S2C, SkillFx, UseFx,
+    ProjectileFx, S2C, SkillFx, UseFx,
 };
 use idlin_sim::{EntityView, KIND_CHARACTER, KIND_MONSTER, SimEvent};
 use std::collections::HashMap;
@@ -88,7 +88,7 @@ fn is_announcement(ev: &GameEvent) -> bool {
 pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> ReplicationHandles {
     let (featured_tx, _) = broadcast::channel::<Frame>(256);
     let (featured_snap_tx, featured_snap_rx) =
-        watch::channel::<Frame>(Arc::from(empty_snapshot("connecting…", 65536, 65536, &[])));
+        watch::channel::<Frame>(Arc::from(empty_snapshot("connecting…", 65536, 65536)));
     let feeds: Arc<RwLock<HashMap<String, FeedHandle>>> = Arc::new(RwLock::new(HashMap::new()));
     let (routing_tx, routing_rx) = watch::channel(Routing::default());
 
@@ -130,7 +130,6 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                         &frame.zone_name,
                         frame.zone_width,
                         frame.zone_height,
-                        &frame.obstacles,
                     )));
                     feeds_task.write().expect("feeds lock").insert(
                         frame.world_key.clone(),
@@ -200,7 +199,6 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     world_key: frame.world_key.clone(),
                     width: frame.zone_width,
                     height: frame.zone_height,
-                    obstacles: frame.obstacles.clone(),
                     tiles: frame.tiles.as_deref().cloned(),
                     exits: frame.exits.clone(),
                     gates: frame.gates.clone(),
@@ -545,7 +543,7 @@ fn serialize(msg: &S2C) -> Frame {
     Arc::from(serde_json::to_string(msg).expect("protocol types always serialize"))
 }
 
-fn empty_snapshot(zone_name: &str, width: i32, height: i32, obstacles: &[ObstacleState]) -> String {
+fn empty_snapshot(zone_name: &str, width: i32, height: i32) -> String {
     serde_json::to_string(&S2C::ZoneSnapshot {
         tick: 0,
         zone_name: zone_name.to_string(),
@@ -553,7 +551,6 @@ fn empty_snapshot(zone_name: &str, width: i32, height: i32, obstacles: &[Obstacl
         world_key: String::new(),
         width,
         height,
-        obstacles: obstacles.to_vec(),
         tiles: None,
         exits: vec![],
         gates: vec![],

@@ -578,7 +578,7 @@ pub enum SkillShape {
     /// Hits everything hostile around a target point (radius_cu).
     PointAoe,
     /// A real traveling projectile (proj_speed_cps, pierce); collides with
-    /// the first enemy or obstacle in its path.
+    /// the first enemy or wall in its path.
     Projectile,
 }
 
@@ -964,12 +964,6 @@ pub struct ZoneDef {
     /// characters inside it (0 = no sanctuary).
     #[serde(default)]
     pub camp_radius_u: i32,
-    /// Area generation: non-walkable rocks/trees placed with the zone
-    /// (clearing spawn and pack anchors). Rendered by the client.
-    #[serde(default)]
-    pub gen_rocks: u32,
-    #[serde(default)]
-    pub gen_trees: u32,
     #[serde(default)]
     pub kind: ZoneKind,
     /// The zone's BRAIN: a bot program (content/brains) that runs once per

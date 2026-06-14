@@ -17,16 +17,13 @@ import { Terrain } from "./Terrain";
 const SKY_COLOR = 0x07070d;
 
 /**
- * Stable identity for a replicated zone. Per-idler instances share a
- * display name ("The Withered Shore") but scatter their own rocks and
- * trees, so the obstacle layout is folded into a cheap hash — a director
- * cut between instances must rebuild the terrain.
+ * Stable identity for a replicated zone. Instances share a display name
+ * ("The Withered Shore"); the authored tile map distinguishes them, so the
+ * map is folded into a cheap hash — a director cut to a different layout
+ * must rebuild the terrain.
  */
 function zoneKey(zone: NonNullable<WorldStore["zone"]>): string {
   let h = 0;
-  for (const o of zone.obstacles) {
-    h = (h * 31 + Math.round(o.x * 8) * 7 + Math.round(o.y * 8) * 13 + o.kind) | 0;
-  }
   if (zone.tiles) {
     for (const row of zone.tiles.rows) {
       for (let i = 0; i < row.length; i++) h = (h * 31 + row.charCodeAt(i)) | 0;
@@ -129,7 +126,7 @@ export class ZoneRenderer {
   /// Identity of the zone the scene was built for — a director cut or
   /// transfer flips the featured world, and the terrain must follow.
   /// Instances share display names ("The Withered Shore") but differ in
-  /// obstacle layout, so the key folds the obstacles in too.
+  /// their authored tile map, so the key folds the map in too.
   private builtZoneKey: string | null = null;
   /** Snapshot generation the visuals were built against. */
   private builtSnapshotGen = -1;
@@ -264,7 +261,7 @@ export class ZoneRenderer {
     // own layout and collision; this class owns beauty.
     const terrain = new Terrain(w, h, zone.name);
     if (zone.tiles) terrain.setTiles(zone.tiles);
-    terrain.build(this.assets, zone.obstacles);
+    terrain.build(this.assets);
     this.terrain = terrain;
     // Braziers: authored cells when the map names them, else the classic
     // trail up the strand.

@@ -147,16 +147,6 @@ impl World {
         })
     }
 
-    /// The generated obstacle layout as raw Q16.16 (x, y, radius, kind),
-    /// for the snapshot — constant for the zone's lifetime.
-    pub fn obstacle_views(&self) -> Vec<(i32, i32, i32, u8)> {
-        self.zone
-            .obstacles
-            .iter()
-            .map(|o| (o.pos.x.raw(), o.pos.y.raw(), o.radius.raw(), o.kind))
-            .collect()
-    }
-
     /// TEST HARNESS ONLY: overwrite an entity's life and flat phys damage
     /// so journey tests finish in test time (e.g. a 1-life harmless boss).
     /// Nothing in the engine calls it.
@@ -565,12 +555,6 @@ impl World {
             h.write_u32(p.source);
             h.write_u32(p.pierce);
             h.write_u8(p.spell as u8);
-        }
-        for ob in &self.zone.obstacles {
-            h.write_i32(ob.pos.x.raw());
-            h.write_i32(ob.pos.y.raw());
-            h.write_i32(ob.radius.raw());
-            h.write_u8(ob.kind);
         }
         for ex in &self.zone.exits {
             h.write_i32(ex.pos.x.raw());

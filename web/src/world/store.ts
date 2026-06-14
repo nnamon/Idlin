@@ -103,13 +103,6 @@ export interface Cue {
   at: number;
 }
 
-/** Sim-generated non-walkable prop, in sim units. */
-export interface ZoneObstacle {
-  x: number;
-  y: number;
-  radius: number;
-  kind: number;
-}
 
 /**
  * Client-side mirror of the replicated zone. The renderer reads it every
@@ -125,7 +118,6 @@ export class WorldStore {
     worldKey: string;
     width: number;
     height: number;
-    obstacles: ZoneObstacle[];
     tiles: TileMapState | null;
     exits: { x: number; y: number; open: boolean }[];
     gates: { x0: number; y0: number; x1: number; y1: number; open: boolean }[];
@@ -168,12 +160,6 @@ export class WorldStore {
           worldKey: d.world_key ?? "",
           width: d.width / FX_SCALE,
           height: d.height / FX_SCALE,
-          obstacles: d.obstacles.map((o) => ({
-            x: o.x / FX_SCALE,
-            y: o.y / FX_SCALE,
-            radius: o.radius / FX_SCALE,
-            kind: o.kind,
-          })),
           tiles: d.tiles ?? null,
           exits: (d.exits ?? []).map((e) => ({
             x: e.x / FX_SCALE,

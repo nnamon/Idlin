@@ -8,7 +8,6 @@ import type { FocusQueueEntry } from "./FocusQueueEntry";
 import type { GameEvent } from "./GameEvent";
 import type { GateView } from "./GateView";
 import type { HitFx } from "./HitFx";
-import type { ObstacleState } from "./ObstacleState";
 import type { ProjectileFx } from "./ProjectileFx";
 import type { Role } from "./Role";
 import type { SkillFx } from "./SkillFx";
@@ -41,12 +40,7 @@ world_key: string,
  */
 width: number, height: number, 
 /**
- * Generated non-walkable props; constant for the zone's lifetime.
- * Empty for authored (tile-mapped) zones.
- */
-obstacles: Array<ObstacleState>, 
-/**
- * The authored tile map; None for generated zones.
+ * The authored tile map (every zone has one).
  */
 tiles: TileMapState | null, 
 /**

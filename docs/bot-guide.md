@@ -258,9 +258,9 @@ address you supply and return a count/status.
 use time (attack-speed scaled): movement and further actions wait until it
 finishes. Plan movement around your swings — or get caught flat-footed.
 
-Attacks require **line of sight**: a generated obstacle (rock, tree) between
+Attacks require **line of sight**: a solid wall tile (cliff, rock) between
 you and the target blocks the strike entirely — `UseSkill` will simply not
-land while cover intervenes. Movement slides along obstacle edges, so walking
+land while cover intervenes. Movement slides along wall edges, so walking
 at a blocked target eventually rounds the cover. `LineOfSight` (21) lets a
 bot test a lane before committing:
 

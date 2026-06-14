@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import type { TileMapState } from "../gen/TileMapState";
 import type { TileVisual } from "../gen/TileVisual";
-import type { ZoneObstacle } from "../world/store";
 import type { AssetLibrary } from "./Assets";
 
 /**
@@ -264,7 +263,7 @@ export class Terrain {
   }
 
   /** Build ground, water, foam, and sky; scatter props. Call once per zone. */
-  build(assets: AssetLibrary, obstacles: ZoneObstacle[] = []): void {
+  build(assets: AssetLibrary): void {
     const { zoneW: w, zoneH: h } = this;
     const minX = -PAD;
     const spanX = w + PAD * 2;
@@ -408,12 +407,11 @@ export class Terrain {
     );
     if (starsWanted) this.group.add(stars);
 
+    // Authored tile maps are the one terrain system; a zone without tiles
+    // (placeholder/test) just gets the bare sculpted ground above.
     if (this.tiles) {
       if (this.features.has("fringe_scatter")) this.scatterFringe(assets, rng);
       this.placeTileProps(assets, rng);
-    } else {
-      this.scatterProps(assets, rng);
-      this.placeObstacles(assets, obstacles, rng);
     }
   }
 
@@ -565,27 +563,6 @@ export class Terrain {
     }
   }
 
-  /**
-   * Sim-generated obstacles: the authoritative non-walkable rocks/trees.
-   * Rendered exactly where the sim put them — entities slide around these.
-   */
-  private placeObstacles(assets: AssetLibrary, obstacles: ZoneObstacle[], rng: () => number): void {
-    const ROCKS = ["rock_1", "rock_2", "rock_3"];
-    const TREES = ["deadtree_1", "deadtree_2", "deadtree_3"];
-    for (const ob of obstacles) {
-      const keys = ob.kind === 1 ? TREES : ROCKS;
-      const obj = assets.instantiateProp(keys[Math.floor(rng() * keys.length)]);
-      if (!obj) continue;
-      // Footprint → visual scale: rock bases are ~1u radius at scale 1,
-      // tree trunks much thinner than their canopy footprint.
-      const s = ob.kind === 1 ? Math.max(0.26, ob.radius * 0.5) : Math.max(0.3, ob.radius * 0.95);
-      obj.scale.setScalar(s);
-      obj.rotation.y = rng() * Math.PI * 2;
-      obj.position.set(ob.x, this.heightAt(ob.x, ob.y) - 0.08, ob.y);
-      this.group.add(obj);
-    }
-  }
-
   /** Soft-edged foam band. */
   private makeFoamTexture(): THREE.CanvasTexture {
     const c = document.createElement("canvas");
@@ -610,89 +587,6 @@ export class Terrain {
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(1, 8);
     return tex;
-  }
-
-  /**
-   * Deterministic set dressing. Props are cosmetic (no collision); density
-   * is biased away from the strand so the fighting lane stays readable.
-   */
-  private scatterProps(assets: AssetLibrary, rng: () => number): void {
-    const { zoneW: w, zoneH: h } = this;
-    const spawnX = w / 2;
-    const spawnZ = h - 8;
-    const beachLeftX = w - BEACH_DEPTH;
-
-    const placeOne = (
-      key: string,
-      x: number,
-      z: number,
-      scale: number,
-      opts: { lieDown?: boolean; castShadow?: boolean } = {},
-    ): void => {
-      const y = this.heightAt(x, z);
-      if (y < WATER_Y + 0.1 && !opts.lieDown) return;
-      const obj = assets.instantiateProp(key);
-      if (!obj) return;
-      obj.scale.setScalar(scale);
-      obj.rotation.y = rng() * Math.PI * 2;
-      if (opts.lieDown) {
-        obj.rotation.z = Math.PI / 2 - 0.15 + rng() * 0.3;
-        obj.position.set(x, y + 0.15, z);
-      } else {
-        obj.position.set(x, y - 0.06, z);
-      }
-      if (opts.castShadow === false) {
-        obj.traverse((o) => {
-          if (o instanceof THREE.Mesh) o.castShadow = false;
-        });
-      }
-      this.group.add(obj);
-    };
-
-    const pick = (keys: string[]) => keys[Math.floor(rng() * keys.length)];
-    const clearOfSpawn = (x: number, z: number, r = 7) => Math.hypot(x - spawnX, z - spawnZ) >= r;
-
-    // Large rocks/trees INSIDE the playable bounds come from the sim's
-    // obstacle layout (placeObstacles) — they're collision. The client only
-    // dresses the non-walkable fringe: the bluffs and beyond both ends.
-    for (let i = 0; i < 40; i++) {
-      const x = rng() < 0.7 ? -2 - rng() * 16 : rng() * w;
-      const inside = x > -2;
-      const z = inside ? (rng() < 0.5 ? -12 + rng() * 10 : h + 2 + rng() * 10) : -12 + rng() * (h + 24);
-      placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 0.35 + rng() * 0.9);
-    }
-    for (let i = 0; i < 14; i++) {
-      const x = -8 - rng() * 10;
-      const z = -8 + rng() * (h + 16);
-      placeOne(pick(["deadtree_1", "deadtree_2", "deadtree_3"]), x, z, 0.3 + rng() * 0.22);
-    }
-    // Dry grass keeps to the inland soil, not the open sand.
-    for (let i = 0; i < 110; i++) {
-      const x = rng() * (beachLeftX - 1);
-      const z = rng() * h;
-      if (!clearOfSpawn(x, z)) continue;
-      placeOne(pick(["grass_1", "grass_2"]), x, z, 0.7 + rng() * 0.5, { castShadow: false });
-    }
-    // Driftwood: dead trees washed up along the sand, half-buried.
-    for (let i = 0; i < 12; i++) {
-      const x = beachLeftX + 2 + rng() * (BEACH_DEPTH - 5);
-      const z = rng() * h;
-      if (!clearOfSpawn(x, z, 9)) continue;
-      placeOne(pick(["deadtree_1", "deadtree_2"]), x, z, 0.2 + rng() * 0.14, { lieDown: true });
-    }
-    // A rocky headland in the surf, just beyond the walkable bound.
-    for (let i = 0; i < 8; i++) {
-      const x = w + 0.8 + rng() * 4.5;
-      const z = h * 0.32 + rng() * (h * 0.06);
-      placeOne(pick(["rock_1", "rock_2", "rock_3"]), x, z, 1.0 + rng() * 1.3);
-    }
-    // Camp clutter near the spawn beach.
-    for (let i = 0; i < 6; i++) {
-      const x = spawnX - 9 + rng() * 18;
-      const z = spawnZ - 5 + rng() * 9;
-      if (Math.hypot(x - spawnX, z - spawnZ) < 3.5) continue;
-      placeOne(pick(["barrel", "crate"]), x, z, 0.85 + rng() * 0.25);
-    }
   }
 
   /** Tide bob and the lapping foam cycle. */
