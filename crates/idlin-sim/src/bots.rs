@@ -596,8 +596,9 @@ impl World {
             SYS_SET_BUILD => {
                 let addr = bot.vm.pop() as u16;
                 let count = bot.vm.pop().clamp(0, 240) as u16;
-                let refs: Vec<u16> = (0..count)
-                    .map(|i| bot.vm.load_u16(addr.wrapping_add(2 * i)))
+                // v2 (#54): each entry is a 4-byte i32 tagged node num.
+                let refs: Vec<i32> = (0..count)
+                    .map(|i| bot.vm.load_i32(addr.wrapping_add(4 * i)))
                     .collect();
                 self.set_build(slot, &refs, events)
             }

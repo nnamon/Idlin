@@ -15,7 +15,7 @@ impl World {
     pub(crate) fn set_build(
         &mut self,
         slot: usize,
-        refs: &[u16],
+        refs: &[i32],
         events: &mut Vec<SimEvent>,
     ) -> i32 {
         let Some(e) = self.zone.get(slot) else {
@@ -32,15 +32,20 @@ impl World {
         // a bot silently stuck mid-build.
         let mut plan: Vec<u32> = Vec::with_capacity(refs.len());
         for (k, r) in refs.iter().take(240).enumerate() {
-            let Some(idx) = self.content.tree_refs.iter().position(|tr| tr == r) else {
-                events.push(SimEvent::BuildRejected {
-                    id: net_id,
-                    owner,
-                    reason: format!("entry {k}: unknown node ref {r:#06x}"),
-                });
-                return -1;
+            // v2 (#54): refs are stable tagged node nums — translate each to its
+            // tree array index. A non-node num (wrong category) or unknown num
+            // is rejected, same as an unknown ref always was.
+            let idx = match self.content.content_idx(*r) {
+                Some((idlin_content::ids::Category::Node, i)) => i,
+                _ => {
+                    events.push(SimEvent::BuildRejected {
+                        id: net_id,
+                        owner,
+                        reason: format!("entry {k}: unknown node num {r}"),
+                    });
+                    return -1;
+                }
             };
-            let idx = idx as u32;
             if idx == start {
                 events.push(SimEvent::BuildRejected {
                     id: net_id,
@@ -203,11 +208,14 @@ mod tests {
     use idlin_content::{ContentDb, CurrencyOp};
     use std::path::Path;
 
-    /// num refs from content/tree/core.ron: STR trunk and DEX trunk.
-    const STR1: u16 = 10;
-    const STR2: u16 = 11;
-    const DEX1: u16 = 40;
-    const DEX2: u16 = 41;
+    /// Stable tagged node nums (#54: `compose(Node, seq)` = `(5 << 23) | seq`)
+    /// for the core.ron STR and DEX trunks — the same values the generated
+    /// `NODE_*` consts carry. Seqs: str1=10, str2=11, str3=12, dex1=40, dex2=41.
+    const STR1: i32 = 41943050;
+    const STR2: i32 = 41943051;
+    const STR3: i32 = 41943052;
+    const DEX1: i32 = 41943080;
+    const DEX2: i32 = 41943081;
 
     fn world_with_pupil() -> (World, usize) {
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
@@ -353,7 +361,7 @@ mod tests {
         assert!(world.set_build(slot, &[STR1, STR2], &mut events) >= 0);
         let mut events = Vec::new();
         // Same prefix, longer plan: no obol required.
-        let r = world.set_build(slot, &[STR1, STR2, 12], &mut events);
+        let r = world.set_build(slot, &[STR1, STR2, STR3], &mut events);
         assert!(r >= 0, "steering must stay free: {r}");
         assert!(
             !events
