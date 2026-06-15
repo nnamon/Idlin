@@ -88,6 +88,11 @@ pub const SYS_SAY: i32 = 26;
 pub const SYS_READ_EXITS: i32 = 27;
 pub const SYS_USE_EXIT: i32 = 28;
 pub const SYS_USE_FLASK: i32 = 29;
+/// #54 PR2a: on-demand per-skill definitional detail (shape/radius/target_mode/
+/// skill_kind) stripped from ReadSkills — call when you need to know HOW to aim.
+pub const SYS_SKILL_INFO: i32 = 30;
+/// #54 PR2a: an inventory item's rolled affix instances (affix_num, value, tier).
+pub const SYS_READ_ITEM_MODS: i32 = 31;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;

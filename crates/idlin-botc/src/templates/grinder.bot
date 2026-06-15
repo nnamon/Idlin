@@ -28,7 +28,7 @@ build [
 
 const SELF = 0xE000;       // SelfStatus buffer
 const ENTS = 0xE100;       // entity query buffer (24-byte records)
-const SKL = 0xE400;        // ReadSkills records (48 bytes each)
+const SKL = 0xE400;        // ReadSkills records (36 bytes each)
 const EXITS = 0xE700;      // ReadExits records (16 bytes each)
 const F_ENEMY = 1;
 const F_LOOT = 3;
@@ -46,9 +46,10 @@ var stuck_t;
 var unstick;               // ticks left of forced wandering
 
 // Fire one skill slot at the target, honoring its declared targeting
-// mode (record +36; ready checked by the caller). 0 = it flies.
+// mode (ReadSkills record +28 = target_mode; ready checked by the
+// caller). 0 = it flies.
 fn fire_skill(rec, slot, target, tx, ty) {
-    var mode = mem[rec + 36];
+    var mode = mem[rec + 28];
     if (mode == 0) { return use_skill(slot, target, 0, 0); }
     if (mode == 1) { return use_skill_at(slot, tx, ty); }
     return use_skill_dir(slot, tx - mem[SELF], ty - mem[SELF + 4]);
@@ -203,13 +204,13 @@ fn main() {
         // attack is free, and the pool wants emergency headroom.
         var used = -1;
         if (mem[SELF + 52] * 5 >= mem[SELF + 56]) {
-            // First READY skill wins (+44; ready already folds
+            // First READY skill wins (record +32; ready already folds
             // cooldown, mana, use-time, and the weapon gate).
             var n = read_skills(SKL, 4);
             var i = 0;
             while (i < n) {
-                var rec = SKL + i * 48;
-                if (mem[rec + 44] == 1) {
+                var rec = SKL + i * 36;
+                if (mem[rec + 32] == 1) {
                     used = fire_skill(rec, i + 1, target, tx, ty);
                     if (used == 0) { i = n; }
                 }

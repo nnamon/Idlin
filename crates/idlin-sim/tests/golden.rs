@@ -10,14 +10,14 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #54 PR1b-B: the declared-build ref table widened from u16 to
-/// i32 (BYTECODE_FORMAT_VERSION 1→2) — node refs are stable tagged nums now,
-/// like every other content id. The grinder template declares its build with the
-/// generated NODE_* consts and SetBuild translates num→tree-index. The RESOLVED
-/// build (which nodes allocate) is identical; only the bytecode representation
-/// changed (version byte + i32 table), and bot VM memory folds into the hash.
-/// (Earlier PR1b folds still apply: reads/kill-events emit nums, zones private.)
-const GOLDEN_HASH: u64 = 0x6E2F_D282_C21E_5B63;
+/// Re-pinned for #54 PR2a (read reforms): ReadInventory drops the definitional
+/// slot/w/h (look them up by base_num in the docs); ReadSkills drops the pure-def
+/// geometry shape/radius/skill_kind (now in the new SkillInfo syscall) but keeps
+/// target_mode (action-critical every fire). Record strides shrink, so the bot
+/// AND monster-brain (hostile_melee) read buffers — folded into the hash — change
+/// layout; the grinder/monster offsets were re-mapped to read the SAME values, so
+/// decisions are behavior-neutral. (Earlier PR1b/PR1b-B folds still apply.)
+const GOLDEN_HASH: u64 = 0x2824_4816_137C_425C;
 
 #[test]
 fn golden_replay() {

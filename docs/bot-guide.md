@@ -288,6 +288,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed. There are NO forced transfers — leaving is always the bot's own call. |
 | 24 | `ReadCurrency` | out_addr, max (≤16) | a positional count array: obol stacks as u32 words in registry order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. The slot's matching id is the `CURRENCY_*` const at the same position — read the count here, spend by num below. |
 | 25 | `UseCurrency` | currency_num, inv_idx | spend one obol on the bag item at inv_idx. `currency_num` is the currency's stable tagged num (#54) — pass a `CURRENCY_*` const, not an array position. 0 ok; −1 unknown/non-currency num / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
+| 30 | `SkillInfo` | slot, out_addr | the static geometry of the skill in `slot` (same 1-based slot space as ReadSkills) → a 3-word record at out_addr: `shape (0 target / 1 nova / 2 cone / 3 line / 4 point-AoE / 5 projectile), radius (Q16.16), skill_kind (0 attack / 1 spell)`. Returns 0, or −1 for an empty/invalid slot. You only need this to position AoE — `target_mode` rides in ReadSkills. |
+| 31 | `ReadItemMods` | inv_idx, out_addr, max (≤16) | the rolled affixes on the bag item at `inv_idx` (its position in the ReadInventory list) → 3-word records: `affix_num (stable tagged, match `AFFIX_*` / content-docs), value (the rolled amount), tier`. Returns the count written, or −1 for a bad index. The item BASE's facts (slot, dims, base stats) live in content-docs; this is the per-instance roll. |
 
 ### Skill-use return codes
 
@@ -351,24 +353,26 @@ monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
 (faction-relative — the same brain works as a player or a monster!), 2 =
 characters, 3 = your own ground loot. Vision radius 50 units.
 
-**ReadInventory record** (8 words, 32 bytes): `base_num, slot (0 weapon /
-1 offhand / 2 helm / 3 chest / 4 boots), rarity, item_level, x, y, w, h`. The
-first word is the item base's stable tagged num (#54) — look it up against the
-generated `ITEM_*` consts / `content-docs.json`, never assume a position. The
-bag is a **12×5 grid**; items have footprints; pickups fail when nothing fits —
-managing space (`MoveItem`, `DropItem`, vendoring later) is your job.
+**ReadInventory record** (5 words, 20 bytes): `base_num, rarity, item_level,
+x, y`. The first word is the item base's stable tagged num (#54) — look it up
+against the generated `ITEM_*` consts / `content-docs.json` for the DEFINITIONAL
+facts (slot, footprint `w`/`h`, base stats), which the read no longer carries
+(#54: reads = identity + live state only). The bag is a **12×5 grid**; items
+have footprints; pickups fail when nothing fits — managing space (`MoveItem`,
+`DropItem`, vendoring later) is your job. Rolled affixes come from `ReadItemMods`.
 
-**ReadSkills record** (12 words, 48 bytes): `slot_no, gem_num, level,
-cooldown_left, range (Q16.16), shape (0 target / 1 nova / 2 cone / 3 line /
-4 point-AoE / 5 projectile), radius (Q16.16), mana_cost, use_ticks (cast
-time for spells, your weapon's swing time for attacks), target_mode
-(0 entity / 1 point / 2 direction), skill_kind (0 attack / 1 spell),
+**ReadSkills record** (9 words, 36 bytes): `slot_no, gem_num, level,
+cooldown_left, range (Q16.16), mana_cost, use_ticks (cast time for spells, your
+weapon's swing time for attacks), target_mode (0 entity / 1 point / 2 direction),
 ready (1 = off cooldown, mana in pocket, not mid-use)`. `gem_num` is the gem's
 stable tagged num (#54) — match it against the generated `GEM_*` consts. Skill
 slots are 1..N in tree-socket order; slot 0 is always the basic weapon attack.
 `mana_cost` and `use_ticks` are FINAL numbers — socketed support gems
 (mana multipliers, attack/cast speed) and your own cast speed are already
-folded in, so budget straight off the record.
+folded in, so budget straight off the record. `target_mode` stays here (you need
+it every fire to pick the UseSkill variant); the static geometry —
+`shape`/`radius`/`skill_kind` — moved to `SkillInfo` (you only need it to
+position AoE), and per-gem statics are in `content-docs.json`.
 
 ## Zone brains (the dungeon master is a bot)
 
