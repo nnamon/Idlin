@@ -342,7 +342,7 @@ can never hit your own faction.
 | +48 | attack range (Q16.16) |
 | +52 / +56 | mana, mana_max |
 | +60 | energy shield |
-| +64 | zone num (the zone's stable tagged content id — branch your whole strategy on WHICH map you stand in; compare against the generated `ZONE_*` consts) |
+| +64 | zone num (the zone's stable tagged content id — an OPAQUE handle: zones are private, so there are no `ZONE_*` consts to compare against. Watch it for CHANGES — when it differs from the value you saw last tick you've transferred maps — and branch your strategy on that, not on a hardcoded value) |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**

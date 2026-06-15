@@ -17,9 +17,11 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// (drop_loot, spawn_monster/elite, use_currency) translate num→idx. Bot/brain
 /// VM memory is folded into the state hash, so those buffers holding nums
 /// shifts it. Sim RULES are unchanged — only the identities crossing the
-/// bot↔engine boundary changed representation. (Also folds a doc-comment fix in
-/// `content/templates/area/brain.bot`, which `content_hash` covers.)
-const GOLDEN_HASH: u64 = 0x8551_9911_AE72_171D;
+/// bot↔engine boundary changed representation. (Also folds: a doc-comment fix in
+/// `content/templates/area/brain.bot`, and dropping `public: true` from the
+/// three zone defs — zones are private now, exposing only an internal num — both
+/// of which `content_hash` covers.)
+const GOLDEN_HASH: u64 = 0x8913_F25D_5AB9_A023;
 
 #[test]
 fn golden_replay() {
