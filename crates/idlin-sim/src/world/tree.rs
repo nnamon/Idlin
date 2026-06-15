@@ -116,8 +116,8 @@ impl World {
         self.allocate_from_plan(slot, events);
         if is_respec {
             // Sockets on nodes we no longer own give their gems back to
-            // the pouch (or the ground when it's full); gear that leaned
-            // on dropped attribute nodes is shed.
+            // the bag as 1×1 items (or the ground when it's full); gear that
+            // leaned on dropped attribute nodes is shed.
             self.unsocket_orphans(slot, events);
             self.refresh_derived_stats(slot);
             self.enforce_gear_requirements(slot, events);

@@ -31,7 +31,11 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// reordered, or retyped). Same manual discipline as `GOLDEN_HASH` and
 /// `PROTO_VERSION`: an old snapshot carrying a different version is refused
 /// cleanly (the world starts fresh), never mis-decoded.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 1;
+///
+/// v2 (#54 PR2b): `CharacterState` lost its `pouch` field and `PlacedItem.item`
+/// was retyped `Item` → `BagItem` (gems became 1×1 bag items), so v1 snapshots
+/// would mis-decode — refuse them.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 2;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
