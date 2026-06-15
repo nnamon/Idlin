@@ -176,8 +176,8 @@ that keeps every allocated node — a redeploy aiming future points).
 Changing what's already allocated is a RESPEC: it consumes one
 **Regret Obol**, resets allocated nodes, re-walks the new plan with
 every banked point, returns gems from sockets you no longer own to
-the pouch (overflow drops at your feet), and re-validates gear
-requirements against the new attributes. Without the obol the
+the bag as 1×1 items (overflow drops at your feet), and re-validates
+gear requirements against the new attributes. Without the obol the
 re-declaration is rejected loudly. Swapping builds mid-map is thus a
 real, priced decision — not a free reroll.
 
@@ -376,7 +376,8 @@ top-center; magic/rare announce themselves with tinted nameplates.
   3–5 / 4–5, tiers gated by item level (= monster level).
 - Ground loot despawns after 600 ticks. Pickup range 2.5 u.
 - The bag is a **12×5 grid**; items have content-defined footprints;
-  pickups fail when no rectangle fits. Gems go to a separate 12-slot pouch.
+  pickups fail when no rectangle fits. Gems are 1×1 bag items too (#54
+  PR2b — no separate pouch), so they compete with gear for grid space.
 
 ## Collision
 

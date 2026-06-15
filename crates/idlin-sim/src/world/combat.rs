@@ -1841,6 +1841,19 @@ mod tests {
         }
     }
 
+    /// Test helper (#54 PR2b): drop a level-1 gem into the next free bag cell,
+    /// returning its inventory index (the handle socket_gem takes now).
+    fn bag_gem(ch: &mut crate::entity::CharacterState, content: &ContentDb, id: &str) -> usize {
+        use crate::entity::{BAG_W, BagItem, PlacedItem};
+        let i = ch.inventory.len();
+        ch.inventory.push(PlacedItem {
+            item: BagItem::Gem(instance(content, id, 1)),
+            x: (i as u8) % BAG_W,
+            y: (i as u8) / BAG_W,
+        });
+        i
+    }
+
     /// A crushing hit (past the sure-stun knee) STUNS — the victim's
     /// committed windup is cancelled and busy extends — and an attacker
     /// with flat Knockback SHOVES the victim along the blow.
@@ -2057,7 +2070,7 @@ mod tests {
     /// tagged nums.
     #[test]
     fn skill_info_and_read_item_mods_expose_def_detail() {
-        use crate::entity::{Item, PlacedItem, Rarity, RolledAffix, SocketedGem};
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix, SocketedGem};
         use idlin_content::ids::Category;
         let content = content();
         let mut world = World::new(0x5141, &content);
@@ -2118,7 +2131,7 @@ mod tests {
                 },
             );
             ch.inventory.push(PlacedItem {
-                item: Item {
+                item: BagItem::Gear(Item {
                     base_idx: 0,
                     rarity: Rarity::Magic,
                     item_level: 5,
@@ -2129,7 +2142,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
-                },
+                }),
                 x: 0,
                 y: 0,
             });
@@ -2250,7 +2263,7 @@ mod tests {
                     supports: vec![instance(&content, "heavier_blows", 1)],
                 },
             );
-            ch.pouch.push(instance(&content, "quickening", 1));
+            bag_gem(ch, &content, "quickening");
         }
         let mut ev = Vec::new();
         assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
@@ -2784,7 +2797,7 @@ mod tests {
                     supports: vec![instance(&content, "heavier_blows", 1)],
                 },
             );
-            ch.pouch.push(instance(&content, "heavier_blows", 1));
+            bag_gem(ch, &content, "heavier_blows");
         }
         let mut ev = Vec::new();
         // Manual: a second copy of the same support is refused outright.
@@ -2792,18 +2805,88 @@ mod tests {
         // Auto: the duplicate is skipped (nothing sockets).
         assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 0);
         // A different fitting support still goes in.
-        world
-            .zone
-            .get_mut(slot)
-            .unwrap()
-            .character
-            .as_mut()
-            .unwrap()
-            .pouch
-            .push(instance(&content, "quickening", 1));
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "quickening");
+        }
         assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 1);
         let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
         assert_eq!(ch.sockets[&node].supports.len(), 2);
+    }
+
+    /// #54 PR2b: auto-socket upgrades a utility squatter to a damage skill, and
+    /// the displaced gem comes back to the BAG GRID (it used to go to the pouch)
+    /// — exercising socket_gem's new grid re-placement.
+    #[test]
+    fn auto_socket_returns_a_swapped_squatter_to_the_grid() {
+        use crate::entity::{BagItem, SocketedGem};
+        let content = content();
+        let mut world = World::new(0x9E5, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Swapper".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        // Use the start socket ("First Spark") as the SOLE socket, so the only
+        // way to place cleave is to swap the squatter out — no empty socket for
+        // Pass 1 to fill instead.
+        let node = content.tree_start;
+        assert_eq!(
+            content.tree[node as usize].kind,
+            idlin_content::NodeKind::Socket,
+            "this test assumes the start node is a socket"
+        );
+        let cleave = gem_idx(&content, "cleave");
+        let war_cry = gem_idx(&content, "war_cry");
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            // A no-damage utility skill squats the only socket; a real damage
+            // skill waits in the bag.
+            ch.sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "war_cry", 1),
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+            bag_gem(ch, &content, "cleave");
+        }
+        let mut ev = Vec::new();
+        assert_eq!(
+            world.socket_gem(slot, -1, -1, &mut ev),
+            1,
+            "the swap happens"
+        );
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(
+            ch.sockets[&node].gem.gem_idx, cleave,
+            "the damage skill took the socket"
+        );
+        assert!(
+            ch.inventory
+                .iter()
+                .any(|p| matches!(&p.item, BagItem::Gem(g) if g.gem_idx == war_cry)),
+            "the displaced utility gem is back in the bag as a 1×1 item"
+        );
     }
 
     #[test]

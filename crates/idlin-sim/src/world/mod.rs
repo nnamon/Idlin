@@ -961,7 +961,6 @@ impl World {
                     equipment: Default::default(),
                     allocated: Vec::new(),
                     build_plan: Vec::new(),
-                    pouch: Vec::new(),
                     currency: vec![0; self.content.currency.len()],
                     sockets: std::collections::BTreeMap::new(),
                 }),

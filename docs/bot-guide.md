@@ -256,7 +256,7 @@ address you supply and return a count/status.
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
 | 18 | `ReadSkills` | out_addr, max (≤8) | count |
-| 19 | `SocketGem` | node, pouch_idx (−1,−1 = auto) | gems socketed, or −1. Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first (DAMAGE skills outrank pure utility buffs), then only supports that fit — and upgrades a supportless utility squatter out of its node when a damage skill waits in the pouch (the utility gem returns to the pouch). |
+| 19 | `SocketGem` | node, inv_idx (−1,−1 = auto) | gems socketed, or −1. `inv_idx` is the BAG slot of the gem to socket — gems are 1×1 bag items now (#54 PR2b), not a separate pouch; find them in `ReadInventory` (a record whose `num >> 23 == CAT_GEM`). Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first (DAMAGE skills outrank pure utility buffs), then only supports that fit — and upgrades a supportless utility squatter out of its node when a damage skill waits in the bag (the squatter returns to the grid). A consumed gem leaves the bag; socketing frees its cell. |
 **Attacks commit you.** A swing occupies your character for the weapon's
 use time (attack-speed scaled): movement and further actions wait until it
 finishes. Plan movement around your swings — or get caught flat-footed.
@@ -353,13 +353,16 @@ monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
 (faction-relative — the same brain works as a player or a monster!), 2 =
 characters, 3 = your own ground loot. Vision radius 50 units.
 
-**ReadInventory record** (5 words, 20 bytes): `base_num, rarity, item_level,
-x, y`. The first word is the item base's stable tagged num (#54) — look it up
-against the generated `ITEM_*` consts / `content-docs.json` for the DEFINITIONAL
-facts (slot, footprint `w`/`h`, base stats), which the read no longer carries
-(#54: reads = identity + live state only). The bag is a **12×5 grid**; items
-have footprints; pickups fail when nothing fits — managing space (`MoveItem`,
-`DropItem`, vendoring later) is your job. Rolled affixes come from `ReadItemMods`.
+**ReadInventory record** (5 words, 20 bytes): `num, rarity, item_level, x, y`.
+The first word is a stable tagged num (#54). The bag holds **both gear and
+gems** now (#54 PR2b — gems are 1×1 items, no separate pouch), so check the
+category: `num >> 23 == CAT_ITEM` → gear (look up slot/footprint `w`/`h`/base
+stats by `num` in `ITEM_*` / `content-docs.json`; rolled affixes via
+`ReadItemMods`); `num >> 23 == CAT_GEM` → a loose gem (always 1×1; `rarity` is
+0/Normal and `item_level` carries the GEM LEVEL; socket it with `SocketGem`).
+The bag is a **12×5 grid**; everything has a footprint and competes for space;
+pickups fail when nothing fits — managing space (`MoveItem`, `DropItem`,
+vendoring later) is your job.
 
 **ReadSkills record** (9 words, 36 bytes): `slot_no, gem_num, level,
 cooldown_left, range (Q16.16), mana_cost, use_ticks (cast time for spells, your

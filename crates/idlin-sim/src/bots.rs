@@ -569,23 +569,33 @@ impl World {
                     return -1;
                 };
                 let Some(ch) = &e.character else { return -1 };
-                // Record (#54 PR2a): base_num, rarity, item_level, x, y.
-                // slot/w/h are definitional — look them up by base_num in docs.
+                // Record (#54): num, rarity, item_level, x, y. The bag holds
+                // BOTH gear and gems (PR2b) — they're told apart by the num's
+                // category (`num >> 23`): gear → CAT_ITEM, gem → CAT_GEM. A
+                // gem has no rarity (0) and reports its gem LEVEL in the
+                // item_level slot. slot/w/h (gear) and gem statics live in docs.
                 let records: Vec<[i32; 5]> = ch
                     .inventory
                     .iter()
                     .take(max)
-                    .map(|placed| {
-                        [
+                    .map(|placed| match &placed.item {
+                        crate::entity::BagItem::Gear(it) => [
                             self.content_num(
                                 idlin_content::ids::Category::Item,
-                                placed.item.base_idx as usize,
+                                it.base_idx as usize,
                             ),
-                            placed.item.rarity as i32,
-                            placed.item.item_level as i32,
+                            it.rarity as i32,
+                            it.item_level as i32,
                             placed.x as i32,
                             placed.y as i32,
-                        ]
+                        ],
+                        crate::entity::BagItem::Gem(g) => [
+                            self.content_num(idlin_content::ids::Category::Gem, g.gem_idx as usize),
+                            crate::entity::Rarity::Normal as i32,
+                            g.level as i32,
+                            placed.x as i32,
+                            placed.y as i32,
+                        ],
                     })
                     .collect();
                 for (i, rec) in records.iter().enumerate() {
@@ -773,9 +783,13 @@ impl World {
                 let Some(placed) = ch.inventory.get(idx) else {
                     return -1;
                 };
+                // Only gear carries rolled affixes; a gem (1×1 bag item, #54
+                // PR2b) has none — report zero mods, not an error.
+                let Some(item) = placed.item.as_gear() else {
+                    return 0;
+                };
                 // Record: affix_num, rolled value, tier.
-                let records: Vec<[i32; 3]> = placed
-                    .item
+                let records: Vec<[i32; 3]> = item
                     .affixes
                     .iter()
                     .take(max)
@@ -800,8 +814,10 @@ impl World {
             }
             SYS_SOCKET_GEM => {
                 let socket_sel = bot.vm.pop();
-                let pouch_sel = bot.vm.pop();
-                self.socket_gem(slot, socket_sel, pouch_sel, events)
+                // #54 PR2b: the gem source is a BAG slot index now, not a pouch
+                // index (gems live in the grid). -1 = auto-pick.
+                let inv_sel = bot.vm.pop();
+                self.socket_gem(slot, socket_sel, inv_sel, events)
             }
             SYS_RANDOM => bot.rng.next_u32() as i32,
             _ => -1,

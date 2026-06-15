@@ -116,8 +116,8 @@ impl World {
         self.allocate_from_plan(slot, events);
         if is_respec {
             // Sockets on nodes we no longer own give their gems back to
-            // the pouch (or the ground when it's full); gear that leaned
-            // on dropped attribute nodes is shed.
+            // the bag as 1×1 items (or the ground when it's full); gear that
+            // leaned on dropped attribute nodes is shed.
             self.unsocket_orphans(slot, events);
             self.refresh_derived_stats(slot);
             self.enforce_gear_requirements(slot, events);
@@ -125,8 +125,9 @@ impl World {
         declared as i32
     }
 
-    /// After a respec: any socketed gem whose socket node is no longer
-    /// owned returns to the pouch (12 slots; overflow drops at our feet).
+    /// After a respec: any socketed gem whose socket node is no longer owned
+    /// returns to the bag as a 1×1 item (#54 PR2b), or drops at our feet if the
+    /// grid is full.
     fn unsocket_orphans(&mut self, slot: usize, _events: &mut Vec<SimEvent>) {
         let start = self.content.tree_start;
         let Some(e) = self.zone.get(slot) else { return };
@@ -140,25 +141,44 @@ impl World {
         if orphan_nodes.is_empty() {
             return;
         }
-        let (pos, net_id) = (e.pos, e.net_id);
-        let mut overflow: Vec<crate::entity::GemInstance> = Vec::new();
+        // Pull the orphaned gems (skill + its supports) out of their sockets.
+        let mut freed: Vec<crate::entity::GemInstance> = Vec::new();
         if let Some(me) = self.zone.get_mut(slot) {
             let ch = me.character.as_mut().unwrap();
             for node in orphan_nodes {
                 let Some(sg) = ch.sockets.remove(&node) else {
                     continue;
                 };
-                for gem in std::iter::once(sg.gem).chain(sg.supports) {
-                    if ch.pouch.len() < 12 {
-                        ch.pouch.push(gem);
-                    } else {
-                        overflow.push(gem);
-                    }
-                }
+                freed.extend(std::iter::once(sg.gem).chain(sg.supports));
             }
         }
-        for gem in overflow {
-            self.spawn_loot(pos, crate::entity::LootPayload::Gem(gem), net_id);
+        // Each lands back in the grid, or drops if there's no 1×1 gap left.
+        for gem in freed {
+            let spot = {
+                let e = self.zone.get(slot).unwrap();
+                self.first_fit(e.character.as_ref().unwrap(), 1, 1)
+            };
+            match spot {
+                Some((x, y)) => {
+                    let me = self.zone.get_mut(slot).unwrap();
+                    me.character
+                        .as_mut()
+                        .unwrap()
+                        .inventory
+                        .push(crate::entity::PlacedItem {
+                            item: crate::entity::BagItem::Gem(gem),
+                            x,
+                            y,
+                        });
+                }
+                None => {
+                    let (pos, net_id) = {
+                        let e = self.zone.get(slot).unwrap();
+                        (e.pos, e.net_id)
+                    };
+                    self.spawn_loot(pos, crate::entity::LootPayload::Gem(gem), net_id);
+                }
+            }
         }
     }
 
@@ -339,7 +359,9 @@ mod tests {
         assert_eq!(ch.currency[regret], 0, "the obol is consumed");
         assert!(ch.equipment[0].is_none(), "weapon slot emptied");
         assert!(
-            ch.inventory.iter().any(|p| p.item.base_idx == cleaver),
+            ch.inventory
+                .iter()
+                .any(|p| p.item.as_gear().is_some_and(|it| it.base_idx == cleaver)),
             "the cleaver landed in the bag"
         );
         let names: Vec<&str> = ch
