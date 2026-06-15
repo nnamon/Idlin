@@ -1066,12 +1066,45 @@ pub struct ContentDb {
     pub tree_refs: Vec<u16>,
     /// Index of the shared "start" node everyone begins at.
     pub tree_start: u32,
+    /// The stable id registry (content/ids.ron): string id ⇄ tagged num — the
+    /// bot↔engine contract (reads emit nums; syscall inputs take nums).
+    pub id_registry: ids::Registry,
+    /// Reverse of the registry: tagged num → (category, array index). Built at
+    /// load so a bot's num translates back to an internal index in O(1).
+    pub num_to_idx: std::collections::HashMap<i32, (ids::Category, u32)>,
 }
 
 impl ContentDb {
     /// An empty database (tests, headless tools).
     pub fn empty() -> ContentDb {
         ContentDb::default()
+    }
+
+    /// The string id of the def at `idx` in `cat`'s sorted vec.
+    fn def_id(&self, cat: ids::Category, idx: usize) -> Option<&str> {
+        use ids::Category::*;
+        match cat {
+            Gem => self.gems.get(idx).map(|d| d.id.as_str()),
+            Item => self.items.get(idx).map(|d| d.id.as_str()),
+            Affix => self.affixes.get(idx).map(|d| d.id.as_str()),
+            Monster => self.monsters.get(idx).map(|d| d.id.as_str()),
+            Node => self.tree.get(idx).map(|d| d.id.as_str()),
+            Zone => self.zones.get(idx).map(|d| d.id.as_str()),
+            Currency => self.currency.get(idx).map(|d| d.id.as_str()),
+            Tileset => self.tilesets.get(idx).map(|d| d.id.as_str()),
+        }
+    }
+
+    /// The stable tagged num for the def at `idx` in `cat` — the forward id map
+    /// reads emit. `None` if the def or its registry entry is missing.
+    pub fn content_num(&self, cat: ids::Category, idx: usize) -> Option<i32> {
+        self.id_registry.num(cat, self.def_id(cat, idx)?)
+    }
+
+    /// The (category, array index) a bot's tagged num refers to — the reverse
+    /// map syscall inputs translate through.
+    pub fn content_idx(&self, num: i32) -> Option<(ids::Category, u32)> {
+        self.num_to_idx.get(&num).copied()
     }
 
     pub fn monster_idx(&self, id: &str) -> Option<usize> {
@@ -1655,6 +1688,34 @@ impl ContentDb {
                 }
             }
         }
+
+        // Build the stable-id map (#54): parse the committed registry, then
+        // invert it to (tagged num → array index) per category. Reads emit nums
+        // via `content_num`; syscall inputs translate back via `content_idx`.
+        db.id_registry = fs::read_to_string(dir.join("ids.ron"))
+            .ok()
+            .and_then(|t| ron::from_str::<ids::Registry>(&t).ok())
+            .unwrap_or_default();
+        let mut num_to_idx = std::collections::HashMap::new();
+        macro_rules! invert {
+            ($cat:expr, $coll:expr) => {
+                for (idx, d) in $coll.iter().enumerate() {
+                    if let Some(n) = db.id_registry.num($cat, &d.id) {
+                        num_to_idx.insert(n, ($cat, idx as u32));
+                    }
+                }
+            };
+        }
+        invert!(ids::Category::Gem, db.gems);
+        invert!(ids::Category::Item, db.items);
+        invert!(ids::Category::Affix, db.affixes);
+        invert!(ids::Category::Monster, db.monsters);
+        invert!(ids::Category::Node, db.tree);
+        invert!(ids::Category::Zone, db.zones);
+        invert!(ids::Category::Currency, db.currency);
+        invert!(ids::Category::Tileset, db.tilesets);
+        db.num_to_idx = num_to_idx;
+
         Ok(db)
     }
 
@@ -1781,6 +1842,22 @@ mod tests {
             .zone("withered_shore")
             .expect("withered_shore must exist");
         assert!(!zone.packs.is_empty());
+    }
+
+    #[test]
+    fn content_id_map_round_trips() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        // A known gem resolves to a tagged num and back to its array index.
+        let idx = db.gems.iter().position(|g| g.id == "power_shot").unwrap();
+        let num = db.content_num(ids::Category::Gem, idx).expect("gem num");
+        assert_eq!(ids::category_code(num), ids::Category::Gem.code());
+        assert_eq!(db.content_idx(num), Some((ids::Category::Gem, idx as u32)));
+        // The map is populated and every num decodes to its own category.
+        assert!(db.num_to_idx.len() >= db.gems.len() + db.items.len());
+        for (&num, &(cat, idx)) in &db.num_to_idx {
+            assert_eq!(ids::category_code(num), cat.code());
+            assert_eq!(db.content_num(cat, idx as usize), Some(num));
+        }
     }
 
     #[test]
