@@ -248,10 +248,10 @@ impl World {
                     mana,
                     mana_max,
                     es,
-                    // Which map this is: the zone's content index (stable
-                    // sorted ids). Bot writers branch their whole strategy
-                    // on it — grind the shore, stroll the town.
-                    self.zone_idx as i32,
+                    // Which map this is: the zone's stable tagged num (#54).
+                    // Bot writers branch their whole strategy on it — grind the
+                    // shore, stroll the town.
+                    self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
                 ];
                 for (i, v) in fields.into_iter().enumerate() {
                     bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);
@@ -436,7 +436,12 @@ impl World {
             SYS_USE_CURRENCY => {
                 let currency_sel = bot.vm.pop();
                 let inv_sel = bot.vm.pop();
-                self.use_currency(slot, currency_sel, inv_sel, events)
+                // The bot passes a currency NUM; translate to its content index.
+                let cidx = match self.content_idx(currency_sel) {
+                    Some((idlin_content::ids::Category::Currency, i)) => i as i32,
+                    _ => -1,
+                };
+                self.use_currency(slot, cidx, inv_sel, events)
             }
             SYS_SAY => {
                 let line = bot.vm.pop();
@@ -565,7 +570,10 @@ impl World {
                     .map(|placed| {
                         let def = &self.content_items()[placed.item.base_idx as usize];
                         [
-                            placed.item.base_idx as i32,
+                            self.content_num(
+                                idlin_content::ids::Category::Item,
+                                placed.item.base_idx as usize,
+                            ),
                             def.slot.idx() as i32,
                             placed.item.rarity as i32,
                             placed.item.item_level as i32,
@@ -677,7 +685,10 @@ impl World {
                                 .unwrap_or(false)) as i32;
                         [
                             (i + 1) as i32,
-                            sg.gem.gem_idx as i32,
+                            self.content_num(
+                                idlin_content::ids::Category::Gem,
+                                sg.gem.gem_idx as usize,
+                            ),
                             sg.gem.level as i32,
                             sg.cooldown_left as i32,
                             range,

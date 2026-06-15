@@ -284,8 +284,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 26 | `Say` | line_idx | speak a speech-bubble line: monsters use their def's `lines:`, characters the global `content/speech.ron` set (index wraps — bots can NEVER inject arbitrary text). 0 ok; −1 no lines for you; −2 rate-limited (characters 10s, monsters 5s). |
 | 27 | `ReadExits` | out_addr, max | the zone's exits as 16-byte records: (x raw, y raw, open, reserved). Returns the count written. Exits are PLACES — walk to one and take it yourself. |
 | 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed. There are NO forced transfers — leaving is always the bot's own call. |
-| 24 | `ReadCurrency` | out_addr, max (≤16) | obol counts as u32 words in content order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. |
-| 25 | `UseCurrency` | currency_idx, inv_idx | spend one obol on the bag item at inv_idx. 0 ok; −1 bad index / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
+| 24 | `ReadCurrency` | out_addr, max (≤16) | a positional count array: obol stacks as u32 words in registry order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. The slot's matching id is the `CURRENCY_*` const at the same position — read the count here, spend by num below. |
+| 25 | `UseCurrency` | currency_num, inv_idx | spend one obol on the bag item at inv_idx. `currency_num` is the currency's stable tagged num (#54) — pass a `CURRENCY_*` const, not an array position. 0 ok; −1 unknown/non-currency num / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 
 ### Skill-use return codes
 
@@ -342,25 +342,28 @@ can never hit your own faction.
 | +48 | attack range (Q16.16) |
 | +52 / +56 | mana, mana_max |
 | +60 | energy shield |
-| +64 | zone index (ContentDb::zones, sorted ids — branch your whole strategy on WHICH map you stand in) |
+| +64 | zone num (the zone's stable tagged content id — an OPAQUE handle: zones are private, so there are no `ZONE_*` consts to compare against. Watch it for CHANGES — when it differs from the value you saw last tick you've transferred maps — and branch your strategy on that, not on a hardcoded value) |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
 (faction-relative — the same brain works as a player or a monster!), 2 =
 characters, 3 = your own ground loot. Vision radius 50 units.
 
-**ReadInventory record** (8 words, 32 bytes): `base_idx, slot (0 weapon /
-1 offhand / 2 helm / 3 chest / 4 boots), rarity, item_level, x, y, w, h`. The bag is a
-**12×5 grid**; items have footprints; pickups fail when nothing fits —
+**ReadInventory record** (8 words, 32 bytes): `base_num, slot (0 weapon /
+1 offhand / 2 helm / 3 chest / 4 boots), rarity, item_level, x, y, w, h`. The
+first word is the item base's stable tagged num (#54) — look it up against the
+generated `ITEM_*` consts / `content-docs.json`, never assume a position. The
+bag is a **12×5 grid**; items have footprints; pickups fail when nothing fits —
 managing space (`MoveItem`, `DropItem`, vendoring later) is your job.
 
-**ReadSkills record** (12 words, 48 bytes): `slot_no, gem_idx, level,
+**ReadSkills record** (12 words, 48 bytes): `slot_no, gem_num, level,
 cooldown_left, range (Q16.16), shape (0 target / 1 nova / 2 cone / 3 line /
 4 point-AoE / 5 projectile), radius (Q16.16), mana_cost, use_ticks (cast
 time for spells, your weapon's swing time for attacks), target_mode
 (0 entity / 1 point / 2 direction), skill_kind (0 attack / 1 spell),
-ready (1 = off cooldown, mana in pocket, not mid-use)`. Skill slots are
-1..N in tree-socket order; slot 0 is always the basic weapon attack.
+ready (1 = off cooldown, mana in pocket, not mid-use)`. `gem_num` is the gem's
+stable tagged num (#54) — match it against the generated `GEM_*` consts. Skill
+slots are 1..N in tree-socket order; slot 0 is always the basic weapon attack.
 `mana_cost` and `use_ticks` are FINAL numbers — socketed support gems
 (mana multipliers, attack/cast speed) and your own cast speed are already
 folded in, so budget straight off the record.
@@ -373,13 +376,13 @@ per tick, bound to no entity, with a zone-scoped syscall table:
 | # | builtin | what |
 |---|---|---|
 | 100 | `query_characters(out, max)` | 10-word records per idler: net, kills, level, x, y, weapon_class (−1/0 melee/1 bow/2 wand), life_pct, dead, build_len (0 = no declared build), archetype (0 melee / 1 bow / 2 wand / −1 unknown, classified from the declared plan) |
-| 101 | `poll_events(out, max)` | drains this tick's events as 4-word records: kind (1 kill / 2 equip / 3 socket / 4 level / 5 died / 6 pickup), char net, a, b (kill: a = monster def idx, b = level) |
+| 101 | `poll_events(out, max)` | drains this tick's events as 4-word records: kind (1 kill / 2 equip / 3 socket / 4 level / 5 died / 6 pickup), char net, a, b (kill: a = monster num — matches a `monster "..."` ref, b = level) |
 | 102 | `narrate(line, char)` | fire an authored ZoneDef `lines:` entry into the ticker (char 0 = everyone). Address lines by name: `narrate(line "welcome", net)` |
-| 103 | `drop_loot(kind, idx, x, y, owner)` | scripted drops: 0 = gear base (normal), 1 = gem, 2 = obol, 3 = rolled RARE at item level `idx`. Story drops never despawn — scripted loot is often a gate key |
-| 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns) |
+| 103 | `drop_loot(kind, ref, x, y, owner)` | scripted drops: 0 = gear base (normal) at item num `ref`, 1 = gem at gem num `ref`, 2 = obol at currency num `ref`, 3 = rolled RARE at item level `ref` (kinds 0–2 take a stable content num — use `item "…"` / `gem "…"` / `currency "…"`; only kind 3's `ref` is a raw level). Story drops never despawn — scripted loot is often a gate key |
+| 104 | `spawn_monster(def, x, y)` | a packless scripted spawn (never respawns); `def` is a monster num — `monster "…"` |
 | 106 | `set_exit(idx, open)` | gate a ZoneDef exit open (1) or shut (0). Brains only GATE — characters take exits THEMSELVES with `use_exit`; forced transfers do not exist. |
 | 107 | `set_gate(idx, open)` | open (1) or shut (0) a ZoneDef gate — a rect of cells that blocks movement AND line of sight while shut (nothing strains at, or shoots through, an unearned lesson). Address by id: `set_gate(gate "start", 1)` |
-| 108 | `spawn_elite(def, x, y, rarity)` | a packless scripted spawn at forced rarity (1 = magic, 2 = rare) — fresh affixes rolled through the item affix system |
+| 108 | `spawn_elite(def, x, y, rarity)` | a packless scripted spawn at forced rarity (1 = magic, 2 = rare) — fresh affixes rolled through the item affix system; `def` is a monster num — `monster "…"` |
 
 Events are DATA the script drains — there are no callbacks; the VM
 stays one `main()` per tick. `content/brains/withered_shore.bot` is

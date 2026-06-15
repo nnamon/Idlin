@@ -65,6 +65,8 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
+    #[error("the committed id registry `ids.ron` is malformed: {msg}")]
+    BadRegistry { msg: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -1066,12 +1068,169 @@ pub struct ContentDb {
     pub tree_refs: Vec<u16>,
     /// Index of the shared "start" node everyone begins at.
     pub tree_start: u32,
+    /// The stable id registry (content/ids.ron): string id ⇄ tagged num — the
+    /// bot↔engine contract (reads emit nums; syscall inputs take nums).
+    pub id_registry: ids::Registry,
+    /// Reverse of the registry: tagged num → (category, array index). Built at
+    /// load so a bot's num translates back to an internal index in O(1).
+    pub num_to_idx: std::collections::HashMap<i32, (ids::Category, u32)>,
 }
 
 impl ContentDb {
     /// An empty database (tests, headless tools).
     pub fn empty() -> ContentDb {
         ContentDb::default()
+    }
+
+    /// The string id of the def at `idx` in `cat`'s sorted vec.
+    fn def_id(&self, cat: ids::Category, idx: usize) -> Option<&str> {
+        use ids::Category::*;
+        match cat {
+            Gem => self.gems.get(idx).map(|d| d.id.as_str()),
+            Item => self.items.get(idx).map(|d| d.id.as_str()),
+            Affix => self.affixes.get(idx).map(|d| d.id.as_str()),
+            Monster => self.monsters.get(idx).map(|d| d.id.as_str()),
+            Node => self.tree.get(idx).map(|d| d.id.as_str()),
+            Zone => self.zones.get(idx).map(|d| d.id.as_str()),
+            Currency => self.currency.get(idx).map(|d| d.id.as_str()),
+            Tileset => self.tilesets.get(idx).map(|d| d.id.as_str()),
+        }
+    }
+
+    /// The stable tagged num for the def at `idx` in `cat` — the forward id map
+    /// reads emit. `None` if the def or its registry entry is missing.
+    pub fn content_num(&self, cat: ids::Category, idx: usize) -> Option<i32> {
+        self.id_registry.num(cat, self.def_id(cat, idx)?)
+    }
+
+    /// The (category, array index) a bot's tagged num refers to — the reverse
+    /// map syscall inputs translate through.
+    pub fn content_idx(&self, num: i32) -> Option<(ids::Category, u32)> {
+        self.num_to_idx.get(&num).copied()
+    }
+
+    /// Every bot-referenceable collection → (string id, optional seed) for the
+    /// id registry. Only nodes seed a sequence (their author-assigned `num`);
+    /// everything else is tool-assigned next-free. Covers ALL defs regardless
+    /// of `public`. Shared by the generator (`gen` bin) and the load-time
+    /// registry fallback so the two can never disagree on what gets numbered.
+    pub fn present_ids(&self) -> Vec<ids::CategoryIds> {
+        use ids::Category;
+        vec![
+            (
+                Category::Gem,
+                self.gems.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Item,
+                self.items.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Affix,
+                self.affixes.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Monster,
+                self.monsters.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Node,
+                self.tree
+                    .iter()
+                    .map(|d| (d.id.clone(), Some(d.num as i32)))
+                    .collect(),
+            ),
+            (
+                Category::Zone,
+                self.zones.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Currency,
+                self.currency.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Tileset,
+                self.tilesets.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+        ]
+    }
+
+    /// The bot/player content reference (RFC #54): every PUBLIC def's full
+    /// definitional surface, keyed by category, identified by its stable tagged
+    /// `num`. Reads carry only identity + live state on the promise the rest
+    /// lives HERE — so this emits the whole serialized def (slot/stats, gem
+    /// `{base, per_level}` formulas, affix tier roll ranges + weights, monster
+    /// kits, …), `public` stripped (always true here) and `num` injected.
+    /// `ZoneDef`'s tile grid/props are `#[serde(skip)]`, so zones carry meta +
+    /// packs + exits without the map blob. Takes the registry explicitly so the
+    /// generator can pass the freshly-regenerated one (which may differ from the
+    /// committed `self.id_registry` mid-regeneration). Output is deterministic
+    /// (serde_json sorts map keys) — the CI gate diffs it.
+    pub fn content_docs(&self, reg: &ids::Registry) -> serde_json::Value {
+        use ids::Category;
+        /// One entry: the def's serialized surface, `public` dropped, `num` in.
+        fn entry<T: serde::Serialize>(num: i32, def: &T) -> serde_json::Value {
+            let mut v = serde_json::to_value(def).expect("def serializes to JSON");
+            if let serde_json::Value::Object(map) = &mut v {
+                map.remove("public");
+                map.insert("num".to_string(), serde_json::json!(num));
+            }
+            v
+        }
+        let mut cats = serde_json::Map::new();
+        // A public def absent from `reg` is SKIPPED, not a panic: the generator
+        // passes the freshly-regenerated registry (covers every def), but a
+        // caller passing a committed `ids.ron` that lags content shouldn't crash
+        // — it just under-reports until the next `gen`.
+        macro_rules! cat {
+            ($cat:expr, $coll:expr) => {{
+                let arr: Vec<serde_json::Value> = $coll
+                    .iter()
+                    .filter(|d| d.public)
+                    .filter_map(|d| reg.num($cat, &d.id).map(|num| entry(num, d)))
+                    .collect();
+                cats.insert($cat.key().to_string(), serde_json::Value::Array(arr));
+            }};
+        }
+        cat!(Category::Gem, self.gems);
+        cat!(Category::Item, self.items);
+        cat!(Category::Affix, self.affixes);
+        cat!(Category::Monster, self.monsters);
+        cat!(Category::Zone, self.zones);
+        cat!(Category::Currency, self.currency);
+        cat!(Category::Tileset, self.tilesets);
+        // Nodes carry their own `num` field — the u16 build-table ref. Keep it
+        // as `build_ref` and inject the registry tagged num as `num`, so a node
+        // reads consistently with every other category and its NODE_* const.
+        let nodes: Vec<serde_json::Value> = self
+            .tree
+            .iter()
+            .filter(|d| d.public)
+            .filter_map(|d| {
+                let num = reg.num(Category::Node, &d.id)?;
+                let mut v = serde_json::to_value(d).expect("node serializes");
+                if let serde_json::Value::Object(map) = &mut v {
+                    map.remove("public");
+                    if let Some(raw) = map.remove("num") {
+                        map.insert("build_ref".to_string(), raw);
+                    }
+                    map.insert("num".to_string(), serde_json::json!(num));
+                }
+                Some(v)
+            })
+            .collect();
+        cats.insert(
+            Category::Node.key().to_string(),
+            serde_json::Value::Array(nodes),
+        );
+        serde_json::json!({
+            "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. \
+                     Bot/player content reference (RFC #54): every public def's full \
+                     definitional surface, keyed by category, identified by `num`.",
+            "fingerprint": reg.fingerprint,
+            "seq_bits": ids::SEQ_BITS,
+            "categories": cats,
+        })
     }
 
     pub fn monster_idx(&self, id: &str) -> Option<usize> {
@@ -1455,10 +1614,52 @@ impl ContentDb {
             }
         }
         db.build_tree()?;
+
+        // Stable-id map (#54): parse the committed registry, then invert it to
+        // (tagged num → array index) per category. The content-ref resolver
+        // below returns tagged nums; reads emit them; syscall inputs translate
+        // back via `content_idx`.
+        db.id_registry = match fs::read_to_string(dir.join("ids.ron")) {
+            // A committed registry MUST parse: a present-but-corrupt `ids.ron`
+            // is a hard error, never silently replaced — booting on a derived
+            // registry would hand out nums that disagree with the committed
+            // contract bots compiled against.
+            Ok(text) => ron::from_str::<ids::Registry>(&text)
+                .map_err(|e| ContentError::BadRegistry { msg: e.to_string() })?,
+            // No committed registry (synthetic test dirs, fresh content):
+            // derive one from the present defs so content refs still resolve to
+            // stable nums. Real content commits `ids.ron` (the locked,
+            // append-only registry) and the CI gate keeps it in sync — this
+            // branch never runs for it.
+            Err(_) => ids::Registry::default()
+                .regenerate(&db.present_ids())
+                .map(|(next, _)| next)
+                .unwrap_or_default(),
+        };
+        let mut num_to_idx = std::collections::HashMap::new();
+        macro_rules! invert {
+            ($cat:expr, $coll:expr) => {
+                for (idx, d) in $coll.iter().enumerate() {
+                    if let Some(n) = db.id_registry.num($cat, &d.id) {
+                        num_to_idx.insert(n, ($cat, idx as u32));
+                    }
+                }
+            };
+        }
+        invert!(ids::Category::Gem, db.gems);
+        invert!(ids::Category::Item, db.items);
+        invert!(ids::Category::Affix, db.affixes);
+        invert!(ids::Category::Monster, db.monsters);
+        invert!(ids::Category::Node, db.tree);
+        invert!(ids::Category::Zone, db.zones);
+        invert!(ids::Category::Currency, db.currency);
+        invert!(ids::Category::Tileset, db.tilesets);
+        db.num_to_idx = num_to_idx;
+
         // Brains compile LAST, with the whole sorted database in hand:
-        // content refs (`item "x"`, `gem "arc"`, `line "welcome"`) become
-        // indices HERE, so adding content can never silently shift what a
-        // script means — an unknown id refuses to load.
+        // content refs (`item "x"`, `gem "arc"`) become stable tagged NUMS here
+        // (zone-scoped line/exit/gate stay indices), so adding content can never
+        // silently shift what a script means — an unknown id refuses to load.
         let mut brains = Vec::new();
         for (id, path, source, is_asm) in &pending_brains {
             let brain_err = |msg: String| ContentError::Brain {
@@ -1477,17 +1678,42 @@ impl ContentDb {
                     .collect();
                 let resolver = |kind: &str, rid: &str| -> Result<i32, String> {
                     let found = |what: &str, idx: Option<usize>| {
-                        idx.map(|i| i as i32)
-                            .ok_or_else(|| format!("unknown {what} `{rid}`"))
+                        idx.ok_or_else(|| format!("unknown {what} `{rid}`"))
+                    };
+                    // Content categories resolve to STABLE TAGGED NUMS (the
+                    // bot↔engine id); zone-scoped line/exit/gate stay zone-local
+                    // indices (not registry categories).
+                    let as_num = |cat: ids::Category, what: &str, idx: Option<usize>| {
+                        let i = found(what, idx)?;
+                        db.content_num(cat, i)
+                            .ok_or_else(|| format!("{what} `{rid}` has no registry num"))
                     };
                     match kind {
-                        "item" => found("item", db.items.iter().position(|d| d.id == rid)),
-                        "gem" => found("gem", db.gems.iter().position(|d| d.id == rid)),
-                        "monster" => found("monster", db.monsters.iter().position(|d| d.id == rid)),
-                        "zone" => found("zone", db.zones.iter().position(|d| d.id == rid)),
-                        "currency" => {
-                            found("currency", db.currency.iter().position(|d| d.id == rid))
-                        }
+                        "item" => as_num(
+                            ids::Category::Item,
+                            "item",
+                            db.items.iter().position(|d| d.id == rid),
+                        ),
+                        "gem" => as_num(
+                            ids::Category::Gem,
+                            "gem",
+                            db.gems.iter().position(|d| d.id == rid),
+                        ),
+                        "monster" => as_num(
+                            ids::Category::Monster,
+                            "monster",
+                            db.monsters.iter().position(|d| d.id == rid),
+                        ),
+                        "zone" => as_num(
+                            ids::Category::Zone,
+                            "zone",
+                            db.zones.iter().position(|d| d.id == rid),
+                        ),
+                        "currency" => as_num(
+                            ids::Category::Currency,
+                            "currency",
+                            db.currency.iter().position(|d| d.id == rid),
+                        ),
                         "line" | "exit" | "gate" => {
                             let zone = match owners.as_slice() {
                                 [one] => one,
@@ -1505,7 +1731,7 @@ impl ContentDb {
                                     ));
                                 }
                             };
-                            match kind {
+                            let idx = match kind {
                                 "line" => found(
                                     "narration line",
                                     zone.lines.iter().position(|l| l.id == rid),
@@ -1515,7 +1741,8 @@ impl ContentDb {
                                     zone.exits.iter().position(|e| e.dest == rid),
                                 ),
                                 _ => found("gate", zone.gates.iter().position(|g| g.id == rid)),
-                            }
+                            }?;
+                            Ok(idx as i32)
                         }
                         other => Err(format!("unknown ref kind `{other}`")),
                     }
@@ -1784,6 +2011,22 @@ mod tests {
     }
 
     #[test]
+    fn content_id_map_round_trips() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        // A known gem resolves to a tagged num and back to its array index.
+        let idx = db.gems.iter().position(|g| g.id == "power_shot").unwrap();
+        let num = db.content_num(ids::Category::Gem, idx).expect("gem num");
+        assert_eq!(ids::category_code(num), ids::Category::Gem.code());
+        assert_eq!(db.content_idx(num), Some((ids::Category::Gem, idx as u32)));
+        // The map is populated and every num decodes to its own category.
+        assert!(db.num_to_idx.len() >= db.gems.len() + db.items.len());
+        for (&num, &(cat, idx)) in &db.num_to_idx {
+            assert_eq!(ids::category_code(num), cat.code());
+            assert_eq!(db.content_num(cat, idx as usize), Some(num));
+        }
+    }
+
+    #[test]
     fn support_tag_gating_on_real_content() {
         let db = ContentDb::load(Path::new("../../content")).unwrap();
         let gem = |id: &str| db.gems.iter().find(|g| g.id == id).expect(id);
@@ -1903,6 +2146,90 @@ mod tests {
             }
             other => panic!("expected Brain error, got {other:?}"),
         }
+    }
+
+    /// A committed `ids.ron` that exists but won't parse is a HARD error — never
+    /// silently replaced by a derived registry (which would hand out nums that
+    /// disagree with the contract bots compiled against). An ABSENT registry is
+    /// fine: synthetic dirs derive one. Both halves verified here.
+    #[test]
+    fn malformed_committed_registry_is_rejected() {
+        let zone = r#"ZoneDef(
+            id: "z", name: "Z", width_u: 20, height_u: 20,
+            spawn_x_u: 5, spawn_y_u: 5,
+            lines: [], gates: [], exits: [], packs: [],
+        )"#;
+        // Absent ids.ron: loads, deriving a registry from the defs.
+        let tc = TempContent::new("reg-absent", &[("areas/z/zone.ron", zone)]);
+        let db = ContentDb::load(&tc.0).expect("absent registry derives cleanly");
+        assert!(
+            db.content_num(ids::Category::Zone, 0).is_some(),
+            "derived registry numbers the zone"
+        );
+        // Present-but-garbage ids.ron: hard BadRegistry, not a silent derive.
+        let tc = TempContent::new(
+            "reg-malformed",
+            &[
+                ("areas/z/zone.ron", zone),
+                ("ids.ron", "this is not ron {{{"),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadRegistry { .. }) => {}
+            other => panic!("expected BadRegistry, got {other:?}"),
+        }
+    }
+
+    /// The docs are the bot/player reference manual (#54): reads strip the
+    /// definitional fields on the promise they live HERE. Guard that the docs
+    /// carry the FULL surface — formulas, tier ranges, node grants, zone packs —
+    /// not the old id-only stub.
+    #[test]
+    fn content_docs_carry_the_full_definitional_surface() {
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let docs = db.content_docs(&db.id_registry);
+        let cats = docs["categories"].as_object().expect("categories object");
+
+        // Gems expose skill metadata and {base, per_level} formulas, with the
+        // tagged num injected and the redundant `public` flag stripped.
+        let gem = &cats["gem"].as_array().unwrap()[0];
+        assert!(gem.get("num").is_some(), "every entry carries its num");
+        assert!(
+            gem.get("public").is_none(),
+            "redundant public flag stripped"
+        );
+        for field in ["skill_kind", "target_mode", "tags", "mana_cost", "crit_bp"] {
+            assert!(gem.get(field).is_some(), "gem docs expose `{field}`");
+        }
+        assert!(
+            gem["mana_cost"].get("base").is_some() && gem["mana_cost"].get("per_level").is_some(),
+            "formulas serialize as base/per_level"
+        );
+
+        // Affix tiers carry roll ranges + weights (crafting bots need them).
+        let tier = &cats["affix"].as_array().unwrap()[0]["tiers"]
+            .as_array()
+            .unwrap()[0];
+        assert!(
+            tier.get("min").is_some() && tier.get("max").is_some() && tier.get("weight").is_some()
+        );
+
+        // Nodes expose BOTH the tagged num and the u16 build_ref, plus grants.
+        let node = &cats["node"].as_array().unwrap()[0];
+        assert!(node.get("build_ref").is_some() && node.get("grants").is_some());
+        assert_ne!(
+            node["num"].as_i64(),
+            node["build_ref"].as_i64(),
+            "num is the tagged id; build_ref is the raw u16"
+        );
+
+        // Zones are PRIVATE: they still get an internal registry num (SelfStatus
+        // emits it for change-detection), but their authored surface — narration
+        // prose, gate choreography, spawn packs — never reaches the public docs.
+        assert!(
+            cats["zone"].as_array().unwrap().is_empty(),
+            "private zones publish nothing to the docs"
+        );
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.
