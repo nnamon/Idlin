@@ -35,7 +35,11 @@ pub const BYTECODE_MAGIC: [u8; 4] = *b"ILBC";
 /// Current bytecode format version. Bump on any encoding change; the VM
 /// rejects programs whose version it does not support, so outdated bots fail
 /// fast at deploy time instead of misbehaving at runtime.
-pub const BYTECODE_FORMAT_VERSION: u16 = 1;
+///
+/// v2 (#54 PR1b-B): the declared-build ref table widened from u16 to i32 per
+/// entry — node refs are stable tagged content nums now, like every other
+/// content id, so they no longer fit in 16 bits.
+pub const BYTECODE_FORMAT_VERSION: u16 = 2;
 /// Header: magic (4) + format version u16 LE (2) + reserved u16 (2).
 pub const HEADER_LEN: usize = 8;
 

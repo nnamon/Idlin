@@ -10,18 +10,14 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #54 PR1b: the content-identity boundary now speaks stable
-/// tagged nums. Bot-facing reads (zone in SelfStatus, item base in inventory,
-/// gem in skills) and the zone brain's kill events emit nums instead of array
-/// indices; the content-ref resolver returns nums; the consuming syscalls
-/// (drop_loot, spawn_monster/elite, use_currency) translate num→idx. Bot/brain
-/// VM memory is folded into the state hash, so those buffers holding nums
-/// shifts it. Sim RULES are unchanged — only the identities crossing the
-/// bot↔engine boundary changed representation. (Also folds: a doc-comment fix in
-/// `content/templates/area/brain.bot`, and dropping `public: true` from the
-/// three zone defs — zones are private now, exposing only an internal num — both
-/// of which `content_hash` covers.)
-const GOLDEN_HASH: u64 = 0x8913_F25D_5AB9_A023;
+/// Re-pinned for #54 PR1b-B: the declared-build ref table widened from u16 to
+/// i32 (BYTECODE_FORMAT_VERSION 1→2) — node refs are stable tagged nums now,
+/// like every other content id. The grinder template declares its build with the
+/// generated NODE_* consts and SetBuild translates num→tree-index. The RESOLVED
+/// build (which nodes allocate) is identical; only the bytecode representation
+/// changed (version byte + i32 table), and bot VM memory folds into the hash.
+/// (Earlier PR1b folds still apply: reads/kill-events emit nums, zones private.)
+const GOLDEN_HASH: u64 = 0x6E2F_D282_C21E_5B63;
 
 #[test]
 fn golden_replay() {

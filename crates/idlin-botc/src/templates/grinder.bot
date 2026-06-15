@@ -10,39 +10,20 @@
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
 
-// Node numbers from the tree map page (content/tree/core.ron `num`).
-// Default build: a Warbringer bruiser splashing Bulwark for survival.
-const N_STR1 = 10;
-const N_STR2 = 11;
-const N_MIGHT = 12;
-const N_HEFT = 20;         // Warbringer limb
-const N_BRAWN = 21;
-const N_RHYTHM = 22;
-const N_BUTCHER = 23;
-const N_OVERWHELM = 24;
-const N_BERSERKER = 25;
-const N_SOCKET_WAR = 26;
-const N_THICK_SKIN = 30;   // Bulwark limb
-const N_HARDY = 31;
-const N_STALWART = 32;
-const N_COLOSSUS = 33;
-const N_IRON_WILL = 34;
-const N_SOCKET_AEGIS = 36;
-const N_SUREFOOT = 112;    // bridge toward Wind Dancer
-const N_POISE = 60;
-const N_FLEET = 61;
-
-// The declared build: allocated automatically as we level. The whole
-// plan is fixed at deploy — changing it means deploying a new bot.
-// Sockets sit DEEP now (behind each limb's fifth node): the second
-// skill slot is a post-shore milestone, not a tutorial snack.
+// The declared build: a Warbringer bruiser splashing Bulwark for
+// survival. Node refs are the generated NODE_* consts (#54 stable tagged
+// nums, from content/lib/gen_ids.bot, prepended by template_grinder) —
+// the same ids the tree map page and content-docs publish. Allocated
+// automatically as we level; the whole plan is fixed at deploy.
+// Sockets sit DEEP (behind each limb's fifth node): the second skill slot
+// is a post-shore milestone, not a tutorial snack.
 build [
-    N_STR1, N_STR2, N_MIGHT,
-    N_HEFT, N_BRAWN, N_RHYTHM, N_BUTCHER, N_OVERWHELM,
-    N_BERSERKER, N_SOCKET_WAR,
-    N_THICK_SKIN, N_HARDY, N_STALWART, N_COLOSSUS, N_IRON_WILL,
-    N_SOCKET_AEGIS,
-    N_SUREFOOT, N_FLEET, N_POISE,
+    NODE_STR1, NODE_STR2, NODE_STR3,                        // STR trunk
+    NODE_W1, NODE_W2, NODE_W3, NODE_W4, NODE_W5,            // Warbringer limb
+    NODE_BERSERKER, NODE_SOCKET_WAR,
+    NODE_B1, NODE_B2, NODE_B3, NODE_B4, NODE_B5,            // Bulwark limb
+    NODE_SOCKET_AEGIS,
+    NODE_SUREFOOT, NODE_WD2, NODE_WD1,                      // bridge toward Wind Dancer
 ];
 
 const SELF = 0xE000;       // SelfStatus buffer

@@ -224,10 +224,12 @@ impl Gen {
                         CompileError::new(*line, format!("unknown constant `{name}` in build"))
                     })?,
                 };
-                let r = u16::try_from(value).map_err(|_| {
-                    CompileError::new(*line, format!("node ref {value} out of u16 range"))
+                // v2 (#54): node refs are stable tagged content nums — i32, not
+                // u16. SetBuild translates each back to a tree node at deploy.
+                let r = i32::try_from(value).map_err(|_| {
+                    CompileError::new(*line, format!("node ref {value} out of i32 range"))
                 })?;
-                self.out.extend_from_slice(&r.to_le_bytes()); // u16 LE per entry
+                self.out.extend_from_slice(&r.to_le_bytes()); // i32 LE per entry
             }
         }
 
