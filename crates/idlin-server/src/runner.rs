@@ -337,12 +337,13 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         equipment: v
             .equipment
             .into_iter()
-            .map(|(slot, item)| {
+            .map(|(slot, item, dimmed)| {
                 let (name, rarity) = item.unwrap_or_default();
                 GearSlotView {
                     slot: slot.to_string(),
                     name,
                     rarity,
+                    dimmed,
                 }
             })
             .collect(),
