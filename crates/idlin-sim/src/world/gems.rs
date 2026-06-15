@@ -2,7 +2,9 @@
 //! the deterministic skill-slot ordering UseSkill/ReadSkills index into.
 
 use super::{SimEvent, World};
-use crate::entity::{CharacterState, GemInstance, SocketedGem, support_slots};
+use crate::entity::{
+    BagItem, CharacterState, GemInstance, LootPayload, PlacedItem, SocketedGem, support_slots,
+};
 use idlin_content::{GemKind, NodeKind};
 
 impl World {
@@ -21,16 +23,18 @@ impl World {
 
     /// Socket gems. Skill gems go into allocated tree socket nodes; support
     /// gems go into a socketed skill gem's own support slots (PoE2-style —
-    /// capacity lives on the gem). Manual: (node, pouch_idx) — a skill gem
-    /// fills an empty node, a support attaches to that node's skill if it
-    /// has a free slot. Auto (-1, -1): fill empty nodes with skill gems,
-    /// then fill every socketed skill's free support slots. Returns the
-    /// number of gems socketed, or -1.
+    /// capacity lives on the gem). Manual: (node, inv_idx) — the BAG entry at
+    /// inv_idx must be a GEM (#54 PR2b: gems live in the grid now); a skill gem
+    /// fills an empty node, a support attaches to that node's skill if it has a
+    /// free slot. Auto (-1, -1): fill empty nodes with skill gems, then fill
+    /// every socketed skill's free support slots. A consumed gem leaves the
+    /// grid; a swapped-out squatter returns to it (or drops if it's full).
+    /// Returns the number of gems socketed, or -1.
     pub(crate) fn socket_gem(
         &mut self,
         slot: usize,
         socket_sel: i32,
-        pouch_sel: i32,
+        inv_sel: i32,
         events: &mut Vec<SimEvent>,
     ) -> i32 {
         let Some(e) = self.zone.get(slot) else {
@@ -47,27 +51,28 @@ impl World {
         // First Spark pattern), it's usable from level 1.
         let start_idx = self.content.tree_start;
         let owns = |node: u32| node == start_idx || ch.allocated.contains(&node);
+        // The gem at a bag slot, or None if that slot is gear / out of range.
+        let gem_at = |i: usize| ch.inventory.get(i).and_then(|p| p.item.as_gem());
 
-        // Work list: (node, pouch index, attach_as_support) — plus skill
-        // SWAPS (node, pouch index): the squatter returns to the pouch.
+        // Work list: (node, bag index, attach_as_support) — plus skill SWAPS
+        // (node, bag index): the squatter returns to the grid.
         let mut plans: Vec<(u32, usize, bool)> = Vec::new();
         let mut swaps: Vec<(u32, usize)> = Vec::new();
         if socket_sel >= 0 {
             let node = socket_sel as u32;
-            let pouch_idx = pouch_sel.max(0) as usize;
-            if (node as usize) >= self.content.tree.len()
-                || !owns(node)
-                || !is_socket_node(node)
-                || pouch_idx >= ch.pouch.len()
-            {
+            let inv_idx = inv_sel.max(0) as usize;
+            let Some(gem) = gem_at(inv_idx) else {
+                return -1; // out of range, or the bag slot isn't a gem
+            };
+            if (node as usize) >= self.content.tree.len() || !owns(node) || !is_socket_node(node) {
                 return -1;
             }
-            match gem_kind_of(&ch.pouch[pouch_idx]) {
+            match gem_kind_of(gem) {
                 GemKind::Skill => {
                     if ch.sockets.contains_key(&node) {
                         return -1;
                     }
-                    plans.push((node, pouch_idx, false));
+                    plans.push((node, inv_idx, false));
                 }
                 GemKind::Support => {
                     let Some(sg) = ch.sockets.get(&node) else {
@@ -77,15 +82,11 @@ impl World {
                         return -1;
                     }
                     // One copy of a given support per skill (PoE rule).
-                    if sg
-                        .supports
-                        .iter()
-                        .any(|g| g.gem_idx == ch.pouch[pouch_idx].gem_idx)
-                    {
+                    if sg.supports.iter().any(|g| g.gem_idx == gem.gem_idx) {
                         return -1;
                     }
                     // Tag gate: the support must fit the skill it joins.
-                    let sup = &self.content.gems[ch.pouch[pouch_idx].gem_idx as usize];
+                    let sup = &self.content.gems[gem.gem_idx as usize];
                     let skill = &self.content.gems[sg.gem.gem_idx as usize];
                     if !sup.fits_skill(skill) {
                         events.push(SimEvent::GemRejected {
@@ -96,7 +97,7 @@ impl World {
                         });
                         return -1;
                     }
-                    plans.push((node, pouch_idx, true));
+                    plans.push((node, inv_idx, true));
                 }
             }
         } else {
@@ -120,15 +121,16 @@ impl World {
             };
             let mut used: Vec<usize> = Vec::new();
             // Pass 1: empty socket nodes get skill gems (start included),
-            // damage-dealers first, then pouch order.
+            // damage-dealers first, then bag order.
             for node in std::iter::once(start_idx).chain(ch.allocated.iter().copied()) {
                 if !is_socket_node(node) || ch.sockets.contains_key(&node) {
                     continue;
                 }
                 let found = ch
-                    .pouch
+                    .inventory
                     .iter()
                     .enumerate()
+                    .filter_map(|(i, p)| p.item.as_gem().map(|g| (i, g)))
                     .filter(|(i, g)| !used.contains(i) && gem_kind_of(g) == GemKind::Skill)
                     .min_by_key(|(i, g)| (!deals_damage(g), *i));
                 if let Some((i, _)) = found {
@@ -138,15 +140,20 @@ impl World {
             }
             // Pass 1.5: upgrade a UTILITY squatter — a socketed skill
             // that deals no damage and carries no supports yields its
-            // node to a damage skill from the pouch (the utility gem
-            // returns to the pouch).
+            // node to a damage skill from the bag (the utility gem
+            // returns to the grid).
             for (&node, sg) in &ch.sockets {
                 if deals_damage(&sg.gem) || !sg.supports.is_empty() {
                     continue;
                 }
-                let found = ch.pouch.iter().enumerate().find(|(i, g)| {
-                    !used.contains(i) && gem_kind_of(g) == GemKind::Skill && deals_damage(g)
-                });
+                let found = ch
+                    .inventory
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, p)| p.item.as_gem().map(|g| (i, g)))
+                    .find(|(i, g)| {
+                        !used.contains(i) && gem_kind_of(g) == GemKind::Skill && deals_damage(g)
+                    });
                 if let Some((i, _)) = found {
                     used.push(i);
                     swaps.push((node, i));
@@ -163,12 +170,17 @@ impl World {
                 let mut free = support_slots_of(&sg.gem).saturating_sub(sg.supports.len());
                 while free > 0 {
                     // Tag gate: auto-socketing quietly skips misfits.
-                    let found = ch.pouch.iter().enumerate().find(|(i, g)| {
-                        !used.contains(i)
-                            && gem_kind_of(g) == GemKind::Support
-                            && !have.contains(&g.gem_idx)
-                            && self.content.gems[g.gem_idx as usize].fits_skill(skill)
-                    });
+                    let found = ch
+                        .inventory
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, p)| p.item.as_gem().map(|g| (i, g)))
+                        .find(|(i, g)| {
+                            !used.contains(i)
+                                && gem_kind_of(g) == GemKind::Support
+                                && !have.contains(&g.gem_idx)
+                                && self.content.gems[g.gem_idx as usize].fits_skill(skill)
+                        });
                     let Some((i, g)) = found.map(|(i, g)| (i, g.gem_idx)) else {
                         break;
                     };
@@ -183,20 +195,25 @@ impl World {
             return 0;
         }
 
-        // Apply: remove pouch gems highest-index-first so indices hold;
-        // swapped-out squatters return to the pouch AFTER all removals.
+        // Apply: pull consumed gems OUT of the bag highest-index-first so the
+        // remaining indices hold. Swapped-out squatters are collected and
+        // re-placed in the grid afterward (a fresh borrow, since first_fit
+        // needs to see the post-removal bag).
+        let mut returned: Vec<GemInstance> = Vec::new();
         {
             let me = self.zone.get_mut(slot).unwrap();
             let ch = me.character.as_mut().unwrap();
-            let mut by_pouch: Vec<(u32, usize, Option<bool>)> = plans
+            let mut by_idx: Vec<(u32, usize, Option<bool>)> = plans
                 .iter()
                 .map(|&(n, i, a)| (n, i, Some(a)))
                 .chain(swaps.iter().map(|&(n, i)| (n, i, None)))
                 .collect();
-            by_pouch.sort_unstable_by_key(|p| std::cmp::Reverse(p.1));
-            let mut returned: Vec<GemInstance> = Vec::new();
-            for (node, pouch_idx, attach) in by_pouch {
-                let gem = ch.pouch.remove(pouch_idx);
+            by_idx.sort_unstable_by_key(|p| std::cmp::Reverse(p.1));
+            for (node, inv_idx, attach) in by_idx {
+                // Every planned index points at a gem (we filtered above).
+                let BagItem::Gem(gem) = ch.inventory.remove(inv_idx).item else {
+                    continue;
+                };
                 match attach {
                     Some(true) => ch.sockets.get_mut(&node).unwrap().supports.push(gem),
                     Some(false) => {
@@ -210,22 +227,38 @@ impl World {
                         );
                     }
                     // Swap: the damage skill takes the node, the utility
-                    // squatter goes home to the pouch.
+                    // squatter comes back out for re-placement.
                     None => {
                         let sg = ch.sockets.get_mut(&node).unwrap();
-                        returned.push(std::mem::replace(
-                            &mut sg.gem,
-                            GemInstance {
-                                gem_idx: gem.gem_idx,
-                                level: gem.level,
-                                xp: gem.xp,
-                            },
-                        ));
+                        returned.push(std::mem::replace(&mut sg.gem, gem));
                         sg.cooldown_left = 0;
                     }
                 }
             }
-            ch.pouch.extend(returned);
+        }
+        // Squatters land back in the bag (1×1), or drop at our feet if full.
+        for gem in returned {
+            let spot = {
+                let e = self.zone.get(slot).unwrap();
+                self.first_fit(e.character.as_ref().unwrap(), 1, 1)
+            };
+            match spot {
+                Some((x, y)) => {
+                    let me = self.zone.get_mut(slot).unwrap();
+                    me.character.as_mut().unwrap().inventory.push(PlacedItem {
+                        item: BagItem::Gem(gem),
+                        x,
+                        y,
+                    });
+                }
+                None => {
+                    let (pos, net) = {
+                        let e = self.zone.get(slot).unwrap();
+                        (e.pos, e.net_id)
+                    };
+                    self.spawn_loot(pos, LootPayload::Gem(gem), net);
+                }
+            }
         }
         // Event names via content (after the mutable borrow ends).
         let count = (plans.len() + swaps.len()) as i32;

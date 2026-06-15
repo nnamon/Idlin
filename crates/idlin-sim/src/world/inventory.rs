@@ -3,22 +3,22 @@
 
 use super::{PICKUP_RANGE, SimEvent, World};
 use crate::entity::{
-    BAG_H, BAG_W, CharacterState, GEAR_SLOTS, Item, LootPayload, POUCH_CAP, PlacedItem,
+    BAG_H, BAG_W, BagItem, CharacterState, GEAR_SLOTS, Item, LootPayload, PlacedItem,
 };
 use crate::stats::{Grant, Stat, StatSheet};
 use idlin_content::GearSlot;
 
 impl World {
     /// First-fit placement scan (row-major). Returns (x, y) or None.
-    fn first_fit(&self, ch: &CharacterState, w: u8, h: u8) -> Option<(u8, u8)> {
+    pub(crate) fn first_fit(&self, ch: &CharacterState, w: u8, h: u8) -> Option<(u8, u8)> {
         if w == 0 || h == 0 || w > BAG_W || h > BAG_H {
             return None;
         }
         let mut occupied = [[false; BAG_W as usize]; BAG_H as usize];
         for placed in &ch.inventory {
-            let def = &self.content.items[placed.item.base_idx as usize];
-            for dy in 0..def.h {
-                for dx in 0..def.w {
+            let (pw, ph) = placed.item.footprint(&self.content);
+            for dy in 0..ph {
+                for dx in 0..pw {
                     let (px, py) = ((placed.x + dx) as usize, (placed.y + dy) as usize);
                     if py < BAG_H as usize && px < BAG_W as usize {
                         occupied[py][px] = true;
@@ -50,8 +50,8 @@ impl World {
         let Some(placed) = ch.inventory.get(inv_idx) else {
             return -1;
         };
-        let def = &self.content.items[placed.item.base_idx as usize];
-        if x + def.w > BAG_W || y + def.h > BAG_H {
+        let (w, h) = placed.item.footprint(&self.content);
+        if x + w > BAG_W || y + h > BAG_H {
             return -1;
         }
         // Overlap check against everything but the moving item.
@@ -59,9 +59,9 @@ impl World {
             if i == inv_idx {
                 continue;
             }
-            let odef = &self.content.items[other.item.base_idx as usize];
-            let overlap_x = x < other.x + odef.w && other.x < x + def.w;
-            let overlap_y = y < other.y + odef.h && other.y < y + def.h;
+            let (ow, oh) = other.item.footprint(&self.content);
+            let overlap_x = x < other.x + ow && other.x < x + w;
+            let overlap_y = y < other.y + oh && other.y < y + h;
             if overlap_x && overlap_y {
                 return -1;
             }
@@ -84,7 +84,7 @@ impl World {
             return -1;
         }
         let (pos, owner) = (e.pos, e.net_id);
-        let item = {
+        let dropped = {
             let me = self.zone.get_mut(slot).unwrap();
             me.character
                 .as_mut()
@@ -93,7 +93,12 @@ impl World {
                 .remove(inv_idx)
                 .item
         };
-        self.spawn_loot(pos, LootPayload::Gear(item), owner);
+        // Gear and gems both drop back to the ground as their own loot kind.
+        let payload = match dropped {
+            BagItem::Gear(it) => LootPayload::Gear(it),
+            BagItem::Gem(g) => LootPayload::Gem(g),
+        };
+        self.spawn_loot(pos, payload, owner);
         0
     }
 
@@ -232,11 +237,11 @@ impl World {
             match spot {
                 Some((x, y)) => {
                     let me = self.zone.get_mut(slot).unwrap();
-                    me.character
-                        .as_mut()
-                        .unwrap()
-                        .inventory
-                        .push(PlacedItem { item, x, y });
+                    me.character.as_mut().unwrap().inventory.push(PlacedItem {
+                        item: BagItem::Gear(item),
+                        x,
+                        y,
+                    });
                 }
                 None => {
                     let (pos, owner_net) = {
@@ -272,7 +277,11 @@ impl World {
                 .unwrap_or(-1);
             let mut best: Option<(usize, i64)> = None;
             for (inv_idx, placed) in ch.inventory.iter().enumerate() {
-                let islot = self.content.items[placed.item.base_idx as usize].slot;
+                // Gems share the grid now but are never equipment — skip them.
+                let Some(gear) = placed.item.as_gear() else {
+                    continue;
+                };
+                let islot = self.content.items[gear.base_idx as usize].slot;
                 // Flask items fit EITHER belt loop; everything else maps 1:1.
                 let fits = if GearSlot::FLASK_SLOTS.contains(&gear_idx) {
                     islot == GearSlot::Flask
@@ -284,24 +293,31 @@ impl World {
                 }
                 // Requirements gate candidacy: an item we couldn't KEEP
                 // equipped must not thrash on and off every tick.
-                if !self.meets_requirements(slot, &placed.item, Some(gear_idx)) {
+                if !self.meets_requirements(slot, gear, Some(gear_idx)) {
                     continue;
                 }
-                let s = self.item_score(&placed.item);
+                let s = self.item_score(gear);
                 if s > current_score && best.is_none_or(|(_, bs)| s > bs) {
                     best = Some((inv_idx, s));
                 }
             }
             let Some((inv_idx, _)) = best else { continue };
             // Rolled display name, while the immutable borrow still holds.
-            let item_name = self.item_display(&ch.inventory[inv_idx].item);
+            let item_name = self.item_display(
+                ch.inventory[inv_idx]
+                    .item
+                    .as_gear()
+                    .expect("equip candidate is gear"),
+            );
 
             // Swap: candidate leaves the grid, then the old piece gets a
             // first-fit spot (likely the freed cells) or drops at our feet.
             let me = self.zone.get_mut(slot).unwrap();
             let ch_mut = me.character.as_mut().unwrap();
             let placed = ch_mut.inventory.remove(inv_idx);
-            let new_item = placed.item;
+            let BagItem::Gear(new_item) = placed.item else {
+                continue; // unreachable: we filtered to gear
+            };
             let item_rarity = new_item.rarity;
             let old = ch_mut.equipment[gear_idx].replace(new_item);
             if let Some(old_item) = old {
@@ -317,7 +333,7 @@ impl World {
                     Some((x, y)) => {
                         let me = self.zone.get_mut(slot).unwrap();
                         me.character.as_mut().unwrap().inventory.push(PlacedItem {
-                            item: old_item,
+                            item: BagItem::Gear(old_item),
                             x,
                             y,
                         });
@@ -423,19 +439,29 @@ impl World {
                     if let Some(me) = self.zone.get_mut(slot) {
                         let ch = me.character.as_mut().unwrap();
                         ch.items += 1;
-                        ch.inventory.push(PlacedItem { item, x, y });
+                        ch.inventory.push(PlacedItem {
+                            item: BagItem::Gear(item),
+                            x,
+                            y,
+                        });
                     }
                 }
                 LootPayload::Gem(gem) => {
-                    if ch.pouch.len() >= POUCH_CAP {
+                    // Gems are 1×1 grid items now (#54 PR2b) — they compete for
+                    // bag space like gear; no room means no pickup.
+                    let Some((x, y)) = self.first_fit(ch, 1, 1) else {
                         continue;
-                    }
+                    };
                     let gem = gem.clone();
                     self.zone.remove(loot_slot);
                     if let Some(me) = self.zone.get_mut(slot) {
                         let ch = me.character.as_mut().unwrap();
                         ch.items += 1;
-                        ch.pouch.push(gem);
+                        ch.inventory.push(PlacedItem {
+                            item: BagItem::Gem(gem),
+                            x,
+                            y,
+                        });
                     }
                 }
                 LootPayload::Currency(idx) => {

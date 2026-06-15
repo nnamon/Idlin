@@ -68,16 +68,27 @@ impl World {
         let inventory = ch
             .inventory
             .iter()
-            .map(|p| {
-                let def = &self.content.items[p.item.base_idx as usize];
-                (
-                    self.item_display(&p.item),
-                    p.item.rarity as u8,
+            .map(|p| match &p.item {
+                crate::entity::BagItem::Gear(it) => {
+                    let def = &self.content.items[it.base_idx as usize];
+                    (
+                        self.item_display(it),
+                        it.rarity as u8,
+                        p.x,
+                        p.y,
+                        def.w,
+                        def.h,
+                    )
+                }
+                // Gems show as 1×1, Normal-rarity entries named by their gem def.
+                crate::entity::BagItem::Gem(g) => (
+                    self.content.gems[g.gem_idx as usize].name.clone(),
+                    crate::entity::Rarity::Normal as u8,
                     p.x,
                     p.y,
-                    def.w,
-                    def.h,
-                )
+                    1,
+                    1,
+                ),
             })
             .collect();
         let gem_row = |gem: &crate::entity::GemInstance, support: bool| {
@@ -443,7 +454,20 @@ impl World {
                 for placed in &ch.inventory {
                     h.write_u8(placed.x);
                     h.write_u8(placed.y);
-                    fold_item(&mut h, &placed.item);
+                    // Tag gear vs gem so the two fold distinctly (#54 PR2b: the
+                    // bag holds both now; gems left the separate pouch).
+                    match &placed.item {
+                        crate::entity::BagItem::Gear(it) => {
+                            h.write_u8(0);
+                            fold_item(&mut h, it);
+                        }
+                        crate::entity::BagItem::Gem(g) => {
+                            h.write_u8(1);
+                            h.write_u32(g.gem_idx);
+                            h.write_u32(g.level);
+                            h.write_i64(g.xp);
+                        }
+                    }
                 }
                 for slot_item in &ch.equipment {
                     match slot_item {
@@ -457,12 +481,6 @@ impl World {
                 h.write_u64(ch.allocated.len() as u64);
                 for &n in &ch.allocated {
                     h.write_u32(n);
-                }
-                h.write_u64(ch.pouch.len() as u64);
-                for gem in &ch.pouch {
-                    h.write_u32(gem.gem_idx);
-                    h.write_u32(gem.level);
-                    h.write_i64(gem.xp);
                 }
                 for count in &ch.currency {
                     h.write_u64(*count);

@@ -2,7 +2,9 @@
 //! tiered by item level), and ground-loot entity spawning.
 
 use super::{LOOT_DESPAWN_TICKS, SimEvent, World};
-use crate::entity::{Entity, GemInstance, Item, LootPayload, LootState, Rarity, RolledAffix};
+use crate::entity::{
+    BagItem, Entity, GemInstance, Item, LootPayload, LootState, Rarity, RolledAffix,
+};
 use crate::fixed::FxV2;
 use crate::rng::Pcg32;
 use idlin_content::{AffixKind, ContentDb, CurrencyOp};
@@ -341,7 +343,11 @@ impl World {
             return -1;
         }
         let inv = inv_sel as usize;
-        let mut item = ch.inventory[inv].item.clone();
+        // Currency orbs craft GEAR; a gem occupying that bag slot (#54 PR2b)
+        // can't be rolled — the verb doesn't apply.
+        let Some(mut item) = ch.inventory[inv].item.as_gear().cloned() else {
+            return -2;
+        };
         let op = self.content.currency[cidx].op;
         if !apply_currency_op(&self.content, &mut self.rng_craft, op, &mut item) {
             return -2;
@@ -351,7 +357,7 @@ impl World {
         let me = self.zone.get_mut(slot).unwrap();
         let ch = me.character.as_mut().unwrap();
         ch.currency[cidx] -= 1;
-        ch.inventory[inv].item = item;
+        ch.inventory[inv].item = BagItem::Gear(item);
         events.push(SimEvent::CurrencyUsed {
             id: net_id,
             owner,

@@ -1841,6 +1841,19 @@ mod tests {
         }
     }
 
+    /// Test helper (#54 PR2b): drop a level-1 gem into the next free bag cell,
+    /// returning its inventory index (the handle socket_gem takes now).
+    fn bag_gem(ch: &mut crate::entity::CharacterState, content: &ContentDb, id: &str) -> usize {
+        use crate::entity::{BAG_W, BagItem, PlacedItem};
+        let i = ch.inventory.len();
+        ch.inventory.push(PlacedItem {
+            item: BagItem::Gem(instance(content, id, 1)),
+            x: (i as u8) % BAG_W,
+            y: (i as u8) / BAG_W,
+        });
+        i
+    }
+
     /// A crushing hit (past the sure-stun knee) STUNS — the victim's
     /// committed windup is cancelled and busy extends — and an attacker
     /// with flat Knockback SHOVES the victim along the blow.
@@ -2057,7 +2070,7 @@ mod tests {
     /// tagged nums.
     #[test]
     fn skill_info_and_read_item_mods_expose_def_detail() {
-        use crate::entity::{Item, PlacedItem, Rarity, RolledAffix, SocketedGem};
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix, SocketedGem};
         use idlin_content::ids::Category;
         let content = content();
         let mut world = World::new(0x5141, &content);
@@ -2118,7 +2131,7 @@ mod tests {
                 },
             );
             ch.inventory.push(PlacedItem {
-                item: Item {
+                item: BagItem::Gear(Item {
                     base_idx: 0,
                     rarity: Rarity::Magic,
                     item_level: 5,
@@ -2129,7 +2142,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
-                },
+                }),
                 x: 0,
                 y: 0,
             });
@@ -2250,7 +2263,7 @@ mod tests {
                     supports: vec![instance(&content, "heavier_blows", 1)],
                 },
             );
-            ch.pouch.push(instance(&content, "quickening", 1));
+            bag_gem(ch, &content, "quickening");
         }
         let mut ev = Vec::new();
         assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
@@ -2784,7 +2797,7 @@ mod tests {
                     supports: vec![instance(&content, "heavier_blows", 1)],
                 },
             );
-            ch.pouch.push(instance(&content, "heavier_blows", 1));
+            bag_gem(ch, &content, "heavier_blows");
         }
         let mut ev = Vec::new();
         // Manual: a second copy of the same support is refused outright.
@@ -2792,15 +2805,16 @@ mod tests {
         // Auto: the duplicate is skipped (nothing sockets).
         assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 0);
         // A different fitting support still goes in.
-        world
-            .zone
-            .get_mut(slot)
-            .unwrap()
-            .character
-            .as_mut()
-            .unwrap()
-            .pouch
-            .push(instance(&content, "quickening", 1));
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "quickening");
+        }
         assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 1);
         let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
         assert_eq!(ch.sockets[&node].supports.len(), 2);

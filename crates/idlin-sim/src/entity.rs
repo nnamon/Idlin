@@ -212,10 +212,46 @@ pub struct Item {
     pub charges: u32,
 }
 
-/// An item sitting in the bag grid at (x, y); footprint comes from its base.
+/// What occupies a bag cell: gear, or — since #54 PR2b — a 1×1 gem. Gems
+/// left the old separate pouch and now compete for grid space like everything
+/// else. A bot tells them apart by the tagged num's category (`num >> 23`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BagItem {
+    Gear(Item),
+    Gem(GemInstance),
+}
+
+impl BagItem {
+    /// Bag footprint: gear from its base def, gems are always 1×1.
+    pub fn footprint(&self, content: &idlin_content::ContentDb) -> (u8, u8) {
+        match self {
+            BagItem::Gear(it) => {
+                let d = &content.items[it.base_idx as usize];
+                (d.w, d.h)
+            }
+            BagItem::Gem(_) => (1, 1),
+        }
+    }
+
+    pub fn as_gear(&self) -> Option<&Item> {
+        match self {
+            BagItem::Gear(it) => Some(it),
+            BagItem::Gem(_) => None,
+        }
+    }
+
+    pub fn as_gem(&self) -> Option<&GemInstance> {
+        match self {
+            BagItem::Gem(g) => Some(g),
+            BagItem::Gear(_) => None,
+        }
+    }
+}
+
+/// An entry sitting in the bag grid at (x, y); footprint comes from `item`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlacedItem {
-    pub item: Item,
+    pub item: BagItem,
     pub x: u8,
     pub y: u8,
 }
@@ -250,8 +286,6 @@ pub enum LootPayload {
     Currency(u32),
 }
 
-/// Gems live in a small pouch, not the bag grid (they're small).
-pub const POUCH_CAP: usize = 12;
 pub const GEM_LEVEL_CAP: u32 = 20;
 
 pub fn gem_xp_to_next(level: u32) -> i64 {
@@ -291,8 +325,6 @@ pub struct CharacterState {
     /// bot initialization (SetBuild); auto-allocated as levels arrive.
     /// Append-only by construction — changing plans means redeploying.
     pub build_plan: Vec<u32>,
-    /// Unsocketed gems.
-    pub pouch: Vec<GemInstance>,
     /// Obol counts, indexed like ContentDb::currency (resized on demand).
     #[serde(default)]
     pub currency: Vec<u64>,
