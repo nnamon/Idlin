@@ -2896,6 +2896,12 @@ mod tests {
     fn a_two_handed_weapon_claims_the_offhand() {
         use crate::entity::{BagItem, Item, PlacedItem, Rarity};
         use idlin_content::GearSlot;
+        // EquipBest's offhand-shed relies on the weapon slot being processed
+        // before the offhand within one pass.
+        assert!(
+            GearSlot::Weapon.idx() < GearSlot::Offhand.idx(),
+            "weapon must precede offhand in slot order"
+        );
         let content = content();
         let mut world = World::new(0x2042, &content);
         let program = idlin_botc::assemble("halt\n").unwrap();
