@@ -99,8 +99,8 @@ same bytecode (the assembler below remains as the escape hatch). Brains in
 
 ```c
 // the default brain, in its entirety
-const N_VIGOR = 30;                      // node numbers: see the tree map page
-build [ N_VIGOR, 2, 3, 10 ];             // the whole plan, up front
+include "gen_ids.bot";                   // generated NODE_*/GEM_*/… consts
+build [ NODE_STR1, NODE_STR2, NODE_STR3 ]; // the whole plan, up front (tree-map ids)
 
 const SELF = 0xE000;
 const ENTS = 0xE100;
@@ -192,10 +192,12 @@ fn main() {                            // main() runs once per tick
 **The `build` declaration — your passive tree, up front**
 
 A bot declares its ENTIRE passive plan at the top of the program: up to
-240 node references in allocation order (level 100 earns 228 points). Each node has a stable numeric id
-(`num` in content, shown as `#N` on the tree map page) — use literals or
-named `const`s. The compiler embeds a packed u16 table (99 nodes = 198
-bytes max) and emits one `SetBuild` syscall during initialization. SetBuild validates the WHOLE plan up front: every entry
+240 node references in allocation order (level 100 earns 228 points). Each
+node has a stable tagged content num (#54) — reference it by its generated
+`NODE_*` const (the same id the tree map page and content-docs publish),
+never a raw small number. The compiler embeds a packed i32 table (240 nodes
+= 960 bytes max) and emits one `SetBuild` syscall during initialization;
+SetBuild translates each num back to a tree node. SetBuild validates the WHOLE plan up front: every entry
 must resolve and be connected to the start node, your allocated set, or an
 earlier entry — a bad plan is rejected loudly (BuildRejected on the
 ticker) rather than silently sticking mid-build; from then on the sim allocates
@@ -249,7 +251,7 @@ address you supply and return a count/status.
 | 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **-1** unknown slot / on cooldown |
 | 8 | `PickUp` | loot_id | 0 |
 | 12 | `EquipBest` | — | number of swaps made |
-| 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; the table is packed u16 name-hash refs) |
+| 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; the table is packed i32 stable tagged node nums, translated to tree nodes at deploy) |
 | 15 | `Random` | — | a value from your private RNG stream |
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |

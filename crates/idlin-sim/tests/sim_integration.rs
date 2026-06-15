@@ -239,10 +239,13 @@ fn disconnected_builds_are_rejected_at_declaration() {
     let content = content();
     let mut world = World::new(11, &content);
 
-    // A plan that jumps straight to a deep node (v4 without v1-v3) must be
-    // rejected outright; a connected plan must be accepted.
-    let bad = idlin_botc::compile("build [23]; fn main() {}").unwrap();
-    let good = idlin_botc::compile("build [10, 11, 12, 20]; fn main() {}").unwrap();
+    // A plan that jumps straight to a deep node (w4 without w1-w3) must be
+    // rejected outright; a connected plan must be accepted. Refs are stable
+    // tagged node nums (#54: compose(Node, seq)): 41943063 = w4 (seq 23);
+    // 41943050/51/52 = str1/str2/str3 (seq 10/11/12); 41943060 = w1 (seq 20).
+    let bad = idlin_botc::compile("build [41943063]; fn main() {}").unwrap();
+    let good = idlin_botc::compile("build [41943050, 41943051, 41943052, 41943060]; fn main() {}")
+        .unwrap();
     let joins = TickInputs {
         arrivals: Vec::new(),
         joins: vec![
