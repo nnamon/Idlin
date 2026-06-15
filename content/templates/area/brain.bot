@@ -33,7 +33,7 @@ fn main() {
         var ev = ZL_EVS + j * 16;
         // Event-driven beats: mem[ev + PE_KIND] is EV_KILL / EV_EQUIP /
         // EV_SOCKET / EV_LEVEL / EV_DIED / EV_PICKUP; PE_WHO the
-        // character; EV_KILL's PE_A is the monster def index.
+        // character; EV_KILL's PE_A is the monster num (matches `monster "..."`).
         j = j + 1;
     }
 }

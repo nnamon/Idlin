@@ -14,7 +14,7 @@ use idlin_vm::DEFAULT_TICK_BUDGET;
 use idlin_vm::RunExit;
 
 // Event kinds the brain can drain (record: kind, char net, a, b).
-pub const EV_KILL: i32 = 1; // a = monster def idx, b = monster level
+pub const EV_KILL: i32 = 1; // a = monster num (tagged content id), b = monster level
 pub const EV_EQUIP: i32 = 2; // a = rarity
 pub const EV_SOCKET: i32 = 3;
 pub const EV_LEVEL: i32 = 4; // a = new level
@@ -48,7 +48,15 @@ impl World {
                     def_idx,
                     level,
                     ..
-                } => [EV_KILL, *killer_id as i32, *def_idx as i32, *level as i32],
+                } => [
+                    EV_KILL,
+                    *killer_id as i32,
+                    // The brain compares this against `monster "..."` content
+                    // refs, which resolve to tagged nums — so the kill event
+                    // must carry the monster's num, not its array index.
+                    self.content_num(idlin_content::ids::Category::Monster, *def_idx as usize),
+                    *level as i32,
+                ],
                 SimEvent::ItemEquipped { id, rarity, .. } => {
                     [EV_EQUIP, *id as i32, *rarity as i32, 0]
                 }
@@ -196,10 +204,12 @@ impl World {
                 let payload = match kind {
                     // A plain gear base (the scripted first weapon).
                     0 => {
-                        let i = usize::try_from(idx).unwrap_or(usize::MAX);
-                        if i >= self.content.items.len() {
+                        let Some((idlin_content::ids::Category::Item, i)) =
+                            self.content.content_idx(idx)
+                        else {
                             return -1;
-                        }
+                        };
+                        let i = i as usize;
                         LootPayload::Gear(Item {
                             base_idx: i as u32,
                             rarity: Rarity::Normal,
@@ -211,10 +221,12 @@ impl World {
                     }
                     // A level-1 gem.
                     1 => {
-                        let i = usize::try_from(idx).unwrap_or(usize::MAX);
-                        if i >= self.content.gems.len() {
+                        let Some((idlin_content::ids::Category::Gem, i)) =
+                            self.content.content_idx(idx)
+                        else {
                             return -1;
-                        }
+                        };
+                        let i = i as usize;
                         LootPayload::Gem(GemInstance {
                             gem_idx: i as u32,
                             level: 1,
@@ -223,11 +235,12 @@ impl World {
                     }
                     // An obol.
                     2 => {
-                        let i = usize::try_from(idx).unwrap_or(usize::MAX);
-                        if i >= self.content.currency.len() {
+                        let Some((idlin_content::ids::Category::Currency, i)) =
+                            self.content.content_idx(idx)
+                        else {
                             return -1;
-                        }
-                        LootPayload::Currency(i as u32)
+                        };
+                        LootPayload::Currency(i)
                     }
                     // A rolled RARE at item level `idx` (boss chests).
                     3 => {
@@ -256,16 +269,17 @@ impl World {
                 let def = bot.vm.pop();
                 let x = bot.vm.pop();
                 let y = bot.vm.pop();
-                let i = usize::try_from(def).unwrap_or(usize::MAX);
-                if i >= self.content.monsters.len() {
+                let Some((idlin_content::ids::Category::Monster, i)) =
+                    self.content.content_idx(def)
+                else {
                     return -1;
-                }
+                };
                 let pos = self
                     .zone
                     .clamp_pos(FxV2::new(Fx::from_raw(x), Fx::from_raw(y)));
                 // Scripted spawns belong to no pack (sentinel): they never
                 // respawn and don't disturb pack bookkeeping.
-                self.spawn_monster(i as u32, u32::MAX, pos);
+                self.spawn_monster(i, u32::MAX, pos);
                 0
             }
             SYS_SPAWN_ELITE => {
@@ -275,10 +289,11 @@ impl World {
                 let x = bot.vm.pop();
                 let y = bot.vm.pop();
                 let r = bot.vm.pop();
-                let i = usize::try_from(def).unwrap_or(usize::MAX);
-                if i >= self.content.monsters.len() {
+                let Some((idlin_content::ids::Category::Monster, i)) =
+                    self.content.content_idx(def)
+                else {
                     return -1;
-                }
+                };
                 let rarity = match r {
                     1 => crate::entity::Rarity::Magic,
                     2 => crate::entity::Rarity::Rare,
@@ -287,7 +302,7 @@ impl World {
                 let pos = self
                     .zone
                     .clamp_pos(FxV2::new(Fx::from_raw(x), Fx::from_raw(y)));
-                self.spawn_monster_with(i as u32, u32::MAX, pos, rarity);
+                self.spawn_monster_with(i, u32::MAX, pos, rarity);
                 0
             }
             SYS_SET_GATE => {

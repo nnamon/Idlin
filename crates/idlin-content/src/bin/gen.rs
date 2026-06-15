@@ -42,44 +42,9 @@ fn main() {
 
     // Every bot-referenceable collection → (string id, optional seed). Only
     // nodes seed a sequence (their author-assigned num); everything else is
-    // tool-assigned next-free. The registry covers ALL defs.
-    let present: Vec<CategoryIds> = vec![
-        (
-            Category::Gem,
-            db.gems.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-        (
-            Category::Item,
-            db.items.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-        (
-            Category::Affix,
-            db.affixes.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-        (
-            Category::Monster,
-            db.monsters.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-        (
-            Category::Node,
-            db.tree
-                .iter()
-                .map(|d| (d.id.clone(), Some(d.num as i32)))
-                .collect(),
-        ),
-        (
-            Category::Zone,
-            db.zones.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-        (
-            Category::Currency,
-            db.currency.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-        (
-            Category::Tileset,
-            db.tilesets.iter().map(|d| (d.id.clone(), None)).collect(),
-        ),
-    ];
+    // tool-assigned next-free. The registry covers ALL defs. Shared with the
+    // load-time registry fallback so the two can never disagree.
+    let present: Vec<CategoryIds> = db.present_ids();
 
     // Public defs only feed the consts + docs (the bot-facing contract). The
     // registry above still numbers every def; `public: true` opts a def in.

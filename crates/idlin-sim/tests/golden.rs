@@ -10,12 +10,16 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #54: the public pass marked the bot-facing gameplay content
-/// `public: true` (items, affixes, currency, monsters, the 3 real zones, tree
-/// nodes — gems were already public; test_range + tilesets stay private), which
-/// edits those hashed RONs and grows the generated consts. Sim behavior is
-/// unchanged — the `public` flag only gates the generated consts/docs.
-const GOLDEN_HASH: u64 = 0x274B_4EA2_669F_7F7D;
+/// Re-pinned for #54 PR1b: the content-identity boundary now speaks stable
+/// tagged nums. Bot-facing reads (zone in SelfStatus, item base in inventory,
+/// gem in skills) and the zone brain's kill events emit nums instead of array
+/// indices; the content-ref resolver returns nums; the consuming syscalls
+/// (drop_loot, spawn_monster/elite, use_currency) translate num→idx. Bot/brain
+/// VM memory is folded into the state hash, so those buffers holding nums
+/// shifts it. Sim RULES are unchanged — only the identities crossing the
+/// bot↔engine boundary changed representation. (Also folds a doc-comment fix in
+/// `content/templates/area/brain.bot`, which `content_hash` covers.)
+const GOLDEN_HASH: u64 = 0x8551_9911_AE72_171D;
 
 #[test]
 fn golden_replay() {

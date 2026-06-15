@@ -65,6 +65,8 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
+    #[error("the committed id registry `ids.ron` is malformed: {msg}")]
+    BadRegistry { msg: String },
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -1107,6 +1109,52 @@ impl ContentDb {
         self.num_to_idx.get(&num).copied()
     }
 
+    /// Every bot-referenceable collection → (string id, optional seed) for the
+    /// id registry. Only nodes seed a sequence (their author-assigned `num`);
+    /// everything else is tool-assigned next-free. Covers ALL defs regardless
+    /// of `public`. Shared by the generator (`gen` bin) and the load-time
+    /// registry fallback so the two can never disagree on what gets numbered.
+    pub fn present_ids(&self) -> Vec<ids::CategoryIds> {
+        use ids::Category;
+        vec![
+            (
+                Category::Gem,
+                self.gems.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Item,
+                self.items.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Affix,
+                self.affixes.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Monster,
+                self.monsters.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Node,
+                self.tree
+                    .iter()
+                    .map(|d| (d.id.clone(), Some(d.num as i32)))
+                    .collect(),
+            ),
+            (
+                Category::Zone,
+                self.zones.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Currency,
+                self.currency.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+            (
+                Category::Tileset,
+                self.tilesets.iter().map(|d| (d.id.clone(), None)).collect(),
+            ),
+        ]
+    }
+
     pub fn monster_idx(&self, id: &str) -> Option<usize> {
         self.monsters
             .binary_search_by(|m| m.id.as_str().cmp(id))
@@ -1488,10 +1536,52 @@ impl ContentDb {
             }
         }
         db.build_tree()?;
+
+        // Stable-id map (#54): parse the committed registry, then invert it to
+        // (tagged num → array index) per category. The content-ref resolver
+        // below returns tagged nums; reads emit them; syscall inputs translate
+        // back via `content_idx`.
+        db.id_registry = match fs::read_to_string(dir.join("ids.ron")) {
+            // A committed registry MUST parse: a present-but-corrupt `ids.ron`
+            // is a hard error, never silently replaced — booting on a derived
+            // registry would hand out nums that disagree with the committed
+            // contract bots compiled against.
+            Ok(text) => ron::from_str::<ids::Registry>(&text)
+                .map_err(|e| ContentError::BadRegistry { msg: e.to_string() })?,
+            // No committed registry (synthetic test dirs, fresh content):
+            // derive one from the present defs so content refs still resolve to
+            // stable nums. Real content commits `ids.ron` (the locked,
+            // append-only registry) and the CI gate keeps it in sync — this
+            // branch never runs for it.
+            Err(_) => ids::Registry::default()
+                .regenerate(&db.present_ids())
+                .map(|(next, _)| next)
+                .unwrap_or_default(),
+        };
+        let mut num_to_idx = std::collections::HashMap::new();
+        macro_rules! invert {
+            ($cat:expr, $coll:expr) => {
+                for (idx, d) in $coll.iter().enumerate() {
+                    if let Some(n) = db.id_registry.num($cat, &d.id) {
+                        num_to_idx.insert(n, ($cat, idx as u32));
+                    }
+                }
+            };
+        }
+        invert!(ids::Category::Gem, db.gems);
+        invert!(ids::Category::Item, db.items);
+        invert!(ids::Category::Affix, db.affixes);
+        invert!(ids::Category::Monster, db.monsters);
+        invert!(ids::Category::Node, db.tree);
+        invert!(ids::Category::Zone, db.zones);
+        invert!(ids::Category::Currency, db.currency);
+        invert!(ids::Category::Tileset, db.tilesets);
+        db.num_to_idx = num_to_idx;
+
         // Brains compile LAST, with the whole sorted database in hand:
-        // content refs (`item "x"`, `gem "arc"`, `line "welcome"`) become
-        // indices HERE, so adding content can never silently shift what a
-        // script means — an unknown id refuses to load.
+        // content refs (`item "x"`, `gem "arc"`) become stable tagged NUMS here
+        // (zone-scoped line/exit/gate stay indices), so adding content can never
+        // silently shift what a script means — an unknown id refuses to load.
         let mut brains = Vec::new();
         for (id, path, source, is_asm) in &pending_brains {
             let brain_err = |msg: String| ContentError::Brain {
@@ -1510,17 +1600,42 @@ impl ContentDb {
                     .collect();
                 let resolver = |kind: &str, rid: &str| -> Result<i32, String> {
                     let found = |what: &str, idx: Option<usize>| {
-                        idx.map(|i| i as i32)
-                            .ok_or_else(|| format!("unknown {what} `{rid}`"))
+                        idx.ok_or_else(|| format!("unknown {what} `{rid}`"))
+                    };
+                    // Content categories resolve to STABLE TAGGED NUMS (the
+                    // bot↔engine id); zone-scoped line/exit/gate stay zone-local
+                    // indices (not registry categories).
+                    let as_num = |cat: ids::Category, what: &str, idx: Option<usize>| {
+                        let i = found(what, idx)?;
+                        db.content_num(cat, i)
+                            .ok_or_else(|| format!("{what} `{rid}` has no registry num"))
                     };
                     match kind {
-                        "item" => found("item", db.items.iter().position(|d| d.id == rid)),
-                        "gem" => found("gem", db.gems.iter().position(|d| d.id == rid)),
-                        "monster" => found("monster", db.monsters.iter().position(|d| d.id == rid)),
-                        "zone" => found("zone", db.zones.iter().position(|d| d.id == rid)),
-                        "currency" => {
-                            found("currency", db.currency.iter().position(|d| d.id == rid))
-                        }
+                        "item" => as_num(
+                            ids::Category::Item,
+                            "item",
+                            db.items.iter().position(|d| d.id == rid),
+                        ),
+                        "gem" => as_num(
+                            ids::Category::Gem,
+                            "gem",
+                            db.gems.iter().position(|d| d.id == rid),
+                        ),
+                        "monster" => as_num(
+                            ids::Category::Monster,
+                            "monster",
+                            db.monsters.iter().position(|d| d.id == rid),
+                        ),
+                        "zone" => as_num(
+                            ids::Category::Zone,
+                            "zone",
+                            db.zones.iter().position(|d| d.id == rid),
+                        ),
+                        "currency" => as_num(
+                            ids::Category::Currency,
+                            "currency",
+                            db.currency.iter().position(|d| d.id == rid),
+                        ),
                         "line" | "exit" | "gate" => {
                             let zone = match owners.as_slice() {
                                 [one] => one,
@@ -1538,7 +1653,7 @@ impl ContentDb {
                                     ));
                                 }
                             };
-                            match kind {
+                            let idx = match kind {
                                 "line" => found(
                                     "narration line",
                                     zone.lines.iter().position(|l| l.id == rid),
@@ -1548,7 +1663,8 @@ impl ContentDb {
                                     zone.exits.iter().position(|e| e.dest == rid),
                                 ),
                                 _ => found("gate", zone.gates.iter().position(|g| g.id == rid)),
-                            }
+                            }?;
+                            Ok(idx as i32)
                         }
                         other => Err(format!("unknown ref kind `{other}`")),
                     }
@@ -1688,34 +1804,6 @@ impl ContentDb {
                 }
             }
         }
-
-        // Build the stable-id map (#54): parse the committed registry, then
-        // invert it to (tagged num → array index) per category. Reads emit nums
-        // via `content_num`; syscall inputs translate back via `content_idx`.
-        db.id_registry = fs::read_to_string(dir.join("ids.ron"))
-            .ok()
-            .and_then(|t| ron::from_str::<ids::Registry>(&t).ok())
-            .unwrap_or_default();
-        let mut num_to_idx = std::collections::HashMap::new();
-        macro_rules! invert {
-            ($cat:expr, $coll:expr) => {
-                for (idx, d) in $coll.iter().enumerate() {
-                    if let Some(n) = db.id_registry.num($cat, &d.id) {
-                        num_to_idx.insert(n, ($cat, idx as u32));
-                    }
-                }
-            };
-        }
-        invert!(ids::Category::Gem, db.gems);
-        invert!(ids::Category::Item, db.items);
-        invert!(ids::Category::Affix, db.affixes);
-        invert!(ids::Category::Monster, db.monsters);
-        invert!(ids::Category::Node, db.tree);
-        invert!(ids::Category::Zone, db.zones);
-        invert!(ids::Category::Currency, db.currency);
-        invert!(ids::Category::Tileset, db.tilesets);
-        db.num_to_idx = num_to_idx;
-
         Ok(db)
     }
 
@@ -1979,6 +2067,38 @@ mod tests {
                 assert!(msg.contains("nope"), "error names the bad id: {msg}");
             }
             other => panic!("expected Brain error, got {other:?}"),
+        }
+    }
+
+    /// A committed `ids.ron` that exists but won't parse is a HARD error — never
+    /// silently replaced by a derived registry (which would hand out nums that
+    /// disagree with the contract bots compiled against). An ABSENT registry is
+    /// fine: synthetic dirs derive one. Both halves verified here.
+    #[test]
+    fn malformed_committed_registry_is_rejected() {
+        let zone = r#"ZoneDef(
+            id: "z", name: "Z", width_u: 20, height_u: 20,
+            spawn_x_u: 5, spawn_y_u: 5,
+            lines: [], gates: [], exits: [], packs: [],
+        )"#;
+        // Absent ids.ron: loads, deriving a registry from the defs.
+        let tc = TempContent::new("reg-absent", &[("areas/z/zone.ron", zone)]);
+        let db = ContentDb::load(&tc.0).expect("absent registry derives cleanly");
+        assert!(
+            db.content_num(ids::Category::Zone, 0).is_some(),
+            "derived registry numbers the zone"
+        );
+        // Present-but-garbage ids.ron: hard BadRegistry, not a silent derive.
+        let tc = TempContent::new(
+            "reg-malformed",
+            &[
+                ("areas/z/zone.ron", zone),
+                ("ids.ron", "this is not ron {{{"),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadRegistry { .. }) => {}
+            other => panic!("expected BadRegistry, got {other:?}"),
         }
     }
 

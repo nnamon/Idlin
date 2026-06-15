@@ -122,7 +122,9 @@ pub enum SimEvent {
         killer_id: u32,
         killer: String,
         monster: String,
-        /// Index into ContentDb::monsters (zone brains key off this).
+        /// Index into ContentDb::monsters. The zone brain does NOT see this
+        /// directly — `run_zone_brain` translates it to the monster's stable
+        /// tagged num (#54) before the kill event reaches the script.
         def_idx: u32,
         level: u32,
     },
@@ -738,6 +740,17 @@ impl World {
 
     pub(crate) fn content_gems(&self) -> &[idlin_content::GemDef] {
         &self.content.gems
+    }
+
+    /// The stable tagged num a read should emit for `cat`'s def at `idx`
+    /// (the bot↔engine id, #54). -1 if unmapped — bots treat negative as unknown.
+    pub(crate) fn content_num(&self, cat: idlin_content::ids::Category, idx: usize) -> i32 {
+        self.content.content_num(cat, idx).unwrap_or(-1)
+    }
+
+    /// Translate a bot's tagged num back to its (category, array index).
+    pub(crate) fn content_idx(&self, num: i32) -> Option<(idlin_content::ids::Category, u32)> {
+        self.content.content_idx(num)
     }
 
     pub fn tick_count(&self) -> u64 {

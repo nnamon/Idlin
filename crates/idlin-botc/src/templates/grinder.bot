@@ -58,7 +58,7 @@ var wander_y;
 var wander_left;           // ticks before we pick a new spot
 var bored;                 // ticks since anything was worth fighting
 var leaving;               // committed to an open exit (boredom latch)
-var last_zone;             // SelfStatus zone index; transfers reset intent
+var last_zone;             // SelfStatus zone num; transfers reset intent
 var stuck_x;               // unstick: position memory + window counter
 var stuck_y;
 var stuck_t;
@@ -247,7 +247,7 @@ fn main() {
     // nothing forces a transfer), else EXPLORE: hold a wander target
     // for a few seconds instead of re-rolling every tick, so an idle
     // bot strolls the map like it lives there (towns especially —
-    // SelfStatus +64 carries the zone's content index when a brain
+    // SelfStatus +64 carries the zone's stable tagged num when a brain
     // wants zone-specific behavior).
     if (have_loot == 1) {
         move_to(loot_x, loot_y);
