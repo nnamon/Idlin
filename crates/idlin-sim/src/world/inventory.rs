@@ -41,6 +41,38 @@ impl World {
         None
     }
 
+    /// Put a shed gear item back in the bag (first-fit) or drop it at the
+    /// character's feet when the grid is full.
+    fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
+        let spot = {
+            let Some(e) = self.zone.get(slot) else { return };
+            let Some(ch) = e.character.as_ref() else {
+                return;
+            };
+            let (w, h) = {
+                let d = &self.content.items[item.base_idx as usize];
+                (d.w, d.h)
+            };
+            self.first_fit(ch, w, h)
+        };
+        match spot {
+            Some((x, y)) => {
+                if let Some(me) = self.zone.get_mut(slot) {
+                    me.character.as_mut().unwrap().inventory.push(PlacedItem {
+                        item: BagItem::Gear(item),
+                        x,
+                        y,
+                    });
+                }
+            }
+            None => {
+                let Some(e) = self.zone.get(slot) else { return };
+                let (pos, net) = (e.pos, e.net_id);
+                self.spawn_loot(pos, LootPayload::Gear(item), net);
+            }
+        }
+    }
+
     /// Bot-requested item move within the bag. Returns 0 or -1.
     pub(crate) fn move_item(&mut self, slot: usize, inv_idx: usize, x: u8, y: u8) -> i32 {
         let Some(e) = self.zone.get(slot) else {
@@ -271,6 +303,32 @@ impl World {
         for gear_idx in 0..GEAR_SLOTS {
             let Some(e) = self.zone.get(slot) else { break };
             let ch = e.character.as_ref().unwrap();
+            // A two-handed weapon claims the offhand: never fill that slot while
+            // one is wielded, and shed any offhand already there (e.g. after a
+            // 1H→2H weapon swap earlier in this same pass — weapon is slot 0,
+            // offhand slot 1).
+            if gear_idx == GearSlot::Offhand.idx()
+                && ch.equipment[GearSlot::Weapon.idx()]
+                    .as_ref()
+                    .is_some_and(|w| self.content.items[w.base_idx as usize].two_handed)
+            {
+                let shed = self
+                    .zone
+                    .get_mut(slot)
+                    .and_then(|e| e.character.as_mut())
+                    .and_then(|c| c.equipment[GearSlot::Offhand.idx()].take());
+                if let Some(off) = shed {
+                    let item = self.item_display(&off);
+                    self.stash_or_drop_gear(slot, off);
+                    events.push(SimEvent::GearShed {
+                        id: net_id,
+                        owner: owner.clone(),
+                        item,
+                    });
+                    self.refresh_derived_stats(slot);
+                }
+                continue;
+            }
             let current_score = ch.equipment[gear_idx]
                 .as_ref()
                 .map(|i| self.item_score(i))

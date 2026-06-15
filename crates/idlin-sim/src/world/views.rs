@@ -6,6 +6,11 @@ use crate::entity::{Item, LootPayload};
 use crate::hash::Fnv1a64;
 use idlin_content::GearSlot;
 
+/// One inspect-sheet equipment slot: (slot name, Some((item name, rarity)) or
+/// None when empty, dimmed). A two-handed weapon mirrors (dimmed) into the
+/// offhand slot.
+pub type GearSlotRow = (&'static str, Option<(String, u8)>, bool);
+
 /// Inspection snapshot of one character (the server maps this onto the
 /// protocol's CharacterSheet for the focus panel).
 pub struct CharacterSheetView {
@@ -30,8 +35,8 @@ pub struct CharacterSheetView {
     /// Find factors (base 10000).
     pub item_rarity: i64,
     pub item_quantity: i64,
-    /// (slot name, Some((item name, rarity)) or None when empty).
-    pub equipment: Vec<(&'static str, Option<(String, u8)>)>,
+    /// Equipment slots; a two-handed weapon mirrors (dimmed) into the offhand.
+    pub equipment: Vec<GearSlotRow>,
     /// (name, rarity, x, y, w, h) per bag item.
     pub inventory: Vec<(String, u8, u8, u8, u8, u8)>,
     /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
@@ -53,7 +58,7 @@ impl World {
         let e = self.zone.get_net(net_id)?;
         let ch = e.character.as_ref()?;
         let c = e.combat.as_ref()?;
-        let equipment = ch
+        let mut equipment: Vec<GearSlotRow> = ch
             .equipment
             .iter()
             .enumerate()
@@ -62,9 +67,20 @@ impl World {
                     SLOT_NAMES[i],
                     s.as_ref()
                         .map(|item| (self.item_display(item), item.rarity as u8)),
+                    false,
                 )
             })
             .collect();
+        // A two-handed weapon mirrors into the offhand slot, dimmed — the UI
+        // convention that signals it occupies both hands.
+        let wpn = GearSlot::Weapon.idx();
+        let off = GearSlot::Offhand.idx();
+        if ch.equipment[wpn]
+            .as_ref()
+            .is_some_and(|it| self.content.items[it.base_idx as usize].two_handed)
+        {
+            equipment[off] = (SLOT_NAMES[off], equipment[wpn].1.clone(), true);
+        }
         let inventory = ch
             .inventory
             .iter()

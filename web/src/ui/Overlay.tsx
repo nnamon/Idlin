@@ -219,18 +219,24 @@ function SlotBox({
   icons,
 }: {
   label: string;
-  gear: { name: string; rarity: number } | undefined;
+  gear: { name: string; rarity: number; dimmed?: boolean } | undefined;
   area: string;
   icons: Icons;
 }) {
   const filled = !!gear?.name;
   const color = filled ? RARITY_COLORS[gear.rarity] : "#3a2f1b";
   const src = filled ? icons?.icon(gear.name, label.toLowerCase()) : null;
+  // A two-handed weapon mirrors into the offhand slot, shown greyed.
+  const dimmed = !!gear?.dimmed;
   return (
     <div
       className={filled ? "slot filled" : "slot"}
-      title={gear?.name || undefined}
-      style={{ gridArea: area, ["--rar" as string]: color }}
+      title={dimmed ? `${gear!.name} (two-handed)` : gear?.name || undefined}
+      style={{
+        gridArea: area,
+        ["--rar" as string]: color,
+        opacity: dimmed ? 0.4 : undefined,
+      }}
     >
       <span className="tag">{label}</span>
       {src ? (

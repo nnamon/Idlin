@@ -3,4 +3,9 @@
 /**
  * One equipment slot on the inspect sheet ("" name = empty slot).
  */
-export type GearSlotView = { slot: string, name: string, rarity: number, };
+export type GearSlotView = { slot: string, name: string, rarity: number, 
+/**
+ * Shown greyed: a two-handed weapon mirrors into the offhand slot to
+ * signal it claims both hands (the offhand can't be filled).
+ */
+dimmed: boolean, };

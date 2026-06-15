@@ -10,14 +10,12 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #54 PR2a (read reforms): ReadInventory drops the definitional
-/// slot/w/h (look them up by base_num in the docs); ReadSkills drops the pure-def
-/// geometry shape/radius/skill_kind (now in the new SkillInfo syscall) but keeps
-/// target_mode (action-critical every fire). Record strides shrink, so the bot
-/// AND monster-brain (hostile_melee) read buffers — folded into the hash — change
-/// layout; the grinder/monster offsets were re-mapped to read the SAME values, so
-/// decisions are behavior-neutral. (Earlier PR1b/PR1b-B folds still apply.)
-const GOLDEN_HASH: u64 = 0x2824_4816_137C_425C;
+/// Re-pinned for weapon handedness: `driftwood_bow` gained `two_handed: true`,
+/// which edits a hashed content file — `content_hash` folds into the state hash,
+/// so the value shifts even though the golden world has no characters at tick
+/// 2000. The EquipBest offhand-exclusion is behavior-neutral for the (melee,
+/// 1H) golden grinder. (Earlier #54 PR1b/PR2a/PR2b folds still apply.)
+const GOLDEN_HASH: u64 = 0x287F_F933_6763_DAD9;
 
 #[test]
 fn golden_replay() {

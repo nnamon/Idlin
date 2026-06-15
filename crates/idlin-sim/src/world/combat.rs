@@ -2889,6 +2889,99 @@ mod tests {
         );
     }
 
+    /// A two-handed weapon claims the offhand: EquipBest won't fill it and
+    /// sheds any offhand worn under it, and the inspect sheet mirrors the
+    /// weapon into the offhand slot dimmed.
+    #[test]
+    fn a_two_handed_weapon_claims_the_offhand() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity};
+        use idlin_content::GearSlot;
+        // EquipBest's offhand-shed relies on the weapon slot being processed
+        // before the offhand within one pass.
+        assert!(
+            GearSlot::Weapon.idx() < GearSlot::Offhand.idx(),
+            "weapon must precede offhand in slot order"
+        );
+        let content = content();
+        let mut world = World::new(0x2042, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Archer".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let net = world.zone.get(slot).unwrap().net_id;
+        let base = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let mk = |base_idx| Item {
+            base_idx,
+            rarity: Rarity::Normal,
+            item_level: 1,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        let bow = base("driftwood_bow"); // two_handed
+        let buckler = base("driftwood_buckler"); // offhand
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::Weapon.idx()] = Some(mk(bow));
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(mk(buckler)),
+                x: 0,
+                y: 0,
+            });
+        }
+        // EquipBest must NOT equip the buckler while the 2H bow is wielded.
+        let mut ev = Vec::new();
+        world.equip_best(slot, &mut ev);
+        {
+            let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+            assert!(
+                ch.equipment[GearSlot::Offhand.idx()].is_none(),
+                "a 2H weapon forbids an offhand"
+            );
+        }
+        // An offhand forced on under a 2H weapon is shed on the next pass.
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::Offhand.idx()] = Some(mk(buckler));
+        }
+        let mut ev = Vec::new();
+        world.equip_best(slot, &mut ev);
+        let off_now = world
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .equipment[GearSlot::Offhand.idx()]
+        .is_none();
+        assert!(off_now, "an offhand worn under a 2H weapon is shed");
+        // The inspect sheet mirrors the weapon into the offhand slot, dimmed.
+        let sheet = world.character_sheet(net).unwrap();
+        let off = &sheet.equipment[GearSlot::Offhand.idx()];
+        assert!(off.2, "the offhand slot is dimmed (2H mirror)");
+        assert!(off.1.is_some(), "the dimmed offhand mirrors the weapon");
+    }
+
     #[test]
     fn mana_mult_scales_skill_cost() {
         let content = content();

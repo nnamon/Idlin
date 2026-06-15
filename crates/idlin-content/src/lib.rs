@@ -307,6 +307,12 @@ pub struct ItemDef {
     /// Weapon: its class, for skill eligibility (None on non-weapons).
     #[serde(default)]
     pub weapon_class: Option<WeaponClass>,
+    /// Weapon: occupies BOTH hands — no offhand may be worn alongside it.
+    /// Bows, staves, and two-handed swords/axes/maces are two-handed; wands,
+    /// daggers, and one-handed melee are not. NOT derivable from `weapon_class`
+    /// (a melee base can be 1H or 2H), so it's authored per base. Default 1H.
+    #[serde(default)]
+    pub two_handed: bool,
     /// Affix pools this base draws from when rolling (the subscription
     /// model: the item declares its pools, affixes declare membership).
     #[serde(default)]

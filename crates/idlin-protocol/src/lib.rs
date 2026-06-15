@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 30;
+pub const PROTO_VERSION: u32 = 31;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -296,6 +296,9 @@ pub struct GearSlotView {
     pub slot: String,
     pub name: String,
     pub rarity: u8,
+    /// Shown greyed: a two-handed weapon mirrors into the offhand slot to
+    /// signal it claims both hands (the offhand can't be filled).
+    pub dimmed: bool,
 }
 
 /// One bag item on the inspect sheet (grid placement + footprint).
