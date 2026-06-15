@@ -62,7 +62,7 @@ pub const DEFAULT_TICK_BUDGET: u32 = 5_000;
 // Syscall numbers — the host/VM ABI, the SINGLE owner. Both the compiler
 // (idlin-botc BUILTINS) and the host (idlin-sim bots.rs / zone_brain.rs)
 // reference these so a number is defined exactly once. Entity bot syscalls
-// are 0..30; zone-brain syscalls are 100+.
+// are 0..32; zone-brain syscalls are 100+.
 pub const SYS_DEBUG: i32 = 0;
 pub const SYS_SELF_STATUS: i32 = 1;
 pub const SYS_READ_ENTITIES: i32 = 2;
@@ -637,6 +637,8 @@ mod tests {
         assert_eq!(SYS_READ_EXITS, 27);
         assert_eq!(SYS_USE_EXIT, 28);
         assert_eq!(SYS_USE_FLASK, 29);
+        assert_eq!(SYS_SKILL_INFO, 30);
+        assert_eq!(SYS_READ_ITEM_MODS, 31);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);

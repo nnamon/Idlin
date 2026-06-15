@@ -2076,6 +2076,8 @@ mod tests {
              debug(mem[0xE108]);\n\
              debug(skill_info(9, 0xE200));\n\
              debug(read_item_mods(9, 0xE300, 8));\n\
+             debug(skill_info(0, 0xE200));\n\
+             debug(skill_info(0 - 5, 0xE200));\n\
              }\n",
         )
         .expect("compiles");
@@ -2141,7 +2143,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(vals.len(), 9, "nine debug emits: {vals:?}");
+        assert_eq!(vals.len(), 11, "eleven debug emits: {vals:?}");
         assert_eq!(vals[0], 0, "skill_info(1) is a valid slot");
         assert_eq!(vals[1], 1, "frost_nova shape = nova");
         assert_eq!(vals[2], 1, "frost_nova kind = spell");
@@ -2149,9 +2151,12 @@ mod tests {
         assert_eq!(vals[4], expect_affix_num, "the rolled affix's tagged num");
         assert_eq!(vals[5], 12, "the rolled value");
         assert_eq!(vals[6], 0, "the rolled tier");
-        // Out-of-range slot / item index are rejected, not garbage.
+        // Out-of-range / zero / negative slot and a bad item index are all
+        // rejected with -1 — never garbage, never a panic (slot is raw input).
         assert_eq!(vals[7], -1, "skill_info on an empty slot → -1");
         assert_eq!(vals[8], -1, "read_item_mods on a bad index → -1");
+        assert_eq!(vals[9], -1, "skill_info on slot 0 (basic attack) → -1");
+        assert_eq!(vals[10], -1, "skill_info on a negative slot → -1");
     }
 
     #[test]

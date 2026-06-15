@@ -45,8 +45,7 @@ pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 /// shape/radius/skill_kind — moved to SkillInfo). Record: slot_no, gem_num,
 /// level, cooldown_left, range, mana_cost, use_ticks, target_mode, ready.
 pub const SKILL_RECORD_SIZE: u16 = 36; // 9 words
-/// Size of one SkillInfo record in bytes: shape, radius, skill_kind.
-pub const SKILL_INFO_RECORD_SIZE: u16 = 12; // 3 words
+// SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline.
 
 /// Size of one ReadInventory record in bytes (#54 PR2a: slot/w/h are
 /// definitional — look them up by `base_num` in the docs). Record: base_num,
@@ -726,10 +725,13 @@ impl World {
                 } else {
                     return -1;
                 };
-                let Ok(idx) = usize::try_from(slot_no - 1) else {
+                // Guard BEFORE subtracting: slot_no is raw bot input, and
+                // `i32::MIN - 1` would overflow-panic in debug builds. Slot 0 is
+                // the basic weapon attack (no gem def) → -1, like any bad slot.
+                if slot_no <= 0 {
                     return -1;
-                };
-                let Some(sg) = gems.get(idx) else {
+                }
+                let Some(sg) = gems.get(slot_no as usize - 1) else {
                     return -1;
                 };
                 let def = &self.content_gems()[sg.gem.gem_idx as usize];
