@@ -1,6 +1,7 @@
 // "Arcane ..." — flat mana on helms and chests (consumed once mana lands).
 AffixDef(
     id: "arcane",
+    public: true,
     name: "Arcane",
     kind: prefix,
     pool: "arcana",

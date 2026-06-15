@@ -1,6 +1,7 @@
 // Tall boots for walking where the shore bites.
 ItemDef(
     id: "wader_boots",
+    public: true,
     name: "Wader's Boots",
     model: "ranger_feet",
     slot: boots,

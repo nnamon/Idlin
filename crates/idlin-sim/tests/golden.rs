@@ -10,12 +10,12 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Moved for #54 (stable-id foundation): the generator adds two hashed files
-/// under content/ (content/ids.ron, content/lib/gen_ids.bot), shared bot
-/// includes moved content/brains/std/ → content/lib/, and the gem RONs gained
-/// `public: true` (the new per-def publish flag) — all shifting content_hash.
-/// Sim behavior is unchanged: nothing consumes the ids yet.
-const GOLDEN_HASH: u64 = 0xA15E_3B3B_6E0F_C4CE;
+/// Re-pinned for #54: the public pass marked the bot-facing gameplay content
+/// `public: true` (items, affixes, currency, monsters, the 3 real zones, tree
+/// nodes — gems were already public; test_range + tilesets stay private), which
+/// edits those hashed RONs and grows the generated consts. Sim behavior is
+/// unchanged — the `public` flag only gates the generated consts/docs.
+const GOLDEN_HASH: u64 = 0x274B_4EA2_669F_7F7D;
 
 #[test]
 fn golden_replay() {

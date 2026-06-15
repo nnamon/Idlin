@@ -1,6 +1,7 @@
 // Layered kelp cured into something like leather.
 ItemDef(
     id: "kelp_vest",
+    public: true,
     name: "Kelp-Woven Vest",
     model: "ranger_body",
     slot: chest,

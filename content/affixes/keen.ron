@@ -1,6 +1,7 @@
 // "Keen ..." — flat accuracy on weapons.
 AffixDef(
     id: "keen",
+    public: true,
     name: "Keen",
     kind: prefix,
     pool: "weapon",

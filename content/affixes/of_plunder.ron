@@ -1,6 +1,7 @@
 // "... of Plunder" — the dead give up better things.
 AffixDef(
     id: "of_plunder",
+    public: true,
     name: "of Plunder",
     kind: suffix,
     pool: "find",

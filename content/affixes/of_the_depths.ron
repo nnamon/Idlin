@@ -1,6 +1,7 @@
 // "... of the Depths" — cold resistance on any armour piece.
 AffixDef(
     id: "of_the_depths",
+    public: true,
     name: "of the Depths",
     kind: suffix,
     pool: "armour",

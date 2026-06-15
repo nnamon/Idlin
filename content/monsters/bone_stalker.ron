@@ -1,6 +1,7 @@
 // A skeletal archer that pelts intruders from range.
 MonsterDef(
     id: "bone_stalker",
+    public: true,
     name: "Bone Stalker",
     model: "stalker",
     brain: "hostile_melee",

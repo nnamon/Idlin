@@ -1,6 +1,7 @@
 // "... of Hoarding" — the dead give up more of everything.
 AffixDef(
     id: "of_hoarding",
+    public: true,
     name: "of Hoarding",
     kind: suffix,
     pool: "find",

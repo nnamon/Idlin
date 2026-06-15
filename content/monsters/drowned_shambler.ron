@@ -1,6 +1,7 @@
 // A slow, waterlogged corpse — the Withered Shore's rank and file.
 MonsterDef(
     id: "drowned_shambler",
+    public: true,
     name: "Drowned Shambler",
     model: "shambler",
     brain: "hostile_melee",

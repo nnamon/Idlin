@@ -1,7 +1,194 @@
 {
   "categories": {
-    "affix": [],
-    "currency": [],
+    "affix": [
+      {
+        "id": "arcane",
+        "name": "Arcane",
+        "num": 25165824
+      },
+      {
+        "id": "hale",
+        "name": "Hale",
+        "num": 25165825
+      },
+      {
+        "id": "heavy",
+        "name": "Heavy",
+        "num": 25165826
+      },
+      {
+        "id": "honed",
+        "name": "Honed",
+        "num": 25165827
+      },
+      {
+        "id": "hulking",
+        "name": "Hulking",
+        "num": 25165828
+      },
+      {
+        "id": "jarring",
+        "name": "Jarring",
+        "num": 25165829
+      },
+      {
+        "id": "keen",
+        "name": "Keen",
+        "num": 25165830
+      },
+      {
+        "id": "of_driving",
+        "name": "of Driving",
+        "num": 25165831
+      },
+      {
+        "id": "of_embers",
+        "name": "of Embers",
+        "num": 25165832
+      },
+      {
+        "id": "of_haste_m",
+        "name": "of Haste",
+        "num": 25165833
+      },
+      {
+        "id": "of_hoarding",
+        "name": "of Hoarding",
+        "num": 25165834
+      },
+      {
+        "id": "of_iron",
+        "name": "of Iron",
+        "num": 25165835
+      },
+      {
+        "id": "of_plunder",
+        "name": "of Plunder",
+        "num": 25165836
+      },
+      {
+        "id": "of_poise",
+        "name": "of Poise",
+        "num": 25165837
+      },
+      {
+        "id": "of_precision",
+        "name": "of Precision",
+        "num": 25165838
+      },
+      {
+        "id": "of_sating",
+        "name": "of Sating",
+        "num": 25165839
+      },
+      {
+        "id": "of_staggering_m",
+        "name": "of Staggering",
+        "num": 25165840
+      },
+      {
+        "id": "of_storms",
+        "name": "of Storms",
+        "num": 25165841
+      },
+      {
+        "id": "of_the_depths",
+        "name": "of the Depths",
+        "num": 25165842
+      },
+      {
+        "id": "of_the_hare",
+        "name": "of the Hare",
+        "num": 25165843
+      },
+      {
+        "id": "of_venom",
+        "name": "of Venom",
+        "num": 25165844
+      },
+      {
+        "id": "of_warding",
+        "name": "of Warding",
+        "num": 25165845
+      },
+      {
+        "id": "of_wards",
+        "name": "of Wards",
+        "num": 25165846
+      },
+      {
+        "id": "of_wind",
+        "name": "of the Wind",
+        "num": 25165847
+      },
+      {
+        "id": "savage",
+        "name": "Savage",
+        "num": 25165848
+      },
+      {
+        "id": "shimmering",
+        "name": "Shimmering",
+        "num": 25165849
+      },
+      {
+        "id": "swift",
+        "name": "Swift",
+        "num": 25165850
+      }
+    ],
+    "currency": [
+      {
+        "id": "alchemy_obol",
+        "name": "Alchemy Obol",
+        "num": 58720256
+      },
+      {
+        "id": "alter_obol",
+        "name": "Alter Obol",
+        "num": 58720257
+      },
+      {
+        "id": "augment_obol",
+        "name": "Augment Obol",
+        "num": 58720258
+      },
+      {
+        "id": "chaotic_obol",
+        "name": "Chaotic Obol",
+        "num": 58720259
+      },
+      {
+        "id": "divine_obol",
+        "name": "Divine Obol",
+        "num": 58720260
+      },
+      {
+        "id": "exalted_obol",
+        "name": "Exalted Obol",
+        "num": 58720261
+      },
+      {
+        "id": "regal_obol",
+        "name": "Regal Obol",
+        "num": 58720262
+      },
+      {
+        "id": "regret_obol",
+        "name": "Regret Obol",
+        "num": 58720263
+      },
+      {
+        "id": "scouring_obol",
+        "name": "Scouring Obol",
+        "num": 58720264
+      },
+      {
+        "id": "transmute_obol",
+        "name": "Transmute Obol",
+        "num": 58720265
+      }
+    ],
     "gem": [
       {
         "id": "added_embers",
@@ -79,11 +266,385 @@
         "num": 8388622
       }
     ],
-    "item": [],
-    "monster": [],
-    "node": [],
+    "item": [
+      {
+        "id": "barnacle_wand",
+        "name": "Barnacle Wand",
+        "num": 16777216
+      },
+      {
+        "id": "brine_helm",
+        "name": "Brinescoured Helm",
+        "num": 16777217
+      },
+      {
+        "id": "driftwood_bow",
+        "name": "Driftwood Bow",
+        "num": 16777218
+      },
+      {
+        "id": "driftwood_buckler",
+        "name": "Driftwood Buckler",
+        "num": 16777219
+      },
+      {
+        "id": "kelp_vest",
+        "name": "Kelp-Woven Vest",
+        "num": 16777220
+      },
+      {
+        "id": "rusted_cleaver",
+        "name": "Rusted Cleaver",
+        "num": 16777221
+      },
+      {
+        "id": "small_life_flask",
+        "name": "Small Life Flask",
+        "num": 16777222
+      },
+      {
+        "id": "small_mana_flask",
+        "name": "Small Mana Flask",
+        "num": 16777223
+      },
+      {
+        "id": "wader_boots",
+        "name": "Wader's Boots",
+        "num": 16777224
+      }
+    ],
+    "monster": [
+      {
+        "id": "bone_stalker",
+        "name": "Bone Stalker",
+        "num": 33554432
+      },
+      {
+        "id": "drowned_shambler",
+        "name": "Drowned Shambler",
+        "num": 33554433
+      },
+      {
+        "id": "grasping_drowned",
+        "name": "Grasping Drowned",
+        "num": 33554434
+      },
+      {
+        "id": "shoal_witch",
+        "name": "Shoal Witch",
+        "num": 33554435
+      },
+      {
+        "id": "tide_husk",
+        "name": "Tide Husk",
+        "num": 33554436
+      },
+      {
+        "id": "tidewarden",
+        "name": "The Tidewarden",
+        "num": 33554437
+      },
+      {
+        "id": "villager",
+        "name": "Survivor",
+        "num": 33554438
+      }
+    ],
+    "node": [
+      {
+        "id": "b1",
+        "name": "Thick Skin",
+        "num": 41943070
+      },
+      {
+        "id": "b2",
+        "name": "Hardy",
+        "num": 41943071
+      },
+      {
+        "id": "b3",
+        "name": "Stalwart",
+        "num": 41943072
+      },
+      {
+        "id": "b4",
+        "name": "Colossus",
+        "num": 41943073
+      },
+      {
+        "id": "b5",
+        "name": "Iron Will",
+        "num": 41943074
+      },
+      {
+        "id": "berserker",
+        "name": "Berserker",
+        "num": 41943065
+      },
+      {
+        "id": "corruption",
+        "name": "Corruption",
+        "num": 41943135
+      },
+      {
+        "id": "d1",
+        "name": "Steady Hands",
+        "num": 41943090
+      },
+      {
+        "id": "d2",
+        "name": "Quick Draw",
+        "num": 41943091
+      },
+      {
+        "id": "d3",
+        "name": "Keen Eye",
+        "num": 41943092
+      },
+      {
+        "id": "d4",
+        "name": "Sure Aim",
+        "num": 41943093
+      },
+      {
+        "id": "d5",
+        "name": "Piercing Shots",
+        "num": 41943094
+      },
+      {
+        "id": "dex1",
+        "name": "Dexterity",
+        "num": 41943080
+      },
+      {
+        "id": "dex2",
+        "name": "Dexterity",
+        "num": 41943081
+      },
+      {
+        "id": "dex3",
+        "name": "Finesse",
+        "num": 41943082
+      },
+      {
+        "id": "el1",
+        "name": "Kindle",
+        "num": 41943120
+      },
+      {
+        "id": "el2",
+        "name": "Living Flame",
+        "num": 41943121
+      },
+      {
+        "id": "el3",
+        "name": "Ashen Ward",
+        "num": 41943122
+      },
+      {
+        "id": "el4",
+        "name": "Emberheart",
+        "num": 41943123
+      },
+      {
+        "id": "el5",
+        "name": "Conflagrate",
+        "num": 41943124
+      },
+      {
+        "id": "hawkeye",
+        "name": "Hawkeye",
+        "num": 41943095
+      },
+      {
+        "id": "int1",
+        "name": "Intelligence",
+        "num": 41943110
+      },
+      {
+        "id": "int2",
+        "name": "Intelligence",
+        "num": 41943111
+      },
+      {
+        "id": "int3",
+        "name": "Insight",
+        "num": 41943112
+      },
+      {
+        "id": "juggernaut",
+        "name": "Juggernaut",
+        "num": 41943075
+      },
+      {
+        "id": "overcharge",
+        "name": "Overcharge",
+        "num": 41943125
+      },
+      {
+        "id": "phantom_grace",
+        "name": "Phantom Grace",
+        "num": 41943105
+      },
+      {
+        "id": "pl1",
+        "name": "Fester",
+        "num": 41943130
+      },
+      {
+        "id": "pl2",
+        "name": "Venom",
+        "num": 41943131
+      },
+      {
+        "id": "pl3",
+        "name": "Grave Ward",
+        "num": 41943132
+      },
+      {
+        "id": "pl4",
+        "name": "Plagueborn",
+        "num": 41943133
+      },
+      {
+        "id": "pl5",
+        "name": "Blight",
+        "num": 41943134
+      },
+      {
+        "id": "scorched_edge",
+        "name": "Scorched Edge",
+        "num": 41943150
+      },
+      {
+        "id": "socket_aegis",
+        "name": "Aegis Socket",
+        "num": 41943076
+      },
+      {
+        "id": "socket_flame",
+        "name": "Flame Socket",
+        "num": 41943126
+      },
+      {
+        "id": "socket_gale",
+        "name": "Gale Socket",
+        "num": 41943106
+      },
+      {
+        "id": "socket_hunt",
+        "name": "Hunt Socket",
+        "num": 41943096
+      },
+      {
+        "id": "socket_rot",
+        "name": "Rot Socket",
+        "num": 41943136
+      },
+      {
+        "id": "socket_war",
+        "name": "War Socket",
+        "num": 41943066
+      },
+      {
+        "id": "start",
+        "name": "First Spark",
+        "num": 41943041
+      },
+      {
+        "id": "str1",
+        "name": "Strength",
+        "num": 41943050
+      },
+      {
+        "id": "str2",
+        "name": "Strength",
+        "num": 41943051
+      },
+      {
+        "id": "str3",
+        "name": "Might",
+        "num": 41943052
+      },
+      {
+        "id": "surefoot",
+        "name": "Surefoot",
+        "num": 41943152
+      },
+      {
+        "id": "venom_fletch",
+        "name": "Venom Fletch",
+        "num": 41943151
+      },
+      {
+        "id": "w1",
+        "name": "Heft",
+        "num": 41943060
+      },
+      {
+        "id": "w2",
+        "name": "Brawn",
+        "num": 41943061
+      },
+      {
+        "id": "w3",
+        "name": "Brutal Rhythm",
+        "num": 41943062
+      },
+      {
+        "id": "w4",
+        "name": "Butcher",
+        "num": 41943063
+      },
+      {
+        "id": "w5",
+        "name": "Overwhelm",
+        "num": 41943064
+      },
+      {
+        "id": "wd1",
+        "name": "Poise",
+        "num": 41943100
+      },
+      {
+        "id": "wd2",
+        "name": "Fleet",
+        "num": 41943101
+      },
+      {
+        "id": "wd3",
+        "name": "Dancer",
+        "num": 41943102
+      },
+      {
+        "id": "wd4",
+        "name": "Ghoststep",
+        "num": 41943103
+      },
+      {
+        "id": "wd5",
+        "name": "Slipstream",
+        "num": 41943104
+      }
+    ],
     "tileset": [],
-    "zone": []
+    "zone": [
+      {
+        "id": "coast",
+        "name": "The Drowned Coast",
+        "num": 50331648
+      },
+      {
+        "id": "saltmere",
+        "name": "Saltmere",
+        "num": 50331649
+      },
+      {
+        "id": "withered_shore",
+        "name": "The Withered Shore",
+        "num": 50331651
+      }
+    ]
   },
   "fingerprint": "247c633789e70735",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit.",

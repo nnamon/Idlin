@@ -1,6 +1,7 @@
 // Monster prefix: hits harder.
 AffixDef(
     id: "savage", name: "Savage", kind: prefix, pool: "monster",
+    public: true,
     weight: 90,
     stat: damage_phys, layer: increased,
     tiers: [

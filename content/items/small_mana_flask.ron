@@ -1,6 +1,7 @@
 // The mana lesson: supports multiply skill costs — the flask keeps up.
 ItemDef(
     id: "small_mana_flask",
+    public: true,
     name: "Small Mana Flask",
     slot: flask,
     w: 1,

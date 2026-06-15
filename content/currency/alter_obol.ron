@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "alter_obol",
+    public: true,
     name: "Alter Obol",
     op: reroll_magic,
     weight: 80,

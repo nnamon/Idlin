@@ -1,6 +1,7 @@
 // Warped but springy. The string smells of kelp.
 ItemDef(
     id: "driftwood_bow",
+    public: true,
     name: "Driftwood Bow",
     model: "bow",
     slot: weapon,

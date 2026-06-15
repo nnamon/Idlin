@@ -1,5 +1,6 @@
 CurrencyDef(
     id: "transmute_obol",
+    public: true,
     name: "Transmute Obol",
     op: to_magic,
     weight: 100,

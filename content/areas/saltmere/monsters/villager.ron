@@ -3,6 +3,7 @@
 // the shore brain pins monster indices.)
 MonsterDef(
     id: "villager",
+    public: true,
     name: "Survivor",
     model: "idler",
     brain: "villager",

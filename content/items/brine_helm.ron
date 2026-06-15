@@ -1,6 +1,7 @@
 // A drowned soldier's helm, scoured clean by the tide.
 ItemDef(
     id: "brine_helm",
+    public: true,
     name: "Brinescoured Helm",
     model: "ranger_hood",
     slot: helm,

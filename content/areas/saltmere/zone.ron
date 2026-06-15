@@ -4,6 +4,7 @@
 // firelight. No monsters; the whole town is sanctuary.
 ZoneDef(
     id: "saltmere",
+    public: true,
     name: "Saltmere",
     kind: town,
     // Dimensions come from map.txt; the count-based generator is dead here.

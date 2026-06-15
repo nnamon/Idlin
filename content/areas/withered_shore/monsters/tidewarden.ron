@@ -3,6 +3,7 @@
 // Cry that rallies every husk in earshot. The tutorial's final exam.
 MonsterDef(
     id: "tidewarden",
+    public: true,
     name: "The Tidewarden",
     model: "tidewarden",
     brain: "hostile_melee",

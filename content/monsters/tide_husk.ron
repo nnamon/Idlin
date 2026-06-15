@@ -1,6 +1,7 @@
 // A bloated hulk of brine and sinew. Hits like a pier collapsing.
 MonsterDef(
     id: "tide_husk",
+    public: true,
     name: "Tide Husk",
     model: "husk",
     brain: "hostile_melee",

@@ -1,6 +1,7 @@
 // "... of Storms" — lightning resistance on any armour piece.
 AffixDef(
     id: "of_storms",
+    public: true,
     name: "of Storms",
     kind: suffix,
     pool: "armour",

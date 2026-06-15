@@ -1,6 +1,7 @@
 // "Honed ..." — flat physical damage.
 AffixDef(
     id: "honed",
+    public: true,
     name: "Honed",
     kind: prefix,
     pool: "weapon",

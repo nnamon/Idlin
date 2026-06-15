@@ -1,6 +1,7 @@
 // "Shimmering ..." — flat energy shield on armour pieces.
 AffixDef(
     id: "shimmering",
+    public: true,
     name: "Shimmering",
     kind: prefix,
     pool: "armour",

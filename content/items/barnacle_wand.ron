@@ -1,6 +1,7 @@
 // Something still pulses inside the shell cluster.
 ItemDef(
     id: "barnacle_wand",
+    public: true,
     name: "Barnacle Wand",
     model: "wand",
     slot: weapon,

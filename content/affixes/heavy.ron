@@ -1,6 +1,7 @@
 // "Heavy Rusted Cleaver" — more physical damage.
 AffixDef(
     id: "heavy",
+    public: true,
     name: "Heavy",
     kind: prefix,
     pool: "weapon",

@@ -1,6 +1,7 @@
 // "Hale ..." — flat life on armor.
 AffixDef(
     id: "hale",
+    public: true,
     name: "Hale",
     kind: prefix,
     pool: "armour",
