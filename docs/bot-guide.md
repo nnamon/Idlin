@@ -374,6 +374,78 @@ it every fire to pick the UseSkill variant); the static geometry —
 `shape`/`radius`/`skill_kind` — moved to `SkillInfo` (you only need it to
 position AoE), and per-gem statics are in `content-docs.json`.
 
+### Reading content: every id is a self-describing num
+
+A read never tells you "this is a gem" or "this is an item" with a type flag —
+it doesn't need to. Every content id is a **stable tagged num** whose high bits
+ARE the category (`gen_ids.bot` defines `ID_SEQ_BITS = 23` and `CAT_GEM = 1`,
+`CAT_ITEM = 2`, `CAT_AFFIX = 3`, …):
+
+```c
+// what kind of thing is this num?
+if ((n >> ID_SEQ_BITS) == CAT_GEM)  { /* it's a gem  */ }
+if ((n >> ID_SEQ_BITS) == CAT_ITEM) { /* it's an item */ }
+// and to recognize a SPECIFIC one, compare against the generated const:
+if (n == GEM_ARC) { /* this exact gem */ }
+```
+
+So a num like `16777221` is `CAT_ITEM` (`16777221 >> 23 == 2`) and specifically
+`ITEM_RUSTED_CLEAVER`; `8388609` is `CAT_GEM` and `GEM_ARC`. This is why reads
+can mix gems and gear in one buffer and stay unambiguous. The *definitional*
+facts behind a num — an item's slot/footprint/base stats, a gem's damage
+formulas, an affix's per-tier roll ranges — live in `content-docs.json`, keyed
+by num; look them up once at authoring time and bake the constants you need.
+
+### Worked examples (concrete bytes)
+
+`read_inventory(0xD000, 60)` returns `3`; the first record (20 bytes at `0xD000`):
+
+```
++0  base_num    16777221   // ITEM_RUSTED_CLEAVER  (>>23 == CAT_ITEM)
++4  rarity      1          // 0 normal · 1 magic · 2 rare · 3 unique
++8  item_level  5          // monster level at drop — gates affix tiers
++12 x           0          // bag column (0..11)
++16 y           0          // bag row    (0..4)
+```
+Need its slot or 2×3 footprint? It's a weapon — you know that from
+`ITEM_RUSTED_CLEAVER` / content-docs; the read won't repeat it.
+
+`read_skills(0xD100, 8)` returns `2`; the first record (36 bytes at `0xD100`):
+
+```
++0  slot_no       1          // 1-based; slot 0 is the basic weapon attack
++4  gem_num       8388612    // GEM_FROST_NOVA  (>>23 == CAT_GEM)
++8  level         3
++12 cooldown_left 0          // ticks until recastable (0 = ok by cooldown)
++16 range         655360     // Q16.16 == 10.0 units  (0x000A0000)
++20 mana_cost     14         // FINAL — support mana-mults folded in
++24 use_ticks     9          // FINAL — support/cast-speed folded in
++28 target_mode   0          // 0 entity · 1 point · 2 direction
++32 ready         1          // cooldown + mana + weapon + not-mid-use all OK
+```
+To fire: `if (rec[+32]) { … }`, dispatch on `target_mode` — entity →
+`use_skill(slot, target,…)`, point → `use_skill_at`, direction → `use_skill_dir`.
+
+`skill_info(1, 0xD200)` returns `0`; the record (12 bytes at `0xD200`) — only
+needed to aim AoE:
+
+```
++0  shape      1          // 0 target · 1 nova · 2 cone · 3 line · 4 point-AoE · 5 projectile
++4  radius     262144     // Q16.16 == 4.0 units  (the nova/AoE radius)
++8  skill_kind 1          // 0 attack · 1 spell
+```
+
+`read_item_mods(0, 0xD300, 16)` on that magic cleaver returns `2`; two 12-byte
+records — the per-instance rolls (the base's static facts are in content-docs):
+
+```
+record 0 @ +0:  affix_num 25165825  // AFFIX_HALE  (>>23 == CAT_AFFIX)
+                value     24         // the rolled amount (flat life here)
+                tier      0          // which tier rolled (index into the affix's tiers)
+record 1 @ +12: affix_num …         // the second roll
+                …
+```
+
 ## Zone brains (the dungeon master is a bot)
 
 A zone may name a `brain:` in its def — a bot program that runs once
