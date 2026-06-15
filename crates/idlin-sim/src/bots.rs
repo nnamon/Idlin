@@ -34,22 +34,29 @@ pub const ENTITY_RECORD_SIZE: u16 = 24;
 use idlin_vm::{
     SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP_BEST, SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM,
     SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EXITS,
-    SYS_READ_INVENTORY, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SOCKET_GEM,
-    SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
-    SYS_USE_SKILL_DIR,
+    SYS_READ_INVENTORY, SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS,
+    SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK,
+    SYS_USE_SKILL, SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
-/// Size of one ReadSkills record in bytes:
-/// slot_no, gem_idx, level, cooldown_left, range_raw, shape, radius_raw.
-pub const SKILL_RECORD_SIZE: u16 = 48; // 12 words
+/// Size of one ReadSkills record in bytes (#54 PR2a: the pure-def geometry —
+/// shape/radius/skill_kind — moved to SkillInfo). Record: slot_no, gem_num,
+/// level, cooldown_left, range, mana_cost, use_ticks, target_mode, ready.
+pub const SKILL_RECORD_SIZE: u16 = 36; // 9 words
+// SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline.
 
-/// Size of one ReadInventory record in bytes:
-/// base_idx, slot, rarity, item_level, x, y, w, h.
-pub const INVENTORY_RECORD_SIZE: u16 = 32;
+/// Size of one ReadInventory record in bytes (#54 PR2a: slot/w/h are
+/// definitional — look them up by `base_num` in the docs). Record: base_num,
+/// rarity, item_level, x, y.
+pub const INVENTORY_RECORD_SIZE: u16 = 20; // 5 words
+/// Size of one ReadItemMods record in bytes: affix_num, value, tier.
+pub const ITEM_MODS_RECORD_SIZE: u16 = 12; // 3 words
 /// Hard cap on inventory query results (a 12×5 bag of 1×1s caps at 60).
 pub const MAX_INVENTORY_RESULTS: usize = 60;
+/// Hard cap on rolled-mod results per item.
+pub const MAX_ITEM_MODS: usize = 16;
 
 /// ReadEntities filters. "Enemies" is faction-relative: a player bot sees
 /// hostiles, a hostile NPC brain sees players — the same brain logic works
@@ -562,25 +569,22 @@ impl World {
                     return -1;
                 };
                 let Some(ch) = &e.character else { return -1 };
-                // Record: base_idx, slot, rarity, item_level, x, y, w, h.
-                let records: Vec<[i32; 8]> = ch
+                // Record (#54 PR2a): base_num, rarity, item_level, x, y.
+                // slot/w/h are definitional — look them up by base_num in docs.
+                let records: Vec<[i32; 5]> = ch
                     .inventory
                     .iter()
                     .take(max)
                     .map(|placed| {
-                        let def = &self.content_items()[placed.item.base_idx as usize];
                         [
                             self.content_num(
                                 idlin_content::ids::Category::Item,
                                 placed.item.base_idx as usize,
                             ),
-                            def.slot.idx() as i32,
                             placed.item.rarity as i32,
                             placed.item.item_level as i32,
                             placed.x as i32,
                             placed.y as i32,
-                            def.w as i32,
-                            def.h as i32,
                         ]
                     })
                     .collect();
@@ -637,7 +641,14 @@ impl World {
                     return -1;
                 };
                 let now = self.tick_count();
-                let records: Vec<[i32; 12]> = gems
+                // Record (#54 PR2a): slot_no, gem_num, level, cooldown_left,
+                // range, mana_cost, use_ticks, target_mode, ready. The pure-def
+                // GEOMETRY (shape/radius/skill_kind) moved to SkillInfo; but
+                // target_mode stays — a bot needs it EVERY fire to pick the
+                // UseSkill variant, so forcing a per-fire syscall for it would be
+                // wasteful. range/cost/use_ticks stay too (they fold supports +
+                // live stats, not pure-def).
+                let records: Vec<[i32; 9]> = gems
                     .iter()
                     .take(max)
                     .enumerate()
@@ -649,22 +660,10 @@ impl World {
                         } else {
                             c.map(|c| c.range.raw()).unwrap_or(0)
                         };
-                        let shape = match def.shape {
-                            idlin_content::SkillShape::Target => 0,
-                            idlin_content::SkillShape::Nova => 1,
-                            idlin_content::SkillShape::Cone => 2,
-                            idlin_content::SkillShape::Line => 3,
-                            idlin_content::SkillShape::PointAoe => 4,
-                            idlin_content::SkillShape::Projectile => 5,
-                        };
                         let target_mode = match def.target_mode {
                             idlin_content::TargetMode::Entity => 0,
                             idlin_content::TargetMode::Point => 1,
                             idlin_content::TargetMode::Direction => 2,
-                        };
-                        let skill_kind = match def.skill_kind {
-                            idlin_content::SkillKind::Attack => 0,
-                            idlin_content::SkillKind::Spell => 1,
                         };
                         // Final cost: support mana multipliers included.
                         let cost = self.skill_mana_cost(sg);
@@ -693,18 +692,106 @@ impl World {
                             sg.gem.level as i32,
                             sg.cooldown_left as i32,
                             range,
-                            shape,
-                            crate::world::fx_from_cu(def.radius_cu).raw(),
                             cost.clamp(0, i32::MAX as i64) as i32,
                             use_ticks,
                             target_mode,
-                            skill_kind,
                             ready,
                         ]
                     })
                     .collect();
                 for (i, rec) in records.iter().enumerate() {
                     let base = out.wrapping_add(i as u16 * SKILL_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_SKILL_INFO => {
+                let slot_no = bot.vm.pop();
+                let out = bot.vm.pop() as u16;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                // Same slot space as ReadSkills (1-based; slot 0 is the basic
+                // weapon attack, which has no gem def → -1).
+                let gems: Vec<&crate::entity::SocketedGem> = if let Some(ch) = &e.character {
+                    self.skill_nodes(ch)
+                        .iter()
+                        .map(|node| &ch.sockets[node])
+                        .collect()
+                } else if let Some(m) = &e.monster {
+                    m.skills.iter().collect()
+                } else {
+                    return -1;
+                };
+                // Guard BEFORE subtracting: slot_no is raw bot input, and
+                // `i32::MIN - 1` would overflow-panic in debug builds. Slot 0 is
+                // the basic weapon attack (no gem def) → -1, like any bad slot.
+                if slot_no <= 0 {
+                    return -1;
+                }
+                let Some(sg) = gems.get(slot_no as usize - 1) else {
+                    return -1;
+                };
+                let def = &self.content_gems()[sg.gem.gem_idx as usize];
+                let shape = match def.shape {
+                    idlin_content::SkillShape::Target => 0,
+                    idlin_content::SkillShape::Nova => 1,
+                    idlin_content::SkillShape::Cone => 2,
+                    idlin_content::SkillShape::Line => 3,
+                    idlin_content::SkillShape::PointAoe => 4,
+                    idlin_content::SkillShape::Projectile => 5,
+                };
+                let skill_kind = match def.skill_kind {
+                    idlin_content::SkillKind::Attack => 0,
+                    idlin_content::SkillKind::Spell => 1,
+                };
+                // Record: shape, radius, skill_kind — the static geometry/kind a
+                // bot needs to position AoE; target_mode lives in ReadSkills.
+                let rec = [
+                    shape,
+                    crate::world::fx_from_cu(def.radius_cu).raw(),
+                    skill_kind,
+                ];
+                for (j, v) in rec.iter().enumerate() {
+                    bot.vm.store_i32(out.wrapping_add(4 * j as u16), *v);
+                }
+                0
+            }
+            SYS_READ_ITEM_MODS => {
+                let inv_idx = bot.vm.pop();
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_ITEM_MODS as i32) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let Some(ch) = &e.character else { return -1 };
+                let Ok(idx) = usize::try_from(inv_idx) else {
+                    return -1;
+                };
+                let Some(placed) = ch.inventory.get(idx) else {
+                    return -1;
+                };
+                // Record: affix_num, rolled value, tier.
+                let records: Vec<[i32; 3]> = placed
+                    .item
+                    .affixes
+                    .iter()
+                    .take(max)
+                    .map(|a| {
+                        [
+                            self.content_num(
+                                idlin_content::ids::Category::Affix,
+                                a.affix_idx as usize,
+                            ),
+                            a.value.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+                            a.tier as i32,
+                        ]
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * ITEM_MODS_RECORD_SIZE);
                     for (j, v) in rec.iter().enumerate() {
                         bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
                     }

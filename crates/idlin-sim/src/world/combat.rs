@@ -2052,6 +2052,113 @@ mod tests {
         events
     }
 
+    /// #54 PR2a: SkillInfo exposes the def geometry stripped from ReadSkills,
+    /// and ReadItemMods exposes an item's rolled affixes — both keyed by stable
+    /// tagged nums.
+    #[test]
+    fn skill_info_and_read_item_mods_expose_def_detail() {
+        use crate::entity::{Item, PlacedItem, Rarity, RolledAffix, SocketedGem};
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(0x5141, &content);
+        // One debug() per value (debug is single-arg): skill_info return, then
+        // shape/skill_kind from its record; mod count, then affix_num/value/tier
+        // from the first mod.
+        let program = idlin_botc::compile(
+            "fn main() {\n\
+             debug(skill_info(1, 0xE000));\n\
+             var n = read_item_mods(0, 0xE100, 8);\n\
+             debug(mem[0xE000]);\n\
+             debug(mem[0xE008]);\n\
+             debug(n);\n\
+             debug(mem[0xE100]);\n\
+             debug(mem[0xE104]);\n\
+             debug(mem[0xE108]);\n\
+             debug(skill_info(9, 0xE200));\n\
+             debug(read_item_mods(9, 0xE300, 8));\n\
+             debug(skill_info(0, 0xE200));\n\
+             debug(skill_info(0 - 5, 0xE200));\n\
+             }\n",
+        )
+        .expect("compiles");
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Seer".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character");
+        let net = world.zone.get(slot).unwrap().net_id;
+        let socket_node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        let hale_idx = content.affixes.iter().position(|a| a.id == "hale").unwrap() as u32;
+        let expect_affix_num = content
+            .content_num(Category::Affix, hale_idx as usize)
+            .unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.sockets.insert(
+                socket_node,
+                SocketedGem {
+                    gem: instance(&content, "frost_nova", 1),
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+            ch.inventory.push(PlacedItem {
+                item: Item {
+                    base_idx: 0,
+                    rarity: Rarity::Magic,
+                    item_level: 5,
+                    affixes: vec![RolledAffix {
+                        affix_idx: hale_idx,
+                        value: 12,
+                        tier: 0,
+                    }],
+                    name: String::new(),
+                    charges: 0,
+                },
+                x: 0,
+                y: 0,
+            });
+        }
+        // Next tick: the bot reads its now-populated skill + item.
+        let events = world.tick(&crate::TickInputs::default());
+        let vals: Vec<i32> = events
+            .iter()
+            .filter_map(|e| match e {
+                super::SimEvent::BotDebug { id, values } if *id == net => values.first().copied(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(vals.len(), 11, "eleven debug emits: {vals:?}");
+        assert_eq!(vals[0], 0, "skill_info(1) is a valid slot");
+        assert_eq!(vals[1], 1, "frost_nova shape = nova");
+        assert_eq!(vals[2], 1, "frost_nova kind = spell");
+        assert_eq!(vals[3], 1, "one rolled mod on the item");
+        assert_eq!(vals[4], expect_affix_num, "the rolled affix's tagged num");
+        assert_eq!(vals[5], 12, "the rolled value");
+        assert_eq!(vals[6], 0, "the rolled tier");
+        // Out-of-range / zero / negative slot and a bad item index are all
+        // rejected with -1 — never garbage, never a panic (slot is raw input).
+        assert_eq!(vals[7], -1, "skill_info on an empty slot → -1");
+        assert_eq!(vals[8], -1, "read_item_mods on a bad index → -1");
+        assert_eq!(vals[9], -1, "skill_info on slot 0 (basic attack) → -1");
+        assert_eq!(vals[10], -1, "skill_info on a negative slot → -1");
+    }
+
     #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
