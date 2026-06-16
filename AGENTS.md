@@ -26,14 +26,37 @@ Most rules carry **✅ do / ❌ don't** examples — match the example when in d
   run an independent critic, triage its findings, gate the commit, open the PR.
   Distrust your own "done" — apply this loop to your own work with full rigor, or the
   critic becomes your QA.
-- **Critic.** A *separate* subagent invocation pointed at the **uncommitted diff** and
-  prompted to **REFUTE** — never the same pass that wrote the code. Skeleton:
+- **Critic — a different model, by hard rule.** `codex exec -m gpt-5.5` (NOT
+  `gpt-5.5-codex`), pointed at the **uncommitted diff** and prompted to **REFUTE** —
+  never the same pass that wrote the code, and **never an in-harness Claude/Opus
+  `Agent` subagent.** A Claude critic on Claude-written code shares training and
+  failure modes, so it is only weakly independent; **cross-model review is the entire
+  point of the gate.** Invoke in the background, wait death-aware (`kill -0 "$PID"`
+  loop, not a blind `until`), redirect `</dev/null` so it can't block on stdin:
 
-  > Adversarial critic. REFUTE that this diff is correct, complete, and deterministic.
-  > Review ONLY the uncommitted diff (`git diff HEAD`, `git status`). For each defect:
-  > file:line, a concrete repro, verdict CLOSED / STILL-OPEN / NEW. Hunt specifically
-  > for <the risk areas of THIS change>. Confirm the new tests fail if the fix is
-  > reverted (mutation reasoning). Run fmt / clippy / test + the determinism trio.
+  ```sh
+  nohup codex exec -m gpt-5.5 --dangerously-bypass-approvals-and-sandbox \
+    -C /Users/amon/projects/idlin/Idlin \
+    --output-last-message /tmp/critic.md "$(cat /tmp/critic_prompt.md)" \
+    </dev/null > /tmp/critic.log 2>&1 &
+  ```
+
+  Skeleton prompt — judge **both correctness and design**:
+
+  > Adversarial critic. REFUTE that this diff is correct, complete, deterministic, AND
+  > well-designed. Review ONLY the uncommitted diff (`git diff HEAD`, `git status`).
+  > For each defect: file:line, a concrete repro, verdict CLOSED / STILL-OPEN / NEW.
+  > Hunt specifically for <the risk areas of THIS change>.
+  >
+  > **Correctness/determinism:** confirm the new tests fail if the fix is reverted
+  > (mutation reasoning); run fmt / clippy / test + the determinism trio.
+  >
+  > **Design:** flag architectural smells; flag where the change **reinvents a
+  > component that already exists instead of reusing it**; flag **over-engineering**
+  > (abstraction, generality, or config the spec doesn't call for); reward the simple,
+  > elegant path that fits the existing architecture. A correct-but-inelegant or
+  > needlessly-complex diff is STILL-OPEN, not MERGE.
+  >
   > Per-area verdicts; conclude MERGE or DO-NOT-MERGE.
 
 - **Background coder / the `Workflow` tool** — held in reserve for large
@@ -257,7 +280,8 @@ it plus the `.bot` consts and the docs; CI gates drift on all three.
 **Do**
 - Spec the feature as an issue (paper trail) before non-trivial work.
 - Branch off `main`; worktree only for parallel work.
-- Self-verify the full gate + read the decisive tests; then run an independent critic.
+- Self-verify the full gate + read the decisive tests; then run the cross-model codex critic (§1).
+- Hold the diff to design quality too: reuse existing components, stay simple, no over-engineering.
 - Triage each finding against the code; escalate a recurring class to a structural fix.
 - Run the determinism trio; re-pin `GOLDEN_HASH` only intentionally, with a why.
 - Name the evidence (file:line + what it shows) for every claim.
