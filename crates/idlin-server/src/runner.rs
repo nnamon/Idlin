@@ -9,7 +9,7 @@ use idlin_protocol::{
     PropState, TileMapState, TileVisual,
 };
 use idlin_sim::world::CharacterSheetView;
-use idlin_sim::{EntityView, SimEvent, TICK_HZ, TickInputs, World};
+use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -60,11 +60,83 @@ pub struct ManagedWorld {
     pub world: World,
     /// Resolved tile map for authored zones (build once at boot).
     pub tiles: Option<Arc<TileMapState>>,
-    /// ZoneDef::max_players (0 = unlimited) — the ferry never overfills.
+    /// ZoneDef::max_players (0 = unlimited). The ferry honors this cap when
+    /// ROUTING a transfer to a destination, but it is a soft cap: a character
+    /// with nowhere to go returns to its source even if that source is at cap
+    /// (never lost beats never-overfilled — see `route_departure`). The sim
+    /// itself enforces no hard cap.
     pub max_players: u32,
     /// Inputs queued for this world's next tick (joins at boot, then
     /// ferried arrivals).
     pub pending: TickInputs,
+}
+
+/// Whether a world can still accept a character (`max_players == 0` is
+/// unlimited; otherwise the projected next-tick population must be under the
+/// cap). The projection counts live characters PLUS those already queued for
+/// next tick (`pending` joins + arrivals) — so several ferries in one pass
+/// can't each see the same free slot and collectively overfill a capped zone.
+fn has_room(mw: &ManagedWorld) -> bool {
+    if mw.max_players == 0 {
+        return true;
+    }
+    let live = mw.world.views().iter().filter(|v| v.kind == 1).count();
+    let queued = mw.pending.joins.len() + mw.pending.arrivals.len();
+    ((live + queued) as u32) < mw.max_players
+}
+
+/// Pick the world index a departing character routes to: the world whose key
+/// matches `dest` (a specific instance) and has room, else any world
+/// simulating that zone with room (a returning idler rejoins an existing
+/// instance). When NOTHING can take them — an unknown destination, or every
+/// matching instance is full — the character returns to its `source` world
+/// rather than being dropped overboard ("lost at sea", #63). The host then
+/// always lands the bundle in exactly one world's arrivals.
+///
+/// The source fallback is intentionally NOT capacity-gated: never losing a
+/// character outranks honoring the soft cap. In a same-tick race — another
+/// transfer claims the slot this character just vacated before its own
+/// bounce-back — the source can exceed its cap, and sustained contention could
+/// push it further over. That is accepted: `max_players` only shapes routing
+/// (the sim hard-enforces no cap), and admitting the character always beats
+/// dropping it (#63). Enforcing a hard cap here would need a reservation pass
+/// and is out of scope for the data-loss fix.
+fn route_departure(worlds: &[ManagedWorld], source: usize, dest: &str) -> usize {
+    worlds
+        .iter()
+        .position(|mw| mw.key == dest && has_room(mw))
+        .or_else(|| {
+            worlds
+                .iter()
+                .position(|mw| mw.zone_id == dest && has_room(mw))
+        })
+        // Nowhere to go → home, cap or no cap. Never overboard.
+        .unwrap_or(source)
+}
+
+/// Land each of this tick's departures into exactly one world's arrivals.
+/// `route_departure` guarantees a valid target — the destination instance, or
+/// the source world when the destination is unknown or full — so a transfer
+/// can never drop a character ("lost at sea", #63).
+fn ferry_departures(
+    worlds: &mut [ManagedWorld],
+    departures: Vec<(usize, CharacterBundle, String)>,
+) {
+    for (source, bundle, dest) in departures {
+        let target = route_departure(worlds, source, &dest);
+        if target == source {
+            warn!(
+                "{} could not reach zone {dest} (unknown or full); returned to source {}",
+                bundle.character.name, worlds[source].key
+            );
+        } else {
+            info!(
+                "ferrying {} to {}",
+                bundle.character.name, worlds[target].key
+            );
+        }
+        worlds[target].pending.arrivals.push(bundle);
+    }
 }
 
 /// Resolve a zone's authored map into wire form: tileset + variant
@@ -150,37 +222,21 @@ pub fn spawn_tick_loop(
                             warn!("[{}] join rejected for {name}: {reason}", mw.key);
                         }
                     }
-                    all_departures.extend(mw.world.take_departures());
+                    // Tag each departure with its SOURCE world so a transfer
+                    // that can't be placed can be returned home, not dropped.
+                    all_departures.extend(
+                        mw.world
+                            .take_departures()
+                            .into_iter()
+                            .map(|(b, dest)| (i, b, dest)),
+                    );
                     frames_data.push((i, events));
                 }
 
-                // Ferry: each departure becomes an arrival in the world
-                // whose zone matches — shared zones are keyed by their
-                // zone id; failing that, any world simulating the zone
-                // (a returning idler rejoins an existing instance).
-                for (bundle, dest) in all_departures {
-                    let name = bundle.character.name.clone();
-                    let has_room = |mw: &ManagedWorld| {
-                        mw.max_players == 0
-                            || (mw.world.views().iter().filter(|v| v.kind == 1).count() as u32)
-                                < mw.max_players
-                    };
-                    let target = worlds
-                        .iter()
-                        .position(|mw| mw.key == dest && has_room(mw))
-                        .or_else(|| {
-                            worlds
-                                .iter()
-                                .position(|mw| mw.zone_id == dest && has_room(mw))
-                        });
-                    match target {
-                        Some(i) => {
-                            info!("ferrying {name} to {}", worlds[i].key);
-                            worlds[i].pending.arrivals.push(bundle);
-                        }
-                        None => warn!("{name} departed for unknown zone {dest}; lost at sea"),
-                    }
-                }
+                // Ferry: land each departure into its destination world (or
+                // back to its source when that zone is unknown or full) — a
+                // transfer never loses a character (#63).
+                ferry_departures(&mut worlds, all_departures);
 
                 // PERSISTENCE: save at the post-ferry boundary — every
                 // character is in exactly one world's state or pending
@@ -382,5 +438,247 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         passive_allocated: v.passive_allocated,
         passive_unspent: v.passive_unspent,
         build_len: v.build_len,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use idlin_sim::JoinRequest;
+    use idlin_sim::entity::CharacterState;
+
+    /// A world holding `n` characters (joined halt-bots), so `has_room` sees a
+    /// real `views()` population. Empty content keeps it cheap and deterministic.
+    fn world_with_chars(n: usize, content: &ContentDb) -> World {
+        let mut w = World::new(0xF0, content);
+        let prog = idlin_botc::assemble("halt\n").unwrap();
+        let joins = (0..n)
+            .map(|i| JoinRequest {
+                name: format!("c{i}"),
+                program: prog.clone(),
+            })
+            .collect();
+        w.tick(&TickInputs {
+            joins,
+            arrivals: Vec::new(),
+        });
+        w
+    }
+
+    fn managed(key: &str, zone_id: &str, world: World, max_players: u32) -> ManagedWorld {
+        ManagedWorld {
+            key: key.into(),
+            zone_id: zone_id.into(),
+            world,
+            tiles: None,
+            max_players,
+            pending: TickInputs::default(),
+        }
+    }
+
+    fn bundle(name: &str) -> CharacterBundle {
+        CharacterBundle {
+            character: CharacterState {
+                name: name.into(),
+                level: 1,
+                xp: 0,
+                respawn_at: None,
+                kills: 0,
+                items: 0,
+                inventory: Vec::new(),
+                equipment: Default::default(),
+                allocated: Vec::new(),
+                build_plan: Vec::new(),
+                currency: Vec::new(),
+                sockets: std::collections::BTreeMap::new(),
+            },
+            program: idlin_botc::assemble("halt\n").unwrap(),
+            persist: Vec::new(),
+            params: Vec::new(),
+            bot_version: 1,
+        }
+    }
+
+    #[test]
+    fn route_departure_prefers_exact_key_then_zone_then_source() {
+        let content = ContentDb::empty();
+        let worlds = vec![
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
+            managed(
+                "shore#A",
+                "withered_shore",
+                world_with_chars(0, &content),
+                0,
+            ),
+            managed(
+                "shore#B",
+                "withered_shore",
+                world_with_chars(0, &content),
+                0,
+            ),
+        ];
+        // An exact instance key wins.
+        assert_eq!(route_departure(&worlds, 0, "shore#B"), 2);
+        // No matching key → first roomy instance of the zone.
+        assert_eq!(route_departure(&worlds, 0, "withered_shore"), 1);
+        // Unknown destination → back to source, never dropped (#63).
+        assert_eq!(route_departure(&worlds, 0, "atlantis"), 0);
+    }
+
+    #[test]
+    fn route_departure_skips_full_instances_and_falls_back_to_source() {
+        let content = ContentDb::empty();
+        // The only instance of "withered_shore" is full (cap 1, holds 1).
+        let mut worlds = vec![
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
+            managed(
+                "shore#A",
+                "withered_shore",
+                world_with_chars(1, &content),
+                1,
+            ),
+        ];
+        // No room anywhere → returns to source (the "lost at sea" case, #63).
+        assert_eq!(route_departure(&worlds, 0, "withered_shore"), 0);
+        // Add a second, roomy instance: the departure routes there instead.
+        worlds.push(managed(
+            "shore#B",
+            "withered_shore",
+            world_with_chars(0, &content),
+            1,
+        ));
+        assert_eq!(route_departure(&worlds, 0, "withered_shore"), 2);
+    }
+
+    #[test]
+    fn ferry_returns_character_home_when_destination_unknown_or_full() {
+        let content = ContentDb::empty();
+        let mut worlds = vec![
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
+            managed(
+                "shore#A",
+                "withered_shore",
+                world_with_chars(1, &content),
+                1,
+            ), // full
+        ];
+        // One bound for an unknown zone, one for a full zone — both must survive.
+        let departures = vec![
+            (0, bundle("Lost"), "atlantis".to_string()),
+            (0, bundle("Crowded"), "withered_shore".to_string()),
+        ];
+        ferry_departures(&mut worlds, departures);
+        assert_eq!(
+            worlds[0].pending.arrivals.len(),
+            2,
+            "unknown + full destinations both return home, not overboard"
+        );
+        assert_eq!(
+            worlds[1].pending.arrivals.len(),
+            0,
+            "the full instance took nobody"
+        );
+        let names: Vec<&str> = worlds[0]
+            .pending
+            .arrivals
+            .iter()
+            .map(|b| b.character.name.as_str())
+            .collect();
+        assert!(names.contains(&"Lost") && names.contains(&"Crowded"));
+    }
+
+    #[test]
+    fn ferry_delivers_to_a_matching_roomy_world() {
+        let content = ContentDb::empty();
+        let mut worlds = vec![
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
+            managed(
+                "shore#A",
+                "withered_shore",
+                world_with_chars(0, &content),
+                0,
+            ),
+        ];
+        ferry_departures(
+            &mut worlds,
+            vec![(0, bundle("Traveler"), "withered_shore".to_string())],
+        );
+        assert_eq!(
+            worlds[1].pending.arrivals.len(),
+            1,
+            "delivered to the destination zone"
+        );
+        assert_eq!(worlds[0].pending.arrivals.len(), 0, "source keeps nobody");
+    }
+
+    #[test]
+    fn ferry_does_not_overfill_a_capped_world_within_one_tick() {
+        let content = ContentDb::empty();
+        // One empty instance of the zone, cap 1. Two characters race its slot.
+        let mut worlds = vec![
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
+            managed(
+                "shore#A",
+                "withered_shore",
+                world_with_chars(0, &content),
+                1,
+            ),
+        ];
+        let departures = vec![
+            (0, bundle("First"), "withered_shore".to_string()),
+            (0, bundle("Second"), "withered_shore".to_string()),
+        ];
+        ferry_departures(&mut worlds, departures);
+        // The cap-1 instance admits exactly one; counting queued arrivals stops
+        // the second from seeing the same free slot and overfilling it.
+        assert_eq!(
+            worlds[1].pending.arrivals.len(),
+            1,
+            "a cap-1 zone takes exactly one of two same-tick arrivals"
+        );
+        assert_eq!(
+            worlds[0].pending.arrivals.len(),
+            1,
+            "the second returns to source, neither overfills nor is lost"
+        );
+    }
+
+    #[test]
+    fn ferry_never_loses_a_returning_character_even_when_its_slot_was_taken() {
+        // The race the soft cap accepts: shore#A (cap 1) has just emptied, an
+        // external transfer claims its one slot, and shore#A's own departed
+        // character then bounces back (its destination unknown). The cap may be
+        // exceeded by one, but NO character is dropped — the #63 invariant.
+        let content = ContentDb::empty();
+        let mut worlds = vec![
+            managed("town", "town", world_with_chars(0, &content), 0),
+            managed(
+                "shore#A",
+                "withered_shore",
+                world_with_chars(0, &content),
+                1,
+            ),
+        ];
+        let departures = vec![
+            // External: claims shore#A's free slot first.
+            (0, bundle("Visitor"), "withered_shore".to_string()),
+            // shore#A's own occupant, destination unknown → bounces home.
+            (1, bundle("Owner"), "atlantis".to_string()),
+        ];
+        ferry_departures(&mut worlds, departures);
+        let total: usize = worlds.iter().map(|w| w.pending.arrivals.len()).sum();
+        assert_eq!(
+            total, 2,
+            "every departed character lands somewhere — none lost"
+        );
+        // The returner specifically is preserved (admitted to its source).
+        assert!(
+            worlds[1]
+                .pending
+                .arrivals
+                .iter()
+                .any(|b| b.character.name == "Owner"),
+            "the returning character is admitted home, not dropped"
+        );
     }
 }
