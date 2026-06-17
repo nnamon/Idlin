@@ -1,10 +1,13 @@
 # UI capture harness (deterministic screenshots)
 
-The §6 prerequisite: reproducible UI screenshots from **canned server state**, so a
-UI change can be captured and signed off instead of "verified" by a typecheck.
+Reproducible UI screenshots from **canned server state**, so a UI change can be captured
+and signed off instead of "verified" by a typecheck (AGENTS.md §6).
 
-Today this covers **Track 1 — the React overlay** (focus/inspect panel, stats, gear,
-gems). The 3D scene (Track 2) is not captured yet; see issue #80.
+Two surfaces:
+- **The React overlay** (focus/inspect panel, stats, gear, gems): deterministic by purity —
+  a static fixture re-renders to identical pixels with no clock.
+- **The 3D scene** (`ZoneRenderer`): deterministic via a seeded global `Math.random` + a
+  stepped virtual clock + an optional pinned camera.
 
 ## Run it
 
@@ -40,6 +43,13 @@ deterministically with the right text; only your eyes prove it looks right.
 - **Frame-ready, not sleep.** The fixture applies all messages *before* the first
   render, drains React's scheduler (via `MessageChannel`), awaits `document.fonts.ready`,
   then sets `window.__harness.ready`. The driver awaits that flag.
+- **Scene fixtures** seed `Math.random` (covers terrain noise, brazier phases,
+  per-entity idle phase, three.js UUIDs), build the `ZoneRenderer` in `capture` mode (a
+  screenshottable back buffer, no rAF loop), `await renderer.whenReady` (models + fonts),
+  then `stepFrames(n)` on a virtual clock so animation settles deterministically. A black
+  WebGL canvas would compress below the manifest's `minBytes` and fail; the shot is still
+  eyeballed for real sign-off. WebGL byte-stability holds same-machine (SwiftShader);
+  cross-machine drift is expected — pixels are presentation, not the sacred `state_hash`.
 - **No drift.** The browser registry (`src/harness/fixtures.ts`) is published on
   `window.__harnessRegistry`; a test asserts it matches the Node manifest exactly, so a
   fixture can't be added/captured without a render assertion.
@@ -52,7 +62,10 @@ deterministically with the right text; only your eyes prove it looks right.
    `src/harness/builders.ts` (`zoneSnapshot`, `directorCue`, `characterSheet`, …). The
    builders are typed against the generated wire types, so a protocol change breaks the
    fixture at typecheck — that's intended.
-2. Add a key to the `FIXTURES` map (the key is the `?fixture=<name>` id).
-3. Add a row to `harness/manifest.ts` with `name` (matching the key) and `expect`
-   (substrings that must appear on screen — the non-vacuous render check).
+2. Add a key to the `FIXTURES` map (the key is the `?fixture=<name>` id). Set `kind`:
+   `"overlay"` (mount the HUD) or `"scene"` (build the `ZoneRenderer`; give it a `seed`,
+   optional `frames`, and an optional pinned `camera: [x,y,z, tx,ty,tz]`).
+3. Add a row to `harness/manifest.ts` with the matching `name` and `kind`, plus the
+   non-vacuous check: `expect` (substrings on screen) for overlay, or `minBytes` (the
+   canvas must exceed this) for scene.
 4. `pnpm -C web capture`, then eyeball `harness/shots/<name>.png`.

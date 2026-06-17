@@ -1,18 +1,42 @@
 import type { S2C } from "../gen/S2C";
 import type { NetStatus } from "../net/client";
 import { LIVE_STATUS } from "./stubClient";
-import { character, characterSheet, directorCue, gear, sheet, zoneSnapshot } from "./builders";
+import {
+  character,
+  characterSheet,
+  directorCue,
+  gear,
+  monster,
+  sheet,
+  simXY,
+  zoneSnapshot,
+} from "./builders";
 
-/** A canned scene: a fixed link status plus a sequence of server messages
- *  replayed through a fresh `WorldStore` with nothing live behind it. */
-export interface Fixture {
-  /** One-line description, surfaced in the README and at sign-off. */
-  label: string;
-  /** Link status the stub client reports (drives the plaque). */
-  status: NetStatus;
-  /** Messages applied via `store.handle()` before the first render. */
-  messages: S2C[];
-}
+/** A canned scene replayed through a fresh `WorldStore` with nothing live
+ *  behind it. Two kinds:
+ *  - `overlay`: render the React HUD; deterministic by purity (Track 1).
+ *  - `scene`: render the 3D `ZoneRenderer` under a seeded `Math.random` and a
+ *    stepped virtual clock (Track 2). */
+export type Fixture =
+  | {
+      kind: "overlay";
+      label: string;
+      /** Link status the stub client reports (drives the plaque). */
+      status: NetStatus;
+      /** Messages applied via `store.handle()` before the first render. */
+      messages: S2C[];
+    }
+  | {
+      kind: "scene";
+      label: string;
+      /** Seed for the global `Math.random` override (reproducible geometry). */
+      seed: number;
+      /** Virtual frames to step (animation settles deterministically). */
+      frames?: number;
+      /** Fixed camera [x,y,z, targetX,targetY,targetZ]; omit to let the director frame. */
+      camera?: number[];
+      messages: S2C[];
+    };
 
 const FOCUS_ID = 1;
 const NAME = "Brakka";
@@ -24,6 +48,7 @@ const NAME = "Brakka";
  * scene ("the offhand at 0.4 opacity").
  */
 const inspectPanel: Fixture = {
+  kind: "overlay",
   label:
     "Focus panel: full inspect sheet for a lv42 marauder with a two-handed weapon (offhand mirrored, dimmed)",
   status: LIVE_STATUS,
@@ -97,7 +122,53 @@ const inspectPanel: Fixture = {
   ],
 };
 
+/**
+ * The 3D scene: a grinder and a stalker on the generated Withered Shore terrain
+ * at night, the director framing the grinder. Exercises terrain, the night rig,
+ * braziers, fog, post-processing, and two animated rigged models — the whole
+ * `ZoneRenderer` path under a seeded clock + RNG.
+ */
+const sceneShore: Fixture = {
+  kind: "scene",
+  label: "Scene: a grinder and a stalker on the Withered Shore at night, close 3/4 view",
+  seed: 0x1d71c0de,
+  frames: 40,
+  // World coords: x = sim x, z = sim y, y = up. Grinder ~(30,22), stalker
+  // ~(34,24); a near 3/4 view looking down the strand at them.
+  camera: [31, 9, 36, 32.5, 1.2, 22.5],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Withered Shore",
+      entities: [
+        character({
+          id: 1,
+          name: "Brakka",
+          model: "idler",
+          level: 42,
+          life_pct: 90,
+          weapon: "cleaver",
+          weapon_rarity: 2,
+          gear: ["ranger_body", "ranger_legs", "ranger_feet"],
+          gear_rarity: [2, 1, 1],
+          ...simXY(30, 22),
+        }),
+        monster({
+          id: 2,
+          name: "Tide Stalker",
+          model: "stalker",
+          level: 40,
+          life_pct: 70,
+          rarity: 2,
+          ...simXY(34, 24),
+        }),
+      ],
+    }),
+    directorCue(1, "carving the strand"),
+  ],
+};
+
 /** Every fixture, keyed by the id used in `?fixture=<name>` and the shot path. */
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
+  "scene-shore": sceneShore,
 };

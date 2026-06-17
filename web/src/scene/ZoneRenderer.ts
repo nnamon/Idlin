@@ -123,6 +123,12 @@ export class ZoneRenderer {
   private moon: THREE.DirectionalLight;
   private focusRing: THREE.Mesh;
   private timer = new THREE.Timer();
+  /** Resolves once models + fonts are loaded; capture awaits this. */
+  readonly whenReady: Promise<void>;
+  /** Capture mode: manual frame stepping + a screenshottable back buffer. */
+  private capture: boolean;
+  /** Virtual elapsed seconds while stepping frames in capture mode. */
+  private captureElapsed = 0;
   /// Identity of the zone the scene was built for — a director cut or
   /// transfer flips the featured world, and the terrain must follow.
   /// Instances share display names ("The Withered Shore") but differ in
@@ -150,8 +156,19 @@ export class ZoneRenderer {
   constructor(
     private container: HTMLElement,
     private store: WorldStore,
+    opts: { capture?: boolean; camera?: number[] } = {},
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.capture = opts.capture ?? false;
+    // A fixed camera for capture: [x,y,z, targetX,targetY,targetZ]. Reuses the
+    // existing ?cam= pin path (frame()), so the shot frames a chosen subject
+    // deterministically without waiting for the director to converge.
+    if (opts.camera?.length === 6) this.camOverride = opts.camera;
+    // Capture needs a readable back buffer to screenshot; the live client
+    // doesn't, and would pay the VRAM, so it's opt-in.
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      preserveDrawingBuffer: this.capture,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
@@ -207,7 +224,7 @@ export class ZoneRenderer {
 
     // Nameplates and damage numbers bake the font into canvases at
     // entity creation — the face must be resolved before the first bake.
-    void Promise.all([
+    this.whenReady = Promise.all([
       AssetLibrary.load(),
       document.fonts.load('bold 56px "Idlin Mono"'),
       document.fonts.load('32px "Idlin Mono"'),
@@ -219,7 +236,9 @@ export class ZoneRenderer {
 
     this.resize();
     window.addEventListener("resize", this.onResize);
-    this.renderer.setAnimationLoop(() => this.frame());
+    // The live client runs the rAF loop; capture steps frames manually on a
+    // virtual clock (stepFrames) for reproducible pixels.
+    if (!this.capture) this.renderer.setAnimationLoop(() => this.frame());
   }
 
   private resize(): void {
@@ -481,11 +500,23 @@ export class ZoneRenderer {
     this.braziers.push({ light, baseIntensity: 17, phase: Math.random() * Math.PI * 2 });
   }
 
-  private frame(): void {
-    this.timer.update();
-    const dt = Math.min(this.timer.getDelta(), 0.1);
-    const now = performance.now();
-    const t = this.timer.getElapsed();
+  private frame(timestampMs?: number): void {
+    // Capture passes a virtual timestamp so animation, the playout clock, and
+    // FX advance deterministically; the live loop uses wall time.
+    let dt: number;
+    let now: number;
+    let t: number;
+    if (timestampMs !== undefined) {
+      now = timestampMs;
+      t = timestampMs / 1000;
+      dt = Math.min(Math.max(0, t - this.captureElapsed), 0.1);
+      this.captureElapsed = t;
+    } else {
+      this.timer.update();
+      dt = Math.min(this.timer.getDelta(), 0.1);
+      now = performance.now();
+      t = this.timer.getElapsed();
+    }
 
     if (this.store.zone && this.assets && zoneKey(this.store.zone) !== this.builtZoneKey) {
       this.buildZone();
@@ -647,6 +678,21 @@ export class ZoneRenderer {
     }
 
     this.composer.render();
+  }
+
+  /** Capture only: render `frames` frames at a fixed `dt`, advancing the
+   *  virtual clock so animation, the playout clock, and the camera converge
+   *  deterministically. Cumulative — repeated calls keep moving time FORWARD
+   *  from where the last left off (never rewind). Call after `whenReady`. */
+  stepFrames(frames: number, dtSeconds = 1 / 60): void {
+    const base = this.captureElapsed;
+    for (let i = 1; i <= frames; i++) this.frame((base + i * dtSeconds) * 1000);
+  }
+
+  /** Capture only: virtual seconds elapsed so far (monotonic across
+   *  `stepFrames` calls). Exposed for the harness to assert the clock advances. */
+  get virtualElapsedSeconds(): number {
+    return this.captureElapsed;
   }
 
   dispose(): void {

@@ -205,17 +205,19 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
   > ✅ "Screenshot of the inspect panel with a two-handed weapon: it shows in both the
   >    weapon and offhand cells, the offhand at 0.4 opacity."
 
-- **Track 1 (React overlay) of the harness exists** (`web/harness/`, run `pnpm -C web
-  capture`): canned `S2C` → `store.handle()` → awaited frame-ready (not a sleep) →
-  byte-stable PNG, with a non-vacuous on-screen-content assertion. The overlay is a pure
-  function of injected state (§6: "already deterministic"), so determinism needs no clock
-  here — that's the 3D track. Use it for any overlay/panel change (focus sheet, stats,
-  gear, gems) and **eyeball the shot to sign off** — a green run proves deterministic
-  render + correct text, only your eyes prove it looks right. See `web/harness/README.md`.
-- **Track 2 (the 3D scene) is still to-be-built** (#80): it needs the steppable clock
-  injected into `ZoneRenderer.frame()` and `Math.random`/flicker neutralized. Until it
-  lands, **scene/canvas** changes are unverified beyond typecheck/build — state that
-  plainly; overlay changes are not.
+- **`pnpm -C web capture`** (Playwright) renders every fixture in `web/harness/` to a PNG
+  and proves each is byte-stable across runs. Two surfaces:
+  - **Overlay / HUD panels** — a fixture feeds canned `S2C` to a `WorldStore` and mounts
+    the React overlay. It's a pure function of that state, so it's deterministic with no
+    clock; the capture asserts the authored content is on screen.
+  - **3D scene** — a fixture builds the `ZoneRenderer` in capture mode: a seeded
+    `Math.random` (terrain, braziers, idle phase, three.js UUIDs), a manually stepped
+    virtual clock, and a pinned camera make the canvas byte-reproducible same-machine; the
+    capture asserts the canvas is non-blank.
+- Add a fixture for any UI/scene change, capture it, and **eyeball the shot to sign off** —
+  a green run proves a deterministic render with the right content, but only your eyes prove
+  it looks right. See `web/harness/README.md`. (WebGL byte-stability is same-machine; shots
+  are gitignored, not committed baselines.)
 
 ## 7. Git & PR discipline
 
