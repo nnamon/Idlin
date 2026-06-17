@@ -93,6 +93,17 @@ pub const SYS_USE_FLASK: i32 = 29;
 pub const SYS_SKILL_INFO: i32 = 30;
 /// #54 PR2a: an inventory item's rolled affix instances (affix_num, value, tier).
 pub const SYS_READ_ITEM_MODS: i32 = 31;
+/// #54 PR3: the currently worn gear, per slot (slot, base_num, rarity, item_level)
+/// — so a bot can score its own gear instead of leaning on `equip_best`.
+pub const SYS_READ_EQUIPMENT: i32 = 32;
+/// #54 PR3: equip a specific bag item into its content-defined slot (manual
+/// counterpart to `equip_best`); the displaced item returns to the bag.
+pub const SYS_EQUIP: i32 = 33;
+/// #54 PR3: the gear slot a gear item num belongs to (the deferred Def-lookup,
+/// RFC Q2) — so a bot can match a bag candidate against the worn item in its
+/// slot. -1 for a non-gear or unknown num. The ONE definitional escape hatch:
+/// base reads stay pure, but manual gear scoring needs base_num→slot.
+pub const SYS_ITEM_SLOT: i32 = 34;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -639,6 +650,9 @@ mod tests {
         assert_eq!(SYS_USE_FLASK, 29);
         assert_eq!(SYS_SKILL_INFO, 30);
         assert_eq!(SYS_READ_ITEM_MODS, 31);
+        assert_eq!(SYS_READ_EQUIPMENT, 32);
+        assert_eq!(SYS_EQUIP, 33);
+        assert_eq!(SYS_ITEM_SLOT, 34);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);
