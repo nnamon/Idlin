@@ -44,6 +44,8 @@ struct AppState {
     inspect: mpsc::UnboundedSender<runner::InspectRequest>,
     /// Pre-serialized passive tree for the map page.
     tree_json: Arc<str>,
+    /// Pre-serialized deploy identity for `/version` (fixed at boot).
+    version_json: Arc<str>,
 }
 
 /// The built-in characters a fresh world starts with.
@@ -240,6 +242,16 @@ async fn main() -> anyhow::Result<()> {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         });
     }
+    // Deploy identity for `/version`, fixed at boot (captured before `worlds`
+    // moves into the tick loop). Lets an operator tell at a glance whether the
+    // binary, protocol, and content actually match the expected deploy.
+    // `git_sha` is populated when the build sets IDLIN_GIT_SHA, null otherwise.
+    let version_json: Arc<str> = Arc::from(version_payload(
+        content.content_hash,
+        worlds.len(),
+        option_env!("IDLIN_GIT_SHA"),
+    ));
+
     runner::spawn_tick_loop(
         worlds,
         frame_tx,
@@ -258,11 +270,13 @@ async fn main() -> anyhow::Result<()> {
         routing: handles.routing,
         inspect: inspect_tx,
         tree_json,
+        version_json,
     };
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/api/tree", get(tree_handler))
         .route("/healthz", get(|| async { "ok" }))
+        .route("/version", get(version_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
         .fallback_service(ServeDir::new("web/dist"))
@@ -323,6 +337,28 @@ async fn tree_handler(State(state): State<AppState>) -> impl axum::response::Int
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         state.tree_json.to_string(),
+    )
+}
+
+/// Build the `/version` payload: the running deploy's identity. Pure (no I/O,
+/// `git_sha` injected) so both the set and unset cases are unit-testable.
+fn version_payload(content_hash: u64, world_count: usize, git_sha: Option<&str>) -> String {
+    serde_json::json!({
+        "server_version": SERVER_VERSION,
+        "proto_version": PROTO_VERSION,
+        "content_hash": format!("{content_hash:016x}"),
+        "world_count": world_count,
+        "git_sha": git_sha,
+    })
+    .to_string()
+}
+
+/// `/version`: the running deploy's identity (server/proto version, content hash,
+/// world count, optional git SHA) so a bad deploy is visible, not silently live.
+async fn version_handler(State(state): State<AppState>) -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        state.version_json.to_string(),
     )
 }
 
@@ -498,7 +534,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::inspect_world_key;
+    use super::{PROTO_VERSION, SERVER_VERSION, inspect_world_key, version_payload};
+
+    #[test]
+    fn version_payload_carries_deploy_identity() {
+        // git_sha set → emitted as that string.
+        let v: serde_json::Value =
+            serde_json::from_str(&version_payload(0xABCD_EF12, 3, Some("abc123")))
+                .expect("valid json");
+        assert_eq!(v["server_version"], SERVER_VERSION);
+        assert_eq!(v["proto_version"], PROTO_VERSION);
+        // content_hash is the zero-padded 16-hex render of the u64.
+        assert_eq!(v["content_hash"], "00000000abcdef12");
+        assert_eq!(v["world_count"], 3);
+        assert_eq!(v["git_sha"], "abc123");
+        // git_sha unset → JSON null (key present, value null), not a string/bool.
+        let unset: serde_json::Value =
+            serde_json::from_str(&version_payload(0, 0, None)).expect("valid json");
+        assert!(unset["git_sha"].is_null());
+    }
 
     #[test]
     fn inspect_resolves_in_the_clients_displayed_world() {
