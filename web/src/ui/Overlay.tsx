@@ -179,6 +179,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           )}
         </div>
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
+        {sheet && <ObolsPanel sheet={sheet} />}
         {/* phones hide the left column; the drawer carries the numbers */}
         {sheet && (
           <div className="mobile-only">
@@ -460,18 +461,25 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
           ))}
         </>
       )}
-      {sheet.currency.length > 0 && (
-        <>
-          <Header>Obols</Header>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-            {sheet.currency.map((c, i) => (
-              <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>
-                {c.name.replace(" Obol", "")} ×{c.count}
-              </span>
-            ))}
-          </div>
-        </>
-      )}
+    </div>
+  );
+}
+
+/** Obols (currency). Its own panel on the RIGHT, beside the gear/bag — the
+ *  left column's stats + skill cards can get tall enough to push a section
+ *  off-screen, and currency belongs with the inventory anyway. */
+function ObolsPanel({ sheet }: { sheet: CharacterSheet }) {
+  if (sheet.currency.length === 0) return null;
+  return (
+    <div className="panel" style={{ marginTop: 8 }}>
+      <Header first>Obols</Header>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+        {sheet.currency.map((c, i) => (
+          <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>
+            {c.name.replace(" Obol", "")} ×{c.count}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
