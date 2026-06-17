@@ -104,6 +104,10 @@ pub const SYS_EQUIP: i32 = 33;
 /// slot. -1 for a non-gear or unknown num. The ONE definitional escape hatch:
 /// base reads stay pure, but manual gear scoring needs base_num→slot.
 pub const SYS_ITEM_SLOT: i32 = 34;
+/// #54 PR3: bare a gear slot — move the worn item back to the bag, leaving the
+/// slot empty (the deliberate counterpart to `equip`'s swap). Unlike a swap,
+/// this REFUSES (-1) when the bag is full rather than dropping the item.
+pub const SYS_UNEQUIP: i32 = 35;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -653,6 +657,7 @@ mod tests {
         assert_eq!(SYS_READ_EQUIPMENT, 32);
         assert_eq!(SYS_EQUIP, 33);
         assert_eq!(SYS_ITEM_SLOT, 34);
+        assert_eq!(SYS_UNEQUIP, 35);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);

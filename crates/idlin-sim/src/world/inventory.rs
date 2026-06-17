@@ -506,6 +506,71 @@ impl World {
         0
     }
 
+    /// Manual unequip (#54 PR3): bare gear slot `gear_sel`, moving the worn item
+    /// back to the bag — the deliberate counterpart to `equip`'s swap. Returns 0;
+    /// −1 if the slot index is invalid, already empty, or the BAG IS FULL. Unlike
+    /// a swap (which drops the displaced piece when the bag is full), this REFUSES
+    /// rather than ever dropping the item on a deliberate unequip.
+    pub(crate) fn unequip(
+        &mut self,
+        slot: usize,
+        gear_sel: i32,
+        events: &mut Vec<SimEvent>,
+    ) -> i32 {
+        let Some(e) = self.zone.get(slot) else {
+            return -1;
+        };
+        let Some(ch) = &e.character else { return -1 };
+        let Ok(gear_idx) = usize::try_from(gear_sel) else {
+            return -1;
+        };
+        if gear_idx >= GEAR_SLOTS {
+            return -1;
+        }
+        let Some(worn) = ch.equipment[gear_idx].as_ref() else {
+            return -1; // nothing worn in that slot
+        };
+        let (net_id, owner) = (e.net_id, ch.name.clone());
+        let (w, h) = {
+            let def = &self.content.items[worn.base_idx as usize];
+            (def.w, def.h)
+        };
+        // Find a home BEFORE removing — a deliberate unequip never drops: if the
+        // bag can't hold it, refuse and leave it equipped.
+        let Some((x, y)) = self.first_fit(ch, w, h) else {
+            return -1;
+        };
+        let item = self.item_display(worn);
+        let removed = self
+            .zone
+            .get_mut(slot)
+            .and_then(|e| e.character.as_mut())
+            .and_then(|c| c.equipment[gear_idx].take());
+        if let Some(it) = removed {
+            self.zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .inventory
+                .push(PlacedItem {
+                    item: BagItem::Gear(it),
+                    x,
+                    y,
+                });
+        }
+        self.refresh_derived_stats(slot);
+        // Baring a slot can drop attributes another piece leaned on — self-heal.
+        self.enforce_gear_requirements(slot, events);
+        events.push(SimEvent::GearShed {
+            id: net_id,
+            owner,
+            item,
+        });
+        0
+    }
+
     /// The worn gear as ReadEquipment records (#54 PR3): one `[slot, base_num,
     /// rarity, item_level]` per gear slot up to `max`, with `base_num == -1` for
     /// an empty slot. Definitional fields (slot→dims, affixes) stay in the docs /

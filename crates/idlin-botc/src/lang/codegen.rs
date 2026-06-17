@@ -50,6 +50,7 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("read_equipment", idlin_vm::SYS_READ_EQUIPMENT, 2),
     ("equip", idlin_vm::SYS_EQUIP, 1),
     ("item_slot", idlin_vm::SYS_ITEM_SLOT, 1),
+    ("unequip", idlin_vm::SYS_UNEQUIP, 1),
     // Zone-brain syscalls (no-ops for entity bots). There is NO forced
     // character transfer: bots take exits themselves (use_exit); brains
     // only gate whether an exit is open.

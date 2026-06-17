@@ -3233,6 +3233,126 @@ mod tests {
         );
     }
 
+    /// #54 PR3: `unequip` bares a slot to the bag, guards bad input, and — the
+    /// headline — REFUSES (leaving the item worn) when the bag is full instead of
+    /// dropping it (unlike `equip`'s swap).
+    #[test]
+    fn unequip_moves_gear_to_the_bag_and_refuses_when_full() {
+        let content = content();
+        let mut world = World::new(21, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Bare".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        let wpn = idlin_content::GearSlot::Weapon.idx();
+        let wear_cleaver = |world: &mut World| {
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .equipment[wpn] = Some(crate::entity::Item {
+                base_idx: cleaver_idx,
+                rarity: crate::entity::Rarity::Normal,
+                item_level: 1,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+            });
+        };
+        wear_cleaver(&mut world);
+
+        let mut ev = Vec::new();
+        // Bad input: out-of-range / negative slot → -1, no panic.
+        assert_eq!(world.unequip(slot, -1, &mut ev), -1);
+        assert_eq!(world.unequip(slot, 99, &mut ev), -1);
+        // An empty slot → -1.
+        assert_eq!(
+            world.unequip(slot, idlin_content::GearSlot::Helm.idx() as i32, &mut ev),
+            -1,
+            "the helm slot is empty"
+        );
+        // Bare the weapon: slot empties, the cleaver lands in the bag.
+        assert_eq!(world.unequip(slot, wpn as i32, &mut ev), 0);
+        {
+            let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+            assert!(ch.equipment[wpn].is_none(), "weapon slot bared");
+            assert!(
+                ch.inventory
+                    .iter()
+                    .any(|p| p.item.as_gear().is_some_and(|g| g.base_idx == cleaver_idx)),
+                "the cleaver is back in the bag"
+            );
+        }
+
+        // Re-wear, then FILL the bag (12×5 = 60 cells) — unequip must refuse and
+        // leave the cleaver equipped rather than drop it.
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            let i = ch
+                .inventory
+                .iter()
+                .position(|p| p.item.as_gear().is_some_and(|g| g.base_idx == cleaver_idx))
+                .unwrap();
+            ch.inventory.remove(i);
+        }
+        wear_cleaver(&mut world);
+        for _ in 0..60 {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "cleave");
+        }
+        let n_full = world
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(
+            world.unequip(slot, wpn as i32, &mut ev),
+            -1,
+            "full bag → refuse"
+        );
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert!(
+            ch.equipment[wpn].is_some(),
+            "the cleaver stays equipped when the bag is full"
+        );
+        assert_eq!(
+            ch.inventory.len(),
+            n_full,
+            "nothing was added to the full bag"
+        );
+    }
+
     /// #54 PR3: ReadEquipment's record layout — one `[slot, base_num/-1, rarity,
     /// item_level]` per gear slot, empty slots reporting base_num -1, `max`
     /// honored. Pins the host-side struct a bot reads.

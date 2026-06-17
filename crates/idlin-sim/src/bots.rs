@@ -36,7 +36,7 @@ use idlin_vm::{
     SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY,
     SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY, SYS_READ_ITEM_MODS,
     SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM,
-    SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
     SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
@@ -849,6 +849,10 @@ impl World {
             SYS_EQUIP => {
                 let inv_sel = bot.vm.pop();
                 self.equip(slot, inv_sel, events)
+            }
+            SYS_UNEQUIP => {
+                let gear_sel = bot.vm.pop();
+                self.unequip(slot, gear_sel, events)
             }
             SYS_ITEM_SLOT => {
                 let num = bot.vm.pop();
