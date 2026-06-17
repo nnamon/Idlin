@@ -389,15 +389,23 @@ function AutoScroll({ maxVh, children }: { maxVh: number; children: React.ReactN
   );
 }
 
-/** Per-type damage palette (phys, fire, cold, lightning, chaos). */
-const DMG_COLORS = ["#d8cba6", "#ff7a3c", "#5adfdf", "#ffe24a", "#c77bff"];
-const DMG_LABELS = ["phys", "fire", "cold", "lightning", "chaos"];
+/** A thin gem-XP progress bar (cyan fill; gold + full at the level cap). Used
+ *  full-width on a skill card, and compactly as a support chip's underline.
+ *  Both wrappers are spans so it's valid inside a chip `<span>` too. */
+function XpBar({ xp, xpNext, className = "xp-bar" }: { xp: number; xpNext: number; className?: string }) {
+  const maxed = xpNext <= 0;
+  const pct = maxed ? 100 : Math.max(0, Math.min(100, Math.round((xp / xpNext) * 100)));
+  return (
+    <span className={maxed ? `${className} maxed` : className} title={maxed ? "max level" : `${xp} / ${xpNext} xp`}>
+      <span style={{ width: `${pct}%` }} />
+    </span>
+  );
+}
 
 /** One socketed skill's computed readout. DPS leads for damage skills; a DoT,
  *  buff, or debuff skill shows its own pertinent number instead of a
  *  misleading "0 DPS". All numbers come from the sim (see `SkillStat`). */
 function SkillCard({ skill }: { skill: SkillStat }) {
-  const total = skill.damage.reduce((a, b) => a + b, 0);
   // The headline metric, chosen by what the skill actually does.
   const head =
     skill.dps > 0
@@ -420,19 +428,7 @@ function SkillCard({ skill }: { skill: SkillStat }) {
           <span style={{ color: "#ab9d7a" }}>{head.k}</span> {head.v}
         </span>
       </div>
-      {total > 0 && (
-        <div className="dmg-bar">
-          {skill.damage.map((d, i) =>
-            d > 0 ? (
-              <span
-                key={i}
-                title={`${DMG_LABELS[i]} ${d}`}
-                style={{ width: `${(d / total) * 100}%`, background: DMG_COLORS[i] }}
-              />
-            ) : null,
-          )}
-        </div>
-      )}
+      <XpBar xp={skill.xp} xpNext={skill.xp_next} />
       <div className="skill-meta">
         <span>{skill.kind}</span>
         {skill.mana_cost > 0 && (
@@ -451,6 +447,7 @@ function SkillCard({ skill }: { skill: SkillStat }) {
           {skill.supports.map((s, i) => (
             <span key={i} className="chip">
               {s.name} lv{s.level}
+              <XpBar xp={s.xp} xpNext={s.xp_next} className="chip-xp" />
             </span>
           ))}
         </div>

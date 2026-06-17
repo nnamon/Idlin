@@ -98,6 +98,8 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
 export function skill(over: Require<SkillStat, "name">): SkillStat {
   return {
     level: 1,
+    xp: 0,
+    xp_next: 100,
     kind: "attack",
     shape: "target",
     damage: [0, 0, 0, 0, 0],

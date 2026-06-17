@@ -651,14 +651,30 @@ impl World {
             SkillShape::PointAoe => "point_aoe",
             SkillShape::Projectile => "projectile",
         };
+        let gem_next = |level: u32| {
+            if level >= crate::entity::GEM_LEVEL_CAP {
+                0
+            } else {
+                crate::entity::gem_xp_to_next(level)
+            }
+        };
         let supports = sg
             .supports
             .iter()
-            .map(|s| (self.content.gems[s.gem_idx as usize].name.clone(), s.level))
+            .map(|s| {
+                (
+                    self.content.gems[s.gem_idx as usize].name.clone(),
+                    s.level,
+                    s.xp,
+                    gem_next(s.level),
+                )
+            })
             .collect();
         Some(super::views::SkillStatView {
             name: self.content.gems[sg.gem.gem_idx as usize].name.clone(),
             level: sg.gem.level,
+            xp: sg.gem.xp,
+            xp_next: gem_next(sg.gem.level),
             is_spell: gem.skill_kind == SkillKind::Spell,
             shape,
             damage: spec.damage,
@@ -3884,5 +3900,68 @@ mod tests {
             "no weapon phys leaks into a spell's stat block"
         );
         assert!(vs.dps > 0, "a damaging spell has dps");
+
+        // Gem XP passthrough: the view reports the socketed gem's own progress
+        // (and each support's), with xp-to-next from the curve (0 at the cap).
+        let hb = gem_idx(&content, "heavier_blows");
+        socket(&mut world, hs);
+        if let Some(sg) = world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .sockets
+            .get_mut(&node)
+        {
+            sg.gem.xp = 55;
+            sg.supports.push(GemInstance {
+                gem_idx: hb,
+                level: 3,
+                xp: 25,
+            });
+        }
+        let xv = world.skill_stat_view(slot, node).unwrap();
+        assert_eq!(xv.xp, 55, "the view reports the gem's xp");
+        assert_eq!(
+            xv.xp_next,
+            crate::entity::gem_xp_to_next(xv.level),
+            "xp-to-next comes from the curve below the cap"
+        );
+        assert!(
+            xv.xp_next > 0,
+            "a sub-cap gem has xp remaining to the next level"
+        );
+        // The support's own progress is reported too (name, level, xp, xp-next).
+        assert_eq!(xv.supports.len(), 1);
+        assert_eq!(xv.supports[0].2, 25, "the support's xp passes through");
+        assert_eq!(
+            xv.supports[0].3,
+            crate::entity::gem_xp_to_next(3),
+            "the support's xp-to-next comes from the curve"
+        );
+
+        // At the level cap, xp-to-next is 0 (the gold/MAX state) — for the skill
+        // and its support.
+        if let Some(sg) = world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .sockets
+            .get_mut(&node)
+        {
+            sg.gem.level = crate::entity::GEM_LEVEL_CAP;
+            sg.supports[0].level = crate::entity::GEM_LEVEL_CAP;
+        }
+        let maxed = world.skill_stat_view(slot, node).unwrap();
+        assert_eq!(maxed.xp_next, 0, "a capped skill gem has no xp-to-next");
+        assert_eq!(
+            maxed.supports[0].3, 0,
+            "a capped support gem has no xp-to-next"
+        );
     }
 }

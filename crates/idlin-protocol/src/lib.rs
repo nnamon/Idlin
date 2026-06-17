@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 32;
+pub const PROTO_VERSION: u32 = 33;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -332,11 +332,15 @@ pub struct GemView {
     pub support: bool,
 }
 
-/// A support gem bound to a skill (name + level), nested under `SkillStat`.
+/// A support gem bound to a skill (name + level + its own XP progress), nested
+/// under `SkillStat`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct SkillSupport {
     pub name: String,
     pub level: u32,
+    /// Gem XP into the current level, and the amount for the next (0 at cap).
+    pub xp: i32,
+    pub xp_next: i32,
 }
 
 /// Computed readout for one socketed SKILL gem — straight from the sim's own
@@ -347,6 +351,9 @@ pub struct SkillSupport {
 pub struct SkillStat {
     pub name: String,
     pub level: u32,
+    /// Gem XP into the current level, and the amount for the next (0 at cap).
+    pub xp: i32,
+    pub xp_next: i32,
     /// "attack" | "spell".
     pub kind: String,
     /// "target" | "nova" | "cone" | "line" | "point_aoe" | "projectile".
@@ -714,6 +721,8 @@ mod tests {
                 skills: vec![SkillStat {
                     name: "Arc".into(),
                     level: 5,
+                    xp: 120,
+                    xp_next: 400,
                     kind: "spell".into(),
                     shape: "line".into(),
                     damage: vec![0, 0, 0, 160, 0],
@@ -735,6 +744,8 @@ mod tests {
                     supports: vec![SkillSupport {
                         name: "Added Lightning".into(),
                         level: 3,
+                        xp: 30,
+                        xp_next: 90,
                     }],
                 }],
                 currency: vec![],
@@ -754,7 +765,17 @@ mod tests {
             "line width survives the wire"
         );
         assert_eq!(sheet.skills[0].dps, 200);
+        assert_eq!(sheet.skills[0].xp, 120, "gem xp survives the wire");
+        assert_eq!(sheet.skills[0].xp_next, 400);
         assert_eq!(sheet.skills[0].supports[0].name, "Added Lightning");
+        assert_eq!(
+            sheet.skills[0].supports[0].xp, 30,
+            "support xp survives the wire"
+        );
+        assert_eq!(
+            sheet.skills[0].supports[0].xp_next, 90,
+            "support xp-to-next survives the wire"
+        );
     }
 
     /// Regenerates web/src/gen/. CI checks the output is committed and fresh.

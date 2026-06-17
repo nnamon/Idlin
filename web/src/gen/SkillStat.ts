@@ -9,6 +9,10 @@ import type { SkillSupport } from "./SkillSupport";
  */
 export type SkillStat = { name: string, level: number, 
 /**
+ * Gem XP into the current level, and the amount for the next (0 at cap).
+ */
+xp: number, xp_next: number, 
+/**
  * "attack" | "spell".
  */
 kind: string, 

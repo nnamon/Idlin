@@ -8,7 +8,7 @@ use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
     PropState, SkillStat, SkillSupport, TileMapState, TileVisual,
 };
-use idlin_sim::world::CharacterSheetView;
+use idlin_sim::world::{CharacterSheetView, SkillStatView};
 use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -361,6 +361,45 @@ fn clamp_i32(v: i64) -> i32 {
     v.clamp(i32::MIN as i64, i32::MAX as i64) as i32
 }
 
+/// Map one computed skill readout to the wire type. XP is clamped nonnegative
+/// (parity with the gem-row clamp) so corrupt state can't render a negative bar.
+fn skill_to_proto(s: SkillStatView) -> SkillStat {
+    SkillStat {
+        name: s.name,
+        level: s.level,
+        xp: clamp_i32(s.xp.max(0)),
+        xp_next: clamp_i32(s.xp_next.max(0)),
+        kind: if s.is_spell { "spell" } else { "attack" }.to_string(),
+        shape: s.shape.to_string(),
+        damage: s.damage.iter().map(|d| clamp_i32(*d)).collect(),
+        dps: clamp_i32(s.dps),
+        crit_chance_bp: clamp_i32(s.crit_chance_bp),
+        crit_multi_bp: clamp_i32(s.crit_multi_bp),
+        use_ticks: s.use_ticks,
+        cooldown_ticks: s.cooldown_ticks,
+        mana_cost: clamp_i32(s.mana_cost),
+        range_cu: s.range_cu,
+        radius_cu: s.radius_cu,
+        width_cu: s.width_cu,
+        projectiles: s.projectiles,
+        pierce: s.pierce,
+        dot_per_sec: clamp_i32(s.dot_per_sec),
+        dot_duration_ticks: s.dot_duration_ticks,
+        buff_duration_ticks: s.buff_duration_ticks,
+        debuff_duration_ticks: s.debuff_duration_ticks,
+        supports: s
+            .supports
+            .into_iter()
+            .map(|(name, level, xp, xp_next)| SkillSupport {
+                name,
+                level,
+                xp: clamp_i32(xp.max(0)),
+                xp_next: clamp_i32(xp_next.max(0)),
+            })
+            .collect(),
+    }
+}
+
 fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
     CharacterSheet {
         id: v.id,
@@ -426,37 +465,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                 support,
             })
             .collect(),
-        skills: v
-            .skills
-            .into_iter()
-            .map(|s| SkillStat {
-                name: s.name,
-                level: s.level,
-                kind: if s.is_spell { "spell" } else { "attack" }.to_string(),
-                shape: s.shape.to_string(),
-                damage: s.damage.iter().map(|d| clamp_i32(*d)).collect(),
-                dps: clamp_i32(s.dps),
-                crit_chance_bp: clamp_i32(s.crit_chance_bp),
-                crit_multi_bp: clamp_i32(s.crit_multi_bp),
-                use_ticks: s.use_ticks,
-                cooldown_ticks: s.cooldown_ticks,
-                mana_cost: clamp_i32(s.mana_cost),
-                range_cu: s.range_cu,
-                radius_cu: s.radius_cu,
-                width_cu: s.width_cu,
-                projectiles: s.projectiles,
-                pierce: s.pierce,
-                dot_per_sec: clamp_i32(s.dot_per_sec),
-                dot_duration_ticks: s.dot_duration_ticks,
-                buff_duration_ticks: s.buff_duration_ticks,
-                debuff_duration_ticks: s.debuff_duration_ticks,
-                supports: s
-                    .supports
-                    .into_iter()
-                    .map(|(name, level)| SkillSupport { name, level })
-                    .collect(),
-            })
-            .collect(),
+        skills: v.skills.into_iter().map(skill_to_proto).collect(),
         currency: v
             .currency
             .into_iter()
@@ -477,6 +486,46 @@ mod tests {
     use super::*;
     use idlin_sim::JoinRequest;
     use idlin_sim::entity::CharacterState;
+
+    /// Corrupt/negative gem XP must not reach the wire as a negative width —
+    /// `skill_to_proto` clamps skill AND support xp/xp_next to 0. Drop the
+    /// `.max(0)` calls and this fails.
+    #[test]
+    fn skill_to_proto_clamps_negative_xp_to_zero() {
+        let view = SkillStatView {
+            name: "Corrupt".into(),
+            level: 3,
+            xp: -50,
+            xp_next: -10,
+            is_spell: false,
+            shape: "target",
+            damage: [0; 5],
+            dps: 0,
+            crit_chance_bp: 0,
+            crit_multi_bp: 15000,
+            use_ticks: 10,
+            cooldown_ticks: 0,
+            mana_cost: 0,
+            range_cu: 0,
+            radius_cu: 0,
+            width_cu: 0,
+            projectiles: 0,
+            pierce: 0,
+            dot_per_sec: 0,
+            dot_duration_ticks: 0,
+            buff_duration_ticks: 0,
+            debuff_duration_ticks: 0,
+            supports: vec![("Sup".into(), 2, -30, -5)],
+        };
+        let out = skill_to_proto(view);
+        assert_eq!(out.xp, 0, "negative skill xp clamps to 0");
+        assert_eq!(out.xp_next, 0, "negative skill xp_next clamps to 0");
+        assert_eq!(out.supports[0].xp, 0, "negative support xp clamps to 0");
+        assert_eq!(
+            out.supports[0].xp_next, 0,
+            "negative support xp_next clamps to 0"
+        );
+    }
 
     /// A world holding `n` characters (joined halt-bots), so `has_room` sees a
     /// real `views()` population. Empty content keeps it cheap and deterministic.

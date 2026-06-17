@@ -17,7 +17,7 @@ mod tree;
 mod views;
 mod zone_brain;
 
-pub use views::CharacterSheetView;
+pub use views::{CharacterSheetView, SkillStatView};
 
 use crate::bots::{Bot, BotArena, program_hash};
 use crate::entity::{CharacterState, CombatStats, Entity, MonsterState, Rarity};

@@ -19,6 +19,9 @@ pub type GearSlotRow = (&'static str, Option<(String, u8)>, bool);
 pub struct SkillStatView {
     pub name: String,
     pub level: u32,
+    /// Gem XP into the current level, and the amount for the next (0 at cap).
+    pub xp: i64,
+    pub xp_next: i64,
     pub is_spell: bool,
     pub shape: &'static str,
     /// Per-hit typed damage, post-support, pre-crit.
@@ -41,8 +44,8 @@ pub struct SkillStatView {
     pub dot_duration_ticks: u32,
     pub buff_duration_ticks: u32,
     pub debuff_duration_ticks: u32,
-    /// (name, level) per support socketed with the skill.
-    pub supports: Vec<(String, u32)>,
+    /// (name, level, xp, xp_to_next: 0 at cap) per support socketed with the skill.
+    pub supports: Vec<(String, u32, i64, i64)>,
 }
 
 /// Inspection snapshot of one character (the server maps this onto the

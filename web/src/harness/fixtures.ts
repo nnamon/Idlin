@@ -118,6 +118,8 @@ const inspectPanel: Fixture = {
           skill({
             name: "Heavy Swing",
             level: 12,
+            xp: 40,
+            xp_next: 100,
             kind: "attack",
             shape: "target",
             damage: [320, 0, 0, 90, 0],
@@ -127,11 +129,13 @@ const inspectPanel: Fixture = {
             use_ticks: 8,
             mana_cost: 0,
             range_cu: 160,
-            supports: [{ name: "Heavier Blows", level: 8 }],
+            supports: [{ name: "Heavier Blows", level: 8, xp: 18, xp_next: 60 }],
           }),
           skill({
             name: "War Cry",
             level: 6,
+            xp: 12,
+            xp_next: 60,
             kind: "attack",
             shape: "nova",
             mana_cost: 14,
@@ -140,7 +144,9 @@ const inspectPanel: Fixture = {
           }),
           skill({
             name: "Plague Cloud",
-            level: 7,
+            level: 20,
+            xp: 0,
+            xp_next: 0, // at the level cap (20) → full gold bar
             kind: "spell",
             shape: "point_aoe",
             mana_cost: 22,
@@ -151,6 +157,8 @@ const inspectPanel: Fixture = {
           skill({
             name: "Arc",
             level: 5,
+            xp: 30,
+            xp_next: 90,
             kind: "spell",
             shape: "line",
             damage: [0, 0, 0, 160, 0],
@@ -245,7 +253,7 @@ const skillOverflow: Fixture = {
         mana_max: 380,
         skills: [
           skill({ name: "Cleave", kind: "attack", shape: "cone", level: 20, damage: [540, 0, 0, 0, 0], dps: 880, crit_chance_bp: 600, use_ticks: 7, radius_cu: 220 }),
-          skill({ name: "Heavy Swing", kind: "attack", shape: "target", level: 18, damage: [710, 0, 0, 0, 0], dps: 1010, crit_chance_bp: 800, use_ticks: 9, range_cu: 160, supports: [{ name: "Heavier Blows", level: 12 }] }),
+          skill({ name: "Heavy Swing", kind: "attack", shape: "target", level: 18, xp: 70, xp_next: 140, damage: [710, 0, 0, 0, 0], dps: 1010, crit_chance_bp: 800, use_ticks: 9, range_cu: 160, supports: [{ name: "Heavier Blows", level: 12, xp: 40, xp_next: 80 }] }),
           skill({ name: "Arc", kind: "spell", shape: "line", level: 16, damage: [0, 0, 0, 300, 0], dps: 540, crit_chance_bp: 500, use_ticks: 8, range_cu: 600, width_cu: 130 }),
           skill({ name: "Fireball", kind: "spell", shape: "projectile", level: 15, damage: [0, 420, 0, 0, 0], dps: 600, crit_chance_bp: 500, use_ticks: 8, range_cu: 900, projectiles: 3, pierce: 1 }),
           skill({ name: "War Cry", kind: "attack", shape: "nova", level: 10, mana_cost: 30, cooldown_ticks: 80, buff_duration_ticks: 120 }),
