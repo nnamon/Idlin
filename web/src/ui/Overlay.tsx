@@ -398,7 +398,6 @@ const DMG_LABELS = ["phys", "fire", "cold", "lightning", "chaos"];
  *  misleading "0 DPS". All numbers come from the sim (see `SkillStat`). */
 function SkillCard({ skill }: { skill: SkillStat }) {
   const total = skill.damage.reduce((a, b) => a + b, 0);
-  const useS = skill.use_ticks / TICK_HZ;
   // The headline metric, chosen by what the skill actually does.
   const head =
     skill.dps > 0
@@ -435,10 +434,7 @@ function SkillCard({ skill }: { skill: SkillStat }) {
         </div>
       )}
       <div className="skill-meta">
-        <span>
-          {skill.kind} · {skill.shape}
-        </span>
-        <span>{useS.toFixed(2)}s/use</span>
+        <span>{skill.kind}</span>
         {skill.mana_cost > 0 && (
           <span>
             {skill.mana_cost} mana ({manaPerSec}/s)
@@ -449,15 +445,6 @@ function SkillCard({ skill }: { skill: SkillStat }) {
             crit {(skill.crit_chance_bp / 100).toFixed(1)}% ×{Math.round(skill.crit_multi_bp / 100)}%
           </span>
         )}
-        {skill.cooldown_ticks > 0 && <span>cd {(skill.cooldown_ticks / TICK_HZ).toFixed(1)}s</span>}
-        {skill.projectiles > 0 && (
-          <span>
-            {skill.projectiles} proj{skill.pierce > 0 ? ` · pierce ${skill.pierce}` : ""}
-          </span>
-        )}
-        {skill.range_cu > 0 && <span>range {skill.range_cu}</span>}
-        {skill.radius_cu > 0 && <span>aoe {skill.radius_cu}</span>}
-        {skill.width_cu > 0 && <span>width {skill.width_cu}</span>}
       </div>
       {skill.supports.length > 0 && (
         <div className="skill-supports">

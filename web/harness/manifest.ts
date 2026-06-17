@@ -35,9 +35,6 @@ export const FIXTURES: FixtureMeta[] = [
       // The adaptive non-DPS headlines — the maintainer's "not just DPS" point.
       "Buff 8s",
       "DoT 48/s",
-      // Footprint: a line skill renders both its range and corridor width.
-      "range 600",
-      "width 130",
     ],
   },
   {
