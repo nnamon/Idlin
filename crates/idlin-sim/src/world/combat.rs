@@ -57,7 +57,7 @@ fn fan_step(i: u32) -> i32 {
 }
 
 /// Every socketed support's behavior effects, folded down for one use.
-struct SupportMods {
+pub(super) struct SupportMods {
     /// Multiplicative per-type damage (10000 = unchanged).
     more_bp: [i64; DMG_COUNT],
     /// Flat typed damage added to the skill (scales with SUPPORT level).
@@ -147,6 +147,21 @@ impl StrikeSpec {
             }
         }
     }
+}
+
+/// A socketed skill fully resolved into what a strike needs — typed damage
+/// (weapon-scaled for attacks, gem-flat for spells), AoE geometry, dot,
+/// debuff, crit, projectile flag — with supports and the attacker's stats
+/// folded ONCE. Target-agnostic and side-effect-free, so the executor (and,
+/// later, the DPS panel) read a single source of truth. `spec_template` is
+/// cloned per victim via `clone_for_next_victim`.
+pub(super) struct ResolvedSkill {
+    pub spec_template: StrikeSpec,
+    pub gem_def: idlin_content::GemDef,
+    pub mods: SupportMods,
+    pub range: Fx,
+    pub radius: Fx,
+    pub width: Fx,
 }
 
 type DeadList = Vec<(usize, u32)>;
@@ -451,6 +466,129 @@ impl World {
         self.finish_kills(dead, loot, events);
     }
 
+    /// Resolve a socketed skill to everything a strike needs, with supports and
+    /// the attacker's stats folded once. Target-agnostic and side-effect-free —
+    /// the executor assembles every gem strike from this. `None` if the slot has
+    /// no combatant, the key isn't socketed, or it isn't a skill gem.
+    pub(super) fn resolve_skill(&self, slot: usize, skill_key: u32) -> Option<ResolvedSkill> {
+        let e = self.zone.get(slot)?;
+        let c = e.combat.as_ref()?;
+        let attacker_net = e.net_id;
+        let attacker_name = match (&e.character, &e.monster) {
+            (Some(ch), _) => ch.name.clone(),
+            (_, Some(m)) => self.monster_def(m.def_idx).name.clone(),
+            _ => return None,
+        };
+        let attacker_is_char = e.character.is_some();
+        let char_damage = c.damage;
+        let (accuracy, weapon_range) = (c.accuracy, c.range);
+        let (crit_inc, crit_multi) = (c.crit_inc, c.crit_multi);
+        let (a_stagger, a_knockback) = (c.stagger, c.knockback_cu);
+
+        let sg = skill_of(e, skill_key)?;
+        let gem_def = self.content.gems[sg.gem.gem_idx as usize].clone();
+        if gem_def.kind != GemKind::Skill {
+            return None;
+        }
+        let gem_idx = sg.gem.gem_idx;
+        let level = sg.gem.level;
+        let is_spell = gem_def.skill_kind == SkillKind::Spell;
+
+        // Supports: behavior effects folded down, plus legacy stat grants on a
+        // per-use sheet.
+        let mods = self.support_mods(&sg.supports);
+
+        let mut sheet = StatSheet::new();
+        for sup in &sg.supports {
+            let sdef = &self.content.gems[sup.gem_idx as usize];
+            for g in &sdef.grants {
+                sheet.apply(g);
+            }
+        }
+
+        // Damage: attacks scale the weapon plus the gem's own flat; spells are
+        // the gem's flat alone.
+        let added = [
+            gem_def.added_phys.at(level),
+            gem_def.added_fire.at(level),
+            gem_def.added_cold.at(level),
+            gem_def.added_lightning.at(level),
+            gem_def.added_chaos.at(level),
+        ];
+        let stats = [
+            Stat::DamagePhys,
+            Stat::DamageFire,
+            Stat::DamageCold,
+            Stat::DamageLightning,
+            Stat::DamageChaos,
+        ];
+        let mut damage = [0i64; DMG_COUNT];
+        for i in 0..DMG_COUNT {
+            let weapon_part = if is_spell {
+                0
+            } else {
+                char_damage[i] * gem_def.coeff_bp / 10000
+            };
+            damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
+            damage[i] = damage[i] * mods.more_bp[i] / 10000;
+        }
+
+        // AoE supports grow the skill's footprint: ring radius, corridor width,
+        // and (for cones) the sector's reach.
+        let aoe = |cu: i32| (cu as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32;
+        let mut range = if gem_def.range_cu > 0 {
+            fx_from_cu(gem_def.range_cu)
+        } else {
+            weapon_range
+        };
+        if gem_def.shape == SkillShape::Cone && mods.aoe_bp != 0 {
+            range =
+                Fx::from_raw((range.raw() as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32);
+        }
+        let radius = fx_from_cu(aoe(gem_def.radius_cu));
+        let width = fx_from_cu(aoe(gem_def.width_cu));
+        let dot = gem_def.dot.map(|d| {
+            (
+                d.dtype.idx() as u8,
+                d.per_second.at(level).max(0),
+                (d.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000) as u32,
+                gem_idx,
+            )
+        });
+        let debuff = gem_def.debuff.clone().map(|b| {
+            (
+                b.grants,
+                (b.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000) as u32,
+            )
+        });
+        let spec_template = StrikeSpec {
+            attacker_slot: Some(slot),
+            attacker_net,
+            attacker_name,
+            attacker_is_char,
+            is_spell,
+            is_dot: false,
+            accuracy,
+            damage,
+            crit_bp: gem_def.crit_bp * crit_inc / 10000,
+            crit_multi,
+            projectile: gem_def.shape == SkillShape::Projectile,
+            dot,
+            debuff,
+            stagger: a_stagger,
+            knockback_cu: a_knockback,
+        };
+
+        Some(ResolvedSkill {
+            spec_template,
+            gem_def,
+            mods,
+            range,
+            radius,
+            width,
+        })
+    }
+
     /// Resolve one committed use at its contact tick. Costs were paid at
     /// start; every guard here is a WHIFF, not a refusal.
     fn resolve_use(
@@ -539,112 +677,26 @@ impl World {
                 }
             }
             Some(node) => {
-                // Socketed skill gem — a character's tree socket or a
-                // monster's def kit; one executor for both. Cooldown
-                // and mana were committed at the START of the use.
-                let Some(sg) = skill_of(e, node) else {
+                // Socketed skill gem — a character's tree socket or a monster's
+                // def kit; one executor for both. Cooldown and mana were paid at
+                // the START of the use; the strike is assembled from the one
+                // shared resolver (so the DPS panel can read the same numbers).
+                let Some(resolved) = self.resolve_skill(slot, node) else {
                     return;
                 };
-                let gem_def = self.content.gems[sg.gem.gem_idx as usize].clone();
-                if gem_def.kind != GemKind::Skill {
-                    return;
-                }
                 if let Some(ch) = &e.character
-                    && !self.weapon_eligible(&gem_def, ch)
+                    && !self.weapon_eligible(&resolved.gem_def, ch)
                 {
                     return; // disarmed mid-windup: the blow whiffs
                 }
-                let gem_idx = sg.gem.gem_idx;
-                let level = sg.gem.level;
-                let is_spell = gem_def.skill_kind == SkillKind::Spell;
-
-                // Supports: behavior effects folded down, plus legacy
-                // stat grants on a per-use sheet.
-                let mods = self.support_mods(&sg.supports);
-
-                let mut sheet = StatSheet::new();
-                for sup in &sg.supports {
-                    let sdef = &self.content.gems[sup.gem_idx as usize];
-                    for g in &sdef.grants {
-                        sheet.apply(g);
-                    }
-                }
-
-                // Damage: attacks scale the weapon plus the gem's own
-                // flat; spells are the gem's flat alone.
-                let added = [
-                    gem_def.added_phys.at(level),
-                    gem_def.added_fire.at(level),
-                    gem_def.added_cold.at(level),
-                    gem_def.added_lightning.at(level),
-                    gem_def.added_chaos.at(level),
-                ];
-                let stats = [
-                    Stat::DamagePhys,
-                    Stat::DamageFire,
-                    Stat::DamageCold,
-                    Stat::DamageLightning,
-                    Stat::DamageChaos,
-                ];
-                let mut damage = [0i64; DMG_COUNT];
-                for i in 0..DMG_COUNT {
-                    let weapon_part = if is_spell {
-                        0
-                    } else {
-                        char_damage[i] * gem_def.coeff_bp / 10000
-                    };
-                    damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
-                    damage[i] = damage[i] * mods.more_bp[i] / 10000;
-                }
-
-                // AoE supports grow the skill's footprint: ring radius,
-                // corridor width, and (for cones) the sector's reach.
-                let aoe = |cu: i32| (cu as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32;
-                let mut range = if gem_def.range_cu > 0 {
-                    fx_from_cu(gem_def.range_cu)
-                } else {
-                    weapon_range
-                };
-                if gem_def.shape == SkillShape::Cone && mods.aoe_bp != 0 {
-                    range = Fx::from_raw(
-                        (range.raw() as i64 * (10000 + mods.aoe_bp).max(0) / 10000) as i32,
-                    );
-                }
-                let radius = fx_from_cu(aoe(gem_def.radius_cu));
-                let width = fx_from_cu(aoe(gem_def.width_cu));
-                let dot = gem_def.dot.map(|d| {
-                    (
-                        d.dtype.idx() as u8,
-                        d.per_second.at(level).max(0),
-                        (d.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000)
-                            as u32,
-                        gem_idx,
-                    )
-                });
-                let debuff = gem_def.debuff.clone().map(|b| {
-                    (
-                        b.grants,
-                        (b.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000)
-                            as u32,
-                    )
-                });
-                let spec_template = StrikeSpec {
-                    attacker_slot: Some(slot),
-                    attacker_net,
-                    attacker_name: attacker_name.clone(),
-                    attacker_is_char,
-                    is_spell,
-                    is_dot: false,
-                    accuracy,
-                    damage,
-                    crit_bp: gem_def.crit_bp * crit_inc / 10000,
-                    crit_multi,
-                    projectile: gem_def.shape == SkillShape::Projectile,
-                    dot,
-                    debuff,
-                    stagger: a_stagger,
-                    knockback_cu: a_knockback,
-                };
+                let ResolvedSkill {
+                    spec_template,
+                    gem_def,
+                    mods,
+                    range,
+                    radius,
+                    width,
+                } = resolved;
 
                 // Aim: where is this skill pointed?
                 let aim_point: Option<FxV2> = match target {
@@ -695,7 +747,7 @@ impl World {
                     SkillShape::Nova => {
                         // Pure-utility novas (War Cry) carry no damage
                         // and strike nobody — riders still fire below.
-                        if damage.iter().any(|d| *d > 0) {
+                        if spec_template.damage.iter().any(|d| *d > 0) {
                             let victims = self.collect_victims_radius(
                                 pos,
                                 radius,
@@ -816,7 +868,7 @@ impl World {
                         };
                         let mut dtype = 0usize;
                         for i in 1..DMG_COUNT {
-                            if damage[i] > damage[dtype] {
+                            if spec_template.damage[i] > spec_template.damage[dtype] {
                                 dtype = i;
                             }
                         }
@@ -829,7 +881,7 @@ impl World {
                         };
                         events.push(SimEvent::SkillFx {
                             attacker: attacker_net,
-                            spell: is_spell,
+                            spell: spec_template.is_spell,
                             shape: shape_code,
                             x: anchor.x.raw(),
                             y: anchor.y.raw(),
@@ -3497,6 +3549,113 @@ mod tests {
             world.equipment_records(slot, 2).len(),
             2,
             "max clamps the record count"
+        );
+    }
+
+    /// #42/#74: the shared `resolve_skill` is the executor's source of truth.
+    /// Pin its contract: an ATTACK scales the weapon by the gem coefficient, a
+    /// SPELL ignores the weapon entirely, and crit folds the attacker's global
+    /// increased-crit. (The executor staying byte-for-byte — golden unchanged —
+    /// proves the extraction; this pins the resolver's own behavior.)
+    #[test]
+    fn resolve_skill_is_consistent() {
+        let content = content();
+        let mut world = World::new(0x4242, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Resolver".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        let hs = gem_idx(&content, "heavy_swing"); // attack (weapon coeff > 0)
+        let arc = gem_idx(&content, "arc"); // spell (ignores the weapon)
+
+        let set_weapon = |world: &mut World, phys: i64, crit_inc: i64| {
+            let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            c.damage = [phys, 0, 0, 0, 0];
+            c.crit_inc = crit_inc;
+        };
+        let socket = |world: &mut World, gem: u32| {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.allocated = vec![node];
+            ch.sockets.clear();
+            ch.sockets.insert(
+                node,
+                SocketedGem {
+                    gem: GemInstance {
+                        gem_idx: gem,
+                        level: 1,
+                        xp: 0,
+                    },
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+        };
+
+        // Attack: its damage rises with the weapon's damage (coefficient scaling).
+        socket(&mut world, hs);
+        set_weapon(&mut world, 10000, 10000);
+        let atk_lo = world
+            .resolve_skill(slot, node)
+            .unwrap()
+            .spec_template
+            .damage[0];
+        set_weapon(&mut world, 20000, 10000);
+        let atk_hi = world
+            .resolve_skill(slot, node)
+            .unwrap()
+            .spec_template
+            .damage[0];
+        assert!(
+            atk_hi > atk_lo,
+            "an attack scales with the weapon ({atk_lo} → {atk_hi})"
+        );
+
+        // Spell: damage is the gem's OWN flat (its lightning add), not the
+        // weapon — even with a huge weapon the resolved lightning equals arc's
+        // added_lightning at level 1, and no weapon phys leaks in. (No spell in
+        // content carries a weapon coefficient, so this pins the flat path.)
+        socket(&mut world, arc);
+        set_weapon(&mut world, 999_999, 10000);
+        let arc_dmg = world
+            .resolve_skill(slot, node)
+            .unwrap()
+            .spec_template
+            .damage;
+        let arc_light = content.gems[arc as usize].added_lightning.at(1);
+        assert!(arc_light > 0, "arc has flat lightning to check");
+        assert_eq!(arc_dmg[3], arc_light, "a spell's damage is its gem flat");
+        assert_eq!(
+            arc_dmg[0], 0,
+            "the weapon's phys does not leak into a spell"
+        );
+
+        // Crit folds the global increase: crit_bp = gem.crit_bp × crit_inc / 10000.
+        socket(&mut world, hs);
+        set_weapon(&mut world, 10000, 20000);
+        let r = world.resolve_skill(slot, node).unwrap();
+        let gem_crit = content.gems[hs as usize].crit_bp;
+        assert_eq!(
+            r.spec_template.crit_bp,
+            gem_crit * 20000 / 10000,
+            "crit folds the attacker's global increase"
         );
     }
 }
