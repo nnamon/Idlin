@@ -514,8 +514,11 @@ impl World {
     /// defined slot — the optimization path a bot drives itself, vs the
     /// `equip_best` shortcut. Returns 0 on success; -1 if the slot isn't gear,
     /// the item doesn't fit any slot, requirements aren't met, or it's an
-    /// offhand while a two-hander is wielded. The displaced piece returns to
-    /// the bag (or drops). A two-hander sheds the offhand, like `equip_best`.
+    /// offhand while a two-hander is wielded. The displaced piece returns to the
+    /// bag (first-fit, into the cells the replacement vacates); if it can't
+    /// re-home there the swap is REFUSED (-1) rather than dropped — a deliberate
+    /// swap never loses gear (unlike `equip_best`, which drops to juggle). A
+    /// two-hander also sheds the offhand, which must fit too.
     pub(crate) fn equip(&mut self, slot: usize, inv_idx: i32, events: &mut Vec<SimEvent>) -> i32 {
         let Some(e) = self.zone.get(slot) else {
             return -1;
@@ -583,9 +586,9 @@ impl World {
 
     /// Manual unequip (#54 PR3): bare gear slot `gear_sel`, moving the worn item
     /// back to the bag — the deliberate counterpart to `equip`'s swap. Returns 0;
-    /// −1 if the slot index is invalid, already empty, or the BAG IS FULL. Unlike
-    /// a swap (which drops the displaced piece when the bag is full), this REFUSES
-    /// rather than ever dropping the item on a deliberate unequip.
+    /// −1 if the slot index is invalid, already empty, or the BAG IS FULL. Like
+    /// manual `equip` (and unlike the `equip_best` auto-swap, which drops to
+    /// juggle), this REFUSES rather than ever dropping the item.
     pub(crate) fn unequip(
         &mut self,
         slot: usize,

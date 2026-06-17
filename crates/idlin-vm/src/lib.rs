@@ -97,7 +97,9 @@ pub const SYS_READ_ITEM_MODS: i32 = 31;
 /// — so a bot can score its own gear instead of leaning on `equip_best`.
 pub const SYS_READ_EQUIPMENT: i32 = 32;
 /// #54 PR3: equip a specific bag item into its content-defined slot (manual
-/// counterpart to `equip_best`); the displaced item returns to the bag.
+/// counterpart to `equip_best`); the displaced item returns to the bag, or the
+/// swap is REFUSED (-1) if it can't re-home there — never dropped (unlike
+/// `equip_best`, which juggles by dropping).
 pub const SYS_EQUIP: i32 = 33;
 /// #54 PR3: the gear slot a gear item num belongs to (the deferred Def-lookup,
 /// RFC Q2) — so a bot can match a bag candidate against the worn item in its
