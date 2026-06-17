@@ -41,6 +41,61 @@ impl World {
         None
     }
 
+    /// Could every footprint in `displaced` (in placement order) find a home in
+    /// the bag once the item at `exclude_idx` (the incoming replacement) leaves
+    /// it? Mirrors the greedy first-fit the swap itself uses, so a deliberate
+    /// `equip` can REFUSE rather than silently drop a piece it can't re-home.
+    fn can_rehome_after_swap(
+        &self,
+        ch: &CharacterState,
+        exclude_idx: usize,
+        displaced: &[(u8, u8)],
+    ) -> bool {
+        let mut occupied = [[false; BAG_W as usize]; BAG_H as usize];
+        for (i, placed) in ch.inventory.iter().enumerate() {
+            if i == exclude_idx {
+                continue; // the replacement is leaving the bag
+            }
+            let (pw, ph) = placed.item.footprint(&self.content);
+            for dy in 0..ph {
+                for dx in 0..pw {
+                    let (px, py) = ((placed.x + dx) as usize, (placed.y + dy) as usize);
+                    if py < BAG_H as usize && px < BAG_W as usize {
+                        occupied[py][px] = true;
+                    }
+                }
+            }
+        }
+        for &(w, h) in displaced {
+            if w == 0 || h == 0 || w > BAG_W || h > BAG_H {
+                return false;
+            }
+            let mut placed_one = false;
+            'find: for y in 0..=(BAG_H - h) {
+                'spot: for x in 0..=(BAG_W - w) {
+                    for dy in 0..h {
+                        for dx in 0..w {
+                            if occupied[(y + dy) as usize][(x + dx) as usize] {
+                                continue 'spot;
+                            }
+                        }
+                    }
+                    for dy in 0..h {
+                        for dx in 0..w {
+                            occupied[(y + dy) as usize][(x + dx) as usize] = true;
+                        }
+                    }
+                    placed_one = true;
+                    break 'find;
+                }
+            }
+            if !placed_one {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Put a shed gear item back in the bag (first-fit) or drop it at the
     /// character's feet when the grid is full.
     fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
@@ -299,8 +354,9 @@ impl World {
         let Some(e) = self.zone.get(slot) else {
             return -1;
         };
-        let Some(ch) = &e.character else { return -1 };
-        let (net_id, owner) = (e.net_id, ch.name.clone());
+        if e.character.is_none() {
+            return -1;
+        }
 
         let mut changes = 0;
         for gear_idx in 0..GEAR_SLOTS {
@@ -315,21 +371,7 @@ impl World {
                     .as_ref()
                     .is_some_and(|w| self.content.items[w.base_idx as usize].two_handed)
             {
-                let shed = self
-                    .zone
-                    .get_mut(slot)
-                    .and_then(|e| e.character.as_mut())
-                    .and_then(|c| c.equipment[GearSlot::Offhand.idx()].take());
-                if let Some(off) = shed {
-                    let item = self.item_display(&off);
-                    self.stash_or_drop_gear(slot, off);
-                    events.push(SimEvent::GearShed {
-                        id: net_id,
-                        owner: owner.clone(),
-                        item,
-                    });
-                    self.refresh_derived_stats(slot);
-                }
+                self.shed_offhand_for_two_hander(slot, events);
                 continue;
             }
             let current_score = ch.equipment[gear_idx]
@@ -363,58 +405,8 @@ impl World {
                 }
             }
             let Some((inv_idx, _)) = best else { continue };
-            // Rolled display name, while the immutable borrow still holds.
-            let item_name = self.item_display(
-                ch.inventory[inv_idx]
-                    .item
-                    .as_gear()
-                    .expect("equip candidate is gear"),
-            );
-
-            // Swap: candidate leaves the grid, then the old piece gets a
-            // first-fit spot (likely the freed cells) or drops at our feet.
-            let me = self.zone.get_mut(slot).unwrap();
-            let ch_mut = me.character.as_mut().unwrap();
-            let placed = ch_mut.inventory.remove(inv_idx);
-            let BagItem::Gear(new_item) = placed.item else {
-                continue; // unreachable: we filtered to gear
-            };
-            let item_rarity = new_item.rarity;
-            let old = ch_mut.equipment[gear_idx].replace(new_item);
-            if let Some(old_item) = old {
-                let (w, h) = {
-                    let def = &self.content.items[old_item.base_idx as usize];
-                    (def.w, def.h)
-                };
-                let spot = {
-                    let e = self.zone.get(slot).unwrap();
-                    self.first_fit(e.character.as_ref().unwrap(), w, h)
-                };
-                match spot {
-                    Some((x, y)) => {
-                        let me = self.zone.get_mut(slot).unwrap();
-                        me.character.as_mut().unwrap().inventory.push(PlacedItem {
-                            item: BagItem::Gear(old_item),
-                            x,
-                            y,
-                        });
-                    }
-                    None => {
-                        let (pos, owner_net) = {
-                            let e = self.zone.get(slot).unwrap();
-                            (e.pos, e.net_id)
-                        };
-                        self.spawn_loot(pos, LootPayload::Gear(old_item), owner_net);
-                    }
-                }
-            }
+            self.swap_bag_into_slot(slot, inv_idx, gear_idx, events);
             changes += 1;
-            events.push(SimEvent::ItemEquipped {
-                id: net_id,
-                owner: owner.clone(),
-                rarity: item_rarity,
-                item: item_name,
-            });
         }
         if changes > 0 {
             self.refresh_derived_stats(slot);
@@ -424,6 +416,273 @@ impl World {
         // self-heal for any invalidation path we didn't foresee).
         self.enforce_gear_requirements(slot, events);
         changes
+    }
+
+    /// Move the bag item at `inv_idx` into equipment `gear_idx`: the candidate
+    /// leaves the grid, the displaced piece gets a first-fit spot (likely the
+    /// freed cells) or drops at our feet, and ItemEquipped fires. The caller
+    /// guarantees `inv_idx` is gear that fits `gear_idx`. Shared by
+    /// `equip_best` (auto) and `equip` (manual) so the swap logic lives once.
+    fn swap_bag_into_slot(
+        &mut self,
+        slot: usize,
+        inv_idx: usize,
+        gear_idx: usize,
+        events: &mut Vec<SimEvent>,
+    ) {
+        let Some(e) = self.zone.get(slot) else { return };
+        let Some(ch) = &e.character else { return };
+        let (net_id, owner) = (e.net_id, ch.name.clone());
+        let Some(gear) = ch.inventory.get(inv_idx).and_then(|p| p.item.as_gear()) else {
+            return;
+        };
+        let item_name = self.item_display(gear);
+        let me = self.zone.get_mut(slot).unwrap();
+        let ch_mut = me.character.as_mut().unwrap();
+        let placed = ch_mut.inventory.remove(inv_idx);
+        let BagItem::Gear(new_item) = placed.item else {
+            return; // unreachable: caller filtered to gear
+        };
+        let item_rarity = new_item.rarity;
+        let old = ch_mut.equipment[gear_idx].replace(new_item);
+        if let Some(old_item) = old {
+            let (w, h) = {
+                let def = &self.content.items[old_item.base_idx as usize];
+                (def.w, def.h)
+            };
+            let spot = {
+                let e = self.zone.get(slot).unwrap();
+                self.first_fit(e.character.as_ref().unwrap(), w, h)
+            };
+            match spot {
+                Some((x, y)) => {
+                    let me = self.zone.get_mut(slot).unwrap();
+                    me.character.as_mut().unwrap().inventory.push(PlacedItem {
+                        item: BagItem::Gear(old_item),
+                        x,
+                        y,
+                    });
+                }
+                None => {
+                    let (pos, owner_net) = {
+                        let e = self.zone.get(slot).unwrap();
+                        (e.pos, e.net_id)
+                    };
+                    self.spawn_loot(pos, LootPayload::Gear(old_item), owner_net);
+                }
+            }
+        }
+        events.push(SimEvent::ItemEquipped {
+            id: net_id,
+            owner,
+            rarity: item_rarity,
+            item: item_name,
+        });
+    }
+
+    /// A two-handed weapon claims the offhand: if one is wielded, shed any
+    /// offhand piece (back to the grid / ground) with a GearShed event. Shared
+    /// by `equip_best` and `equip`.
+    fn shed_offhand_for_two_hander(&mut self, slot: usize, events: &mut Vec<SimEvent>) {
+        let Some(e) = self.zone.get(slot) else { return };
+        let Some(ch) = &e.character else { return };
+        let wields_2h = ch.equipment[GearSlot::Weapon.idx()]
+            .as_ref()
+            .is_some_and(|w| self.content.items[w.base_idx as usize].two_handed);
+        if !wields_2h {
+            return;
+        }
+        let (net_id, owner) = (e.net_id, ch.name.clone());
+        let shed = self
+            .zone
+            .get_mut(slot)
+            .and_then(|e| e.character.as_mut())
+            .and_then(|c| c.equipment[GearSlot::Offhand.idx()].take());
+        if let Some(off) = shed {
+            let item = self.item_display(&off);
+            self.stash_or_drop_gear(slot, off);
+            events.push(SimEvent::GearShed {
+                id: net_id,
+                owner,
+                item,
+            });
+            self.refresh_derived_stats(slot);
+        }
+    }
+
+    /// Manual equip (#54 PR3): wear the bag item at `inv_idx` in its content-
+    /// defined slot — the optimization path a bot drives itself, vs the
+    /// `equip_best` shortcut. Returns 0 on success; -1 if the slot isn't gear,
+    /// the item doesn't fit any slot, requirements aren't met, or it's an
+    /// offhand while a two-hander is wielded. The displaced piece returns to the
+    /// bag (first-fit, into the cells the replacement vacates); if it can't
+    /// re-home there the swap is REFUSED (-1) rather than dropped — a deliberate
+    /// swap never loses gear (unlike `equip_best`, which drops to juggle). A
+    /// two-hander also sheds the offhand, which must fit too.
+    pub(crate) fn equip(&mut self, slot: usize, inv_idx: i32, events: &mut Vec<SimEvent>) -> i32 {
+        let Some(e) = self.zone.get(slot) else {
+            return -1;
+        };
+        let Some(ch) = &e.character else { return -1 };
+        let Ok(inv_idx) = usize::try_from(inv_idx) else {
+            return -1;
+        };
+        let Some(gear) = ch.inventory.get(inv_idx).and_then(|p| p.item.as_gear()) else {
+            return -1; // out of range, or the bag slot is a gem
+        };
+        let islot = self.content.items[gear.base_idx as usize].slot;
+        // A flask takes either belt loop — the first free one, else loop 0.
+        let gear_idx = if islot == GearSlot::Flask {
+            GearSlot::FLASK_SLOTS
+                .into_iter()
+                .find(|&i| ch.equipment[i].is_none())
+                .unwrap_or(GearSlot::FLASK_SLOTS[0])
+        } else {
+            islot.idx()
+        };
+        // Can't keep it equipped → refuse, rather than thrash it on and off.
+        if !self.meets_requirements(slot, gear, Some(gear_idx)) {
+            return -1;
+        }
+        let two_handed = self.content.items[gear.base_idx as usize].two_handed;
+        // An offhand can't go on while a two-hander holds that slot: the bot
+        // must swap the weapon first. (A two-hander itself sheds the offhand.)
+        if gear_idx == GearSlot::Offhand.idx()
+            && ch.equipment[GearSlot::Weapon.idx()]
+                .as_ref()
+                .is_some_and(|w| self.content.items[w.base_idx as usize].two_handed)
+        {
+            return -1;
+        }
+        // A deliberate swap never DROPS gear (like unequip): every piece we'd
+        // displace — the slot's current item, plus the offhand a two-hander
+        // sheds — must fit the bag once the replacement leaves it. Refuse if
+        // not, so the bot frees space itself. (`equip_best` keeps drop-to-juggle:
+        // an auto upgrade on a full bag still happens, shedding the worse piece.)
+        let mut displaced: Vec<(u8, u8)> = Vec::new();
+        if let Some(worn) = ch.equipment[gear_idx].as_ref() {
+            let d = &self.content.items[worn.base_idx as usize];
+            displaced.push((d.w, d.h));
+        }
+        if two_handed
+            && gear_idx == GearSlot::Weapon.idx()
+            && let Some(off) = ch.equipment[GearSlot::Offhand.idx()].as_ref()
+        {
+            let d = &self.content.items[off.base_idx as usize];
+            displaced.push((d.w, d.h));
+        }
+        if !self.can_rehome_after_swap(ch, inv_idx, &displaced) {
+            return -1;
+        }
+        self.swap_bag_into_slot(slot, inv_idx, gear_idx, events);
+        if gear_idx == GearSlot::Weapon.idx() && two_handed {
+            self.shed_offhand_for_two_hander(slot, events);
+        }
+        self.refresh_derived_stats(slot);
+        // A swap can invalidate another piece's requirements — self-heal.
+        self.enforce_gear_requirements(slot, events);
+        0
+    }
+
+    /// Manual unequip (#54 PR3): bare gear slot `gear_sel`, moving the worn item
+    /// back to the bag — the deliberate counterpart to `equip`'s swap. Returns 0;
+    /// −1 if the slot index is invalid, already empty, or the BAG IS FULL. Like
+    /// manual `equip` (and unlike the `equip_best` auto-swap, which drops to
+    /// juggle), this REFUSES rather than ever dropping the item.
+    pub(crate) fn unequip(
+        &mut self,
+        slot: usize,
+        gear_sel: i32,
+        events: &mut Vec<SimEvent>,
+    ) -> i32 {
+        let Some(e) = self.zone.get(slot) else {
+            return -1;
+        };
+        let Some(ch) = &e.character else { return -1 };
+        let Ok(gear_idx) = usize::try_from(gear_sel) else {
+            return -1;
+        };
+        if gear_idx >= GEAR_SLOTS {
+            return -1;
+        }
+        let Some(worn) = ch.equipment[gear_idx].as_ref() else {
+            return -1; // nothing worn in that slot
+        };
+        let (net_id, owner) = (e.net_id, ch.name.clone());
+        let (w, h) = {
+            let def = &self.content.items[worn.base_idx as usize];
+            (def.w, def.h)
+        };
+        // Find a home BEFORE removing — a deliberate unequip never drops: if the
+        // bag can't hold it, refuse and leave it equipped.
+        let Some((x, y)) = self.first_fit(ch, w, h) else {
+            return -1;
+        };
+        let item = self.item_display(worn);
+        let removed = self
+            .zone
+            .get_mut(slot)
+            .and_then(|e| e.character.as_mut())
+            .and_then(|c| c.equipment[gear_idx].take());
+        if let Some(it) = removed {
+            self.zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .inventory
+                .push(PlacedItem {
+                    item: BagItem::Gear(it),
+                    x,
+                    y,
+                });
+        }
+        self.refresh_derived_stats(slot);
+        // Baring a slot can drop attributes another piece leaned on — self-heal.
+        self.enforce_gear_requirements(slot, events);
+        events.push(SimEvent::GearShed {
+            id: net_id,
+            owner,
+            item,
+        });
+        0
+    }
+
+    /// The worn gear as ReadEquipment records (#54 PR3): one `[slot, base_num,
+    /// rarity, item_level]` per gear slot up to `max`, with `base_num == -1` for
+    /// an empty slot. Definitional fields (slot→dims, affixes) stay in the docs /
+    /// ReadItemMods (P1). Extracted from the syscall so the layout is testable.
+    pub(crate) fn equipment_records(&self, slot: usize, max: usize) -> Vec<[i32; 4]> {
+        let Some(ch) = self.zone.get(slot).and_then(|e| e.character.as_ref()) else {
+            return Vec::new();
+        };
+        ch.equipment
+            .iter()
+            .take(max)
+            .enumerate()
+            .map(|(gear_idx, worn)| match worn {
+                Some(it) => [
+                    gear_idx as i32,
+                    self.content_num(idlin_content::ids::Category::Item, it.base_idx as usize),
+                    it.rarity as i32,
+                    it.item_level as i32,
+                ],
+                None => [gear_idx as i32, -1, 0, 0],
+            })
+            .collect()
+    }
+
+    /// The gear slot a gear item num belongs to (#54 PR3 `item_slot` syscall):
+    /// the GearSlot index, or -1 for a non-gear / unknown num. The deferred
+    /// Def-lookup (RFC Q2) that manual gear scoring needs — base reads omit it.
+    pub(crate) fn item_slot_of_num(&self, num: i32) -> i32 {
+        match self.content_idx(num) {
+            Some((idlin_content::ids::Category::Item, idx)) => {
+                self.content.items[idx as usize].slot.idx() as i32
+            }
+            _ => -1,
+        }
     }
 
     /// Deterministic single-item valuation for EquipBest: evaluate the item's

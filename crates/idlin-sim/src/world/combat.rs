@@ -2265,8 +2265,12 @@ mod tests {
             );
             bag_gem(ch, &content, "quickening");
         }
+        // #54 PR3: socket_gem takes the stable node NUM now, not the array index.
+        let node_num = content
+            .content_num(idlin_content::ids::Category::Node, node as usize)
+            .unwrap();
         let mut ev = Vec::new();
-        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
+        assert_eq!(world.socket_gem(slot, node_num, 0, &mut ev), -1);
         // The same skill at level 7 has a second slot.
         world
             .zone
@@ -2280,7 +2284,7 @@ mod tests {
             .unwrap()
             .gem
             .level = 7;
-        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), 1);
+        assert_eq!(world.socket_gem(slot, node_num, 0, &mut ev), 1);
     }
 
     #[test]
@@ -2779,6 +2783,10 @@ mod tests {
             .iter()
             .position(|n| n.kind == idlin_content::NodeKind::Socket)
             .expect("a socket node exists") as u32;
+        // #54 PR3: socket_gem takes the stable node NUM now, not the array index.
+        let node_num = content
+            .content_num(idlin_content::ids::Category::Node, node as usize)
+            .unwrap();
         {
             let ch = world
                 .zone
@@ -2801,7 +2809,7 @@ mod tests {
         }
         let mut ev = Vec::new();
         // Manual: a second copy of the same support is refused outright.
-        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
+        assert_eq!(world.socket_gem(slot, node_num, 0, &mut ev), -1);
         // Auto: the duplicate is skipped (nothing sockets).
         assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 0);
         // A different fitting support still goes in.
@@ -3079,5 +3087,416 @@ mod tests {
         supported.supports.push(instance(&content, "widening", 1));
         assert_eq!(world.skill_mana_cost(&bare), 4);
         assert_eq!(world.skill_mana_cost(&supported), 5);
+    }
+
+    /// #52 / #54 PR3: a melee grinder must never socket a bow skill gem (it
+    /// could never swing it). We seed ONLY a bow gem (power_shot) in town
+    /// (saltmere — no monsters, so no scripted drops, so the First Spark socket
+    /// stays EMPTY the whole window). An empty socket would accept any skill if
+    /// the grinder socketed indiscriminately — the melee build must leave the
+    /// bow gem. Fails if the whitelist regresses (verified by mutation: adding
+    /// power_shot to the grinder's plan makes this fail). The melee-skill path
+    /// is covered by `bots_grind_the_shore` / the tutorial.
+    #[test]
+    fn grinder_skips_a_bow_gem_on_a_melee_build() {
+        let content = content();
+        let mut world = World::new_for_zone(0x52F1, &content, "saltmere");
+        let program = idlin_botc::template_grinder().expect("template assembles");
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Melee".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "power_shot"); // bow skill — must be skipped
+        }
+        let empty = crate::TickInputs::default();
+        let mut socketed_bow = false;
+        for _ in 0..30 {
+            for ev in world.tick(&empty) {
+                if let SimEvent::GemSocketed { gem, .. } = ev
+                    && gem == "Power Shot"
+                {
+                    socketed_bow = true;
+                }
+            }
+        }
+        assert!(
+            !socketed_bow,
+            "a melee build must NOT socket the bow skill, even into an empty socket (#52)"
+        );
+    }
+
+    /// #54 PR3 syscalls: `item_slot` maps gear nums to their slot and rejects
+    /// everything else; `equip` handles hostile/out-of-range input with -1, never
+    /// a panic, and a real gear item lands in its slot.
+    #[test]
+    fn equip_and_item_slot_reject_bad_input() {
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(9, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap();
+        let cleaver_num = content.content_num(Category::Item, cleaver_idx).unwrap();
+        let cleave_gem_num = content
+            .content_num(
+                Category::Gem,
+                content.gems.iter().position(|g| g.id == "cleave").unwrap(),
+            )
+            .unwrap();
+        // item_slot: a gear num → its slot; a gem / unknown / negative → -1.
+        assert_eq!(
+            world.item_slot_of_num(cleaver_num),
+            idlin_content::GearSlot::Weapon.idx() as i32
+        );
+        assert_eq!(
+            world.item_slot_of_num(cleave_gem_num),
+            -1,
+            "a gem has no slot"
+        );
+        assert_eq!(world.item_slot_of_num(-1), -1);
+        assert_eq!(world.item_slot_of_num(0), -1);
+        assert_eq!(world.item_slot_of_num(i32::MAX), -1);
+
+        // equip: out-of-range / negative / empty bag / a gem all return -1.
+        let mut ev = Vec::new();
+        assert_eq!(world.equip(slot, -1, &mut ev), -1);
+        assert_eq!(world.equip(slot, i32::MAX, &mut ev), -1);
+        assert_eq!(
+            world.equip(slot, 0, &mut ev),
+            -1,
+            "empty bag → nothing to equip"
+        );
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "cleave"); // a gem at index 0
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: cleaver_idx as u32,
+                    rarity: crate::entity::Rarity::Normal,
+                    item_level: 1,
+                    affixes: Vec::new(),
+                    name: String::new(),
+                    charges: 0,
+                }),
+                x: 5,
+                y: 0,
+            });
+        }
+        assert_eq!(world.equip(slot, 0, &mut ev), -1, "a gem can't be equipped");
+        // The real cleaver (index 1) equips and lands in the weapon slot.
+        assert_eq!(world.equip(slot, 1, &mut ev), 0, "the cleaver equips");
+        assert!(
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .equipment[idlin_content::GearSlot::Weapon.idx()]
+            .is_some(),
+            "the weapon slot is now filled"
+        );
+    }
+
+    /// #54 PR3: `unequip` bares a slot to the bag, guards bad input, and — the
+    /// headline — REFUSES (leaving the item worn) when the bag is full instead of
+    /// dropping it (unlike `equip`'s swap).
+    #[test]
+    fn unequip_moves_gear_to_the_bag_and_refuses_when_full() {
+        let content = content();
+        let mut world = World::new(21, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Bare".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        let wpn = idlin_content::GearSlot::Weapon.idx();
+        let wear_cleaver = |world: &mut World| {
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .equipment[wpn] = Some(crate::entity::Item {
+                base_idx: cleaver_idx,
+                rarity: crate::entity::Rarity::Normal,
+                item_level: 1,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+            });
+        };
+        wear_cleaver(&mut world);
+
+        let mut ev = Vec::new();
+        // Bad input: out-of-range / negative slot → -1, no panic.
+        assert_eq!(world.unequip(slot, -1, &mut ev), -1);
+        assert_eq!(world.unequip(slot, 99, &mut ev), -1);
+        // An empty slot → -1.
+        assert_eq!(
+            world.unequip(slot, idlin_content::GearSlot::Helm.idx() as i32, &mut ev),
+            -1,
+            "the helm slot is empty"
+        );
+        // Bare the weapon: slot empties, the cleaver lands in the bag.
+        assert_eq!(world.unequip(slot, wpn as i32, &mut ev), 0);
+        {
+            let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+            assert!(ch.equipment[wpn].is_none(), "weapon slot bared");
+            assert!(
+                ch.inventory
+                    .iter()
+                    .any(|p| p.item.as_gear().is_some_and(|g| g.base_idx == cleaver_idx)),
+                "the cleaver is back in the bag"
+            );
+        }
+
+        // Re-wear, then FILL the bag (12×5 = 60 cells) — unequip must refuse and
+        // leave the cleaver equipped rather than drop it.
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            let i = ch
+                .inventory
+                .iter()
+                .position(|p| p.item.as_gear().is_some_and(|g| g.base_idx == cleaver_idx))
+                .unwrap();
+            ch.inventory.remove(i);
+        }
+        wear_cleaver(&mut world);
+        for _ in 0..60 {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "cleave");
+        }
+        let n_full = world
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(
+            world.unequip(slot, wpn as i32, &mut ev),
+            -1,
+            "full bag → refuse"
+        );
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert!(
+            ch.equipment[wpn].is_some(),
+            "the cleaver stays equipped when the bag is full"
+        );
+        assert_eq!(
+            ch.inventory.len(),
+            n_full,
+            "nothing was added to the full bag"
+        );
+    }
+
+    /// #54 PR3: a deliberate `equip` never DROPS the displaced piece. Swapping a
+    /// smaller weapon (cleaver, 2×3) in for a larger worn one (bow, 2×4) when the
+    /// bag can't re-home the bow must REFUSE (-1) and leave both in place — not
+    /// drop the bow. (`equip_best` would still juggle by dropping; this is the
+    /// manual contract.)
+    #[test]
+    fn equip_refuses_a_swap_that_would_drop_the_displaced_item() {
+        use crate::entity::{BAG_H, BAG_W, BagItem, Item, PlacedItem, Rarity};
+        let content = content();
+        let mut world = World::new(0x533, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Packed".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let item_base = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let bow = item_base("driftwood_bow"); // 2×4 worn fixture
+        let cleaver = item_base("rusted_cleaver"); // 2×3 replacement (no reqs)
+        let wpn = idlin_content::GearSlot::Weapon.idx();
+        let gear = |base_idx: u32| Item {
+            base_idx,
+            rarity: Rarity::Normal,
+            item_level: 1,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[wpn] = Some(gear(bow)); // wear the larger bow
+            // The cleaver (replacement) at the top-left 2×3; gems pack the rest.
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(gear(cleaver)),
+                x: 0,
+                y: 0,
+            });
+            for y in 0..BAG_H {
+                for x in 0..BAG_W {
+                    if x < 2 && y < 3 {
+                        continue; // reserved for the cleaver's 2×3
+                    }
+                    ch.inventory.push(PlacedItem {
+                        item: BagItem::Gem(instance(&content, "cleave", 1)),
+                        x,
+                        y,
+                    });
+                }
+            }
+        }
+        let mut ev = Vec::new();
+        // Equipping the cleaver would displace the bow; freeing the cleaver's
+        // 2×3 leaves no 2×4 region, so the bow can't re-home → refuse.
+        assert_eq!(
+            world.equip(slot, 0, &mut ev),
+            -1,
+            "the swap refuses when the displaced bow can't re-home"
+        );
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(
+            ch.equipment[wpn].as_ref().unwrap().base_idx,
+            bow,
+            "the bow stays equipped — not dropped"
+        );
+        assert!(
+            ch.inventory
+                .iter()
+                .any(|p| p.item.as_gear().is_some_and(|g| g.base_idx == cleaver)),
+            "the cleaver stays in the bag"
+        );
+    }
+
+    /// #54 PR3: ReadEquipment's record layout — one `[slot, base_num/-1, rarity,
+    /// item_level]` per gear slot, empty slots reporting base_num -1, `max`
+    /// honored. Pins the host-side struct a bot reads.
+    #[test]
+    fn equipment_records_report_every_slot() {
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(11, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Worn".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap();
+        let cleaver_num = content.content_num(Category::Item, cleaver_idx).unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(crate::entity::Item {
+                base_idx: cleaver_idx as u32,
+                rarity: crate::entity::Rarity::Magic,
+                item_level: 7,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+            });
+        }
+        let recs = world.equipment_records(slot, crate::entity::GEAR_SLOTS);
+        assert_eq!(
+            recs.len(),
+            crate::entity::GEAR_SLOTS,
+            "one record per gear slot"
+        );
+        assert_eq!(
+            recs[0],
+            [0, cleaver_num, crate::entity::Rarity::Magic as i32, 7],
+            "the worn weapon: slot, num, rarity, item_level"
+        );
+        for (i, rec) in recs.iter().enumerate().skip(1) {
+            assert_eq!(*rec, [i as i32, -1, 0, 0], "empty slot {i} → base_num -1");
+        }
+        // The `max` argument clamps the record count.
+        assert_eq!(
+            world.equipment_records(slot, 2).len(),
+            2,
+            "max clamps the record count"
+        );
     }
 }
