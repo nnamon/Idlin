@@ -2265,8 +2265,12 @@ mod tests {
             );
             bag_gem(ch, &content, "quickening");
         }
+        // #54 PR3: socket_gem takes the stable node NUM now, not the array index.
+        let node_num = content
+            .content_num(idlin_content::ids::Category::Node, node as usize)
+            .unwrap();
         let mut ev = Vec::new();
-        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
+        assert_eq!(world.socket_gem(slot, node_num, 0, &mut ev), -1);
         // The same skill at level 7 has a second slot.
         world
             .zone
@@ -2280,7 +2284,7 @@ mod tests {
             .unwrap()
             .gem
             .level = 7;
-        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), 1);
+        assert_eq!(world.socket_gem(slot, node_num, 0, &mut ev), 1);
     }
 
     #[test]
@@ -2779,6 +2783,10 @@ mod tests {
             .iter()
             .position(|n| n.kind == idlin_content::NodeKind::Socket)
             .expect("a socket node exists") as u32;
+        // #54 PR3: socket_gem takes the stable node NUM now, not the array index.
+        let node_num = content
+            .content_num(idlin_content::ids::Category::Node, node as usize)
+            .unwrap();
         {
             let ch = world
                 .zone
@@ -2801,7 +2809,7 @@ mod tests {
         }
         let mut ev = Vec::new();
         // Manual: a second copy of the same support is refused outright.
-        assert_eq!(world.socket_gem(slot, node as i32, 0, &mut ev), -1);
+        assert_eq!(world.socket_gem(slot, node_num, 0, &mut ev), -1);
         // Auto: the duplicate is skipped (nothing sockets).
         assert_eq!(world.socket_gem(slot, -1, -1, &mut ev), 0);
         // A different fitting support still goes in.

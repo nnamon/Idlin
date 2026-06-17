@@ -10,12 +10,16 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for weapon handedness: `driftwood_bow` gained `two_handed: true`,
-/// which edits a hashed content file — `content_hash` folds into the state hash,
-/// so the value shifts even though the golden world has no characters at tick
-/// 2000. The EquipBest offhand-exclusion is behavior-neutral for the (melee,
-/// 1H) golden grinder. (Earlier #54 PR1b/PR2a/PR2b folds still apply.)
-const GOLDEN_HASH: u64 = 0x287F_F933_6763_DAD9;
+/// Re-pinned for #54 PR3 (grinder rewrite): the two golden grinders now select
+/// gems/gear IN THE BOT — socketing the melee skill into the First Spark socket
+/// via `socket_gem(node_num, slot)` and equipping with `equip` instead of the
+/// `equip_best`/`socket_gem(-1,-1)` autos — so their 2000-tick behavior (and
+/// thus the replay state) shifts. Bot-template change only; `content_hash` is
+/// unchanged (nothing under content/ moved). Sim-only PR3 changes (socket
+/// node-num, the equip_best refactor, the new read syscalls) were verified
+/// hash-neutral before the template edit. (Earlier weapon-handedness + #54
+/// PR1b/PR2a/PR2b folds still apply.)
+const GOLDEN_HASH: u64 = 0x8CE0_9C9C_C4F3_1A3A;
 
 #[test]
 fn golden_replay() {

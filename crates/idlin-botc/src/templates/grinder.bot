@@ -30,6 +30,8 @@ const SELF = 0xE000;       // SelfStatus buffer
 const ENTS = 0xE100;       // entity query buffer (24-byte records)
 const SKL = 0xE400;        // ReadSkills records (36 bytes each)
 const EXITS = 0xE700;      // ReadExits records (16 bytes each)
+const INV = 0xE800;        // ReadInventory records (20 bytes each)
+const EQ = 0xED00;         // ReadEquipment records (16 bytes each)
 const F_ENEMY = 1;
 const F_LOOT = 3;
 
@@ -53,6 +55,56 @@ fn fire_skill(rec, slot, target, tx, ty) {
     if (mode == 0) { return use_skill(slot, target, 0, 0); }
     if (mode == 1) { return use_skill_at(slot, tx, ty); }
     return use_skill_dir(slot, tx - mem[SELF], ty - mem[SELF + 4]);
+}
+
+// Socket the planned gem NUM into socket `node`, if a loose copy is in the bag.
+// Idempotent: a filled node, or no such gem, returns -1 and we move on next
+// tick. socket_gem takes a stable node NUM now (#54 PR3); args are (node, slot).
+fn socket_into(node, gem_num) {
+    var n = read_inventory(INV, 60);
+    var i = 0;
+    while (i < n) {
+        if (mem[INV + i * 20] == gem_num) {
+            if (socket_gem(node, i) == 0) { return 0; }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Wear the first bag piece that fills an empty slot or out-levels what's worn —
+// the manual gear path (vs the equip_best shortcut). item_slot(num) maps a
+// candidate to its gear slot; read_equipment gives the worn piece there
+// (record: slot, base_num/-1, rarity, item_level). One equip per tick: a swap
+// shifts the bag, so we stop and re-scan next tick.
+fn upkeep_gear() {
+    read_equipment(EQ, 7);
+    var n = read_inventory(INV, 60);
+    var i = 0;
+    while (i < n) {
+        var rec = INV + i * 20;
+        var num = mem[rec];
+        var s = item_slot(num);                 // -1 unless this is gear
+        if (s >= 0) {
+            // The WEAPON slot is build-critical: a wand or bow would silence our
+            // melee skills at the weapon gate (the gear face of #52). Reads don't
+            // carry weapon class, so we wield only our known melee base; armor
+            // and flasks have no such gate, so they upgrade freely by item level.
+            var ok = 1;
+            if (s == 0) {
+                ok = 0;
+                if (num == ITEM_RUSTED_CLEAVER) { ok = 1; }
+            }
+            if (ok == 1) {
+                var er = EQ + s * 16;
+                // Empty slot (worn base_num -1), or a higher item level, wins.
+                if (mem[er + 4] < 0 || mem[rec + 8] > mem[er + 12]) {
+                    if (equip(i) == 0) { return; }   // equipped; the bag shifted
+                }
+            }
+        }
+        i = i + 1;
+    }
 }
 
 fn main() {
@@ -95,9 +147,24 @@ fn main() {
         }
     }
 
-    // Upkeep: gear and gems (passives allocate themselves per the build).
-    equip_best();
-    socket_gem(-1, -1);
+    // Upkeep (#54 PR3): selection lives in the BOT now, not the engine autos.
+    // Gear: wear our own upgrades. Gems: socket ONLY melee skills + their
+    // supports — a bow gem (power_shot) or a spell is never in the plan, so it's
+    // never socketed (the weapon-compat skip #52 wanted). Passives self-allocate
+    // per the declared build.
+    upkeep_gear();
+    // First Spark (NODE_START) is a socket allocated from level 1; the deep
+    // limb sockets (WAR/AEGIS) unlock post-shore. The shore brain pays a melee
+    // char EITHER heavy_swing or cleave, so try both into the start socket —
+    // whichever we hold lands, the other waits for a deep socket. Each call is
+    // idempotent (a filled node or absent gem returns -1).
+    socket_into(NODE_START, GEM_HEAVY_SWING);
+    socket_into(NODE_START, GEM_CLEAVE);
+    socket_into(NODE_START, GEM_HEAVIER_BLOWS);
+    socket_into(NODE_START, GEM_QUICKENING);
+    socket_into(NODE_SOCKET_WAR, GEM_HEAVY_SWING);
+    socket_into(NODE_SOCKET_WAR, GEM_CLEAVE);
+    socket_into(NODE_SOCKET_AEGIS, GEM_HEAVIER_BLOWS);
 
     // Find an open exit, but don't rush it: grind zones keep feeding us.
     // Departures are earned by BOREDOM — ~12s with nothing in sight to
