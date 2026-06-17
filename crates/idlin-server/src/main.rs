@@ -63,6 +63,23 @@ fn builtin_joins() -> anyhow::Result<TickInputs> {
     })
 }
 
+/// Load gameplay content, failing CLOSED. A present-but-broken content tree (a
+/// parse / IO / registry error) is FATAL: running with empty content would
+/// silently produce a divergent deterministic world and write snapshots against
+/// the wrong content hash. A *missing* tree is not an error — `ContentDb::load`
+/// returns an empty db (an absent dir collects no files), and the caller warns
+/// and runs the placeholder Void zone (the wrong-CWD dev path).
+fn load_content(dir: &std::path::Path) -> anyhow::Result<ContentDb> {
+    use anyhow::Context;
+    ContentDb::load(dir).with_context(|| {
+        format!(
+            "content/ at {} failed to load — refusing to start with empty \
+             content (it would diverge the world). Run from the repository root.",
+            dir.display()
+        )
+    })
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -80,13 +97,7 @@ async fn main() -> anyhow::Result<()> {
     let snapshot_dir =
         PathBuf::from(std::env::var("IDLIN_DATA").unwrap_or_else(|_| "data/snapshots".into()));
 
-    let content = match ContentDb::load(std::path::Path::new("content")) {
-        Ok(db) => db,
-        Err(e) => {
-            warn!("failed to load content/: {e}; starting with empty content");
-            ContentDb::empty()
-        }
-    };
+    let content = load_content(std::path::Path::new("content"))?;
     if content.zones.is_empty() {
         warn!(
             "no zones loaded — content/ is missing or empty; the world will \
@@ -498,7 +509,37 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::inspect_world_key;
+    use super::{inspect_world_key, load_content};
+
+    #[test]
+    fn content_load_fails_closed_on_a_broken_tree() {
+        use std::fs;
+        // A present-but-malformed content tree must be FATAL, not silently empty:
+        // empty content would diverge the deterministic world (#63).
+        let dir = std::env::temp_dir().join(format!("idlin-content-broken-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("zones")).unwrap();
+        fs::write(dir.join("zones/bad.ron"), b"this is not valid RON (((").unwrap();
+        assert!(
+            load_content(&dir).is_err(),
+            "a broken content tree is fatal"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_content_is_not_fatal_just_empty() {
+        // A missing tree (wrong CWD) is allowed: load returns an empty db and the
+        // caller warns + runs the Void zone. Only a *broken* tree is fatal.
+        let dir =
+            std::env::temp_dir().join(format!("idlin-content-absent-{}-nope", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = load_content(&dir).expect("a missing content tree is allowed (empty)");
+        assert!(
+            db.zones.is_empty(),
+            "missing content yields an empty db, not an error"
+        );
+    }
 
     #[test]
     fn inspect_resolves_in_the_clients_displayed_world() {

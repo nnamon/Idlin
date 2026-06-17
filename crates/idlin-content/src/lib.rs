@@ -1637,10 +1637,18 @@ impl ContentDb {
             // stable nums. Real content commits `ids.ron` (the locked,
             // append-only registry) and the CI gate keeps it in sync — this
             // branch never runs for it.
-            Err(_) => ids::Registry::default()
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => ids::Registry::default()
                 .regenerate(&db.present_ids())
                 .map(|(next, _)| next)
                 .unwrap_or_default(),
+            // Present but UNREADABLE (a directory in its place, a permission or
+            // symlink error): a broken content tree, NOT an absent registry. Fail
+            // closed exactly like a parse error — never silently derive over it.
+            Err(e) => {
+                return Err(ContentError::BadRegistry {
+                    msg: format!("ids.ron present but unreadable: {e}"),
+                });
+            }
         };
         let mut num_to_idx = std::collections::HashMap::new();
         macro_rules! invert {
@@ -1976,7 +1984,20 @@ fn expand_includes(content_root: &Path, src: &str, depth: u32) -> Result<String,
 
 fn collect_ron_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     if !dir.exists() {
-        return Ok(());
+        // `exists()` follows symlinks, so a TRULY-absent path and a DANGLING
+        // symlink both land here. They are not the same: a missing dir is the
+        // wrong-CWD / fresh case (empty content is fine), but a dangling
+        // `content` link is present-but-broken and must fail closed (#63), or it
+        // would silently boot an empty, divergent world. `symlink_metadata`
+        // (lstat, no follow) succeeds for the dangling link and errors for the
+        // truly-absent path.
+        return match dir.symlink_metadata() {
+            Ok(_) => Err(std::io::Error::other(format!(
+                "{} exists but its target is missing (broken symlink)",
+                dir.display()
+            ))),
+            Err(_) => Ok(()),
+        };
     }
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -2184,6 +2205,37 @@ mod tests {
             Err(ContentError::BadRegistry { .. }) => {}
             other => panic!("expected BadRegistry, got {other:?}"),
         }
+        // Present-but-UNREADABLE ids.ron (a directory in its place): a broken
+        // tree, also a hard error — distinct from the absent case above, which
+        // is the only one allowed to derive a registry (#63 fail-closed).
+        let tc = TempContent::new("reg-unreadable", &[("areas/z/zone.ron", zone)]);
+        fs::create_dir_all(tc.0.join("ids.ron")).unwrap();
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadRegistry { .. }) => {}
+            other => panic!("expected BadRegistry for an unreadable registry, got {other:?}"),
+        }
+    }
+
+    /// A MISSING content dir is fine (empty content, the wrong-CWD case), but a
+    /// DANGLING `content` symlink is present-but-broken and must fail closed —
+    /// otherwise the server would silently boot an empty, divergent world (#63).
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_content_symlink_fails_closed() {
+        let base =
+            std::env::temp_dir().join(format!("idlin-content-dangling-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let link = base.join("content");
+        std::os::unix::fs::symlink(base.join("no-such-target"), &link).unwrap();
+        match ContentDb::load(&link) {
+            Err(ContentError::Io(_)) => {}
+            other => panic!("expected an Io error for a dangling content link, got {other:?}"),
+        }
+        // Sanity: a plainly-absent path still loads as empty content.
+        let absent = base.join("not-there");
+        assert!(ContentDb::load(&absent).is_ok_and(|db| db.zones.is_empty()));
+        let _ = fs::remove_dir_all(&base);
     }
 
     /// The docs are the bot/player reference manual (#54): reads strip the
