@@ -3353,6 +3353,89 @@ mod tests {
         );
     }
 
+    /// #54 PR3: a deliberate `equip` never DROPS the displaced piece. Swapping a
+    /// smaller weapon (cleaver, 2×3) in for a larger worn one (bow, 2×4) when the
+    /// bag can't re-home the bow must REFUSE (-1) and leave both in place — not
+    /// drop the bow. (`equip_best` would still juggle by dropping; this is the
+    /// manual contract.)
+    #[test]
+    fn equip_refuses_a_swap_that_would_drop_the_displaced_item() {
+        use crate::entity::{BAG_H, BAG_W, BagItem, Item, PlacedItem, Rarity};
+        let content = content();
+        let mut world = World::new(0x533, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Packed".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let item_base = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let bow = item_base("driftwood_bow"); // 2×4 worn fixture
+        let cleaver = item_base("rusted_cleaver"); // 2×3 replacement (no reqs)
+        let wpn = idlin_content::GearSlot::Weapon.idx();
+        let gear = |base_idx: u32| Item {
+            base_idx,
+            rarity: Rarity::Normal,
+            item_level: 1,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[wpn] = Some(gear(bow)); // wear the larger bow
+            // The cleaver (replacement) at the top-left 2×3; gems pack the rest.
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(gear(cleaver)),
+                x: 0,
+                y: 0,
+            });
+            for y in 0..BAG_H {
+                for x in 0..BAG_W {
+                    if x < 2 && y < 3 {
+                        continue; // reserved for the cleaver's 2×3
+                    }
+                    ch.inventory.push(PlacedItem {
+                        item: BagItem::Gem(instance(&content, "cleave", 1)),
+                        x,
+                        y,
+                    });
+                }
+            }
+        }
+        let mut ev = Vec::new();
+        // Equipping the cleaver would displace the bow; freeing the cleaver's
+        // 2×3 leaves no 2×4 region, so the bow can't re-home → refuse.
+        assert_eq!(
+            world.equip(slot, 0, &mut ev),
+            -1,
+            "the swap refuses when the displaced bow can't re-home"
+        );
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(
+            ch.equipment[wpn].as_ref().unwrap().base_idx,
+            bow,
+            "the bow stays equipped — not dropped"
+        );
+        assert!(
+            ch.inventory
+                .iter()
+                .any(|p| p.item.as_gear().is_some_and(|g| g.base_idx == cleaver)),
+            "the cleaver stays in the bag"
+        );
+    }
+
     /// #54 PR3: ReadEquipment's record layout — one `[slot, base_num/-1, rarity,
     /// item_level]` per gear slot, empty slots reporting base_num -1, `max`
     /// honored. Pins the host-side struct a bot reads.

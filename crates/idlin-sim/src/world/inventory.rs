@@ -41,6 +41,61 @@ impl World {
         None
     }
 
+    /// Could every footprint in `displaced` (in placement order) find a home in
+    /// the bag once the item at `exclude_idx` (the incoming replacement) leaves
+    /// it? Mirrors the greedy first-fit the swap itself uses, so a deliberate
+    /// `equip` can REFUSE rather than silently drop a piece it can't re-home.
+    fn can_rehome_after_swap(
+        &self,
+        ch: &CharacterState,
+        exclude_idx: usize,
+        displaced: &[(u8, u8)],
+    ) -> bool {
+        let mut occupied = [[false; BAG_W as usize]; BAG_H as usize];
+        for (i, placed) in ch.inventory.iter().enumerate() {
+            if i == exclude_idx {
+                continue; // the replacement is leaving the bag
+            }
+            let (pw, ph) = placed.item.footprint(&self.content);
+            for dy in 0..ph {
+                for dx in 0..pw {
+                    let (px, py) = ((placed.x + dx) as usize, (placed.y + dy) as usize);
+                    if py < BAG_H as usize && px < BAG_W as usize {
+                        occupied[py][px] = true;
+                    }
+                }
+            }
+        }
+        for &(w, h) in displaced {
+            if w == 0 || h == 0 || w > BAG_W || h > BAG_H {
+                return false;
+            }
+            let mut placed_one = false;
+            'find: for y in 0..=(BAG_H - h) {
+                'spot: for x in 0..=(BAG_W - w) {
+                    for dy in 0..h {
+                        for dx in 0..w {
+                            if occupied[(y + dy) as usize][(x + dx) as usize] {
+                                continue 'spot;
+                            }
+                        }
+                    }
+                    for dy in 0..h {
+                        for dx in 0..w {
+                            occupied[(y + dy) as usize][(x + dx) as usize] = true;
+                        }
+                    }
+                    placed_one = true;
+                    break 'find;
+                }
+            }
+            if !placed_one {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Put a shed gear item back in the bag (first-fit) or drop it at the
     /// character's feet when the grid is full.
     fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
@@ -494,6 +549,26 @@ impl World {
                 .as_ref()
                 .is_some_and(|w| self.content.items[w.base_idx as usize].two_handed)
         {
+            return -1;
+        }
+        // A deliberate swap never DROPS gear (like unequip): every piece we'd
+        // displace — the slot's current item, plus the offhand a two-hander
+        // sheds — must fit the bag once the replacement leaves it. Refuse if
+        // not, so the bot frees space itself. (`equip_best` keeps drop-to-juggle:
+        // an auto upgrade on a full bag still happens, shedding the worse piece.)
+        let mut displaced: Vec<(u8, u8)> = Vec::new();
+        if let Some(worn) = ch.equipment[gear_idx].as_ref() {
+            let d = &self.content.items[worn.base_idx as usize];
+            displaced.push((d.w, d.h));
+        }
+        if two_handed
+            && gear_idx == GearSlot::Weapon.idx()
+            && let Some(off) = ch.equipment[GearSlot::Offhand.idx()].as_ref()
+        {
+            let d = &self.content.items[off.base_idx as usize];
+            displaced.push((d.w, d.h));
+        }
+        if !self.can_rehome_after_swap(ch, inv_idx, &displaced) {
             return -1;
         }
         self.swap_bag_into_slot(slot, inv_idx, gear_idx, events);
