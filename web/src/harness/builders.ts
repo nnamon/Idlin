@@ -35,10 +35,21 @@ export function character(over: Require<EntityState, "id" | "name">): EntityStat
   };
 }
 
+/** A monster entity (for scene fixtures). `model` must be a manifest monster
+ *  key (shambler/husk/stalker/tidewarden/idler). */
+export function monster(over: Require<EntityState, "id" | "name" | "model">): EntityState {
+  return character({ ...over, kind: "Monster" });
+}
+
 /** One equipment slot. `dimmed` greys a two-handed weapon mirrored into the
  *  offhand cell (the panel renders it at 0.4 opacity). */
 export function gear(slot: string, name: string, rarity = 0, dimmed = false): GearSlotView {
   return { slot, name, rarity, dimmed };
+}
+
+/** Convert sim units to the Q16.16 raw ints the wire uses for positions. */
+export function simXY(x: number, y: number): { x: number; y: number } {
+  return { x: Math.round(x * FX), y: Math.round(y * FX) };
 }
 
 /** A character sheet with zeroed defaults; pass only what the fixture shows. */

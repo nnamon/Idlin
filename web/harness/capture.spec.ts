@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type BrowserContextOptions } from "@playwright/test";
+import { test, expect, type Browser, type BrowserContextOptions, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { FIXTURES } from "./manifest";
@@ -14,9 +14,7 @@ const CONTEXT: BrowserContextOptions = {
   reducedMotion: "reduce",
 };
 
-/** Load a fixture and await its explicit frame-ready signal (never a sleep):
- *  state is injected before the first render, the scheduler is drained, and
- *  fonts are loaded before `__harness.ready` flips. */
+/** Load a fixture and await its explicit frame-ready signal (never a sleep). */
 async function loadFixture(browser: Browser, name: string) {
   const ctx = await browser.newContext(CONTEXT);
   const page = await ctx.newPage();
@@ -27,12 +25,16 @@ async function loadFixture(browser: Browser, name: string) {
   return { ctx, page };
 }
 
+/** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
+function shotTarget(page: Page, kind: "overlay" | "scene") {
+  return kind === "overlay" ? page.locator("#overlay") : page.locator("#scene canvas");
+}
+
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
   // The browser registry (src/harness/fixtures.ts) is the source of truth; the
-  // Node manifest (harness/manifest.ts) supplies each fixture's render
-  // assertions. If they drift, a fixture gets added or captured WITHOUT a
-  // content check (or a manifest entry points at nothing) — this fails on
-  // either-direction drift.
+  // Node manifest (harness/manifest.ts) supplies each fixture's assertions. If
+  // they drift, a fixture gets added or captured WITHOUT a check (or a manifest
+  // entry points at nothing) — this fails on either-direction drift.
   const ctx = await browser.newContext(CONTEXT);
   const page = await ctx.newPage();
   await page.goto(`/harness/fixture.html`);
@@ -45,31 +47,55 @@ test("fixture registry and manifest cover exactly the same fixtures", async ({ b
 });
 
 for (const fx of FIXTURES) {
-  test(`${fx.name}: renders the fixture content and captures a shot`, async ({ browser }) => {
+  test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
-    // Non-vacuous: the authored content must actually be on screen, or a
-    // broken injection would shoot a blank panel and still "pass".
-    for (const needle of fx.expect) {
-      await expect(page.locator("#overlay")).toContainText(needle);
+    const target = shotTarget(page, fx.kind);
+    if (fx.kind === "overlay") {
+      // Non-vacuous: the authored content must actually be on screen, or a
+      // broken injection would shoot a blank panel and still "pass".
+      for (const needle of fx.expect) await expect(target).toContainText(needle);
     }
-    await page.screenshot({ path: join(SHOTS_DIR, `${fx.name}.png`) });
+    const buf = await target.screenshot({ path: join(SHOTS_DIR, `${fx.name}.png`) });
+    if (fx.kind === "scene") {
+      // Non-vacuous for a canvas: a black/cleared frame compresses tiny, so a
+      // failed render (assets missing, GL lost) trips this. Eyeball for real.
+      expect(buf.length).toBeGreaterThan(fx.minBytes);
+    }
     await ctx.close();
   });
 
-  test(`${fx.name}: render is a byte-stable pure function of injected state`, async ({ browser }) => {
-    // Two independent captures of the same fixture must be byte-identical. The
-    // overlay renders ONLY from injected store state — no live socket, no
-    // Math.random, no uncontrolled re-render — so this fails the moment a panel
-    // introduces nondeterminism (a Math.random()/wall-clock value reaching the
-    // rendered DOM). That nondeterminism class is the regression this guards;
-    // it is NOT a claim about clock freezing (the overlay has no animation —
-    // the steppable clock belongs to the 3D-scene track, #80).
+  test(`${fx.name}: capture is byte-stable across independent runs`, async ({ browser }) => {
+    // Two independent captures must be byte-identical. The overlay renders only
+    // from injected store state; the scene runs under a seeded Math.random and
+    // a stepped virtual clock. This fails the moment nondeterminism (a
+    // Math.random()/wall-clock value, an unseeded source) reaches the output.
     const shoot = async () => {
       const { ctx, page } = await loadFixture(browser, fx.name);
-      const buf = await page.screenshot();
+      const buf = await shotTarget(page, fx.kind).screenshot();
       await ctx.close();
       return buf;
     };
     expect(Buffer.compare(await shoot(), await shoot())).toBe(0);
   });
+
+  if (fx.kind === "scene") {
+    test(`${fx.name}: stepFrames advances the virtual clock monotonically`, async ({ browser }) => {
+      // The fixture already stepped `frames`; a further step must move time
+      // FORWARD, not rewind it (a non-cumulative stepFrames would restart near
+      // zero and jump the absolute-`t` animations backward).
+      const { ctx, page } = await loadFixture(browser, fx.name);
+      const { before, after } = await page.evaluate(() => {
+        const r = (
+          window as unknown as {
+            __harnessRenderer?: { stepFrames(n: number): void; virtualElapsedSeconds: number };
+          }
+        ).__harnessRenderer!;
+        const before = r.virtualElapsedSeconds;
+        r.stepFrames(10);
+        return { before, after: r.virtualElapsedSeconds };
+      });
+      expect(after).toBeGreaterThan(before);
+      await ctx.close();
+    });
+  }
 }

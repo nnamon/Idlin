@@ -212,10 +212,12 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
   here — that's the 3D track. Use it for any overlay/panel change (focus sheet, stats,
   gear, gems) and **eyeball the shot to sign off** — a green run proves deterministic
   render + correct text, only your eyes prove it looks right. See `web/harness/README.md`.
-- **Track 2 (the 3D scene) is still to-be-built** (#80): it needs the steppable clock
-  injected into `ZoneRenderer.frame()` and `Math.random`/flicker neutralized. Until it
-  lands, **scene/canvas** changes are unverified beyond typecheck/build — state that
-  plainly; overlay changes are not.
+- **Track 2 (the 3D scene) also exists** (#80): a `ZoneRenderer` capture mode steps a
+  virtual clock manually (no rAF loop) with a screenshottable back buffer; the fixture
+  seeds `Math.random` (terrain/brazier/idle/UUID) and pins the camera, so the scene is
+  byte-reproducible same-machine. Use it for scene/canvas changes — `pnpm -C web capture`
+  then **eyeball the shot**. (WebGL byte-stability is same-machine only; cross-machine
+  pixel drift is expected — shots are gitignored, not committed baselines.)
 
 ## 7. Git & PR discipline
 

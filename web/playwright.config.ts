@@ -14,6 +14,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
+  // Scene fixtures render many composer frames (bloom passes) in SOFTWARE
+  // WebGL (SwiftShader, headless) — slow. The determinism test loads twice.
+  timeout: 120_000,
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${PORT}`,
