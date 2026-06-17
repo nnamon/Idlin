@@ -59,12 +59,18 @@ impl World {
         let mut plans: Vec<(u32, usize, bool)> = Vec::new();
         let mut swaps: Vec<(u32, usize)> = Vec::new();
         if socket_sel >= 0 {
-            let node = socket_sel as u32;
+            // #54 PR3: socket_sel is a stable tagged NODE num (like set_build),
+            // not a tree array index — translate it. A non-node / unknown num
+            // is rejected, same as an out-of-range index always was.
+            let node = match self.content.content_idx(socket_sel) {
+                Some((idlin_content::ids::Category::Node, i)) => i,
+                _ => return -1,
+            };
             let inv_idx = inv_sel.max(0) as usize;
             let Some(gem) = gem_at(inv_idx) else {
                 return -1; // out of range, or the bag slot isn't a gem
             };
-            if (node as usize) >= self.content.tree.len() || !owns(node) || !is_socket_node(node) {
+            if !owns(node) || !is_socket_node(node) {
                 return -1;
             }
             match gem_kind_of(gem) {

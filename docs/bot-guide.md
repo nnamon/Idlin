@@ -256,7 +256,7 @@ address you supply and return a count/status.
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
 | 17 | `DropItem` | inv_idx | 0 ok; −1 invalid |
 | 18 | `ReadSkills` | out_addr, max (≤8) | count |
-| 19 | `SocketGem` | node, inv_idx (−1,−1 = auto) | gems socketed, or −1. `inv_idx` is the BAG slot of the gem to socket — gems are 1×1 bag items now (#54 PR2b), not a separate pouch; find them in `ReadInventory` (a record whose `num >> 23 == CAT_GEM`). Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first (DAMAGE skills outrank pure utility buffs), then only supports that fit — and upgrades a supportless utility squatter out of its node when a damage skill waits in the bag (the squatter returns to the grid). A consumed gem leaves the bag; socketing frees its cell. |
+| 19 | `SocketGem` | node, inv_idx (−1,−1 = auto) | gems socketed, or −1. `node` is a stable tagged NODE num (#54 PR3) — a `NODE_*` const (the start socket is `NODE_START`), the same id space `SetBuild` takes, NOT a tree array index. `inv_idx` is the BAG slot of the gem to socket — gems are 1×1 bag items now (#54 PR2b), not a separate pouch; find them in `ReadInventory` (a record whose `num >> 23 == CAT_GEM`). Skill gems fill empty socket nodes; support gems attach INTO that node's skill gem. **Support capacity grows with the SKILL gem's level**: 1 slot, a 2nd at level 7, a 3rd at 14. **Supports are tag-gated**: the support must share a tag with the skill (a melee-only support refuses a spell), and a skill takes only ONE copy of each support — violations return −1 on manual sockets; auto mode (−1,−1) fills skills first (DAMAGE skills outrank pure utility buffs), then only supports that fit — and upgrades a supportless utility squatter out of its node when a damage skill waits in the bag (the squatter returns to the grid). A consumed gem leaves the bag; socketing frees its cell. |
 **Attacks commit you.** A swing occupies your character for the weapon's
 use time (attack-speed scaled): movement and further actions wait until it
 finishes. Plan movement around your swings — or get caught flat-footed.
@@ -290,6 +290,10 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 25 | `UseCurrency` | currency_num, inv_idx | spend one obol on the bag item at inv_idx. `currency_num` is the currency's stable tagged num (#54) — pass a `CURRENCY_*` const, not an array position. 0 ok; −1 unknown/non-currency num / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 | 30 | `SkillInfo` | slot, out_addr | the static geometry of the skill in `slot` (same 1-based slot space as ReadSkills) → a 3-word record at out_addr: `shape (0 target / 1 nova / 2 cone / 3 line / 4 point-AoE / 5 projectile), radius (Q16.16), skill_kind (0 attack / 1 spell)`. Returns 0, or −1 for an empty/invalid slot. You only need this to position AoE — `target_mode` rides in ReadSkills. |
 | 31 | `ReadItemMods` | inv_idx, out_addr, max (≤16) | the rolled affixes on the bag item at `inv_idx` (its position in the ReadInventory list) → 3-word records: `affix_num (stable tagged, match `AFFIX_*` / content-docs), value (the rolled amount), tier`. Returns the count written, or −1 for a bad index. The item BASE's facts (slot, dims, base stats) live in content-docs; this is the per-instance roll. |
+| 32 | `ReadEquipment` | out_addr, max (≤7) | the WORN gear, one 4-word record per gear slot → `slot (0 weapon · 1 offhand · 2 helm · 3 chest · 4 boots · 5/6 flask), base_num (−1 if the slot is empty), rarity, item_level`. Returns the count written. Definitional facts (an item's slot/dims) live in content-docs; an empty slot reads `base_num −1`. Pair with `ItemSlot` to score bag candidates against what you wear. |
+| 33 | `Equip` | inv_idx | wear the bag item at `inv_idx` in its content-defined slot — the MANUAL counterpart to `EquipBest`, so your own scoring decides. The displaced piece returns to the bag (first-fit, into the cells the incoming item vacates). 0 ok; −1 if the slot isn't gear, you don't meet its requirements, it's an offhand while a two-hander is wielded, **or the displaced piece can't re-home in the bag** (a deliberate swap never drops gear — free space first; unlike `EquipBest`, which juggles by dropping the worse piece). A two-handed weapon also sheds the offhand, which must fit too. |
+| 34 | `ItemSlot` | base_num | the gear slot a gear item num belongs to (0 weapon … 5 flask), or −1 for a gem / unknown / non-gear num. The one definitional escape hatch (RFC #54 Q2): base reads stay pure, but matching a bag candidate to the worn piece needs `base_num → slot`. It does NOT tell you the weapon CLASS — keep a whitelist of the weapon bases your build can actually wield (a wand/bow would silence a melee skill at the weapon gate). |
+| 35 | `Unequip` | gear_slot | bare a gear slot — move the worn item back to the bag, leaving the slot empty (the deliberate counterpart to `Equip`'s swap). `gear_slot` is the 0–6 index `ReadEquipment` reports. 0 ok; −1 if the index is out of range, the slot is already empty, or **the bag is full**. Like manual `Equip`, and unlike `EquipBest`'s auto-swap (which drops to juggle), `Unequip` REFUSES rather than ever dropping the item. |
 
 ### Skill-use return codes
 
@@ -447,6 +451,54 @@ record 0 @ +0:  affix_num 25165825  // AFFIX_HALE  (>>23 == CAT_AFFIX)
                 tier      0          // which tier rolled (index into the affix's tiers)
 record 1 @ +12: affix_num …         // the second roll
                 …
+```
+
+### Manual gem & gear selection (the optimization path)
+
+`equip_best()` and `socket_gem(-1, -1)` are shortcuts for default bots; an
+optimizing bot does its OWN selection — that's the whole point of stable nums
+(RFC #54 P4). The grinder template does this now. The idiom:
+
+```c
+// GEMS — socket only skills your build can USE. A bow gem on a melee build is
+// never in your plan, so you never socket it (the engine won't stop you —
+// selection is YOUR job; this is the weapon-compat skip auto mode can't make).
+// socket_gem takes a stable NODE num; this is idempotent (a filled node or an
+// absent gem returns −1).
+fn socket_into(node, gem_num) {
+    var n = read_inventory(0xE800, 60);
+    var i = 0;
+    while (i < n) {
+        if (mem[0xE800 + i * 20] == gem_num) {        // base_num == a planned gem
+            // socket_gem returns the COUNT socketed (>0 ok); stop on success —
+            // socketing shifts the bag, so the scanned buffer goes stale.
+            if (socket_gem(node, i) > 0) { return 0; }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+// socket_into(NODE_START, GEM_HEAVY_SWING);  // First Spark socket, level 1
+// socket_into(NODE_SOCKET_WAR, GEM_CLEAVE);  // a deeper socket, post-milestone
+
+// GEAR — wear your own upgrades. read_equipment gives the worn piece per slot
+// (base_num −1 = empty); item_slot(num) maps a bag candidate to its slot. The
+// WEAPON slot is build-critical: a wand or bow silences your melee skills at the
+// weapon gate, and reads carry no weapon class — so wield only your melee base.
+read_equipment(0xED00, 7);
+var n = read_inventory(0xE800, 60);
+var i = 0;
+while (i < n) {
+    var rec = 0xE800 + i * 20;
+    var s = item_slot(mem[rec]);                       // −1 unless this is gear
+    if (s >= 0 && (s != 0 || mem[rec] == ITEM_RUSTED_CLEAVER)) {
+        var er = 0xED00 + s * 16;
+        if (mem[er + 4] < 0 || mem[rec + 8] > mem[er + 12]) {  // empty, or higher ilvl
+            if (equip(i) == 0) { i = n; }              // bag shifted; re-scan next tick
+        }
+    }
+    i = i + 1;
+}
 ```
 
 ## Zone brains (the dungeon master is a bot)

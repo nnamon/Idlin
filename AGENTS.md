@@ -212,6 +212,17 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
 
 - One PR per feature, on a branch (worktree only for parallel), with an independent
   critic, for human review. **Never self-merge. Never straight to `main`.**
+- **Keep the PR description current.** The body is the canonical review artifact — the
+  first (often only) thing the reviewer reads. When you push scope-changing commits to an
+  *open* PR (a new feature, API surface, behavior/contract change, notable fix), refresh
+  the description so it reflects the whole branch — `gh pr edit <n> --body …`. A commit
+  message or a PR comment is **not** enough.
+
+  > ❌ Added an `unequip` syscall + a refuse-not-drop change to an open PR; left only a PR
+  >    *comment*, so the description still listed 3 syscalls and the old "drops" contract.
+  > ✅ `gh pr edit` the body to list all 4 syscalls and the new contract, the moment the
+  >    commits land.
+
 - On "merged": verify the commit is in `origin/main` BEFORE any local change, then
   `git pull --ff-only origin main`. Prune branches/worktrees only when explicitly
   asked, and only after that verification.
@@ -287,6 +298,7 @@ it plus the `.bot` consts and the docs; CI gates drift on all three.
 - Name the evidence (file:line + what it shows) for every claim.
 - Verify a merge landed in `origin/main` before any cleanup; verify the whole result of every mutation.
 - Bump the format version on any bytecode/protocol/snapshot layout change.
+- Keep the PR description current — scope-changing commits to an open PR → `gh pr edit --body`, not just a comment.
 
 **Don't**
 - Don't edit/commit `main`, self-merge, force-push, or add attribution.

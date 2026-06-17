@@ -32,11 +32,12 @@ pub const ENTITY_RECORD_SIZE: u16 = 24;
 // Syscall numbers come from idlin_vm — the single ABI owner shared with
 // the compiler's BUILTINS table.
 use idlin_vm::{
-    SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP_BEST, SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM,
-    SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EXITS,
-    SYS_READ_INVENTORY, SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS,
-    SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK,
-    SYS_USE_SKILL, SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
+    SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
+    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY,
+    SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY, SYS_READ_ITEM_MODS,
+    SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM,
+    SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
@@ -53,6 +54,9 @@ pub const SKILL_RECORD_SIZE: u16 = 36; // 9 words
 pub const INVENTORY_RECORD_SIZE: u16 = 20; // 5 words
 /// Size of one ReadItemMods record in bytes: affix_num, value, tier.
 pub const ITEM_MODS_RECORD_SIZE: u16 = 12; // 3 words
+/// Size of one ReadEquipment record in bytes (#54 PR3): slot, base_num (-1 if
+/// the slot is empty), rarity, item_level. One record per gear slot.
+pub const EQUIPMENT_RECORD_SIZE: u16 = 16; // 4 words
 /// Hard cap on inventory query results (a 12×5 bag of 1×1s caps at 60).
 pub const MAX_INVENTORY_RESULTS: usize = 60;
 /// Hard cap on rolled-mod results per item.
@@ -819,6 +823,41 @@ impl World {
                 let inv_sel = bot.vm.pop();
                 self.socket_gem(slot, socket_sel, inv_sel, events)
             }
+            SYS_READ_EQUIPMENT => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, crate::entity::GEAR_SLOTS as i32) as usize;
+                if self
+                    .zone
+                    .get(slot)
+                    .and_then(|e| e.character.as_ref())
+                    .is_none()
+                {
+                    return -1;
+                }
+                // One record per gear slot (#54 PR3): slot, base_num (-1 when
+                // empty), rarity, item_level. Built by `equipment_records` so the
+                // layout is unit-testable; written here to the VM buffer.
+                let records = self.equipment_records(slot, max);
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * EQUIPMENT_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_EQUIP => {
+                let inv_sel = bot.vm.pop();
+                self.equip(slot, inv_sel, events)
+            }
+            SYS_UNEQUIP => {
+                let gear_sel = bot.vm.pop();
+                self.unequip(slot, gear_sel, events)
+            }
+            SYS_ITEM_SLOT => {
+                let num = bot.vm.pop();
+                self.item_slot_of_num(num)
+            }
             SYS_RANDOM => bot.rng.next_u32() as i32,
             _ => -1,
         }
@@ -830,4 +869,90 @@ pub fn program_hash(program: &[u8]) -> u64 {
     let mut h = crate::hash::Fnv1a64::new();
     h.write_bytes(program);
     h.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::World;
+    use idlin_content::ContentDb;
+    use std::path::Path;
+
+    /// #54 PR3: drive SYS_READ_EQUIPMENT through the VM and confirm the records
+    /// land at the `EQUIPMENT_RECORD_SIZE` (16-byte) stride the bot-guide
+    /// promises. The pure-records unit test pins field order; THIS pins the
+    /// syscall's memory writes — a wrong stride would pass that test yet feed
+    /// bots garbage (they read at a hard-coded 16).
+    #[test]
+    fn read_equipment_syscall_writes_records_at_the_documented_stride() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut world = World::new(13, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Worn".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap();
+        let cleaver_num = content
+            .content_num(idlin_content::ids::Category::Item, cleaver_idx)
+            .unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(crate::entity::Item {
+                base_idx: cleaver_idx as u32,
+                rarity: crate::entity::Rarity::Normal,
+                item_level: 4,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+            });
+        }
+        let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
+        let mut bot = world.bots.take(bot_idx).unwrap();
+        let out: u16 = 0xD000;
+        // Args pushed in reverse (max then out); the dispatch pops out first.
+        bot.vm.push(7);
+        bot.vm.push(out as i32);
+        let mut ev = Vec::new();
+        let count = world.syscall(slot, &mut bot, SYS_READ_EQUIPMENT, 2, &mut ev);
+        assert_eq!(
+            count,
+            crate::entity::GEAR_SLOTS as i32,
+            "one record per gear slot"
+        );
+        let rd = |addr: u16, field: usize| bot.vm.load_i32(addr.wrapping_add(4 * field as u16));
+        // Record 0 (the worn weapon) at out + 0.
+        assert_eq!(rd(out, 0), 0, "record 0 slot index");
+        assert_eq!(rd(out, 1), cleaver_num, "record 0 base_num");
+        assert_eq!(rd(out, 3), 4, "record 0 item_level");
+        // Record 1 (empty offhand) read at the LITERAL 16-byte stride the
+        // bot-guide promises and grinder.bot hard-codes (`s * 16`) — NOT the
+        // const, so a regression that changed the const (and the dispatch with
+        // it) to a different stride would land record 1's slot index elsewhere
+        // and fail here.
+        assert_eq!(EQUIPMENT_RECORD_SIZE, 16, "the documented record stride");
+        assert_eq!(rd(out.wrapping_add(16), 0), 1, "record 1 slot index @ +16");
+        assert_eq!(
+            rd(out.wrapping_add(16), 1),
+            -1,
+            "record 1 empty → base_num -1"
+        );
+        world.bots.put_back(bot_idx, bot);
+    }
 }
