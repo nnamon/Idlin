@@ -65,7 +65,10 @@ fn socket_into(node, gem_num) {
     var i = 0;
     while (i < n) {
         if (mem[INV + i * 20] == gem_num) {
-            if (socket_gem(node, i) == 0) { return 0; }
+            // socket_gem returns the COUNT socketed (>0 ok, -1 fail). Stop on
+            // success: socketing shifts the bag, so the scanned buffer is now
+            // stale — a later stale index would point at the wrong item.
+            if (socket_gem(node, i) > 0) { return 0; }
         }
         i = i + 1;
     }

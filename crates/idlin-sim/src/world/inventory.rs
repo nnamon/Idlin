@@ -506,6 +506,30 @@ impl World {
         0
     }
 
+    /// The worn gear as ReadEquipment records (#54 PR3): one `[slot, base_num,
+    /// rarity, item_level]` per gear slot up to `max`, with `base_num == -1` for
+    /// an empty slot. Definitional fields (slot→dims, affixes) stay in the docs /
+    /// ReadItemMods (P1). Extracted from the syscall so the layout is testable.
+    pub(crate) fn equipment_records(&self, slot: usize, max: usize) -> Vec<[i32; 4]> {
+        let Some(ch) = self.zone.get(slot).and_then(|e| e.character.as_ref()) else {
+            return Vec::new();
+        };
+        ch.equipment
+            .iter()
+            .take(max)
+            .enumerate()
+            .map(|(gear_idx, worn)| match worn {
+                Some(it) => [
+                    gear_idx as i32,
+                    self.content_num(idlin_content::ids::Category::Item, it.base_idx as usize),
+                    it.rarity as i32,
+                    it.item_level as i32,
+                ],
+                None => [gear_idx as i32, -1, 0, 0],
+            })
+            .collect()
+    }
+
     /// The gear slot a gear item num belongs to (#54 PR3 `item_slot` syscall):
     /// the GearSlot index, or -1 for a non-gear / unknown num. The deferred
     /// Def-lookup (RFC Q2) that manual gear scoring needs — base reads omit it.

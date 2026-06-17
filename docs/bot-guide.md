@@ -469,7 +469,9 @@ fn socket_into(node, gem_num) {
     var i = 0;
     while (i < n) {
         if (mem[0xE800 + i * 20] == gem_num) {        // base_num == a planned gem
-            if (socket_gem(node, i) == 0) { return 0; }
+            // socket_gem returns the COUNT socketed (>0 ok); stop on success —
+            // socketing shifts the bag, so the scanned buffer goes stale.
+            if (socket_gem(node, i) > 0) { return 0; }
         }
         i = i + 1;
     }

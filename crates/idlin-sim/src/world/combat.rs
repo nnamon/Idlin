@@ -3232,4 +3232,68 @@ mod tests {
             "the weapon slot is now filled"
         );
     }
+
+    /// #54 PR3: ReadEquipment's record layout — one `[slot, base_num/-1, rarity,
+    /// item_level]` per gear slot, empty slots reporting base_num -1, `max`
+    /// honored. Pins the host-side struct a bot reads.
+    #[test]
+    fn equipment_records_report_every_slot() {
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(11, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Worn".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap();
+        let cleaver_num = content.content_num(Category::Item, cleaver_idx).unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(crate::entity::Item {
+                base_idx: cleaver_idx as u32,
+                rarity: crate::entity::Rarity::Magic,
+                item_level: 7,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+            });
+        }
+        let recs = world.equipment_records(slot, crate::entity::GEAR_SLOTS);
+        assert_eq!(
+            recs.len(),
+            crate::entity::GEAR_SLOTS,
+            "one record per gear slot"
+        );
+        assert_eq!(
+            recs[0],
+            [0, cleaver_num, crate::entity::Rarity::Magic as i32, 7],
+            "the worn weapon: slot, num, rarity, item_level"
+        );
+        for (i, rec) in recs.iter().enumerate().skip(1) {
+            assert_eq!(*rec, [i as i32, -1, 0, 0], "empty slot {i} → base_num -1");
+        }
+        // The `max` argument clamps the record count.
+        assert_eq!(
+            world.equipment_records(slot, 2).len(),
+            2,
+            "max clamps the record count"
+        );
+    }
 }

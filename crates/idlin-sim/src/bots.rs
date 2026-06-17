@@ -826,31 +826,18 @@ impl World {
             SYS_READ_EQUIPMENT => {
                 let out = bot.vm.pop() as u16;
                 let max = bot.vm.pop().clamp(0, crate::entity::GEAR_SLOTS as i32) as usize;
-                let Some(e) = self.zone.get(slot) else {
+                if self
+                    .zone
+                    .get(slot)
+                    .and_then(|e| e.character.as_ref())
+                    .is_none()
+                {
                     return -1;
-                };
-                let Some(ch) = &e.character else { return -1 };
+                }
                 // One record per gear slot (#54 PR3): slot, base_num (-1 when
-                // empty), rarity, item_level. Definitional fields (slot→w/h,
-                // affixes) live in the docs / ReadItemMods, per P1.
-                let records: Vec<[i32; 4]> = ch
-                    .equipment
-                    .iter()
-                    .take(max)
-                    .enumerate()
-                    .map(|(gear_idx, worn)| match worn {
-                        Some(it) => [
-                            gear_idx as i32,
-                            self.content_num(
-                                idlin_content::ids::Category::Item,
-                                it.base_idx as usize,
-                            ),
-                            it.rarity as i32,
-                            it.item_level as i32,
-                        ],
-                        None => [gear_idx as i32, -1, 0, 0],
-                    })
-                    .collect();
+                // empty), rarity, item_level. Built by `equipment_records` so the
+                // layout is unit-testable; written here to the VM buffer.
+                let records = self.equipment_records(slot, max);
                 for (i, rec) in records.iter().enumerate() {
                     let base = out.wrapping_add(i as u16 * EQUIPMENT_RECORD_SIZE);
                     for (j, v) in rec.iter().enumerate() {
