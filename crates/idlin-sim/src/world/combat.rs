@@ -3088,4 +3088,148 @@ mod tests {
         assert_eq!(world.skill_mana_cost(&bare), 4);
         assert_eq!(world.skill_mana_cost(&supported), 5);
     }
+
+    /// #52 / #54 PR3: a melee grinder must never socket a bow skill gem (it
+    /// could never swing it). We seed ONLY a bow gem (power_shot) in town
+    /// (saltmere — no monsters, so no scripted drops, so the First Spark socket
+    /// stays EMPTY the whole window). An empty socket would accept any skill if
+    /// the grinder socketed indiscriminately — the melee build must leave the
+    /// bow gem. Fails if the whitelist regresses (verified by mutation: adding
+    /// power_shot to the grinder's plan makes this fail). The melee-skill path
+    /// is covered by `bots_grind_the_shore` / the tutorial.
+    #[test]
+    fn grinder_skips_a_bow_gem_on_a_melee_build() {
+        let content = content();
+        let mut world = World::new_for_zone(0x52F1, &content, "saltmere");
+        let program = idlin_botc::template_grinder().expect("template assembles");
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Melee".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "power_shot"); // bow skill — must be skipped
+        }
+        let empty = crate::TickInputs::default();
+        let mut socketed_bow = false;
+        for _ in 0..30 {
+            for ev in world.tick(&empty) {
+                if let SimEvent::GemSocketed { gem, .. } = ev
+                    && gem == "Power Shot"
+                {
+                    socketed_bow = true;
+                }
+            }
+        }
+        assert!(
+            !socketed_bow,
+            "a melee build must NOT socket the bow skill, even into an empty socket (#52)"
+        );
+    }
+
+    /// #54 PR3 syscalls: `item_slot` maps gear nums to their slot and rejects
+    /// everything else; `equip` handles hostile/out-of-range input with -1, never
+    /// a panic, and a real gear item lands in its slot.
+    #[test]
+    fn equip_and_item_slot_reject_bad_input() {
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(9, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Tester".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+
+        let cleaver_idx = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap();
+        let cleaver_num = content.content_num(Category::Item, cleaver_idx).unwrap();
+        let cleave_gem_num = content
+            .content_num(
+                Category::Gem,
+                content.gems.iter().position(|g| g.id == "cleave").unwrap(),
+            )
+            .unwrap();
+        // item_slot: a gear num → its slot; a gem / unknown / negative → -1.
+        assert_eq!(
+            world.item_slot_of_num(cleaver_num),
+            idlin_content::GearSlot::Weapon.idx() as i32
+        );
+        assert_eq!(
+            world.item_slot_of_num(cleave_gem_num),
+            -1,
+            "a gem has no slot"
+        );
+        assert_eq!(world.item_slot_of_num(-1), -1);
+        assert_eq!(world.item_slot_of_num(0), -1);
+        assert_eq!(world.item_slot_of_num(i32::MAX), -1);
+
+        // equip: out-of-range / negative / empty bag / a gem all return -1.
+        let mut ev = Vec::new();
+        assert_eq!(world.equip(slot, -1, &mut ev), -1);
+        assert_eq!(world.equip(slot, i32::MAX, &mut ev), -1);
+        assert_eq!(
+            world.equip(slot, 0, &mut ev),
+            -1,
+            "empty bag → nothing to equip"
+        );
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            bag_gem(ch, &content, "cleave"); // a gem at index 0
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: cleaver_idx as u32,
+                    rarity: crate::entity::Rarity::Normal,
+                    item_level: 1,
+                    affixes: Vec::new(),
+                    name: String::new(),
+                    charges: 0,
+                }),
+                x: 5,
+                y: 0,
+            });
+        }
+        assert_eq!(world.equip(slot, 0, &mut ev), -1, "a gem can't be equipped");
+        // The real cleaver (index 1) equips and lands in the weapon slot.
+        assert_eq!(world.equip(slot, 1, &mut ev), 0, "the cleaver equips");
+        assert!(
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .equipment[idlin_content::GearSlot::Weapon.idx()]
+            .is_some(),
+            "the weapon slot is now filled"
+        );
+    }
 }
