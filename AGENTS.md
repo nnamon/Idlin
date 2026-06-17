@@ -234,6 +234,17 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
   > ✅ `gh pr edit` the body to list all 4 syscalls and the new contract, the moment the
   >    commits land.
 
+- **Standing docs state the present, not the process.** AGENTS.md, READMEs, and design
+  docs describe what the codebase **is** and how to use it — never the phasing/order it was
+  built in. Process narrative (build sequencing, "Track 1/2", "now exists / to-be-built",
+  PR or issue numbers as the storyline) belongs in commits, PR descriptions, and issues —
+  those *are* the process record; the standing doc is loaded fresh each session as ground
+  truth. Illustrative ❌/✅ examples that teach a rule are fine; a record of build order is
+  not.
+
+  > ❌ "§6: Track 1 (overlay) of the harness exists; Track 2 (3D scene) also exists (#80)."
+  > ✅ "§6: `pnpm -C web capture` renders overlay + 3D-scene fixtures to byte-stable PNGs."
+
 - On "merged": verify the commit is in `origin/main` BEFORE any local change, then
   `git pull --ff-only origin main`. Prune branches/worktrees only when explicitly
   asked, and only after that verification.
@@ -318,3 +329,4 @@ it plus the `.bot` consts and the docs; CI gates drift on all three.
 - Don't put floats / wall-clock / HashMap-order into hashed or serialized state.
 - Don't call a UI change done on a typecheck; deterministic capture + sign-off or it's unverified.
 - Don't whack-a-mole a recurring class of finding; fix the chokepoint.
+- Don't put dev phasing/process ("Track 1/2", "to-be-built", PR# as narrative) in standing docs — that belongs in commits/PRs/issues.
