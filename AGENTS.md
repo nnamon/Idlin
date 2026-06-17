@@ -205,8 +205,17 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
   > ✅ "Screenshot of the inspect panel with a two-handed weapon: it shows in both the
   >    weapon and offhand cells, the offhand at 0.4 opacity."
 
-- The harness itself is **to-be-built** — its own spec-issue + PR. Until it exists,
-  state plainly that UI changes are unverified beyond typecheck/build.
+- **Track 1 (React overlay) of the harness exists** (`web/harness/`, run `pnpm -C web
+  capture`): canned `S2C` → `store.handle()` → awaited frame-ready (not a sleep) →
+  byte-stable PNG, with a non-vacuous on-screen-content assertion. The overlay is a pure
+  function of injected state (§6: "already deterministic"), so determinism needs no clock
+  here — that's the 3D track. Use it for any overlay/panel change (focus sheet, stats,
+  gear, gems) and **eyeball the shot to sign off** — a green run proves deterministic
+  render + correct text, only your eyes prove it looks right. See `web/harness/README.md`.
+- **Track 2 (the 3D scene) is still to-be-built** (#80): it needs the steppable clock
+  injected into `ZoneRenderer.frame()` and `Math.random`/flicker neutralized. Until it
+  lands, **scene/canvas** changes are unverified beyond typecheck/build — state that
+  plainly; overlay changes are not.
 
 ## 7. Git & PR discipline
 
