@@ -466,8 +466,6 @@ impl World {
         self.finish_kills(dead, loot, events);
     }
 
-    /// Resolve one committed use at its contact tick. Costs were paid at
-    /// start; every guard here is a WHIFF, not a refusal.
     /// Resolve a socketed skill to everything a strike needs, with supports and
     /// the attacker's stats folded once. Target-agnostic and side-effect-free —
     /// the executor assembles every gem strike from this. `None` if the slot has
@@ -591,6 +589,8 @@ impl World {
         })
     }
 
+    /// Resolve one committed use at its contact tick. Costs were paid at
+    /// start; every guard here is a WHIFF, not a refusal.
     fn resolve_use(
         &mut self,
         slot: usize,
