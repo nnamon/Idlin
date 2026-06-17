@@ -83,7 +83,10 @@ impl World {
             return -1;
         };
         let (w, h) = placed.item.footprint(&self.content);
-        if x + w > BAG_W || y + h > BAG_H {
+        // Bots supply x/y across the full u8 range, so `x + w` in u8 would overflow
+        // (panic in debug, silently WRAP in release — a determinism hazard). Widen the
+        // bounds check to u16; the boundary logic is otherwise unchanged.
+        if x as u16 + w as u16 > BAG_W as u16 || y as u16 + h as u16 > BAG_H as u16 {
             return -1;
         }
         // Overlap check against everything but the moving item.
