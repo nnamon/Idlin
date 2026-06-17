@@ -32,11 +32,12 @@ pub const ENTITY_RECORD_SIZE: u16 = 24;
 // Syscall numbers come from idlin_vm — the single ABI owner shared with
 // the compiler's BUILTINS table.
 use idlin_vm::{
-    SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP_BEST, SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM,
-    SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EXITS,
-    SYS_READ_INVENTORY, SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS,
-    SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK,
-    SYS_USE_SKILL, SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
+    SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
+    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY,
+    SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY, SYS_READ_ITEM_MODS,
+    SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM,
+    SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
@@ -53,6 +54,9 @@ pub const SKILL_RECORD_SIZE: u16 = 36; // 9 words
 pub const INVENTORY_RECORD_SIZE: u16 = 20; // 5 words
 /// Size of one ReadItemMods record in bytes: affix_num, value, tier.
 pub const ITEM_MODS_RECORD_SIZE: u16 = 12; // 3 words
+/// Size of one ReadEquipment record in bytes (#54 PR3): slot, base_num (-1 if
+/// the slot is empty), rarity, item_level. One record per gear slot.
+pub const EQUIPMENT_RECORD_SIZE: u16 = 16; // 4 words
 /// Hard cap on inventory query results (a 12×5 bag of 1×1s caps at 60).
 pub const MAX_INVENTORY_RESULTS: usize = 60;
 /// Hard cap on rolled-mod results per item.
@@ -818,6 +822,50 @@ impl World {
                 // index (gems live in the grid). -1 = auto-pick.
                 let inv_sel = bot.vm.pop();
                 self.socket_gem(slot, socket_sel, inv_sel, events)
+            }
+            SYS_READ_EQUIPMENT => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, crate::entity::GEAR_SLOTS as i32) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -1;
+                };
+                let Some(ch) = &e.character else { return -1 };
+                // One record per gear slot (#54 PR3): slot, base_num (-1 when
+                // empty), rarity, item_level. Definitional fields (slot→w/h,
+                // affixes) live in the docs / ReadItemMods, per P1.
+                let records: Vec<[i32; 4]> = ch
+                    .equipment
+                    .iter()
+                    .take(max)
+                    .enumerate()
+                    .map(|(gear_idx, worn)| match worn {
+                        Some(it) => [
+                            gear_idx as i32,
+                            self.content_num(
+                                idlin_content::ids::Category::Item,
+                                it.base_idx as usize,
+                            ),
+                            it.rarity as i32,
+                            it.item_level as i32,
+                        ],
+                        None => [gear_idx as i32, -1, 0, 0],
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * EQUIPMENT_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
+            SYS_EQUIP => {
+                let inv_sel = bot.vm.pop();
+                self.equip(slot, inv_sel, events)
+            }
+            SYS_ITEM_SLOT => {
+                let num = bot.vm.pop();
+                self.item_slot_of_num(num)
             }
             SYS_RANDOM => bot.rng.next_u32() as i32,
             _ => -1,
