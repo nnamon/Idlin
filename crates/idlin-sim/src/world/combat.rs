@@ -2982,6 +2982,85 @@ mod tests {
         assert!(off.1.is_some(), "the dimmed offhand mirrors the weapon");
     }
 
+    /// #63: move_item must reject out-of-grid bot coordinates with -1, never
+    /// overflow `x + w` (debug panic / release wrap). The x=255 case panics in
+    /// debug if the u16-widened bounds check is reverted — so this test pins it.
+    #[test]
+    fn move_item_rejects_overflowing_coords_without_panicking() {
+        use crate::entity::{BAG_H, BAG_W, BagItem, Item, PlacedItem, Rarity};
+        let content = content();
+        let mut world = World::new(0x303, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Packer".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        // A 2×2 base (the buckler) at the top-left, so w=h=2 exercises the math.
+        let buckler = content
+            .items
+            .iter()
+            .position(|i| i.id == "driftwood_buckler")
+            .unwrap() as u32;
+        assert_eq!(
+            (
+                content.items[buckler as usize].w,
+                content.items[buckler as usize].h
+            ),
+            (2, 2),
+            "test assumes a 2×2 buckler"
+        );
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(Item {
+                    base_idx: buckler,
+                    rarity: Rarity::Normal,
+                    item_level: 1,
+                    affixes: Vec::new(),
+                    name: String::new(),
+                    charges: 0,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        // The overflow case: a hostile coord must be rejected, not panic/wrap.
+        // x=255 and y=255 are pinned independently so a one-sided regression (only
+        // the x term or only the y term left in u8) still fails this test.
+        assert_eq!(world.move_item(slot, 0, 255, 255), -1, "far OOB → -1");
+        assert_eq!(world.move_item(slot, 0, 255, 0), -1, "x overflow → -1");
+        assert_eq!(world.move_item(slot, 0, 0, 255), -1, "y overflow → -1");
+        // One past the right/bottom edge for a 2×2 (BAG_W-1 / BAG_H-1).
+        assert_eq!(
+            world.move_item(slot, 0, BAG_W - 1, 0),
+            -1,
+            "x one past edge → -1"
+        );
+        assert_eq!(
+            world.move_item(slot, 0, 0, BAG_H - 1),
+            -1,
+            "y one past edge → -1"
+        );
+        // Exact bottom-right fit for a 2×2 is accepted.
+        assert_eq!(
+            world.move_item(slot, 0, BAG_W - 2, BAG_H - 2),
+            0,
+            "exact bottom-right fit is allowed"
+        );
+    }
+
     #[test]
     fn mana_mult_scales_skill_cost() {
         let content = content();

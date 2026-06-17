@@ -1,13 +1,17 @@
 //! World snapshot persistence. The sim is fully serde-serializable (including
 //! every bot VM's memory), so a snapshot plus determinism equals an exact
-//! resume. Writes are atomic (temp file + rename).
+//! resume.
+//!
+//! A world and its in-flight ferries (`pending arrivals`) are written together
+//! as ONE atomically-published file (temp file + rename), so a crash can never
+//! pair a fresh world with a stale pending list — the two are always from the
+//! same instant.
 //!
 //! MULTI-WORLD: every managed world saves under its own key —
 //! `data/snapshots/<sanitized-key>-<fnv8>/` — at a consistent point
 //! (after the ferry, so every character is in exactly one world's
 //! state or pending list), every SAVE_EVERY_TICKS and on graceful
-//! shutdown. Pending arrivals persist alongside the world: a character
-//! mid-ferry survives the restart.
+//! shutdown. A character mid-ferry survives the restart.
 
 use anyhow::Context;
 use idlin_content::ContentDb;
@@ -17,7 +21,6 @@ use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 const SNAP_NAME: &str = "world.snap";
-const PENDING_NAME: &str = "pending.snap";
 
 /// Magic prefix stamped on every snapshot file, checked before any decode so an
 /// incompatible or foreign file is refused cleanly instead of being fed to
@@ -28,14 +31,17 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 
 /// On-disk snapshot format version. BUMP whenever any serialized type reachable
 /// from `World` or `CharacterBundle` changes layout (fields added, removed,
-/// reordered, or retyped). Same manual discipline as `GOLDEN_HASH` and
-/// `PROTO_VERSION`: an old snapshot carrying a different version is refused
-/// cleanly (the world starts fresh), never mis-decoded.
+/// reordered, or retyped), OR the snapshot envelope itself changes. Same manual
+/// discipline as `GOLDEN_HASH` and `PROTO_VERSION`: an old snapshot carrying a
+/// different version is refused cleanly (the world starts fresh), never
+/// mis-decoded.
 ///
 /// v2 (#54 PR2b): `CharacterState` lost its `pouch` field and `PlacedItem.item`
-/// was retyped `Item` → `BagItem` (gems became 1×1 bag items), so v1 snapshots
-/// would mis-decode — refuse them.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 2;
+/// was retyped `Item` → `BagItem` (gems became 1×1 bag items).
+/// v3 (#63): the world and its pending arrivals now share ONE file — the
+/// snapshot payload is `(World, Vec<CharacterBundle>)` instead of a bare
+/// `World` with a sidecar `pending.snap` — so a torn pair is impossible.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 3;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -93,52 +99,33 @@ fn unframe(bytes: &[u8]) -> Result<&[u8], String> {
     Ok(&bytes[8..])
 }
 
-/// Save a managed world: state plus any not-yet-arrived ferries.
+/// Publish `bytes` to `path` atomically: write a sibling temp file, then rename
+/// over the destination. A crash mid-write leaves the stale-but-valid old file,
+/// never a half-written one.
+fn atomic_publish(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, bytes).context("write snapshot temp file")?;
+    fs::rename(&tmp, path).context("publish snapshot")?;
+    Ok(())
+}
+
+/// Save a managed world together with its not-yet-arrived ferries, as a single
+/// atomically-published snapshot. World and pendings are one serialized unit, so
+/// a resume can never see them out of sync.
 pub fn save_managed(
     world: &World,
     pending_arrivals: &[CharacterBundle],
     dir: &Path,
 ) -> anyhow::Result<()> {
-    save_world(world, dir)?;
-    let bytes = frame(&postcard::to_allocvec(pending_arrivals).context("serialize pendings")?);
-    let tmp = dir.join(format!("{PENDING_NAME}.tmp"));
-    fs::write(&tmp, &bytes).context("write pendings temp")?;
-    fs::rename(&tmp, dir.join(PENDING_NAME)).context("publish pendings")?;
-    Ok(())
-}
-
-/// Load a managed world and its in-flight arrivals; None = start fresh.
-pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<CharacterBundle>)> {
-    let world = load_world(content, dir)?;
-    let pendings = match fs::read(dir.join(PENDING_NAME)) {
-        Ok(bytes) => match unframe(&bytes) {
-            Ok(payload) => postcard::from_bytes(payload).unwrap_or_else(|e| {
-                warn!("pending arrivals unreadable ({e}); dropping them");
-                Vec::new()
-            }),
-            Err(why) => {
-                warn!("pending arrivals: {why}; dropping them");
-                Vec::new()
-            }
-        },
-        Err(_) => Vec::new(),
-    };
-    Some((world, pendings))
-}
-
-pub fn save_world(world: &World, dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(dir).context("create snapshot dir")?;
-    let bytes = frame(&postcard::to_allocvec(world).context("serialize world")?);
-    let tmp = dir.join(format!("{SNAP_NAME}.tmp"));
-    let path = dir.join(SNAP_NAME);
-    fs::write(&tmp, &bytes).context("write snapshot temp file")?;
-    fs::rename(&tmp, &path).context("publish snapshot")?;
-    Ok(())
+    let payload =
+        postcard::to_allocvec(&(world, pending_arrivals)).context("serialize snapshot")?;
+    atomic_publish(&dir.join(SNAP_NAME), &frame(&payload))
 }
 
-/// Load the latest snapshot if present and compatible with the loaded
-/// content; otherwise None (caller starts a fresh world).
-pub fn load_world(content: &ContentDb, dir: &Path) -> Option<World> {
+/// Load a managed world and its in-flight arrivals if present and compatible
+/// with the loaded content; None = start fresh.
+pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<CharacterBundle>)> {
     let path = dir.join(SNAP_NAME);
     let bytes = fs::read(&path).ok()?;
     let payload = match unframe(&bytes) {
@@ -148,8 +135,8 @@ pub fn load_world(content: &ContentDb, dir: &Path) -> Option<World> {
             return None;
         }
     };
-    let mut world: World = match postcard::from_bytes(payload) {
-        Ok(w) => w,
+    let (mut world, pendings): (World, Vec<CharacterBundle>) = match postcard::from_bytes(payload) {
+        Ok(v) => v,
         Err(e) => {
             warn!(
                 "snapshot at {} is unreadable ({e}); starting fresh",
@@ -162,10 +149,11 @@ pub fn load_world(content: &ContentDb, dir: &Path) -> Option<World> {
         Ok(()) => {
             info!(
                 tick = world.tick_count(),
+                pending = pendings.len(),
                 "resuming world from snapshot (state hash {:016x})",
                 world.state_hash()
             );
-            Some(world)
+            Some((world, pendings))
         }
         Err(snapshot_hash) => {
             warn!(
@@ -181,7 +169,7 @@ pub fn load_world(content: &ContentDb, dir: &Path) -> Option<World> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use idlin_sim::TickInputs;
+    use idlin_sim::entity::CharacterState;
     use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -191,35 +179,95 @@ mod tests {
         dir
     }
 
+    /// A minimal in-flight ferry bundle, enough to round-trip through a snapshot.
+    fn bundle(name: &str) -> CharacterBundle {
+        CharacterBundle {
+            character: CharacterState {
+                name: name.into(),
+                level: 1,
+                xp: 0,
+                respawn_at: None,
+                kills: 0,
+                items: 0,
+                inventory: Vec::new(),
+                equipment: Default::default(),
+                allocated: Vec::new(),
+                build_plan: Vec::new(),
+                currency: Vec::new(),
+                sockets: std::collections::BTreeMap::new(),
+            },
+            program: idlin_botc::assemble("halt\n").unwrap(),
+            persist: Vec::new(),
+            params: Vec::new(),
+            bot_version: 1,
+        }
+    }
+
     #[test]
     fn snapshot_roundtrip_resumes_exactly() {
         let content = ContentDb::empty();
         let mut world = World::new(7, &content);
-        let inputs = TickInputs::default();
+        let inputs = idlin_sim::TickInputs::default();
         for _ in 0..25 {
             world.tick(&inputs);
         }
         let dir = temp_dir("roundtrip");
-        save_world(&world, &dir).expect("save snapshot");
-        let resumed = load_world(&content, &dir).expect("load snapshot");
+        save_managed(&world, &[], &dir).expect("save snapshot");
+        let (resumed, pendings) = load_managed(&content, &dir).expect("load snapshot");
         assert_eq!(resumed.tick_count(), world.tick_count());
         assert_eq!(resumed.state_hash(), world.state_hash());
+        assert!(pendings.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pending_arrivals_resume_with_their_world() {
+        // A character mid-ferry is saved IN the same blob as the world and comes
+        // back with it — the whole point of persisting pendings.
+        let content = ContentDb::empty();
+        let world = World::new(7, &content);
+        let dir = temp_dir("pendings");
+        save_managed(&world, &[bundle("InFlight")], &dir).expect("save");
+        let (_, pendings) = load_managed(&content, &dir).expect("load");
+        assert_eq!(pendings.len(), 1, "the in-flight character survives");
+        assert_eq!(pendings[0].character.name, "InFlight");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stray_pending_file_cannot_desync_the_resume() {
+        // The pre-v3 format wrote world + pendings as two files; a crash between
+        // their renames could pair a fresh world with a stale pending list. The
+        // combined blob is the single source of truth, so a leftover
+        // `pending.snap` from an old build is simply ignored.
+        let content = ContentDb::empty();
+        let world = World::new(7, &content);
+        let dir = temp_dir("stray-pending");
+        save_managed(&world, &[bundle("InFlight")], &dir).expect("save");
+        fs::write(dir.join("pending.snap"), b"stale garbage from a torn save").unwrap();
+        let (_, pendings) = load_managed(&content, &dir).expect("load");
+        assert_eq!(
+            pendings.len(),
+            1,
+            "pendings come from the blob, not the stray"
+        );
+        assert_eq!(pendings[0].character.name, "InFlight");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn missing_snapshot_means_fresh_world() {
         let dir = temp_dir("missing");
-        assert!(load_world(&ContentDb::empty(), &dir).is_none());
+        assert!(load_managed(&ContentDb::empty(), &dir).is_none());
     }
 
     #[test]
     fn corrupt_snapshot_is_refused_not_fatal() {
-        // Garbage now fails the magic check before any decode is attempted.
+        // Garbage fails the magic check before any decode is attempted.
         let dir = temp_dir("corrupt");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(SNAP_NAME), b"not a postcard world").unwrap();
-        assert!(load_world(&ContentDb::empty(), &dir).is_none());
+        assert!(load_managed(&ContentDb::empty(), &dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -234,9 +282,11 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&SNAP_MAGIC);
         bytes.extend_from_slice(&(SNAPSHOT_FORMAT_VERSION + 1).to_le_bytes());
-        bytes.extend_from_slice(&postcard::to_allocvec(&world).unwrap());
+        bytes.extend_from_slice(
+            &postcard::to_allocvec(&(&world, &Vec::<CharacterBundle>::new())).unwrap(),
+        );
         fs::write(dir.join(SNAP_NAME), &bytes).unwrap();
-        assert!(load_world(&content, &dir).is_none());
+        assert!(load_managed(&content, &dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -249,7 +299,7 @@ mod tests {
         let dir = temp_dir("legacy-headerless");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(SNAP_NAME), postcard::to_allocvec(&world).unwrap()).unwrap();
-        assert!(load_world(&content, &dir).is_none());
+        assert!(load_managed(&content, &dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -260,9 +310,9 @@ mod tests {
         let real = ContentDb::load(std::path::Path::new("../../content")).expect("real content");
         let world = World::new(7, &real);
         let dir = temp_dir("mismatch");
-        save_world(&world, &dir).expect("save snapshot");
-        assert!(load_world(&ContentDb::empty(), &dir).is_none());
-        assert!(load_world(&real, &dir).is_some());
+        save_managed(&world, &[], &dir).expect("save snapshot");
+        assert!(load_managed(&ContentDb::empty(), &dir).is_none());
+        assert!(load_managed(&real, &dir).is_some());
         let _ = fs::remove_dir_all(&dir);
     }
 }
