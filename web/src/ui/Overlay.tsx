@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
+import type { SkillStat } from "../gen/SkillStat";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
@@ -340,6 +341,89 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   );
 }
 
+/** Per-type damage palette (phys, fire, cold, lightning, chaos). */
+const DMG_COLORS = ["#d8cba6", "#ff7a3c", "#5adfdf", "#ffe24a", "#c77bff"];
+const DMG_LABELS = ["phys", "fire", "cold", "lightning", "chaos"];
+
+/** One socketed skill's computed readout. DPS leads for damage skills; a DoT,
+ *  buff, or debuff skill shows its own pertinent number instead of a
+ *  misleading "0 DPS". All numbers come from the sim (see `SkillStat`). */
+function SkillCard({ skill }: { skill: SkillStat }) {
+  const total = skill.damage.reduce((a, b) => a + b, 0);
+  const useS = skill.use_ticks / TICK_HZ;
+  // The headline metric, chosen by what the skill actually does.
+  const head =
+    skill.dps > 0
+      ? { k: "DPS", v: String(skill.dps) }
+      : skill.dot_per_sec > 0
+        ? { k: "DoT", v: `${skill.dot_per_sec}/s · ${Math.round(skill.dot_duration_ticks / TICK_HZ)}s` }
+        : skill.buff_duration_ticks > 0
+          ? { k: "Buff", v: `${Math.round(skill.buff_duration_ticks / TICK_HZ)}s` }
+          : skill.debuff_duration_ticks > 0
+            ? { k: "Debuff", v: `${Math.round(skill.debuff_duration_ticks / TICK_HZ)}s` }
+            : { k: skill.shape, v: "" };
+  const manaPerSec = skill.use_ticks > 0 ? Math.round((skill.mana_cost * TICK_HZ) / skill.use_ticks) : 0;
+  return (
+    <div className="skill-card">
+      <div className="skill-head">
+        <span>
+          ◆ {skill.name} <span style={{ color: "#ab9d7a" }}>lv{skill.level}</span>
+        </span>
+        <span className="skill-head-metric">
+          <span style={{ color: "#ab9d7a" }}>{head.k}</span> {head.v}
+        </span>
+      </div>
+      {total > 0 && (
+        <div className="dmg-bar">
+          {skill.damage.map((d, i) =>
+            d > 0 ? (
+              <span
+                key={i}
+                title={`${DMG_LABELS[i]} ${d}`}
+                style={{ width: `${(d / total) * 100}%`, background: DMG_COLORS[i] }}
+              />
+            ) : null,
+          )}
+        </div>
+      )}
+      <div className="skill-meta">
+        <span>
+          {skill.kind} · {skill.shape}
+        </span>
+        <span>{useS.toFixed(2)}s/use</span>
+        {skill.mana_cost > 0 && (
+          <span>
+            {skill.mana_cost} mana ({manaPerSec}/s)
+          </span>
+        )}
+        {skill.crit_chance_bp > 0 && (
+          <span>
+            crit {(skill.crit_chance_bp / 100).toFixed(1)}% ×{Math.round(skill.crit_multi_bp / 100)}%
+          </span>
+        )}
+        {skill.cooldown_ticks > 0 && <span>cd {(skill.cooldown_ticks / TICK_HZ).toFixed(1)}s</span>}
+        {skill.projectiles > 0 && (
+          <span>
+            {skill.projectiles} proj{skill.pierce > 0 ? ` · pierce ${skill.pierce}` : ""}
+          </span>
+        )}
+        {skill.range_cu > 0 && <span>range {skill.range_cu}</span>}
+        {skill.radius_cu > 0 && <span>aoe {skill.radius_cu}</span>}
+        {skill.width_cu > 0 && <span>width {skill.width_cu}</span>}
+      </div>
+      {skill.supports.length > 0 && (
+        <div className="skill-supports">
+          {skill.supports.map((s, i) => (
+            <span key={i} className="chip">
+              {s.name} lv{s.level}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Left column: the focused idler's numbers — stats, gems, obols. */
 function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
   const stat = (label: string, value: string) => (
@@ -368,49 +452,11 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
           `+${(sheet.item_rarity_bp / 100).toFixed(0)}% / +${(sheet.item_quantity_bp / 100).toFixed(0)}%`,
         )}
       {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
-      {sheet.gems.length > 0 && (
+      {sheet.skills.length > 0 && (
         <>
-          <Header>Gems</Header>
-          {sheet.gems.map((g, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: 12.5,
-                color: "#5adfdf",
-                paddingLeft: g.support ? 12 : 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span style={{ whiteSpace: "nowrap" }}>
-                {g.support ? "↳ " : "◆ "}
-                {g.name} <span style={{ color: "#ab9d7a" }}>lv{g.level}</span>
-              </span>
-              {g.xp_next > 0 ? (
-                <span
-                  style={{
-                    flex: "0 0 44px",
-                    height: 4,
-                    background: "#2c2415",
-                    borderRadius: 2,
-                    overflow: "hidden",
-                  }}
-                  title={`${g.xp} / ${g.xp_next} xp`}
-                >
-                  <span
-                    style={{
-                      display: "block",
-                      height: "100%",
-                      width: `${Math.min(100, Math.round((g.xp / g.xp_next) * 100))}%`,
-                      background: "#5adfdf",
-                    }}
-                  />
-                </span>
-              ) : (
-                <span style={{ color: "#ffd75a", fontSize: 10.5, letterSpacing: 1 }}>MAX</span>
-              )}
-            </div>
+          <Header>Skills</Header>
+          {sheet.skills.map((s, i) => (
+            <SkillCard key={i} skill={s} />
           ))}
         </>
       )}

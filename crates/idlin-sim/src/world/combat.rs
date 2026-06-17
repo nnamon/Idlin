@@ -23,6 +23,9 @@ const BASIC_CRIT_BP: i64 = 500;
 const BASIC_PROJ_SPEED_CPS: i32 = 1600;
 /// Body radius of projectiles (collision sweep).
 const PROJ_RADIUS_CU: i32 = 25;
+/// Crit chance is capped here at the roll (95%); the inspect-sheet readout
+/// caps the same way so its DPS can't promise crit the executor never rolls.
+const CRIT_CHANCE_CAP_BP: i64 = 9500;
 /// Fan spread between extra projectiles: 12-degree steps (Q16.16 cos/sin,
 /// cos rounded DOWN so repeated rotation never lengthens the vector).
 const FAN_COS_RAW: i64 = 64103;
@@ -586,6 +589,95 @@ impl World {
             range,
             radius,
             width,
+        })
+    }
+
+    /// Computed inspect-sheet readout for one socketed skill (#19). Reuses the
+    /// executor's own `resolve_skill` + `skill_use_ticks` + `skill_mana_cost`,
+    /// so the panel's numbers can never drift from what the sim charges and
+    /// deals. Side-effect-free. (Lives here because it reads `SupportMods`,
+    /// which is private to this module.)
+    pub(super) fn skill_stat_view(
+        &self,
+        slot: usize,
+        key: u32,
+    ) -> Option<super::views::SkillStatView> {
+        let resolved = self.resolve_skill(slot, key)?;
+        let e = self.zone.get(slot)?;
+        let c = e.combat.as_ref()?;
+        let sg = skill_of(e, key)?;
+        let gem = &resolved.gem_def;
+        let spec = &resolved.spec_template;
+        let mods = &resolved.mods;
+
+        let use_ticks = self.skill_use_ticks(sg, c.use_ticks, c.cast_speed) as u32;
+        let mana_cost = self.skill_mana_cost(sg);
+
+        // Effective crit chance: globally-scaled, then capped exactly as the
+        // executor caps the roll — so the panel never promises crit the sim
+        // won't deliver.
+        let crit_chance_bp = spec.crit_bp.min(CRIT_CHANCE_CAP_BP);
+        // Average per-hit multiplier including crit: 1 + chance × (multi − 1),
+        // in basis points.
+        let crit_factor_bp = 10000 + crit_chance_bp * (spec.crit_multi - 10000) / 10000;
+        let total: i64 = spec.damage.iter().sum();
+        // Σdamage × crit factor × hits/sec; hit variance averages to 100%.
+        let dps = if total > 0 && use_ticks > 0 {
+            total * crit_factor_bp * super::TICK_HZ as i64 / (10000 * use_ticks as i64)
+        } else {
+            0
+        };
+
+        // Content units back out of Q16.16 (inverse of fx_from_cu).
+        let cu = |f: Fx| (f.raw() as i64 * 100 / 65536) as i32;
+        let (dot_per_sec, dot_duration_ticks) = match spec.dot {
+            Some((_, per_sec, dur, _)) => (per_sec, dur),
+            None => (0, 0),
+        };
+        let buff_duration_ticks = gem.buff.as_ref().map_or(0, |b| {
+            (b.duration_ticks as i64 * (10000 + mods.dot_duration_bp).max(0) / 10000) as u32
+        });
+        let debuff_duration_ticks = spec.debuff.as_ref().map_or(0, |(_, d)| *d);
+        let projectiles = if gem.shape == SkillShape::Projectile {
+            1 + mods.extra_projectiles
+        } else {
+            0
+        };
+        let shape = match gem.shape {
+            SkillShape::Target => "target",
+            SkillShape::Nova => "nova",
+            SkillShape::Cone => "cone",
+            SkillShape::Line => "line",
+            SkillShape::PointAoe => "point_aoe",
+            SkillShape::Projectile => "projectile",
+        };
+        let supports = sg
+            .supports
+            .iter()
+            .map(|s| (self.content.gems[s.gem_idx as usize].name.clone(), s.level))
+            .collect();
+        Some(super::views::SkillStatView {
+            name: self.content.gems[sg.gem.gem_idx as usize].name.clone(),
+            level: sg.gem.level,
+            is_spell: gem.skill_kind == SkillKind::Spell,
+            shape,
+            damage: spec.damage,
+            dps,
+            crit_chance_bp,
+            crit_multi_bp: spec.crit_multi,
+            use_ticks,
+            cooldown_ticks: gem.cooldown_ticks,
+            mana_cost,
+            range_cu: cu(resolved.range),
+            radius_cu: cu(resolved.radius),
+            width_cu: cu(resolved.width),
+            projectiles,
+            pierce: gem.pierce + mods.pierce,
+            dot_per_sec,
+            dot_duration_ticks,
+            buff_duration_ticks,
+            debuff_duration_ticks,
+            supports,
         })
     }
 
@@ -1407,7 +1499,8 @@ impl World {
             let mut scale = 100i64;
             if !spec.is_dot {
                 if spec.crit_bp > 0
-                    && (self.rng_combat.next_range(10000) as i64) < spec.crit_bp.min(9500)
+                    && (self.rng_combat.next_range(10000) as i64)
+                        < spec.crit_bp.min(CRIT_CHANCE_CAP_BP)
                 {
                     crit = true;
                 }
@@ -3657,5 +3750,139 @@ mod tests {
             gem_crit * 20000 / 10000,
             "crit folds the attacker's global increase"
         );
+    }
+
+    #[test]
+    fn skill_stat_view_reports_dps_and_timing_from_the_pipeline() {
+        let content = content();
+        let mut world = World::new(0x7BD, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Statter".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        let hs = gem_idx(&content, "heavy_swing");
+        let arc = gem_idx(&content, "arc");
+        let socket = |world: &mut World, gem: u32| {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.allocated = vec![node];
+            ch.sockets.clear();
+            ch.sockets.insert(
+                node,
+                SocketedGem {
+                    gem: GemInstance {
+                        gem_idx: gem,
+                        level: 1,
+                        xp: 0,
+                    },
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+        };
+        let set_weapon = |world: &mut World, phys: i64, crit_inc: i64| {
+            let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            c.damage = [phys, 0, 0, 0, 0];
+            c.crit_inc = crit_inc;
+        };
+
+        // Attack with real weapon damage + a doubled global crit.
+        socket(&mut world, hs);
+        set_weapon(&mut world, 30000, 20000);
+        let v = world.skill_stat_view(slot, node).unwrap();
+        let r = world.resolve_skill(slot, node).unwrap();
+
+        // The view's per-hit damage IS the resolver's (one source of truth).
+        assert_eq!(v.damage, r.spec_template.damage);
+        assert!(!v.is_spell, "heavy_swing is an attack");
+        assert!(v.use_ticks >= 2, "use time is real");
+
+        // DPS = Σdamage × average-crit factor × hits/sec — derived here from the
+        // resolver's own outputs + the view's use time, so a bug in the view's
+        // dps expression (lost crit factor, wrong divisor) breaks this.
+        let total: i64 = r.spec_template.damage.iter().sum();
+        let crit = r.spec_template.crit_bp.min(CRIT_CHANCE_CAP_BP);
+        let crit_factor = 10000 + crit * (r.spec_template.crit_multi - 10000) / 10000;
+        let expect =
+            total * crit_factor * crate::world::TICK_HZ as i64 / (10000 * v.use_ticks as i64);
+        assert_eq!(
+            v.dps, expect,
+            "dps tracks resolved damage / use time / crit"
+        );
+        if crit_factor > 10000 {
+            let no_crit = total * crate::world::TICK_HZ as i64 / v.use_ticks as i64;
+            assert!(v.dps > no_crit, "crit lifts dps over the no-crit baseline");
+        }
+
+        // DPS scales with weapon damage.
+        let dps_lo = v.dps;
+        set_weapon(&mut world, 60000, 20000);
+        let dps_hi = world.skill_stat_view(slot, node).unwrap().dps;
+        assert!(
+            dps_hi > dps_lo,
+            "doubling weapon damage raises dps ({dps_lo} → {dps_hi})"
+        );
+
+        // Crit chance is capped exactly where the executor caps the roll, so
+        // the panel never promises crit the sim won't deliver.
+        set_weapon(&mut world, 30000, 2_000_000);
+        let uncapped = world
+            .resolve_skill(slot, node)
+            .unwrap()
+            .spec_template
+            .crit_bp;
+        let capped = world.skill_stat_view(slot, node).unwrap();
+        assert!(
+            uncapped > CRIT_CHANCE_CAP_BP,
+            "the test drives crit past the cap"
+        );
+        assert_eq!(
+            capped.crit_chance_bp, CRIT_CHANCE_CAP_BP,
+            "the panel caps crit where the executor's roll caps"
+        );
+        // And DPS uses the CAPPED crit too — not just the displayed chance. A
+        // regression that capped the chance but fed uncapped crit into the dps
+        // factor would equal `dps_if_uncapped` and break the equality below.
+        let cap_total: i64 = capped.damage.iter().sum();
+        let cap_factor = 10000 + CRIT_CHANCE_CAP_BP * (capped.crit_multi_bp - 10000) / 10000;
+        let expect_capped = cap_total * cap_factor * crate::world::TICK_HZ as i64
+            / (10000 * capped.use_ticks as i64);
+        assert_eq!(capped.dps, expect_capped, "dps uses the capped crit chance");
+        let uncapped_factor = 10000 + uncapped * (capped.crit_multi_bp - 10000) / 10000;
+        let dps_if_uncapped = cap_total * uncapped_factor * crate::world::TICK_HZ as i64
+            / (10000 * capped.use_ticks as i64);
+        assert!(
+            dps_if_uncapped > capped.dps,
+            "uncapped crit would overstate dps ({dps_if_uncapped} vs {})",
+            capped.dps
+        );
+
+        // A spell reports as a spell with its own flat damage (no weapon leak).
+        socket(&mut world, arc);
+        set_weapon(&mut world, 999_999, 10000);
+        let vs = world.skill_stat_view(slot, node).unwrap();
+        assert!(vs.is_spell, "arc is a spell");
+        assert_eq!(
+            vs.damage[0], 0,
+            "no weapon phys leaks into a spell's stat block"
+        );
+        assert!(vs.dps > 0, "a damaging spell has dps");
     }
 }

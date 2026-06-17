@@ -3,6 +3,7 @@ import type { CurrencyView } from "./CurrencyView";
 import type { GearSlotView } from "./GearSlotView";
 import type { GemView } from "./GemView";
 import type { InvItemView } from "./InvItemView";
+import type { SkillStat } from "./SkillStat";
 
 /**
  * On-demand character inspection, shown while the director focuses an
@@ -20,4 +21,8 @@ resist_fire_bp: number, resist_cold_bp: number, resist_lightning_bp: number, res
 /**
  * Find factors in basis points over 10000 (0 = no bonus).
  */
-item_rarity_bp: number, item_quantity_bp: number, equipment: Array<GearSlotView>, inventory: Array<InvItemView>, gems: Array<GemView>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };
+item_rarity_bp: number, item_quantity_bp: number, equipment: Array<GearSlotView>, inventory: Array<InvItemView>, gems: Array<GemView>, 
+/**
+ * Computed per-socketed-skill readout (DPS / DoT / buff / footprint).
+ */
+skills: Array<SkillStat>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };

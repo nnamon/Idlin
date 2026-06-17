@@ -9,6 +9,7 @@ import {
   monster,
   sheet,
   simXY,
+  skill,
   zoneSnapshot,
 } from "./builders";
 
@@ -109,6 +110,58 @@ const inspectPanel: Fixture = {
           { name: "Heavy Swing", level: 12, xp: 40, xp_next: 100, support: false },
           { name: "Heavier Blows", level: 8, xp: 12, xp_next: 60, support: true },
           { name: "Cleave", level: 6, xp: 0, xp_next: 0, support: false },
+        ],
+        // The four headline variants: a damage attack, a damage spell, a
+        // no-damage self-buff, and a damage-over-time — proving the card shows
+        // each gem's pertinent metric, not a misleading "0 DPS".
+        skills: [
+          skill({
+            name: "Heavy Swing",
+            level: 12,
+            kind: "attack",
+            shape: "target",
+            damage: [320, 0, 0, 90, 0],
+            dps: 612,
+            crit_chance_bp: 700,
+            crit_multi_bp: 15000,
+            use_ticks: 8,
+            mana_cost: 0,
+            range_cu: 160,
+            supports: [{ name: "Heavier Blows", level: 8 }],
+          }),
+          skill({
+            name: "War Cry",
+            level: 6,
+            kind: "attack",
+            shape: "nova",
+            mana_cost: 14,
+            cooldown_ticks: 40,
+            buff_duration_ticks: 80,
+          }),
+          skill({
+            name: "Plague Cloud",
+            level: 7,
+            kind: "spell",
+            shape: "point_aoe",
+            mana_cost: 22,
+            radius_cu: 240,
+            dot_per_sec: 48,
+            dot_duration_ticks: 60,
+          }),
+          skill({
+            name: "Arc",
+            level: 5,
+            kind: "spell",
+            shape: "line",
+            damage: [0, 0, 0, 160, 0],
+            dps: 200,
+            crit_chance_bp: 500,
+            crit_multi_bp: 15000,
+            use_ticks: 8,
+            mana_cost: 12,
+            range_cu: 600,
+            width_cu: 130,
+          }),
         ],
         currency: [
           { name: "Obol", count: 47, tier: 0 },

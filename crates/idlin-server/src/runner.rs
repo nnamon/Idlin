@@ -6,7 +6,7 @@
 use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
-    PropState, TileMapState, TileVisual,
+    PropState, SkillStat, SkillSupport, TileMapState, TileVisual,
 };
 use idlin_sim::world::CharacterSheetView;
 use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -424,6 +424,37 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                 xp: xp.clamp(0, i32::MAX as i64) as i32,
                 xp_next: xp_next.clamp(0, i32::MAX as i64) as i32,
                 support,
+            })
+            .collect(),
+        skills: v
+            .skills
+            .into_iter()
+            .map(|s| SkillStat {
+                name: s.name,
+                level: s.level,
+                kind: if s.is_spell { "spell" } else { "attack" }.to_string(),
+                shape: s.shape.to_string(),
+                damage: s.damage.iter().map(|d| clamp_i32(*d)).collect(),
+                dps: clamp_i32(s.dps),
+                crit_chance_bp: clamp_i32(s.crit_chance_bp),
+                crit_multi_bp: clamp_i32(s.crit_multi_bp),
+                use_ticks: s.use_ticks,
+                cooldown_ticks: s.cooldown_ticks,
+                mana_cost: clamp_i32(s.mana_cost),
+                range_cu: s.range_cu,
+                radius_cu: s.radius_cu,
+                width_cu: s.width_cu,
+                projectiles: s.projectiles,
+                pierce: s.pierce,
+                dot_per_sec: clamp_i32(s.dot_per_sec),
+                dot_duration_ticks: s.dot_duration_ticks,
+                buff_duration_ticks: s.buff_duration_ticks,
+                debuff_duration_ticks: s.debuff_duration_ticks,
+                supports: s
+                    .supports
+                    .into_iter()
+                    .map(|(name, level)| SkillSupport { name, level })
+                    .collect(),
             })
             .collect(),
         currency: v

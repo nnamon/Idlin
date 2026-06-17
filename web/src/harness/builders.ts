@@ -7,6 +7,7 @@ import type { S2C } from "../gen/S2C";
 import type { EntityState } from "../gen/EntityState";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { GearSlotView } from "../gen/GearSlotView";
+import type { SkillStat } from "../gen/SkillStat";
 
 /** Q16.16 fixed-point scale — wire coordinates are raw fixed-point ints. */
 const FX = 65536;
@@ -83,10 +84,39 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
     equipment: [],
     inventory: [],
     gems: [],
+    skills: [],
     currency: [],
     passive_allocated: 0,
     passive_unspent: 0,
     build_len: 0,
+    ...over,
+  };
+}
+
+/** A per-skill stat readout with zeroed defaults; pass only the pertinent
+ *  numbers (dps for a damage skill, dot/buff/debuff for the rest). */
+export function skill(over: Require<SkillStat, "name">): SkillStat {
+  return {
+    level: 1,
+    kind: "attack",
+    shape: "target",
+    damage: [0, 0, 0, 0, 0],
+    dps: 0,
+    crit_chance_bp: 0,
+    crit_multi_bp: 15000,
+    use_ticks: 10,
+    cooldown_ticks: 0,
+    mana_cost: 0,
+    range_cu: 0,
+    radius_cu: 0,
+    width_cu: 0,
+    projectiles: 0,
+    pierce: 0,
+    dot_per_sec: 0,
+    dot_duration_ticks: 0,
+    buff_duration_ticks: 0,
+    debuff_duration_ticks: 0,
+    supports: [],
     ...over,
   };
 }
