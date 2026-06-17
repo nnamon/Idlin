@@ -45,4 +45,11 @@ export const FIXTURES: FixtureMeta[] = [
     kind: "scene",
     minBytes: 50_000,
   },
+  {
+    // All nine skills are in the DOM (clipped, not absent) — the first and last
+    // prove the full list rendered; the bounded-box test proves it's clipped.
+    name: "skill-overflow",
+    kind: "overlay",
+    expect: ["Cleave", "Decoy", "DPS"],
+  },
 ];

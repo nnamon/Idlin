@@ -373,3 +373,43 @@
   letter-spacing: 0.5px;
   font-size: 10px;
 }
+
+/* A viewport pinned to a fraction of the screen; overflow is hidden (the box
+   never grows past its cap) and the edges fade to cue more content. The bound
+   is pure static CSS — deterministic to capture. */
+.autoscroll {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 7px,
+    #000 calc(100% - 7px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 7px,
+    #000 calc(100% - 7px),
+    transparent 100%
+  );
+}
+/* The scroll MOTION (only when contents overflow). Capture freezes it:
+   reduced-motion below, plus the harness shoots with animations disabled, so
+   the frozen frame is always the top. */
+.autoscroll.scrolling .autoscroll-inner {
+  animation: autoscroll-y var(--scroll-dur, 20s) ease-in-out infinite alternate;
+}
+@keyframes autoscroll-y {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--scroll-y, 0));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .autoscroll.scrolling .autoscroll-inner {
+    animation: none;
+  }
+}

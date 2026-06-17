@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { SkillStat } from "../gen/SkillStat";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
@@ -342,6 +342,53 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   );
 }
 
+/**
+ * A panel region pinned to a fraction of the viewport (`maxVh`) that auto-
+ * scrolls its contents slowly when they overflow — so a tall list (many
+ * socketed skills, later the debug console) can never push the rest of the HUD
+ * off-screen, and the NON-interactive broadcast still cycles everything into
+ * view over time.
+ *
+ * Determinism: the box bound (`max-height` + `overflow: hidden` + the edge
+ * fade) is pure static CSS. The scroll MOTION is a CSS animation the capture
+ * harness freezes — it's disabled under `prefers-reduced-motion: reduce` (which
+ * the harness emulates) and frozen by `screenshot({ animations: "disabled" })`,
+ * so the measured scroll distance only ever feeds the (frozen) animation,
+ * never the captured pixels.
+ */
+function AutoScroll({ maxVh, children }: { maxVh: number; children: React.ReactNode }) {
+  const view = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const v = view.current;
+      const i = inner.current;
+      if (v && i) setOverflow(Math.max(0, i.scrollHeight - v.clientHeight));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (inner.current) ro.observe(inner.current);
+    if (view.current) ro.observe(view.current);
+    return () => ro.disconnect();
+  }, []);
+  const scrolling = overflow > 0;
+  const style = {
+    maxHeight: `${maxVh}vh`,
+    // One pixel/~0.1s, floored — slow and readable; only the disabled-in-capture
+    // animation reads these.
+    ["--scroll-y" as string]: `${-overflow}px`,
+    ["--scroll-dur" as string]: `${Math.max(8, Math.round(overflow / 10))}s`,
+  } as React.CSSProperties;
+  return (
+    <div ref={view} className={scrolling ? "autoscroll scrolling" : "autoscroll"} style={style}>
+      <div ref={inner} className="autoscroll-inner">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** Per-type damage palette (phys, fire, cold, lightning, chaos). */
 const DMG_COLORS = ["#d8cba6", "#ff7a3c", "#5adfdf", "#ffe24a", "#c77bff"];
 const DMG_LABELS = ["phys", "fire", "cold", "lightning", "chaos"];
@@ -456,9 +503,14 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
       {sheet.skills.length > 0 && (
         <>
           <Header>Skills</Header>
-          {sheet.skills.map((s, i) => (
-            <SkillCard key={i} skill={s} />
-          ))}
+          {/* Pinned to ~half the viewport: a typical few-skill loadout fits;
+              a heavily-socketed build clips and auto-scrolls. The cap keeps the
+              left column (plaque + stats + this) on screen. */}
+          <AutoScroll maxVh={50}>
+            {sheet.skills.map((s, i) => (
+              <SkillCard key={i} skill={s} />
+            ))}
+          </AutoScroll>
         </>
       )}
     </div>

@@ -220,8 +220,51 @@ const sceneShore: Fixture = {
   ],
 };
 
+/**
+ * A heavily-socketed idler: nine skills, far more than the skills panel's
+ * height budget. Exercises the auto-scroll box — the panel must pin to its
+ * viewport ratio and clip, not stretch the column off-screen.
+ */
+const skillOverflow: Fixture = {
+  kind: "overlay",
+  label: "Skills overflow: a 9-skill idler — the panel pins to its ratio and auto-scrolls",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [character({ id: 1, name: "Vorin", level: 88, model: "marauder", life_pct: 95 })],
+    }),
+    directorCue(1, "spinning the wheel"),
+    characterSheet(
+      sheet({
+        id: 1,
+        name: "Vorin",
+        level: 88,
+        life: 2400,
+        life_max: 2400,
+        mana: 380,
+        mana_max: 380,
+        skills: [
+          skill({ name: "Cleave", kind: "attack", shape: "cone", level: 20, damage: [540, 0, 0, 0, 0], dps: 880, crit_chance_bp: 600, use_ticks: 7, radius_cu: 220 }),
+          skill({ name: "Heavy Swing", kind: "attack", shape: "target", level: 18, damage: [710, 0, 0, 0, 0], dps: 1010, crit_chance_bp: 800, use_ticks: 9, range_cu: 160, supports: [{ name: "Heavier Blows", level: 12 }] }),
+          skill({ name: "Arc", kind: "spell", shape: "line", level: 16, damage: [0, 0, 0, 300, 0], dps: 540, crit_chance_bp: 500, use_ticks: 8, range_cu: 600, width_cu: 130 }),
+          skill({ name: "Fireball", kind: "spell", shape: "projectile", level: 15, damage: [0, 420, 0, 0, 0], dps: 600, crit_chance_bp: 500, use_ticks: 8, range_cu: 900, projectiles: 3, pierce: 1 }),
+          skill({ name: "War Cry", kind: "attack", shape: "nova", level: 10, mana_cost: 30, cooldown_ticks: 80, buff_duration_ticks: 120 }),
+          skill({ name: "Plague Cloud", kind: "spell", shape: "point_aoe", level: 14, mana_cost: 28, radius_cu: 260, dot_per_sec: 95, dot_duration_ticks: 80 }),
+          skill({ name: "Frost Nova", kind: "spell", shape: "nova", level: 12, damage: [0, 0, 180, 0, 0], dps: 220, mana_cost: 22, radius_cu: 200, debuff_duration_ticks: 30 }),
+          skill({ name: "Ground Slam", kind: "attack", shape: "cone", level: 13, damage: [480, 0, 0, 0, 0], dps: 700, use_ticks: 10, radius_cu: 240 }),
+          skill({ name: "Decoy", kind: "spell", shape: "point_aoe", level: 8, mana_cost: 18, cooldown_ticks: 120, buff_duration_ticks: 60 }),
+        ],
+        currency: [{ name: "Obol", count: 312, tier: 0 }],
+        passive_allocated: 80,
+        build_len: 88,
+      }),
+    ),
+  ],
+};
+
 /** Every fixture, keyed by the id used in `?fixture=<name>` and the shot path. */
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "scene-shore": sceneShore,
+  "skill-overflow": skillOverflow,
 };
