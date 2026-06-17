@@ -1,13 +1,13 @@
 # UI capture harness (deterministic screenshots)
 
-The §6 prerequisite: reproducible UI screenshots from **canned server state**, so a
-UI change can be captured and signed off instead of "verified" by a typecheck.
+Reproducible UI screenshots from **canned server state**, so a UI change can be captured
+and signed off instead of "verified" by a typecheck (AGENTS.md §6).
 
-This covers both §6 tracks:
-- **Track 1 — the React overlay** (focus/inspect panel, stats, gear, gems): deterministic
-  by purity (a static fixture re-renders to identical pixels with no clock).
-- **Track 2 — the 3D scene** (`ZoneRenderer`): deterministic via a seeded global
-  `Math.random` + a stepped virtual clock + an optional pinned camera.
+Two surfaces:
+- **The React overlay** (focus/inspect panel, stats, gear, gems): deterministic by purity —
+  a static fixture re-renders to identical pixels with no clock.
+- **The 3D scene** (`ZoneRenderer`): deterministic via a seeded global `Math.random` + a
+  stepped virtual clock + an optional pinned camera.
 
 ## Run it
 
@@ -43,7 +43,7 @@ deterministically with the right text; only your eyes prove it looks right.
 - **Frame-ready, not sleep.** The fixture applies all messages *before* the first
   render, drains React's scheduler (via `MessageChannel`), awaits `document.fonts.ready`,
   then sets `window.__harness.ready`. The driver awaits that flag.
-- **Scene fixtures (Track 2)** seed `Math.random` (covers terrain noise, brazier phases,
+- **Scene fixtures** seed `Math.random` (covers terrain noise, brazier phases,
   per-entity idle phase, three.js UUIDs), build the `ZoneRenderer` in `capture` mode (a
   screenshottable back buffer, no rAF loop), `await renderer.whenReady` (models + fonts),
   then `stepFrames(n)` on a virtual clock so animation settles deterministically. A black
