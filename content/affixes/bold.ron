@@ -1,0 +1,16 @@
+// "Bold ..." — raw strength etched into a ring, belt, or charm.
+AffixDef(
+    id: "bold",
+    public: true,
+    name: "Bold",
+    kind: prefix,
+    pool: "accessory",
+    weight: 100,
+    stat: strength,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 4, max: 8, name: "Bold", weight: 100),
+        (ilvl: 4, min: 9, max: 15, name: "Mighty", weight: 45),
+        (ilvl: 8, min: 16, max: 24, name: "Colossal", weight: 15),
+    ],
+)

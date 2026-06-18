@@ -35,6 +35,39 @@
         "weight": 70
       },
       {
+        "id": "bold",
+        "kind": "prefix",
+        "layer": "added",
+        "name": "Bold",
+        "num": 25165851,
+        "pool": "accessory",
+        "stat": "strength",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "max": 8,
+            "min": 4,
+            "name": "Bold",
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "max": 15,
+            "min": 9,
+            "name": "Mighty",
+            "weight": 45
+          },
+          {
+            "ilvl": 8,
+            "max": 24,
+            "min": 16,
+            "name": "Colossal",
+            "weight": 15
+          }
+        ],
+        "weight": 100
+      },
+      {
         "id": "hale",
         "kind": "prefix",
         "layer": "added",
@@ -66,6 +99,39 @@
           }
         ],
         "weight": 100
+      },
+      {
+        "id": "hardy",
+        "kind": "prefix",
+        "layer": "added",
+        "name": "Hardy",
+        "num": 25165852,
+        "pool": "accessory",
+        "stat": "life",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "max": 12,
+            "min": 6,
+            "name": "Hardy",
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "max": 24,
+            "min": 13,
+            "name": "Vigorous",
+            "weight": 45
+          },
+          {
+            "ilvl": 8,
+            "max": 40,
+            "min": 25,
+            "name": "Undying",
+            "weight": 15
+          }
+        ],
+        "weight": 90
       },
       {
         "id": "heavy",
@@ -212,6 +278,39 @@
         "weight": 70
       },
       {
+        "id": "of_acumen",
+        "kind": "suffix",
+        "layer": "added",
+        "name": "of Acumen",
+        "num": 25165853,
+        "pool": "accessory",
+        "stat": "intelligence",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "max": 8,
+            "min": 4,
+            "name": "of Acumen",
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "max": 15,
+            "min": 9,
+            "name": "of Insight",
+            "weight": 45
+          },
+          {
+            "ilvl": 8,
+            "max": 24,
+            "min": 16,
+            "name": "of Genius",
+            "weight": 15
+          }
+        ],
+        "weight": 100
+      },
+      {
         "id": "of_driving",
         "kind": "suffix",
         "layer": "added",
@@ -262,6 +361,39 @@
           }
         ],
         "weight": 80
+      },
+      {
+        "id": "of_finesse",
+        "kind": "suffix",
+        "layer": "added",
+        "name": "of Finesse",
+        "num": 25165854,
+        "pool": "accessory",
+        "stat": "dexterity",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "max": 8,
+            "min": 4,
+            "name": "of Finesse",
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "max": 15,
+            "min": 9,
+            "name": "of Grace",
+            "weight": 45
+          },
+          {
+            "ilvl": 8,
+            "max": 24,
+            "min": 16,
+            "name": "of Mastery",
+            "weight": 15
+          }
+        ],
+        "weight": 100
       },
       {
         "id": "of_haste_m",
@@ -1866,6 +1998,79 @@
       },
       {
         "affix_pools": [
+          "accessory",
+          "arcana",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 1,
+        "id": "coral_ring",
+        "model": "",
+        "name": "Coral Band",
+        "num": 16777225,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "ring",
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 1,
+        "weapon_class": null,
+        "weight": 80
+      },
+      {
+        "affix_pools": [
+          "accessory",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 1,
+        "id": "corded_belt",
+        "model": "",
+        "name": "Corded Belt",
+        "num": 16777226,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "belt",
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 80
+      },
+      {
+        "affix_pools": [
           "weapon"
         ],
         "armour": 0,
@@ -2074,6 +2279,43 @@
         "w": 1,
         "weapon_class": null,
         "weight": 100
+      },
+      {
+        "affix_pools": [
+          "accessory",
+          "arcana",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 1,
+        "id": "tidal_amulet",
+        "model": "",
+        "name": "Tidal Charm",
+        "num": 16777227,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "amulet",
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 1,
+        "weapon_class": null,
+        "weight": 60
       },
       {
         "affix_pools": [
@@ -3699,7 +3941,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "247c633789e70735",
+  "fingerprint": "71177f0c47ffba6a",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23
 }

@@ -1,0 +1,12 @@
+// Accessory suffix: a sharper mind.
+AffixDef(
+    id: "of_acumen", name: "of Acumen", kind: suffix, pool: "accessory",
+    public: true,
+    weight: 100,
+    stat: intelligence, layer: added,
+    tiers: [
+        (ilvl: 1, min: 4, max: 8, name: "of Acumen", weight: 100),
+        (ilvl: 4, min: 9, max: 15, name: "of Insight", weight: 45),
+        (ilvl: 8, min: 16, max: 24, name: "of Genius", weight: 15),
+    ],
+)

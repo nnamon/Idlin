@@ -218,12 +218,23 @@ pub enum GearSlot {
     Boots,
     /// Utility slot: flasks (charges, drink on demand). PoE-style.
     Flask,
+    /// Accessory: rings — two fingers (two loops, exactly like flasks).
+    /// Carries rolled affixes only; no weapon/armour base, no 3D mesh.
+    Ring,
+    /// Accessory: belt. Affixes only.
+    Belt,
+    /// Accessory: amulet. Affixes only.
+    Amulet,
 }
 
 impl GearSlot {
-    pub const COUNT: usize = 7;
+    pub const COUNT: usize = 11;
 
     pub fn idx(self) -> usize {
+        // Indices are append-only — existing slots (0..=6) keep their numbers so
+        // a slot growth never re-homes worn gear. Index 6 is the second flask
+        // loop and index 8 the second ring loop (no enum variant — the SLOTS
+        // arrays below own the second loop, the Flask/Ring precedent).
         match self {
             GearSlot::Weapon => 0,
             GearSlot::Offhand => 1,
@@ -231,11 +242,16 @@ impl GearSlot {
             GearSlot::Chest => 3,
             GearSlot::Boots => 4,
             GearSlot::Flask => 5,
+            GearSlot::Ring => 7,
+            GearSlot::Belt => 9,
+            GearSlot::Amulet => 10,
         }
     }
 
     /// Equipment indices that accept flask items (two belt loops).
     pub const FLASK_SLOTS: [usize; 2] = [5, 6];
+    /// Equipment indices that accept rings (two fingers), like flasks.
+    pub const RING_SLOTS: [usize; 2] = [7, 8];
 }
 
 /// An item base type. Rolled affixes provide everything beyond these bases.

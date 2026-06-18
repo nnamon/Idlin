@@ -81,7 +81,11 @@ fn socket_into(node, gem_num) {
 // (record: slot, base_num/-1, rarity, item_level). One equip per tick: a swap
 // shifts the bag, so we stop and re-scan next tick.
 fn upkeep_gear() {
-    read_equipment(EQ, 7);
+    read_equipment(EQ, 11);                     // ALL gear slots, incl. the
+                                                // accessories (rings 7/8, belt 9,
+                                                // amulet 10) — item_slot returns
+                                                // those, so records 7..10 must be
+                                                // written or `EQ + s*16` reads stale.
     var n = read_inventory(INV, 60);
     var i = 0;
     while (i < n) {
@@ -92,9 +96,10 @@ fn upkeep_gear() {
             // The WEAPON slot is build-critical: a wand or bow would silence our
             // melee skills at the weapon gate (the gear face of #52). Reads don't
             // carry weapon class, so we wield only our known melee base; armor
-            // upgrades freely by item level. (A STARTER heuristic: flasks map to
-            // loop 5 via item_slot, so a second same-level flask in loop 6 may go
-            // unworn — perfecting belt use is the optimizing author's job, RFC P4.)
+            // upgrades freely by item level. (A STARTER heuristic: item_slot maps
+            // flasks to loop 5 and rings to loop 7, so a second same-level flask
+            // or ring in the OTHER loop may go unworn — perfecting the twin loops
+            // is the optimizing author's job, RFC P4.)
             var ok = 1;
             if (s == 0) {
                 ok = 0;

@@ -175,6 +175,46 @@ function silhouette(kind: string): string | null {
         g.lineTo(-10, 12);
       }, "#5adfdf");
       break;
+    case "ring":
+      // A gold band face-on with a small set stone.
+      g.beginPath();
+      g.arc(0, 6, 16, 0, Math.PI * 2);
+      g.strokeStyle = "#caa24a";
+      g.lineWidth = 8;
+      g.stroke();
+      fill(() => {
+        g.moveTo(0, -24);
+        g.lineTo(9, -13);
+        g.lineTo(0, -2);
+        g.lineTo(-9, -13);
+      }, "#5adfdf");
+      break;
+    case "amulet":
+      // A teardrop pendant hung on a cord.
+      g.beginPath();
+      g.arc(0, -6, 19, Math.PI * 1.18, Math.PI * -0.18);
+      g.strokeStyle = "#8a7a5a";
+      g.lineWidth = 3;
+      g.stroke();
+      fill(() => {
+        g.moveTo(0, 0);
+        g.lineTo(14, 14);
+        g.lineTo(0, 30);
+        g.lineTo(-14, 14);
+      }, "#4a8fb8");
+      break;
+    case "belt":
+      // A horizontal strap with a square buckle.
+      fill(() => {
+        g.rect(-30, -8, 60, 16);
+      }, "#5b4f42");
+      fill(() => {
+        g.rect(-11, -12, 22, 24);
+      }, "#caa24a");
+      fill(() => {
+        g.rect(-4, -6, 8, 12);
+      }, "#2a2418");
+      break;
     default:
       return null;
   }

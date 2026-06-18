@@ -1,0 +1,11 @@
+// A length of tarred rope cinched with a bone buckle.
+ItemDef(
+    id: "corded_belt",
+    public: true,
+    name: "Corded Belt",
+    slot: belt,
+    w: 2,
+    h: 1,
+    affix_pools: ["accessory", "find"],
+    weight: 80,
+)

@@ -385,9 +385,12 @@ impl World {
                     continue;
                 };
                 let islot = self.content.items[gear.base_idx as usize].slot;
-                // Flask items fit EITHER belt loop; everything else maps 1:1.
+                // Flasks fit EITHER belt loop and rings EITHER finger; everything
+                // else maps 1:1.
                 let fits = if GearSlot::FLASK_SLOTS.contains(&gear_idx) {
                     islot == GearSlot::Flask
+                } else if GearSlot::RING_SLOTS.contains(&gear_idx) {
+                    islot == GearSlot::Ring
                 } else {
                     islot.idx() == gear_idx
                 };
@@ -531,12 +534,18 @@ impl World {
             return -1; // out of range, or the bag slot is a gem
         };
         let islot = self.content.items[gear.base_idx as usize].slot;
-        // A flask takes either belt loop — the first free one, else loop 0.
+        // A flask takes either belt loop and a ring either finger — the first
+        // free one, else loop 0. Everything else maps 1:1.
         let gear_idx = if islot == GearSlot::Flask {
             GearSlot::FLASK_SLOTS
                 .into_iter()
                 .find(|&i| ch.equipment[i].is_none())
                 .unwrap_or(GearSlot::FLASK_SLOTS[0])
+        } else if islot == GearSlot::Ring {
+            GearSlot::RING_SLOTS
+                .into_iter()
+                .find(|&i| ch.equipment[i].is_none())
+                .unwrap_or(GearSlot::RING_SLOTS[0])
         } else {
             islot.idx()
         };

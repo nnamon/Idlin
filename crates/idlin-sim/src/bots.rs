@@ -927,7 +927,8 @@ mod tests {
         let mut bot = world.bots.take(bot_idx).unwrap();
         let out: u16 = 0xD000;
         // Args pushed in reverse (max then out); the dispatch pops out first.
-        bot.vm.push(7);
+        // Request the full slate so the returned count is the live GEAR_SLOTS.
+        bot.vm.push(crate::entity::GEAR_SLOTS as i32);
         bot.vm.push(out as i32);
         let mut ev = Vec::new();
         let count = world.syscall(slot, &mut bot, SYS_READ_EQUIPMENT, 2, &mut ev);

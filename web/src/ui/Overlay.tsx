@@ -16,6 +16,11 @@ function bagKind(name: string, w: number, h: number): string {
   if (n.includes("helm")) return "helm";
   if (n.includes("vest") || n.includes("chest") || n.includes("plate")) return "chest";
   if (n.includes("flask")) return "flask";
+  // Accessories BEFORE the 1×1 fallback — a ring/amulet is 1×1 and would
+  // otherwise read as a gem silhouette in the bag.
+  if (n.includes("ring") || n.includes("band")) return "ring";
+  if (n.includes("amulet") || n.includes("charm") || n.includes("pendant")) return "amulet";
+  if (n.includes("belt")) return "belt";
   if (w === 1 && h === 1) return "gem";
   return "item";
 }
@@ -316,8 +321,8 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         style={{
           display: "grid",
           gridTemplateColumns: "60px 1fr 60px",
-          gridTemplateRows: "46px 62px 40px",
-          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" "weapon boots flask"`,
+          gridTemplateRows: "46px 62px 40px 40px",
+          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" "weapon boots flask" "acc acc acc"`,
           gap: 5,
           marginBottom: 2,
         }}
@@ -333,6 +338,21 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
           </div>
           <div style={{ flex: 1, display: "grid" }}>
             <SlotBox area="auto" label="Flask" gear={bySlot.get("flask 2")} icons={icons} />
+          </div>
+        </div>
+        {/* Accessories — affix-only slots (2 rings, amulet, belt), no 3D mesh. */}
+        <div style={{ gridArea: "acc", display: "flex", gap: 4 }}>
+          <div style={{ flex: 1, display: "grid" }}>
+            <SlotBox area="auto" label="Ring" gear={bySlot.get("ring")} icons={icons} />
+          </div>
+          <div style={{ flex: 1, display: "grid" }}>
+            <SlotBox area="auto" label="Ring" gear={bySlot.get("ring 2")} icons={icons} />
+          </div>
+          <div style={{ flex: 1, display: "grid" }}>
+            <SlotBox area="auto" label="Amulet" gear={bySlot.get("amulet")} icons={icons} />
+          </div>
+          <div style={{ flex: 1, display: "grid" }}>
+            <SlotBox area="auto" label="Belt" gear={bySlot.get("belt")} icons={icons} />
           </div>
         </div>
       </div>
