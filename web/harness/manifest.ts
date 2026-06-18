@@ -29,7 +29,10 @@ export const FIXTURES: FixtureMeta[] = [
     expect: [
       "Brakka",
       "level 42",
-      "Rusted Cleaver",
+      // The paper doll is icon-only (names ride the hover title), so assert the
+      // section is present, not item-name text; the icons are eyeballed + the
+      // byte-stable shot pins them.
+      "Equipment",
       "Heavy Swing",
       "DPS",
       // The adaptive non-DPS headlines — the maintainer's "not just DPS" point.

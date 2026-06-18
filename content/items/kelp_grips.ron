@@ -1,0 +1,12 @@
+// Gloves woven from sea-tough kelp fronds, salt-stiffened into armour.
+ItemDef(
+    id: "kelp_grips",
+    public: true,
+    name: "Kelp Grips",
+    slot: gloves,
+    w: 2,
+    h: 2,
+    armour: 30,
+    affix_pools: ["armour", "arcana", "find"],
+    weight: 90,
+)

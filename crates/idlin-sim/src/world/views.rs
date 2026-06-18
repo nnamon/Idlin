@@ -91,8 +91,9 @@ pub struct CharacterSheetView {
 impl World {
     /// Inspect one character by net id (None for monsters/loot/unknown).
     pub fn character_sheet(&self, net_id: u32) -> Option<CharacterSheetView> {
-        const SLOT_NAMES: [&str; 7] = [
-            "Weapon", "Offhand", "Helm", "Chest", "Boots", "Flask", "Flask 2",
+        const SLOT_NAMES: [&str; 12] = [
+            "Weapon", "Offhand", "Helm", "Chest", "Boots", "Flask", "Flask 2", "Ring", "Ring 2",
+            "Belt", "Amulet", "Gloves",
         ];
         let e = self.zone.get_net(net_id)?;
         let ch = e.character.as_ref()?;

@@ -12,6 +12,7 @@ import { createRoot } from "react-dom/client";
 import { WorldStore } from "../world/store";
 import { Overlay } from "../ui/Overlay";
 import { ZoneRenderer } from "../scene/ZoneRenderer";
+import { silhouette } from "../scene/IconFactory";
 import { stubClient } from "./stubClient";
 import { makeSeededRandom } from "./random";
 import { FIXTURES, type Fixture } from "./fixtures";
@@ -44,6 +45,11 @@ function nextTask(): Promise<void> {
 async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Promise<void> {
   const overlay = document.getElementById("overlay")!;
   const store = new WorldStore();
+  // The live client paints slot icons (3D model renders + canvas silhouettes);
+  // the headless harness has no WebGL/model pipeline, so feed it the
+  // deterministic canvas silhouettes alone — enough to verify the doll reads
+  // with real icons rather than the cramped name-text fallback.
+  store.icons = { icon: (_name, kind) => silhouette(kind) };
   for (const msg of fixture.messages) store.handle(msg);
 
   const client = stubClient(fixture.status);

@@ -1,0 +1,11 @@
+// A barnacled band off a drowned hand — it carries only what's etched in it.
+ItemDef(
+    id: "coral_ring",
+    public: true,
+    name: "Coral Band",
+    slot: ring,
+    w: 1,
+    h: 1,
+    affix_pools: ["accessory", "arcana", "find"],
+    weight: 80,
+)

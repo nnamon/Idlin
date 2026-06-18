@@ -385,12 +385,9 @@ impl World {
                     continue;
                 };
                 let islot = self.content.items[gear.base_idx as usize].slot;
-                // Flask items fit EITHER belt loop; everything else maps 1:1.
-                let fits = if GearSlot::FLASK_SLOTS.contains(&gear_idx) {
-                    islot == GearSlot::Flask
-                } else {
-                    islot.idx() == gear_idx
-                };
+                // The item fits this index iff it's one of its slot family's
+                // loops (flasks and rings own two each; others a single index).
+                let fits = islot.loops().contains(&gear_idx);
                 if !fits {
                     continue;
                 }
@@ -531,15 +528,15 @@ impl World {
             return -1; // out of range, or the bag slot is a gem
         };
         let islot = self.content.items[gear.base_idx as usize].slot;
-        // A flask takes either belt loop — the first free one, else loop 0.
-        let gear_idx = if islot == GearSlot::Flask {
-            GearSlot::FLASK_SLOTS
-                .into_iter()
-                .find(|&i| ch.equipment[i].is_none())
-                .unwrap_or(GearSlot::FLASK_SLOTS[0])
-        } else {
-            islot.idx()
-        };
+        // Land on the first FREE loop of the item's slot family (flasks and
+        // rings own two), else its primary — single-slot families collapse to
+        // idx(), and equip swaps whatever's worn there.
+        let loops = islot.loops();
+        let gear_idx = loops
+            .iter()
+            .copied()
+            .find(|&i| ch.equipment[i].is_none())
+            .unwrap_or(loops[0]);
         // Can't keep it equipped → refuse, rather than thrash it on and off.
         if !self.meets_requirements(slot, gear, Some(gear_idx)) {
             return -1;
@@ -715,6 +712,14 @@ impl World {
                 + sheet.value(Stat::Block, def.block_bp) / 3
                 + sheet.value(Stat::Evasion, def.evasion) * 100
                 + sheet.value(Stat::Life, 0) * 200
+                + sheet.value(Stat::Mana, 0) * 50
+                // Attributes feed real derived stats (STR→life/melee, DEX→acc/eva,
+                // INT→mana/ES), so accessory jewelry's signature rolls must count —
+                // else EquipBest can't tell a +20-STR amulet from a bare slot.
+                + (sheet.value(Stat::Strength, 0)
+                    + sheet.value(Stat::Dexterity, 0)
+                    + sheet.value(Stat::Intelligence, 0))
+                    * 80
                 + sheet.value(Stat::ResistFire, 0) / 10
                 + sheet.value(Stat::ResistCold, 0) / 10
                 + sheet.value(Stat::ResistLightning, 0) / 10

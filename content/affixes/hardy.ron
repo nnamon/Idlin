@@ -1,0 +1,16 @@
+// "Hardy ..." — flat life clasped to an accessory.
+AffixDef(
+    id: "hardy",
+    public: true,
+    name: "Hardy",
+    kind: prefix,
+    pool: "accessory",
+    weight: 90,
+    stat: life,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 6, max: 12, name: "Hardy", weight: 100),
+        (ilvl: 4, min: 13, max: 24, name: "Vigorous", weight: 45),
+        (ilvl: 8, min: 25, max: 40, name: "Undying", weight: 15),
+    ],
+)

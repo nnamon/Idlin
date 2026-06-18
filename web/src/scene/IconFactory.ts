@@ -76,8 +76,10 @@ export class IconFactory {
   }
 }
 
-/** Flat-shaded canvas silhouettes for items without models yet. */
-function silhouette(kind: string): string | null {
+/** Flat-shaded canvas silhouettes for items without models yet. Exported so the
+ *  capture harness (which has no WebGL/model pipeline) can show real slot icons
+ *  instead of cramped text. */
+export function silhouette(kind: string): string | null {
   const c = document.createElement("canvas");
   c.width = 96;
   c.height = 96;
@@ -95,6 +97,35 @@ function silhouette(kind: string): string | null {
     g.stroke();
   };
   switch (kind) {
+    case "weapon":
+      // A sword: blade up, crossguard, grip.
+      fill(() => {
+        g.moveTo(0, -32);
+        g.lineTo(6, -20);
+        g.lineTo(6, 8);
+        g.lineTo(-6, 8);
+        g.lineTo(-6, -20);
+      }, "#9aa0b0");
+      fill(() => {
+        g.rect(-15, 8, 30, 5);
+      }, "#6b5836");
+      fill(() => {
+        g.rect(-3, 13, 6, 15);
+      }, "#3a2f1b");
+      break;
+    case "offhand":
+      // A heater shield with a centre ridge.
+      fill(() => {
+        g.moveTo(-20, -22);
+        g.lineTo(20, -22);
+        g.lineTo(20, 2);
+        g.lineTo(0, 28);
+        g.lineTo(-20, 2);
+      }, "#5a5d70");
+      fill(() => {
+        g.rect(-2, -20, 4, 40);
+      }, "#3a3d4e");
+      break;
     case "helm":
       fill(() => {
         g.arc(0, -2, 26, Math.PI, 0);
@@ -139,6 +170,24 @@ function silhouette(kind: string): string | null {
         g.lineTo(4, 18);
       }, "#4d4338");
       break;
+    case "gloves":
+      // A gauntlet: cuff, palm, and a thumb jutting to the side.
+      fill(() => {
+        g.moveTo(-16, -20);
+        g.lineTo(14, -20);
+        g.lineTo(14, 14);
+        g.lineTo(-16, 14);
+      }, "#5a5d70");
+      fill(() => {
+        g.moveTo(-16, -8);
+        g.lineTo(-26, -4);
+        g.lineTo(-24, 8);
+        g.lineTo(-16, 6);
+      }, "#5a5d70");
+      fill(() => {
+        g.rect(-16, 14, 30, 8);
+      }, "#3a3d4e");
+      break;
     case "flask":
       // A potion bottle: bulb, neck, cork, red fill.
       fill(() => {
@@ -174,6 +223,46 @@ function silhouette(kind: string): string | null {
         g.lineTo(8, -2);
         g.lineTo(-10, 12);
       }, "#5adfdf");
+      break;
+    case "ring":
+      // A gold band face-on with a small set stone.
+      g.beginPath();
+      g.arc(0, 6, 16, 0, Math.PI * 2);
+      g.strokeStyle = "#caa24a";
+      g.lineWidth = 8;
+      g.stroke();
+      fill(() => {
+        g.moveTo(0, -24);
+        g.lineTo(9, -13);
+        g.lineTo(0, -2);
+        g.lineTo(-9, -13);
+      }, "#5adfdf");
+      break;
+    case "amulet":
+      // A teardrop pendant hung on a cord.
+      g.beginPath();
+      g.arc(0, -6, 19, Math.PI * 1.18, Math.PI * -0.18);
+      g.strokeStyle = "#8a7a5a";
+      g.lineWidth = 3;
+      g.stroke();
+      fill(() => {
+        g.moveTo(0, 0);
+        g.lineTo(14, 14);
+        g.lineTo(0, 30);
+        g.lineTo(-14, 14);
+      }, "#4a8fb8");
+      break;
+    case "belt":
+      // A horizontal strap with a square buckle.
+      fill(() => {
+        g.rect(-30, -8, 60, 16);
+      }, "#5b4f42");
+      fill(() => {
+        g.rect(-11, -12, 22, 24);
+      }, "#caa24a");
+      fill(() => {
+        g.rect(-4, -6, 8, 12);
+      }, "#2a2418");
       break;
     default:
       return null;

@@ -3151,6 +3151,368 @@ mod tests {
         assert!(off.1.is_some(), "the dimmed offhand mirrors the weapon");
     }
 
+    /// #91: the accessory + gloves slots — 2 rings (two fingers, the Flask
+    /// precedent), a belt, an amulet, gloves — accept their items, the second
+    /// ring lands on the OTHER finger (never displacing the first), their affixes
+    /// fold into the resolved sheet, and the grown 12-slot array survives a v4
+    /// roundtrip.
+    #[test]
+    fn accessories_occupy_their_own_slots_and_fold_affixes() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xACCE_0001, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Jeweler".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let base = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let hardy = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "hardy")
+            .unwrap() as u32;
+        // A ring carrying +25 flat life (the `hardy` accessory prefix), so the
+        // affix-fold is verifiable through life_max.
+        let ring = |val: i64| Item {
+            base_idx: base("coral_ring"),
+            rarity: Rarity::Magic,
+            item_level: 10,
+            affixes: vec![RolledAffix {
+                affix_idx: hardy,
+                value: val,
+                tier: 0,
+            }],
+            name: String::new(),
+            charges: 0,
+        };
+        let plain = |id: &str| Item {
+            base_idx: base(id),
+            rarity: Rarity::Normal,
+            item_level: 1,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        // Push a bag item and return its index (robust to any starter bag).
+        let stash = |world: &mut World, item: Item| -> i32 {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(item),
+                x: 0,
+                y: 0,
+            });
+            (ch.inventory.len() - 1) as i32
+        };
+        let worn = |world: &World, gslot: usize| -> bool {
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .equipment[gslot]
+                .is_some()
+        };
+        let life = |world: &World| -> i64 {
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .life_max
+        };
+
+        let life0 = life(&world);
+        let mut ev = Vec::new();
+
+        // First ring → finger 1; the second → finger 2, NOT over the first.
+        let i = stash(&mut world, ring(25));
+        assert_eq!(world.equip(slot, i, &mut ev), 0, "first ring equips");
+        assert!(worn(&world, GearSlot::RING_SLOTS[0]), "ring on finger 1");
+        assert!(
+            !worn(&world, GearSlot::RING_SLOTS[1]),
+            "finger 2 still free"
+        );
+        let i = stash(&mut world, ring(25));
+        assert_eq!(world.equip(slot, i, &mut ev), 0, "second ring equips");
+        assert!(
+            worn(&world, GearSlot::RING_SLOTS[0]) && worn(&world, GearSlot::RING_SLOTS[1]),
+            "two rings, two fingers — the 2nd never displaces the 1st"
+        );
+
+        // Belt, amulet, and gloves are single 1:1 slots.
+        for (id, gslot) in [
+            ("corded_belt", GearSlot::Belt),
+            ("tidal_amulet", GearSlot::Amulet),
+            ("kelp_grips", GearSlot::Gloves),
+        ] {
+            let i = stash(&mut world, plain(id));
+            assert_eq!(world.equip(slot, i, &mut ev), 0, "{id} equips");
+            assert!(worn(&world, gslot.idx()), "{id} sits in its slot");
+        }
+
+        // Both rings' +25 life folded into the resolved sheet (+50 over bare).
+        let life_now = life(&world);
+        assert_eq!(
+            life_now,
+            life0 + 50,
+            "both rings' +life folded into life_max"
+        );
+
+        // v4 snapshot: the grown 12-slot array (accessories, gloves, and all)
+        // survives a postcard roundtrip unchanged.
+        let bytes = postcard::to_allocvec(&world).expect("serialize");
+        let restored: World = postcard::from_bytes(&bytes).expect("deserialize");
+        for s in [
+            GearSlot::RING_SLOTS[0],
+            GearSlot::RING_SLOTS[1],
+            GearSlot::Belt.idx(),
+            GearSlot::Amulet.idx(),
+            GearSlot::Gloves.idx(),
+        ] {
+            assert!(
+                worn(&restored, s),
+                "accessory/gloves slot {s} survives the roundtrip"
+            );
+        }
+        assert_eq!(
+            life(&restored),
+            life_now,
+            "resolved life identical after roundtrip"
+        );
+    }
+
+    /// #91: EquipBest must fill BOTH ring fingers from the bag — the fits-branch
+    /// for `RING_SLOTS` is what lets loop 2 (index 8, no enum variant) accept a
+    /// ring. Revert that branch and the second finger never fills.
+    #[test]
+    fn equip_best_fills_both_ring_fingers() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xACCE_0002, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Collector".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let coral = content
+            .items
+            .iter()
+            .position(|i| i.id == "coral_ring")
+            .unwrap() as u32;
+        let ring = || Item {
+            base_idx: coral,
+            rarity: Rarity::Normal,
+            item_level: 1,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring()),
+                x: 0,
+                y: 0,
+            });
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring()),
+                x: 1,
+                y: 0,
+            });
+        }
+        let mut ev = Vec::new();
+        world.equip_best(slot, &mut ev);
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert!(
+            ch.equipment[GearSlot::RING_SLOTS[0]].is_some()
+                && ch.equipment[GearSlot::RING_SLOTS[1]].is_some(),
+            "EquipBest fills BOTH ring fingers (the fits-branch covers loop 2)"
+        );
+    }
+
+    /// #91: the LIVE stock grinder must read all 12 equipment records before it
+    /// decides a swap. `upkeep_gear` indexes `EQ + item_slot(num)*16`, and a ring
+    /// reports slot 7 — so with the old `read_equipment(EQ, 7)` records 7..11
+    /// stayed stale (worn item_level read as 0), making the grinder treat ANY
+    /// bag ring as an upgrade and DISPLACE a worn one. With both fingers full of
+    /// ilvl-10 rings, a worse ilvl-1 bag ring must never reach a finger.
+    #[test]
+    fn the_stock_grinder_reads_worn_rings_before_swapping() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xACCE_0003, &content);
+        let program = idlin_botc::template_grinder().expect("template assembles");
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Grinder".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let coral = content
+            .items
+            .iter()
+            .position(|i| i.id == "coral_ring")
+            .unwrap() as u32;
+        let ring = |ilvl: u32| Item {
+            base_idx: coral,
+            rarity: Rarity::Normal,
+            item_level: ilvl,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::RING_SLOTS[0]] = Some(ring(10));
+            ch.equipment[GearSlot::RING_SLOTS[1]] = Some(ring(10));
+            ch.inventory.clear();
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring(1)),
+                x: 0,
+                y: 0,
+            });
+        }
+        // The bug CHURNS (it would oscillate the ilvl-1 ring on and off each
+        // tick), so a final-state check could pass on an even tick — assert
+        // after EVERY tick that no finger ever holds the worse ring.
+        for t in 0..8 {
+            world.tick(&crate::TickInputs::default());
+            let Some(e) = world.zone.get(slot) else { break };
+            let Some(ch) = e.character.as_ref() else {
+                break;
+            };
+            for &r in &GearSlot::RING_SLOTS {
+                if let Some(worn) = ch.equipment[r].as_ref() {
+                    assert_ne!(
+                        worn.item_level, 1,
+                        "tick {t}: the worse ilvl-1 ring displaced a worn ring \
+                         — the grinder read a stale (unwritten) accessory record"
+                    );
+                }
+            }
+        }
+    }
+
+    /// #91: item_score must value accessory attribute rolls (STR/DEX/INT), which
+    /// feed real derived stats — else EquipBest can't rank attribute jewelry and
+    /// both rings score 0. With the weight, the STRONGER ring wins the first ring
+    /// loop EquipBest processes; revert the attribute weight and the weaker ring
+    /// (first in the bag) takes it on the tie-break.
+    #[test]
+    fn equip_best_ranks_accessories_by_their_attribute_rolls() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xACCE_0004, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Appraiser".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let coral = content
+            .items
+            .iter()
+            .position(|i| i.id == "coral_ring")
+            .unwrap() as u32;
+        let bold = content.affixes.iter().position(|a| a.id == "bold").unwrap() as u32;
+        // Two coral rings, identical but for the +STR roll.
+        let ring = |strength: i64| Item {
+            base_idx: coral,
+            rarity: Rarity::Magic,
+            item_level: 10,
+            affixes: vec![RolledAffix {
+                affix_idx: bold,
+                value: strength,
+                tier: 0,
+            }],
+            name: String::new(),
+            charges: 0,
+        };
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::RING_SLOTS[0]] = None;
+            ch.equipment[GearSlot::RING_SLOTS[1]] = None;
+            ch.inventory.clear();
+            // Weak ring FIRST so the tie-break (without the weight) would pick it.
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring(4)),
+                x: 0,
+                y: 0,
+            });
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring(24)),
+                x: 1,
+                y: 0,
+            });
+        }
+        let mut ev = Vec::new();
+        world.equip_best(slot, &mut ev);
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        let worn_str = ch.equipment[GearSlot::RING_SLOTS[0]]
+            .as_ref()
+            .expect("first ring loop is filled")
+            .affixes[0]
+            .value;
+        assert_eq!(
+            worn_str, 24,
+            "EquipBest put the higher-STR ring in the first loop (item_score values attributes)"
+        );
+    }
+
     /// #63: move_item must reject out-of-grid bot coordinates with -1, never
     /// overflow `x + w` (debug panic / release wrap). The x=255 case panics in
     /// debug if the u16-widened bounds check is reverted — so this test pins it.
