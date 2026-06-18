@@ -225,10 +225,12 @@ pub enum GearSlot {
     Belt,
     /// Accessory: amulet. Affixes only.
     Amulet,
+    /// Hand armour. Like helm/chest/boots: an armour base plus affixes.
+    Gloves,
 }
 
 impl GearSlot {
-    pub const COUNT: usize = 11;
+    pub const COUNT: usize = 12;
 
     /// The equipment-array indices this slot occupies — the single source of
     /// truth for slot↔index mapping. Flasks and rings each own TWO loops; every
@@ -246,6 +248,7 @@ impl GearSlot {
             GearSlot::Ring => &Self::RING_SLOTS,
             GearSlot::Belt => &[9],
             GearSlot::Amulet => &[10],
+            GearSlot::Gloves => &[11],
         }
     }
 

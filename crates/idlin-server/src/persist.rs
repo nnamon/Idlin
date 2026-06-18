@@ -41,8 +41,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v3 (#63): the world and its pending arrivals now share ONE file — the
 /// snapshot payload is `(World, Vec<CharacterBundle>)` instead of a bare
 /// `World` with a sidecar `pending.snap` — so a torn pair is impossible.
-/// v4 (#91): the equipment array grew 7 → 11 (accessory slots — 2 rings, a
-/// belt, an amulet), so `Character` serializes four more `Option<Item>`.
+/// v4 (#91): the equipment array grew 7 → 12 — accessory slots (2 rings, a
+/// belt, an amulet) plus a gloves slot — so `Character` serializes five more
+/// `Option<Item>`.
 pub const SNAPSHOT_FORMAT_VERSION: u32 = 4;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so

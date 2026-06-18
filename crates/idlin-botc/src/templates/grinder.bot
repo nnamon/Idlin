@@ -81,11 +81,12 @@ fn socket_into(node, gem_num) {
 // (record: slot, base_num/-1, rarity, item_level). One equip per tick: a swap
 // shifts the bag, so we stop and re-scan next tick.
 fn upkeep_gear() {
-    read_equipment(EQ, 11);                     // ALL gear slots, incl. the
+    read_equipment(EQ, 12);                     // ALL gear slots, incl. the
                                                 // accessories (rings 7/8, belt 9,
-                                                // amulet 10) — item_slot returns
-                                                // those, so records 7..10 must be
-                                                // written or `EQ + s*16` reads stale.
+                                                // amulet 10) and gloves (11) —
+                                                // item_slot returns those, so the
+                                                // records must be written or
+                                                // `EQ + s*16` reads stale.
     var n = read_inventory(INV, 60);
     var i = 0;
     while (i < n) {

@@ -51,7 +51,7 @@ const NAME = "Brakka";
 const inspectPanel: Fixture = {
   kind: "overlay",
   label:
-    "Focus panel: full inspect sheet for a lv42 marauder with a two-handed weapon (offhand mirrored, dimmed) + accessories (2 rings, belt, amulet)",
+    "Focus panel: full inspect sheet for a lv42 marauder with a two-handed weapon (offhand mirrored, dimmed) + accessories (2 rings, belt, amulet) + gloves",
   status: LIVE_STATUS,
   messages: [
     zoneSnapshot({
@@ -103,6 +103,7 @@ const inspectPanel: Fixture = {
           gear("Ring 2", "Coral Band", 2),
           gear("Belt", "Corded Belt", 1),
           gear("Amulet", "Tidal Charm", 2),
+          gear("Gloves", "Kelp Grips", 1),
         ],
         inventory: [
           { name: "Quicksilver Flask", rarity: 0, x: 0, y: 0, w: 1, h: 2 },

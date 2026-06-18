@@ -3151,10 +3151,11 @@ mod tests {
         assert!(off.1.is_some(), "the dimmed offhand mirrors the weapon");
     }
 
-    /// #91: the accessory slots — 2 rings (two fingers, the Flask precedent),
-    /// a belt, an amulet — accept their items, the second ring lands on the
-    /// OTHER finger (never displacing the first), their affixes fold into the
-    /// resolved sheet, and the grown 11-slot array survives a v4 roundtrip.
+    /// #91: the accessory + gloves slots — 2 rings (two fingers, the Flask
+    /// precedent), a belt, an amulet, gloves — accept their items, the second
+    /// ring lands on the OTHER finger (never displacing the first), their affixes
+    /// fold into the resolved sheet, and the grown 12-slot array survives a v4
+    /// roundtrip.
     #[test]
     fn accessories_occupy_their_own_slots_and_fold_affixes() {
         use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
@@ -3256,10 +3257,11 @@ mod tests {
             "two rings, two fingers — the 2nd never displaces the 1st"
         );
 
-        // Belt + amulet are single 1:1 slots.
+        // Belt, amulet, and gloves are single 1:1 slots.
         for (id, gslot) in [
             ("corded_belt", GearSlot::Belt),
             ("tidal_amulet", GearSlot::Amulet),
+            ("kelp_grips", GearSlot::Gloves),
         ] {
             let i = stash(&mut world, plain(id));
             assert_eq!(world.equip(slot, i, &mut ev), 0, "{id} equips");
@@ -3274,8 +3276,8 @@ mod tests {
             "both rings' +life folded into life_max"
         );
 
-        // v4 snapshot: the grown 11-slot array (accessories and all) survives a
-        // postcard roundtrip unchanged.
+        // v4 snapshot: the grown 12-slot array (accessories, gloves, and all)
+        // survives a postcard roundtrip unchanged.
         let bytes = postcard::to_allocvec(&world).expect("serialize");
         let restored: World = postcard::from_bytes(&bytes).expect("deserialize");
         for s in [
@@ -3283,10 +3285,11 @@ mod tests {
             GearSlot::RING_SLOTS[1],
             GearSlot::Belt.idx(),
             GearSlot::Amulet.idx(),
+            GearSlot::Gloves.idx(),
         ] {
             assert!(
                 worn(&restored, s),
-                "accessory slot {s} survives the roundtrip"
+                "accessory/gloves slot {s} survives the roundtrip"
             );
         }
         assert_eq!(
@@ -3358,9 +3361,9 @@ mod tests {
         );
     }
 
-    /// #91: the LIVE stock grinder must read all 11 equipment records before it
+    /// #91: the LIVE stock grinder must read all 12 equipment records before it
     /// decides a swap. `upkeep_gear` indexes `EQ + item_slot(num)*16`, and a ring
-    /// reports slot 7 — so with the old `read_equipment(EQ, 7)` records 7..10
+    /// reports slot 7 — so with the old `read_equipment(EQ, 7)` records 7..11
     /// stayed stale (worn item_level read as 0), making the grinder treat ANY
     /// bag ring as an upgrade and DISPLACE a worn one. With both fingers full of
     /// ilvl-10 rings, a worse ilvl-1 bag ring must never reach a finger.

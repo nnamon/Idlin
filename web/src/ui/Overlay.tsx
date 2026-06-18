@@ -14,6 +14,7 @@ function bagKind(name: string, w: number, h: number): string {
   const n = name.toLowerCase();
   if (n.includes("boots") || n.includes("wader")) return "boots";
   if (n.includes("helm")) return "helm";
+  if (n.includes("glove") || n.includes("grip") || n.includes("gauntlet")) return "gloves";
   if (n.includes("vest") || n.includes("chest") || n.includes("plate")) return "chest";
   if (n.includes("flask")) return "flask";
   // Accessories BEFORE the 1×1 fallback — a ring/amulet is 1×1 and would
@@ -232,37 +233,29 @@ function SlotBox({
 }) {
   const filled = !!gear?.name;
   const color = filled ? RARITY_COLORS[gear.rarity] : "#3a2f1b";
-  const src = filled ? icons?.icon(gear.name, label.toLowerCase()) : null;
   // A two-handed weapon mirrors into the offhand slot, shown greyed.
   const dimmed = !!gear?.dimmed;
+  const kind = label.toLowerCase();
+  // Icon-only paper doll (PoE-style): the worn item's icon when filled, else a
+  // FAINT glyph of what the slot takes so an empty slot stays identifiable. The
+  // item name rides the hover title — no text crammed into the tiny cells.
+  const src = filled ? icons?.icon(gear!.name, kind) : icons?.icon(label, kind);
   return (
     <div
       className={filled ? "slot filled" : "slot"}
-      title={dimmed ? `${gear!.name} (two-handed)` : gear?.name || undefined}
+      title={dimmed ? `${gear!.name} (two-handed)` : gear?.name || label}
       style={{
         gridArea: area,
         ["--rar" as string]: color,
         opacity: dimmed ? 0.4 : undefined,
       }}
     >
-      <span className="tag">{label}</span>
       {src ? (
-        <img src={src} alt="" />
+        <img src={src} alt="" style={filled ? undefined : { opacity: 0.24 }} />
       ) : (
-        <span
-          style={{
-            fontWeight: 700,
-            fontSize: 10,
-            color: filled ? color : "#3a2f1b",
-            textAlign: "center",
-            padding: "8px 2px 0",
-            wordBreak: "break-word",
-          }}
-        >
-          {filled ? gear.name : ""}
-        </span>
+        // No icon pipeline available → a small slot label so the cell isn't blank.
+        <span className="tag">{label}</span>
       )}
-      {filled && src && <span className="name">{gear.name.split(" (")[0]}</span>}
     </div>
   );
 }
@@ -317,41 +310,40 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   return (
     <div className="panel" style={{ marginTop: 8, lineHeight: 1.5 }}>
       <Header first>Equipment</Header>
-      {/* PoE-style paper doll: weapon/offhand tall on the sides, amulet at the
-          neck, the two rings FLANKING the body, belt wide across the bottom. */}
+      {/* Faithful PoE doll on a fine 8-column square grid — each slot SPANS cells
+          to its real footprint: weapon/offhand 2×4, body 2×3, helm/gloves/boots
+          2×2, belt 2×1, flasks 1×2, rings/amulet 1×1. Helm→chest→belt share the
+          centre spine; weapon→gloves the left column, offhand→boots the right;
+          rings flank the body, and each flask tucks into the gap directly below
+          its ring; the amulet sits upper-right. */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "60px 1fr 60px",
-          gridTemplateRows: "46px 44px 50px 44px 44px",
-          gridTemplateAreas: `"weapon helm offhand" "weapon amulet offhand" "weapon chest offhand" "ringl chest ringr" "boots belt flask"`,
-          gap: 5,
+          gridTemplateColumns: "repeat(8, 1fr)",
+          gridTemplateRows: "repeat(6, 30px)",
+          gridTemplateAreas: `
+            "weapon weapon .      helm  helm  .      offhand offhand"
+            "weapon weapon .      helm  helm  amulet offhand offhand"
+            "weapon weapon .      chest chest .      offhand offhand"
+            "weapon weapon ringl  chest chest ringr  offhand offhand"
+            "gloves gloves flaska chest chest flaskb boots   boots"
+            "gloves gloves flaska belt  belt  flaskb boots   boots"`,
+          gap: 4,
           marginBottom: 2,
         }}
       >
         <SlotBox area="weapon" label="Weapon" gear={bySlot.get("weapon")} icons={icons} />
         <SlotBox area="helm" label="Helm" gear={bySlot.get("helm")} icons={icons} />
+        <SlotBox area="amulet" label="Amulet" gear={bySlot.get("amulet")} icons={icons} />
         <SlotBox area="offhand" label="Offhand" gear={bySlot.get("offhand")} icons={icons} />
-        {/* Amulet: a small slot at the neck, centered in the wide column. */}
-        <div style={{ gridArea: "amulet", display: "flex", justifyContent: "center" }}>
-          <div style={{ width: 56, display: "grid" }}>
-            <SlotBox area="auto" label="Amulet" gear={bySlot.get("amulet")} icons={icons} />
-          </div>
-        </div>
-        <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
-        {/* Rings flank the body, left and right. */}
         <SlotBox area="ringl" label="Ring" gear={bySlot.get("ring")} icons={icons} />
+        <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
         <SlotBox area="ringr" label="Ring" gear={bySlot.get("ring 2")} icons={icons} />
-        <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
+        <SlotBox area="gloves" label="Gloves" gear={bySlot.get("gloves")} icons={icons} />
         <SlotBox area="belt" label="Belt" gear={bySlot.get("belt")} icons={icons} />
-        <div style={{ gridArea: "flask", display: "flex", gap: 4 }}>
-          <div style={{ flex: 1, display: "grid" }}>
-            <SlotBox area="auto" label="Flask" gear={bySlot.get("flask")} icons={icons} />
-          </div>
-          <div style={{ flex: 1, display: "grid" }}>
-            <SlotBox area="auto" label="Flask" gear={bySlot.get("flask 2")} icons={icons} />
-          </div>
-        </div>
+        <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
+        <SlotBox area="flaska" label="Flask" gear={bySlot.get("flask")} icons={icons} />
+        <SlotBox area="flaskb" label="Flask" gear={bySlot.get("flask 2")} icons={icons} />
       </div>
       <Header>Bag</Header>
       <BagGrid sheet={sheet} icons={icons} />
