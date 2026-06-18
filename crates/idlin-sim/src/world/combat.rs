@@ -3432,6 +3432,84 @@ mod tests {
         }
     }
 
+    /// #91: item_score must value accessory attribute rolls (STR/DEX/INT), which
+    /// feed real derived stats — else EquipBest can't rank attribute jewelry and
+    /// both rings score 0. With the weight, the STRONGER ring wins the first ring
+    /// loop EquipBest processes; revert the attribute weight and the weaker ring
+    /// (first in the bag) takes it on the tie-break.
+    #[test]
+    fn equip_best_ranks_accessories_by_their_attribute_rolls() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xACCE_0004, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Appraiser".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let coral = content
+            .items
+            .iter()
+            .position(|i| i.id == "coral_ring")
+            .unwrap() as u32;
+        let bold = content.affixes.iter().position(|a| a.id == "bold").unwrap() as u32;
+        // Two coral rings, identical but for the +STR roll.
+        let ring = |strength: i64| Item {
+            base_idx: coral,
+            rarity: Rarity::Magic,
+            item_level: 10,
+            affixes: vec![RolledAffix {
+                affix_idx: bold,
+                value: strength,
+                tier: 0,
+            }],
+            name: String::new(),
+            charges: 0,
+        };
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::RING_SLOTS[0]] = None;
+            ch.equipment[GearSlot::RING_SLOTS[1]] = None;
+            ch.inventory.clear();
+            // Weak ring FIRST so the tie-break (without the weight) would pick it.
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring(4)),
+                x: 0,
+                y: 0,
+            });
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(ring(24)),
+                x: 1,
+                y: 0,
+            });
+        }
+        let mut ev = Vec::new();
+        world.equip_best(slot, &mut ev);
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        let worn_str = ch.equipment[GearSlot::RING_SLOTS[0]]
+            .as_ref()
+            .expect("first ring loop is filled")
+            .affixes[0]
+            .value;
+        assert_eq!(
+            worn_str, 24,
+            "EquipBest put the higher-STR ring in the first loop (item_score values attributes)"
+        );
+    }
+
     /// #63: move_item must reject out-of-grid bot coordinates with -1, never
     /// overflow `x + w` (debug panic / release wrap). The x=255 case panics in
     /// debug if the u16-widened bounds check is reverted — so this test pins it.

@@ -317,12 +317,14 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   return (
     <div className="panel" style={{ marginTop: 8, lineHeight: 1.5 }}>
       <Header first>Equipment</Header>
+      {/* PoE-style paper doll: weapon/offhand tall on the sides, amulet at the
+          neck, the two rings FLANKING the body, belt wide across the bottom. */}
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "60px 1fr 60px",
-          gridTemplateRows: "46px 62px 40px 40px",
-          gridTemplateAreas: `"weapon helm offhand" "weapon chest offhand" "weapon boots flask" "acc acc acc"`,
+          gridTemplateRows: "46px 44px 50px 44px 44px",
+          gridTemplateAreas: `"weapon helm offhand" "weapon amulet offhand" "weapon chest offhand" "ringl chest ringr" "boots belt flask"`,
           gap: 5,
           marginBottom: 2,
         }}
@@ -330,29 +332,24 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         <SlotBox area="weapon" label="Weapon" gear={bySlot.get("weapon")} icons={icons} />
         <SlotBox area="helm" label="Helm" gear={bySlot.get("helm")} icons={icons} />
         <SlotBox area="offhand" label="Offhand" gear={bySlot.get("offhand")} icons={icons} />
+        {/* Amulet: a small slot at the neck, centered in the wide column. */}
+        <div style={{ gridArea: "amulet", display: "flex", justifyContent: "center" }}>
+          <div style={{ width: 56, display: "grid" }}>
+            <SlotBox area="auto" label="Amulet" gear={bySlot.get("amulet")} icons={icons} />
+          </div>
+        </div>
         <SlotBox area="chest" label="Chest" gear={bySlot.get("chest")} icons={icons} />
+        {/* Rings flank the body, left and right. */}
+        <SlotBox area="ringl" label="Ring" gear={bySlot.get("ring")} icons={icons} />
+        <SlotBox area="ringr" label="Ring" gear={bySlot.get("ring 2")} icons={icons} />
         <SlotBox area="boots" label="Boots" gear={bySlot.get("boots")} icons={icons} />
+        <SlotBox area="belt" label="Belt" gear={bySlot.get("belt")} icons={icons} />
         <div style={{ gridArea: "flask", display: "flex", gap: 4 }}>
           <div style={{ flex: 1, display: "grid" }}>
             <SlotBox area="auto" label="Flask" gear={bySlot.get("flask")} icons={icons} />
           </div>
           <div style={{ flex: 1, display: "grid" }}>
             <SlotBox area="auto" label="Flask" gear={bySlot.get("flask 2")} icons={icons} />
-          </div>
-        </div>
-        {/* Accessories — affix-only slots (2 rings, amulet, belt), no 3D mesh. */}
-        <div style={{ gridArea: "acc", display: "flex", gap: 4 }}>
-          <div style={{ flex: 1, display: "grid" }}>
-            <SlotBox area="auto" label="Ring" gear={bySlot.get("ring")} icons={icons} />
-          </div>
-          <div style={{ flex: 1, display: "grid" }}>
-            <SlotBox area="auto" label="Ring" gear={bySlot.get("ring 2")} icons={icons} />
-          </div>
-          <div style={{ flex: 1, display: "grid" }}>
-            <SlotBox area="auto" label="Amulet" gear={bySlot.get("amulet")} icons={icons} />
-          </div>
-          <div style={{ flex: 1, display: "grid" }}>
-            <SlotBox area="auto" label="Belt" gear={bySlot.get("belt")} icons={icons} />
           </div>
         </div>
       </div>

@@ -230,25 +230,32 @@ pub enum GearSlot {
 impl GearSlot {
     pub const COUNT: usize = 11;
 
-    pub fn idx(self) -> usize {
-        // Indices are append-only — existing slots (0..=6) keep their numbers so
-        // a slot growth never re-homes worn gear. Index 6 is the second flask
-        // loop and index 8 the second ring loop (no enum variant — the SLOTS
-        // arrays below own the second loop, the Flask/Ring precedent).
+    /// The equipment-array indices this slot occupies — the single source of
+    /// truth for slot↔index mapping. Flasks and rings each own TWO loops; every
+    /// other slot is one index. Indices are append-only (existing slots keep
+    /// 0..=6 so a slot growth never re-homes worn gear); index 6 is the 2nd
+    /// flask loop and index 8 the 2nd ring loop, owned here with no enum variant.
+    pub fn loops(self) -> &'static [usize] {
         match self {
-            GearSlot::Weapon => 0,
-            GearSlot::Offhand => 1,
-            GearSlot::Helm => 2,
-            GearSlot::Chest => 3,
-            GearSlot::Boots => 4,
-            GearSlot::Flask => 5,
-            GearSlot::Ring => 7,
-            GearSlot::Belt => 9,
-            GearSlot::Amulet => 10,
+            GearSlot::Weapon => &[0],
+            GearSlot::Offhand => &[1],
+            GearSlot::Helm => &[2],
+            GearSlot::Chest => &[3],
+            GearSlot::Boots => &[4],
+            GearSlot::Flask => &Self::FLASK_SLOTS,
+            GearSlot::Ring => &Self::RING_SLOTS,
+            GearSlot::Belt => &[9],
+            GearSlot::Amulet => &[10],
         }
     }
 
-    /// Equipment indices that accept flask items (two belt loops).
+    /// The slot's PRIMARY equipment index (the first loop). A single-target
+    /// equip lands on the first FREE loop, falling back to this.
+    pub fn idx(self) -> usize {
+        self.loops()[0]
+    }
+
+    /// Equipment indices that accept flask items (two flask loops).
     pub const FLASK_SLOTS: [usize; 2] = [5, 6];
     /// Equipment indices that accept rings (two fingers), like flasks.
     pub const RING_SLOTS: [usize; 2] = [7, 8];
