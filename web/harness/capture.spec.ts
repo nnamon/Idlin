@@ -55,7 +55,10 @@ for (const fx of FIXTURES) {
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);
     }
-    const buf = await target.screenshot({ path: join(SHOTS_DIR, `${fx.name}.png`) });
+    const buf = await target.screenshot({
+      path: join(SHOTS_DIR, `${fx.name}.png`),
+      animations: "disabled", // freeze CSS auto-scroll to its first frame
+    });
     if (fx.kind === "scene") {
       // Non-vacuous for a canvas: a black/cleared frame compresses tiny, so a
       // failed render (assets missing, GL lost) trips this. Eyeball for real.
@@ -71,7 +74,7 @@ for (const fx of FIXTURES) {
     // Math.random()/wall-clock value, an unseeded source) reaches the output.
     const shoot = async () => {
       const { ctx, page } = await loadFixture(browser, fx.name);
-      const buf = await shotTarget(page, fx.kind).screenshot();
+      const buf = await shotTarget(page, fx.kind).screenshot({ animations: "disabled" });
       await ctx.close();
       return buf;
     };
@@ -99,3 +102,75 @@ for (const fx of FIXTURES) {
     });
   }
 }
+
+test("skill-overflow: the skills panel is pinned to its viewport ratio and clips overflow", async ({
+  browser,
+}) => {
+  // Many socketed skills must NOT stretch the column off-screen: the box is
+  // capped at 50vh of an 800px viewport (~400px), not the full content height.
+  const { ctx, page } = await loadFixture(browser, "skill-overflow");
+  const box = page.locator(".autoscroll").first();
+  const h = (await box.boundingBox())!.height;
+  expect(h).toBeLessThanOrEqual(410);
+  // ...and the content genuinely overflows it, so the cap is doing real work
+  // (a regression dropping `max-height` would let the box grow to fit, failing
+  // the bound above only if there's real overflow to clip).
+  const clipped = await box.evaluate(
+    (el) => (el.firstElementChild as HTMLElement).scrollHeight > el.clientHeight + 8,
+  );
+  expect(clipped).toBe(true);
+  await ctx.close();
+});
+
+test("inspect-panel: a few-skill loadout fits the panel WITHOUT clipping", async ({ browser }) => {
+  // The common case (4 skills) must not be clipped by the cap — only genuinely
+  // overflowing builds (skill-overflow) clip. A cap set too small would clip
+  // these four; this fails if so.
+  const { ctx, page } = await loadFixture(browser, "inspect-panel");
+  const overflows = await page
+    .locator(".autoscroll")
+    .first()
+    .evaluate((el) => (el.firstElementChild as HTMLElement).scrollHeight > el.clientHeight + 2);
+  expect(overflows).toBe(false);
+  await ctx.close();
+});
+
+test("the skills auto-scroll actually moves when motion is allowed, and is off under reduced-motion", async ({
+  browser,
+}) => {
+  // Proves the capture's determinism is real WORK, not luck: with motion
+  // allowed the overflowing box's transform MUST change over time (the keyframe
+  // runs), and under the reduced-motion the captures use the animation resolves
+  // to none. Checking animation-name alone is too weak — Chromium reports the
+  // name even when no @keyframes match — so the motion half watches the
+  // transform actually move; delete @keyframes and it stops (timeout → fail).
+  const sel = ".autoscroll.scrolling .autoscroll-inner";
+
+  const motion = await browser.newContext({ ...CONTEXT, reducedMotion: "no-preference" });
+  const mp = await motion.newPage();
+  await mp.goto(`/harness/fixture.html?fixture=skill-overflow`);
+  await mp.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+  const t0 = await mp
+    .locator(sel)
+    .first()
+    .evaluate((el) => getComputedStyle(el).transform);
+  await mp.waitForFunction(
+    (start) => {
+      const el = document.querySelector(".autoscroll.scrolling .autoscroll-inner");
+      return !!el && getComputedStyle(el).transform !== start;
+    },
+    t0,
+    { timeout: 6000 },
+  );
+  await motion.close();
+
+  const { ctx, page } = await loadFixture(browser, "skill-overflow"); // CONTEXT = reduced-motion
+  const reducedName = await page
+    .locator(sel)
+    .first()
+    .evaluate((el) => getComputedStyle(el).animationName);
+  expect(reducedName).toBe("none");
+  await ctx.close();
+});

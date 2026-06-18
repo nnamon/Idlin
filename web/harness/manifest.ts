@@ -26,11 +26,27 @@ export const FIXTURES: FixtureMeta[] = [
   {
     name: "inspect-panel",
     kind: "overlay",
-    expect: ["Brakka", "level 42", "Rusted Cleaver", "Heavy Swing"],
+    expect: [
+      "Brakka",
+      "level 42",
+      "Rusted Cleaver",
+      "Heavy Swing",
+      "DPS",
+      // The adaptive non-DPS headlines — the maintainer's "not just DPS" point.
+      "Buff 8s",
+      "DoT 48/s",
+    ],
   },
   {
     name: "scene-shore",
     kind: "scene",
     minBytes: 50_000,
+  },
+  {
+    // All nine skills are in the DOM (clipped, not absent) — the first and last
+    // prove the full list rendered; the bounded-box test proves it's clipped.
+    name: "skill-overflow",
+    kind: "overlay",
+    expect: ["Cleave", "Decoy", "DPS"],
   },
 ];

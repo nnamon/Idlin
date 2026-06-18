@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
+import type { SkillStat } from "../gen/SkillStat";
 import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore, EntityRender } from "../world/store";
@@ -178,6 +179,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           )}
         </div>
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
+        {sheet && <ObolsPanel sheet={sheet} />}
         {/* phones hide the left column; the drawer carries the numbers */}
         {sheet && (
           <div className="mobile-only">
@@ -340,6 +342,120 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   );
 }
 
+/**
+ * A panel region pinned to a fraction of the viewport (`maxVh`) that auto-
+ * scrolls its contents slowly when they overflow — so a tall list (many
+ * socketed skills, later the debug console) can never push the rest of the HUD
+ * off-screen, and the NON-interactive broadcast still cycles everything into
+ * view over time.
+ *
+ * Determinism: the box bound (`max-height` + `overflow: hidden` + the edge
+ * fade) is pure static CSS. The scroll MOTION is a CSS animation the capture
+ * harness freezes — it's disabled under `prefers-reduced-motion: reduce` (which
+ * the harness emulates) and frozen by `screenshot({ animations: "disabled" })`,
+ * so the measured scroll distance only ever feeds the (frozen) animation,
+ * never the captured pixels.
+ */
+function AutoScroll({ maxVh, children }: { maxVh: number; children: React.ReactNode }) {
+  const view = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const v = view.current;
+      const i = inner.current;
+      if (v && i) setOverflow(Math.max(0, i.scrollHeight - v.clientHeight));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (inner.current) ro.observe(inner.current);
+    if (view.current) ro.observe(view.current);
+    return () => ro.disconnect();
+  }, []);
+  const scrolling = overflow > 0;
+  const style = {
+    maxHeight: `${maxVh}vh`,
+    // One pixel/~0.1s, floored — slow and readable; only the disabled-in-capture
+    // animation reads these.
+    ["--scroll-y" as string]: `${-overflow}px`,
+    ["--scroll-dur" as string]: `${Math.max(8, Math.round(overflow / 10))}s`,
+  } as React.CSSProperties;
+  return (
+    <div ref={view} className={scrolling ? "autoscroll scrolling" : "autoscroll"} style={style}>
+      <div ref={inner} className="autoscroll-inner">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** A thin gem-XP progress bar (cyan fill; gold + full at the level cap). Used
+ *  full-width on a skill card, and compactly as a support chip's underline.
+ *  Both wrappers are spans so it's valid inside a chip `<span>` too. */
+function XpBar({ xp, xpNext, className = "xp-bar" }: { xp: number; xpNext: number; className?: string }) {
+  const maxed = xpNext <= 0;
+  const pct = maxed ? 100 : Math.max(0, Math.min(100, Math.round((xp / xpNext) * 100)));
+  return (
+    <span className={maxed ? `${className} maxed` : className} title={maxed ? "max level" : `${xp} / ${xpNext} xp`}>
+      <span style={{ width: `${pct}%` }} />
+    </span>
+  );
+}
+
+/** One socketed skill's computed readout. DPS leads for damage skills; a DoT,
+ *  buff, or debuff skill shows its own pertinent number instead of a
+ *  misleading "0 DPS". All numbers come from the sim (see `SkillStat`). */
+function SkillCard({ skill }: { skill: SkillStat }) {
+  // The headline metric, chosen by what the skill actually does.
+  const head =
+    skill.dps > 0
+      ? { k: "DPS", v: String(skill.dps) }
+      : skill.dot_per_sec > 0
+        ? { k: "DoT", v: `${skill.dot_per_sec}/s · ${Math.round(skill.dot_duration_ticks / TICK_HZ)}s` }
+        : skill.buff_duration_ticks > 0
+          ? { k: "Buff", v: `${Math.round(skill.buff_duration_ticks / TICK_HZ)}s` }
+          : skill.debuff_duration_ticks > 0
+            ? { k: "Debuff", v: `${Math.round(skill.debuff_duration_ticks / TICK_HZ)}s` }
+            : { k: skill.shape, v: "" };
+  const manaPerSec = skill.use_ticks > 0 ? Math.round((skill.mana_cost * TICK_HZ) / skill.use_ticks) : 0;
+  return (
+    <div className="skill-card">
+      <div className="skill-head">
+        <span>
+          ◆ {skill.name} <span style={{ color: "#ab9d7a" }}>lv{skill.level}</span>
+        </span>
+        <span className="skill-head-metric">
+          <span style={{ color: "#ab9d7a" }}>{head.k}</span> {head.v}
+        </span>
+      </div>
+      <XpBar xp={skill.xp} xpNext={skill.xp_next} />
+      <div className="skill-meta">
+        <span>{skill.kind}</span>
+        {skill.mana_cost > 0 && (
+          <span>
+            {skill.mana_cost} mana ({manaPerSec}/s)
+          </span>
+        )}
+        {skill.crit_chance_bp > 0 && (
+          <span>
+            crit {(skill.crit_chance_bp / 100).toFixed(1)}% ×{Math.round(skill.crit_multi_bp / 100)}%
+          </span>
+        )}
+      </div>
+      {skill.supports.length > 0 && (
+        <div className="skill-supports">
+          {skill.supports.map((s, i) => (
+            <span key={i} className="chip">
+              {s.name} lv{s.level}
+              <XpBar xp={s.xp} xpNext={s.xp_next} className="chip-xp" />
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Left column: the focused idler's numbers — stats, gems, obols. */
 function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
   const stat = (label: string, value: string) => (
@@ -368,64 +484,38 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
           `+${(sheet.item_rarity_bp / 100).toFixed(0)}% / +${(sheet.item_quantity_bp / 100).toFixed(0)}%`,
         )}
       {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
-      {sheet.gems.length > 0 && (
+      {sheet.skills.length > 0 && (
         <>
-          <Header>Gems</Header>
-          {sheet.gems.map((g, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: 12.5,
-                color: "#5adfdf",
-                paddingLeft: g.support ? 12 : 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span style={{ whiteSpace: "nowrap" }}>
-                {g.support ? "↳ " : "◆ "}
-                {g.name} <span style={{ color: "#ab9d7a" }}>lv{g.level}</span>
-              </span>
-              {g.xp_next > 0 ? (
-                <span
-                  style={{
-                    flex: "0 0 44px",
-                    height: 4,
-                    background: "#2c2415",
-                    borderRadius: 2,
-                    overflow: "hidden",
-                  }}
-                  title={`${g.xp} / ${g.xp_next} xp`}
-                >
-                  <span
-                    style={{
-                      display: "block",
-                      height: "100%",
-                      width: `${Math.min(100, Math.round((g.xp / g.xp_next) * 100))}%`,
-                      background: "#5adfdf",
-                    }}
-                  />
-                </span>
-              ) : (
-                <span style={{ color: "#ffd75a", fontSize: 10.5, letterSpacing: 1 }}>MAX</span>
-              )}
-            </div>
-          ))}
-        </>
-      )}
-      {sheet.currency.length > 0 && (
-        <>
-          <Header>Obols</Header>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-            {sheet.currency.map((c, i) => (
-              <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>
-                {c.name.replace(" Obol", "")} ×{c.count}
-              </span>
+          <Header>Skills</Header>
+          {/* Pinned to ~half the viewport: a typical few-skill loadout fits;
+              a heavily-socketed build clips and auto-scrolls. The cap keeps the
+              left column (plaque + stats + this) on screen. */}
+          <AutoScroll maxVh={50}>
+            {sheet.skills.map((s, i) => (
+              <SkillCard key={i} skill={s} />
             ))}
-          </div>
+          </AutoScroll>
         </>
       )}
+    </div>
+  );
+}
+
+/** Obols (currency). Its own panel on the RIGHT, beside the gear/bag — the
+ *  left column's stats + skill cards can get tall enough to push a section
+ *  off-screen, and currency belongs with the inventory anyway. */
+function ObolsPanel({ sheet }: { sheet: CharacterSheet }) {
+  if (sheet.currency.length === 0) return null;
+  return (
+    <div className="panel" style={{ marginTop: 8 }}>
+      <Header first>Obols</Header>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+        {sheet.currency.map((c, i) => (
+          <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>
+            {c.name.replace(" Obol", "")} ×{c.count}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

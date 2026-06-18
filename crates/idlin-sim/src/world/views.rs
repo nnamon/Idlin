@@ -11,6 +11,43 @@ use idlin_content::GearSlot;
 /// offhand slot.
 pub type GearSlotRow = (&'static str, Option<(String, u8)>, bool);
 
+/// Computed readout for one socketed SKILL gem — produced by the sim's own
+/// resolution pipeline (`skill_stat_view`), so the panel can never disagree
+/// with what the executor charges and deals. `dps` leads for damage skills;
+/// the dot / buff / debuff durations carry the pertinent number for skills
+/// that deal no direct hit (a DoT, an aura, an on-hit debuff).
+pub struct SkillStatView {
+    pub name: String,
+    pub level: u32,
+    /// Gem XP into the current level, and the amount for the next (0 at cap).
+    pub xp: i64,
+    pub xp_next: i64,
+    pub is_spell: bool,
+    pub shape: &'static str,
+    /// Per-hit typed damage, post-support, pre-crit.
+    pub damage: [i64; crate::entity::DMG_COUNT],
+    /// Σdamage × average-crit factor × hits/sec; 0 when no direct hit.
+    pub dps: i64,
+    pub crit_chance_bp: i64,
+    pub crit_multi_bp: i64,
+    pub use_ticks: u32,
+    pub cooldown_ticks: u32,
+    pub mana_cost: i64,
+    /// Effective footprint in content units (weapon range / AoE mods folded).
+    pub range_cu: i32,
+    pub radius_cu: i32,
+    /// Line/corridor width in content units (0 for non-line skills).
+    pub width_cu: i32,
+    pub projectiles: u32,
+    pub pierce: u32,
+    pub dot_per_sec: i64,
+    pub dot_duration_ticks: u32,
+    pub buff_duration_ticks: u32,
+    pub debuff_duration_ticks: u32,
+    /// (name, level, xp, xp_to_next: 0 at cap) per support socketed with the skill.
+    pub supports: Vec<(String, u32, i64, i64)>,
+}
+
 /// Inspection snapshot of one character (the server maps this onto the
 /// protocol's CharacterSheet for the focus panel).
 pub struct CharacterSheetView {
@@ -42,6 +79,8 @@ pub struct CharacterSheetView {
     /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
     /// follow their skill.
     pub gems: Vec<(String, u32, i64, i64, bool)>,
+    /// Computed per-socketed-skill readout (DPS / DoT / buff / footprint).
+    pub skills: Vec<SkillStatView>,
     /// (name, count, tier) per owned obol kind (nonzero only).
     pub currency: Vec<(String, u64, u8)>,
     pub passive_allocated: u32,
@@ -128,6 +167,15 @@ impl World {
                 gems.push(gem_row(sup, true));
             }
         }
+        // Per-skill computed readout (#19), straight from the executor's own
+        // resolution helpers. Keys collected first so the per-skill borrow
+        // doesn't overlap the `self` reads inside `skill_stat_view`.
+        let slot = self.zone.slot_of(net_id)?;
+        let socket_keys: Vec<u32> = ch.sockets.keys().copied().collect();
+        let skills: Vec<SkillStatView> = socket_keys
+            .iter()
+            .filter_map(|k| self.skill_stat_view(slot, *k))
+            .collect();
         let currency = ch
             .currency
             .iter()
@@ -167,6 +215,7 @@ impl World {
             equipment,
             inventory,
             gems,
+            skills,
             currency,
             passive_allocated: ch.allocated.len() as u32,
             passive_unspent: ch.passive_points(),

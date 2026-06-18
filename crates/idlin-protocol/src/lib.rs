@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 31;
+pub const PROTO_VERSION: u32 = 33;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -332,6 +332,63 @@ pub struct GemView {
     pub support: bool,
 }
 
+/// A support gem bound to a skill (name + level + its own XP progress), nested
+/// under `SkillStat`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct SkillSupport {
+    pub name: String,
+    pub level: u32,
+    /// Gem XP into the current level, and the amount for the next (0 at cap).
+    pub xp: i32,
+    pub xp_next: i32,
+}
+
+/// Computed readout for one socketed SKILL gem — straight from the sim's own
+/// resolution pipeline, never a client reimplementation. `dps` is the headline
+/// for damage skills; the dot / buff / debuff fields carry the pertinent number
+/// for skills that deal no direct hit (a DoT, an aura, an on-hit debuff).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct SkillStat {
+    pub name: String,
+    pub level: u32,
+    /// Gem XP into the current level, and the amount for the next (0 at cap).
+    pub xp: i32,
+    pub xp_next: i32,
+    /// "attack" | "spell".
+    pub kind: String,
+    /// "target" | "nova" | "cone" | "line" | "point_aoe" | "projectile".
+    pub shape: String,
+    /// Per-hit typed damage [phys, fire, cold, lightning, chaos], post-support, pre-crit.
+    pub damage: Vec<i32>,
+    /// Damage/second: Σdamage × crit factor ÷ use-seconds. 0 when no direct hit.
+    pub dps: i32,
+    /// Effective crit chance (gem base × global increased), basis points.
+    pub crit_chance_bp: i32,
+    /// Crit multiplier, basis points (15000 = 150%).
+    pub crit_multi_bp: i32,
+    /// Effective use duration, ticks (support speed folded).
+    pub use_ticks: u32,
+    /// Extra cooldown on top of use time (specials), ticks; 0 if none.
+    pub cooldown_ticks: u32,
+    pub mana_cost: i32,
+    /// Content-unit footprint. 0 range = the weapon's range.
+    pub range_cu: i32,
+    pub radius_cu: i32,
+    /// Line/corridor width in content units (0 for non-line skills).
+    pub width_cu: i32,
+    /// Projectiles fired (1 + support extras); 0 for non-projectile skills.
+    pub projectiles: u32,
+    pub pierce: u32,
+    /// Damage-over-time per second and its duration (ticks); 0 when no DoT.
+    pub dot_per_sec: i32,
+    pub dot_duration_ticks: u32,
+    /// Self-buff duration, ticks; 0 when the skill grants no buff.
+    pub buff_duration_ticks: u32,
+    /// On-hit debuff duration, ticks; 0 when none.
+    pub debuff_duration_ticks: u32,
+    pub supports: Vec<SkillSupport>,
+}
+
 /// A tutorial gate: a rect of CELLS that blocks ground while shut.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GateView {
@@ -450,6 +507,8 @@ pub struct CharacterSheet {
     pub equipment: Vec<GearSlotView>,
     pub inventory: Vec<InvItemView>,
     pub gems: Vec<GemView>,
+    /// Computed per-socketed-skill readout (DPS / DoT / buff / footprint).
+    pub skills: Vec<SkillStat>,
     pub currency: Vec<CurrencyView>,
     pub passive_allocated: u32,
     pub passive_unspent: u32,
@@ -624,6 +683,99 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let back: S2C = serde_json::from_str(&json).unwrap();
         assert!(matches!(back, S2C::ZoneDelta { tick: 42, .. }));
+
+        // The per-skill readout (#19) survives the wire — notably `width_cu`,
+        // the newest field, and a nested support.
+        let sheet = S2C::CharacterSheet {
+            sheet: CharacterSheet {
+                id: 1,
+                name: "Brakka".into(),
+                level: 42,
+                xp: 0,
+                xp_next: 0,
+                life: 100,
+                life_max: 100,
+                mana: 0,
+                mana_max: 0,
+                es: 0,
+                es_max: 0,
+                block_bp: 0,
+                kills: 0,
+                dmg_phys: 0,
+                dmg_fire: 0,
+                dmg_cold: 0,
+                dmg_lightning: 0,
+                dmg_chaos: 0,
+                accuracy: 0,
+                evasion: 0,
+                armour: 0,
+                resist_fire_bp: 0,
+                resist_cold_bp: 0,
+                resist_lightning_bp: 0,
+                resist_chaos_bp: 0,
+                item_rarity_bp: 0,
+                item_quantity_bp: 0,
+                equipment: vec![],
+                inventory: vec![],
+                gems: vec![],
+                skills: vec![SkillStat {
+                    name: "Arc".into(),
+                    level: 5,
+                    xp: 120,
+                    xp_next: 400,
+                    kind: "spell".into(),
+                    shape: "line".into(),
+                    damage: vec![0, 0, 0, 160, 0],
+                    dps: 200,
+                    crit_chance_bp: 500,
+                    crit_multi_bp: 15000,
+                    use_ticks: 8,
+                    cooldown_ticks: 0,
+                    mana_cost: 12,
+                    range_cu: 600,
+                    radius_cu: 0,
+                    width_cu: 130,
+                    projectiles: 0,
+                    pierce: 0,
+                    dot_per_sec: 0,
+                    dot_duration_ticks: 0,
+                    buff_duration_ticks: 0,
+                    debuff_duration_ticks: 0,
+                    supports: vec![SkillSupport {
+                        name: "Added Lightning".into(),
+                        level: 3,
+                        xp: 30,
+                        xp_next: 90,
+                    }],
+                }],
+                currency: vec![],
+                passive_allocated: 0,
+                passive_unspent: 0,
+                build_len: 0,
+            },
+        };
+        let json = serde_json::to_string(&sheet).unwrap();
+        let back: S2C = serde_json::from_str(&json).unwrap();
+        let S2C::CharacterSheet { sheet } = back else {
+            panic!("expected CharacterSheet");
+        };
+        assert_eq!(sheet.skills.len(), 1);
+        assert_eq!(
+            sheet.skills[0].width_cu, 130,
+            "line width survives the wire"
+        );
+        assert_eq!(sheet.skills[0].dps, 200);
+        assert_eq!(sheet.skills[0].xp, 120, "gem xp survives the wire");
+        assert_eq!(sheet.skills[0].xp_next, 400);
+        assert_eq!(sheet.skills[0].supports[0].name, "Added Lightning");
+        assert_eq!(
+            sheet.skills[0].supports[0].xp, 30,
+            "support xp survives the wire"
+        );
+        assert_eq!(
+            sheet.skills[0].supports[0].xp_next, 90,
+            "support xp-to-next survives the wire"
+        );
     }
 
     /// Regenerates web/src/gen/. CI checks the output is committed and fresh.
