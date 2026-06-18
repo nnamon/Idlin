@@ -8,6 +8,12 @@ web/dist/
 # Runtime state (world DB, snapshots)
 /data/
 
+# Capture-harness screenshots — eyeball them locally, never commit (they're
+# review artifacts/baselines, not source; AGENTS.md §6). Attach to a PR via
+# GitHub's upload (CDN), don't bloat the repo with binaries.
+web/harness/shots/
+docs/harness/
+
 # OS / editor
 .DS_Store
 *.swp
