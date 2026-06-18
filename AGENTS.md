@@ -234,6 +234,17 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
   > ✅ `gh pr edit` the body to list all 4 syscalls and the new contract, the moment the
   >    commits land.
 
+- **PR images live on GitHub's CDN, never in the repo.** To put a screenshot in a PR (or
+  issue) description, attach it through GitHub's upload — drag-drop or paste into the web
+  description editor — which hosts it under `github.com/user-attachments/…` and never touches
+  git. **Never `git add` a PNG to embed it via a `blob/<sha>/…?raw=true` link, and never
+  commit capture shots as "review artifacts"** — that bloats the repo with binaries. Shots are
+  gitignored, eyeball-only (§6). If you can't attach (no web UI in reach), describe the change
+  or let the reviewer pull the branch and run `pnpm -C web capture` — don't commit pixels.
+
+  > ❌ Committed `docs/harness/inspect-panel.png` so the PR body could link it with `?raw=true`.
+  > ✅ Dragged the PNG into the PR description → hosted on GitHub's CDN; the repo stays binary-free.
+
 - **Standing docs state the present, not the process.** AGENTS.md, READMEs, and design
   docs describe what the codebase **is** and how to use it — never the phasing/order it was
   built in. Process narrative (build sequencing, "Track 1/2", "now exists / to-be-built",
@@ -330,3 +341,4 @@ it plus the `.bot` consts and the docs; CI gates drift on all three.
 - Don't call a UI change done on a typecheck; deterministic capture + sign-off or it's unverified.
 - Don't whack-a-mole a recurring class of finding; fix the chokepoint.
 - Don't put dev phasing/process ("Track 1/2", "to-be-built", PR# as narrative) in standing docs — that belongs in commits/PRs/issues.
+- Don't commit screenshots/PNGs to embed in a PR — attach via GitHub's CDN upload; capture shots stay gitignored.
