@@ -413,6 +413,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 let reply = match serde_json::from_str::<C2S>(&text) {
                     Ok(C2S::Hello { proto_version, watch, .. }) => {
                         if proto_version != PROTO_VERSION {
+                            // Loud, because a silent reject is the "viewer shows
+                            // nothing" footgun (#51): a stale server vs a fresh
+                            // client after a PROTO bump. `just redeploy` prevents
+                            // it; this makes a missed redeploy obvious in the log.
+                            warn!(
+                                "rejected client: protocol mismatch (server v{PROTO_VERSION}, \
+                                 client v{proto_version}) — redeploy the server (`just redeploy`)"
+                            );
                             S2C::Error {
                                 code: 1,
                                 msg: format!(
