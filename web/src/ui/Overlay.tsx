@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { SkillStat } from "../gen/SkillStat";
-import type { FocusQueueEntry } from "../gen/FocusQueueEntry";
 import type { NetClient, NetStatus } from "../net/client";
-import type { WorldStore, EntityRender } from "../world/store";
+import type { WorldStore } from "../world/store";
 import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
 import "./overlay.css";
 
@@ -30,6 +29,74 @@ function bagKind(name: string, w: number, h: number): string {
 /** Section header: the engraved small-caps rule used across every panel. */
 function Header({ children, first }: { children: React.ReactNode; first?: boolean }) {
   return <div className={first ? "hdr first" : "hdr"}>{children}</div>;
+}
+
+/** A Diablo-style HUD orb whose liquid level fills to the pool's percent — life
+ *  (red, bottom-left) and mana (blue, bottom-right). The orbs are pre-composited
+ *  from the CC0 "Health Orb" (v1.0) layers by itsmars (dark-glass sphere, fill,
+ *  shadow, highlight, ornate frame — see web/public/assets/README.md): the empty
+ *  dark orb is the base, the filled orb is clipped over it to the pool pct. The
+ *  value rides small and low so the orb reads first. Pure from props → capture-
+ *  stable. */
+function Globe({
+  kind,
+  cur,
+  max,
+  es = 0,
+  esMax = 0,
+  reserved = 0,
+}: {
+  kind: "life" | "mana";
+  cur: number;
+  max: number;
+  es?: number;
+  esMax?: number;
+  reserved?: number;
+}) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (cur * 100) / max)) : 0;
+  const esPct = esMax > 0 ? Math.max(0, Math.min(100, (es * 100) / esMax)) : 0;
+  const resPct = max > 0 ? Math.max(0, Math.min(100, (reserved * 100) / max)) : 0;
+  const label = kind === "life" ? "Life" : "Mana";
+  // Clamp the displayed numbers to >= 0: an overkilled idler's life goes negative
+  // in the sim, but the readout should read 0 (the fill already clamps).
+  const showCur = Math.max(0, cur);
+  const showEs = Math.max(0, es);
+  const showRes = Math.max(0, reserved);
+  const title =
+    (esMax > 0
+      ? `${label} ${showCur} / ${max} · ES ${showEs} / ${esMax}`
+      : `${label} ${showCur} / ${max}`) + (reserved > 0 ? ` · ${showRes} reserved` : "");
+  // Stacked readout on the glass: pool, then ES (life only), then reserved.
+  const lines = [`${label}: ${showCur}/${max}`];
+  if (kind === "life" && esMax > 0) lines.push(`ES: ${showEs}/${esMax}`);
+  if (reserved > 0) lines.push(`Reserved: ${showRes}`);
+  return (
+    <div className={`globe globe-${kind}`} title={title}>
+      {/* layers, back→front: stone frame → liquid (clipped to the pool level from
+          the bottom) → reserved gravel (granite band from the TOP) → energy-shield
+          (light-blue right semicircle, over the gravel) → glass sheen → value */}
+      <img className="globe-base" src="/assets/ui/orb-empty.png" alt="" />
+      <div className="globe-fill" style={{ height: `${pct}%` }}>
+        <img src={`/assets/ui/orb-${kind}-fill.png`} alt="" />
+      </div>
+      {reserved > 0 && (
+        <div className="globe-reserved" style={{ height: `${resPct}%` }}>
+          <img src="/assets/ui/orb-reserved.png" alt="" />
+        </div>
+      )}
+      {kind === "life" && esMax > 0 && (
+        <div className="globe-fill globe-es-fill" style={{ height: `${esPct}%` }}>
+          <img src="/assets/ui/orb-es-fill.png" alt="" />
+        </div>
+      )}
+      <img className="globe-glass" src="/assets/ui/orb-glass.png" alt="" />
+      <div className="globe-val">
+        {lines.map((l, i) => (
+          <div key={i}>{l}</div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
@@ -77,12 +144,17 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
   const chars = store
     .characters()
     .sort((a, b) => b.state.level - a.state.level || b.state.kills - a.state.kills);
-  // Focused row first, then everyone in the order the rotation will
-  // visit them, numbered from 1.
-  let queuePos = 0;
-  const queueRows = [...store.focusQueue]
-    .sort((a, b) => Number(b.focused) - Number(a.focused))
-    .map((q) => <QueueRow key={q.name} q={q} pos={q.focused ? null : ++queuePos} />);
+  // The rotation, compacted into a carousel under the focus panel: the global
+  // focus queue when featured (the order the director will visit), else the
+  // local roster. The current idler is the centre; neighbours flank it.
+  const rosterNames =
+    store.focusQueue.length > 0
+      ? store.focusQueue.map((q) => q.name)
+      : chars.map((c) => c.state.name);
+  const rosterIdx =
+    store.focusQueue.length > 0
+      ? store.focusQueue.findIndex((q) => q.focused)
+      : chars.findIndex((c) => c.state.id === focusId);
   const now = performance.now();
   const ticker = store.ticker.filter((t) => now - t.at < 14000).slice(-8);
 
@@ -163,29 +235,20 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
             <div style={{ fontSize: 12.5, color: "#ab9d7a" }}>
               {focused.state.kills} kills · {focused.state.items} items
             </div>
+            {/* the idler rotation, folded into a compact carousel */}
+            <FocusCarousel names={rosterNames} current={rosterIdx} />
           </div>
         )}
-        <div className="panel">
-          {store.focusQueue.length > 0 ? (
-            // The featured feed carries every idler everywhere, in the
-            // order the director's rotation will visit them.
-            <>
-              <Header first>Idlers · Focus Queue</Header>
-              {queueRows}
-            </>
-          ) : (
-            // Watch feeds see one world: the local roster.
-            <>
-              <Header first>Idlers</Header>
-              {chars.map((c) => (
-                <LeaderRow key={c.state.id} c={c} focused={c.state.id === focusId} />
-              ))}
-              {chars.length === 0 && <div style={{ color: "#8d8164" }}>none yet</div>}
-            </>
-          )}
-        </div>
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
-        {sheet && <ObolsPanel sheet={sheet} />}
+        {/* bag + obols share one slot, cycling while the idler is on screen */}
+        {sheet && (
+          <CycleDeck
+            faces={[
+              <BagPanel key="bag" sheet={sheet} icons={store.icons} />,
+              ...(sheet.currency.length > 0 ? [<ObolsPanel key="obols" sheet={sheet} />] : []),
+            ]}
+          />
+        )}
         {/* phones hide the left column; the drawer carries the numbers */}
         {sheet && (
           <div className="mobile-only">
@@ -193,6 +256,21 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
           </div>
         )}
       </div>
+
+      {/* bottom corners: ARPG life/mana globes for the focused idler */}
+      {sheet && (
+        <>
+          <Globe
+            kind="life"
+            cur={sheet.life}
+            max={sheet.life_max}
+            es={sheet.es}
+            esMax={sheet.es_max}
+            reserved={sheet.life_reserved}
+          />
+          <Globe kind="mana" cur={sheet.mana} max={sheet.mana_max} reserved={sheet.mana_reserved} />
+        </>
+      )}
 
       {/* phones: the panels live in a slide-in drawer */}
       <button className="hud-toggle" onClick={() => setDrawer((d) => !d)}>
@@ -345,10 +423,33 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
         <SlotBox area="flaska" label="Flask" gear={bySlot.get("flask")} icons={icons} />
         <SlotBox area="flaskb" label="Flask" gear={bySlot.get("flask 2")} icons={icons} />
       </div>
-      <Header>Bag</Header>
+    </div>
+  );
+}
+
+/** The bag, as its own panel so it can share space with the obols panel via the
+ *  CycleDeck. */
+function BagPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
+  return (
+    <div className="panel" style={{ marginTop: 8 }}>
+      <Header first>Bag</Header>
       <BagGrid sheet={sheet} icons={icons} />
     </div>
   );
+}
+
+/** Cycle through panels in one shared slot — the bag and obols take turns rather
+ *  than both claiming vertical room, advancing on a timer while the idler is
+ *  focused. The capture harness shoots the initial face (index 0); the timer
+ *  never fires within a (sub-second) capture, so the shot stays deterministic. */
+function CycleDeck({ faces, periodMs = 7000 }: { faces: React.ReactNode[]; periodMs?: number }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (faces.length <= 1) return;
+    const h = setInterval(() => setI((n) => (n + 1) % faces.length), periodMs);
+    return () => clearInterval(h);
+  }, [faces.length, periodMs]);
+  return <>{faces[Math.min(i, faces.length - 1)]}</>;
 }
 
 /**
@@ -479,8 +580,7 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
   return (
     <div className="panel" style={{ lineHeight: 1.5 }}>
       <Header first>Stats</Header>
-      {stat("life", `${Math.max(0, sheet.life)} / ${sheet.life_max}`)}
-      {stat("mana", `${Math.max(0, sheet.mana)} / ${sheet.mana_max}`)}
+      {/* life + mana now read off the HUD globes; energy shield stays (no orb) */}
       {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`)}
       {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`)}
       {stat("dmg p/f/c/l/ch", dmg.join("/"))}
@@ -546,53 +646,39 @@ function LifeBar({ pct, dead }: { pct: number; dead: boolean }) {
   );
 }
 
-function LeaderRow({ c, focused }: { c: EntityRender; focused: boolean }) {
+/** The idler rotation, compacted into a forward-looking carousel: one previous,
+ *  the current (bold), and the next few — dot-separated, so you see who's up.
+ *  Driven by the focus queue (the director's rotation order) or, in a watch
+ *  feed, the local roster. Wraps cyclically; never repeats past the roster size. */
+function FocusCarousel({
+  names,
+  current,
+  before = 1,
+  after = 3,
+}: {
+  names: string[];
+  current: number;
+  before?: number;
+  after?: number;
+}) {
+  if (current < 0 || names.length === 0) return null;
+  const n = names.length;
+  const at = (k: number) => names[((k % n) + n) % n];
+  // Window of distinct offsets that ALWAYS includes 0 (the current, bold): up to
+  // `before` previous and `after` next, each capped to the roster size so we never
+  // repeat — and so a single idler shows itself as current, not a dim neighbour.
+  const back = Math.min(before, n - 1);
+  const fwd = Math.min(after, n - 1 - back);
+  const offsets: number[] = [];
+  for (let off = -back; off <= fwd; off++) offsets.push(off);
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        fontSize: 13,
-        color: c.state.dead ? "#8d8164" : focused ? "#f0e6d2" : "#d2c5a3",
-      }}
-    >
-      <span>
-        {focused ? "▸ " : ""}
-        {c.state.name}
-        {c.state.dead ? " ☠" : ""}
-      </span>
-      <span style={{ color: "#b8aa87" }}>
-        lv{c.state.level} · {c.state.kills}k
-      </span>
-    </div>
-  );
-}
-
-/** One idler on the cross-world focus queue: ▸ marks the camera's hold,
- *  numbers count down to each idler's turn, ⧖ marks a focus cooldown. */
-function QueueRow({ q, pos }: { q: FocusQueueEntry; pos: number | null }) {
-  return (
-    <div style={{ fontSize: 13, opacity: q.cooldown && !q.focused ? 0.6 : 1 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          color: q.dead ? "#8d8164" : q.focused ? "#f0e6d2" : "#d2c5a3",
-        }}
-      >
-        <span>
-          <span style={{ color: "#e0b75e", display: "inline-block", width: 16 }}>
-            {q.focused ? "▸" : pos}
-          </span>
-          {q.name}
-          {q.dead ? " ☠" : ""}
-          {q.cooldown && !q.focused ? " ⧖" : ""}
-        </span>
-        <span style={{ color: "#b8aa87" }}>lv{q.level}</span>
-      </div>
-      <div style={{ color: "#8d8164", fontSize: 11, paddingLeft: 16, lineHeight: 1.25 }}>
-        {q.zone}
-      </div>
+    <div className="carousel">
+      {offsets.map((off, i) => (
+        <Fragment key={off}>
+          {i > 0 && <span className="carousel-dot">·</span>}
+          <span className={off === 0 ? "carousel-cur" : "carousel-side"}>{at(current + off)}</span>
+        </Fragment>
+      ))}
     </div>
   );
 }

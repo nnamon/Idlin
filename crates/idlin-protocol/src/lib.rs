@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 33;
+pub const PROTO_VERSION: u32 = 34;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -485,6 +485,10 @@ pub struct CharacterSheet {
     pub mana_max: i32,
     pub es: i32,
     pub es_max: i32,
+    /// Reserved life/mana — unavailable pool shown as the gravel band growing from
+    /// the TOP of the orb. 0 until reservations (auras) exist in the sim.
+    pub life_reserved: i32,
+    pub mana_reserved: i32,
     /// Basis points chance to block (0 without a shield).
     pub block_bp: i32,
     pub kills: u32,
@@ -699,6 +703,8 @@ mod tests {
                 mana_max: 0,
                 es: 0,
                 es_max: 0,
+                life_reserved: 25,
+                mana_reserved: 40,
                 block_bp: 0,
                 kills: 0,
                 dmg_phys: 0,
@@ -768,6 +774,8 @@ mod tests {
         assert_eq!(sheet.skills[0].xp, 120, "gem xp survives the wire");
         assert_eq!(sheet.skills[0].xp_next, 400);
         assert_eq!(sheet.skills[0].supports[0].name, "Added Lightning");
+        assert_eq!(sheet.life_reserved, 25, "reserved life survives the wire");
+        assert_eq!(sheet.mana_reserved, 40, "reserved mana survives the wire");
         assert_eq!(
             sheet.skills[0].supports[0].xp, 30,
             "support xp survives the wire"

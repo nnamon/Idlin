@@ -413,6 +413,10 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         mana_max: clamp_i32(v.mana_max),
         es: clamp_i32(v.es),
         es_max: clamp_i32(v.es_max),
+        // No reservation mechanic yet (combat rework) — 0 for now; the client's
+        // reserved gravel band is exercised via harness fixtures until then.
+        life_reserved: 0,
+        mana_reserved: 0,
         block_bp: clamp_i32(v.block),
         kills: v.kills.min(u32::MAX as u64) as u32,
         dmg_phys: clamp_i32(v.damage[0]),

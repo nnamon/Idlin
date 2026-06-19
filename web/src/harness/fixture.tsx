@@ -59,6 +59,11 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   // for the bundled font so text pixels are stable.
   for (let i = 0; i < 6; i++) await nextTask();
   await document.fonts.ready;
+  // Await any sprite <img> (e.g. the orb-frame) so the shot isn't raced against
+  // async image decode — otherwise the byte-stable capture flakes.
+  await Promise.all(
+    Array.from(overlay.querySelectorAll("img")).map((img) => img.decode().catch(() => {})),
+  );
 }
 
 async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promise<void> {
@@ -77,7 +82,39 @@ async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promis
   renderer.stepFrames(fixture.frames ?? 150); // settle animation deterministically
 }
 
+/** The whole game view: render the 3D scene, then mount the React HUD over it
+ *  from the SAME store — so the overlay (orbs, panels) is shot in real context. */
+async function renderFull(fixture: Extract<Fixture, { kind: "full" }>): Promise<void> {
+  Math.random = makeSeededRandom(fixture.seed);
+  const store = new WorldStore();
+  store.icons = { icon: (_name, kind) => silhouette(kind) };
+  for (const msg of fixture.messages) store.handle(msg);
+
+  const scene = document.getElementById("scene")!;
+  const renderer = new ZoneRenderer(scene, store, { capture: true, camera: fixture.camera });
+  window.__harnessRenderer = renderer;
+  await renderer.whenReady;
+  renderer.stepFrames(fixture.frames ?? 150);
+
+  const overlay = document.getElementById("overlay")!;
+  const client = stubClient(fixture.status);
+  createRoot(overlay).render(<Overlay client={client} store={store} />);
+  for (let i = 0; i < 6; i++) await nextTask();
+  await document.fonts.ready;
+  await Promise.all(
+    Array.from(overlay.querySelectorAll("img")).map((img) => img.decode().catch(() => {})),
+  );
+}
+
 async function main(): Promise<void> {
+  // Freeze the wall clock so any wall-clock-derived render is byte-stable across
+  // runs — specifically the event ticker's age-based fade (opacity = f(now - at)):
+  // both the event timestamps (set in store.handle) and the render's `now` then
+  // read the SAME constant, so the fade is fixed instead of drifting with real
+  // elapsed ms. The scene runs on its own stepped virtual clock and is already
+  // wall-clock-independent (scene-shore is byte-stable), so this is safe there.
+  performance.now = () => 1000;
+
   // Publish the registry first, so the drift check works even on the landing
   // page (no ?fixture=).
   window.__harnessRegistry = Object.keys(FIXTURES);
@@ -95,6 +132,7 @@ async function main(): Promise<void> {
   }
 
   if (fixture.kind === "scene") await renderScene(fixture);
+  else if (fixture.kind === "full") await renderFull(fixture);
   else await renderOverlay(fixture);
 
   window.__harness = { ready: true, name, label: fixture.label };

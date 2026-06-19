@@ -208,12 +208,155 @@
 }
 .hud-ticker {
   position: absolute;
+  /* the event log sits to the RIGHT of the bottom-left life globe and is height-
+     capped so it never rises past the orb's top (orb = bottom 10px + 112px tall).
+     A dimmed, slightly-rounded box keeps the coloured text legible over a bright
+     scene. Newest line at the bottom; older lines clip off the top. */
+  left: 134px;
   bottom: 14px;
-  left: 12px;
-  max-width: 460px;
+  max-width: 380px;
+  max-height: 108px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: rgba(8, 8, 12, 0.58);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  /* fade the top edge so the oldest line dissolves instead of hard-clipping. The
+     mask is on the clipping box, so the fade sits exactly at the visible cut. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+}
+/* no events yet → don't float an empty box */
+.hud-ticker:empty {
+  display: none;
 }
 .hud-toggle {
   display: none;
+}
+
+/* ---- ARPG life/mana globes: orbs in the bottom corners, fed by the focused
+   idler's pools (#89). Pre-composited CC0 orb sprites (empty base + filled orb
+   clipped to the pool pct); pure from inline height = pct, no animation, so the
+   capture is byte-stable. ---- */
+.globe {
+  position: absolute;
+  bottom: 10px;
+  width: 112px;
+  height: 112px;
+  filter: drop-shadow(0 3px 9px rgba(0, 0, 0, 0.55));
+}
+.globe-life {
+  left: 12px;
+}
+.globe-mana {
+  right: 12px;
+}
+/* the dark empty orb sprite — the base, always shown */
+.globe-base {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* the filled orb sprite, clipped from the bottom to the pool pct (height inline);
+   the image is full-size + bottom-anchored so it lines up with the base */
+.globe-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+.globe-fill img {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 112px;
+  height: 112px;
+}
+/* reserved life/mana: a granite-gravel band growing from the TOP (top-anchored
+   clip), so the orb reads as current (bottom liquid) · empty (transparent) ·
+   reserved (gravel top). Same sprite geometry as the fills, so it's aligned. */
+.globe-reserved {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  overflow: hidden;
+}
+.globe-reserved img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 112px;
+  height: 112px;
+}
+/* energy shield: a glowing light-blue RIGHT semicircle (a recoloured copy of the
+   life sprite), sitting on top of the life liquid and clipped from the bottom by
+   es/es_max exactly like the liquid. The glow tracks the clip edge at runtime. */
+.globe-es-fill {
+  filter: drop-shadow(0 0 4px rgba(140, 215, 255, 0.7));
+}
+/* the glass surface sheen — the topmost orb layer (over the ES ring), so the
+   shield reads as embedded under the glass */
+.globe-glass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* the value: small + low on the GLASS (above the stone cradle) so the orb reads
+   first, not the number */
+.globe-val {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 7.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #f0e6cc;
+  opacity: 0.9;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 3px #000;
+  pointer-events: none;
+}
+
+/* ---- focus carousel: the idler rotation, compacted under the focus panel —
+   current idler bold + centred, prev/next dimmed and dot-separated ---- */
+.carousel {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.carousel-cur {
+  font-weight: 700;
+  color: #ecdcae;
+  flex-shrink: 0;
+}
+.carousel-side {
+  color: #6f6549;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.carousel-dot {
+  color: #4e472f;
 }
 .mobile-only {
   display: none;
@@ -291,10 +434,17 @@
   .hud-right.open {
     transform: none;
   }
+  /* the bottom-corner HUD (globes + event ticker) would sit under the slide-in
+     drawer — hide it while the drawer is open so the panels stay readable; it
+     returns when the drawer closes. The toggle stays (it's the close button). */
+  .hud-right.open ~ .globe,
+  .hud-right.open ~ .hud-ticker {
+    display: none;
+  }
   .hud-toggle {
     display: block;
     position: absolute;
-    bottom: 16px;
+    bottom: 132px; /* clear of the bottom-corner globes */
     right: 14px;
     z-index: 10;
     width: 46px;
@@ -309,8 +459,11 @@
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
   }
   .hud-ticker {
-    max-width: 72vw;
-    bottom: 12px;
+    /* sits BETWEEN the two bottom-corner globes: right of the life globe, left of
+       the mana globe — so it overlaps neither on a narrow phone. */
+    left: 130px;
+    right: 128px;
+    max-width: none;
   }
   .hud-ticker > div {
     font-size: 11px !important;

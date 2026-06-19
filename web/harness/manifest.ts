@@ -20,6 +20,14 @@ export type FixtureMeta =
        *  failed render (no assets, GL context lost) fails the test. The shot
        *  is still eyeballed for real sign-off (§6). */
       minBytes: number;
+    }
+  | {
+      // 3D scene + HUD overlay together: assert BOTH the overlay text (non-vacuous
+      // HUD) and the non-blank page bytes (non-vacuous scene).
+      name: string;
+      kind: "full";
+      expect: string[];
+      minBytes: number;
     };
 
 export const FIXTURES: FixtureMeta[] = [
@@ -41,15 +49,54 @@ export const FIXTURES: FixtureMeta[] = [
     ],
   },
   {
+    // Edge cases: a lone idler renders as the current carousel item, and an
+    // overkilled (negative) life pool reads "Life: 0/1180", not a negative number.
+    name: "hud-edge",
+    kind: "overlay",
+    expect: ["Solo", "Life: 0/1180"],
+  },
+  {
     name: "scene-shore",
     kind: "scene",
     minBytes: 50_000,
   },
   {
-    // All nine skills are in the DOM (clipped, not absent) — the first and last
+    // All eight skills are in the DOM (clipped, not absent) — the first and last
     // prove the full list rendered; the bounded-box test proves it's clipped.
     name: "skill-overflow",
     kind: "overlay",
-    expect: ["Cleave", "Decoy", "DPS"],
+    expect: ["Cleave", "Power Shot", "DPS"],
+  },
+  {
+    // The life/mana globes render with the focused idler's pools — "168" is the
+    // life-orb value (low life), proving the orb bound to the sheet, not a blank.
+    name: "globes",
+    kind: "overlay",
+    expect: ["Vesh", "168"],
+  },
+  {
+    // Whole game view: HUD over the 3D scene. Assert HUD text (Brakka + a skill)
+    // AND that the full-page PNG is non-blank (scene rendered).
+    name: "full-shore",
+    kind: "full",
+    expect: ["Brakka", "Heavy Swing"],
+    minBytes: 60_000,
+  },
+  {
+    // Whole game view at extremes: low life, full ES, heavy reservation — the
+    // "Reserved: 612" line proves the reserved band/readout renders.
+    name: "full-bloodied",
+    kind: "full",
+    expect: ["Brakka", "Reserved: 612"],
+    minBytes: 60_000,
+  },
+  {
+    // Whole game view, full pools with no ES and no reservation — the life
+    // readout is just "Life: 1530/1530" (no ES/Reserved lines), proving the
+    // zero-cases drop out.
+    name: "full-fresh",
+    kind: "full",
+    expect: ["Brakka", "Life: 1530/1530"],
+    minBytes: 60_000,
   },
 ];

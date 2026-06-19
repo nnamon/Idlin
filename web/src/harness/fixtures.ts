@@ -1,4 +1,5 @@
 import type { S2C } from "../gen/S2C";
+import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { NetStatus } from "../net/client";
 import { LIVE_STATUS } from "./stubClient";
 import {
@@ -37,10 +38,37 @@ export type Fixture =
       /** Fixed camera [x,y,z, targetX,targetY,targetZ]; omit to let the director frame. */
       camera?: number[];
       messages: S2C[];
+    }
+  | {
+      // The whole game view: the 3D scene with the React HUD mounted over it,
+      // from ONE store — so the orbs/panels are seen in their real context.
+      kind: "full";
+      label: string;
+      status: NetStatus;
+      seed: number;
+      frames?: number;
+      camera?: number[];
+      messages: S2C[];
     };
 
 const FOCUS_ID = 1;
 const NAME = "Brakka";
+
+/** A FocusQueue message (the director's rotation roster) from names, marking one
+ *  as the camera's current hold — drives the focus carousel. */
+const focusQueue = (names: string[], focusedIdx: number): S2C => ({
+  type: "FocusQueue",
+  data: {
+    entries: names.map((name, i) => ({
+      name,
+      zone: "The Withered Shore",
+      level: 40,
+      dead: false,
+      focused: i === focusedIdx,
+      cooldown: false,
+    })),
+  },
+});
 
 /**
  * The focus/inspect panel, fully populated: a level-42 marauder carrying a
@@ -68,6 +96,8 @@ const inspectPanel: Fixture = {
       ],
     }),
     directorCue(FOCUS_ID, "carving the strand"),
+    focusQueue(["Kargan", NAME, "Veles", "Mirra", "Thane", "Doral", "Sable"], 1), // Brakka centre; neighbours flank
+
     characterSheet(
       sheet({
         id: FOCUS_ID,
@@ -94,10 +124,10 @@ const inspectPanel: Fixture = {
         equipment: [
           gear("Weapon", "Rusted Cleaver", 2),
           gear("Offhand", "Rusted Cleaver", 2, true), // 2H mirror — dimmed
-          gear("Helm", "Iron Helm", 1),
-          gear("Chest", "Plate Vest", 0),
-          gear("Boots", "Leather Waders", 1),
-          gear("Flask", "Crimson Flask", 0),
+          gear("Helm", "Brinescoured Helm", 1),
+          gear("Chest", "Kelp-Woven Vest", 0),
+          gear("Boots", "Wader's Boots", 1),
+          gear("Flask", "Small Life Flask", 0),
           gear("Flask 2", "", 0), // empty second flask loop
           gear("Ring", "Coral Band", 1),
           gear("Ring 2", "Coral Band", 2),
@@ -106,10 +136,10 @@ const inspectPanel: Fixture = {
           gear("Gloves", "Kelp Grips", 1),
         ],
         inventory: [
-          { name: "Quicksilver Flask", rarity: 0, x: 0, y: 0, w: 1, h: 2 },
-          { name: "Cobalt Gem", rarity: 0, x: 2, y: 0, w: 1, h: 1 },
-          { name: "Iron Ring", rarity: 1, x: 4, y: 1, w: 1, h: 1 },
-          { name: "Scroll Fragment", rarity: 0, x: 6, y: 0, w: 1, h: 1 },
+          { name: "Small Mana Flask", rarity: 0, x: 0, y: 0, w: 1, h: 2 },
+          { name: "Frost Nova", rarity: 0, x: 2, y: 0, w: 1, h: 1 }, // a skill gem (1×1)
+          { name: "Coral Band", rarity: 1, x: 4, y: 1, w: 1, h: 1 },
+          { name: "Quickening", rarity: 0, x: 6, y: 0, w: 1, h: 1 }, // a support gem (1×1)
         ],
         gems: [
           { name: "Heavy Swing", level: 12, xp: 40, xp_next: 100, support: false },
@@ -177,8 +207,9 @@ const inspectPanel: Fixture = {
           }),
         ],
         currency: [
-          { name: "Obol", count: 47, tier: 0 },
-          { name: "Mirror Shard", count: 1, tier: 3 },
+          { name: "Transmute Obol", count: 47, tier: 1 },
+          { name: "Alchemy Obol", count: 12, tier: 2 },
+          { name: "Exalted Obol", count: 1, tier: 3 },
         ],
         passive_allocated: 38,
         passive_unspent: 4,
@@ -220,7 +251,7 @@ const sceneShore: Fixture = {
         }),
         monster({
           id: 2,
-          name: "Tide Stalker",
+          name: "Bone Stalker",
           model: "stalker",
           level: 40,
           life_pct: 70,
@@ -240,7 +271,7 @@ const sceneShore: Fixture = {
  */
 const skillOverflow: Fixture = {
   kind: "overlay",
-  label: "Skills overflow: a 9-skill idler — the panel pins to its ratio and auto-scrolls",
+  label: "Skills overflow: an 8-skill idler — the panel pins to its ratio and auto-scrolls",
   status: LIVE_STATUS,
   messages: [
     zoneSnapshot({
@@ -260,14 +291,13 @@ const skillOverflow: Fixture = {
           skill({ name: "Cleave", kind: "attack", shape: "cone", level: 20, damage: [540, 0, 0, 0, 0], dps: 880, crit_chance_bp: 600, use_ticks: 7, radius_cu: 220 }),
           skill({ name: "Heavy Swing", kind: "attack", shape: "target", level: 18, xp: 70, xp_next: 140, damage: [710, 0, 0, 0, 0], dps: 1010, crit_chance_bp: 800, use_ticks: 9, range_cu: 160, supports: [{ name: "Heavier Blows", level: 12, xp: 40, xp_next: 80 }] }),
           skill({ name: "Arc", kind: "spell", shape: "line", level: 16, damage: [0, 0, 0, 300, 0], dps: 540, crit_chance_bp: 500, use_ticks: 8, range_cu: 600, width_cu: 130 }),
-          skill({ name: "Fireball", kind: "spell", shape: "projectile", level: 15, damage: [0, 420, 0, 0, 0], dps: 600, crit_chance_bp: 500, use_ticks: 8, range_cu: 900, projectiles: 3, pierce: 1 }),
+          skill({ name: "Ember Bolt", kind: "spell", shape: "projectile", level: 15, damage: [0, 420, 0, 0, 0], dps: 600, crit_chance_bp: 500, use_ticks: 8, range_cu: 900, projectiles: 3, pierce: 1 }),
           skill({ name: "War Cry", kind: "attack", shape: "nova", level: 10, mana_cost: 30, cooldown_ticks: 80, buff_duration_ticks: 120 }),
           skill({ name: "Plague Cloud", kind: "spell", shape: "point_aoe", level: 14, mana_cost: 28, radius_cu: 260, dot_per_sec: 95, dot_duration_ticks: 80 }),
           skill({ name: "Frost Nova", kind: "spell", shape: "nova", level: 12, damage: [0, 0, 180, 0, 0], dps: 220, mana_cost: 22, radius_cu: 200, debuff_duration_ticks: 30 }),
-          skill({ name: "Ground Slam", kind: "attack", shape: "cone", level: 13, damage: [480, 0, 0, 0, 0], dps: 700, use_ticks: 10, radius_cu: 240 }),
-          skill({ name: "Decoy", kind: "spell", shape: "point_aoe", level: 8, mana_cost: 18, cooldown_ticks: 120, buff_duration_ticks: 60 }),
+          skill({ name: "Power Shot", kind: "attack", shape: "projectile", level: 13, damage: [480, 0, 0, 0, 0], dps: 700, use_ticks: 10, range_cu: 800, projectiles: 1, pierce: 1 }),
         ],
-        currency: [{ name: "Obol", count: 312, tier: 0 }],
+        currency: [{ name: "Transmute Obol", count: 312, tier: 1 }],
         passive_allocated: 80,
         build_len: 88,
       }),
@@ -276,8 +306,239 @@ const skillOverflow: Fixture = {
 };
 
 /** Every fixture, keyed by the id used in `?fixture=<name>` and the shot path. */
+const GLOBE_ID = 7;
+/**
+ * The HUD life/mana globes (#89) at an extreme the near-full inspect-panel
+ * fixture can't show: a focused idler at ~14% life with an energy-shield buffer
+ * and fully drained mana — so the low-life, ES-overlay, and empty-pool fills all
+ * get a deterministic shot.
+ */
+const globes: Fixture = {
+  kind: "overlay",
+  label: "Life/mana globes — low life + energy shield + empty mana on the focused idler",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [
+        character({
+          id: GLOBE_ID,
+          name: "Vesh",
+          level: 28,
+          model: "ranger",
+          life_pct: 14,
+          kills: 96,
+          items: 3,
+        }),
+      ],
+    }),
+    directorCue(GLOBE_ID, "bleeding out"),
+    characterSheet(
+      sheet({
+        id: GLOBE_ID,
+        name: "Vesh",
+        level: 28,
+        life: 168,
+        life_max: 1180,
+        es: 90,
+        es_max: 240,
+        mana: 0,
+        mana_max: 200,
+        life_reserved: 354, // ~30% reserved → gravel band at the top
+        mana_reserved: 80, // ~40% of the mana pool reserved
+      }),
+    ),
+  ],
+};
+
+/**
+ * The whole game view: the Withered Shore scene (reusing scene-shore's world +
+ * camera) with Brakka's HUD mounted over it — orbs, equipment doll, the
+ * bag/obols cycle, stats, skills — so the orbs are seen in their real in-game
+ * context. The sheet's id/name match the focused idler (id 1, Brakka); pools at
+ * ~60/70% so the orbs read as partially filled.
+ */
+const fullShore: Fixture = {
+  kind: "full",
+  label: "Whole game view: Brakka's HUD (orbs + panels) over the Withered Shore scene",
+  status: LIVE_STATUS,
+  seed: 0x1d71c0de,
+  frames: 40,
+  camera: [31, 9, 36, 32.5, 1.2, 22.5],
+  messages: [
+    ...sceneShore.messages,
+    focusQueue(["Kargan", NAME, "Veles", "Mirra", "Thane", "Doral", "Sable"], 1),
+    // A burst of real-content events so the bottom-left ticker is populated —
+    // the whole game view includes the running event log, not just the panels.
+    {
+      type: "Events",
+      data: {
+        events: [
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Bone Stalker", level: 40 } },
+          { type: "LootDropped", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
+          { type: "ItemPickedUp", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
+          { type: "MonsterKilled", data: { killer_id: 3, killer: "Mirra", monster: "Drowned Shambler", level: 39 } },
+          { type: "LevelUp", data: { id: 4, name: "Veles", level: 41 } },
+          { type: "GemSocketed", data: { id: FOCUS_ID, owner: NAME, gem: "Cleave" } },
+          { type: "CurrencyUsed", data: { id: FOCUS_ID, owner: NAME, currency: "Alchemy Obol", item: "Kelp-Woven Vest" } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Tide Husk", level: 40 } },
+        ],
+      },
+    },
+    characterSheet(
+      sheet({
+        id: FOCUS_ID,
+        name: NAME,
+        level: 42,
+        xp: 1240,
+        xp_next: 4096,
+        life: 920,
+        life_max: 1530,
+        mana: 168,
+        mana_max: 240,
+        es: 180,
+        es_max: 300,
+        life_reserved: 306, // ~20% reserved (aura) → gravel at the top
+        mana_reserved: 60, // ~25% of mana reserved
+        kills: 318,
+        dmg_phys: 412,
+        dmg_lightning: 88,
+        accuracy: 1320,
+        evasion: 540,
+        armour: 2200,
+        resist_fire_bp: 3600,
+        resist_cold_bp: 2900,
+        resist_lightning_bp: 1200,
+        resist_chaos_bp: -600,
+        item_rarity_bp: 4200,
+        item_quantity_bp: 800,
+        equipment: [
+          gear("Weapon", "Rusted Cleaver", 2),
+          gear("Offhand", "Rusted Cleaver", 2, true),
+          gear("Helm", "Brinescoured Helm", 1),
+          gear("Chest", "Kelp-Woven Vest", 0),
+          gear("Boots", "Wader's Boots", 1),
+          gear("Flask", "Small Life Flask", 0),
+          gear("Flask 2", "", 0),
+          gear("Ring", "Coral Band", 1),
+          gear("Ring 2", "Coral Band", 2),
+          gear("Belt", "Corded Belt", 1),
+          gear("Amulet", "Tidal Charm", 2),
+          gear("Gloves", "Kelp Grips", 1),
+        ],
+        inventory: [
+          { name: "Small Mana Flask", rarity: 0, x: 0, y: 0, w: 1, h: 2 },
+          { name: "Frost Nova", rarity: 0, x: 2, y: 0, w: 1, h: 1 },
+          { name: "Coral Band", rarity: 1, x: 4, y: 1, w: 1, h: 1 },
+        ],
+        currency: [
+          { name: "Transmute Obol", count: 47, tier: 1 },
+          { name: "Alchemy Obol", count: 12, tier: 2 },
+          { name: "Exalted Obol", count: 1, tier: 3 },
+        ],
+        skills: [
+          skill({
+            name: "Heavy Swing",
+            level: 12,
+            xp: 40,
+            xp_next: 100,
+            kind: "attack",
+            shape: "target",
+            damage: [320, 0, 0, 90, 0],
+            dps: 612,
+            crit_chance_bp: 700,
+            crit_multi_bp: 15000,
+            use_ticks: 8,
+            mana_cost: 0,
+            range_cu: 160,
+          }),
+          skill({
+            name: "Arc",
+            level: 5,
+            xp: 30,
+            xp_next: 90,
+            kind: "spell",
+            shape: "line",
+            damage: [0, 0, 0, 160, 0],
+            dps: 200,
+            crit_chance_bp: 500,
+            crit_multi_bp: 15000,
+            use_ticks: 8,
+            mana_cost: 12,
+            range_cu: 600,
+            width_cu: 130,
+          }),
+        ],
+        passive_allocated: 38,
+        passive_unspent: 4,
+        build_len: 42,
+      }),
+    ),
+  ],
+};
+
+// Variant whole-game scenes: the SAME Brakka loadout as full-shore, only the
+// pools differ — so the orbs can be reviewed across life/ES/mana/reserved states
+// in real in-game context. (full-shore = mid pools.)
+const fullSheetMsg = fullShore.messages[fullShore.messages.length - 1] as Extract<
+  S2C,
+  { type: "CharacterSheet" }
+>;
+const fullVariant = (label: string, pools: Partial<CharacterSheet>): Fixture => ({
+  ...fullShore,
+  label,
+  messages: [
+    ...fullShore.messages.slice(0, -1),
+    { type: "CharacterSheet", data: { sheet: { ...fullSheetMsg.data.sheet, ...pools } } },
+  ],
+});
+// Low life, full energy shield, heavy reservation — every band at an extreme.
+const fullBloodied = fullVariant("Whole game view: low life, full ES, heavy reservation", {
+  life: 214,
+  mana: 36,
+  es: 300,
+  es_max: 300,
+  life_reserved: 612,
+  mana_reserved: 96,
+});
+// Full pools, no energy shield, no reservation — the ES ring and the ES/Reserved
+// readout lines all drop out (proves the zero-cases).
+const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservation", {
+  life: 1530,
+  mana: 240,
+  es: 0,
+  es_max: 0,
+  life_reserved: 0,
+  mana_reserved: 0,
+});
+
+// Edge cases: a lone idler (no focus queue) must show as the CURRENT carousel item
+// (bold), not a dim neighbour; and an overkilled pool (sim sends negative life)
+// must read 0 on the orb, never a negative number.
+const EDGE_ID = 9;
+const hudEdge: Fixture = {
+  kind: "overlay",
+  label: "Edge: a lone idler + an overkilled (negative) life pool that clamps to 0",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [
+        character({ id: EDGE_ID, name: "Solo", level: 30, model: "ranger", life_pct: 0, kills: 12, items: 2 }),
+      ],
+    }),
+    directorCue(EDGE_ID, "last stand"),
+    characterSheet(
+      sheet({ id: EDGE_ID, name: "Solo", level: 30, life: -25, life_max: 1180, mana: 30, mana_max: 200 }),
+    ),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
+  "hud-edge": hudEdge,
   "scene-shore": sceneShore,
   "skill-overflow": skillOverflow,
+  globes,
+  "full-shore": fullShore,
+  "full-bloodied": fullBloodied,
+  "full-fresh": fullFresh,
 };

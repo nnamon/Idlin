@@ -26,8 +26,10 @@ async function loadFixture(browser: Browser, name: string) {
 }
 
 /** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
-function shotTarget(page: Page, kind: "overlay" | "scene") {
-  return kind === "overlay" ? page.locator("#overlay") : page.locator("#scene canvas");
+function shotTarget(page: Page, kind: "overlay" | "scene" | "full") {
+  if (kind === "scene") return page.locator("#scene canvas");
+  if (kind === "full") return page.locator("body"); // 3D scene canvas + HUD overlay
+  return page.locator("#overlay");
 }
 
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
@@ -50,16 +52,28 @@ for (const fx of FIXTURES) {
   test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
     const target = shotTarget(page, fx.kind);
-    if (fx.kind === "overlay") {
-      // Non-vacuous: the authored content must actually be on screen, or a
+    if (fx.kind === "overlay" || fx.kind === "full") {
+      // Non-vacuous: the authored HUD content must actually be on screen, or a
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);
+      // No broken sprites: every overlay <img> (orb layers, slot icons) must have
+      // decoded. The harness swallows decode errors so it can't hang; this is the
+      // gate that fails if an orb layer (e.g. orb-life-fill.png) is missing/broken.
+      const brokenImgs = await page
+        .locator("#overlay img")
+        .evaluateAll((imgs) =>
+          imgs.filter((i) => {
+            const im = i as HTMLImageElement;
+            return !im.complete || im.naturalWidth === 0;
+          }).length,
+        );
+      expect(brokenImgs, "every overlay sprite decoded").toBe(0);
     }
     const buf = await target.screenshot({
       path: join(SHOTS_DIR, `${fx.name}.png`),
       animations: "disabled", // freeze CSS auto-scroll to its first frame
     });
-    if (fx.kind === "scene") {
+    if (fx.kind === "scene" || fx.kind === "full") {
       // Non-vacuous for a canvas: a black/cleared frame compresses tiny, so a
       // failed render (assets missing, GL lost) trips this. Eyeball for real.
       expect(buf.length).toBeGreaterThan(fx.minBytes);
@@ -172,5 +186,95 @@ test("the skills auto-scroll actually moves when motion is allowed, and is off u
     .first()
     .evaluate((el) => getComputedStyle(el).animationName);
   expect(reducedName).toBe("none");
+  await ctx.close();
+});
+
+test("the bag/obols shared slot cycles Bag → Obols → Bag on its timer", async ({ browser }) => {
+  // The bag and obols take turns in ONE slot on a 7s timer (CycleDeck). The
+  // frame captures only ever see the initial Bag face (the timer never fires in a
+  // sub-second shot), so this drives the page clock to prove the switch actually
+  // happens — both faces render, and it loops back — and shoots the Obols face
+  // for eyeballing. inspect-panel carries currency, so its deck has both faces.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  const bag = page.getByText("Bag", { exact: true });
+  const obols = page.getByText("Obols", { exact: true });
+
+  // starts on the Bag face; the Obols face is not in the DOM (one at a time)
+  await expect(bag).toBeVisible();
+  await expect(obols).toHaveCount(0);
+
+  // one period → the slot flips to Obols (and Bag leaves the DOM)
+  await page.clock.fastForward(7000);
+  await expect(obols).toBeVisible();
+  await expect(bag).toHaveCount(0);
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "obols-face.png") });
+
+  // another period → it loops back to Bag
+  await page.clock.fastForward(7000);
+  await expect(bag).toBeVisible();
+  await expect(obols).toHaveCount(0);
+
+  await ctx.close();
+});
+
+test("mobile: bottom HUD clears the globes when closed, and hides under the open drawer", async ({
+  browser,
+}) => {
+  // full-shore carries events (a non-empty ticker). On a phone, with the drawer
+  // CLOSED the ticker sits between the corner globes (overlapping neither); with it
+  // OPEN, the globes AND ticker hide so they can't cover the panels. Mutations:
+  // revert the ticker `right` cap → the closed right-edge check fails; drop the
+  // `.hud-right.open ~ …` hide rules → an open-state `toBeHidden` fails.
+  const phone = await browser.newContext({ ...CONTEXT, viewport: { width: 390, height: 844 } });
+  const page = await phone.newPage();
+  await page.goto(`/harness/fixture.html?fixture=full-shore`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+  // closed: globes shown; the ticker sits between them, overlapping neither.
+  await expect(page.locator(".globe-life")).toBeVisible();
+  const ticker = (await page.locator(".hud-ticker").boundingBox())!;
+  const life = (await page.locator(".globe-life").boundingBox())!;
+  const mana = (await page.locator(".globe-mana").boundingBox())!;
+  expect(ticker.x, "ticker right of life globe").toBeGreaterThanOrEqual(life.x + life.width - 1);
+  expect(ticker.x + ticker.width, "ticker left of mana globe").toBeLessThanOrEqual(mana.x + 1);
+  // open: the drawer takes over — the globes and ticker hide so nothing covers it.
+  await page.locator(".hud-toggle").click();
+  await expect(page.locator(".globe-life")).toBeHidden();
+  await expect(page.locator(".globe-mana")).toBeHidden();
+  await expect(page.locator(".hud-ticker")).toBeHidden();
+  await phone.close();
+});
+
+test("hud-edge: lone idler is the current carousel item; overkilled life clamps to 0", async ({
+  browser,
+}) => {
+  const { ctx, page } = await loadFixture(browser, "hud-edge");
+  // A single idler must be the CURRENT (bold) carousel item, with no dim neighbours.
+  // Mutation: the old offset window excluded 0 → the lone idler was a carousel-side.
+  await expect(page.locator(".carousel-cur")).toHaveText("Solo");
+  await expect(page.locator(".carousel-side")).toHaveCount(0);
+  // The sim sent life: -25 (overkill); the readout must clamp to 0, never negative.
+  await expect(page.locator("#overlay")).toContainText("Life: 0/1180");
+  await expect(page.locator("#overlay")).not.toContainText("-25");
+  await ctx.close();
+});
+
+test("globe readout: ES and Reserved lines drop out at zero (full-fresh)", async ({ browser }) => {
+  // full-fresh has full pools, no ES (es_max=0) and no reservation. The life orb
+  // must read ONLY "Life: …" — proving the ES/Reserved lines are gated, not always
+  // rendered. Mutation: make Globe always emit those lines → these negatives fail.
+  const { ctx, page } = await loadFixture(browser, "full-fresh");
+  const overlay = page.locator("#overlay");
+  await expect(overlay).toContainText("Life: 1530/1530");
+  await expect(overlay).not.toContainText("ES:");
+  await expect(overlay).not.toContainText("Reserved:");
   await ctx.close();
 });
