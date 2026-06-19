@@ -1,0 +1,15 @@
+// "... of Siphoning" — mana leech on weapons (bp of damage returned to mana).
+AffixDef(
+    id: "of_siphoning",
+    public: true,
+    name: "of Siphoning",
+    kind: suffix,
+    pool: "weapon",
+    weight: 55,
+    stat: leech_mana,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 150, max: 300, name: "of Siphoning", weight: 100),
+        (ilvl: 5, min: 301, max: 500, name: "of Draining", weight: 40),
+    ],
+)

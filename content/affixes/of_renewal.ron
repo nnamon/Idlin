@@ -1,0 +1,15 @@
+// "... of Renewal" — life regeneration on armour (flat per second).
+AffixDef(
+    id: "of_renewal",
+    public: true,
+    name: "of Renewal",
+    kind: suffix,
+    pool: "armour",
+    weight: 75,
+    stat: life_regen,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 2, max: 5, name: "of Renewal", weight: 100),
+        (ilvl: 4, min: 6, max: 10, name: "of Regrowth", weight: 45),
+    ],
+)

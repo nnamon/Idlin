@@ -1,0 +1,15 @@
+// "... of Leeching" — life leech on weapons (bp of damage returned, rate-capped).
+AffixDef(
+    id: "of_leeching",
+    public: true,
+    name: "of Leeching",
+    kind: suffix,
+    pool: "weapon",
+    weight: 55,
+    stat: leech_life,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 100, max: 200, name: "of Leeching", weight: 100),   // 1-2%
+        (ilvl: 5, min: 201, max: 350, name: "of the Vampire", weight: 40),
+    ],
+)

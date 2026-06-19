@@ -1,0 +1,15 @@
+// "... of Casting" — increased cast speed on caster gear.
+AffixDef(
+    id: "of_casting",
+    public: true,
+    name: "of Casting",
+    kind: suffix,
+    pool: "arcana",
+    weight: 60,
+    stat: cast_speed,
+    layer: increased,
+    tiers: [
+        (ilvl: 1, min: 800, max: 1400, name: "of Casting", weight: 100),     // +8-14%
+        (ilvl: 4, min: 1401, max: 2200, name: "of Conjuring", weight: 45),
+    ],
+)

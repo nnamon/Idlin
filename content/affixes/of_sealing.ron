@@ -1,0 +1,15 @@
+// "... of Sealing" — chaos resistance on armour (basis points, capped at use).
+AffixDef(
+    id: "of_sealing",
+    public: true,
+    name: "of Sealing",
+    kind: suffix,
+    pool: "armour",
+    weight: 70,
+    stat: resist_chaos,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 500, max: 1200, name: "of Sealing", weight: 100),   // 5-12%
+        (ilvl: 4, min: 1300, max: 2200, name: "of Purity", weight: 45),
+    ],
+)

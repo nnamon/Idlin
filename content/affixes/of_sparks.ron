@@ -1,0 +1,15 @@
+// "... of Sparks" — flat lightning damage on weapons.
+AffixDef(
+    id: "of_sparks",
+    public: true,
+    name: "of Sparks",
+    kind: suffix,
+    pool: "weapon",
+    weight: 80,
+    stat: damage_lightning,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 2, max: 5, name: "of Sparks", weight: 100),
+        (ilvl: 4, min: 6, max: 11, name: "of Arcing", weight: 45),
+    ],
+)

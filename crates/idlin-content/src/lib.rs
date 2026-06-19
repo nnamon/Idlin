@@ -2149,6 +2149,38 @@ mod tests {
     }
 
     #[test]
+    fn affix_pool_extension_wires_the_dark_stats() {
+        use crate::stats::Stat;
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        // The affix-pool extension (#103 follow-up) makes the formerly-dark
+        // capabilities reachable through gear. Each new affix must grant its
+        // INTENDED stat — a misfiled `stat:` slips past the pool checks above,
+        // so pin the (id → stat) map. The pool-subscription test proves each is
+        // rollable; this proves it grants the right thing.
+        let want = [
+            ("of_leeching", Stat::LeechLife),
+            ("of_siphoning", Stat::LeechMana),
+            ("of_ruin", Stat::CritMulti),
+            ("of_frost", Stat::DamageCold),
+            ("of_sparks", Stat::DamageLightning),
+            ("of_renewal", Stat::LifeRegen),
+            ("of_sealing", Stat::ResistChaos),
+            ("of_channeling", Stat::ManaRegen),
+            ("of_casting", Stat::CastSpeed),
+        ];
+        for (id, stat) in want {
+            let a = db
+                .affixes
+                .iter()
+                .find(|a| a.id == id)
+                .unwrap_or_else(|| panic!("affix {id} missing from the registry"));
+            assert_eq!(a.stat, stat, "affix {id} grants the wrong stat");
+            assert!(a.public, "affix {id} must be public (bot-facing contract)");
+            assert!(!a.tiers.is_empty(), "affix {id} has no tiers");
+        }
+    }
+
+    #[test]
     fn unknown_affix_pool_subscriptions_are_rejected() {
         let tc = TempContent::new(
             "badpool",

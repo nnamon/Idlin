@@ -1,0 +1,15 @@
+// "... of Ruin" — critical strike multiplier on weapons (bp atop the 150% base).
+AffixDef(
+    id: "of_ruin",
+    public: true,
+    name: "of Ruin",
+    kind: suffix,
+    pool: "weapon",
+    weight: 50,
+    stat: crit_multi,
+    layer: added,
+    tiers: [
+        (ilvl: 1, min: 1000, max: 1800, name: "of Ruin", weight: 100),       // +10-18%
+        (ilvl: 4, min: 1801, max: 2800, name: "of Annihilation", weight: 45),
+    ],
+)

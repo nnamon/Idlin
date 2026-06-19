@@ -10,21 +10,21 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #98 (skill life cost + general support cost multiplier). Two
-/// REPRESENTATION changes move the hash while the sim TRAJECTORY stays identical.
-/// One: the 6 support gems renamed `mana_mult` → `cost_mult` in their RON and
-/// `hostile_melee.bot` widened its ReadSkills stride 36 → 40 — both edit files
-/// under content/, moving `content_hash` (FNV over content/), which folds into
-/// `state_hash`. Two: the ReadSkills record grew a 10th word (life_cost), so the
-/// grinder template recompiled to a 40-byte stride and the two golden grinder
-/// bots carry that new bytecode in hashed state. Behavior is identical — mana
-/// cost is computed byte-for-byte as before, no content carries a life cost
-/// (default 0), and the bot reader/writer record strides ALWAYS agree, so every
-/// bot reads the same logical (ready, target_mode) it read before (life_cost is
-/// appended past them at +36 and unread by the stock bots); only the
-/// representation shifted.
-/// (Prior: #91 accessory/gloves slots + affixes; #54 PR3 grinder rewrite; etc.)
-const GOLDEN_HASH: u64 = 0x2779_BEAA_C621_F4D7;
+/// Re-pinned for the affix-pool extension (#103 follow-up): nine affix files
+/// added under content/ (of_leeching/of_siphoning/of_ruin/of_frost/of_sparks on
+/// weapons; of_renewal/of_sealing on armour; of_channeling/of_casting on caster
+/// gear), plus the regenerated content/ids.ron and content/lib/gen_ids.bot.
+/// `content_hash` (FNV-1a over the rel-path + bytes of every file UNDER content/,
+/// see `ContentDb::load`) folds into `state_hash`, so adding these files moves
+/// the golden — the §4-expected re-pin for any content edit. (web/public/
+/// content-docs.json is regenerated too, but lives under web/, NOT content/, so
+/// it does not contribute to `content_hash`.) The affixes make leech, regen,
+/// crit-multi, chaos-resist, and cold/lightning damage reachable through gear;
+/// their engine paths are covered by the #103 combat unit tests, and the affixes
+/// themselves by `affix_pool_subscriptions_resolve` +
+/// `affix_pool_extension_wires_the_dark_stats` — not by this replay.
+/// (Prior: #98 skill life cost + cost_mult; #91 accessory/gloves slots; etc.)
+const GOLDEN_HASH: u64 = 0x5D21_B764_DAC4_E5AF;
 
 #[test]
 fn golden_replay() {
