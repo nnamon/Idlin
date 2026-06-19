@@ -8,6 +8,6 @@ GemDef(
     requires_tags: [aoe],
     effects: [
         aoe_inc(bp: 3000),              // 30% increased area footprint
-        mana_mult(bp: 1500),            // 115% mana cost
+        cost_mult(bp: 1500),            // 115% cost
     ],
 )

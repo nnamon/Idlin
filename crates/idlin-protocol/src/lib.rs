@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 34;
+pub const PROTO_VERSION: u32 = 35;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -371,6 +371,8 @@ pub struct SkillStat {
     /// Extra cooldown on top of use time (specials), ticks; 0 if none.
     pub cooldown_ticks: u32,
     pub mana_cost: i32,
+    /// Life paid per use (0 for most skills). Ungated — a use can self-kill.
+    pub life_cost: i32,
     /// Content-unit footprint. 0 range = the weapon's range.
     pub range_cu: i32,
     pub radius_cu: i32,
@@ -738,6 +740,7 @@ mod tests {
                     use_ticks: 8,
                     cooldown_ticks: 0,
                     mana_cost: 12,
+                    life_cost: 7,
                     range_cu: 600,
                     radius_cu: 0,
                     width_cu: 130,
@@ -771,6 +774,10 @@ mod tests {
             "line width survives the wire"
         );
         assert_eq!(sheet.skills[0].dps, 200);
+        assert_eq!(
+            sheet.skills[0].life_cost, 7,
+            "skill life cost survives the wire"
+        );
         assert_eq!(sheet.skills[0].xp, 120, "gem xp survives the wire");
         assert_eq!(sheet.skills[0].xp_next, 400);
         assert_eq!(sheet.skills[0].supports[0].name, "Added Lightning");

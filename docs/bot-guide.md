@@ -118,11 +118,11 @@ fn main() {                            // main() runs once per tick
         var tx = mem[ENTS + 8];
         var ty = mem[ENTS + 12];
         // Lead with the first READY skill, aimed per its target_mode
-        // (+36) — ready (+44) already folds cooldown/mana/weapon. The
+        // (+28) — ready (+32) already folds cooldown/mana/weapon. The
         // full grinder template loops every slot and budgets mana.
         var used = -1;
-        if (read_skills(0xE400, 1) > 0 && mem[0xE400 + 44] == 1) {
-            var mode = mem[0xE400 + 36];
+        if (read_skills(0xE400, 1) > 0 && mem[0xE400 + 32] == 1) {
+            var mode = mem[0xE400 + 28];
             if (mode == 0) { used = use_skill(1, target, 0, 0); }
             if (mode == 1) { used = use_skill_at(1, tx, ty); }
             if (mode == 2) { used = use_skill_dir(1, tx - mem[SELF], ty - mem[SELF + 4]); }
@@ -368,15 +368,18 @@ The bag is a **12×5 grid**; everything has a footprint and competes for space;
 pickups fail when nothing fits — managing space (`MoveItem`, `DropItem`,
 vendoring later) is your job.
 
-**ReadSkills record** (9 words, 36 bytes): `slot_no, gem_num, level,
+**ReadSkills record** (10 words, 40 bytes): `slot_no, gem_num, level,
 cooldown_left, range (Q16.16), mana_cost, use_ticks (cast time for spells, your
 weapon's swing time for attacks), target_mode (0 entity / 1 point / 2 direction),
-ready (1 = off cooldown, mana in pocket, not mid-use)`. `gem_num` is the gem's
-stable tagged num (#54) — match it against the generated `GEM_*` consts. Skill
-slots are 1..N in tree-socket order; slot 0 is always the basic weapon attack.
-`mana_cost` and `use_ticks` are FINAL numbers — socketed support gems
-(mana multipliers, attack/cast speed) and your own cast speed are already
-folded in, so budget straight off the record. `target_mode` stays here (you need
+ready (1 = off cooldown, mana in pocket, not mid-use), life_cost`. `gem_num` is
+the gem's stable tagged num (#54) — match it against the generated `GEM_*` consts.
+Skill slots are 1..N in tree-socket order; slot 0 is always the basic weapon
+attack. `mana_cost`, `use_ticks`, and `life_cost` are FINAL numbers — socketed
+support gems (cost multipliers, attack/cast speed) and your own cast speed are
+already folded in, so budget straight off the record. `life_cost` (#98) is 0 for
+almost every skill; it is **ungated** — paid even past 0, so a life-cost skill can
+kill its own caster — and so is deliberately **not** folded into `ready`: weigh it
+against your `SelfStatus` life yourself. `target_mode` stays here (you need
 it every fire to pick the UseSkill variant); the static geometry —
 `shape`/`radius`/`skill_kind` — moved to `SkillInfo` (you only need it to
 position AoE), and per-gem statics are in `content-docs.json`.
@@ -417,7 +420,7 @@ by num; look them up once at authoring time and bake the constants you need.
 Need its slot or 2×3 footprint? It's a weapon — you know that from
 `ITEM_RUSTED_CLEAVER` / content-docs; the read won't repeat it.
 
-`read_skills(0xD100, 8)` returns `2`; the first record (36 bytes at `0xD100`):
+`read_skills(0xD100, 8)` returns `2`; the first record (40 bytes at `0xD100`):
 
 ```
 +0  slot_no       1          // 1-based; slot 0 is the basic weapon attack
@@ -425,10 +428,13 @@ Need its slot or 2×3 footprint? It's a weapon — you know that from
 +8  level         3
 +12 cooldown_left 0          // ticks until recastable (0 = ok by cooldown)
 +16 range         655360     // Q16.16 == 10.0 units  (0x000A0000)
-+20 mana_cost     14         // FINAL — support mana-mults folded in
++20 mana_cost     14         // FINAL — support cost-mults folded in
 +24 use_ticks     9          // FINAL — support/cast-speed folded in
 +28 target_mode   0          // 0 entity · 1 point · 2 direction
 +32 ready         1          // cooldown + mana + weapon + not-mid-use all OK
++36 life_cost     0          // FINAL per-use life (#98); 0 for most skills.
+                             // UNGATED — paid even past 0, so NOT in `ready`;
+                             // weigh it against SelfStatus life yourself
 ```
 To fire: `if (rec[+32]) { … }`, dispatch on `target_mode` — entity →
 `use_skill(slot, target,…)`, point → `use_skill_at`, direction → `use_skill_dir`.

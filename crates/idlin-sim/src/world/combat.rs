@@ -230,9 +230,9 @@ impl World {
                     SupportEffect::Pierce { count } => m.pierce += count,
                     SupportEffect::AoeInc { bp } => m.aoe_bp += bp,
                     SupportEffect::DotDurationInc { bp } => m.dot_duration_bp += bp,
-                    // Folded by skill_mana_cost, where the syscall check
-                    // can reach it too.
-                    SupportEffect::ManaMult { .. } => {}
+                    // Folded by skill_mana_cost/skill_life_cost, where the syscall
+                    // check can reach it too.
+                    SupportEffect::CostMult { .. } => {}
                 }
             }
         }
@@ -256,19 +256,71 @@ impl World {
             .is_some_and(|class| gem.weapon_classes.contains(&class))
     }
 
-    /// A skill's mana cost with support multipliers folded in. Shared by the
-    /// syscall validation and the executor so they cannot disagree.
-    pub(crate) fn skill_mana_cost(&self, sg: &SocketedGem) -> i64 {
-        let gem = &self.content.gems[sg.gem.gem_idx as usize];
-        let mut cost = gem.mana_cost.at(sg.gem.level).max(0);
+    /// Folds every support `CostMult` into a base cost (compounded per support,
+    /// the same way for mana and life so the two costs scale identically).
+    fn apply_cost_mult(&self, sg: &SocketedGem, mut cost: i64) -> i64 {
         for sup in &sg.supports {
             for ef in &self.content.gems[sup.gem_idx as usize].effects {
-                if let SupportEffect::ManaMult { bp } = *ef {
+                if let SupportEffect::CostMult { bp } = *ef {
                     cost = cost * (10000 + bp).max(0) / 10000;
                 }
             }
         }
         cost
+    }
+
+    /// A skill's mana cost with support multipliers folded in. Shared by the
+    /// syscall validation and the executor so they cannot disagree. Gated: a use
+    /// needs at least this much mana.
+    pub(crate) fn skill_mana_cost(&self, sg: &SocketedGem) -> i64 {
+        let base = self.content.gems[sg.gem.gem_idx as usize]
+            .mana_cost
+            .at(sg.gem.level)
+            .max(0);
+        self.apply_cost_mult(sg, base)
+    }
+
+    /// A skill's life cost with support multipliers folded in. NOT gated — it is
+    /// always paid and can take the caster to 0 (a deliberate self-kill).
+    pub(crate) fn skill_life_cost(&self, sg: &SocketedGem) -> i64 {
+        let base = self.content.gems[sg.gem.gem_idx as usize]
+            .life_cost
+            .at(sg.gem.level)
+            .max(0);
+        self.apply_cost_mult(sg, base)
+    }
+
+    /// Charge a skill's life cost to the caster at `slot` after the skill has
+    /// resolved (issue #98). Ungated: life may go to or below zero. A CHARACTER
+    /// that spends its last life is reaped here — respawn scheduled, intents and
+    /// effects cleared, `CharacterDied` emitted — because no strike ran the death
+    /// path. Monsters can't carry a life cost (rejected at content load), so the
+    /// monster corpse/pack bookkeeping is intentionally not duplicated here.
+    fn pay_life_cost(&mut self, slot: usize, life_cost: i64, now: u64, events: &mut Vec<SimEvent>) {
+        let Some(me) = self.zone.get_mut(slot) else {
+            return;
+        };
+        if let Some(c) = me.combat.as_mut() {
+            c.life -= life_cost;
+        }
+        if me.combat.as_ref().is_some_and(|c| c.life <= 0) {
+            let died = match me.character.as_mut() {
+                Some(ch) if ch.respawn_at.is_none() => {
+                    ch.respawn_at = Some(now + RESPAWN_TICKS);
+                    Some((me.net_id, ch.name.clone()))
+                }
+                _ => None,
+            };
+            if let Some((id, name)) = died {
+                me.intents = Default::default();
+                me.effects.clear();
+                events.push(SimEvent::CharacterDied {
+                    id,
+                    name: name.clone(),
+                    killer: name,
+                });
+            }
+        }
     }
 
     /// Effective use-time commitment for one use of a socketed skill —
@@ -460,6 +512,20 @@ impl World {
                 continue; // died winding up
             }
             self.resolve_use(slot, p.target, p.skill, events, &mut dead, &mut loot);
+            // Charge the skill's LIFE cost now that it has resolved (issue #98).
+            // Ungated and paid AFTER the effect, so a fatal cost still lands the
+            // skill and only then takes the caster down. A character that spends
+            // its last life is reaped here (no strike ran the death path).
+            if let Some(node) = p.skill {
+                let life_cost = self
+                    .zone
+                    .get(slot)
+                    .and_then(|e| skill_of(e, node))
+                    .map_or(0, |sg| self.skill_life_cost(sg));
+                if life_cost > 0 {
+                    self.pay_life_cost(slot, life_cost, now, events);
+                }
+            }
         }
 
         // Phase 2: STARTS. Commit new uses (mana, cooldown, busy) and
@@ -684,6 +750,7 @@ impl World {
             use_ticks,
             cooldown_ticks: gem.cooldown_ticks,
             mana_cost,
+            life_cost: self.skill_life_cost(sg),
             range_cu: cu(resolved.range),
             radius_cu: cu(resolved.radius),
             width_cu: cu(resolved.width),
@@ -1140,7 +1207,11 @@ impl World {
                 (busy_ticks * 3 / 5).max(1)
             };
 
-            // COMMIT: everything is paid here, refunds don't exist.
+            // COMMIT: mana, busy, and cooldown are paid here; refunds don't exist.
+            // (The LIFE cost is charged later, at resolution — see `attacks`'s
+            // contact loop — so a FATAL cost still fires the skill before the
+            // caster dies. Paying it here would kill the caster mid-windup and
+            // the contact loop would skip the dead attacker, issue #98.)
             if let Some(me) = self.zone.get_mut(slot) {
                 if let Some(c) = me.combat.as_mut() {
                     if cost > 0 {
@@ -3593,7 +3664,7 @@ mod tests {
     }
 
     #[test]
-    fn mana_mult_scales_skill_cost() {
+    fn cost_mult_scales_mana_cost() {
         let content = content();
         let world = World::new(1, &content);
         let bare = SocketedGem {
@@ -3610,6 +3681,151 @@ mod tests {
         supported.supports.push(instance(&content, "widening", 1));
         assert_eq!(world.skill_mana_cost(&bare), 4);
         assert_eq!(world.skill_mana_cost(&supported), 5);
+    }
+
+    #[test]
+    fn cost_mult_scales_life_cost() {
+        // No content skill costs life yet, so give war_cry one and confirm
+        // skill_life_cost folds the SAME support CostMult that scales mana.
+        let mut content = content();
+        let wc = content
+            .gems
+            .iter()
+            .position(|g| g.id == "war_cry")
+            .expect("war_cry gem");
+        content.gems[wc].life_cost = idlin_content::Formula {
+            base: 50,
+            per_level: 0,
+        };
+        let world = World::new(1, &content);
+        let bare = SocketedGem {
+            gem: instance(&content, "war_cry", 1),
+            cooldown_left: 0,
+            supports: Vec::new(),
+        };
+        let mut supported = bare.clone();
+        // Lingering (CostMult 110%) carries the `duration` tag, which War Cry's
+        // [aoe, duration] satisfies — a production-valid pairing.
+        supported.supports.push(instance(&content, "lingering", 1));
+        assert_eq!(world.skill_life_cost(&bare), 50);
+        assert_eq!(
+            world.skill_life_cost(&supported),
+            55,
+            "CostMult scales life"
+        );
+        let m = world.skill_mana_cost(&bare);
+        assert_eq!(
+            world.skill_mana_cost(&supported),
+            m * 11000 / 10000,
+            "the SAME CostMult scales mana"
+        );
+    }
+
+    #[test]
+    fn life_cost_can_self_kill_the_caster() {
+        // war_cry is a no-damage, direction-aimed nova that rallies allies in
+        // radius. A life cost larger than a fresh idler's pool makes one cast
+        // lethal — but the rally must still LAND (the skill resolves) before the
+        // caster falls. We stand an ally in the nova and read its buff back as
+        // proof of resolution. Mutation: charging life at COMMIT instead of at
+        // resolution kills the caster mid-windup, the contact loop skips the dead
+        // attacker, the ally is never rallied, and this test fails.
+        let mut content = content();
+        let wc = content
+            .gems
+            .iter()
+            .position(|g| g.id == "war_cry")
+            .expect("war_cry gem");
+        content.gems[wc].life_cost = idlin_content::Formula {
+            base: 100_000,
+            per_level: 0,
+        };
+        let mut world = World::new(424_242, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![
+                crate::JoinRequest {
+                    name: "Sacrifice".into(),
+                    program: program.clone(),
+                },
+                crate::JoinRequest {
+                    name: "Witness".into(),
+                    program,
+                },
+            ],
+        });
+        let chars: Vec<usize> = (0..world.zone.slot_count())
+            .filter(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .collect();
+        let (slot, ally) = (chars[0], chars[1]);
+        let socket_node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .expect("a socket node exists") as u32;
+        // Stand the ally just inside the rally's nova.
+        let base_pos = world.zone.get(slot).unwrap().pos;
+        world.zone.get_mut(ally).unwrap().pos = FxV2::new(base_pos.x + Fx::from_int(2), base_pos.y);
+        let ally_base_phys = world
+            .zone
+            .get(ally)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .damage[0];
+        let e = world.zone.get_mut(slot).unwrap();
+        let net = e.net_id;
+        e.character.as_mut().unwrap().sockets.insert(
+            socket_node,
+            SocketedGem {
+                gem: instance(&content, "war_cry", 1),
+                cooldown_left: 0,
+                supports: Vec::new(),
+            },
+        );
+        let c = e.combat.as_mut().unwrap();
+        c.mana = 100;
+        assert!(c.life < 100_000, "fixture: one cast must be lethal");
+        e.intents.attack = Some(AttackIntent {
+            target: SkillTarget::Direction(FxV2::new(Fx::from_raw(0x10000), Fx::ZERO)),
+            skill: Some(socket_node),
+        });
+
+        let mut events = Vec::new();
+        run_attacks(&mut world, &mut events);
+
+        // The rally LANDED on the ally — the skill resolved before the cost was
+        // charged (this is the #2 regression guard).
+        let ally_phys = world
+            .zone
+            .get(ally)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .damage[0];
+        assert!(
+            ally_phys > ally_base_phys,
+            "war cry rallied the ally before the caster fell: {ally_phys} vs {ally_base_phys}"
+        );
+
+        // ...and only THEN did the caster pay its last life and die — NOT floored
+        // at 1. (Mutation: flooring life at 1 leaves it alive, failing the rest.)
+        let e = world.zone.get(slot).expect("corpse slot persists");
+        assert!(e.combat.as_ref().unwrap().life <= 0, "life paid past 0");
+        assert!(!e.alive(), "caster is dead");
+        assert!(
+            e.character.as_ref().unwrap().respawn_at.is_some(),
+            "respawn queued"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, super::SimEvent::CharacterDied { id, .. } if *id == net)),
+            "CharacterDied fired for the self-kill"
+        );
     }
 
     /// #52 / #54 PR3: a melee grinder must never socket a bow skill gem (it

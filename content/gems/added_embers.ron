@@ -9,6 +9,6 @@ GemDef(
     requires_tags: [attack, spell],
     effects: [
         added_damage(dtype: fire, amount: (base: 4, per_level: 2)),
-        mana_mult(bp: 1000),            // 110% mana cost
+        cost_mult(bp: 1000),            // 110% cost
     ],
 )

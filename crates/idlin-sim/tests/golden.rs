@@ -10,14 +10,21 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #91 (accessory + gloves slots): four new item bases (coral_ring,
-/// corded_belt, tidal_amulet, kelp_grips) and four new affixes (bold/hardy/
-/// of_finesse/of_acumen in the new `accessory` pool) move `content_hash` (FNV
-/// over content/), and entering the new bases into the loot weight table shifts
-/// every `roll_item` draw over the 2000-tick run — both intentional, so the
-/// replay state shifts. (Earlier #54 PR3 grinder rewrite + weapon-handedness +
-/// PR1b/PR2a/PR2b folds still apply.)
-const GOLDEN_HASH: u64 = 0xF294_4BDC_EB3F_4203;
+/// Re-pinned for #98 (skill life cost + general support cost multiplier). Two
+/// REPRESENTATION changes move the hash while the sim TRAJECTORY stays identical.
+/// One: the 6 support gems renamed `mana_mult` → `cost_mult` in their RON and
+/// `hostile_melee.bot` widened its ReadSkills stride 36 → 40 — both edit files
+/// under content/, moving `content_hash` (FNV over content/), which folds into
+/// `state_hash`. Two: the ReadSkills record grew a 10th word (life_cost), so the
+/// grinder template recompiled to a 40-byte stride and the two golden grinder
+/// bots carry that new bytecode in hashed state. Behavior is identical — mana
+/// cost is computed byte-for-byte as before, no content carries a life cost
+/// (default 0), and the bot reader/writer record strides ALWAYS agree, so every
+/// bot reads the same logical (ready, target_mode) it read before (life_cost is
+/// appended past them at +36 and unread by the stock bots); only the
+/// representation shifted.
+/// (Prior: #91 accessory/gloves slots + affixes; #54 PR3 grinder rewrite; etc.)
+const GOLDEN_HASH: u64 = 0x2779_BEAA_C621_F4D7;
 
 #[test]
 fn golden_replay() {

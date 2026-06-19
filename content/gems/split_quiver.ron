@@ -9,6 +9,6 @@ GemDef(
     effects: [
         extra_projectiles(count: 2),
         more_damage(dtype: None, bp: -2500),    // 25% LESS damage, all types
-        mana_mult(bp: 3000),                    // 130% mana cost
+        cost_mult(bp: 3000),                    // 130% cost
     ],
 )

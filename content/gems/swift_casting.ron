@@ -8,6 +8,6 @@ GemDef(
     requires_tags: [spell],
     effects: [
         inc_cast_speed(bp: 2000),       // 20% increased cast speed
-        mana_mult(bp: 500),             // 105% mana cost
+        cost_mult(bp: 500),             // 105% cost
     ],
 )

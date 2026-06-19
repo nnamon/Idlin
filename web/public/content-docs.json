@@ -1001,7 +1001,7 @@
             }
           },
           {
-            "mana_mult": {
+            "cost_mult": {
               "bp": 1000
             }
           }
@@ -1009,6 +1009,10 @@
         "grants": [],
         "id": "added_embers",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0
@@ -1065,6 +1069,10 @@
         "grants": [],
         "id": "arc",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 7,
           "per_level": 1
@@ -1121,6 +1129,10 @@
         "grants": [],
         "id": "cleave",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 4,
           "per_level": 0
@@ -1181,6 +1193,10 @@
         "grants": [],
         "id": "ember_bolt",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 6,
           "per_level": 1
@@ -1252,6 +1268,10 @@
         "grants": [],
         "id": "frost_nova",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 8,
           "per_level": 1
@@ -1313,7 +1333,7 @@
             }
           },
           {
-            "mana_mult": {
+            "cost_mult": {
               "bp": 1000
             }
           }
@@ -1321,6 +1341,10 @@
         "grants": [],
         "id": "heavier_blows",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0
@@ -1376,6 +1400,10 @@
         "grants": [],
         "id": "heavy_swing",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 5,
           "per_level": 0
@@ -1438,7 +1466,7 @@
             }
           },
           {
-            "mana_mult": {
+            "cost_mult": {
               "bp": 1000
             }
           }
@@ -1446,6 +1474,10 @@
         "grants": [],
         "id": "lingering",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0
@@ -1508,6 +1540,10 @@
         "grants": [],
         "id": "plague_cloud",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 10,
           "per_level": 1
@@ -1566,6 +1602,10 @@
         "grants": [],
         "id": "power_shot",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 5,
           "per_level": 0
@@ -1631,6 +1671,10 @@
         "grants": [],
         "id": "quickening",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0
@@ -1695,7 +1739,7 @@
             }
           },
           {
-            "mana_mult": {
+            "cost_mult": {
               "bp": 3000
             }
           }
@@ -1703,6 +1747,10 @@
         "grants": [],
         "id": "split_quiver",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0
@@ -1761,7 +1809,7 @@
             }
           },
           {
-            "mana_mult": {
+            "cost_mult": {
               "bp": 500
             }
           }
@@ -1769,6 +1817,10 @@
         "grants": [],
         "id": "swift_casting",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0
@@ -1833,6 +1885,10 @@
         "grants": [],
         "id": "war_cry",
         "kind": "skill",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 12,
           "per_level": 0
@@ -1892,7 +1948,7 @@
             }
           },
           {
-            "mana_mult": {
+            "cost_mult": {
               "bp": 1500
             }
           }
@@ -1900,6 +1956,10 @@
         "grants": [],
         "id": "widening",
         "kind": "support",
+        "life_cost": {
+          "base": 0,
+          "per_level": 0
+        },
         "mana_cost": {
           "base": 0,
           "per_level": 0

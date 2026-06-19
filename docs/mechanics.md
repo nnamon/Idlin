@@ -129,8 +129,9 @@ play. Only one copy of a given support fits a skill. Two layers:
   the SUPPORT's level), `inc_attack_speed` / `inc_cast_speed` (shorten
   the use time), `extra_projectiles` (the shot fans out in 12° steps),
   `pierce`, `aoe_inc` (grows ring radius, corridor width, and cone
-  reach), `dot_duration_inc`, and `mana_mult` (multiplies the skill's
-  mana cost; ReadSkills reports the final cost).
+  reach), `dot_duration_inc`, and `cost_mult` (multiplies the skill's
+  resource cost — BOTH mana and life; ReadSkills reports the final mana
+  AND life cost).
 
 Current roster: Heavier Blows (melee: 20% MORE phys), Quickening
 (attack: 20% attack speed), Added Embers (attack|spell: flat fire),
@@ -323,6 +324,10 @@ top-center; magic/rare announce themselves with tinted nameplates.
   moves and swings slower until the effect expires.
 - **Mana costs**: every gem declares one (`mana_cost` formula); the use
   fails (code −4) without the mana, and the cost is charged on the swing.
+- **Life costs**: a gem may also declare a `life_cost` formula (0 for most).
+  Unlike mana it is **not** gated — it's always paid, even past 0, so a
+  life-cost skill can kill its own caster. (Characters die + respawn; a monster
+  may not wield a life-cost gem yet — rejected at content load.)
 - **Weapon gates**: attack skills list eligible weapon classes
   (`weapon_classes: [melee]` / `[bow]` / `[wand]`); using them with the
   wrong tool — or bare hands — fails with code −9. Spells (and attacks
