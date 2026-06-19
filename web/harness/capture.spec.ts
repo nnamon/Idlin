@@ -309,11 +309,13 @@ test("resolveFocusId pins to the named idler with no director-cue fallback (#79)
   // The pure focus rule shared by the HUD overlay AND the scene camera — so a
   // regression to cue-fallback in EITHER (the renderer's path isn't otherwise
   // capture-covered) is caught here. The cue is deliberately a DIFFERENT idler.
-  const chars = [
-    { id: 1, name: "Brakka" },
-    { id: 2, name: "Veles" },
+  const entities = [
+    { id: 1, name: "Brakka", kind: "Character" },
+    { id: 2, name: "Veles", kind: "Character" },
+    { id: 3, name: "Bone Stalker", kind: "Monster" },
   ];
-  expect(resolveFocusId("Brakka", chars, 2)).toBe(1); // pinned + present → that idler, not the cue
-  expect(resolveFocusId("Ghost", chars, 2)).toBeUndefined(); // pinned + ABSENT → nobody, never the cue
-  expect(resolveFocusId(null, chars, 2)).toBe(2); // unpinned → the director's cue
+  expect(resolveFocusId("Brakka", entities, 2)).toBe(1); // pinned + present → that idler, not the cue
+  expect(resolveFocusId("Ghost", entities, 2)).toBeUndefined(); // pinned + ABSENT → nobody, never the cue
+  expect(resolveFocusId("Bone Stalker", entities, 2)).toBeUndefined(); // a monster's shared name never resolves
+  expect(resolveFocusId(null, entities, 2)).toBe(2); // unpinned → the director's cue
 });

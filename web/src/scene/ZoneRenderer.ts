@@ -253,6 +253,12 @@ export class ZoneRenderer {
     this.composer.setSize(w, h);
   }
 
+  /** Lazy view of entity states for resolveFocusId — no per-frame array (the
+   *  focus resolver stops at the first match and filters to characters). */
+  private *entityStates(): Generator<{ id: number; name: string; kind: string }> {
+    for (const er of this.store.entities.values()) yield er.state;
+  }
+
   private buildZone(): void {
     const zone = this.store.zone;
     if (!zone || !this.assets) return;
@@ -661,7 +667,7 @@ export class ZoneRenderer {
     // the cue. Shared with the HUD via resolveFocusId so they always agree.
     const focusId = resolveFocusId(
       this.followOverride,
-      [...this.store.entities.values()].map((er) => er.state),
+      this.entityStates(),
       this.store.cue?.focus,
     );
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;

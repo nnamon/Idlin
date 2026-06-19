@@ -9,16 +9,19 @@
  * showing. Unpinned (the broadcast) follows the director's cue.
  *
  * Match is by exact name to mirror the server's `routing.by_character` lookup —
- * the client must focus exactly who the server is streaming.
+ * the client must focus exactly who the server is streaming. Only CHARACTERS are
+ * candidates: monsters share the name field (e.g. "Bone Stalker"), and a pinned
+ * page must never resolve a monster (both the HUD and the camera call this, so the
+ * filter lives here — one guarantee, not per-caller).
  */
 export function resolveFocusId(
   pinnedName: string | null | undefined,
-  characters: Iterable<{ id: number; name: string }>,
+  entities: Iterable<{ id: number; name: string; kind: string }>,
   cueFocus: number | undefined,
 ): number | undefined {
   if (pinnedName == null) return cueFocus;
-  for (const c of characters) {
-    if (c.name === pinnedName) return c.id;
+  for (const e of entities) {
+    if (e.kind === "Character" && e.name === pinnedName) return e.id;
   }
   return undefined; // pinned but absent → no focus, NOT the director cue
 }
