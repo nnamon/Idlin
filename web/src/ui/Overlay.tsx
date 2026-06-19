@@ -3,6 +3,7 @@ import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { SkillStat } from "../gen/SkillStat";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore } from "../world/store";
+import { resolveFocusId } from "../world/focus";
 import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
 import "./overlay.css";
 
@@ -121,14 +122,15 @@ export function Overlay({
     return () => clearInterval(h);
   }, [store]);
 
-  // Individual view (#79): pin focus to the named idler — matched by name, since
-  // net ids are per-world. In individual mode there is NO director-cue fallback:
-  // an absent idler shows no focus panel, never the broadcast's pick mislabelled
-  // "your idler". Broadcast mode follows the director's cue.
-  const watched = idler
-    ? store.characters().find((c) => c.state.name === idler)
-    : undefined;
-  const focusId = idler ? watched?.state.id : store.cue?.focus;
+  // Individual view (#79): focus is pinned to the named idler (no director-cue
+  // fallback — an absent idler shows no focus panel, never the broadcast's pick
+  // mislabelled "your idler"); broadcast follows the cue. Shared with the scene
+  // camera via resolveFocusId so the two never disagree.
+  const focusId = resolveFocusId(
+    idler,
+    store.characters().map((c) => c.state),
+    store.cue?.focus,
+  );
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
 
   // Keep the focus panel fresh: re-request the sheet while a character is

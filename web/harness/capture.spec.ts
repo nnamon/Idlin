@@ -2,6 +2,7 @@ import { test, expect, type Browser, type BrowserContextOptions, type Page } fro
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { FIXTURES } from "./manifest";
+import { resolveFocusId } from "../src/world/focus";
 
 const SHOTS_DIR = join(import.meta.dirname, "shots");
 mkdirSync(SHOTS_DIR, { recursive: true });
@@ -302,4 +303,17 @@ test("idler-absent: an absent idler shows no focus panel, never the director's p
   await expect(page.locator(".idler-banner-name")).toHaveText("Ghost");
   await expect(page.locator(".display")).toHaveCount(0);
   await ctx.close();
+});
+
+test("resolveFocusId pins to the named idler with no director-cue fallback (#79)", () => {
+  // The pure focus rule shared by the HUD overlay AND the scene camera — so a
+  // regression to cue-fallback in EITHER (the renderer's path isn't otherwise
+  // capture-covered) is caught here. The cue is deliberately a DIFFERENT idler.
+  const chars = [
+    { id: 1, name: "Brakka" },
+    { id: 2, name: "Veles" },
+  ];
+  expect(resolveFocusId("Brakka", chars, 2)).toBe(1); // pinned + present → that idler, not the cue
+  expect(resolveFocusId("Ghost", chars, 2)).toBeUndefined(); // pinned + ABSENT → nobody, never the cue
+  expect(resolveFocusId(null, chars, 2)).toBe(2); // unpinned → the director's cue
 });

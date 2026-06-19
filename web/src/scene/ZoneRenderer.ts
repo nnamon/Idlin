@@ -10,6 +10,7 @@ import type { WorldStore } from "../world/store";
 import { DirectorCamera } from "../camera/DirectorCamera";
 import { AssetLibrary } from "./Assets";
 import { EntityVisual, SharedResources } from "./EntityVisuals";
+import { resolveFocusId } from "../world/focus";
 import { FxSystem } from "./FxSystem";
 import { IconFactory } from "./IconFactory";
 import { Terrain } from "./Terrain";
@@ -655,21 +656,14 @@ export class ZoneRenderer {
     }
     const zoom = this.zoomOverride;
     // Pinned to one idler (/idler/<name>, ?watch=, ?follow=): the camera tracks
-    // THEM, or nobody if they're absent — it must NOT fall back to the director's
-    // pick (that would silently frame a different idler on someone's page, #79).
-    // Broadcast follows the director cue.
-    let focusId: number | undefined;
-    if (this.followOverride) {
-      const name = this.followOverride.toLowerCase();
-      for (const er of this.store.entities.values()) {
-        if (er.state.name.toLowerCase() === name) {
-          focusId = er.state.id;
-          break;
-        }
-      }
-    } else {
-      focusId = this.store.cue?.focus;
-    }
+    // THEM, or nobody if they're absent — never the director's pick (that would
+    // silently frame a different idler on someone's page, #79). Broadcast follows
+    // the cue. Shared with the HUD via resolveFocusId so they always agree.
+    const focusId = resolveFocusId(
+      this.followOverride,
+      [...this.store.entities.values()].map((er) => er.state),
+      this.store.cue?.focus,
+    );
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;
     if (focus) {
       this.focusRing.visible = true;
