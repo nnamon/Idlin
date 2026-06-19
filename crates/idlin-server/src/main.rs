@@ -452,6 +452,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         } else {
                             welcomed = true;
                             watch_name = watch;
+                            // A (re-)Hello RESETS the subscription: drop any prior
+                            // binding back to the featured default so a failed
+                            // re-bind below can never retain the previous world
+                            // (#79 privacy — repeat Hello must not leak the old
+                            // idler's feed/snapshot/inspect). The is_welcome block
+                            // re-binds for a watch; a broadcast stays on featured.
+                            current_key = None;
+                            feed = state.featured.broadcast.subscribe();
+                            my_snapshot = state.featured.snapshot.clone();
                             S2C::Welcome {
                                 role: Role::Owner,
                                 proto_version: PROTO_VERSION,
@@ -555,26 +564,33 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     }
                 }
             }
-            // A watched character moved worlds: follow them.
+            // The watched idler's world changed: re-bind. Appears/moves → bind to
+            // that world; leaves EVERY world → UNBIND (current_key None) so we stop
+            // forwarding the world they left (#79 — no stale binding). Frames stay
+            // gated off while unbound; a later reappearance re-binds.
             changed = routing.changed(), if watch_name.is_some() => {
                 if changed.is_err() { break; }
                 let Some(name) = &watch_name else { continue };
                 let key = routing.borrow().by_character.get(name).cloned();
-                if key == current_key || key.is_none() {
-                    continue;
+                if key == current_key {
+                    continue; // binding unchanged
                 }
-                let key = key.unwrap();
-                let handle = state.feeds.read().expect("feeds lock").get(&key).cloned();
-                if let Some(handle) = handle {
-                    feed = handle.broadcast.subscribe();
-                    my_snapshot = handle.snapshot.clone();
-                    current_key = Some(key);
-                    let snap = my_snapshot.borrow().clone();
-                    if welcomed
-                        && tx.send(Message::Text(snap.to_string().into())).await.is_err()
-                    {
-                        break;
+                match key {
+                    Some(key) => {
+                        let handle = state.feeds.read().expect("feeds lock").get(&key).cloned();
+                        if let Some(handle) = handle {
+                            feed = handle.broadcast.subscribe();
+                            my_snapshot = handle.snapshot.clone();
+                            current_key = Some(key);
+                            let snap = my_snapshot.borrow().clone();
+                            if welcomed
+                                && tx.send(Message::Text(snap.to_string().into())).await.is_err()
+                            {
+                                break;
+                            }
+                        }
                     }
+                    None => current_key = None, // idler left all worlds → unbind
                 }
             }
             frame = feed.recv() => {
