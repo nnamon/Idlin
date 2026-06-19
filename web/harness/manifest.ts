@@ -20,6 +20,14 @@ export type FixtureMeta =
        *  failed render (no assets, GL context lost) fails the test. The shot
        *  is still eyeballed for real sign-off (§6). */
       minBytes: number;
+    }
+  | {
+      // 3D scene + HUD overlay together: assert BOTH the overlay text (non-vacuous
+      // HUD) and the non-blank page bytes (non-vacuous scene).
+      name: string;
+      kind: "full";
+      expect: string[];
+      minBytes: number;
     };
 
 export const FIXTURES: FixtureMeta[] = [
@@ -46,10 +54,25 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 50_000,
   },
   {
-    // All nine skills are in the DOM (clipped, not absent) — the first and last
+    // All eight skills are in the DOM (clipped, not absent) — the first and last
     // prove the full list rendered; the bounded-box test proves it's clipped.
     name: "skill-overflow",
     kind: "overlay",
-    expect: ["Cleave", "Decoy", "DPS"],
+    expect: ["Cleave", "Power Shot", "DPS"],
+  },
+  {
+    // The life/mana globes render with the focused idler's pools — "168" is the
+    // life-orb value (low life), proving the orb bound to the sheet, not a blank.
+    name: "globes",
+    kind: "overlay",
+    expect: ["Vesh", "168"],
+  },
+  {
+    // Whole game view: HUD over the 3D scene. Assert HUD text (Brakka + a skill)
+    // AND that the full-page PNG is non-blank (scene rendered).
+    name: "full-shore",
+    kind: "full",
+    expect: ["Brakka", "Heavy Swing"],
+    minBytes: 60_000,
   },
 ];

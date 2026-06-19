@@ -632,9 +632,9 @@ export class EntityVisual {
     if (this.hpFg && this.hpBg) {
       this.hpFg.scale.x = Math.max(0.02, 1.16 * pct);
       this.hpFg.position.x = -(1.16 * (1 - pct)) / 2;
-      (this.hpFg.material as THREE.SpriteMaterial).color.setHex(
-        pct > 0.5 ? 0x44dd66 : pct > 0.25 ? 0xffd75a : 0xff5a5a,
-      );
+      // Life reads red everywhere — the same crimson as the bottom-left life globe
+      // (sampled from the orb liquid), so the bar and the orb are one visual language.
+      (this.hpFg.material as THREE.SpriteMaterial).color.setHex(0xb73433);
       const hide = er.state.dead || (er.state.kind === "Monster" && er.state.life_pct >= 100);
       this.hpBg.visible = !hide;
       this.hpFg.visible = !hide;

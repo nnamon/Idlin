@@ -26,8 +26,10 @@ async function loadFixture(browser: Browser, name: string) {
 }
 
 /** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
-function shotTarget(page: Page, kind: "overlay" | "scene") {
-  return kind === "overlay" ? page.locator("#overlay") : page.locator("#scene canvas");
+function shotTarget(page: Page, kind: "overlay" | "scene" | "full") {
+  if (kind === "scene") return page.locator("#scene canvas");
+  if (kind === "full") return page.locator("body"); // 3D scene canvas + HUD overlay
+  return page.locator("#overlay");
 }
 
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
@@ -50,8 +52,8 @@ for (const fx of FIXTURES) {
   test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
     const target = shotTarget(page, fx.kind);
-    if (fx.kind === "overlay") {
-      // Non-vacuous: the authored content must actually be on screen, or a
+    if (fx.kind === "overlay" || fx.kind === "full") {
+      // Non-vacuous: the authored HUD content must actually be on screen, or a
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);
     }
@@ -59,7 +61,7 @@ for (const fx of FIXTURES) {
       path: join(SHOTS_DIR, `${fx.name}.png`),
       animations: "disabled", // freeze CSS auto-scroll to its first frame
     });
-    if (fx.kind === "scene") {
+    if (fx.kind === "scene" || fx.kind === "full") {
       // Non-vacuous for a canvas: a black/cleared frame compresses tiny, so a
       // failed render (assets missing, GL lost) trips this. Eyeball for real.
       expect(buf.length).toBeGreaterThan(fx.minBytes);
@@ -172,5 +174,40 @@ test("the skills auto-scroll actually moves when motion is allowed, and is off u
     .first()
     .evaluate((el) => getComputedStyle(el).animationName);
   expect(reducedName).toBe("none");
+  await ctx.close();
+});
+
+test("the bag/obols shared slot cycles Bag → Obols → Bag on its timer", async ({ browser }) => {
+  // The bag and obols take turns in ONE slot on a 7s timer (CycleDeck). The
+  // frame captures only ever see the initial Bag face (the timer never fires in a
+  // sub-second shot), so this drives the page clock to prove the switch actually
+  // happens — both faces render, and it loops back — and shoots the Obols face
+  // for eyeballing. inspect-panel carries currency, so its deck has both faces.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  const bag = page.getByText("Bag", { exact: true });
+  const obols = page.getByText("Obols", { exact: true });
+
+  // starts on the Bag face; the Obols face is not in the DOM (one at a time)
+  await expect(bag).toBeVisible();
+  await expect(obols).toHaveCount(0);
+
+  // one period → the slot flips to Obols (and Bag leaves the DOM)
+  await page.clock.fastForward(7000);
+  await expect(obols).toBeVisible();
+  await expect(bag).toHaveCount(0);
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "obols-face.png") });
+
+  // another period → it loops back to Bag
+  await page.clock.fastForward(7000);
+  await expect(bag).toBeVisible();
+  await expect(obols).toHaveCount(0);
+
   await ctx.close();
 });

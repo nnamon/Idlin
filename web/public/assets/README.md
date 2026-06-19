@@ -4,6 +4,16 @@ All models are **CC0 (Creative Commons Zero)** by Quaternius
 (quaternius.com), downloaded from quaternius.itch.io. Attribution is not
 required by the license; we credit anyway. Thanks, Quaternius.
 
+## UI sprites (`ui/`)
+
+`ui/orb-{empty,life,mana}.png` are the HUD life/mana globes — pre-composited
+from the **CC0** "Health Orb" (v1.0) layers by **itsmars**
+(opengameart.org/content/health-orb-11): filigree backing + dark-glass sphere +
+tinted fill + shadow + highlight + ornate border, flattened per fill color.
+`empty` is the unfilled dark orb (base); `life`/`mana` are the full red/blue
+orbs, which the client clips over the base to the pool percentage. CC0 needs no
+attribution; we credit anyway. Thanks, itsmars.
+
 ## The modular character system
 
 Characters are a paper-doll: `models/body.glb` carries the universal rig,
