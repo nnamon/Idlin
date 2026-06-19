@@ -402,36 +402,73 @@ fn inspect_world_key(provided: &str, current: Option<&str>, featured: &str) -> O
 /// never falls back to `featured` (#79 privacy: a pinned/unbound viewer must not
 /// pull sheets from the broadcast); unbound (no `current`) → None, nothing to
 /// inspect. A broadcast connection resolves the world it is displaying.
-fn inspect_key(
-    is_watch: bool,
-    provided: &str,
-    current: Option<&str>,
-    featured: &str,
-) -> Option<String> {
-    if is_watch {
-        return current.map(str::to_string);
+/// A connection's subscription state — the SINGLE source of truth for what data
+/// it may receive (#79 privacy). The leaks this prevents all came from gating
+/// distributed across `handle_socket` branches; centralising it here makes the
+/// boundary one decision, and unit-testable.
+///
+/// - `Connecting` — before `Hello`: nothing at all (no frames, snapshot, inspect).
+/// - `Broadcast` — `Hello` with no watch: the featured/director feed.
+/// - `Watch` — `Hello watch=<name>`: confined to ONE idler. `world` is `None`
+///   until that idler's world feed binds (early connect / absent / left); while
+///   unbound, frames/snapshot/inspect are all refused. A watch NEVER reads the
+///   featured feed, another world, or director cues.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SubState {
+    Connecting,
+    Broadcast,
+    Watch { name: String, world: Option<String> },
+}
+
+impl SubState {
+    /// May the current feed's frames — or a resync snapshot — reach this client?
+    fn may_stream(&self) -> bool {
+        matches!(
+            self,
+            SubState::Broadcast | SubState::Watch { world: Some(_), .. }
+        )
     }
-    inspect_world_key(provided, current, featured)
+
+    /// The world an `Inspect` resolves in, or `None` to refuse. `Connecting`
+    /// refuses (no `Hello` yet — the pre-Hello leak). A `Watch` is confined to its
+    /// bound `world`, IGNORING the client-supplied `provided`, and never falls back
+    /// to `featured`. `Broadcast` resolves the client's displayed world, else
+    /// featured.
+    fn inspect_world(&self, provided: &str, featured: &str) -> Option<String> {
+        match self {
+            SubState::Connecting => None,
+            SubState::Watch { world, .. } => world.clone(),
+            SubState::Broadcast => inspect_world_key(provided, None, featured),
+        }
+    }
+
+    /// The watched character name, if this is a watch connection.
+    fn watch_name(&self) -> Option<&str> {
+        match self {
+            SubState::Watch { name, .. } => Some(name),
+            _ => None,
+        }
+    }
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut tx, mut rx) = socket.split();
 
-    // Every connection holds ONE subscription: the featured broadcast by
-    // default, or — when Hello names a character to watch — the feed of
-    // whichever world contains them, re-routed live as they transfer.
+    // ONE subscription per connection; `sub` (SubState) is the single source of
+    // truth for what data may reach this client (#79 privacy). The feed + snapshot
+    // channel handles are kept in sync with `sub` across (re-)Hello and routing
+    // changes; until Hello (`Connecting`), nothing is forwarded.
+    let mut sub = SubState::Connecting;
     let mut feed = state.featured.broadcast.subscribe();
     let mut my_snapshot = state.featured.snapshot.clone();
     let mut routing = state.routing.clone();
-    let mut watch_name: Option<String> = None;
-    let mut current_key: Option<String> = None; // None = the featured feed
 
-    let mut welcomed = false;
     loop {
         tokio::select! {
             msg = rx.next() => {
                 let Some(Ok(msg)) = msg else { break };
                 let Message::Text(text) = msg else { continue };
+                let mut welcomed_now = false;
                 let reply = match serde_json::from_str::<C2S>(&text) {
                     Ok(C2S::Hello { proto_version, watch, .. }) => {
                         if proto_version != PROTO_VERSION {
@@ -450,17 +487,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 ),
                             }
                         } else {
-                            welcomed = true;
-                            watch_name = watch;
-                            // A (re-)Hello RESETS the subscription: drop any prior
-                            // binding back to the featured default so a failed
-                            // re-bind below can never retain the previous world
-                            // (#79 privacy — repeat Hello must not leak the old
-                            // idler's feed/snapshot/inspect). The is_welcome block
-                            // re-binds for a watch; a broadcast stays on featured.
-                            current_key = None;
+                            // A (re-)Hello RESETS the subscription back to the
+                            // featured channels; the welcome block below binds a
+                            // watch to its idler's world. Resetting first means a
+                            // failed (re-)bind can never retain a prior world (#79 —
+                            // a repeat Hello must not leak the old idler's
+                            // feed/snapshot/inspect).
+                            sub = match watch {
+                                None => SubState::Broadcast,
+                                Some(name) => SubState::Watch { name, world: None },
+                            };
                             feed = state.featured.broadcast.subscribe();
                             my_snapshot = state.featured.snapshot.clone();
+                            welcomed_now = true;
                             S2C::Welcome {
                                 role: Role::Owner,
                                 proto_version: PROTO_VERSION,
@@ -475,20 +514,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     },
                     Ok(C2S::DirectorMode { .. }) => continue, // client-side concern in Phase 1
                     Ok(C2S::Inspect { id, world_key }) => {
-                        // A WATCH connection may inspect ONLY its bound idler's
-                        // world (#79 privacy): ignore the client-supplied world_key
-                        // and NEVER fall back to the featured world — otherwise an
-                        // unbound or pinned viewer could pull sheets from the
-                        // broadcast. Unbound → nothing to inspect yet. A BROADCAST
-                        // connection resolves the world it's displaying (its own
-                        // zone.worldKey; net ids are per-world, so the server can't
-                        // guess), falling back to the featured world only then.
-                        let key = inspect_key(
-                            watch_name.is_some(),
-                            &world_key,
-                            current_key.as_deref(),
-                            &routing.borrow().featured,
-                        );
+                        // Resolve via the connection's subscription state: pre-Hello
+                        // (`Connecting`) refuses; a watch is confined to its bound
+                        // world (ignores the client world_key, never falls back to
+                        // featured); broadcast resolves the displayed world, else
+                        // featured (#79).
+                        let key =
+                            sub.inspect_world(&world_key, &routing.borrow().featured);
                         match key {
                             Some(key) => {
                                 let (tx_r, rx_r) = tokio::sync::oneshot::channel();
@@ -514,33 +546,32 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     }
                     Err(e) => S2C::Error { code: 2, msg: format!("bad message: {e}") },
                 };
-                let is_welcome = welcomed && matches!(reply, S2C::Welcome { .. });
                 let json = serde_json::to_string(&reply).expect("protocol always serializes");
                 if tx.send(Message::Text(json.into())).await.is_err() {
                     break;
                 }
-                // Right after Welcome: bind the subscription and deliver
-                // that feed's current snapshot.
-                if is_welcome {
-                    if let Some(name) = &watch_name {
-                        let key = routing.borrow().by_character.get(name).cloned();
+                // Right after a successful Hello: bind a watch to its idler's world
+                // (if online), then deliver the bound feed's snapshot.
+                if welcomed_now {
+                    if let SubState::Watch { name, world } = &mut sub {
+                        let key = routing.borrow().by_character.get(name.as_str()).cloned();
                         match key.and_then(|k| {
                             state.feeds.read().expect("feeds lock").get(&k).cloned().map(|f| (k, f))
                         }) {
                             Some((key, handle)) => {
                                 feed = handle.broadcast.subscribe();
                                 my_snapshot = handle.snapshot.clone();
-                                current_key = Some(key);
+                                *world = Some(key);
                             }
                             None => {
                                 // The idler's world feed isn't online yet (early
                                 // connect before the routing table fills, or an
                                 // unknown name). Do NOT fall back to the broadcast:
                                 // an individual view is ONE idler only — no director
-                                // cues, no other idlers' streams. Keep watch_name so
-                                // the routing.changed arm binds the world feed the
-                                // moment that idler appears; until then frames are
-                                // gated off below (#79).
+                                // cues, no other idlers' streams. The watch stays
+                                // unbound (world None) so frames stay gated off; the
+                                // routing.changed arm binds the world feed the moment
+                                // that idler appears (#79).
                                 let err = serde_json::to_string(&S2C::Error {
                                     code: 4,
                                     msg: format!("character {name} is not streaming yet; waiting"),
@@ -551,12 +582,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                         }
                     }
-                    // Send the bound feed's snapshot — but skip it for a watch that
-                    // hasn't bound a world yet (current_key None): my_snapshot is
-                    // still the featured one, and an individual view must never
-                    // receive the broadcast. routing.changed sends the world
-                    // snapshot once it binds.
-                    if watch_name.is_none() || current_key.is_some() {
+                    // Deliver the bound feed's snapshot. `may_stream()` is false for an
+                    // unbound watch (its snapshot is still the featured one, which an
+                    // individual view must never receive); routing.changed sends the
+                    // world snapshot once it binds (#79).
+                    if sub.may_stream() {
                         let snap = my_snapshot.borrow().clone();
                         if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
                             break;
@@ -564,52 +594,52 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     }
                 }
             }
-            // The watched idler's world changed: re-bind. Appears/moves → bind to
-            // that world; leaves EVERY world → UNBIND (current_key None) so we stop
-            // forwarding the world they left (#79 — no stale binding). Frames stay
-            // gated off while unbound; a later reappearance re-binds.
-            changed = routing.changed(), if watch_name.is_some() => {
+            // The watched idler's world changed: appears/moves → bind to it; leaves
+            // EVERY world → unbind (world None) so we stop forwarding the world they
+            // left (#79 — no stale binding). Frames stay gated off while unbound; a
+            // later reappearance re-binds. A watch never falls back to the broadcast.
+            changed = routing.changed(), if sub.watch_name().is_some() => {
                 if changed.is_err() { break; }
-                let Some(name) = &watch_name else { continue };
-                let key = routing.borrow().by_character.get(name).cloned();
-                if key == current_key {
+                let SubState::Watch { name, world } = &mut sub else { continue };
+                let key = routing.borrow().by_character.get(name.as_str()).cloned();
+                if key.as_deref() == world.as_deref() {
                     continue; // binding unchanged
                 }
                 match key {
-                    Some(key) => {
-                        let handle = state.feeds.read().expect("feeds lock").get(&key).cloned();
+                    Some(k) => {
+                        let handle = state.feeds.read().expect("feeds lock").get(&k).cloned();
                         if let Some(handle) = handle {
                             feed = handle.broadcast.subscribe();
                             my_snapshot = handle.snapshot.clone();
-                            current_key = Some(key);
+                            *world = Some(k);
+                            // Only reached post-Hello (sub is Watch), so the welcome
+                            // was already sent; deliver the newly-bound snapshot.
                             let snap = my_snapshot.borrow().clone();
-                            if welcomed
-                                && tx.send(Message::Text(snap.to_string().into())).await.is_err()
-                            {
+                            if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
                                 break;
                             }
                         }
                     }
-                    None => current_key = None, // idler left all worlds → unbind
+                    None => *world = None, // idler left all worlds → unbind
                 }
             }
             frame = feed.recv() => {
                 match frame {
-                    // Broadcast (no watch) or a BOUND watch only — an unbound watch
-                    // still defaults to the featured subscription but must never
-                    // forward it (one idler only: no director cues, no other
+                    // Broadcast or a BOUND watch only — `Connecting` and an unbound
+                    // watch (still defaulting to the featured subscription) must
+                    // never forward it (one idler only: no director cues, no other
                     // idlers' streams, #79).
-                    Ok(frame) if welcomed && (watch_name.is_none() || current_key.is_some()) => {
+                    Ok(frame) if sub.may_stream() => {
                         if tx.send(Message::Text(frame.to_string().into())).await.is_err() {
                             break;
                         }
                     }
-                    Ok(_) => {} // pre-welcome, or an unbound watch: drop frames
+                    Ok(_) => {} // pre-Hello, or an unbound watch: drop frames
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         // Fell behind: self-heal with a fresh snapshot — but not for
                         // an unbound watch (its snapshot is the featured one).
                         warn!("client lagged {n} frames; resyncing with snapshot");
-                        if welcomed && (watch_name.is_none() || current_key.is_some()) {
+                        if sub.may_stream() {
                             let snap = my_snapshot.borrow().clone();
                             if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
                                 break;
@@ -626,8 +656,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        PROTO_VERSION, SERVER_VERSION, inspect_key, inspect_world_key, load_content,
-        version_payload,
+        PROTO_VERSION, SERVER_VERSION, SubState, inspect_world_key, load_content, version_payload,
     };
 
     #[test]
@@ -709,27 +738,59 @@ mod tests {
     }
 
     #[test]
-    fn watch_inspect_is_confined_to_its_bound_world() {
-        // A WATCH connection inspects ONLY its bound idler's world (#79 privacy):
-        // it ignores the client-supplied world_key and never falls back to the
-        // featured world. Mutation: drop the is_watch branch and an unbound watch
-        // resolves `featured` (the leak the critic found) → these fail.
-        // Unbound watch → nothing to inspect, despite a provided/featured world.
-        assert_eq!(inspect_key(true, "", None, "featured#w"), None);
-        assert_eq!(inspect_key(true, "some#other", None, "featured#w"), None);
-        // Bound watch → ALWAYS the bound world, ignoring the client world_key.
+    fn subscription_state_gates_streaming_and_inspect() {
+        // SubState is the single privacy boundary (#79). Each leak the critic found
+        // maps to one assertion here; reverting any gate fails this test.
+        use SubState::*;
+
+        // Pre-Hello (`Connecting`): nothing streams, nothing is inspectable — even
+        // with a featured world present (the pre-Hello Inspect leak).
+        assert!(!Connecting.may_stream());
+        assert_eq!(Connecting.inspect_world("coast", "featured#w"), None);
+        assert_eq!(Connecting.inspect_world("", "featured#w"), None);
+        assert_eq!(Connecting.watch_name(), None);
+
+        // Broadcast: streams; inspects the client's displayed world, else featured.
+        assert!(Broadcast.may_stream());
         assert_eq!(
-            inspect_key(true, "some#other", Some("kargan#w"), "featured#w").as_deref(),
-            Some("kargan#w"),
-        );
-        // A broadcast connection keeps the displayed-world / featured behaviour.
-        assert_eq!(
-            inspect_key(false, "shown#w", None, "featured#w").as_deref(),
+            Broadcast.inspect_world("shown#w", "featured#w").as_deref(),
             Some("shown#w"),
         );
         assert_eq!(
-            inspect_key(false, "", None, "featured#w").as_deref(),
+            Broadcast.inspect_world("", "featured#w").as_deref(),
             Some("featured#w"),
         );
+        assert_eq!(Broadcast.watch_name(), None);
+
+        // Watch UNBOUND (idler not yet on a world feed): never streams, never
+        // inspects — ignoring both the provided world_key and featured (the
+        // unbound-watch Inspect leak). Still reports its watched name so the
+        // routing arm can bind it.
+        let unbound = Watch {
+            name: "Kargan".into(),
+            world: None,
+        };
+        assert!(!unbound.may_stream());
+        assert_eq!(unbound.inspect_world("coast", "featured#w"), None);
+        assert_eq!(unbound.inspect_world("", "featured#w"), None);
+        assert_eq!(unbound.watch_name(), Some("Kargan"));
+
+        // Watch BOUND: streams; inspects ONLY its bound world, ignoring the
+        // client-supplied world_key and never featured (the repeat-Hello / wrong-
+        // world leak).
+        let bound = Watch {
+            name: "Kargan".into(),
+            world: Some("kargan#w".into()),
+        };
+        assert!(bound.may_stream());
+        assert_eq!(
+            bound.inspect_world("some#other", "featured#w").as_deref(),
+            Some("kargan#w"),
+        );
+        assert_eq!(
+            bound.inspect_world("", "featured#w").as_deref(),
+            Some("kargan#w"),
+        );
+        assert_eq!(bound.watch_name(), Some("Kargan"));
     }
 }
