@@ -10,6 +10,36 @@ const CONTACT_FRAC = 0.45;
 const ANIM_DEBUG = new URLSearchParams(location.search).has("animdebug");
 const FADE_S = 0.18;
 
+/** Overhead bar canvas size (drawn in 2D, shown on one billboarded sprite). */
+const BAR_W = 256;
+const BAR_H = 40;
+
+/** Paint the overhead life (+ optional energy-shield) bar onto its canvas. All
+ *  layout happens in 2D here, so the single sprite that shows this texture stays
+ *  aligned at any camera angle — the old two-sprite bar offset the fill in the
+ *  group's LOCAL space, which the angled camera projected diagonally off the
+ *  track (#100). `esPct < 0` means no shield → only the life bar is drawn. */
+function drawBar(canvas: HTMLCanvasElement, lifePct: number, esPct: number): void {
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, BAR_W, BAR_H);
+  const band = (y: number, h: number, pct: number, track: string, fill: string) => {
+    ctx.fillStyle = "rgba(0,0,0,0.82)"; // dark outline → reads as a border
+    ctx.fillRect(0, y, BAR_W, h);
+    const i = 3;
+    ctx.fillStyle = track;
+    ctx.fillRect(i, y + i, BAR_W - 2 * i, h - 2 * i);
+    const w = (Math.max(0, Math.min(100, pct)) / 100) * (BAR_W - 2 * i);
+    ctx.fillStyle = fill;
+    ctx.fillRect(i, y + i, w, h - 2 * i); // left-anchored fill: depletes rightward
+  };
+  if (esPct >= 0) {
+    band(2, 13, esPct, "#10242e", "#8cd7ff"); // shield on top (cyan, globe glow)
+    band(19, 19, lifePct, "#331111", "#b73433"); // life below (crimson, globe red)
+  } else {
+    band(10, 20, lifePct, "#331111", "#b73433"); // life only, vertically centred
+  }
+}
+
 function strHash(s: string): number {
   let hash = 0;
   for (const c of s) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
@@ -68,8 +98,11 @@ export class EntityVisual {
   private bubble: THREE.Sprite | null = null;
   private bubbleTex: THREE.CanvasTexture | null = null;
   private bubbleShownAt = 0;
-  private hpBg: THREE.Sprite | null = null;
-  private hpFg: THREE.Sprite | null = null;
+  private bar: THREE.Sprite | null = null;
+  private barCanvas: HTMLCanvasElement | null = null;
+  private barTex: THREE.CanvasTexture | null = null;
+  private lastLifePct = -1;
+  private lastEsPct = -2; // sentinel below any real es_pct (-1..100) → first draw runs
   private label: THREE.Sprite | null = null;
   private weaponKey = "";
   private oneShot: THREE.AnimationAction | null = null;
@@ -380,29 +413,24 @@ export class EntityVisual {
   }
 
   private buildBars(): void {
-    this.hpBg = new THREE.Sprite(
+    const canvas = document.createElement("canvas");
+    canvas.width = BAR_W;
+    canvas.height = BAR_H;
+    this.barCanvas = canvas;
+    this.barTex = new THREE.CanvasTexture(canvas);
+    this.barTex.colorSpace = THREE.SRGBColorSpace;
+    this.bar = new THREE.Sprite(
       new THREE.SpriteMaterial({
-        map: this.shared.whiteTex,
-        color: 0x331111,
-        transparent: true,
-        opacity: 0.85,
-        depthTest: false,
-      }),
-    );
-    this.hpBg.scale.set(1.2, 0.14, 1);
-    this.hpBg.position.y = this.height + 0.45;
-    this.hpFg = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: this.shared.whiteTex,
-        color: 0x44dd66,
+        map: this.barTex,
         transparent: true,
         depthTest: false,
       }),
     );
-    this.hpFg.scale.set(1.16, 0.1, 1);
-    this.hpFg.position.y = this.height + 0.45;
-    this.hpFg.renderOrder = 1;
-    this.group.add(this.hpBg, this.hpFg);
+    // 1.2 wide as before; height tracks the canvas aspect so nothing stretches.
+    this.bar.scale.set(1.2, (1.2 * BAR_H) / BAR_W, 1);
+    this.bar.position.y = this.height + 0.45;
+    this.bar.renderOrder = 1;
+    this.group.add(this.bar);
   }
 
   private buildLabel(text: string, tint?: number): void {
@@ -627,17 +655,24 @@ export class EntityVisual {
       return;
     }
 
-    // -- health bar --
-    const pct = er.state.life_pct / 100;
-    if (this.hpFg && this.hpBg) {
-      this.hpFg.scale.x = Math.max(0.02, 1.16 * pct);
-      this.hpFg.position.x = -(1.16 * (1 - pct)) / 2;
-      // Life reads red everywhere — the same crimson as the bottom-left life globe
-      // (sampled from the orb liquid), so the bar and the orb are one visual language.
-      (this.hpFg.material as THREE.SpriteMaterial).color.setHex(0xb73433);
-      const hide = er.state.dead || (er.state.kind === "Monster" && er.state.life_pct >= 100);
-      this.hpBg.visible = !hide;
-      this.hpFg.visible = !hide;
+    // -- health + energy-shield bar (one canvas sprite; redrawn only on change) --
+    if (this.bar && this.barTex && this.barCanvas) {
+      const lifePct = er.state.life_pct;
+      const esPct = er.state.es_pct;
+      if (lifePct !== this.lastLifePct || esPct !== this.lastEsPct) {
+        this.lastLifePct = lifePct;
+        this.lastEsPct = esPct;
+        // Life reads the same crimson as the HUD life globe; the shield the same
+        // light blue as the globe's ES — bar and orbs are one visual language.
+        drawBar(this.barCanvas, lifePct, esPct);
+        this.barTex.needsUpdate = true;
+      }
+      // A monster at full life hides its bar — but keep it shown if a shield is down.
+      const esFull = esPct < 0 || esPct >= 100;
+      const hide =
+        er.state.dead ||
+        (er.state.kind === "Monster" && er.state.life_pct >= 100 && esFull);
+      this.bar.visible = !hide;
     }
 
     // Nameplates: idlers keep theirs always; a monster's name dies with
@@ -712,8 +747,8 @@ export class EntityVisual {
       mat.dispose();
     }
     this.outlineMat?.dispose();
-    (this.hpBg?.material as THREE.Material | undefined)?.dispose();
-    (this.hpFg?.material as THREE.Material | undefined)?.dispose();
+    (this.bar?.material as THREE.Material | undefined)?.dispose();
+    this.barTex?.dispose();
     if (this.bubble) {
       this.bubble.removeFromParent();
       (this.bubble.material as THREE.Material).dispose();
@@ -724,7 +759,6 @@ export class EntityVisual {
 
 /** Session-lifetime resources shared by every visual (never disposed). */
 export class SharedResources {
-  readonly whiteTex: THREE.Texture;
   readonly glowTex: THREE.Texture;
   readonly pillarGeo = new THREE.CylinderGeometry(0.13, 0.26, 7.5, 10, 1, true);
   readonly pillarMats: { rarity: THREE.MeshBasicMaterial[]; gem: THREE.MeshBasicMaterial };
@@ -752,9 +786,6 @@ export class SharedResources {
   readonly fallbackMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
 
   constructor() {
-    const data = new Uint8Array([255, 255, 255, 255]);
-    this.whiteTex = new THREE.DataTexture(data, 1, 1);
-    this.whiteTex.needsUpdate = true;
     // Soft radial falloff for flashes/tracers — a flat white texture on a
     // sprite reads as a literal square.
     const c = document.createElement("canvas");

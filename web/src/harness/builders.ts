@@ -22,6 +22,7 @@ export function character(over: Require<EntityState, "id" | "name">): EntityStat
     x: 0,
     y: 0,
     life_pct: 100,
+    es_pct: -1, // no shield by default; a fixture sets 0..100 to show the band
     level: 1,
     model: "marauder",
     rarity: 0,

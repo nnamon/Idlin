@@ -63,6 +63,13 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 50_000,
   },
   {
+    // Overhead bars (#100): entities at 50/80(+ES 60)/25% life — eyeball that
+    // each red fill sits on its dark track and the shield band reads cyan.
+    name: "scene-bars",
+    kind: "scene",
+    minBytes: 50_000,
+  },
+  {
     // All eight skills are in the DOM (clipped, not absent) — the first and last
     // prove the full list rendered; the bounded-box test proves it's clipped.
     name: "skill-overflow",

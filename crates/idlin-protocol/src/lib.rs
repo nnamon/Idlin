@@ -10,7 +10,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTO_VERSION: u32 = 35;
+// 36: EntityState.es_pct (#100 — energy shield on the overhead bar).
+pub const PROTO_VERSION: u32 = 36;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -36,6 +37,9 @@ pub struct EntityState {
     pub x: i32,
     pub y: i32,
     pub life_pct: u8,
+    /// Energy-shield fill for the overhead bar: -1 = no ES (draw none), else
+    /// es/es_max as 0..=100. Lets the scene show a shield band per entity.
+    pub es_pct: i32,
     pub level: u32,
     /// Display name (characters: player name; monsters: archetype name).
     pub name: String,
@@ -69,6 +73,9 @@ pub struct EntityMove {
 pub struct EntityPatch {
     pub id: u32,
     pub life_pct: u8,
+    /// Energy-shield fill (-1 = no ES, else 0..=100); patched so the overhead
+    /// shield band tracks ES drain/recharge mid-stream.
+    pub es_pct: i32,
     pub level: u32,
     pub dead: bool,
     pub kills: u32,

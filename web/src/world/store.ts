@@ -203,6 +203,7 @@ export class WorldStore {
           const er = this.entities.get(u.id);
           if (!er) continue;
           er.state.life_pct = u.life_pct;
+          er.state.es_pct = u.es_pct;
           er.state.level = u.level;
           er.state.dead = u.dead;
           er.state.kills = u.kills;

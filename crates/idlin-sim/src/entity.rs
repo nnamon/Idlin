@@ -125,6 +125,17 @@ impl CombatStats {
         }
         (self.life.clamp(0, self.life_max) * 100 / self.life_max) as u8
     }
+
+    /// Energy-shield fill for display: `-1` when the entity has no ES at all
+    /// (the client then draws no shield band), otherwise `es/es_max` as `0..=100`
+    /// (a depleted-but-present shield reads as `0`, so the empty track still
+    /// shows that this entity carries a shield).
+    pub fn es_pct(&self) -> i32 {
+        if self.es_max <= 0 {
+            return -1;
+        }
+        (self.es.clamp(0, self.es_max) * 100 / self.es_max) as i32
+    }
 }
 
 /// How a skill use is aimed; which forms are legal is the gem's

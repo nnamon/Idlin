@@ -413,6 +413,7 @@ impl World {
                     x_raw: e.pos.x.raw(),
                     y_raw: e.pos.y.raw(),
                     life_pct: combat.map(|c| c.life_pct()).unwrap_or(0),
+                    es_pct: combat.map(|c| c.es_pct()).unwrap_or(-1),
                     level,
                     name,
                     model,

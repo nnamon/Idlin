@@ -8,7 +8,12 @@ export type EntityState = { id: number, kind: EntityKind,
 /**
  * Q16.16 raw.
  */
-x: number, y: number, life_pct: number, level: number, 
+x: number, y: number, life_pct: number, 
+/**
+ * Energy-shield fill for the overhead bar: -1 = no ES (draw none), else
+ * es/es_max as 0..=100. Lets the scene show a shield band per entity.
+ */
+es_pct: number, level: number, 
 /**
  * Display name (characters: player name; monsters: archetype name).
  */

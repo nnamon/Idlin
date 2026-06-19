@@ -502,6 +502,7 @@ fn diff(
                     });
                 }
                 if old.life_pct != state.life_pct
+                    || old.es_pct != state.es_pct
                     || old.level != state.level
                     || old.dead != state.dead
                     || old.kills != state.kills
@@ -514,6 +515,7 @@ fn diff(
                     updated.push(EntityPatch {
                         id: *id,
                         life_pct: state.life_pct,
+                        es_pct: state.es_pct,
                         level: state.level,
                         dead: state.dead,
                         kills: state.kills,
@@ -570,6 +572,7 @@ fn to_state(v: &EntityView) -> EntityState {
         x: v.x_raw,
         y: v.y_raw,
         life_pct: v.life_pct,
+        es_pct: v.es_pct,
         level: v.level,
         name: v.name.clone(),
         model: v.model.clone(),
@@ -761,6 +764,7 @@ mod tests {
             x,
             y: 0,
             life_pct,
+            es_pct: -1,
             level: 1,
             name: format!("e{id}"),
             model: "idler".into(),
@@ -801,6 +805,25 @@ mod tests {
             [(2, 40)]
         );
         assert_eq!(removed, [3]);
+    }
+
+    #[test]
+    fn diff_patches_an_energy_shield_change() {
+        // ES drains/recharges with life unmoved — the patch must still fire and
+        // carry the new es_pct, else the overhead shield band would freeze.
+        // (Mutation: drop `old.es_pct != state.es_pct` from diff() → no update.)
+        let mut shielded = state(1, 0, 100);
+        shielded.es_pct = 80;
+        let prev = keyed(vec![shielded.clone()]);
+        let mut drained = shielded;
+        drained.es_pct = 30; // life still 100; only the shield moved
+        let current = keyed(vec![drained]);
+        let (_, _, updated, _) = diff(&prev, &current);
+        assert_eq!(
+            updated.iter().map(|u| (u.id, u.es_pct)).collect::<Vec<_>>(),
+            [(1, 30)],
+            "an ES-only change emits a patch carrying the new es_pct"
+        );
     }
 
     #[test]

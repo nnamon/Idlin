@@ -293,6 +293,8 @@ pub struct EntityView {
     pub x_raw: i32,
     pub y_raw: i32,
     pub life_pct: u8,
+    /// Energy-shield fill for the overhead bar: -1 = no ES, else 0..=100.
+    pub es_pct: i32,
     pub level: u32,
     pub name: String,
     /// Client-side visual key (monster archetype model; characters: "idler").
