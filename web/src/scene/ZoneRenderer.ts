@@ -9,10 +9,11 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { WorldStore } from "../world/store";
 import { DirectorCamera } from "../camera/DirectorCamera";
 import { AssetLibrary } from "./Assets";
-import { EntityVisual, SharedResources } from "./EntityVisuals";
+import { EntityVisual, SharedResources, UI_LAYER } from "./EntityVisuals";
 import { FxSystem } from "./FxSystem";
 import { IconFactory } from "./IconFactory";
 import { Terrain } from "./Terrain";
+import { RetroShader } from "./RetroPass";
 
 const SKY_COLOR = 0x07070d;
 
@@ -129,6 +130,9 @@ export class ZoneRenderer {
   private capture: boolean;
   /** Virtual elapsed seconds while stepping frames in capture mode. */
   private captureElapsed = 0;
+  /** #90 experiment: the optional retro (pixelate/posterize) pass; resolution
+   *  is refreshed on resize. Null unless ?pixel / ?posterize is set. */
+  private retroPass: ShaderPass | null = null;
   /// Identity of the zone the scene was built for — a director cut or
   /// transfer flips the featured world, and the terrain must follow.
   /// Instances share display names ("The Withered Shore") but differ in
@@ -190,6 +194,9 @@ export class ZoneRenderer {
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
     this.camera.position.set(30, 25, 55);
     this.director = new DirectorCamera(this.camera);
+    // The camera sees the world (layer 0) AND the in-scene UI/text (layer 1) by
+    // default; the retro pass (#90) splits them so only the world is pixelated.
+    this.camera.layers.enable(UI_LAYER);
 
     // -- the night rig: cold ambient sky, one shadow-casting moon --
     this.scene.add(new THREE.HemisphereLight(0x44548a, 0x1a1722, 0.7));
@@ -209,6 +216,26 @@ export class ZoneRenderer {
     vignette.uniforms.darkness.value = 1.0;
     this.composer.addPass(vignette);
     this.composer.addPass(new OutputPass());
+
+    // #90 (experiment, default OFF): a retro pixelate/posterize grade, last in
+    // the chain so it grades the final tonemapped image. Behind URL params so
+    // the live path + existing fixtures are untouched until a look is signed off:
+    //   ?pixel=<N>        chunk size in px (>1 to pixelate)
+    //   ?posterize=<N>    palette steps per channel (>=2 to posterize)
+    //   ?dither=1         ordered dither before posterizing
+    {
+      const sp = new URLSearchParams(location.search);
+      const pixelSize = Math.max(1, Number(sp.get("pixel") ?? "1"));
+      const levels = Math.max(0, Number(sp.get("posterize") ?? "0"));
+      if (pixelSize > 1 || levels > 1) {
+        const retro = new ShaderPass(RetroShader);
+        retro.uniforms.pixelSize.value = pixelSize;
+        retro.uniforms.levels.value = levels;
+        retro.uniforms.dither.value = sp.get("dither") === "1" ? 1 : 0;
+        this.composer.addPass(retro);
+        this.retroPass = retro;
+      }
+    }
 
     this.fx = new FxSystem(this.scene, this.shared.glowTex);
 
@@ -247,6 +274,10 @@ export class ZoneRenderer {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
+    if (this.retroPass) {
+      const pr = this.renderer.getPixelRatio();
+      this.retroPass.uniforms.resolution.value.set(w * pr, h * pr);
+    }
   }
 
   private buildZone(): void {
@@ -647,7 +678,7 @@ export class ZoneRenderer {
       this.camera.position.set(x, y, z);
       this.camera.lookAt(tx, ty, tz);
       this.focusRing.visible = false;
-      this.composer.render();
+      this.renderComposite();
       return;
     }
     let focusId = this.store.cue?.focus;
@@ -677,7 +708,34 @@ export class ZoneRenderer {
       this.director.idle(dt);
     }
 
+    this.renderComposite();
+  }
+
+  /** Render the frame. Normally the composer draws everything (world + the
+   *  in-scene UI/text on layer 1). With the retro pass active (#90), the WORLD
+   *  (layer 0) goes through the post chain while the UI/text (layer 1) is drawn
+   *  crisp straight to the screen on top — so the shader never touches text. */
+  private renderComposite(): void {
+    if (!this.retroPass) {
+      this.composer.render();
+      return;
+    }
+    this.camera.layers.set(0); // world only → pixelate/posterize
     this.composer.render();
+    // Text/UI (layer 1) drawn crisp on TOP of the pixelated world. The scene
+    // background would otherwise repaint over the world on this second render,
+    // so null it (and don't auto-clear) — only the transparent UI sprites land.
+    this.camera.layers.set(UI_LAYER);
+    const prevAutoClear = this.renderer.autoClear;
+    const prevBg = this.scene.background;
+    this.renderer.autoClear = false;
+    this.scene.background = null;
+    this.renderer.setRenderTarget(null);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.autoClear = prevAutoClear;
+    this.scene.background = prevBg;
+    this.camera.layers.set(0); // restore the default (world + UI) view
+    this.camera.layers.enable(UI_LAYER);
   }
 
   /** Capture only: render `frames` frames at a fixed `dt`, advancing the

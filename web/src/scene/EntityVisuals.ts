@@ -14,6 +14,11 @@ const FADE_S = 0.18;
 const BAR_W = 256;
 const BAR_H = 40;
 
+/** Render layer for in-scene UI/text sprites (nameplates, bars, damage numbers,
+ *  speech). The retro post-pass (#90) renders only layer 0 (the world); these
+ *  ride layer 1 and are composited crisp on top, never pixelated. */
+export const UI_LAYER = 1;
+
 /** Paint the overhead life (+ optional energy-shield) bar onto its canvas. All
  *  layout happens in 2D here, so the single sprite that shows this texture stays
  *  aligned at any camera angle — the old two-sprite bar offset the fill in the
@@ -430,6 +435,7 @@ export class EntityVisual {
     this.bar.scale.set(1.2, (1.2 * BAR_H) / BAR_W, 1);
     this.bar.position.y = this.height + 0.45;
     this.bar.renderOrder = 1;
+    this.bar.layers.set(UI_LAYER);
     this.group.add(this.bar);
   }
 
@@ -458,6 +464,7 @@ export class EntityVisual {
     );
     this.label.scale.set(3.75, 0.94, 1);
     this.label.position.y = this.height + 0.95;
+    this.label.layers.set(UI_LAYER);
     this.group.add(this.label);
   }
 
@@ -531,6 +538,7 @@ export class EntityVisual {
         const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
         this.bubble = new THREE.Sprite(mat);
         this.bubble.renderOrder = 3;
+        this.bubble.layers.set(UI_LAYER);
         this.bubble.scale.set(4.4, 0.82, 1);
         this.bubbleTex = tex;
         this.group.add(this.bubble);

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { ActiveHit, ActiveProjectile, ActiveSkill } from "../world/store";
+import { UI_LAYER } from "./EntityVisuals";
 
 /** Damage-number colors by dominant component:
  *  phys, fire, cold, lightning, chaos. */
@@ -532,6 +533,7 @@ export class FxSystem {
         active: false,
       };
       n.sprite.renderOrder = 2;
+      n.sprite.layers.set(UI_LAYER); // text rides the crisp UI layer (#90)
       this.scene.add(n.sprite);
       this.numbers.push(n);
     }
