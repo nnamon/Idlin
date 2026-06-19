@@ -6,13 +6,22 @@ required by the license; we credit anyway. Thanks, Quaternius.
 
 ## UI sprites (`ui/`)
 
-`ui/orb-{empty,life,mana}.png` are the HUD life/mana globes — pre-composited
-from the **CC0** "Health Orb" (v1.0) layers by **itsmars**
-(opengameart.org/content/health-orb-11): filigree backing + dark-glass sphere +
-tinted fill + shadow + highlight + ornate border, flattened per fill color.
-`empty` is the unfilled dark orb (base); `life`/`mana` are the full red/blue
-orbs, which the client clips over the base to the pool percentage. CC0 needs no
-attribution; we credit anyway. Thanks, itsmars.
+`ui/orb-*.png` are the HUD life/mana globes, composited from the **CC0** "Health
+Orb" layers by **itsmars** (opengameart.org/content/health-orb-11) — the v1.0
+fill/highlight spheres plus the v1.1 PSD's stone border + cradle. The orb renders
+as stacked layers (the client composites them per pool state), all sharing the
+same sphere geometry so they align:
+
+- `orb-empty.png` — the stone frame (ornate border + cradle), transparent interior.
+- `orb-life-fill.png` / `orb-mana-fill.png` — the red/blue liquid sphere (tinted
+  fill), clipped from the bottom to the pool percentage.
+- `orb-es-fill.png` — a light-blue right semicircle (recoloured fill) for energy
+  shield, clipped from the bottom; its inner edge is a concave meridian.
+- `orb-reserved.png` — the granite sphere (the v1.0 dark-glass back), clipped from
+  the TOP to show reserved (unavailable) life/mana.
+- `orb-glass.png` — the glass surface gloss/highlight, the topmost shared layer.
+
+CC0 needs no attribution; we credit anyway. Thanks, itsmars.
 
 ## The modular character system
 

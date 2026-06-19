@@ -1,4 +1,5 @@
 import type { S2C } from "../gen/S2C";
+import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { NetStatus } from "../net/client";
 import { LIVE_STATUS } from "./stubClient";
 import {
@@ -342,6 +343,8 @@ const globes: Fixture = {
         es_max: 240,
         mana: 0,
         mana_max: 200,
+        life_reserved: 354, // ~30% reserved → gravel band at the top
+        mana_reserved: 80, // ~40% of the mana pool reserved
       }),
     ),
   ],
@@ -392,6 +395,10 @@ const fullShore: Fixture = {
         life_max: 1530,
         mana: 168,
         mana_max: 240,
+        es: 180,
+        es_max: 300,
+        life_reserved: 306, // ~20% reserved (aura) → gravel at the top
+        mana_reserved: 60, // ~25% of mana reserved
         kills: 318,
         dmg_phys: 412,
         dmg_lightning: 88,
@@ -469,10 +476,69 @@ const fullShore: Fixture = {
   ],
 };
 
+// Variant whole-game scenes: the SAME Brakka loadout as full-shore, only the
+// pools differ — so the orbs can be reviewed across life/ES/mana/reserved states
+// in real in-game context. (full-shore = mid pools.)
+const fullSheetMsg = fullShore.messages[fullShore.messages.length - 1] as Extract<
+  S2C,
+  { type: "CharacterSheet" }
+>;
+const fullVariant = (label: string, pools: Partial<CharacterSheet>): Fixture => ({
+  ...fullShore,
+  label,
+  messages: [
+    ...fullShore.messages.slice(0, -1),
+    { type: "CharacterSheet", data: { sheet: { ...fullSheetMsg.data.sheet, ...pools } } },
+  ],
+});
+// Low life, full energy shield, heavy reservation — every band at an extreme.
+const fullBloodied = fullVariant("Whole game view: low life, full ES, heavy reservation", {
+  life: 214,
+  mana: 36,
+  es: 300,
+  es_max: 300,
+  life_reserved: 612,
+  mana_reserved: 96,
+});
+// Full pools, no energy shield, no reservation — the ES ring and the ES/Reserved
+// readout lines all drop out (proves the zero-cases).
+const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservation", {
+  life: 1530,
+  mana: 240,
+  es: 0,
+  es_max: 0,
+  life_reserved: 0,
+  mana_reserved: 0,
+});
+
+// Edge cases: a lone idler (no focus queue) must show as the CURRENT carousel item
+// (bold), not a dim neighbour; and an overkilled pool (sim sends negative life)
+// must read 0 on the orb, never a negative number.
+const EDGE_ID = 9;
+const hudEdge: Fixture = {
+  kind: "overlay",
+  label: "Edge: a lone idler + an overkilled (negative) life pool that clamps to 0",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [
+        character({ id: EDGE_ID, name: "Solo", level: 30, model: "ranger", life_pct: 0, kills: 12, items: 2 }),
+      ],
+    }),
+    directorCue(EDGE_ID, "last stand"),
+    characterSheet(
+      sheet({ id: EDGE_ID, name: "Solo", level: 30, life: -25, life_max: 1180, mana: 30, mana_max: 200 }),
+    ),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
+  "hud-edge": hudEdge,
   "scene-shore": sceneShore,
   "skill-overflow": skillOverflow,
   globes,
   "full-shore": fullShore,
+  "full-bloodied": fullBloodied,
+  "full-fresh": fullFresh,
 };

@@ -49,6 +49,13 @@ export const FIXTURES: FixtureMeta[] = [
     ],
   },
   {
+    // Edge cases: a lone idler renders as the current carousel item, and an
+    // overkilled (negative) life pool reads "Life: 0/1180", not a negative number.
+    name: "hud-edge",
+    kind: "overlay",
+    expect: ["Solo", "Life: 0/1180"],
+  },
+  {
     name: "scene-shore",
     kind: "scene",
     minBytes: 50_000,
@@ -73,6 +80,23 @@ export const FIXTURES: FixtureMeta[] = [
     name: "full-shore",
     kind: "full",
     expect: ["Brakka", "Heavy Swing"],
+    minBytes: 60_000,
+  },
+  {
+    // Whole game view at extremes: low life, full ES, heavy reservation — the
+    // "Reserved: 612" line proves the reserved band/readout renders.
+    name: "full-bloodied",
+    kind: "full",
+    expect: ["Brakka", "Reserved: 612"],
+    minBytes: 60_000,
+  },
+  {
+    // Whole game view, full pools with no ES and no reservation — the life
+    // readout is just "Life: 1530/1530" (no ES/Reserved lines), proving the
+    // zero-cases drop out.
+    name: "full-fresh",
+    kind: "full",
+    expect: ["Brakka", "Life: 1530/1530"],
     minBytes: 60_000,
   },
 ];

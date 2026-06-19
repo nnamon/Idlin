@@ -65,6 +65,8 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
     mana_max: 50,
     es: 0,
     es_max: 0,
+    life_reserved: 0,
+    mana_reserved: 0,
     block_bp: 0,
     kills: 0,
     dmg_phys: 0,

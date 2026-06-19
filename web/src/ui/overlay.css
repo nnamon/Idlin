@@ -278,20 +278,54 @@
   width: 112px;
   height: 112px;
 }
+/* reserved life/mana: a granite-gravel band growing from the TOP (top-anchored
+   clip), so the orb reads as current (bottom liquid) · empty (transparent) ·
+   reserved (gravel top). Same sprite geometry as the fills, so it's aligned. */
+.globe-reserved {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  overflow: hidden;
+}
+.globe-reserved img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 112px;
+  height: 112px;
+}
+/* energy shield: a glowing light-blue RIGHT semicircle (a recoloured copy of the
+   life sprite), sitting on top of the life liquid and clipped from the bottom by
+   es/es_max exactly like the liquid. The glow tracks the clip edge at runtime. */
+.globe-es-fill {
+  filter: drop-shadow(0 0 4px rgba(140, 215, 255, 0.7));
+}
+/* the glass surface sheen — the topmost orb layer (over the ES ring), so the
+   shield reads as embedded under the glass */
+.globe-glass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 /* the value: small + low on the GLASS (above the stone cradle) so the orb reads
    first, not the number */
 .globe-val {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 36%;
+  top: 50%;
+  transform: translateY(-50%);
   text-align: center;
   font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
+  font-size: 7.5px;
+  line-height: 1.5;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.2px;
   color: #f0e6cc;
-  opacity: 0.82;
+  opacity: 0.9;
   text-shadow:
     0 1px 2px #000,
     0 0 3px #000;
@@ -400,10 +434,17 @@
   .hud-right.open {
     transform: none;
   }
+  /* the bottom-corner HUD (globes + event ticker) would sit under the slide-in
+     drawer — hide it while the drawer is open so the panels stay readable; it
+     returns when the drawer closes. The toggle stays (it's the close button). */
+  .hud-right.open ~ .globe,
+  .hud-right.open ~ .hud-ticker {
+    display: none;
+  }
   .hud-toggle {
     display: block;
     position: absolute;
-    bottom: 16px;
+    bottom: 132px; /* clear of the bottom-corner globes */
     right: 14px;
     z-index: 10;
     width: 46px;
@@ -418,8 +459,11 @@
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
   }
   .hud-ticker {
-    left: 130px; /* still right of the corner life globe */
-    max-width: 56vw;
+    /* sits BETWEEN the two bottom-corner globes: right of the life globe, left of
+       the mana globe — so it overlaps neither on a narrow phone. */
+    left: 130px;
+    right: 128px;
+    max-width: none;
   }
   .hud-ticker > div {
     font-size: 11px !important;

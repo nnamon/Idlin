@@ -38,18 +38,63 @@ function Header({ children, first }: { children: React.ReactNode; first?: boolea
  *  dark orb is the base, the filled orb is clipped over it to the pool pct. The
  *  value rides small and low so the orb reads first. Pure from props → capture-
  *  stable. */
-function Globe({ kind, cur, max }: { kind: "life" | "mana"; cur: number; max: number }) {
+function Globe({
+  kind,
+  cur,
+  max,
+  es = 0,
+  esMax = 0,
+  reserved = 0,
+}: {
+  kind: "life" | "mana";
+  cur: number;
+  max: number;
+  es?: number;
+  esMax?: number;
+  reserved?: number;
+}) {
   const pct = max > 0 ? Math.max(0, Math.min(100, (cur * 100) / max)) : 0;
+  const esPct = esMax > 0 ? Math.max(0, Math.min(100, (es * 100) / esMax)) : 0;
+  const resPct = max > 0 ? Math.max(0, Math.min(100, (reserved * 100) / max)) : 0;
+  const label = kind === "life" ? "Life" : "Mana";
+  // Clamp the displayed numbers to >= 0: an overkilled idler's life goes negative
+  // in the sim, but the readout should read 0 (the fill already clamps).
+  const showCur = Math.max(0, cur);
+  const showEs = Math.max(0, es);
+  const showRes = Math.max(0, reserved);
+  const title =
+    (esMax > 0
+      ? `${label} ${showCur} / ${max} · ES ${showEs} / ${esMax}`
+      : `${label} ${showCur} / ${max}`) + (reserved > 0 ? ` · ${showRes} reserved` : "");
+  // Stacked readout on the glass: pool, then ES (life only), then reserved.
+  const lines = [`${label}: ${showCur}/${max}`];
+  if (kind === "life" && esMax > 0) lines.push(`ES: ${showEs}/${esMax}`);
+  if (reserved > 0) lines.push(`Reserved: ${showRes}`);
   return (
-    <div className={`globe globe-${kind}`} title={`${kind === "life" ? "Life" : "Mana"} ${cur} / ${max}`}>
-      {/* dark empty orb base, then the filled orb clipped up to the pool level */}
+    <div className={`globe globe-${kind}`} title={title}>
+      {/* layers, back→front: stone frame → liquid (clipped to the pool level from
+          the bottom) → reserved gravel (granite band from the TOP) → energy-shield
+          (light-blue right semicircle, over the gravel) → glass sheen → value */}
       <img className="globe-base" src="/assets/ui/orb-empty.png" alt="" />
       <div className="globe-fill" style={{ height: `${pct}%` }}>
-        <img src={`/assets/ui/orb-${kind}.png`} alt="" />
+        <img src={`/assets/ui/orb-${kind}-fill.png`} alt="" />
       </div>
-      <span className="globe-val">
-        {cur}/{max}
-      </span>
+      {reserved > 0 && (
+        <div className="globe-reserved" style={{ height: `${resPct}%` }}>
+          <img src="/assets/ui/orb-reserved.png" alt="" />
+        </div>
+      )}
+      {kind === "life" && esMax > 0 && (
+        <div className="globe-fill globe-es-fill" style={{ height: `${esPct}%` }}>
+          <img src="/assets/ui/orb-es-fill.png" alt="" />
+        </div>
+      )}
+      <img className="globe-glass" src="/assets/ui/orb-glass.png" alt="" />
+      <div className="globe-val">
+        {lines.map((l, i) => (
+          <div key={i}>{l}</div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -215,8 +260,15 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
       {/* bottom corners: ARPG life/mana globes for the focused idler */}
       {sheet && (
         <>
-          <Globe kind="life" cur={sheet.life} max={sheet.life_max} />
-          <Globe kind="mana" cur={sheet.mana} max={sheet.mana_max} />
+          <Globe
+            kind="life"
+            cur={sheet.life}
+            max={sheet.life_max}
+            es={sheet.es}
+            esMax={sheet.es_max}
+            reserved={sheet.life_reserved}
+          />
+          <Globe kind="mana" cur={sheet.mana} max={sheet.mana_max} reserved={sheet.mana_reserved} />
         </>
       )}
 
@@ -612,9 +664,13 @@ function FocusCarousel({
   if (current < 0 || names.length === 0) return null;
   const n = names.length;
   const at = (k: number) => names[((k % n) + n) % n];
-  const count = Math.min(before + after + 1, n);
+  // Window of distinct offsets that ALWAYS includes 0 (the current, bold): up to
+  // `before` previous and `after` next, each capped to the roster size so we never
+  // repeat — and so a single idler shows itself as current, not a dim neighbour.
+  const back = Math.min(before, n - 1);
+  const fwd = Math.min(after, n - 1 - back);
   const offsets: number[] = [];
-  for (let off = -before; offsets.length < count && off <= after; off++) offsets.push(off);
+  for (let off = -back; off <= fwd; off++) offsets.push(off);
   return (
     <div className="carousel">
       {offsets.map((off, i) => (

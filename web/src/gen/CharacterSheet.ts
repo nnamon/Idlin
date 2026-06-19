@@ -11,6 +11,11 @@ import type { SkillStat } from "./SkillStat";
  */
 export type CharacterSheet = { id: number, name: string, level: number, xp: number, xp_next: number, life: number, life_max: number, mana: number, mana_max: number, es: number, es_max: number, 
 /**
+ * Reserved life/mana — unavailable pool shown as the gravel band growing from
+ * the TOP of the orb. 0 until reservations (auras) exist in the sim.
+ */
+life_reserved: number, mana_reserved: number, 
+/**
  * Basis points chance to block (0 without a shield).
  */
 block_bp: number, kills: number, dmg_phys: number, dmg_fire: number, dmg_cold: number, dmg_lightning: number, dmg_chaos: number, accuracy: number, evasion: number, armour: number, 
