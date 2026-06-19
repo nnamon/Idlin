@@ -9,6 +9,6 @@ GemDef(
     requires_tags: [duration],
     effects: [
         dot_duration_inc(bp: 4000),     // 40% longer riders
-        mana_mult(bp: 1000),            // 110% mana cost
+        cost_mult(bp: 1000),            // 110% cost
     ],
 )

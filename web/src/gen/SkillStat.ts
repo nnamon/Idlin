@@ -45,6 +45,10 @@ use_ticks: number,
  */
 cooldown_ticks: number, mana_cost: number, 
 /**
+ * Life paid per use (0 for most skills). Ungated — a use can self-kill.
+ */
+life_cost: number, 
+/**
  * Content-unit footprint. 0 range = the weapon's range.
  */
 range_cu: number, radius_cu: number, 

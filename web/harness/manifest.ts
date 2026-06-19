@@ -46,6 +46,8 @@ export const FIXTURES: FixtureMeta[] = [
       // The adaptive non-DPS headlines — the maintainer's "not just DPS" point.
       "Buff 8s",
       "DoT 48/s",
+      // War Cry's life cost renders on the skill card (#98).
+      "30 life",
     ],
   },
   {

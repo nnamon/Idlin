@@ -44,8 +44,10 @@ pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
 /// Size of one ReadSkills record in bytes (#54 PR2a: the pure-def geometry —
 /// shape/radius/skill_kind — moved to SkillInfo). Record: slot_no, gem_num,
-/// level, cooldown_left, range, mana_cost, use_ticks, target_mode, ready.
-pub const SKILL_RECORD_SIZE: u16 = 36; // 9 words
+/// level, cooldown_left, range, mana_cost, use_ticks, target_mode, ready,
+/// life_cost (#98: the FINAL per-use life cost, support cost-mults folded in —
+/// 0 for the vast majority of skills; ungated, so it does NOT gate `ready`).
+pub const SKILL_RECORD_SIZE: u16 = 40; // 10 words
 // SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline.
 
 /// Size of one ReadInventory record in bytes (#54 PR2a: slot/w/h are
@@ -656,13 +658,16 @@ impl World {
                 };
                 let now = self.tick_count();
                 // Record (#54 PR2a): slot_no, gem_num, level, cooldown_left,
-                // range, mana_cost, use_ticks, target_mode, ready. The pure-def
-                // GEOMETRY (shape/radius/skill_kind) moved to SkillInfo; but
-                // target_mode stays — a bot needs it EVERY fire to pick the
+                // range, mana_cost, use_ticks, target_mode, ready, life_cost. The
+                // pure-def GEOMETRY (shape/radius/skill_kind) moved to SkillInfo;
+                // but target_mode stays — a bot needs it EVERY fire to pick the
                 // UseSkill variant, so forcing a per-fire syscall for it would be
-                // wasteful. range/cost/use_ticks stay too (they fold supports +
-                // live stats, not pure-def).
-                let records: Vec<[i32; 9]> = gems
+                // wasteful. range/cost/use_ticks/life_cost stay too (they fold
+                // supports + live stats, not pure-def). life_cost is the FINAL
+                // per-use life cost (#98) and is NOT folded into `ready`: a life
+                // cost is ungated, so a bot that wants to avoid bleeding out must
+                // weigh it against SelfStatus life itself.
+                let records: Vec<[i32; 10]> = gems
                     .iter()
                     .take(max)
                     .enumerate()
@@ -679,8 +684,9 @@ impl World {
                             idlin_content::TargetMode::Point => 1,
                             idlin_content::TargetMode::Direction => 2,
                         };
-                        // Final cost: support mana multipliers included.
+                        // Final costs: support cost multipliers included.
                         let cost = self.skill_mana_cost(sg);
+                        let life_cost = self.skill_life_cost(sg);
                         // Effective commitment: support speed effects and
                         // your cast speed folded in, same as the executor.
                         let use_ticks = self.skill_use_ticks(
@@ -710,6 +716,7 @@ impl World {
                             use_ticks,
                             target_mode,
                             ready,
+                            life_cost.clamp(0, i32::MAX as i64) as i32,
                         ]
                     })
                     .collect();
@@ -953,6 +960,115 @@ mod tests {
             rd(out.wrapping_add(16), 1),
             -1,
             "record 1 empty → base_num -1"
+        );
+        world.bots.put_back(bot_idx, bot);
+    }
+
+    #[test]
+    fn read_skills_syscall_exposes_life_cost_as_the_tenth_word() {
+        // #98: the ReadSkills record grew a 10th word — the FINAL per-use life
+        // cost at +36 — and the stride widened 36 → 40. Give war_cry a life cost,
+        // socket it ALONGSIDE a no-life-cost skill, and read both records back
+        // through the syscall. Mutation guards: zeroing/dropping the life_cost
+        // word fails the +36 read; reverting the stride to 36 lands record 1's
+        // slot number somewhere other than +40.
+        let mut content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let wc = content
+            .gems
+            .iter()
+            .position(|g| g.id == "war_cry")
+            .expect("war_cry gem");
+        content.gems[wc].life_cost = idlin_content::Formula {
+            base: 30,
+            per_level: 0,
+        };
+        let cleave = content
+            .gems
+            .iter()
+            .position(|g| g.id == "cleave")
+            .expect("cleave gem");
+        let war_num = content
+            .content_num(idlin_content::ids::Category::Gem, wc)
+            .unwrap();
+        let mut world = World::new(13, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Bleeder".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        // First two socket nodes, ascending. `ch.sockets` is ordered, so the
+        // lower node id is record 0 — war_cry goes there, cleave second.
+        let mut socket_nodes = content
+            .tree
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.kind == idlin_content::NodeKind::Socket)
+            .map(|(i, _)| i as u32);
+        let node_a = socket_nodes.next().expect("socket node A");
+        let node_b = socket_nodes.next().expect("socket node B");
+        assert!(node_a < node_b, "sockets iterate in ascending node order");
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.sockets.insert(
+                node_a,
+                crate::entity::SocketedGem {
+                    gem: crate::entity::GemInstance {
+                        gem_idx: wc as u32,
+                        level: 1,
+                        xp: 0,
+                    },
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+            ch.sockets.insert(
+                node_b,
+                crate::entity::SocketedGem {
+                    gem: crate::entity::GemInstance {
+                        gem_idx: cleave as u32,
+                        level: 1,
+                        xp: 0,
+                    },
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+        }
+        let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
+        let mut bot = world.bots.take(bot_idx).unwrap();
+        let out: u16 = 0xD100;
+        // Args pushed in reverse (max then out); the dispatch pops out first.
+        bot.vm.push(8);
+        bot.vm.push(out as i32);
+        let mut ev = Vec::new();
+        let count = world.syscall(slot, &mut bot, SYS_READ_SKILLS, 2, &mut ev);
+        assert_eq!(count, 2, "two socketed skills → two records");
+        assert_eq!(SKILL_RECORD_SIZE, 40, "the documented 40-byte stride");
+        let rd = |addr: u16, field: usize| bot.vm.load_i32(addr.wrapping_add(4 * field as u16));
+        // Record 0 (war_cry): the life cost is the 10th word, at +36.
+        assert_eq!(rd(out, 0), 1, "record 0 slot_no");
+        assert_eq!(rd(out, 1), war_num, "record 0 is war_cry");
+        assert_eq!(rd(out, 9), 30, "war_cry life_cost at +36 (word 9)");
+        // Record 1 (cleave) read at the LITERAL 40-byte stride: its slot_no is 2,
+        // which only lands at +40 if the record really is 40 bytes wide; and its
+        // life cost is 0, proving word 9 is per-gem, not a constant.
+        assert_eq!(rd(out.wrapping_add(40), 0), 2, "record 1 slot_no @ +40");
+        assert_eq!(
+            rd(out.wrapping_add(40), 9),
+            0,
+            "cleave has no life cost → word 9 is 0"
         );
         world.bots.put_back(bot_idx, bot);
     }

@@ -174,6 +174,7 @@ const inspectPanel: Fixture = {
             kind: "attack",
             shape: "nova",
             mana_cost: 14,
+            life_cost: 30, // a rally paid in blood — exercises the life-cost readout
             cooldown_ticks: 40,
             buff_duration_ticks: 80,
           }),

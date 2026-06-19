@@ -9,7 +9,7 @@
 
 const SELF = 0xE000;
 const ENTS = 0xE100;
-const SKL = 0xE400;        // ReadSkills records (36 bytes each)
+const SKL = 0xE400;        // ReadSkills records (40 bytes each)
 const F_ENEMY = 1;
 const LEASH = 0x190000;    // 25 units (Q16.16) manhattan from home
 
@@ -62,12 +62,12 @@ fn main() {
             taunt_timer = 80 + (random() & 0x7FFFFFFF) % 120;
         }
         // Lead with the first READY kit slot, aimed per its mode (#54 PR2a:
-        // +28 target_mode, +32 ready in the 9-word record).
+        // +28 target_mode, +32 ready in the 10-word record; +36 life_cost, #98).
         var used = -1;
         var n = read_skills(SKL, 4);
         var i = 0;
         while (i < n) {
-            var rec = SKL + i * 36;
+            var rec = SKL + i * 40;
             if (mem[rec + 32] == 1) {
                 if (mem[rec + 28] == 0) { used = use_skill(i + 1, target, 0, 0); }
                 if (mem[rec + 28] == 1) { used = use_skill_at(i + 1, tx, ty); }

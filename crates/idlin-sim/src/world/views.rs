@@ -33,6 +33,8 @@ pub struct SkillStatView {
     pub use_ticks: u32,
     pub cooldown_ticks: u32,
     pub mana_cost: i64,
+    /// Life paid per use (0 for most skills). Ungated — can self-kill.
+    pub life_cost: i64,
     /// Effective footprint in content units (weapon range / AoE mods folded).
     pub range_cu: i32,
     pub radius_cu: i32,

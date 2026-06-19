@@ -546,6 +546,9 @@ function SkillCard({ skill }: { skill: SkillStat }) {
             {skill.mana_cost} mana ({manaPerSec}/s)
           </span>
         )}
+        {skill.life_cost > 0 && (
+          <span style={{ color: "#e08a82" }}>{skill.life_cost} life</span>
+        )}
         {skill.crit_chance_bp > 0 && (
           <span>
             crit {(skill.crit_chance_bp / 100).toFixed(1)}% ×{Math.round(skill.crit_multi_bp / 100)}%

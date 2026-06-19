@@ -111,6 +111,7 @@ export function skill(over: Require<SkillStat, "name">): SkillStat {
     use_ticks: 10,
     cooldown_ticks: 0,
     mana_cost: 0,
+    life_cost: 0,
     range_cu: 0,
     radius_cu: 0,
     width_cu: 0,

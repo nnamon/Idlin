@@ -180,7 +180,8 @@ GemDef(
                                         // (added_phys/cold/lightning/chaos too)
     crit_bp: 600,                       // per-skill base crit chance
     // -- costs & timing --
-    mana_cost: (base: 6, per_level: 1), // Formula
+    mana_cost: (base: 6, per_level: 1), // Formula; gated — a use needs the mana
+    life_cost: (base: 0, per_level: 0), // Formula; UNGATED — paid even past 0 (self-kill)
     cast_ticks: 7,                      // spells only; attacks use the weapon
     cooldown_ticks: 0,                  // SPECIALS only, on top of use time
     // -- geometry (per shape) --
@@ -210,12 +211,12 @@ GemDef(
     effects: [
         extra_projectiles(count: 2),    // fan in 12° steps
         more_damage(dtype: None, bp: -2500),   // 25% LESS, all types
-        mana_mult(bp: 3000),            // 130% mana cost
+        cost_mult(bp: 3000),            // 130% cost (mana AND life)
     ],
     // effects vocabulary: more_damage(dtype: Option, bp) ·
     // added_damage(dtype, amount: Formula — at the SUPPORT's level) ·
     // inc_attack_speed(bp) · inc_cast_speed(bp) · extra_projectiles(count) ·
-    // pierce(count) · aoe_inc(bp) · dot_duration_inc(bp) · mana_mult(bp)
+    // pierce(count) · aoe_inc(bp) · dot_duration_inc(bp) · cost_mult(bp)
     // (legacy `grants:` stat lists still apply if present)
 )
 ```

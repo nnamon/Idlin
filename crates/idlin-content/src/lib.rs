@@ -609,8 +609,9 @@ pub enum SupportEffect {
     DotDurationInc {
         bp: i64,
     },
-    /// Scales the skill's mana cost (e.g. 4000 = 40% more mana).
-    ManaMult {
+    /// Scales the skill's resource cost — BOTH mana and life alike
+    /// (e.g. 4000 = 40% more cost).
+    CostMult {
         bp: i64,
     },
 }
@@ -684,9 +685,13 @@ pub struct GemDef {
     #[serde(default)]
     pub crit_bp: i64,
     // -- costs & timing --
-    /// Mana drawn per use, scaling with gem level.
+    /// Mana drawn per use, scaling with gem level. Gated: a use needs the mana.
     #[serde(default)]
     pub mana_cost: Formula,
+    /// Life paid per use, scaling with gem level. NOT gated — it's always paid and
+    /// can take the caster to 0 (a deliberate self-kill).
+    #[serde(default)]
+    pub life_cost: Formula,
     /// Spells: base cast time (cast speed divides it). Attacks use the
     /// weapon's use_ticks instead.
     #[serde(default)]
@@ -1901,6 +1906,17 @@ impl ContentDb {
                 if skill.kind != GemKind::Skill {
                     return Err(bad(format!("`{}` is not a skill gem", ms.gem)));
                 }
+                // Monster self-kill reaping (corpse decay / pack decrement / brain
+                // free) isn't implemented — only characters are reaped when a life
+                // cost empties the pool. So a monster may not wield a life-cost gem
+                // yet: reject it loudly at load instead of letting it die into an
+                // un-reaped corpse (#98).
+                if skill.life_cost.base != 0 || skill.life_cost.per_level != 0 {
+                    return Err(bad(format!(
+                        "`{}` has a life cost; monster life-cost skills aren't supported yet",
+                        ms.gem
+                    )));
+                }
                 let mut seen: Vec<&str> = Vec::new();
                 for sup_ref in &ms.supports {
                     let Some(sup) = db.gems.iter().find(|g| g.id == sup_ref.gem) else {
@@ -2153,6 +2169,53 @@ mod tests {
                 assert_eq!(pool, "weapon");
             }
             other => panic!("expected UnknownAffixPool, got {other:?}"),
+        }
+    }
+
+    /// A monster may NOT wield a life-cost skill gem yet (#98). Monster self-kill
+    /// reaping — corpse decay, pack decrement, brain free — isn't implemented, so
+    /// the load guard rejects a monster-kit gem that carries any `life_cost`
+    /// rather than let a monster die into an un-reaped corpse. Mutation: drop the
+    /// `life_cost` check in `load()` and this fixture loads clean, so the test
+    /// catches the guard's removal.
+    #[test]
+    fn monster_life_cost_skill_is_rejected_at_load() {
+        let brain = "fn main() {}";
+        let gem = r#"GemDef(
+            id: "blood_rite", public: true, name: "Blood Rite",
+            kind: skill, skill_kind: spell, target_mode: direction,
+            tags: [aoe], weight: 10, shape: nova, radius_cu: 300, max_targets: 1,
+            cast_ticks: 6,
+            mana_cost: (base: 0, per_level: 0),
+            life_cost: (base: 20, per_level: 0),
+        )"#;
+        let monster = r#"MonsterDef(
+            id: "blood_thing", public: true, name: "Blood Thing",
+            model: "husk", brain: "hm", hostile: true, level: 1,
+            life: 50, damage: 5, speed_cps: 100, radius_cu: 80, range_cu: 200,
+            mana: 40, skills: [(gem: "blood_rite", level: 1)],
+            use_ticks: 16, aggro_radius_cu: 1000, xp: 10, projectile: false,
+            affix_pools: [],
+        )"#;
+        let tc = TempContent::new(
+            "monster-life-cost",
+            &[
+                ("brains/hm.bot", brain),
+                ("gems/blood_rite.ron", gem),
+                ("monsters/blood_thing.ron", monster),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadMonsterSkills { monster, msg }) => {
+                assert_eq!(monster, "blood_thing");
+                assert!(
+                    msg.contains("life cost"),
+                    "error explains the rejection: {msg}"
+                );
+            }
+            other => {
+                panic!("expected BadMonsterSkills for a monster life-cost gem, got {other:?}")
+            }
         }
     }
 
