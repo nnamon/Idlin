@@ -234,16 +234,32 @@ reasoning) — no production-shaped-but-asserts-nothing fixtures.
   > ✅ `gh pr edit` the body to list all 4 syscalls and the new contract, the moment the
   >    commits land.
 
-- **PR images live on GitHub's CDN, never in the repo.** To put a screenshot in a PR (or
-  issue) description, attach it through GitHub's upload — drag-drop or paste into the web
-  description editor — which hosts it under `github.com/user-attachments/…` and never touches
-  git. **Never `git add` a PNG to embed it via a `blob/<sha>/…?raw=true` link, and never
-  commit capture shots as "review artifacts"** — that bloats the repo with binaries. Shots are
-  gitignored, eyeball-only (§6). If you can't attach (no web UI in reach), describe the change
-  or let the reviewer pull the branch and run `pnpm -C web capture` — don't commit pixels.
+- **PR images never go in THIS repo — host them in `nnamon/idlin-images`.** Committing PNGs
+  into Idlin to embed them bloats its git history forever. Instead push the shot to the
+  dedicated **private** repo `nnamon/idlin-images`, under `Idlin/<pr-N | issue-N | topic>/<name>.png`
+  (one folder per PR/issue; see that repo's README), and embed it from there — the main repo
+  stays binary-free. It's all `gh`/`git`, no browser:
 
-  > ❌ Committed `docs/harness/inspect-panel.png` so the PR body could link it with `?raw=true`.
-  > ✅ Dragged the PNG into the PR description → hosted on GitHub's CDN; the repo stays binary-free.
+  ```
+  cp web/harness/shots/full-shore.png  <clone>/Idlin/pr-95/         # then commit + push idlin-images
+  ![full-shore](https://github.com/nnamon/idlin-images/blob/main/Idlin/pr-95/full-shore.png?raw=true)
+  ```
+
+  Use the **`github.com/.../blob/main/…?raw=true`** form — a `github.com` URL, which GitHub
+  serves directly to your authenticated browser (it only anonymizes *external* URLs through its
+  `camo` proxy). Do **NOT** use `raw.githubusercontent.com/…` — that's a different domain your
+  github.com session cookie isn't sent to, so a private repo 404s there (and a PAT won't auth
+  the web `blob?raw` endpoint either, so you can't curl-verify it — eyeball the rendered PR).
+
+  Caveat: `idlin-images` is private, so images render only for accounts with access to it (the
+  maintainer) — good for self-review; an outside reviewer without access sees broken images.
+  For a PR aimed at outside reviewers, fall back to GitHub's `user-attachments` CDN (drag-drop
+  into the web editor). Either way: **never `git add` a PNG into Idlin** to embed via a
+  `blob/<sha>/…?raw=true` link, and never commit capture shots as "review artifacts." Shots are
+  gitignored, eyeball-only (§6).
+
+  > ❌ Committed `docs/harness/inspect-panel.png` into Idlin so the PR body could `?raw=true` it.
+  > ✅ Pushed it to `idlin-images/Idlin/pr-95/…`, linked the `blob/main/…?raw=true` URL — Idlin stays binary-free.
 
 - **Standing docs state the present, not the process.** AGENTS.md, READMEs, and design
   docs describe what the codebase **is** and how to use it — never the phasing/order it was
@@ -341,4 +357,4 @@ it plus the `.bot` consts and the docs; CI gates drift on all three.
 - Don't call a UI change done on a typecheck; deterministic capture + sign-off or it's unverified.
 - Don't whack-a-mole a recurring class of finding; fix the chokepoint.
 - Don't put dev phasing/process ("Track 1/2", "to-be-built", PR# as narrative) in standing docs — that belongs in commits/PRs/issues.
-- Don't commit screenshots/PNGs to embed in a PR — attach via GitHub's CDN upload; capture shots stay gitignored.
+- Don't commit screenshots/PNGs into Idlin to embed in a PR — host them in the private `nnamon/idlin-images` repo and link the `blob/main/…?raw=true` URL (or use the `user-attachments` CDN for outside reviewers); capture shots stay gitignored.
