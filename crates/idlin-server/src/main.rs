@@ -397,6 +397,23 @@ fn inspect_world_key(provided: &str, current: Option<&str>, featured: &str) -> O
     (!featured.is_empty()).then(|| featured.to_string())
 }
 
+/// Which world an Inspect resolves in. A WATCH connection is confined to its
+/// bound idler's world — it ignores the client-supplied `provided` world_key and
+/// never falls back to `featured` (#79 privacy: a pinned/unbound viewer must not
+/// pull sheets from the broadcast); unbound (no `current`) → None, nothing to
+/// inspect. A broadcast connection resolves the world it is displaying.
+fn inspect_key(
+    is_watch: bool,
+    provided: &str,
+    current: Option<&str>,
+    featured: &str,
+) -> Option<String> {
+    if is_watch {
+        return current.map(str::to_string);
+    }
+    inspect_world_key(provided, current, featured)
+}
+
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut tx, mut rx) = socket.split();
 
@@ -449,23 +466,38 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     },
                     Ok(C2S::DirectorMode { .. }) => continue, // client-side concern in Phase 1
                     Ok(C2S::Inspect { id, world_key }) => {
-                        // Resolve in the world the CLIENT is displaying — it
-                        // sends its own zone.worldKey. net ids are per-world and
-                        // overlap, so the director's current featured pick can
-                        // name a DIFFERENT character (wrong sheet). Fall back to
-                        // the followed/featured world only when none was sent.
-                        let key = inspect_world_key(
+                        // A WATCH connection may inspect ONLY its bound idler's
+                        // world (#79 privacy): ignore the client-supplied world_key
+                        // and NEVER fall back to the featured world — otherwise an
+                        // unbound or pinned viewer could pull sheets from the
+                        // broadcast. Unbound → nothing to inspect yet. A BROADCAST
+                        // connection resolves the world it's displaying (its own
+                        // zone.worldKey; net ids are per-world, so the server can't
+                        // guess), falling back to the featured world only then.
+                        let key = inspect_key(
+                            watch_name.is_some(),
                             &world_key,
                             current_key.as_deref(),
                             &routing.borrow().featured,
                         );
-                        let (tx_r, rx_r) = tokio::sync::oneshot::channel();
-                        let _ = state.inspect.send((key, id, tx_r));
-                        match tokio::time::timeout(std::time::Duration::from_millis(300), rx_r)
-                            .await
-                        {
-                            Ok(Ok(Some(sheet))) => S2C::CharacterSheet { sheet },
-                            _ => S2C::Error {
+                        match key {
+                            Some(key) => {
+                                let (tx_r, rx_r) = tokio::sync::oneshot::channel();
+                                let _ = state.inspect.send((Some(key), id, tx_r));
+                                match tokio::time::timeout(
+                                    std::time::Duration::from_millis(300),
+                                    rx_r,
+                                )
+                                .await
+                                {
+                                    Ok(Ok(Some(sheet))) => S2C::CharacterSheet { sheet },
+                                    _ => S2C::Error {
+                                        code: 3,
+                                        msg: format!("no character {id}"),
+                                    },
+                                }
+                            }
+                            None => S2C::Error {
                                 code: 3,
                                 msg: format!("no character {id}"),
                             },
@@ -577,7 +609,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{PROTO_VERSION, SERVER_VERSION, inspect_world_key, load_content, version_payload};
+    use super::{
+        PROTO_VERSION, SERVER_VERSION, inspect_key, inspect_world_key, load_content,
+        version_payload,
+    };
 
     #[test]
     fn version_payload_carries_deploy_identity() {
@@ -655,5 +690,30 @@ mod tests {
             Some("coast".to_string())
         );
         assert_eq!(inspect_world_key("", None, ""), None);
+    }
+
+    #[test]
+    fn watch_inspect_is_confined_to_its_bound_world() {
+        // A WATCH connection inspects ONLY its bound idler's world (#79 privacy):
+        // it ignores the client-supplied world_key and never falls back to the
+        // featured world. Mutation: drop the is_watch branch and an unbound watch
+        // resolves `featured` (the leak the critic found) → these fail.
+        // Unbound watch → nothing to inspect, despite a provided/featured world.
+        assert_eq!(inspect_key(true, "", None, "featured#w"), None);
+        assert_eq!(inspect_key(true, "some#other", None, "featured#w"), None);
+        // Bound watch → ALWAYS the bound world, ignoring the client world_key.
+        assert_eq!(
+            inspect_key(true, "some#other", Some("kargan#w"), "featured#w").as_deref(),
+            Some("kargan#w"),
+        );
+        // A broadcast connection keeps the displayed-world / featured behaviour.
+        assert_eq!(
+            inspect_key(false, "shown#w", None, "featured#w").as_deref(),
+            Some("shown#w"),
+        );
+        assert_eq!(
+            inspect_key(false, "", None, "featured#w").as_deref(),
+            Some("featured#w"),
+        );
     }
 }
