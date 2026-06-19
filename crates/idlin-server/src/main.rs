@@ -492,20 +492,34 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 current_key = Some(key);
                             }
                             None => {
+                                // The idler's world feed isn't online yet (early
+                                // connect before the routing table fills, or an
+                                // unknown name). Do NOT fall back to the broadcast:
+                                // an individual view is ONE idler only — no director
+                                // cues, no other idlers' streams. Keep watch_name so
+                                // the routing.changed arm binds the world feed the
+                                // moment that idler appears; until then frames are
+                                // gated off below (#79).
                                 let err = serde_json::to_string(&S2C::Error {
                                     code: 4,
-                                    msg: format!("no character named {name}; showing the broadcast"),
+                                    msg: format!("character {name} is not streaming yet; waiting"),
                                 }).expect("protocol always serializes");
                                 if tx.send(Message::Text(err.into())).await.is_err() {
                                     break;
                                 }
-                                watch_name = None;
                             }
                         }
                     }
-                    let snap = my_snapshot.borrow().clone();
-                    if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
-                        break;
+                    // Send the bound feed's snapshot — but skip it for a watch that
+                    // hasn't bound a world yet (current_key None): my_snapshot is
+                    // still the featured one, and an individual view must never
+                    // receive the broadcast. routing.changed sends the world
+                    // snapshot once it binds.
+                    if watch_name.is_none() || current_key.is_some() {
+                        let snap = my_snapshot.borrow().clone();
+                        if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
+                            break;
+                        }
                     }
                 }
             }
@@ -533,20 +547,25 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             }
             frame = feed.recv() => {
                 match frame {
-                    Ok(frame) if welcomed => {
+                    // Broadcast (no watch) or a BOUND watch only — an unbound watch
+                    // still defaults to the featured subscription but must never
+                    // forward it (one idler only: no director cues, no other
+                    // idlers' streams, #79).
+                    Ok(frame) if welcomed && (watch_name.is_none() || current_key.is_some()) => {
                         if tx.send(Message::Text(frame.to_string().into())).await.is_err() {
                             break;
                         }
                     }
-                    Ok(_) => {} // not welcomed yet; drop frames
+                    Ok(_) => {} // pre-welcome, or an unbound watch: drop frames
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        // Fell behind: self-heal with a fresh snapshot.
+                        // Fell behind: self-heal with a fresh snapshot — but not for
+                        // an unbound watch (its snapshot is the featured one).
                         warn!("client lagged {n} frames; resyncing with snapshot");
-                        let snap = my_snapshot.borrow().clone();
-                        if welcomed
-                            && tx.send(Message::Text(snap.to_string().into())).await.is_err()
-                        {
-                            break;
+                        if welcomed && (watch_name.is_none() || current_key.is_some()) {
+                            let snap = my_snapshot.borrow().clone();
+                            if tx.send(Message::Text(snap.to_string().into())).await.is_err() {
+                                break;
+                            }
                         }
                     }
                     Err(broadcast::error::RecvError::Closed) => break,

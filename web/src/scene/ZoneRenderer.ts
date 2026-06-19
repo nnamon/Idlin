@@ -681,6 +681,11 @@ export class ZoneRenderer {
       const pulse = 1 + Math.sin(t * 4) * 0.12;
       this.focusRing.scale.set(pulse, pulse, 1);
       this.director.follow(focus.group.position, dt, zoom);
+    } else if (this.followOverride) {
+      // Pinned view (/idler/<name>): the idler isn't on screen right now (still
+      // loading, transferring, or respawning). HOLD the camera — never orbit into
+      // the overview, which is broadcast-only chrome (#79).
+      this.focusRing.visible = false;
     } else {
       this.focusRing.visible = false;
       this.director.idle(dt);

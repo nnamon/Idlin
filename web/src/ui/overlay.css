@@ -531,6 +531,35 @@
   font-style: italic;
 }
 
+/* Individual view for an idler not in any world (#79): a clean centered message,
+   no scene/HUD — the server sends no feed in this state. */
+.not-in-realms {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(120% 100% at 50% 40%, #11131b, #07070d 70%);
+  font-family: "Idlin Mono", ui-monospace, Menlo, monospace;
+  pointer-events: auto;
+}
+.not-in-realms-card {
+  text-align: center;
+  opacity: 0.92;
+}
+.not-in-realms-name {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ecc97e;
+  margin-bottom: 8px;
+}
+.not-in-realms-msg {
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #ab9d7a;
+}
+
 @media (max-width: 860px) {
   /* Keep the original orb size on a phone — 1.5× orbs would crowd the narrow
      between-globes ticker and the close toggle, which are tuned to 112px (#100). */

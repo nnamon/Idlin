@@ -100,6 +100,19 @@ function Globe({
   );
 }
 
+/** The individual view when the idler isn't in any world (#79): a clean message,
+ *  not an empty scene + HUD. The server sends no feed in this state. */
+function NotInRealms({ idler }: { idler: string }) {
+  return (
+    <div className="not-in-realms">
+      <div className="not-in-realms-card">
+        <div className="not-in-realms-name">{idler}</div>
+        <div className="not-in-realms-msg">is not in the realms</div>
+      </div>
+    </div>
+  );
+}
+
 export function Overlay({
   client,
   store,
@@ -191,6 +204,14 @@ export function Overlay({
       return dx * dx + dy * dy <= BOSS_RANGE * BOSS_RANGE;
     });
   });
+
+  // Individual view for an idler that isn't in any world: the server sends no
+  // feed (it's one idler only), so there's nothing to show — a clean "not in the
+  // realms" message instead of an empty scene + HUD (#79). Reactive: the moment
+  // the idler's world streams in, `focused` resolves and the view takes over.
+  if (idler && !focused) {
+    return <NotInRealms idler={idler} />;
+  }
 
   return (
     <>

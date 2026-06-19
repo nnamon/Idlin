@@ -300,7 +300,12 @@ test("idler-absent: an absent idler shows no focus panel, never the director's p
   // cue — the banner names Ghost, but there is no focus panel. Mutation: restore
   // the `?? store.cue?.focus` fallback → Brakka's panel (.display) appears → fails.
   const { ctx, page } = await loadFixture(browser, "idler-absent");
-  await expect(page.locator(".idler-banner-name")).toHaveText("Ghost");
+  // The page is /idler/Ghost; Ghost isn't streamed, the cue points at Brakka.
+  // Individual mode must show the clean "not in the realms" message — NOT focus
+  // the cue's Brakka. Mutation: restore `?? store.cue?.focus` → Brakka's panel
+  // (.display) renders and the message is gone → both assertions fail.
+  await expect(page.locator(".not-in-realms-name")).toHaveText("Ghost");
+  await expect(page.locator("#overlay")).toContainText("not in the realms");
   await expect(page.locator(".display")).toHaveCount(0);
   await ctx.close();
 });

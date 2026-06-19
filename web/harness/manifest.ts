@@ -132,11 +132,11 @@ export const FIXTURES: FixtureMeta[] = [
     expect: ["Brakka", "manage", "Event stream", "Bone Stalker"],
   },
   {
-    // Individual view for an ABSENT idler (#79): the banner names the requested
-    // idler even when it's not streamed; the focus-panel absence is asserted by a
-    // dedicated test (no director-cue fallback).
+    // Individual view for an idler not in any world (#79): a clean "not in the
+    // realms" message (no scene/HUD). The no-focus-panel + no-cue-fallback is
+    // asserted by a dedicated test.
     name: "idler-absent",
     kind: "overlay",
-    expect: ["Ghost", "individual view"],
+    expect: ["Ghost", "not in the realms"],
   },
 ];
