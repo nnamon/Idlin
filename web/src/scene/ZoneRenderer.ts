@@ -156,9 +156,12 @@ export class ZoneRenderer {
   constructor(
     private container: HTMLElement,
     private store: WorldStore,
-    opts: { capture?: boolean; camera?: number[] } = {},
+    opts: { capture?: boolean; camera?: number[]; follow?: string } = {},
   ) {
     this.capture = opts.capture ?? false;
+    // The individual view (/idler/<name>) and ?watch= pass the followed idler
+    // explicitly; it wins over the URL-param read in the field initializer (#79).
+    if (opts.follow) this.followOverride = opts.follow;
     // A fixed camera for capture: [x,y,z, targetX,targetY,targetZ]. Reuses the
     // existing ?cam= pin path (frame()), so the shot frames a chosen subject
     // deterministically without waiting for the director to converge.

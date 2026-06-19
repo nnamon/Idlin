@@ -26,7 +26,7 @@ use idlin_content::ContentDb;
 use idlin_protocol::{C2S, PROTO_VERSION, Role, S2C};
 use idlin_sim::{JoinRequest, TickInputs, World};
 use tokio::sync::{broadcast, mpsc, watch};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{info, warn};
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -290,7 +290,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/version", get(version_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
-        .fallback_service(ServeDir::new("web/dist"))
+        // Static client, with an SPA fallback so deep links like /idler/<name>
+        // (the individual idler view, #79) serve index.html and let the client
+        // route on the path — unmatched files fall through to the app shell.
+        .fallback_service(ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html")))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

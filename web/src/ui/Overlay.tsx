@@ -99,7 +99,18 @@ function Globe({
   );
 }
 
-export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
+export function Overlay({
+  client,
+  store,
+  idler = null,
+}: {
+  client: NetClient;
+  store: WorldStore;
+  /** Individual idler view (#79): the idler whose page this is. null = the
+   *  director broadcast. Pins focus + inspect to this idler and drops the
+   *  director chrome (rotation carousel, cue reason). */
+  idler?: string | null;
+}) {
   const [status, setStatus] = useState<NetStatus | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [, setVersion] = useState(0);
@@ -110,7 +121,12 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
     return () => clearInterval(h);
   }, [store]);
 
-  const focusId = store.cue?.focus;
+  // Individual view (#79): pin focus to the named idler — matched by name, since
+  // net ids are per-world. Otherwise follow the director's cue (broadcast).
+  const watched = idler
+    ? store.characters().find((c) => c.state.name === idler)
+    : undefined;
+  const focusId = watched?.state.id ?? store.cue?.focus;
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
 
   // Keep the focus panel fresh: re-request the sheet while a character is
@@ -174,6 +190,15 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
 
   return (
     <>
+      {/* individual idler view (#79): a header framing the page as one idler's,
+          distinct from the director broadcast. The shell the management portal
+          (bot editor, debug console) will extend. */}
+      {idler && (
+        <div className="idler-banner">
+          <span className="idler-banner-name">{idler}</span>
+          <span className="idler-banner-tag">individual view</span>
+        </div>
+      )}
       {/* top-center: boss life bars */}
       {bosses.length > 0 && (
         <div className="hud-boss">
@@ -226,7 +251,7 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
               <span className="display" style={{ fontSize: 17 }}>
                 {focused.state.name}
               </span>
-              <span className="chip">{store.cue?.reason}</span>
+              <span className="chip">{idler ? "your idler" : store.cue?.reason}</span>
             </div>
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
@@ -235,8 +260,8 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
             <div style={{ fontSize: 12.5, color: "#ab9d7a" }}>
               {focused.state.kills} kills · {focused.state.items} items
             </div>
-            {/* the idler rotation, folded into a compact carousel */}
-            <FocusCarousel names={rosterNames} current={rosterIdx} />
+            {/* the idler rotation carousel is director chrome — broadcast only */}
+            {!idler && <FocusCarousel names={rosterNames} current={rosterIdx} />}
           </div>
         )}
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}

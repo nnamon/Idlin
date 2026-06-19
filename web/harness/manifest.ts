@@ -28,6 +28,13 @@ export type FixtureMeta =
       kind: "full";
       expect: string[];
       minBytes: number;
+    }
+  | {
+      // Per-idler management page (#79): an opaque overlay surface, no 3D scene.
+      // Asserted by text needles like an overlay.
+      name: string;
+      kind: "manage";
+      expect: string[];
     };
 
 export const FIXTURES: FixtureMeta[] = [
@@ -107,5 +114,22 @@ export const FIXTURES: FixtureMeta[] = [
     kind: "full",
     expect: ["Brakka", "Life: 1530/1530"],
     minBytes: 60_000,
+  },
+  {
+    // Individual idler view (#79): the banner ("individual view") + the "your
+    // idler" chip prove the overlay is in individual mode, and Brakka's pinned
+    // inspect proves focus-by-name. A regression to broadcast mode drops these.
+    name: "idler-view",
+    kind: "full",
+    expect: ["Brakka", "individual view", "your idler"],
+    minBytes: 60_000,
+  },
+  {
+    // Per-idler management page (#79): the header (idler + "manage") and the
+    // streamed event lines prove the page rendered and the ticker fed it. A
+    // broken stream / wrong render leaves the empty state and fails these.
+    name: "idler-manage",
+    kind: "manage",
+    expect: ["Brakka", "manage", "Event stream", "Bone Stalker"],
   },
 ];

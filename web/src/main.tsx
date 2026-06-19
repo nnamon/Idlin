@@ -4,11 +4,22 @@ import type { S2C } from "./gen/S2C";
 import { WorldStore } from "./world/store";
 import { ZoneRenderer } from "./scene/ZoneRenderer";
 import { Overlay } from "./ui/Overlay";
+import { ManagePage } from "./ui/ManagePage";
 
 const params = new URLSearchParams(location.search);
-/** ?watch=<name>: subscribe to that character's world (it follows them
- *  across transfers) instead of the featured broadcast. */
-const watch = params.get("watch");
+/** `/idler/<name>`: the dedicated INDIVIDUAL idler view (#79) — streams that
+ *  idler's world, follows + focuses them, and frames the UI as their own page
+ *  (the shell the management portal will extend). `/idler/<name>/manage` is the
+ *  management surface for that idler. Path-based on purpose, not a query param,
+ *  so they read as real routes. */
+const idlerMatch = location.pathname.match(/^\/idler\/([^/]+)(\/manage)?\/?$/);
+const idler = idlerMatch ? decodeURIComponent(idlerMatch[1]) : null;
+/** `/idler/<name>/manage`: the per-idler management page — same stream, a
+ *  management surface (no 3D scene) instead of the watch view. */
+const manage = idler !== null && idlerMatch![2] != null;
+/** ?watch=<name>: the raw per-idler stream WITHOUT the individual-view framing
+ *  (dev affordance). `/idler/<name>` implies it. */
+const watch = idler ?? params.get("watch");
 /** ?replay=<url>: play a recorded world journal (JSONL of wire messages)
  *  through the same renderer — no server connection at all. */
 const replay = params.get("replay");
@@ -39,11 +50,17 @@ if (replay) {
   client.start();
 }
 
+let zr: ZoneRenderer | undefined;
 // Dev/probe handle: headless verification injects FX and reads state here.
 (window as unknown as { __idlin?: object }).__idlin = { store, get zr() { return zr; } };
 
-const zr = new ZoneRenderer(document.getElementById("scene")!, store);
-
-createRoot(document.getElementById("overlay")!).render(
-  <Overlay client={client} store={store} />,
-);
+const overlayRoot = createRoot(document.getElementById("overlay")!);
+if (manage && idler) {
+  // Management page: no 3D scene — an opaque surface fed by the idler's stream.
+  overlayRoot.render(<ManagePage store={store} idler={idler} />);
+} else {
+  zr = new ZoneRenderer(document.getElementById("scene")!, store, {
+    follow: watch ?? undefined,
+  });
+  overlayRoot.render(<Overlay client={client} store={store} idler={idler} />);
+}

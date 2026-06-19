@@ -26,10 +26,10 @@ async function loadFixture(browser: Browser, name: string) {
 }
 
 /** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
-function shotTarget(page: Page, kind: "overlay" | "scene" | "full") {
+function shotTarget(page: Page, kind: "overlay" | "scene" | "full" | "manage") {
   if (kind === "scene") return page.locator("#scene canvas");
   if (kind === "full") return page.locator("body"); // 3D scene canvas + HUD overlay
-  return page.locator("#overlay");
+  return page.locator("#overlay"); // overlay + manage are #overlay surfaces
 }
 
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
@@ -52,7 +52,7 @@ for (const fx of FIXTURES) {
   test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
     const target = shotTarget(page, fx.kind);
-    if (fx.kind === "overlay" || fx.kind === "full") {
+    if (fx.kind === "overlay" || fx.kind === "full" || fx.kind === "manage") {
       // Non-vacuous: the authored HUD content must actually be on screen, or a
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);

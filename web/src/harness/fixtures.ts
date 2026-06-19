@@ -49,6 +49,18 @@ export type Fixture =
       frames?: number;
       camera?: number[];
       messages: S2C[];
+      /** #79: render the HUD in INDIVIDUAL idler-view mode for this idler
+       *  (focus pinned by name, banner shown, director carousel dropped). */
+      idler?: string;
+    }
+  | {
+      // Per-idler MANAGEMENT page (#79): an opaque surface (no 3D scene) fed by
+      // the idler's stream — for now just the live event ticker.
+      kind: "manage";
+      label: string;
+      status: NetStatus;
+      idler: string;
+      messages: S2C[];
     };
 
 const FOCUS_ID = 1;
@@ -583,6 +595,27 @@ const hudEdge: Fixture = {
   ],
 };
 
+// The INDIVIDUAL idler view (#79): the same world + HUD as full-shore, but the
+// overlay is in individual mode for Brakka — focus pinned by name, the "your
+// idler" banner shown, the director rotation carousel dropped. The page shell the
+// management portal (bot editor, debug console) will extend.
+const idlerView: Fixture = {
+  ...fullShore,
+  label: "Individual idler view: Brakka's own page (#79) — pinned focus, banner, no carousel",
+  idler: NAME,
+};
+
+// The per-idler MANAGEMENT page (#79 → #17): Brakka's management surface, fed by
+// the same stream. For now it shows the live event ticker — reuse full-shore's
+// event burst so the stream is populated.
+const idlerManage: Fixture = {
+  kind: "manage",
+  label: "Individual idler management page (#79): Brakka's event stream",
+  status: LIVE_STATUS,
+  idler: NAME,
+  messages: fullShore.messages,
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
@@ -593,4 +626,6 @@ export const FIXTURES: Record<string, Fixture> = {
   "full-shore": fullShore,
   "full-bloodied": fullBloodied,
   "full-fresh": fullFresh,
+  "idler-view": idlerView,
+  "idler-manage": idlerManage,
 };
