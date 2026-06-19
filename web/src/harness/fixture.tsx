@@ -54,7 +54,9 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   for (const msg of fixture.messages) store.handle(msg);
 
   const client = stubClient(fixture.status);
-  createRoot(overlay).render(<Overlay client={client} store={store} />);
+  createRoot(overlay).render(
+    <Overlay client={client} store={store} idler={fixture.idler ?? null} />,
+  );
 
   // Drain the scheduler so the status effect (link plaque) commits, then wait
   // for the bundled font so text pixels are stable.

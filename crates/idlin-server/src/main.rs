@@ -290,10 +290,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/version", get(version_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
-        // Static client, with an SPA fallback so deep links like /idler/<name>
-        // (the individual idler view, #79) serve index.html and let the client
-        // route on the path — unmatched files fall through to the app shell.
-        .fallback_service(ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html")))
+        // SPA shell for the client's OWN routes (the individual idler view +
+        // management page, #79): /idler/<name>[/manage] serve index.html so the
+        // client routes on the path. Scoped to /idler so a genuine static miss
+        // (e.g. a stale /assets/* hash) still 404s instead of 200-ing HTML.
+        .nest_service("/idler", ServeFile::new("web/dist/index.html"))
+        .fallback_service(ServeDir::new("web/dist"))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

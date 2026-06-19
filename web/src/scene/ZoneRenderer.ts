@@ -653,8 +653,12 @@ export class ZoneRenderer {
       this.composer.render();
       return;
     }
-    let focusId = this.store.cue?.focus;
     const zoom = this.zoomOverride;
+    // Pinned to one idler (/idler/<name>, ?watch=, ?follow=): the camera tracks
+    // THEM, or nobody if they're absent — it must NOT fall back to the director's
+    // pick (that would silently frame a different idler on someone's page, #79).
+    // Broadcast follows the director cue.
+    let focusId: number | undefined;
     if (this.followOverride) {
       const name = this.followOverride.toLowerCase();
       for (const er of this.store.entities.values()) {
@@ -663,6 +667,8 @@ export class ZoneRenderer {
           break;
         }
       }
+    } else {
+      focusId = this.store.cue?.focus;
     }
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;
     if (focus) {

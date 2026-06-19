@@ -13,7 +13,16 @@ const params = new URLSearchParams(location.search);
  *  management surface for that idler. Path-based on purpose, not a query param,
  *  so they read as real routes. */
 const idlerMatch = location.pathname.match(/^\/idler\/([^/]+)(\/manage)?\/?$/);
-const idler = idlerMatch ? decodeURIComponent(idlerMatch[1]) : null;
+// Tolerate a malformed %-escape: a bad deep link must not blank the SPA (it
+// just won't match a real idler) — fall back to the raw segment.
+const decodeIdler = (s: string): string => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+const idler = idlerMatch ? decodeIdler(idlerMatch[1]) : null;
 /** `/idler/<name>/manage`: the per-idler management page — same stream, a
  *  management surface (no 3D scene) instead of the watch view. */
 const manage = idler !== null && idlerMatch![2] != null;

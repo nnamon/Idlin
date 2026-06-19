@@ -278,3 +278,28 @@ test("globe readout: ES and Reserved lines drop out at zero (full-fresh)", async
   await expect(overlay).not.toContainText("Reserved:");
   await ctx.close();
 });
+
+test("idler-view: focus is pinned to the requested idler, not the director cue", async ({
+  browser,
+}) => {
+  // The fixture is Brakka's page (/idler/Brakka) but the director cue points at
+  // Veles (id 2). Individual mode must focus Brakka BY NAME — the focus panel must
+  // read Brakka. Mutation: fall focusId back to store.cue?.focus → the panel reads
+  // "Veles" and this fails. (This is the non-vacuous proof of name-pinned focus.)
+  const { ctx, page } = await loadFixture(browser, "idler-view");
+  await expect(page.locator(".display")).toHaveText("Brakka");
+  await ctx.close();
+});
+
+test("idler-absent: an absent idler shows no focus panel, never the director's pick", async ({
+  browser,
+}) => {
+  // The page is /idler/Ghost but Ghost isn't in the streamed world; the director
+  // cue points at the present Brakka. Individual mode must NOT fall back to the
+  // cue — the banner names Ghost, but there is no focus panel. Mutation: restore
+  // the `?? store.cue?.focus` fallback → Brakka's panel (.display) appears → fails.
+  const { ctx, page } = await loadFixture(browser, "idler-absent");
+  await expect(page.locator(".idler-banner-name")).toHaveText("Ghost");
+  await expect(page.locator(".display")).toHaveCount(0);
+  await ctx.close();
+});

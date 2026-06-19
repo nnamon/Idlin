@@ -122,11 +122,13 @@ export function Overlay({
   }, [store]);
 
   // Individual view (#79): pin focus to the named idler — matched by name, since
-  // net ids are per-world. Otherwise follow the director's cue (broadcast).
+  // net ids are per-world. In individual mode there is NO director-cue fallback:
+  // an absent idler shows no focus panel, never the broadcast's pick mislabelled
+  // "your idler". Broadcast mode follows the director's cue.
   const watched = idler
     ? store.characters().find((c) => c.state.name === idler)
     : undefined;
-  const focusId = watched?.state.id ?? store.cue?.focus;
+  const focusId = idler ? watched?.state.id : store.cue?.focus;
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
 
   // Keep the focus panel fresh: re-request the sheet while a character is

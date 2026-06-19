@@ -120,9 +120,8 @@ export const FIXTURES: FixtureMeta[] = [
     // idler" chip prove the overlay is in individual mode, and Brakka's pinned
     // inspect proves focus-by-name. A regression to broadcast mode drops these.
     name: "idler-view",
-    kind: "full",
+    kind: "overlay",
     expect: ["Brakka", "individual view", "your idler"],
-    minBytes: 60_000,
   },
   {
     // Per-idler management page (#79): the header (idler + "manage") and the
@@ -131,5 +130,13 @@ export const FIXTURES: FixtureMeta[] = [
     name: "idler-manage",
     kind: "manage",
     expect: ["Brakka", "manage", "Event stream", "Bone Stalker"],
+  },
+  {
+    // Individual view for an ABSENT idler (#79): the banner names the requested
+    // idler even when it's not streamed; the focus-panel absence is asserted by a
+    // dedicated test (no director-cue fallback).
+    name: "idler-absent",
+    kind: "overlay",
+    expect: ["Ghost", "individual view"],
   },
 ];
