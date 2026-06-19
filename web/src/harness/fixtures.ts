@@ -266,6 +266,56 @@ const sceneShore: Fixture = {
 };
 
 /**
+ * Overhead bars (#100): three entities at controlled pools so the fix + the new
+ * shield band are both visible. The red life fill must sit EXACTLY on its dark
+ * track at any pool level (the old two-sprite bar slid the fill off diagonally),
+ * and an entity with energy shield shows a cyan band above the life bar.
+ */
+const sceneBars: Fixture = {
+  kind: "scene",
+  label: "Overhead bars: aligned life fill + energy-shield band (#100)",
+  seed: 0x1d71c0de,
+  frames: 40,
+  camera: [34, 8, 32, 34, 1.5, 22.5],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Withered Shore",
+      entities: [
+        // Half life, no shield: the red fill must align on the dark track.
+        character({
+          id: 1,
+          name: "Halfling",
+          model: "idler",
+          level: 40,
+          life_pct: 50,
+          ...simXY(31, 22.5),
+        }),
+        // Life + a partial shield: a cyan band rides above the red life bar.
+        character({
+          id: 2,
+          name: "Warded",
+          model: "idler",
+          level: 40,
+          life_pct: 80,
+          es_pct: 60,
+          ...simXY(34, 22),
+        }),
+        // A low-life monster: a small red fill, still left-anchored.
+        monster({
+          id: 3,
+          name: "Bone Stalker",
+          model: "stalker",
+          level: 40,
+          life_pct: 25,
+          rarity: 2,
+          ...simXY(37, 22.5),
+        }),
+      ],
+    }),
+  ],
+};
+
+/**
  * A heavily-socketed idler: nine skills, far more than the skills panel's
  * height budget. Exercises the auto-scroll box — the panel must pin to its
  * viewport ratio and clip, not stretch the column off-screen.
@@ -537,6 +587,7 @@ export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
   "scene-shore": sceneShore,
+  "scene-bars": sceneBars,
   "skill-overflow": skillOverflow,
   globes,
   "full-shore": fullShore,

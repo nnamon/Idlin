@@ -209,13 +209,14 @@
 .hud-ticker {
   position: absolute;
   /* the event log sits to the RIGHT of the bottom-left life globe and is height-
-     capped so it never rises past the orb's top (orb = bottom 10px + 112px tall).
-     A dimmed, slightly-rounded box keeps the coloured text legible over a bright
-     scene. Newest line at the bottom; older lines clip off the top. */
-  left: 134px;
+     capped so it never rises past the orb's top (orb = bottom 10px + --globe
+     tall) — both bounds derive from --globe so the box grows in lockstep when
+     the orb is resized (#100). A dimmed, slightly-rounded box keeps the coloured
+     text legible over a bright scene. Newest line at the bottom; older clip off. */
+  left: calc(var(--globe) + 22px); /* 12px globe margin + globe + 10px gap */
   bottom: 14px;
   max-width: 380px;
-  max-height: 108px;
+  max-height: calc(var(--globe) - 4px); /* top stays level with the orb's top */
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -242,11 +243,17 @@
    idler's pools (#89). Pre-composited CC0 orb sprites (empty base + filled orb
    clipped to the pool pct); pure from inline height = pct, no animation, so the
    capture is byte-stable. ---- */
+/* One knob sizes the orbs (#100): the orb sprites AND the event ticker derive
+   their dimensions from it, so they always move together. Mobile reverts it to
+   the original size in the narrow @media below. */
+:root {
+  --globe: 168px;
+}
 .globe {
   position: absolute;
   bottom: 10px;
-  width: 112px;
-  height: 112px;
+  width: var(--globe);
+  height: var(--globe);
   filter: drop-shadow(0 3px 9px rgba(0, 0, 0, 0.55));
 }
 .globe-life {
@@ -275,8 +282,8 @@
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 112px;
-  height: 112px;
+  width: var(--globe);
+  height: var(--globe);
 }
 /* reserved life/mana: a granite-gravel band growing from the TOP (top-anchored
    clip), so the orb reads as current (bottom liquid) · empty (transparent) ·
@@ -292,8 +299,8 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: 112px;
-  height: 112px;
+  width: var(--globe);
+  height: var(--globe);
 }
 /* energy shield: a glowing light-blue RIGHT semicircle (a recoloured copy of the
    life sprite), sitting on top of the life liquid and clipped from the bottom by
@@ -320,7 +327,7 @@
   transform: translateY(-50%);
   text-align: center;
   font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 7.5px;
+  font-size: calc(var(--globe) * 7.5 / 112); /* scales with the orb */
   line-height: 1.5;
   font-weight: 600;
   letter-spacing: 0.2px;
@@ -407,6 +414,11 @@
 }
 
 @media (max-width: 860px) {
+  /* Keep the original orb size on a phone — 1.5× orbs would crowd the narrow
+     between-globes ticker and the close toggle, which are tuned to 112px (#100). */
+  :root {
+    --globe: 112px;
+  }
   /* Watching comes first on a phone: the world fills the screen, the
      ticker stays, everything else slides in from the right. */
   .hud-left {
