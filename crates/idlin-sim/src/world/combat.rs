@@ -576,8 +576,7 @@ impl World {
         let level = sg.gem.level;
         let is_spell = gem_def.skill_kind == SkillKind::Spell;
 
-        // Supports: behavior effects folded down, plus legacy stat grants on a
-        // per-use sheet.
+        // Supports: behavior effects (more/added/speed/proj/etc.) folded down.
         let mods = self.support_mods(&sg.supports);
 
         // Damage: attacks scale the weapon plus the gem's own flat; spells are
