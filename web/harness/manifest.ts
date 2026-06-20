@@ -116,12 +116,12 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 60_000,
   },
   {
-    // Individual idler view (#79): the banner ("individual view") + the "your
-    // idler" chip prove the overlay is in individual mode, and Brakka's pinned
-    // inspect proves focus-by-name. A regression to broadcast mode drops these.
+    // Individual idler view (#79): the name banner + the "your idler" chip prove
+    // the overlay is in individual mode, and Brakka's pinned inspect proves
+    // focus-by-name. A regression to broadcast mode drops these.
     name: "idler-view",
     kind: "overlay",
-    expect: ["Brakka", "individual view", "your idler"],
+    expect: ["Brakka", "your idler"],
   },
   {
     // Per-idler management page (#79): the header (idler + "manage") and the

@@ -438,12 +438,6 @@
   letter-spacing: 0.5px;
   color: #ecc97e;
 }
-.idler-banner-tag {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  color: #ab9d7a;
-}
 /* When the banner is present, the boss bars drop below it (sibling-aware). */
 .idler-banner ~ .hud-boss {
   top: 56px;
