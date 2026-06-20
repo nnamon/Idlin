@@ -1654,11 +1654,17 @@ impl World {
             } else {
                 26000
             };
+            // Monsters wield no weapon → unarmed, which counts as melee, so a
+            // melee condition holds and bow/wand conditions don't (#86). Evaluate
+            // so a conditional monster affix isn't applied unconditionally.
+            let ctx = crate::stats::EvalContext { weapon_class: None };
             let mut sheet = crate::stats::StatSheet::new();
             for ra in &affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                for g in a.grants(&ra.values) {
-                    sheet.apply(&g);
+                for (g, cond) in a.conditional_grants(&ra.values) {
+                    if cond.is_none_or(|c| c.holds(&ctx)) {
+                        sheet.apply(&g);
+                    }
                 }
             }
             stats.life_max =
@@ -1757,6 +1763,79 @@ mod pack_rarity_tests {
 
     fn content() -> ContentDb {
         ContentDb::load(Path::new("../../content")).expect("workspace content must load")
+    }
+
+    #[test]
+    fn conditional_monster_affixes_are_gated_at_spawn() {
+        use crate::stats::{Condition, Layer, Stat, WeaponClass};
+        use idlin_content::{AffixDef, AffixEffect, AffixKind, AffixTier, RollRange};
+        // A monster wields no weapon (unarmed → melee), so a melee-conditional
+        // +life affix applies but a bow-conditional one does not. Mutation: fold
+        // monster affixes via face-value grants() again → both apply → equal life.
+        let cond_life = |id: &str, cond: Condition| AffixDef {
+            id: id.into(),
+            public: false,
+            name: id.into(),
+            kind: AffixKind::Suffix,
+            pool: "monster".into(),
+            weight: 100,
+            effects: vec![AffixEffect {
+                stat: Stat::Life,
+                layer: Layer::Increased,
+                condition: Some(cond),
+            }],
+            tiers: vec![AffixTier {
+                ilvl: 1,
+                rolls: vec![RollRange {
+                    min: 5000,
+                    max: 5000,
+                }], // +50%, fixed
+                name: String::new(),
+                weight: 100,
+            }],
+        };
+        let mut content = content();
+        let melee_idx = content.affixes.len() as u32;
+        content.affixes.push(cond_life(
+            "cond_melee",
+            Condition::WieldingWeaponClass(WeaponClass::Melee),
+        ));
+        let bow_idx = content.affixes.len() as u32;
+        content.affixes.push(cond_life(
+            "cond_bow",
+            Condition::WieldingWeaponClass(WeaponClass::Bow),
+        ));
+
+        let mut w = World::new(7, &content);
+        let rolled = |idx: u32| {
+            vec![crate::entity::RolledAffix {
+                affix_idx: idx,
+                values: vec![5000],
+                tier: 0,
+            }]
+        };
+        let life_of = |w: &mut World, idx: u32, name: &str| -> i64 {
+            w.spawn_monster_rolled(
+                0,
+                0,
+                FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+                Rarity::Magic,
+                rolled(idx),
+                name.into(),
+            );
+            w.zone
+                .iter()
+                .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some(name))
+                .and_then(|(_, e)| e.combat.as_ref().map(|c| c.life_max))
+                .expect("spawned monster present")
+        };
+        let life_melee = life_of(&mut w, melee_idx, "MeleeMob");
+        let life_bow = life_of(&mut w, bow_idx, "BowMob");
+        assert!(
+            life_melee > life_bow,
+            "melee condition applies the +life to an (unarmed) monster, bow does not \
+             ({life_melee} vs {life_bow})"
+        );
     }
 
     /// A fresh shore world with ONE multi-member non-unique pack forced

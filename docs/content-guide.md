@@ -152,13 +152,24 @@ AffixDef(
 )
 ```
 
+An effect may carry a `condition` (note the explicit `Some(...)`, RON-style) — it
+applies only while the predicate holds, evaluated from hashed state so it stays
+deterministic. Conditions: `wielding_weapon_class(melee | bow | wand)` (unarmed
+counts as melee).
+
+```ron
+effects: [(stat: damage_phys, layer: increased,
+           condition: Some(wielding_weapon_class(melee)))],   // "increased phys with melee"
+```
+
 **Stat registry**: `strength, dexterity, intelligence, life, damage_phys,
-damage_fire, damage_cold, damage_lightning, damage_chaos, melee_phys,
+damage_fire, damage_cold, damage_lightning, damage_chaos,
 mana, energy_shield, life_regen, mana_regen, leech_life, leech_mana,
 attack_speed, cast_speed, move_speed, armour, evasion, accuracy, block,
 crit_chance, crit_multi, resist_fire, resist_cold, resist_lightning,
 resist_chaos` (attributes convert per
-[mechanics.md](mechanics.md)). The same vocabulary powers gear, tree nodes, and support
+[mechanics.md](mechanics.md); STR's increased-melee-phys is a conditional effect,
+not a stat — see below). The same vocabulary powers gear, tree nodes, and support
 gems — one evaluator (see [mechanics.md](mechanics.md)).
 
 ### Monster skill kits

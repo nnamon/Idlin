@@ -12,7 +12,9 @@
 //!
 //! All integer math on i64 basis points (10000 = +100%).
 
-pub use idlin_content::stats::{Grant, Layer, STAT_COUNT, Stat};
+pub use idlin_content::stats::{
+    Condition, EvalContext, Grant, Layer, STAT_COUNT, Stat, WeaponClass,
+};
 
 /// Accumulated grants, ready to evaluate against base values.
 #[derive(Debug, Clone)]
@@ -47,16 +49,6 @@ impl StatSheet {
                 self.more[i] = self.more[i] * (10000 + grant.value) / 10000;
             }
         }
-    }
-
-    /// Fold one stat's buckets into another's — e.g. the STR melee-phys
-    /// bucket folds into phys damage only when the weapon is melee.
-    pub fn fold(&mut self, from: Stat, to: Stat) {
-        let f = from.idx();
-        let t = to.idx();
-        self.added[t] += self.added[f];
-        self.increased[t] += self.increased[f];
-        self.more[t] = self.more[t] * self.more[f] / 10000;
     }
 
     /// Evaluate a stat against its base value. Never returns negative.

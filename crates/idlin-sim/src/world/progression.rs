@@ -212,13 +212,22 @@ impl World {
         let mut armour_base = 0i64;
         let mut evasion_base = base_evasion(level);
         let mut block_base = 0i64;
+        // The condition context: the wielded weapon's class (None = unarmed,
+        // which counts as melee). Resolved up front so affix conditions evaluate
+        // against the weapon regardless of slot order (#86).
+        let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
+            .as_ref()
+            .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
+        let ctx = crate::stats::EvalContext { weapon_class };
         for (i, slot_item) in ch.equipment.iter().enumerate() {
             let Some(item) = slot_item else { continue };
             let def = &self.content.items[item.base_idx as usize];
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                for g in a.grants(&ra.values) {
-                    sheet.apply(&g);
+                for (g, cond) in a.conditional_grants(&ra.values) {
+                    if cond.is_none_or(|c| c.holds(&ctx)) {
+                        sheet.apply(&g);
+                    }
                 }
             }
             if i == GearSlot::Weapon.idx() {
@@ -245,11 +254,6 @@ impl World {
                 value: strength / 2,
             },
             Grant {
-                stat: Stat::MeleePhys,
-                layer: crate::stats::Layer::Increased,
-                value: strength * 20,
-            },
-            Grant {
                 stat: Stat::Accuracy,
                 layer: crate::stats::Layer::Added,
                 value: dexterity * 2,
@@ -273,6 +277,20 @@ impl World {
             if grant.value != 0 {
                 sheet.apply(&grant);
             }
+        }
+        // STR's "increased melee physical" is the general conditional mechanism's
+        // first client (#86): increased phys damage while wielding melee (unarmed
+        // counts), replacing the old MeleePhys bucket + `if !projectile` fold.
+        // Behavior-identical — same strength*20 into damage_phys.increased when melee.
+        if strength != 0
+            && crate::stats::Condition::WieldingWeaponClass(crate::stats::WeaponClass::Melee)
+                .holds(&ctx)
+        {
+            sheet.apply(&Grant {
+                stat: Stat::DamagePhys,
+                layer: crate::stats::Layer::Increased,
+                value: strength * 20,
+            });
         }
 
         let (dmg_base, range, use_base, projectile) = match weapon {
@@ -298,11 +316,6 @@ impl World {
                 false,
             ),
         };
-
-        // The STR bucket applies only to melee weapons (and bare fists).
-        if !projectile {
-            sheet.fold(Stat::MeleePhys, Stat::DamagePhys);
-        }
 
         let life_max = sheet.value(Stat::Life, base_life(level)).max(1);
         const DMG_STATS: [Stat; DMG_COUNT] = [

@@ -31,8 +31,8 @@ pub enum Stat {
     DamageCold,
     DamageLightning,
     DamageChaos,
-    /// The STR bucket: increased physical damage with melee weapons only.
-    MeleePhys,
+    // ("increased melee physical" is no longer a stat: STR grants damage_phys
+    //  gated by Condition::WieldingWeaponClass(Melee) — see refresh_character_stats.)
     // -- speeds (factors, base 10000) --
     AttackSpeed,
     CastSpeed,
@@ -67,7 +67,7 @@ pub enum Stat {
     Knockback,
 }
 
-pub const STAT_COUNT: usize = 34;
+pub const STAT_COUNT: usize = 33;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -86,7 +86,6 @@ impl Stat {
         Stat::DamageCold,
         Stat::DamageLightning,
         Stat::DamageChaos,
-        Stat::MeleePhys,
         Stat::AttackSpeed,
         Stat::CastSpeed,
         Stat::MoveSpeed,
@@ -120,8 +119,55 @@ pub enum Layer {
     More,
 }
 
+/// Weapon families. A skill gates on them (gem `weapon_classes`); a condition
+/// can read the wielded class (`Condition::WieldingWeaponClass`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaponClass {
+    Melee,
+    Bow,
+    Wand,
+}
+
+/// A predicate gating an affix effect (#86), read from HASHED STATE ONLY so it
+/// stays deterministic (no floats / wall-clock). The sim evaluates it against an
+/// `EvalContext` at the point the effect folds in. `None` on an effect = always.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Condition {
+    /// While the wielded weapon is this class. Unarmed (no weapon) counts as
+    /// Melee — fists are melee attacks (subsumes the legacy MeleePhys rule).
+    WieldingWeaponClass(WeaponClass),
+}
+
+/// The hashed-state facts a `Condition` reads, built by the sim per entity at
+/// fold time. Pure data so the predicate (`Condition::holds`) stays in content
+/// and deterministic. Grows as new conditions land (life %, target ailments, …).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EvalContext {
+    /// The wielded weapon's class; `None` = unarmed (counts as melee).
+    pub weapon_class: Option<WeaponClass>,
+}
+
+impl Condition {
+    /// Does this condition hold in `ctx`? Pure + integer — deterministic.
+    pub fn holds(&self, ctx: &EvalContext) -> bool {
+        match self {
+            // Unarmed (fists) satisfies a Melee gate; other classes need an exact
+            // match. Equivalent to the legacy `!projectile` rule for current
+            // content (bow/wand are projectile; melee + unarmed are not).
+            Condition::WieldingWeaponClass(WeaponClass::Melee) => {
+                matches!(ctx.weapon_class, Some(WeaponClass::Melee) | None)
+            }
+            Condition::WieldingWeaponClass(want) => ctx.weapon_class == Some(*want),
+        }
+    }
+}
+
 /// One concrete grant. Tree nodes carry these with fixed values; item
-/// affixes carry rolled values.
+/// affixes carry rolled values. Unconditional — a content effect's condition
+/// rides on `AffixEffect`/the def and is evaluated before this grant is applied,
+/// so `Grant` (which also lives in hashed/serialized buff state) stays flat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grant {
     pub stat: Stat,
@@ -139,5 +185,34 @@ mod tests {
         for (i, s) in Stat::ALL.iter().enumerate() {
             assert_eq!(s.idx(), i, "{s:?} out of order");
         }
+    }
+
+    #[test]
+    fn wielding_weapon_class_condition_treats_unarmed_as_melee() {
+        use Condition::WieldingWeaponClass as W;
+        // Melee gate: a melee weapon OR unarmed (fists) — the legacy MeleePhys rule.
+        let melee = EvalContext {
+            weapon_class: Some(WeaponClass::Melee),
+        };
+        let unarmed = EvalContext { weapon_class: None };
+        let bow = EvalContext {
+            weapon_class: Some(WeaponClass::Bow),
+        };
+        assert!(W(WeaponClass::Melee).holds(&melee));
+        assert!(
+            W(WeaponClass::Melee).holds(&unarmed),
+            "fists count as melee"
+        );
+        assert!(!W(WeaponClass::Melee).holds(&bow));
+        // Other classes need an exact match — unarmed does NOT satisfy them.
+        assert!(W(WeaponClass::Bow).holds(&bow));
+        assert!(!W(WeaponClass::Bow).holds(&unarmed));
+        assert!(!W(WeaponClass::Bow).holds(&melee));
+    }
+
+    #[test]
+    fn condition_round_trips_through_ron() {
+        let c: Condition = ron::from_str("wielding_weapon_class(bow)").unwrap();
+        assert_eq!(c, Condition::WieldingWeaponClass(WeaponClass::Bow));
     }
 }
