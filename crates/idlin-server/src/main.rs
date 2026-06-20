@@ -806,4 +806,29 @@ mod tests {
         );
         assert_eq!(bound.watch_name(), Some("Kargan"));
     }
+
+    #[test]
+    fn world_for_watch_matches_a_name_case_insensitively() {
+        // `/idler/kargan` must bind `Kargan`'s world: an operator-typed URL
+        // shouldn't have to match the proper-noun casing. Reverting the lookup to
+        // an exact `by_character.get()` makes the lowercase/UPPERCASE cases fail.
+        let mut routing = crate::replication::Routing::default();
+        routing.by_character.insert("Kargan".into(), "coast".into());
+        routing
+            .by_character
+            .insert("Veles".into(), "withered_shore#Veles".into());
+        for q in ["kargan", "Kargan", "KARGAN", "kArGaN"] {
+            assert_eq!(
+                super::world_for_watch(&routing, q).as_deref(),
+                Some("coast"),
+                "{q} should resolve Kargan's world"
+            );
+        }
+        assert_eq!(
+            super::world_for_watch(&routing, "veles").as_deref(),
+            Some("withered_shore#Veles"),
+        );
+        // An unknown idler resolves to nothing — the not-in-realms path.
+        assert_eq!(super::world_for_watch(&routing, "nobody"), None);
+    }
 }
