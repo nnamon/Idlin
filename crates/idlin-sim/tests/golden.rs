@@ -10,17 +10,20 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for the #86 grant-unification follow-up: `state_hash` now
-/// fingerprints independent persistent state it previously dropped — `move_to`
-/// (cleared only on arrival; steers the next move) and `build_plan` (drives
-/// future auto-allocation), plus active-buff grant internals and the full
-/// projectile payload. The world is byte-identical (no sim-rule or content
-/// change — `content_hash` is unchanged); only the FINGERPRINT widened, so the
-/// digest of the same 2000-tick replay moves. The determinism trio still agrees
-/// under the wider hash, confirming a representation change, not a leak.
-/// (Prior: Phase D 0x5755 — ten new affix files; Phase A 0x0A71 — effects-list
-/// schema; #98 skill life cost; etc.)
-const GOLDEN_HASH: u64 = 0x8541_E433_93AF_36CE;
+/// Re-pinned for the #86 grant-unification follow-up: `state_hash` was made a
+/// COMPLETE fingerprint of replay-relevant persisted state — it had silently
+/// dropped a lot of it. Now hashed: active-buff grant internals, the full
+/// projectile payload, `intents.move_to`, `CharacterState.build_plan`, the WHOLE
+/// `CombatStats` (regen/leech/range/stagger/poise/knockback/use_ticks/speed/
+/// projectile/find factors), `MonsterState` (pack_idx/affixes/display_name/skill
+/// supports), and the World's zone identity (zone_idx/level/lines). The world is
+/// byte-identical (no sim-rule or content change — `content_hash` is unchanged);
+/// only the FINGERPRINT widened, so the digest of the same 2000-tick replay
+/// moves. The determinism trio still agrees under the wider hash, confirming a
+/// representation change, not a leak.
+/// (Prior: 0x8541 — first hash-completeness pass; Phase D 0x5755 — ten new affix
+/// files; Phase A 0x0A71 — effects-list schema; #98 skill life cost; etc.)
+const GOLDEN_HASH: u64 = 0x5662_D967_D6E4_BF38;
 
 #[test]
 fn golden_replay() {

@@ -3211,6 +3211,14 @@ mod tests {
             hash_with(Grant::new(Stat::Dexterity, Layer::Added, 10)),
             "a buff grant's stat must change the state hash"
         );
+        assert_ne!(
+            h_base,
+            hash_with(Grant {
+                layer: Layer::Increased,
+                ..base
+            }),
+            "a buff grant's layer must change the state hash"
+        );
     }
 
     #[test]
@@ -3273,11 +3281,36 @@ mod tests {
             hash_with(&|p| p.already_hit.push(9)),
             "projectile pierce state must change the hash"
         );
+        // Dot payload: presence AND each tuple field (dtype, per_second, ticks,
+        // skill) is hashed — compare from a non-None base so each field is proven.
         assert_ne!(
             base,
             hash_with(&|p| p.dot = Some((1, 3, 20, 0))),
-            "projectile dot payload must change the hash"
+            "projectile dot presence must change the hash"
         );
+        let dot = |t: (u8, i64, u32, u32)| hash_with(&move |p| p.dot = Some(t));
+        let dot_base = dot((1, 3, 20, 5));
+        assert_ne!(
+            dot_base,
+            dot((2, 3, 20, 5)),
+            "projectile dot dtype must change the hash"
+        );
+        assert_ne!(
+            dot_base,
+            dot((1, 4, 20, 5)),
+            "projectile dot per_second must change the hash"
+        );
+        assert_ne!(
+            dot_base,
+            dot((1, 3, 21, 5)),
+            "projectile dot ticks must change the hash"
+        );
+        assert_ne!(
+            dot_base,
+            dot((1, 3, 20, 6)),
+            "projectile dot skill must change the hash"
+        );
+        // Debuff payload: presence, grant internals (via fold_grant), AND duration.
         assert_ne!(
             base,
             hash_with(&|p| p.debuff = Some((
@@ -3286,8 +3319,12 @@ mod tests {
             ))),
             "projectile debuff grants must change the hash"
         );
-        // The condition on a projectile debuff grant is future-relevant too.
         let g = Grant::new(Stat::Strength, Layer::Added, 1);
+        assert_ne!(
+            hash_with(&|p| p.debuff = Some((vec![g], 30))),
+            hash_with(&|p| p.debuff = Some((vec![g], 31))),
+            "a projectile debuff duration must change the hash"
+        );
         assert_ne!(
             hash_with(&|p| p.debuff = Some((vec![g], 30))),
             hash_with(&|p| p.debuff = Some((
@@ -3426,6 +3463,228 @@ mod tests {
                 .unwrap()
                 .build_plan = vec![1, 2, 3]),
             "build_plan must change the state hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_combat_stats() {
+        // The hash fingerprints the WHOLE CombatStats — derived for characters
+        // (recomputed by refresh), but spawn-set for monsters (stagger/poise/
+        // knockback from rolled affixes), so the derived-vs-independent line is
+        // fragile and every field is hashed. Mutation: drop any field's write from
+        // the combat block in views.rs and its assert_ne! fails.
+        use crate::entity::CombatStats;
+        use crate::fixed::Fx;
+        let content = content();
+        let hash_with = |mutate: &dyn Fn(&mut CombatStats)| {
+            let mut world = World::new(6_06, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            mutate(c);
+            world.state_hash()
+        };
+        let base = hash_with(&|_c| {});
+        assert_eq!(
+            base,
+            hash_with(&|_c| {}),
+            "identical combat stats must hash identically"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.life_regen += 1),
+            "life_regen must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.mana_regen += 1),
+            "mana_regen must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.leech_life += 1),
+            "leech_life must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.leech_mana += 1),
+            "leech_mana must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.range += Fx::from_int(1)),
+            "range must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.stagger += 1),
+            "stagger must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.poise += 1),
+            "poise must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.knockback_cu += 1),
+            "knockback_cu must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.use_ticks += 1),
+            "use_ticks must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.speed_per_tick += Fx::from_int(1)),
+            "speed_per_tick must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.projectile = !c.projectile),
+            "projectile flag must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.item_rarity += 1),
+            "item_rarity must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.item_quantity += 1),
+            "item_quantity must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_monster_state() {
+        // Independent monster state: the pack link, rolled spawn affixes, composed
+        // name, and skill supports. Mutation: drop any from the monster block in
+        // views.rs and its assert_ne! fails.
+        use crate::entity::{GemInstance, MonsterState, RolledAffix, SocketedGem};
+        let content = content();
+        let hash_with = |mutate: &dyn Fn(&mut MonsterState)| {
+            let mut world = World::new(7_07, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = world
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.is_some())
+                .map(|(s, _)| s)
+                .expect("a monster spawned");
+            let m = world.zone.get_mut(slot).unwrap().monster.as_mut().unwrap();
+            mutate(m);
+            world.state_hash()
+        };
+        let base = hash_with(&|_m| {});
+        assert_eq!(
+            base,
+            hash_with(&|_m| {}),
+            "identical monster state must hash identically"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|m| m.pack_idx += 1),
+            "monster pack_idx must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|m| m.display_name = "Z".into()),
+            "monster display_name must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|m| m.affixes.push(RolledAffix {
+                affix_idx: 0,
+                values: vec![5],
+                tier: 0,
+            })),
+            "monster rolled affixes must change the hash"
+        );
+        // Isolate supports: same skill gem, with vs without a support.
+        assert_ne!(
+            hash_with(&|m| m.skills.push(SocketedGem {
+                gem: GemInstance {
+                    gem_idx: 0,
+                    level: 1,
+                    xp: 0
+                },
+                cooldown_left: 0,
+                supports: vec![],
+            })),
+            hash_with(&|m| m.skills.push(SocketedGem {
+                gem: GemInstance {
+                    gem_idx: 0,
+                    level: 1,
+                    xp: 0
+                },
+                cooldown_left: 0,
+                supports: vec![GemInstance {
+                    gem_idx: 1,
+                    level: 1,
+                    xp: 0
+                }],
+            })),
+            "monster skill supports must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_world_zone_identity() {
+        // Which zone the world runs (read by bots via SelfStatus), its level, and
+        // the zone's authored speech are serialized World state. Mutation: drop any
+        // from the hash header in views.rs and its assert_ne! fails.
+        let content = content();
+        let build = |mutate: &dyn Fn(&mut World)| {
+            let mut world = World::new(8_08, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            mutate(&mut world);
+            world.state_hash()
+        };
+        let base = build(&|_w| {});
+        assert_eq!(
+            base,
+            build(&|_w| {}),
+            "identical worlds must hash identically"
+        );
+        assert_ne!(
+            base,
+            build(&|w| w.zone_idx += 1),
+            "zone_idx must change the hash"
+        );
+        assert_ne!(
+            base,
+            build(&|w| w.zone_level += 1),
+            "zone_level must change the hash"
+        );
+        assert_ne!(
+            base,
+            build(&|w| w.zone_lines.push("x".into())),
+            "zone_lines must change the hash"
         );
     }
 

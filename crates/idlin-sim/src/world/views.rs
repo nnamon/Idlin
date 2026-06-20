@@ -437,6 +437,18 @@ impl World {
         h.write_u64(self.content_hash);
         h.write_u64(self.tick);
         h.write_u32(self.next_net_id);
+        // Which zone this world runs (bots read it via SelfStatus) and its level;
+        // both are serialized World state. `zone_lines` is the zone's authored
+        // speech, also persisted. (Zone geometry/grid are loaded from content and
+        // so are already folded into `content_hash`; the slot allocator's internal
+        // free-list/by-net order is excluded — a divergence there surfaces in the
+        // hashed net_id/slot of the next spawn.)
+        h.write_u32(self.zone_idx);
+        h.write_u32(self.zone_level);
+        h.write_u64(self.zone_lines.len() as u64);
+        for line in &self.zone_lines {
+            h.write_bytes(line.as_bytes());
+        }
         for rng in [
             &self.rng_ai,
             &self.rng_combat,
@@ -543,6 +555,24 @@ impl World {
                 h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
                 h.write_i32(c.radius.raw());
+                // The remaining combat fields are derived for characters (refresh
+                // recomputes them from hashed inputs) but spawn-set for monsters
+                // (e.g. stagger/poise/knockback from rolled affixes), so the
+                // derived-vs-independent line is fragile — hash the WHOLE struct so
+                // no field can be omitted or argued.
+                h.write_i64(c.life_regen);
+                h.write_i64(c.mana_regen);
+                h.write_i64(c.leech_life);
+                h.write_i64(c.leech_mana);
+                h.write_i32(c.range.raw());
+                h.write_i64(c.stagger);
+                h.write_i64(c.poise);
+                h.write_i64(c.knockback_cu);
+                h.write_u32(c.use_ticks);
+                h.write_i32(c.speed_per_tick.raw());
+                h.write_u8(c.projectile as u8);
+                h.write_i64(c.item_rarity);
+                h.write_i64(c.item_quantity);
             }
             if let Some(ch) = &e.character {
                 h.write_bytes(ch.name.as_bytes());
@@ -637,16 +667,34 @@ impl World {
             }
             if let Some(m) = &e.monster {
                 h.write_u32(m.def_idx);
+                h.write_u32(m.pack_idx);
                 h.write_u8(m.rarity as u8);
                 h.write_u32(m.level);
                 h.write_u8(m.hostile as u8);
                 h.write_i32(m.anchor.x.raw());
                 h.write_i32(m.anchor.y.raw());
                 h.write_u64(m.decay_at.unwrap_or(0));
+                h.write_bytes(m.display_name.as_bytes());
+                // Rolled spawn mods are independent persisted state (their EFFECT
+                // shows in the derived combat stats above, but their identity does
+                // not), just like the affixes on a character's items.
+                h.write_u64(m.affixes.len() as u64);
+                for ra in &m.affixes {
+                    h.write_u32(ra.affix_idx);
+                    h.write_u64(ra.values.len() as u64);
+                    for &v in &ra.values {
+                        h.write_i64(v);
+                    }
+                }
                 for sg in &m.skills {
                     h.write_u32(sg.gem.gem_idx);
                     h.write_u32(sg.gem.level);
                     h.write_u32(sg.cooldown_left);
+                    h.write_u64(sg.supports.len() as u64);
+                    for sup in &sg.supports {
+                        h.write_u32(sup.gem_idx);
+                        h.write_u32(sup.level);
+                    }
                 }
             }
             if let Some(l) = &e.loot {
