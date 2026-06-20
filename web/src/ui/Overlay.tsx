@@ -173,6 +173,12 @@ export function Overlay({
   );
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
 
+  // Drop any open item tooltip when the focused character changes: the hovered
+  // gear/bag cell can unmount without firing onMouseLeave (a focus switch swaps
+  // the whole sheet), which would otherwise strand the tooltip and keep the
+  // bag/obols deck paused (`paused={!!hover}`) forever.
+  useEffect(() => setHover(null), [focusId]);
+
   // Keep the focus panel fresh: re-request the sheet while a character is
   // in frame (cheap: one small message per second).
   useEffect(() => {

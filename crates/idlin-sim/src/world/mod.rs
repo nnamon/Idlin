@@ -745,7 +745,7 @@ impl World {
     ) -> Option<String> {
         item.affixes.iter().find_map(|ra| {
             content
-                .check_rolled_affix(ra.affix_idx, ra.values.len())
+                .check_rolled_affix(ra.affix_idx, ra.values.len(), ra.tier)
                 .err()
         })
     }
@@ -783,9 +783,9 @@ impl World {
             }
             if let Some(m) = &e.monster {
                 for ra in &m.affixes {
-                    if let Err(why) = self
-                        .content
-                        .check_rolled_affix(ra.affix_idx, ra.values.len())
+                    if let Err(why) =
+                        self.content
+                            .check_rolled_affix(ra.affix_idx, ra.values.len(), ra.tier)
                     {
                         return Some(why);
                     }

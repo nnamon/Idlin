@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // 36: EntityState.es_pct (#100 — energy shield on the overhead bar).
+// 37: GearSlotView/InvItemView gain base_num + item_level + rolled mods, and a
+//     new RolledModView, for the #87 item tooltip.
 pub const PROTO_VERSION: u32 = 37;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -754,8 +756,36 @@ mod tests {
                 resist_chaos_bp: 0,
                 item_rarity_bp: 0,
                 item_quantity_bp: 0,
-                equipment: vec![],
-                inventory: vec![],
+                // #87: the tooltip fields (base_num, item_level, rolled mods) must
+                // survive the wire — populate them so the roundtrip is non-vacuous.
+                equipment: vec![GearSlotView {
+                    slot: "weapon".into(),
+                    name: "Vortex Cleaver".into(),
+                    rarity: 2,
+                    dimmed: false,
+                    base_num: 2001,
+                    item_level: 84,
+                    mods: vec![RolledModView {
+                        num: 1001,
+                        tier: 1,
+                        values: vec![24],
+                    }],
+                }],
+                inventory: vec![InvItemView {
+                    name: "Athlete's Coral Band".into(),
+                    rarity: 1,
+                    x: 0,
+                    y: 0,
+                    w: 1,
+                    h: 1,
+                    base_num: 2002,
+                    item_level: 70,
+                    mods: vec![RolledModView {
+                        num: 1002,
+                        tier: 0,
+                        values: vec![83, 900],
+                    }],
+                }],
                 gems: vec![],
                 skills: vec![SkillStat {
                     name: "Arc".into(),
@@ -821,6 +851,32 @@ mod tests {
         assert_eq!(
             sheet.skills[0].supports[0].xp_next, 90,
             "support xp-to-next survives the wire"
+        );
+        // #87: the item tooltip fields survive the wire (base_num, item_level, and
+        // the rolled mods incl. a hybrid's multiple values).
+        assert_eq!(
+            sheet.equipment[0].base_num, 2001,
+            "gear base_num on the wire"
+        );
+        assert_eq!(
+            sheet.equipment[0].item_level, 84,
+            "gear item_level on the wire"
+        );
+        assert_eq!(sheet.equipment[0].mods[0].num, 1001);
+        assert_eq!(
+            sheet.equipment[0].mods[0].tier, 1,
+            "rolled tier on the wire"
+        );
+        assert_eq!(sheet.equipment[0].mods[0].values, vec![24]);
+        assert_eq!(
+            sheet.inventory[0].base_num, 2002,
+            "bag base_num on the wire"
+        );
+        assert_eq!(sheet.inventory[0].item_level, 70);
+        assert_eq!(
+            sheet.inventory[0].mods[0].values,
+            vec![83, 900],
+            "a hybrid's multiple rolled values survive the wire"
         );
     }
 

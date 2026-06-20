@@ -1213,12 +1213,18 @@ impl ContentDb {
         ContentDb::default()
     }
 
-    /// Validate one rolled affix against the registry: the index must exist AND
-    /// carry exactly one value per effect (positional, #86). `Err` is a human
-    /// reason. The fail-closed gate for snapshot resume — a malformed roll would
-    /// otherwise misalign/drop a hybrid's stats (`AffixDef::grants`) or panic on
-    /// a direct `affixes[idx]` index downstream.
-    pub fn check_rolled_affix(&self, affix_idx: u32, values_len: usize) -> Result<(), String> {
+    /// Validate one rolled affix against the registry: the index must exist, carry
+    /// exactly one value per effect (positional, #86), AND name a tier the affix
+    /// has. `Err` is a human reason. The fail-closed gate for snapshot resume — a
+    /// malformed roll would otherwise misalign/drop a hybrid's stats
+    /// (`AffixDef::grants`), panic on a direct `affixes[idx]` index downstream, or
+    /// index a nonexistent tier (names, ranges, the #87 tooltip).
+    pub fn check_rolled_affix(
+        &self,
+        affix_idx: u32,
+        values_len: usize,
+        tier: u32,
+    ) -> Result<(), String> {
         match self.affixes.get(affix_idx as usize) {
             None => Err(format!(
                 "affix #{affix_idx} is out of range ({} affixes)",
@@ -1228,6 +1234,11 @@ impl ContentDb {
                 "affix '{}' (#{affix_idx}) carries {values_len} rolled value(s) but expects {}",
                 a.id,
                 a.effects.len()
+            )),
+            Some(a) if tier as usize >= a.tiers.len() => Err(format!(
+                "affix '{}' (#{affix_idx}) rolled tier {tier} but has {} tier(s)",
+                a.id,
+                a.tiers.len()
             )),
             Some(_) => Ok(()),
         }
@@ -2741,24 +2752,40 @@ mod tests {
             .unwrap() as u32;
         let hale = db.affixes.iter().position(|a| a.id == "hale").unwrap() as u32;
         assert!(
-            db.check_rolled_affix(fox, 2).is_ok(),
+            db.check_rolled_affix(fox, 2, 0).is_ok(),
             "hybrid wants 2 values"
         );
         assert!(
-            db.check_rolled_affix(fox, 1).is_err(),
+            db.check_rolled_affix(fox, 1, 0).is_err(),
             "1 value for a 2-effect affix"
         );
         assert!(
-            db.check_rolled_affix(hale, 1).is_ok(),
+            db.check_rolled_affix(hale, 1, 0).is_ok(),
             "single-effect wants 1"
         );
         assert!(
-            db.check_rolled_affix(hale, 2).is_err(),
+            db.check_rolled_affix(hale, 2, 0).is_err(),
             "2 values for 1 effect"
         );
         assert!(
-            db.check_rolled_affix(u32::MAX, 1).is_err(),
+            db.check_rolled_affix(u32::MAX, 1, 0).is_err(),
             "an out-of-range affix index is rejected, not silently OK"
+        );
+        // Tier bound (#87): a roll naming a tier the affix doesn't have is
+        // rejected, not resumed (it indexes names/ranges/the tooltip). Mutation:
+        // drop the tier arm and a corrupt snapshot tier resumes.
+        let hale_tiers = db.affixes[hale as usize].tiers.len() as u32;
+        assert!(
+            db.check_rolled_affix(hale, 1, hale_tiers - 1).is_ok(),
+            "the top valid tier is accepted"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 1, hale_tiers).is_err(),
+            "a tier past the last is rejected"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 1, u32::MAX).is_err(),
+            "a wildly-out-of-range tier is rejected, not silently OK"
         );
     }
 
