@@ -1708,6 +1708,28 @@ impl ContentDb {
                     msg: "has no effects (grants nothing)".into(),
                 });
             }
+            // A condition must NOT gate an attribute (#86 Phase B): attribute
+            // totals feed gear requirements at FACE VALUE (`attribute_totals`),
+            // so a conditional attribute would satisfy a requirement while
+            // inactive in derived stats — incoherent. Forbid it until requirement
+            // evaluation is condition-aware.
+            for eff in &affix.effects {
+                if eff.condition.is_some()
+                    && matches!(
+                        eff.stat,
+                        Stat::Strength | Stat::Dexterity | Stat::Intelligence
+                    )
+                {
+                    return Err(ContentError::BadAffixTiers {
+                        affix: affix.id.clone(),
+                        msg: format!(
+                            "effect on {:?} is conditional — attributes feed gear \
+                             requirements at face value and cannot be conditional",
+                            eff.stat
+                        ),
+                    });
+                }
+            }
             if affix.tiers.is_empty() {
                 return Err(ContentError::BadAffixTiers {
                     affix: affix.id.clone(),
@@ -2769,6 +2791,34 @@ mod tests {
                 assert_eq!(affix, "bad");
                 assert!(
                     msg.contains("roll range") && msg.contains("effect"),
+                    "msg: {msg}"
+                );
+            }
+            other => panic!("expected BadAffixTiers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_conditional_attribute_effect_is_rejected() {
+        // Attributes feed gear requirements at face value (#86 Phase B), so a
+        // conditional attribute is incoherent — reject at load. Mutation: remove
+        // the attribute-condition guard and this malformed affix loads.
+        let tc = TempContent::new(
+            "cond_attr",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
+                    effects: [(stat: strength, layer: added, condition: Some(wielding_weapon_class(melee)))],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadAffixTiers { affix, msg }) => {
+                assert_eq!(affix, "bad");
+                assert!(
+                    msg.contains("conditional") && msg.contains("attribute"),
                     "msg: {msg}"
                 );
             }

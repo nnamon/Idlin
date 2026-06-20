@@ -233,6 +233,10 @@ impl World {
             let Some(item) = slot_item else { continue };
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
+                // Face value (conditions ignored): only attribute totals are read
+                // here (for gear requirements), and the loader forbids conditional
+                // attribute effects (#86 Phase B), so no condition can apply to a
+                // stat this function returns.
                 for g in a.grants(&ra.values) {
                     sheet.apply(&g);
                 }

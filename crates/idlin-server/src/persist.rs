@@ -47,7 +47,11 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v5 (#86 Phase A): affixes became multi-effect (hybrid support), so
 /// `RolledAffix` serializes `values: Vec<i64>` instead of a single `value` — a
 /// v4 snapshot's items would fail to decode, so refuse them cleanly.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 5;
+/// v6 (#86 Phase B): the `Stat` enum lost `MeleePhys`, shifting the postcard
+/// variant index of every later stat. `Grant { stat: Stat, .. }` is serialized in
+/// active-buff and projectile-debuff state (`ActiveEffect::Buff`), so a v5
+/// snapshot's buffs would decode shifted stats — refuse them cleanly.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 6;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
