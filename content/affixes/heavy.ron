@@ -6,11 +6,10 @@ AffixDef(
     kind: prefix,
     pool: "weapon",
     weight: 100,
-    stat: damage_phys,
-    layer: increased,
+    effects: [(stat: damage_phys, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 800, max: 1500, name: "Heavy", weight: 100),   // 8-15%
-        (ilvl: 3, min: 1600, max: 2500, name: "Brutal", weight: 45),
-        (ilvl: 6, min: 2600, max: 4000, name: "Ruinous", weight: 15),
+        (ilvl: 1, name: "Heavy", weight: 100, rolls: [(min: 800, max: 1500)]),   // 8-15%
+        (ilvl: 3, name: "Brutal", weight: 45, rolls: [(min: 1600, max: 2500)]),
+        (ilvl: 6, name: "Ruinous", weight: 15, rolls: [(min: 2600, max: 4000)]),
     ],
 )

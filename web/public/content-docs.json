@@ -2,876 +2,1338 @@
   "categories": {
     "affix": [
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "mana"
+          }
+        ],
         "id": "arcane",
         "kind": "prefix",
-        "layer": "added",
         "name": "Arcane",
         "num": 25165824,
         "pool": "arcana",
-        "stat": "mana",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 12,
-            "min": 6,
             "name": "Arcane",
+            "rolls": [
+              {
+                "max": 12,
+                "min": 6
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 22,
-            "min": 13,
             "name": "Occult",
+            "rolls": [
+              {
+                "max": 22,
+                "min": 13
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 36,
-            "min": 23,
             "name": "Eldritch",
+            "rolls": [
+              {
+                "max": 36,
+                "min": 23
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 70
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "strength"
+          }
+        ],
         "id": "bold",
         "kind": "prefix",
-        "layer": "added",
         "name": "Bold",
         "num": 25165851,
         "pool": "accessory",
-        "stat": "strength",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 8,
-            "min": 4,
             "name": "Bold",
+            "rolls": [
+              {
+                "max": 8,
+                "min": 4
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 15,
-            "min": 9,
             "name": "Mighty",
+            "rolls": [
+              {
+                "max": 15,
+                "min": 9
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 8,
-            "max": 24,
-            "min": 16,
             "name": "Colossal",
+            "rolls": [
+              {
+                "max": 24,
+                "min": 16
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "life"
+          }
+        ],
         "id": "hale",
         "kind": "prefix",
-        "layer": "added",
         "name": "Hale",
         "num": 25165825,
         "pool": "armour",
-        "stat": "life",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 15,
-            "min": 8,
             "name": "Hale",
+            "rolls": [
+              {
+                "max": 15,
+                "min": 8
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 28,
-            "min": 16,
             "name": "Stalwart",
+            "rolls": [
+              {
+                "max": 28,
+                "min": 16
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 45,
-            "min": 29,
             "name": "Indomitable",
+            "rolls": [
+              {
+                "max": 45,
+                "min": 29
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "life"
+          }
+        ],
         "id": "hardy",
         "kind": "prefix",
-        "layer": "added",
         "name": "Hardy",
         "num": 25165852,
         "pool": "accessory",
-        "stat": "life",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 12,
-            "min": 6,
             "name": "Hardy",
+            "rolls": [
+              {
+                "max": 12,
+                "min": 6
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 24,
-            "min": 13,
             "name": "Vigorous",
+            "rolls": [
+              {
+                "max": 24,
+                "min": 13
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 8,
-            "max": 40,
-            "min": 25,
             "name": "Undying",
+            "rolls": [
+              {
+                "max": 40,
+                "min": 25
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 90
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "damage_phys"
+          }
+        ],
         "id": "heavy",
         "kind": "prefix",
-        "layer": "increased",
         "name": "Heavy",
         "num": 25165826,
         "pool": "weapon",
-        "stat": "damage_phys",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 1500,
-            "min": 800,
             "name": "Heavy",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 800
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 2500,
-            "min": 1600,
             "name": "Brutal",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1600
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 4000,
-            "min": 2600,
             "name": "Ruinous",
+            "rolls": [
+              {
+                "max": 4000,
+                "min": 2600
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "damage_phys"
+          }
+        ],
         "id": "honed",
         "kind": "prefix",
-        "layer": "added",
         "name": "Honed",
         "num": 25165827,
         "pool": "weapon",
-        "stat": "damage_phys",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 4,
-            "min": 2,
             "name": "Honed",
+            "rolls": [
+              {
+                "max": 4,
+                "min": 2
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 8,
-            "min": 5,
             "name": "Whetted",
+            "rolls": [
+              {
+                "max": 8,
+                "min": 5
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 14,
-            "min": 9,
             "name": "Razor",
+            "rolls": [
+              {
+                "max": 14,
+                "min": 9
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "life"
+          }
+        ],
         "id": "hulking",
         "kind": "prefix",
-        "layer": "increased",
         "name": "Hulking",
         "num": 25165828,
         "pool": "monster",
-        "stat": "life",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 7000,
-            "min": 4000,
             "name": "Hulking",
+            "rolls": [
+              {
+                "max": 7000,
+                "min": 4000
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 5,
-            "max": 12000,
-            "min": 8000,
             "name": "Monstrous",
+            "rolls": [
+              {
+                "max": 12000,
+                "min": 8000
+              }
+            ],
             "weight": 35
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "stagger"
+          }
+        ],
         "id": "jarring",
         "kind": "prefix",
-        "layer": "increased",
         "name": "Jarring",
         "num": 25165829,
         "pool": "weapon",
-        "stat": "stagger",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 2500,
-            "min": 1500,
             "name": "Jarring",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 6,
-            "max": 4000,
-            "min": 2501,
             "name": "Staggering",
+            "rolls": [
+              {
+                "max": 4000,
+                "min": 2501
+              }
+            ],
             "weight": 40
           }
         ],
         "weight": 60
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "accuracy"
+          }
+        ],
         "id": "keen",
         "kind": "prefix",
-        "layer": "added",
         "name": "Keen",
         "num": 25165830,
         "pool": "weapon",
-        "stat": "accuracy",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 30,
-            "min": 15,
             "name": "Keen",
+            "rolls": [
+              {
+                "max": 30,
+                "min": 15
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 60,
-            "min": 31,
             "name": "Hawkeyed",
+            "rolls": [
+              {
+                "max": 60,
+                "min": 31
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 70
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "intelligence"
+          }
+        ],
         "id": "of_acumen",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Acumen",
         "num": 25165853,
         "pool": "accessory",
-        "stat": "intelligence",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 8,
-            "min": 4,
             "name": "of Acumen",
+            "rolls": [
+              {
+                "max": 8,
+                "min": 4
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 15,
-            "min": 9,
             "name": "of Insight",
+            "rolls": [
+              {
+                "max": 15,
+                "min": 9
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 8,
-            "max": 24,
-            "min": 16,
             "name": "of Genius",
+            "rolls": [
+              {
+                "max": 24,
+                "min": 16
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "knockback"
+          }
+        ],
         "id": "of_driving",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Driving",
         "num": 25165831,
         "pool": "weapon",
-        "stat": "knockback",
         "tiers": [
           {
             "ilvl": 2,
-            "max": 45,
-            "min": 25,
             "name": "of Driving",
+            "rolls": [
+              {
+                "max": 45,
+                "min": 25
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 8,
-            "max": 75,
-            "min": 46,
             "name": "of Hurling",
+            "rolls": [
+              {
+                "max": 75,
+                "min": 46
+              }
+            ],
             "weight": 35
           }
         ],
         "weight": 50
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "damage_fire"
+          }
+        ],
         "id": "of_embers",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Embers",
         "num": 25165832,
         "pool": "weapon",
-        "stat": "damage_fire",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 5,
-            "min": 2,
             "name": "of Embers",
+            "rolls": [
+              {
+                "max": 5,
+                "min": 2
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 11,
-            "min": 6,
             "name": "of Cinders",
+            "rolls": [
+              {
+                "max": 11,
+                "min": 6
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 80
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "dexterity"
+          }
+        ],
         "id": "of_finesse",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Finesse",
         "num": 25165854,
         "pool": "accessory",
-        "stat": "dexterity",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 8,
-            "min": 4,
             "name": "of Finesse",
+            "rolls": [
+              {
+                "max": 8,
+                "min": 4
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 15,
-            "min": 9,
             "name": "of Grace",
+            "rolls": [
+              {
+                "max": 15,
+                "min": 9
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 8,
-            "max": 24,
-            "min": 16,
             "name": "of Mastery",
+            "rolls": [
+              {
+                "max": 24,
+                "min": 16
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "attack_speed"
+          }
+        ],
         "id": "of_haste_m",
         "kind": "suffix",
-        "layer": "increased",
         "name": "of Haste",
         "num": 25165833,
         "pool": "monster",
-        "stat": "attack_speed",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 2500,
-            "min": 1500,
             "name": "of Haste",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 5,
-            "max": 4500,
-            "min": 3000,
             "name": "of Frenzy",
+            "rolls": [
+              {
+                "max": 4500,
+                "min": 3000
+              }
+            ],
             "weight": 35
           }
         ],
         "weight": 80
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "item_quantity"
+          }
+        ],
         "id": "of_hoarding",
         "kind": "suffix",
-        "layer": "increased",
         "name": "of Hoarding",
         "num": 25165834,
         "pool": "find",
-        "stat": "item_quantity",
         "tiers": [
           {
             "ilvl": 2,
-            "max": 800,
-            "min": 400,
             "name": "of Hoarding",
+            "rolls": [
+              {
+                "max": 800,
+                "min": 400
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 6,
-            "max": 1500,
-            "min": 900,
             "name": "of Bounty",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 900
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 35
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "armour"
+          }
+        ],
         "id": "of_iron",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Iron",
         "num": 25165835,
         "pool": "armour",
-        "stat": "armour",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 30,
-            "min": 15,
             "name": "of Iron",
+            "rolls": [
+              {
+                "max": 30,
+                "min": 15
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 60,
-            "min": 31,
             "name": "of Steel",
+            "rolls": [
+              {
+                "max": 60,
+                "min": 31
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 90
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "item_rarity"
+          }
+        ],
         "id": "of_plunder",
         "kind": "suffix",
-        "layer": "increased",
         "name": "of Plunder",
         "num": 25165836,
         "pool": "find",
-        "stat": "item_rarity",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 1500,
-            "min": 800,
             "name": "of Plunder",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 800
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 2500,
-            "min": 1600,
             "name": "of Avarice",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1600
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 50
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "poise"
+          }
+        ],
         "id": "of_poise",
         "kind": "suffix",
-        "layer": "increased",
         "name": "of Poise",
         "num": 25165837,
         "pool": "armour",
-        "stat": "poise",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 2500,
-            "min": 1500,
             "name": "of Poise",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 7,
-            "max": 4500,
-            "min": 2501,
             "name": "of Iron Poise",
+            "rolls": [
+              {
+                "max": 4500,
+                "min": 2501
+              }
+            ],
             "weight": 35
           }
         ],
         "weight": 70
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "crit_chance"
+          }
+        ],
         "id": "of_precision",
         "kind": "suffix",
-        "layer": "increased",
         "name": "of Precision",
         "num": 25165838,
         "pool": "weapon",
-        "stat": "crit_chance",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 1800,
-            "min": 1000,
             "name": "of Precision",
+            "rolls": [
+              {
+                "max": 1800,
+                "min": 1000
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 3000,
-            "min": 1801,
             "name": "of the Marksman",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1801
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 60
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "life"
+          }
+        ],
         "id": "of_sating",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Sating",
         "num": 25165839,
         "pool": "flask",
-        "stat": "life",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 10,
-            "min": 5,
             "name": "of Sating",
+            "rolls": [
+              {
+                "max": 10,
+                "min": 5
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 5,
-            "max": 20,
-            "min": 11,
             "name": "of Plenty",
+            "rolls": [
+              {
+                "max": 20,
+                "min": 11
+              }
+            ],
             "weight": 40
           }
         ],
         "weight": 100
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "stagger"
+          }
+        ],
         "id": "of_staggering_m",
         "kind": "suffix",
-        "layer": "increased",
         "name": "of Staggering",
         "num": 25165840,
         "pool": "monster",
-        "stat": "stagger",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 3500,
-            "min": 2000,
             "name": "of Staggering",
+            "rolls": [
+              {
+                "max": 3500,
+                "min": 2000
+              }
+            ],
             "weight": 100
           }
         ],
         "weight": 40
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "resist_lightning"
+          }
+        ],
         "id": "of_storms",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Storms",
         "num": 25165841,
         "pool": "armour",
-        "stat": "resist_lightning",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 900,
-            "min": 500,
             "name": "of Storms",
+            "rolls": [
+              {
+                "max": 900,
+                "min": 500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 1500,
-            "min": 901,
             "name": "of Tempests",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 901
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 2400,
-            "min": 1501,
             "name": "of the Maelstrom",
+            "rolls": [
+              {
+                "max": 2400,
+                "min": 1501
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 80
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "resist_cold"
+          }
+        ],
         "id": "of_the_depths",
         "kind": "suffix",
-        "layer": "added",
         "name": "of the Depths",
         "num": 25165842,
         "pool": "armour",
-        "stat": "resist_cold",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 900,
-            "min": 500,
             "name": "of the Depths",
+            "rolls": [
+              {
+                "max": 900,
+                "min": 500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 1500,
-            "min": 901,
             "name": "of the Abyss",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 901
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 2400,
-            "min": 1501,
             "name": "of the Drowned King",
+            "rolls": [
+              {
+                "max": 2400,
+                "min": 1501
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 80
       },
       {
-        "id": "of_the_hare",
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "dexterity"
+          },
+          {
+            "layer": "increased",
+            "stat": "evasion"
+          }
+        ],
+        "id": "of_the_fox",
         "kind": "suffix",
-        "layer": "increased",
-        "name": "of the Hare",
-        "num": 25165843,
-        "pool": "stride",
-        "stat": "move_speed",
+        "name": "of the Fox",
+        "num": 25165855,
+        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 900,
-            "min": 500,
+            "name": "of the Fox",
+            "rolls": [
+              {
+                "max": 10,
+                "min": 5
+              },
+              {
+                "max": 900,
+                "min": 500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 5,
+            "name": "of the Vulpine",
+            "rolls": [
+              {
+                "max": 18,
+                "min": 11
+              },
+              {
+                "max": 1500,
+                "min": 901
+              }
+            ],
+            "weight": 40
+          }
+        ],
+        "weight": 55
+      },
+      {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "move_speed"
+          }
+        ],
+        "id": "of_the_hare",
+        "kind": "suffix",
+        "name": "of the Hare",
+        "num": 25165843,
+        "pool": "stride",
+        "tiers": [
+          {
+            "ilvl": 1,
             "name": "of the Hare",
+            "rolls": [
+              {
+                "max": 900,
+                "min": 500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 1500,
-            "min": 1000,
             "name": "of the Stag",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 1000
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 70
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "damage_chaos"
+          }
+        ],
         "id": "of_venom",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Venom",
         "num": 25165844,
         "pool": "weapon",
-        "stat": "damage_chaos",
         "tiers": [
           {
             "ilvl": 2,
-            "max": 4,
-            "min": 2,
             "name": "of Venom",
+            "rolls": [
+              {
+                "max": 4,
+                "min": 2
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 5,
-            "max": 9,
-            "min": 5,
             "name": "of Blight",
+            "rolls": [
+              {
+                "max": 9,
+                "min": 5
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 50
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "resist_fire"
+          }
+        ],
         "id": "of_warding",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Warding",
         "num": 25165845,
         "pool": "armour",
-        "stat": "resist_fire",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 1200,
-            "min": 500,
             "name": "of Warding",
+            "rolls": [
+              {
+                "max": 1200,
+                "min": 500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 2200,
-            "min": 1300,
             "name": "of Sanctuary",
+            "rolls": [
+              {
+                "max": 2200,
+                "min": 1300
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 80
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "resist_fire"
+          }
+        ],
         "id": "of_wards",
         "kind": "suffix",
-        "layer": "added",
         "name": "of Wards",
         "num": 25165846,
         "pool": "monster",
-        "stat": "resist_fire",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 3000,
-            "min": 2000,
             "name": "of Wards",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2000
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 5,
-            "max": 5000,
-            "min": 3500,
             "name": "of Bastions",
+            "rolls": [
+              {
+                "max": 5000,
+                "min": 3500
+              }
+            ],
             "weight": 35
           }
         ],
         "weight": 70
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "evasion"
+          }
+        ],
         "id": "of_wind",
         "kind": "suffix",
-        "layer": "added",
         "name": "of the Wind",
         "num": 25165847,
         "pool": "armour",
-        "stat": "evasion",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 25,
-            "min": 12,
             "name": "of Wind",
+            "rolls": [
+              {
+                "max": 25,
+                "min": 12
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 50,
-            "min": 26,
             "name": "of Zephyrs",
+            "rolls": [
+              {
+                "max": 50,
+                "min": 26
+              }
+            ],
             "weight": 45
           }
         ],
         "weight": 90
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "damage_phys"
+          }
+        ],
         "id": "savage",
         "kind": "prefix",
-        "layer": "increased",
         "name": "Savage",
         "num": 25165848,
         "pool": "monster",
-        "stat": "damage_phys",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 4000,
-            "min": 2500,
             "name": "Savage",
+            "rolls": [
+              {
+                "max": 4000,
+                "min": 2500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 5,
-            "max": 7000,
-            "min": 4500,
             "name": "Bloodthirsty",
+            "rolls": [
+              {
+                "max": 7000,
+                "min": 4500
+              }
+            ],
             "weight": 35
           }
         ],
         "weight": 90
       },
       {
+        "effects": [
+          {
+            "layer": "added",
+            "stat": "energy_shield"
+          }
+        ],
         "id": "shimmering",
         "kind": "prefix",
-        "layer": "added",
         "name": "Shimmering",
         "num": 25165849,
         "pool": "armour",
-        "stat": "energy_shield",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 10,
-            "min": 5,
             "name": "Shimmering",
+            "rolls": [
+              {
+                "max": 10,
+                "min": 5
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 3,
-            "max": 19,
-            "min": 11,
             "name": "Gleaming",
+            "rolls": [
+              {
+                "max": 19,
+                "min": 11
+              }
+            ],
             "weight": 45
           },
           {
             "ilvl": 6,
-            "max": 32,
-            "min": 20,
             "name": "Radiant",
+            "rolls": [
+              {
+                "max": 32,
+                "min": 20
+              }
+            ],
             "weight": 15
           }
         ],
         "weight": 70
       },
       {
+        "effects": [
+          {
+            "layer": "increased",
+            "stat": "attack_speed"
+          }
+        ],
         "id": "swift",
         "kind": "prefix",
-        "layer": "increased",
         "name": "Swift",
         "num": 25165850,
         "pool": "weapon",
-        "stat": "attack_speed",
         "tiers": [
           {
             "ilvl": 1,
-            "max": 900,
-            "min": 500,
             "name": "Swift",
+            "rolls": [
+              {
+                "max": 900,
+                "min": 500
+              }
+            ],
             "weight": 100
           },
           {
             "ilvl": 4,
-            "max": 1600,
-            "min": 1000,
             "name": "Quicksilver",
+            "rolls": [
+              {
+                "max": 1600,
+                "min": 1000
+              }
+            ],
             "weight": 45
           }
         ],
@@ -4038,7 +4500,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "83aebc1c2de03b6c",
+  "fingerprint": "7b686952d98e0ab0",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23
 }

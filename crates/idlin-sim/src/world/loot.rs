@@ -467,11 +467,19 @@ pub(crate) fn roll_affixes_into(
             AffixKind::Prefix => prefixes += 1,
             AffixKind::Suffix => suffixes += 1,
         }
-        let span = (tier.max - tier.min).max(0) as u32 + 1;
-        let value = tier.min + rng.next_range(span) as i64;
+        // One independent roll per effect, in effect order (deterministic). A
+        // plain affix rolls one value; a hybrid (#86) rolls one per component.
+        let values: Vec<i64> = tier
+            .rolls
+            .iter()
+            .map(|r| {
+                let span = (r.max - r.min).max(0) as u32 + 1;
+                r.min + rng.next_range(span) as i64
+            })
+            .collect();
         (*affixes).push(RolledAffix {
             affix_idx,
-            value,
+            values,
             tier: tier_idx as u32,
         });
     }
@@ -624,8 +632,15 @@ fn apply_currency_op(
             for ra in item.affixes.iter_mut() {
                 let affix = &content.affixes[ra.affix_idx as usize];
                 if let Some(tier) = affix.tiers.iter().rev().find(|t| t.ilvl <= item.item_level) {
-                    let span = (tier.max - tier.min).max(0) as u32 + 1;
-                    ra.value = tier.min + rng.next_range(span) as i64;
+                    // Reroll every component in effect order (hybrid-aware, #86).
+                    ra.values = tier
+                        .rolls
+                        .iter()
+                        .map(|r| {
+                            let span = (r.max - r.min).max(0) as u32 + 1;
+                            r.min + rng.next_range(span) as i64
+                        })
+                        .collect();
                 }
             }
             true // Divine keeps the name
@@ -812,7 +827,9 @@ mod craft_tests {
         for ra in &item.affixes {
             let affix = &content.affixes[ra.affix_idx as usize];
             let tier = affix.tiers.iter().rev().find(|t| t.ilvl <= 5).unwrap();
-            assert!(ra.value >= tier.min && ra.value <= tier.max);
+            for (v, r) in ra.values.iter().zip(&tier.rolls) {
+                assert!(*v >= r.min && *v <= r.max);
+            }
         }
 
         // Scouring strips it all back to the base.

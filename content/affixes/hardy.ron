@@ -6,11 +6,10 @@ AffixDef(
     kind: prefix,
     pool: "accessory",
     weight: 90,
-    stat: life,
-    layer: added,
+    effects: [(stat: life, layer: added)],
     tiers: [
-        (ilvl: 1, min: 6, max: 12, name: "Hardy", weight: 100),
-        (ilvl: 4, min: 13, max: 24, name: "Vigorous", weight: 45),
-        (ilvl: 8, min: 25, max: 40, name: "Undying", weight: 15),
+        (ilvl: 1, name: "Hardy", weight: 100, rolls: [(min: 6, max: 12)]),
+        (ilvl: 4, name: "Vigorous", weight: 45, rolls: [(min: 13, max: 24)]),
+        (ilvl: 8, name: "Undying", weight: 15, rolls: [(min: 25, max: 40)]),
     ],
 )

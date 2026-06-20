@@ -3,9 +3,9 @@ AffixDef(
     id: "hulking", name: "Hulking", kind: prefix, pool: "monster",
     public: true,
     weight: 100,
-    stat: life, layer: increased,
+    effects: [(stat: life, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 4000, max: 7000, name: "Hulking", weight: 100),
-        (ilvl: 5, min: 8000, max: 12000, name: "Monstrous", weight: 35),
+        (ilvl: 1, name: "Hulking", weight: 100, rolls: [(min: 4000, max: 7000)]),
+        (ilvl: 5, name: "Monstrous", weight: 35, rolls: [(min: 8000, max: 12000)]),
     ],
 )

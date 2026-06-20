@@ -2307,8 +2307,8 @@ mod tests {
         let content = content();
         let mut world = World::new(0x5141, &content);
         // One debug() per value (debug is single-arg): skill_info return, then
-        // shape/skill_kind from its record; mod count, then affix_num/value/tier
-        // from the first mod.
+        // shape/skill_kind from its record; mod count, then affix_num/effect_index/
+        // value/tier from the first mod record (4 words, #86 hybrid-aware).
         let program = idlin_botc::compile(
             "fn main() {\n\
              debug(skill_info(1, 0xE000));\n\
@@ -2319,6 +2319,7 @@ mod tests {
              debug(mem[0xE100]);\n\
              debug(mem[0xE104]);\n\
              debug(mem[0xE108]);\n\
+             debug(mem[0xE10C]);\n\
              debug(skill_info(9, 0xE200));\n\
              debug(read_item_mods(9, 0xE300, 8));\n\
              debug(skill_info(0, 0xE200));\n\
@@ -2369,7 +2370,7 @@ mod tests {
                     item_level: 5,
                     affixes: vec![RolledAffix {
                         affix_idx: hale_idx,
-                        value: 12,
+                        values: vec![12],
                         tier: 0,
                     }],
                     name: String::new(),
@@ -2388,20 +2389,21 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(vals.len(), 11, "eleven debug emits: {vals:?}");
+        assert_eq!(vals.len(), 12, "twelve debug emits: {vals:?}");
         assert_eq!(vals[0], 0, "skill_info(1) is a valid slot");
         assert_eq!(vals[1], 1, "frost_nova shape = nova");
         assert_eq!(vals[2], 1, "frost_nova kind = spell");
-        assert_eq!(vals[3], 1, "one rolled mod on the item");
+        assert_eq!(vals[3], 1, "one rolled mod record (hale is single-effect)");
         assert_eq!(vals[4], expect_affix_num, "the rolled affix's tagged num");
-        assert_eq!(vals[5], 12, "the rolled value");
-        assert_eq!(vals[6], 0, "the rolled tier");
+        assert_eq!(vals[5], 0, "the effect index (0 — hale's only effect)");
+        assert_eq!(vals[6], 12, "the rolled value");
+        assert_eq!(vals[7], 0, "the rolled tier");
         // Out-of-range / zero / negative slot and a bad item index are all
         // rejected with -1 — never garbage, never a panic (slot is raw input).
-        assert_eq!(vals[7], -1, "skill_info on an empty slot → -1");
-        assert_eq!(vals[8], -1, "read_item_mods on a bad index → -1");
-        assert_eq!(vals[9], -1, "skill_info on slot 0 (basic attack) → -1");
-        assert_eq!(vals[10], -1, "skill_info on a negative slot → -1");
+        assert_eq!(vals[8], -1, "skill_info on an empty slot → -1");
+        assert_eq!(vals[9], -1, "read_item_mods on a bad index → -1");
+        assert_eq!(vals[10], -1, "skill_info on slot 0 (basic attack) → -1");
+        assert_eq!(vals[11], -1, "skill_info on a negative slot → -1");
     }
 
     #[test]
@@ -3258,7 +3260,7 @@ mod tests {
             item_level: 10,
             affixes: vec![RolledAffix {
                 affix_idx: hardy,
-                value: val,
+                values: vec![val],
                 tier: 0,
             }],
             name: String::new(),
@@ -3541,7 +3543,7 @@ mod tests {
             item_level: 10,
             affixes: vec![RolledAffix {
                 affix_idx: bold,
-                value: strength,
+                values: vec![strength],
                 tier: 0,
             }],
             name: String::new(),
@@ -3577,7 +3579,7 @@ mod tests {
             .as_ref()
             .expect("first ring loop is filled")
             .affixes[0]
-            .value;
+            .values[0];
         assert_eq!(
             worn_str, 24,
             "EquipBest put the higher-STR ring in the first loop (item_score values attributes)"

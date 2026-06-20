@@ -1583,11 +1583,9 @@ impl World {
             let mut sheet = crate::stats::StatSheet::new();
             for ra in &affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                sheet.apply(&crate::stats::Grant {
-                    stat: a.stat,
-                    layer: a.layer,
-                    value: ra.value,
-                });
+                for g in a.grants(&ra.values) {
+                    sheet.apply(&g);
+                }
             }
             stats.life_max =
                 sheet.value(idlin_content::stats::Stat::Life, scaled_life) * bulk / 10000;

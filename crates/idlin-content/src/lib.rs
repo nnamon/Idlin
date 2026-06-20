@@ -372,12 +372,29 @@ pub enum AffixKind {
     Suffix,
 }
 
-/// One rollable tier: eligible from `ilvl`, value rolled in `min..=max`.
+/// One effect of an affix: a `(stat, layer)` grant template. The rolled value
+/// comes from the matching positional `RollRange` in each tier. An affix with
+/// more than one effect is a HYBRID (#86) — one roll, several stats.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffixEffect {
+    pub stat: Stat,
+    pub layer: Layer,
+}
+
+/// The `min..=max` value range for one effect within one tier.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct RollRange {
+    pub min: i64,
+    pub max: i64,
+}
+
+/// One rollable tier: eligible from `ilvl`; each effect rolls in its positional
+/// `rolls` range (`rolls.len() == effects.len()`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixTier {
     pub ilvl: u32,
-    pub min: i64,
-    pub max: i64,
+    /// One range per affix effect, positional. Hybrids roll each independently.
+    pub rolls: Vec<RollRange>,
     /// THIS tier's display name — magic-item names are built from the
     /// rolled tier ("Heavy" vs "Brutal"), PoE-style. Empty = fall back
     /// to the affix family name.
@@ -456,8 +473,9 @@ pub struct NamingDef {
     pub second: Vec<String>,
 }
 
-/// A rollable item affix: a (stat, layer) grant whose value comes from the
-/// highest tier the item level allows.
+/// A rollable item affix: one or more `(stat, layer)` effects whose values come
+/// from the highest tier the item level allows. One effect = a plain mod; many
+/// effects = a HYBRID (#86), one roll granting several stats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixDef {
     pub id: String,
@@ -474,10 +492,25 @@ pub struct AffixDef {
     pub pool: String,
     #[serde(default = "default_weight")]
     pub weight: u32,
-    pub stat: Stat,
-    pub layer: Layer,
-    /// Must be sorted by ilvl ascending.
+    /// The stats this affix grants — one for a plain mod, several for a hybrid.
+    pub effects: Vec<AffixEffect>,
+    /// Must be sorted by ilvl ascending; each tier's `rolls.len()` == `effects.len()`.
     pub tiers: Vec<AffixTier>,
+}
+
+impl AffixDef {
+    /// The grants this affix yields for one rolled instance: each effect paired
+    /// with its positional rolled value (a hybrid yields several). The single
+    /// fold path every power-source site shares — `values` come from a
+    /// `RolledAffix`; extras beyond the effect count are ignored, missing ones
+    /// drop their effect (the loader guarantees the lengths match for real content).
+    pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
+        self.effects.iter().zip(values).map(|(eff, &value)| Grant {
+            stat: eff.stat,
+            layer: eff.layer,
+            value,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1622,6 +1655,12 @@ impl ContentDb {
         // scanning from the back, so tier order is load-bearing — reject
         // violations here instead of rolling wrong values at runtime.
         for affix in &db.affixes {
+            if affix.effects.is_empty() {
+                return Err(ContentError::BadAffixTiers {
+                    affix: affix.id.clone(),
+                    msg: "has no effects (grants nothing)".into(),
+                });
+            }
             if affix.tiers.is_empty() {
                 return Err(ContentError::BadAffixTiers {
                     affix: affix.id.clone(),
@@ -1638,6 +1677,30 @@ impl ContentDb {
                             w[0].ilvl, w[1].ilvl
                         ),
                     });
+                }
+            }
+            // Each tier must roll exactly one range per effect, every min <= max —
+            // a hybrid's components are positional, so a length mismatch would
+            // silently drop or misalign a stat at roll time.
+            for (ti, tier) in affix.tiers.iter().enumerate() {
+                if tier.rolls.len() != affix.effects.len() {
+                    return Err(ContentError::BadAffixTiers {
+                        affix: affix.id.clone(),
+                        msg: format!(
+                            "tier {ti} has {} roll range(s) but the affix has {} effect(s) \
+                             (need one range per effect)",
+                            tier.rolls.len(),
+                            affix.effects.len()
+                        ),
+                    });
+                }
+                for (ri, r) in tier.rolls.iter().enumerate() {
+                    if r.min > r.max {
+                        return Err(ContentError::BadAffixTiers {
+                            affix: affix.id.clone(),
+                            msg: format!("tier {ti} roll {ri}: min {} > max {}", r.min, r.max),
+                        });
+                    }
                 }
             }
         }
@@ -2353,12 +2416,19 @@ mod tests {
             "formulas serialize as base/per_level"
         );
 
-        // Affix tiers carry roll ranges + weights (crafting bots need them).
-        let tier = &cats["affix"].as_array().unwrap()[0]["tiers"]
-            .as_array()
-            .unwrap()[0];
+        // Affix effects + per-effect tier roll ranges + weights (crafting bots
+        // need them; hybrids carry several effects/rolls).
+        let affix0 = &cats["affix"].as_array().unwrap()[0];
         assert!(
-            tier.get("min").is_some() && tier.get("max").is_some() && tier.get("weight").is_some()
+            affix0["effects"].as_array().is_some_and(|e| !e.is_empty()),
+            "affix exposes its effect list"
+        );
+        let tier = &affix0["tiers"].as_array().unwrap()[0];
+        let roll0 = &tier["rolls"].as_array().unwrap()[0];
+        assert!(
+            roll0.get("min").is_some()
+                && roll0.get("max").is_some()
+                && tier.get("weight").is_some()
         );
 
         // Nodes expose BOTH the tagged num and the u16 build_ref, plus grants.
@@ -2402,8 +2472,8 @@ mod tests {
 
     const AFFIX_OK: &str = r#"AffixDef(
         id: "hale", name: "Hale", kind: prefix, pool: "armour",
-        stat: life, layer: added,
-        tiers: [(ilvl: 1, min: 8, max: 15), (ilvl: 3, min: 16, max: 28)],
+        effects: [(stat: life, layer: added)],
+        tiers: [(ilvl: 1, rolls: [(min: 8, max: 15)]), (ilvl: 3, rolls: [(min: 16, max: 28)])],
     )"#;
 
     const TILESET_OK: &str = r##"TilesetDef(
@@ -2422,6 +2492,35 @@ mod tests {
         tileset: Some("cave"),
         packs: [],
     )"#;
+
+    #[test]
+    fn affix_grants_pairs_each_effect_with_its_rolled_value() {
+        // A HYBRID affix (#86) yields one grant per effect, each carrying its
+        // positional rolled value. Mutation: a fold that only applied the first
+        // effect (or mispaired values) fails the second/both assertions.
+        let fox: AffixDef = ron::from_str(
+            r#"AffixDef(
+                id: "of_the_fox", name: "of the Fox", kind: suffix, pool: "armour",
+                effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
+                tiers: [(ilvl: 1, rolls: [(min: 5, max: 10), (min: 500, max: 900)])],
+            )"#,
+        )
+        .unwrap();
+        let grants: Vec<_> = fox.grants(&[7, 700]).collect();
+        assert_eq!(grants.len(), 2, "a 2-effect affix yields 2 grants");
+        assert_eq!(grants[0].stat, Stat::Dexterity);
+        assert_eq!(grants[0].layer, Layer::Added);
+        assert_eq!(grants[0].value, 7);
+        assert_eq!(grants[1].stat, Stat::Evasion);
+        assert_eq!(grants[1].layer, Layer::Increased);
+        assert_eq!(grants[1].value, 700);
+
+        // A plain single-effect affix yields exactly one grant (the common path).
+        let hale: AffixDef = ron::from_str(AFFIX_OK).unwrap();
+        let g: Vec<_> = hale.grants(&[12]).collect();
+        assert_eq!(g.len(), 1);
+        assert_eq!((g[0].stat, g[0].value), (Stat::Life, 12));
+    }
 
     #[test]
     fn area_map_binds_to_its_zone_and_derives_dims() {
@@ -2539,8 +2638,8 @@ mod tests {
                 "affixes/bad.ron",
                 r#"AffixDef(
                     id: "bad", name: "Bad", kind: prefix, pool: "armour",
-                    stat: life, layer: added,
-                    tiers: [(ilvl: 5, min: 1, max: 2), (ilvl: 2, min: 3, max: 4)],
+                    effects: [(stat: life, layer: added)],
+                    tiers: [(ilvl: 5, rolls: [(min: 1, max: 2)]), (ilvl: 2, rolls: [(min: 3, max: 4)])],
                 )"#,
             )],
         );
@@ -2558,7 +2657,7 @@ mod tests {
                 "affixes/empty.ron",
                 r#"AffixDef(
                     id: "empty", name: "Empty", kind: prefix, pool: "armour",
-                    stat: life, layer: added, tiers: [],
+                    effects: [(stat: life, layer: added)], tiers: [],
                 )"#,
             )],
         );

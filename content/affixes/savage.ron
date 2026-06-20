@@ -3,9 +3,9 @@ AffixDef(
     id: "savage", name: "Savage", kind: prefix, pool: "monster",
     public: true,
     weight: 90,
-    stat: damage_phys, layer: increased,
+    effects: [(stat: damage_phys, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 2500, max: 4000, name: "Savage", weight: 100),
-        (ilvl: 5, min: 4500, max: 7000, name: "Bloodthirsty", weight: 35),
+        (ilvl: 1, name: "Savage", weight: 100, rolls: [(min: 2500, max: 4000)]),
+        (ilvl: 5, name: "Bloodthirsty", weight: 35, rolls: [(min: 4500, max: 7000)]),
     ],
 )

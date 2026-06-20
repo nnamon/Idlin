@@ -6,11 +6,10 @@ AffixDef(
     kind: prefix,
     pool: "armour",
     weight: 70,
-    stat: energy_shield,
-    layer: added,
+    effects: [(stat: energy_shield, layer: added)],
     tiers: [
-        (ilvl: 1, min: 5, max: 10, name: "Shimmering", weight: 100),
-        (ilvl: 3, min: 11, max: 19, name: "Gleaming", weight: 45),
-        (ilvl: 6, min: 20, max: 32, name: "Radiant", weight: 15),
+        (ilvl: 1, name: "Shimmering", weight: 100, rolls: [(min: 5, max: 10)]),
+        (ilvl: 3, name: "Gleaming", weight: 45, rolls: [(min: 11, max: 19)]),
+        (ilvl: 6, name: "Radiant", weight: 15, rolls: [(min: 20, max: 32)]),
     ],
 )

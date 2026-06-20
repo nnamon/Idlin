@@ -44,7 +44,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v4 (#91): the equipment array grew 7 → 12 — accessory slots (2 rings, a
 /// belt, an amulet) plus a gloves slot — so `Character` serializes five more
 /// `Option<Item>`.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 4;
+/// v5 (#86 Phase A): affixes became multi-effect (hybrid support), so
+/// `RolledAffix` serializes `values: Vec<i64>` instead of a single `value` — a
+/// v4 snapshot's items would fail to decode, so refuse them cleanly.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 5;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.

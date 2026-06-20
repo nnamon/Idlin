@@ -6,10 +6,9 @@ AffixDef(
     kind: prefix,
     pool: "weapon",
     weight: 70,
-    stat: attack_speed,
-    layer: increased,
+    effects: [(stat: attack_speed, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 500, max: 900, name: "Swift", weight: 100),
-        (ilvl: 4, min: 1000, max: 1600, name: "Quicksilver", weight: 45),
+        (ilvl: 1, name: "Swift", weight: 100, rolls: [(min: 500, max: 900)]),
+        (ilvl: 4, name: "Quicksilver", weight: 45, rolls: [(min: 1000, max: 1600)]),
     ],
 )

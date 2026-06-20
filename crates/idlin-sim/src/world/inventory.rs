@@ -5,7 +5,7 @@ use super::{PICKUP_RANGE, SimEvent, World};
 use crate::entity::{
     BAG_H, BAG_W, BagItem, CharacterState, GEAR_SLOTS, Item, LootPayload, PlacedItem,
 };
-use crate::stats::{Grant, Stat, StatSheet};
+use crate::stats::{Stat, StatSheet};
 use idlin_content::GearSlot;
 
 impl World {
@@ -233,11 +233,9 @@ impl World {
             let Some(item) = slot_item else { continue };
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                sheet.apply(&crate::stats::Grant {
-                    stat: a.stat,
-                    layer: a.layer,
-                    value: ra.value,
-                });
+                for g in a.grants(&ra.values) {
+                    sheet.apply(&g);
+                }
             }
         }
         (
@@ -689,11 +687,9 @@ impl World {
         let mut sheet = StatSheet::new();
         for ra in &item.affixes {
             let a = &self.content.affixes[ra.affix_idx as usize];
-            sheet.apply(&Grant {
-                stat: a.stat,
-                layer: a.layer,
-                value: ra.value,
-            });
+            for g in a.grants(&ra.values) {
+                sheet.apply(&g);
+            }
         }
         if def.slot == GearSlot::Flask {
             // Bigger heals win; charges are state, not quality.

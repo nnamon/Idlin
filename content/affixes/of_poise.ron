@@ -3,9 +3,9 @@ AffixDef(
     id: "of_poise", name: "of Poise", kind: suffix, pool: "armour",
     public: true,
     weight: 70,
-    stat: poise, layer: increased,
+    effects: [(stat: poise, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 1500, max: 2500, name: "of Poise", weight: 100),
-        (ilvl: 7, min: 2501, max: 4500, name: "of Iron Poise", weight: 35),
+        (ilvl: 1, name: "of Poise", weight: 100, rolls: [(min: 1500, max: 2500)]),
+        (ilvl: 7, name: "of Iron Poise", weight: 35, rolls: [(min: 2501, max: 4500)]),
     ],
 )
