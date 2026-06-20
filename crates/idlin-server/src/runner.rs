@@ -6,7 +6,7 @@
 use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
-    PropState, RolledModView, SkillStat, SkillSupport, TileMapState, TileVisual,
+    PropState, RolledModView, SkillStat, SkillSupport, StatSourceView, TileMapState, TileVisual,
 };
 use idlin_sim::world::{CharacterSheetView, SkillStatView};
 use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -508,6 +508,16 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         passive_allocated: v.passive_allocated,
         passive_unspent: v.passive_unspent,
         build_len: v.build_len,
+        stat_sources: v
+            .stat_sources
+            .into_iter()
+            .map(|(stat, source, layer, value)| StatSourceView {
+                stat,
+                source,
+                layer,
+                value: clamp_i32(value),
+            })
+            .collect(),
     }
 }
 

@@ -100,6 +100,9 @@ pub struct CharacterSheetView {
     pub passive_allocated: u32,
     pub passive_unspent: u32,
     pub build_len: u32,
+    /// Per-stat source breakdown (#87): (stat_key, source, layer u8, value) for
+    /// every ACTIVE grant contribution (gear affix / passive node / buff).
+    pub stat_sources: Vec<(String, String, u8, i64)>,
 }
 
 impl World {
@@ -222,6 +225,58 @@ impl World {
                 (def.name.clone(), *c, def.tier)
             })
             .collect();
+        // Per-stat source breakdown (#87): every ACTIVE grant's contribution from
+        // gear / tree / buffs, the same grants `refresh_character_stats` folds,
+        // filtered to those whose condition currently holds. View-only (not hashed).
+        let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
+            .as_ref()
+            .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
+        let ctx = crate::stats::EvalContext { weapon_class };
+        let mut stat_sources: Vec<(String, String, u8, i64)> = Vec::new();
+        for it in ch.equipment.iter().flatten() {
+            let name = self.item_display(it);
+            for ra in &it.affixes {
+                let a = &self.content.affixes[ra.affix_idx as usize];
+                for g in a.grants(&ra.values) {
+                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            name.clone(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
+        }
+        for &node_idx in &ch.allocated {
+            if let Some(node) = self.content.tree.get(node_idx as usize) {
+                for g in &node.grants {
+                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            node.name.clone(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
+        }
+        for ef in &e.effects {
+            if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
+                for g in grants {
+                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            "Buff".to_string(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
+        }
         Some(CharacterSheetView {
             id: e.net_id,
             name: ch.name.clone(),
@@ -256,6 +311,7 @@ impl World {
             passive_allocated: ch.allocated.len() as u32,
             passive_unspent: ch.passive_points(),
             build_len: ch.build_plan.len() as u32,
+            stat_sources,
         })
     }
 

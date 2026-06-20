@@ -114,6 +114,7 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
     passive_allocated: 0,
     passive_unspent: 0,
     build_len: 0,
+    stat_sources: [],
     ...over,
   };
 }
