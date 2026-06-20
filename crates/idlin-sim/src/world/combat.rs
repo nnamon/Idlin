@@ -2667,6 +2667,49 @@ mod tests {
     }
 
     #[test]
+    fn item_score_honors_a_conditional_affixs_weapon_context() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        // EquipBest's item_score must value of_savagery (phys while melee) only when
+        // it would fire on the candidate: counted on a melee weapon, ignored on a
+        // bow. Mutation: score via face-value grants() and the bow's of_savagery
+        // inflates its score, so the bow assertion (==) fails.
+        let content = content();
+        let world = World::new(0x5C04, &content);
+        let idx = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let (cleaver, bow) = (idx("rusted_cleaver"), idx("driftwood_bow"));
+        let savagery = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_savagery")
+            .unwrap() as u32;
+        let item = |base_idx: u32, with: bool| Item {
+            base_idx,
+            rarity: Rarity::Magic,
+            item_level: 1,
+            affixes: if with {
+                vec![RolledAffix {
+                    affix_idx: savagery,
+                    values: vec![3000],
+                    tier: 0,
+                }]
+            } else {
+                vec![]
+            },
+            name: String::new(),
+            charges: 0,
+        };
+        assert!(
+            world.item_score(&item(cleaver, true)) > world.item_score(&item(cleaver, false)),
+            "of_savagery raises a MELEE weapon's score"
+        );
+        assert_eq!(
+            world.item_score(&item(bow, true)),
+            world.item_score(&item(bow, false)),
+            "of_savagery does NOT raise a BOW's score (its melee condition is false)"
+        );
+    }
+
+    #[test]
     fn of_savagery_conditional_content_applies_only_on_a_melee_weapon() {
         use crate::entity::{Item, Rarity, RolledAffix};
         use idlin_content::GearSlot;

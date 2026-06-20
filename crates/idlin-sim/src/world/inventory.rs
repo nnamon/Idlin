@@ -686,13 +686,23 @@ impl World {
 
     /// Deterministic single-item valuation for EquipBest: evaluate the item's
     /// own affixes over its own bases. Bots with opinions can do better.
-    fn item_score(&self, item: &Item) -> i64 {
+    /// `pub(crate)` for the conditional-scoring regression test.
+    pub(crate) fn item_score(&self, item: &Item) -> i64 {
         let def = &self.content.items[item.base_idx as usize];
+        // Evaluate conditional affixes against the CANDIDATE's own context so a
+        // gated mod is scored only when it would actually fire on this item (#86):
+        // of_savagery (phys while melee) counts on a cleaver, scores 0 on a bow.
+        // A weapon supplies its class; non-weapons have none (unarmed → melee).
+        let ctx = crate::stats::EvalContext {
+            weapon_class: def.weapon_class,
+        };
         let mut sheet = StatSheet::new();
         for ra in &item.affixes {
             let a = &self.content.affixes[ra.affix_idx as usize];
-            for g in a.grants(&ra.values) {
-                sheet.apply(&g);
+            for (g, cond) in a.conditional_grants(&ra.values) {
+                if cond.is_none_or(|c| c.holds(&ctx)) {
+                    sheet.apply(&g);
+                }
             }
         }
         if def.slot == GearSlot::Flask {
