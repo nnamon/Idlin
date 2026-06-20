@@ -1654,11 +1654,17 @@ impl World {
             } else {
                 26000
             };
+            // Monsters wield no weapon → unarmed, which counts as melee, so a
+            // melee condition holds and bow/wand conditions don't (#86). Evaluate
+            // so a conditional monster affix isn't applied unconditionally.
+            let ctx = crate::stats::EvalContext { weapon_class: None };
             let mut sheet = crate::stats::StatSheet::new();
             for ra in &affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                for g in a.grants(&ra.values) {
-                    sheet.apply(&g);
+                for (g, cond) in a.conditional_grants(&ra.values) {
+                    if cond.is_none_or(|c| c.holds(&ctx)) {
+                        sheet.apply(&g);
+                    }
                 }
             }
             stats.life_max =
