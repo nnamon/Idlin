@@ -631,6 +631,10 @@ fn apply_currency_op(
             }
             for ra in item.affixes.iter_mut() {
                 let affix = &content.affixes[ra.affix_idx as usize];
+                // NOTE (#106): this rerolls from the HIGHEST eligible tier, not the
+                // rolled `ra.tier` — a pre-existing bug (contradicts mechanics.md).
+                // Left as-is here to keep #86 Phase A behavior-preserving; the fix
+                // (reroll within ra.tier) moves the golden and rides #106.
                 if let Some(tier) = affix.tiers.iter().rev().find(|t| t.ilvl <= item.item_level) {
                     // Reroll every component in effect order (hybrid-aware, #86).
                     ra.values = tier

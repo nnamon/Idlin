@@ -120,21 +120,34 @@ ItemDef(
 
 ## `content/affixes/*.ron` — AffixDef
 
-Affixes are single-stat grants with item-level-gated tiers. Rarity sets the
-roll count: magic 1–2, rare 3–5, unique 4–5.
+An affix grants a LIST of effects with item-level-gated tiers — one effect for a
+plain mod, several for a HYBRID (one roll, several stats). Each tier carries one
+`rolls` range PER effect, positional. Rarity sets the affix count: magic 1–2,
+rare 3–5, unique 4–5.
 
 ```ron
 AffixDef(
     id: "heavy",
-    name: "Heavy",            // prefixes prepend, suffixes append
-    kind: prefix,             // prefix | suffix
-    slots: [weapon],          // where it can appear
+    name: "Heavy",                     // prefixes prepend, suffixes append
+    kind: prefix,                      // prefix | suffix
+    pool: "weapon",                    // ONE named pool; bases subscribe via affix_pools
     weight: 100,
-    stat: damage_phys,        // see stat registry below
-    layer: increased,         // added | increased | more
+    effects: [(stat: damage_phys, layer: increased)],  // stat(s) granted; see registry below
     tiers: [
-        (ilvl: 1, min: 800, max: 1500),   // value rolled in min..=max
-        (ilvl: 3, min: 1600, max: 2500),  // highest eligible tier is used
+        (ilvl: 1, name: "Heavy",  weight: 100, rolls: [(min: 800,  max: 1500)]),
+        (ilvl: 3, name: "Brutal", weight: 45,  rolls: [(min: 1600, max: 2500)]),
+    ],
+)
+```
+
+A HYBRID names several effects; each tier rolls one range per effect, in order:
+
+```ron
+AffixDef(
+    id: "of_the_fox", name: "of the Fox", kind: suffix, pool: "armour", weight: 55,
+    effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
+    tiers: [
+        (ilvl: 1, name: "of the Fox", weight: 100, rolls: [(min: 5, max: 10), (min: 500, max: 900)]),
     ],
 )
 ```
