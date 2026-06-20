@@ -62,12 +62,29 @@ pub enum ContentError {
     DuplicateId { path: String, id: String },
     #[error("affix `{affix}`: {msg}")]
     BadAffixTiers { affix: String, msg: String },
+    #[error(
+        "{at}: a condition cannot gate an attribute \
+             (strength/dexterity/intelligence) — attributes feed gear requirements \
+             at face value, so a conditional attribute would meet a requirement \
+             while inactive in derived stats"
+    )]
+    ConditionalAttribute { at: String },
     #[error("tile map for `{zone}`: {msg}")]
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
     #[error("the committed id registry `ids.ron` is malformed: {msg}")]
     BadRegistry { msg: String },
+}
+
+/// A condition must NOT gate an attribute (#86): attribute totals feed gear
+/// requirements at FACE VALUE (`attribute_totals` → `meets_requirements`), so a
+/// conditional attribute could satisfy a requirement while inactive in derived
+/// stats — incoherent. Enforced at EVERY power source (affix effect, tree-node
+/// grant, gem buff/debuff grant) so no source can slip a conditional attribute
+/// past, until requirement evaluation is made condition-aware.
+fn is_conditional_attribute(stat: Stat, condition: &Option<Condition>) -> bool {
+    condition.is_some() && matches!(stat, Stat::Strength | Stat::Dexterity | Stat::Intelligence)
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -1690,25 +1707,12 @@ impl ContentDb {
                     msg: "has no effects (grants nothing)".into(),
                 });
             }
-            // A condition must NOT gate an attribute (#86 Phase B): attribute
-            // totals feed gear requirements at FACE VALUE (`attribute_totals`),
-            // so a conditional attribute would satisfy a requirement while
-            // inactive in derived stats — incoherent. Forbid it until requirement
-            // evaluation is condition-aware.
+            // Conditional attributes are forbidden at every power source (#86);
+            // see `is_conditional_attribute`.
             for eff in &affix.effects {
-                if eff.condition.is_some()
-                    && matches!(
-                        eff.stat,
-                        Stat::Strength | Stat::Dexterity | Stat::Intelligence
-                    )
-                {
-                    return Err(ContentError::BadAffixTiers {
-                        affix: affix.id.clone(),
-                        msg: format!(
-                            "effect on {:?} is conditional — attributes feed gear \
-                             requirements at face value and cannot be conditional",
-                            eff.stat
-                        ),
+                if is_conditional_attribute(eff.stat, &eff.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("affix `{}`", affix.id),
                     });
                 }
             }
@@ -1762,6 +1766,31 @@ impl ContentDb {
                     path: "gems/".into(),
                     id: w[0].id.clone(),
                 });
+            }
+        }
+        // A gem buff/debuff grant feeds the same conditional-grant fold as
+        // tree/affix grants (#86), so it is subject to the same attribute rule.
+        for gem in &db.gems {
+            for (kind, buff) in [("buff", &gem.buff), ("debuff", &gem.debuff)] {
+                let Some(buff) = buff else { continue };
+                for g in &buff.grants {
+                    if is_conditional_attribute(g.stat, &g.condition) {
+                        return Err(ContentError::ConditionalAttribute {
+                            at: format!("gem `{}` {kind}", gem.id),
+                        });
+                    }
+                }
+            }
+        }
+        // Tree-node grants are condition-capable too (#86), so the same rule
+        // applies — a conditional attribute on a node would game requirements.
+        for node in &db.tree {
+            for g in &node.grants {
+                if is_conditional_attribute(g.stat, &g.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("tree node `{}`", node.id),
+                    });
+                }
             }
         }
         db.build_tree()?;
@@ -2827,9 +2856,9 @@ mod tests {
 
     #[test]
     fn a_conditional_attribute_effect_is_rejected() {
-        // Attributes feed gear requirements at face value (#86 Phase B), so a
-        // conditional attribute is incoherent — reject at load. Mutation: remove
-        // the attribute-condition guard and this malformed affix loads.
+        // Attributes feed gear requirements at face value (#86), so a conditional
+        // attribute is incoherent — reject at load. Mutation: remove the
+        // attribute-condition guard and this malformed affix loads.
         let tc = TempContent::new(
             "cond_attr",
             &[(
@@ -2842,14 +2871,62 @@ mod tests {
             )],
         );
         match ContentDb::load(&tc.0) {
-            Err(ContentError::BadAffixTiers { affix, msg }) => {
-                assert_eq!(affix, "bad");
-                assert!(
-                    msg.contains("conditional") && msg.contains("attribute"),
-                    "msg: {msg}"
-                );
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
             }
-            other => panic!("expected BadAffixTiers, got {other:?}"),
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_conditional_attribute_tree_node_is_rejected() {
+        // The unified Grant lets tree nodes be conditional too (#86) — but the
+        // attribute rule binds every source: a node's conditional +STR would
+        // satisfy a gear requirement while inactive in derived stats. Mutation:
+        // drop the tree-node arm of the check and this node loads.
+        let tc = TempContent::new(
+            "cond_attr_tree",
+            &[(
+                "tree/bad.ron",
+                r#"TreeDef(nodes: [
+                    NodeDef(id: "bad", num: 1, name: "Bad", pos: (0, 0), kind: travel,
+                            grants: [(stat: strength, layer: added, value: 10,
+                                      condition: Some(wielding_weapon_class(melee)))]),
+                ])"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("tree node") && at.contains("bad"), "at: {at}");
+            }
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_conditional_attribute_gem_buff_is_rejected() {
+        // A gem buff/debuff grant folds through the same conditional path (#86),
+        // so it is bound by the attribute rule too. Mutation: drop the gem arm of
+        // the check and this buff loads, letting a timed +DEX game requirements.
+        let tc = TempContent::new(
+            "cond_attr_gem",
+            &[(
+                "gems/bad.ron",
+                r#"GemDef(
+                    id: "bad", name: "Bad", kind: skill,
+                    buff: Some(BuffDef(
+                        grants: [(stat: dexterity, layer: added, value: 10,
+                                  condition: Some(wielding_weapon_class(melee)))],
+                        duration_ticks: 100,
+                    )),
+                )"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("gem") && at.contains("bad"), "at: {at}");
+            }
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
         }
     }
 

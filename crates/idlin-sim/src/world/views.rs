@@ -593,6 +593,22 @@ impl World {
                         h.write_u8(2);
                         h.write_u64(grants.len() as u64);
                         h.write_u32(*ticks_left);
+                        // Hash each grant's full contents (#86): a buff grant can
+                        // now be CONDITIONAL, so two worlds with the same buff
+                        // timer but differently-gated grants are different future
+                        // state — the canonical hash must distinguish them.
+                        for g in grants {
+                            h.write_u8(g.stat.idx() as u8);
+                            h.write_u8(g.layer as u8);
+                            h.write_i64(g.value);
+                            match g.condition {
+                                None => h.write_u8(0),
+                                Some(crate::stats::Condition::WieldingWeaponClass(wc)) => {
+                                    h.write_u8(1);
+                                    h.write_u8(wc as u8);
+                                }
+                            }
+                        }
                     }
                 }
             }
