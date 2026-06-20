@@ -3618,6 +3618,20 @@ mod tests {
             })),
             "monster rolled affixes must change the hash"
         );
+        // The rolled tier is part of the affix identity — isolate it.
+        assert_ne!(
+            hash_with(&|m| m.affixes.push(RolledAffix {
+                affix_idx: 0,
+                values: vec![5],
+                tier: 0
+            })),
+            hash_with(&|m| m.affixes.push(RolledAffix {
+                affix_idx: 0,
+                values: vec![5],
+                tier: 1
+            })),
+            "monster affix tier must change the hash"
+        );
         // Isolate supports: same skill gem, with vs without a support.
         assert_ne!(
             hash_with(&|m| m.skills.push(SocketedGem {
@@ -3685,6 +3699,68 @@ mod tests {
             base,
             build(&|w| w.zone_lines.push("x".into())),
             "zone_lines must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_item_charges_and_affix_tier() {
+        // `fold_item` covers every item the hash visits (bag, equipment, ground
+        // loot). Flask charges are mutable runtime state; the rolled affix tier
+        // feeds requirements and bot-visible ReadItemMods. Mutation: drop either
+        // write from fold_item in views.rs and the matching assert_ne! fails.
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        let content = content();
+        let hash_with = |charges: u32, tier: u32| {
+            let mut world = World::new(9_09, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            let item = Item {
+                base_idx: 0,
+                rarity: Rarity::Magic,
+                item_level: 1,
+                affixes: vec![RolledAffix {
+                    affix_idx: 0,
+                    values: vec![5],
+                    tier,
+                }],
+                name: "Probe".into(),
+                charges,
+            };
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .inventory
+                .push(PlacedItem {
+                    item: BagItem::Gear(item),
+                    x: 0,
+                    y: 0,
+                });
+            world.state_hash()
+        };
+        let base = hash_with(3, 0);
+        assert_eq!(
+            base,
+            hash_with(3, 0),
+            "identical items must hash identically"
+        );
+        assert_ne!(base, hash_with(4, 0), "item charges must change the hash");
+        assert_ne!(
+            base,
+            hash_with(3, 1),
+            "rolled affix tier must change the hash"
         );
     }
 

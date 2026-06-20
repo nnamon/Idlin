@@ -432,17 +432,30 @@ impl World {
 
     /// Canonical state hash for determinism checks (replays, snapshots, CI).
     pub fn state_hash(&self) -> u64 {
+        // Canonical fingerprint of all REPLAY-RELEVANT world state: enough that two
+        // worlds with the same hash compute the same future under the same inputs.
+        // Deliberate exclusions, each sound:
+        //  - Content-loaded constants (zone geometry/grid, gem/affix defs, the
+        //    zone-brain program) are immutable at runtime and already folded into
+        //    `content_hash`.
+        //  - The slot/bot allocators' free-lists (`Zone::{free,by_net}`,
+        //    `BotArena::free`) are excluded: their ONLY observable effect is WHERE
+        //    the next entity/bot lands, and the slot/idx index is hashed per
+        //    entity/bot below — so any allocation divergence surfaces immediately
+        //    as a changed slot at the next spawn. They roundtrip via postcard, so
+        //    snapshot resume is exact.
+        //  - `intents.attack`/`pickup` are wiped by `clear_transient_intents` at the
+        //    top of every tick before any read, so their tick-boundary value cannot
+        //    affect the resumed sim.
+        //  - Server-level ferry state (pending arrivals) lives outside `World`; the
+        //    server snapshot's integrity is handled at that layer.
         let mut h = Fnv1a64::new();
         h.write_u64(self.seed);
         h.write_u64(self.content_hash);
         h.write_u64(self.tick);
         h.write_u32(self.next_net_id);
-        // Which zone this world runs (bots read it via SelfStatus) and its level;
-        // both are serialized World state. `zone_lines` is the zone's authored
-        // speech, also persisted. (Zone geometry/grid are loaded from content and
-        // so are already folded into `content_hash`; the slot allocator's internal
-        // free-list/by-net order is excluded — a divergence there surfaces in the
-        // hashed net_id/slot of the next spawn.)
+        // Which zone this world runs (bots read it via SelfStatus), its level, and
+        // the zone's authored speech — all serialized World state.
         h.write_u32(self.zone_idx);
         h.write_u32(self.zone_level);
         h.write_u64(self.zone_lines.len() as u64);
@@ -487,9 +500,14 @@ impl World {
             h.write_u8(item.rarity as u8);
             h.write_u32(item.item_level);
             h.write_bytes(item.name.as_bytes());
+            // Flask charges are mutable runtime state (spent on drink, gained on
+            // kill); the rolled tier feeds equip requirements and bot-visible
+            // ReadItemMods. Both steer future behavior, so both are hashed.
+            h.write_u32(item.charges);
             h.write_u64(item.affixes.len() as u64);
             for ra in &item.affixes {
                 h.write_u32(ra.affix_idx);
+                h.write_u32(ra.tier);
                 h.write_u64(ra.values.len() as u64);
                 for &v in &ra.values {
                     h.write_i64(v);
@@ -681,6 +699,7 @@ impl World {
                 h.write_u64(m.affixes.len() as u64);
                 for ra in &m.affixes {
                     h.write_u32(ra.affix_idx);
+                    h.write_u32(ra.tier);
                     h.write_u64(ra.values.len() as u64);
                     for &v in &ra.values {
                         h.write_i64(v);
