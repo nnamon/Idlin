@@ -841,12 +841,13 @@ mod tests {
                 passive_allocated: 0,
                 passive_unspent: 0,
                 build_len: 0,
-                // #87: the per-stat source breakdown survives the wire.
+                // #87: the per-stat source breakdown survives the wire (a
+                // non-zero layer + value, so both fields are non-vacuously checked).
                 stat_sources: vec![StatSourceView {
-                    stat: "strength".into(),
-                    source: "Iron Ring".into(),
-                    layer: 0,
-                    value: 10,
+                    stat: "damage_phys".into(),
+                    source: "of Savagery".into(),
+                    layer: 1,
+                    value: 2000,
                 }],
             },
         };
@@ -904,10 +905,14 @@ mod tests {
             vec![83, 900],
             "a hybrid's multiple rolled values survive the wire"
         );
-        assert_eq!(sheet.stat_sources[0].stat, "strength");
-        assert_eq!(sheet.stat_sources[0].source, "Iron Ring");
+        assert_eq!(sheet.stat_sources[0].stat, "damage_phys");
+        assert_eq!(sheet.stat_sources[0].source, "of Savagery");
         assert_eq!(
-            sheet.stat_sources[0].value, 10,
+            sheet.stat_sources[0].layer, 1,
+            "the contribution layer survives the wire"
+        );
+        assert_eq!(
+            sheet.stat_sources[0].value, 2000,
             "the stat source breakdown survives the wire"
         );
     }

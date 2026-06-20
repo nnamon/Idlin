@@ -3801,6 +3801,93 @@ mod tests {
     }
 
     #[test]
+    fn character_sheet_breaks_stats_down_by_source() {
+        // #87: the per-stat source breakdown lists each ACTIVE grant, with the
+        // SAME condition gating as refresh_character_stats. of_savagery (phys,
+        // melee-gated) appears only while a melee weapon is wielded; hale (life,
+        // unconditional) always does. Mutation: drop a source loop or relax the
+        // condition filter in character_sheet and these asserts fail.
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        let content = content();
+        let idx = |id: &str| content.affixes.iter().position(|a| a.id == id).unwrap() as u32;
+        let base = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let savagery = idx("of_savagery");
+        let hale = idx("hale");
+        let cleaver = base("rusted_cleaver");
+        let bow = base("driftwood_bow");
+
+        let sheet_for = |weapon_base: u32| {
+            let mut world = World::new(4_24, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .unwrap();
+            let net = world.zone.get(slot).unwrap().net_id;
+            {
+                let ch = world
+                    .zone
+                    .get_mut(slot)
+                    .unwrap()
+                    .character
+                    .as_mut()
+                    .unwrap();
+                ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                    base_idx: weapon_base,
+                    rarity: Rarity::Magic,
+                    item_level: 20,
+                    affixes: vec![
+                        RolledAffix {
+                            affix_idx: hale,
+                            values: vec![50],
+                            tier: 0,
+                        },
+                        RolledAffix {
+                            affix_idx: savagery,
+                            values: vec![2000],
+                            tier: 0,
+                        },
+                    ],
+                    name: "Probe".into(),
+                    charges: 0,
+                });
+            }
+            world.character_sheet(net).unwrap().stat_sources
+        };
+
+        let melee = sheet_for(cleaver);
+        assert!(
+            melee
+                .iter()
+                .any(|(s, src, l, v)| s == "life" && *l == 0 && *v == 50 && !src.is_empty()),
+            "hale's life always appears with a source: {melee:?}"
+        );
+        assert!(
+            melee
+                .iter()
+                .any(|(s, _, l, v)| s == "damage_phys" && *l == 1 && *v == 2000),
+            "of_savagery's phys appears while wielding a melee weapon: {melee:?}"
+        );
+
+        let ranged = sheet_for(bow);
+        assert!(
+            ranged.iter().any(|(s, _, _, v)| s == "life" && *v == 50),
+            "hale still applies on a bow"
+        );
+        assert!(
+            !ranged.iter().any(|(s, _, _, _)| s == "damage_phys"),
+            "of_savagery is gated OFF while wielding a bow: {ranged:?}"
+        );
+    }
+
+    #[test]
     fn attack_skills_demand_an_eligible_weapon() {
         let content = content();
         let mut world = World::new(99_99, &content);
