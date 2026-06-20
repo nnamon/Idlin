@@ -3807,13 +3807,18 @@ mod tests {
         // melee-gated) appears only while a melee weapon is wielded; hale (life,
         // unconditional) always does. Mutation: drop a source loop or relax the
         // condition filter in character_sheet and these asserts fail.
-        use crate::entity::{Item, Rarity, RolledAffix};
+        use crate::entity::{ActiveEffect, Item, Rarity, RolledAffix};
+        use crate::stats::{Grant, Layer, Stat};
         use idlin_content::GearSlot;
         let content = content();
         let idx = |id: &str| content.affixes.iter().position(|a| a.id == id).unwrap() as u32;
         let base = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
         let savagery = idx("of_savagery");
         let hale = idx("hale");
+        // A passive node that grants a stat (str1 → +10 strength) covers the tree
+        // source loop; an injected buff covers the buff loop.
+        let str_node = content.tree.iter().position(|n| n.id == "str1").unwrap() as u32;
+        let str_node_name = content.tree[str_node as usize].name.clone();
         let cleaver = base("rusted_cleaver");
         let bow = base("driftwood_bow");
 
@@ -3832,31 +3837,34 @@ mod tests {
                 .unwrap();
             let net = world.zone.get(slot).unwrap().net_id;
             {
-                let ch = world
-                    .zone
-                    .get_mut(slot)
-                    .unwrap()
-                    .character
-                    .as_mut()
-                    .unwrap();
-                ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
-                    base_idx: weapon_base,
-                    rarity: Rarity::Magic,
-                    item_level: 20,
-                    affixes: vec![
-                        RolledAffix {
-                            affix_idx: hale,
-                            values: vec![50],
-                            tier: 0,
-                        },
-                        RolledAffix {
-                            affix_idx: savagery,
-                            values: vec![2000],
-                            tier: 0,
-                        },
-                    ],
-                    name: "Probe".into(),
-                    charges: 0,
+                let e = world.zone.get_mut(slot).unwrap();
+                {
+                    let ch = e.character.as_mut().unwrap();
+                    ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                        base_idx: weapon_base,
+                        rarity: Rarity::Magic,
+                        item_level: 20,
+                        affixes: vec![
+                            RolledAffix {
+                                affix_idx: hale,
+                                values: vec![50],
+                                tier: 0,
+                            },
+                            RolledAffix {
+                                affix_idx: savagery,
+                                values: vec![2000],
+                                tier: 0,
+                            },
+                        ],
+                        name: "Probe".into(),
+                        charges: 0,
+                    });
+                    ch.allocated.push(str_node); // tree source
+                }
+                // buff source
+                e.effects.push(ActiveEffect::Buff {
+                    grants: vec![Grant::new(Stat::Mana, Layer::Added, 30)],
+                    ticks_left: 50,
                 });
             }
             world.character_sheet(net).unwrap().stat_sources
@@ -3874,6 +3882,19 @@ mod tests {
                 .iter()
                 .any(|(s, _, l, v)| s == "damage_phys" && *l == 1 && *v == 2000),
             "of_savagery's phys appears while wielding a melee weapon: {melee:?}"
+        );
+        assert!(
+            melee.iter().any(|(s, src, l, v)| s == "strength"
+                && *src == str_node_name
+                && *l == 0
+                && *v == 10),
+            "the allocated passive node's strength appears, sourced to the node: {melee:?}"
+        );
+        assert!(
+            melee
+                .iter()
+                .any(|(s, src, l, v)| s == "mana" && src == "Buff" && *l == 0 && *v == 30),
+            "the active buff's mana appears, sourced to \"Buff\": {melee:?}"
         );
 
         let ranged = sheet_for(bow);
