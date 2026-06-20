@@ -532,9 +532,10 @@ impl AffixDef {
     }
 
     /// The grants at FACE VALUE — conditions ignored (as if every one holds).
-    /// For context-free uses (item scoring, attribute totals) where no entity
-    /// state exists to evaluate against; the derive path uses
-    /// `conditional_grants` + an `EvalContext` instead.
+    /// For the one context-free use left, `attribute_totals` (gear requirements),
+    /// which only reads attributes — and conditional attributes are rejected at
+    /// load. Every context-bearing path (character/monster derive, item scoring)
+    /// uses `conditional_grants` + an `EvalContext` instead.
     pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
         self.conditional_grants(values).map(|(g, _)| g)
     }
