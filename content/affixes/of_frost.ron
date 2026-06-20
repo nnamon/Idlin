@@ -1,0 +1,14 @@
+// "... of Frost" — flat cold damage on weapons.
+AffixDef(
+    id: "of_frost",
+    public: true,
+    name: "of Frost",
+    kind: suffix,
+    pool: "weapon",
+    weight: 80,
+    effects: [(stat: damage_cold, layer: added)],
+    tiers: [
+        (ilvl: 1, name: "of Frost", weight: 100, rolls: [(min: 2, max: 5)]),
+        (ilvl: 4, name: "of Rime", weight: 45, rolls: [(min: 6, max: 11)]),
+    ],
+)

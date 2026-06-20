@@ -2667,6 +2667,83 @@ mod tests {
     }
 
     #[test]
+    fn of_savagery_conditional_content_applies_only_on_a_melee_weapon() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        // The first CONDITIONAL CONTENT (#86 Phase D): of_savagery grants increased
+        // phys ONLY while the weapon it's on is melee. End-to-end through the real
+        // affix path. Mutation: drop the gate and the bow's of_savagery applies too.
+        let content = content();
+        let mut world = World::new(0x5A7A, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Savage".into(),
+                program: halt,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let idx = |id: &str| content.items.iter().position(|i| i.id == id).unwrap() as u32;
+        let (cleaver, bow) = (idx("rusted_cleaver"), idx("driftwood_bow"));
+        let savagery = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_savagery")
+            .unwrap() as u32;
+        // A weapon, optionally with of_savagery (+30% phys while melee) rolled on it.
+        let phys = |world: &mut World, base_idx: u32, with_savagery: bool| -> i64 {
+            let affixes = if with_savagery {
+                vec![RolledAffix {
+                    affix_idx: savagery,
+                    values: vec![3000],
+                    tier: 0,
+                }]
+            } else {
+                vec![]
+            };
+            {
+                let ch = world
+                    .zone
+                    .get_mut(slot)
+                    .unwrap()
+                    .character
+                    .as_mut()
+                    .unwrap();
+                ch.equipment = Default::default();
+                ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                    base_idx,
+                    rarity: Rarity::Magic,
+                    item_level: 1,
+                    affixes,
+                    name: String::new(),
+                    charges: 0,
+                });
+            }
+            world.refresh_derived_stats(slot);
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .damage[0]
+        };
+        assert!(
+            phys(&mut world, cleaver, true) > phys(&mut world, cleaver, false),
+            "of_savagery raises phys on a MELEE weapon"
+        );
+        assert_eq!(
+            phys(&mut world, bow, true),
+            phys(&mut world, bow, false),
+            "of_savagery is inert on a BOW (its melee condition is false)"
+        );
+    }
+
+    #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
         let fx = events
