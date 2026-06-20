@@ -2882,14 +2882,16 @@ mod tests {
     fn a_conditional_attribute_tree_node_is_rejected() {
         // The unified Grant lets tree nodes be conditional too (#86) — but the
         // attribute rule binds every source: a node's conditional +STR would
-        // satisfy a gear requirement while inactive in derived stats. Mutation:
-        // drop the tree-node arm of the check and this node loads.
+        // satisfy a gear requirement while inactive in derived stats. The node is
+        // `start` (build_tree finds the root by id), so with the check neutralized
+        // the tree is OTHERWISE valid and loads — the mutation then surfaces as a
+        // missing rejection, not an incidental NoStartNode.
         let tc = TempContent::new(
             "cond_attr_tree",
             &[(
                 "tree/bad.ron",
                 r#"TreeDef(nodes: [
-                    NodeDef(id: "bad", num: 1, name: "Bad", pos: (0, 0), kind: travel,
+                    NodeDef(id: "start", num: 1, name: "Start", pos: (0, 0), kind: socket,
                             grants: [(stat: strength, layer: added, value: 10,
                                       condition: Some(wielding_weapon_class(melee)))]),
                 ])"#,
@@ -2897,7 +2899,7 @@ mod tests {
         );
         match ContentDb::load(&tc.0) {
             Err(ContentError::ConditionalAttribute { at }) => {
-                assert!(at.contains("tree node") && at.contains("bad"), "at: {at}");
+                assert!(at.contains("tree node") && at.contains("start"), "at: {at}");
             }
             other => panic!("expected ConditionalAttribute, got {other:?}"),
         }

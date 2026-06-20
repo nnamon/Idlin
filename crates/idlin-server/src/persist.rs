@@ -53,8 +53,8 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// snapshot's buffs would decode shifted stats — refuse them cleanly.
 /// v7 (#86 unify): `Grant` gained a `condition: Option<Condition>` field (one
 /// conditional model for affixes, tree, and buffs), changing the postcard layout
-/// of every serialized `Grant` in `ActiveEffect::Buff` — a v6 snapshot's buff
-/// grants would mis-decode, so refuse them cleanly.
+/// of every serialized `Grant` — in active-buff and projectile-debuff state
+/// alike — so a v6 snapshot's grants would mis-decode; refuse them cleanly.
 pub const SNAPSHOT_FORMAT_VERSION: u32 = 7;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so

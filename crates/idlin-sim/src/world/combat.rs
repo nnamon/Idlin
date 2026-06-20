@@ -3153,6 +3153,154 @@ mod tests {
     }
 
     #[test]
+    fn state_hash_fingerprints_buff_grant_internals() {
+        // #86 regression: an active buff's grants are now condition-capable, and a
+        // grant's stat/layer/value/condition are all future-relevant state (a
+        // condition can flip on equip and change derivation). state_hash must
+        // distinguish buffs that differ in ANY of them. Mutation: drop the
+        // grant-hashing loop in views.rs (leaving only len/ticks_left) and every
+        // assert_ne! below collapses to equal — this test fails.
+        use crate::stats::{Condition, Grant, Layer, Stat, WeaponClass};
+        let content = content();
+        let hash_with = |grant: Grant| {
+            let mut world = World::new(31_41, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .effects
+                .push(ActiveEffect::Buff {
+                    grants: vec![grant],
+                    ticks_left: 50,
+                });
+            world.state_hash()
+        };
+        let base = Grant::new(Stat::Strength, Layer::Added, 10);
+        let h_base = hash_with(base);
+        assert_eq!(
+            h_base,
+            hash_with(base),
+            "identical buff grants must hash identically"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant {
+                condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+                ..base
+            }),
+            "a buff grant's condition must change the state hash"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant::new(Stat::Strength, Layer::Added, 11)),
+            "a buff grant's value must change the state hash"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant::new(Stat::Dexterity, Layer::Added, 10)),
+            "a buff grant's stat must change the state hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_projectile_payload() {
+        // Determinism (§4): the projectile hash once fingerprinted only motion
+        // (pos/vel/remaining/source/pierce/spell), silently dropping the on-impact
+        // payload — damage, crit, dot, debuff grants, and pierce's already-hit
+        // set. Two worlds with identical in-flight motion but different payloads
+        // hashed alike, then diverged at impact. Each assert_ne! guards one field;
+        // mutation: drop that field from the projectile hash loop and it fails.
+        use crate::stats::{Condition, Grant, Layer, Stat, WeaponClass};
+        let content = content();
+        let base_proj = || Projectile {
+            pos: FxV2::new(Fx::from_int(1), Fx::from_int(2)),
+            vel: FxV2::new(Fx::ONE, Fx::ZERO),
+            remaining: Fx::from_int(10),
+            radius: Fx::from_int(1),
+            source: 7,
+            source_name: "A".into(),
+            source_is_char: true,
+            hostile_to_players: false,
+            spell: true,
+            accuracy: 0,
+            damage: [0; DMG_COUNT],
+            crit_bp: 0,
+            crit_multi: 150,
+            pierce: 1,
+            already_hit: Vec::new(),
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+        };
+        let hash_with = |mutate: &dyn Fn(&mut Projectile)| {
+            let mut world = World::new(27_18, &content);
+            let mut p = base_proj();
+            mutate(&mut p);
+            world.zone.projectiles.push(p);
+            world.state_hash()
+        };
+        let base = hash_with(&|_p| {});
+        assert_eq!(
+            base,
+            hash_with(&|_p| {}),
+            "identical projectiles must hash identically"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.damage[0] = 6),
+            "projectile damage must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.crit_bp = 500),
+            "projectile crit must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.already_hit.push(9)),
+            "projectile pierce state must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.dot = Some((1, 3, 20, 0))),
+            "projectile dot payload must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.debuff = Some((
+                vec![Grant::new(Stat::MoveSpeed, Layer::Increased, -3000)],
+                30
+            ))),
+            "projectile debuff grants must change the hash"
+        );
+        // The condition on a projectile debuff grant is future-relevant too.
+        let g = Grant::new(Stat::Strength, Layer::Added, 1);
+        assert_ne!(
+            hash_with(&|p| p.debuff = Some((vec![g], 30))),
+            hash_with(&|p| p.debuff = Some((
+                vec![Grant {
+                    condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+                    ..g
+                }],
+                30
+            ))),
+            "a projectile debuff grant's condition must change the hash"
+        );
+    }
+
+    #[test]
     fn attack_skills_demand_an_eligible_weapon() {
         let content = content();
         let mut world = World::new(99_99, &content);

@@ -484,6 +484,22 @@ impl World {
                 }
             }
         };
+        // One grant-hashing routine for every site a `Grant` enters the canonical
+        // hash (#86): a grant is condition-capable, so its stat/layer/value AND
+        // condition are all future-relevant state. Used by both the active-buff
+        // arm and the projectile debuff payload so no carrier can drop a field.
+        let fold_grant = |h: &mut Fnv1a64, g: &crate::stats::Grant| {
+            h.write_u8(g.stat.idx() as u8);
+            h.write_u8(g.layer as u8);
+            h.write_i64(g.value);
+            match g.condition {
+                None => h.write_u8(0),
+                Some(crate::stats::Condition::WieldingWeaponClass(wc)) => {
+                    h.write_u8(1);
+                    h.write_u8(wc as u8);
+                }
+            }
+        };
         for (slot, e) in self.zone.iter() {
             h.write_u64(slot as u64);
             h.write_u32(e.net_id);
@@ -593,21 +609,8 @@ impl World {
                         h.write_u8(2);
                         h.write_u64(grants.len() as u64);
                         h.write_u32(*ticks_left);
-                        // Hash each grant's full contents (#86): a buff grant can
-                        // now be CONDITIONAL, so two worlds with the same buff
-                        // timer but differently-gated grants are different future
-                        // state — the canonical hash must distinguish them.
                         for g in grants {
-                            h.write_u8(g.stat.idx() as u8);
-                            h.write_u8(g.layer as u8);
-                            h.write_i64(g.value);
-                            match g.condition {
-                                None => h.write_u8(0),
-                                Some(crate::stats::Condition::WieldingWeaponClass(wc)) => {
-                                    h.write_u8(1);
-                                    h.write_u8(wc as u8);
-                                }
-                            }
+                            fold_grant(&mut h, g);
                         }
                     }
                 }
@@ -658,9 +661,52 @@ impl World {
             h.write_i32(p.vel.x.raw());
             h.write_i32(p.vel.y.raw());
             h.write_i32(p.remaining.raw());
+            h.write_i32(p.radius.raw());
             h.write_u32(p.source);
-            h.write_u32(p.pierce);
+            h.write_bytes(p.source_name.as_bytes());
+            h.write_u8(p.source_is_char as u8);
+            h.write_u8(p.hostile_to_players as u8);
             h.write_u8(p.spell as u8);
+            h.write_i64(p.accuracy);
+            for d in p.damage {
+                h.write_i64(d);
+            }
+            h.write_i64(p.crit_bp);
+            h.write_i64(p.crit_multi);
+            h.write_u32(p.pierce);
+            // Pierce state: which targets this projectile already passed through —
+            // it changes whether the next overlap connects, so it is future state.
+            h.write_u64(p.already_hit.len() as u64);
+            for id in &p.already_hit {
+                h.write_u32(*id);
+            }
+            // On-impact payload: a DoT and a debuff (condition-capable grants,
+            // #86) are applied when the projectile lands, so two otherwise
+            // identical in-flight projectiles with different payloads are
+            // different future state and must hash apart.
+            match &p.dot {
+                None => h.write_u8(0),
+                Some((dtype, per_second, ticks, skill)) => {
+                    h.write_u8(1);
+                    h.write_u8(*dtype);
+                    h.write_i64(*per_second);
+                    h.write_u32(*ticks);
+                    h.write_u32(*skill);
+                }
+            }
+            match &p.debuff {
+                None => h.write_u8(0),
+                Some((grants, duration)) => {
+                    h.write_u8(1);
+                    h.write_u64(grants.len() as u64);
+                    h.write_u32(*duration);
+                    for g in grants {
+                        fold_grant(&mut h, g);
+                    }
+                }
+            }
+            h.write_i64(p.stagger);
+            h.write_i64(p.knockback_cu);
         }
         for ex in &self.zone.exits {
             h.write_i32(ex.pos.x.raw());
