@@ -13,7 +13,7 @@ use crate::entity::{
     SocketedGem,
 };
 use crate::fixed::{Fx, FxV2};
-use crate::stats::{Grant, Stat, StatSheet, apply_resist, hit_chance_bp, mitigate_phys};
+use crate::stats::{Grant, apply_resist, hit_chance_bp, mitigate_phys};
 use crate::zone::Projectile;
 use idlin_content::{GemKind, SkillKind, SkillShape, SupportEffect};
 
@@ -580,29 +580,15 @@ impl World {
         // per-use sheet.
         let mods = self.support_mods(&sg.supports);
 
-        let mut sheet = StatSheet::new();
-        for sup in &sg.supports {
-            let sdef = &self.content.gems[sup.gem_idx as usize];
-            for g in &sdef.grants {
-                sheet.apply(g);
-            }
-        }
-
         // Damage: attacks scale the weapon plus the gem's own flat; spells are
-        // the gem's flat alone.
+        // the gem's flat alone. (Supports contribute via `mods`; the old per-use
+        // legacy-grant sheet went away with the dead `GemDef.grants`, #86.)
         let added = [
             gem_def.added_phys.at(level),
             gem_def.added_fire.at(level),
             gem_def.added_cold.at(level),
             gem_def.added_lightning.at(level),
             gem_def.added_chaos.at(level),
-        ];
-        let stats = [
-            Stat::DamagePhys,
-            Stat::DamageFire,
-            Stat::DamageCold,
-            Stat::DamageLightning,
-            Stat::DamageChaos,
         ];
         let mut damage = [0i64; DMG_COUNT];
         for i in 0..DMG_COUNT {
@@ -611,7 +597,7 @@ impl World {
             } else {
                 char_damage[i] * gem_def.coeff_bp / 10000
             };
-            damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
+            damage[i] = (weapon_part + added[i] + mods.added[i]).max(0);
             damage[i] = damage[i] * mods.more_bp[i] / 10000;
         }
 
@@ -3273,16 +3259,8 @@ mod tests {
         chill.shape = idlin_content::SkillShape::Target;
         chill.debuff = Some(idlin_content::BuffDef {
             grants: vec![
-                Grant {
-                    stat: Stat::MoveSpeed,
-                    layer: Layer::Increased,
-                    value: -3000,
-                },
-                Grant {
-                    stat: Stat::AttackSpeed,
-                    layer: Layer::Increased,
-                    value: -3000,
-                },
+                Grant::new(Stat::MoveSpeed, Layer::Increased, -3000),
+                Grant::new(Stat::AttackSpeed, Layer::Increased, -3000),
             ],
             duration_ticks: 20,
         });

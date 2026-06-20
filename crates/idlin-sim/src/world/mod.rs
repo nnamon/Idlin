@@ -1661,10 +1661,8 @@ impl World {
             let mut sheet = crate::stats::StatSheet::new();
             for ra in &affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                for (g, cond) in a.conditional_grants(&ra.values) {
-                    if cond.is_none_or(|c| c.holds(&ctx)) {
-                        sheet.apply(&g);
-                    }
+                for g in a.grants(&ra.values) {
+                    crate::world::progression::apply_conditional(&mut sheet, &g, &ctx);
                 }
             }
             stats.life_max =

@@ -97,31 +97,11 @@ mod tests {
     fn layers_compose_correctly() {
         let mut sheet = StatSheet::new();
         // +20 flat, 50% increased + 10% increased (sums to 60%), 20% more, 25% more.
-        sheet.apply(&Grant {
-            stat: Stat::Life,
-            layer: Layer::Added,
-            value: 20,
-        });
-        sheet.apply(&Grant {
-            stat: Stat::Life,
-            layer: Layer::Increased,
-            value: 5000,
-        });
-        sheet.apply(&Grant {
-            stat: Stat::Life,
-            layer: Layer::Increased,
-            value: 1000,
-        });
-        sheet.apply(&Grant {
-            stat: Stat::Life,
-            layer: Layer::More,
-            value: 2000,
-        });
-        sheet.apply(&Grant {
-            stat: Stat::Life,
-            layer: Layer::More,
-            value: 2500,
-        });
+        sheet.apply(&Grant::new(Stat::Life, Layer::Added, 20));
+        sheet.apply(&Grant::new(Stat::Life, Layer::Increased, 5000));
+        sheet.apply(&Grant::new(Stat::Life, Layer::Increased, 1000));
+        sheet.apply(&Grant::new(Stat::Life, Layer::More, 2000));
+        sheet.apply(&Grant::new(Stat::Life, Layer::More, 2500));
         // (100+20) * 1.6 * 1.2 * 1.25 = 288
         assert_eq!(sheet.value(Stat::Life, 100), 288);
         // Other stats untouched.
@@ -132,11 +112,7 @@ mod tests {
     fn increased_is_one_bucket_not_compounding() {
         let mut sheet = StatSheet::new();
         for _ in 0..10 {
-            sheet.apply(&Grant {
-                stat: Stat::DamagePhys,
-                layer: Layer::Increased,
-                value: 1000,
-            });
+            sheet.apply(&Grant::new(Stat::DamagePhys, Layer::Increased, 1000));
         }
         // Ten "10% increased" = +100%, NOT ×1.1^10.
         assert_eq!(sheet.value(Stat::DamagePhys, 100), 200);
@@ -145,11 +121,7 @@ mod tests {
     #[test]
     fn negative_increased_floors_at_zero() {
         let mut sheet = StatSheet::new();
-        sheet.apply(&Grant {
-            stat: Stat::MoveSpeed,
-            layer: Layer::Increased,
-            value: -15000,
-        });
+        sheet.apply(&Grant::new(Stat::MoveSpeed, Layer::Increased, -15000));
         assert_eq!(sheet.value(Stat::MoveSpeed, 10000), 0);
     }
 

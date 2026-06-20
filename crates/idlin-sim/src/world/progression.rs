@@ -8,8 +8,17 @@ use super::{
 };
 use crate::entity::{DMG_COUNT, GEM_LEVEL_CAP, Item, RES_COUNT, gem_xp_to_next};
 use crate::fixed::Fx;
-use crate::stats::{Grant, Stat, StatSheet};
+use crate::stats::{EvalContext, Grant, Stat, StatSheet};
 use idlin_content::GearSlot;
+
+/// Fold one grant into a sheet IF its condition holds (`None` = always) — the
+/// single conditional-apply path every power source shares (#86): affixes, tree
+/// nodes, and buffs all route through here against the entity's `EvalContext`.
+pub(crate) fn apply_conditional(sheet: &mut StatSheet, g: &Grant, ctx: &EvalContext) {
+    if g.condition.is_none_or(|c| c.holds(ctx)) {
+        sheet.apply(g);
+    }
+}
 
 /// XP to advance from `level` to `level+1`. Hybrid curve: a quadratic
 /// BASE (smooth early game) times an exponential factor that engages
@@ -131,11 +140,13 @@ impl World {
         let Some(e) = self.zone.get(slot) else { return };
         let Some(m) = &e.monster else { return };
         let def_idx = m.def_idx;
+        // Monsters wield no weapon → unarmed (counts as melee) for conditions.
+        let ctx = EvalContext { weapon_class: None };
         let mut sheet = StatSheet::new();
         for ef in &e.effects {
             if let ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    sheet.apply(g);
+                    apply_conditional(&mut sheet, g, &ctx);
                 }
             }
         }
@@ -192,10 +203,17 @@ impl World {
         let level = ch.level;
 
         let mut sheet = StatSheet::new();
+        // The condition context up front (wielded weapon class; None = unarmed,
+        // which counts as melee) so EVERY power source — tree, buffs, affixes —
+        // evaluates its grant conditions against it through one path (#86).
+        let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
+            .as_ref()
+            .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
+        let ctx = crate::stats::EvalContext { weapon_class };
         for &node_idx in &ch.allocated {
             if let Some(node) = self.content.tree.get(node_idx as usize) {
                 for g in &node.grants {
-                    sheet.apply(g);
+                    apply_conditional(&mut sheet, g, &ctx);
                 }
             }
         }
@@ -204,7 +222,7 @@ impl World {
         for ef in &e.effects {
             if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    sheet.apply(g);
+                    apply_conditional(&mut sheet, g, &ctx);
                 }
             }
         }
@@ -212,22 +230,13 @@ impl World {
         let mut armour_base = 0i64;
         let mut evasion_base = base_evasion(level);
         let mut block_base = 0i64;
-        // The condition context: the wielded weapon's class (None = unarmed,
-        // which counts as melee). Resolved up front so affix conditions evaluate
-        // against the weapon regardless of slot order (#86).
-        let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
-            .as_ref()
-            .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
-        let ctx = crate::stats::EvalContext { weapon_class };
         for (i, slot_item) in ch.equipment.iter().enumerate() {
             let Some(item) = slot_item else { continue };
             let def = &self.content.items[item.base_idx as usize];
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                for (g, cond) in a.conditional_grants(&ra.values) {
-                    if cond.is_none_or(|c| c.holds(&ctx)) {
-                        sheet.apply(&g);
-                    }
+                for g in a.grants(&ra.values) {
+                    apply_conditional(&mut sheet, &g, &ctx);
                 }
             }
             if i == GearSlot::Weapon.idx() {
@@ -248,49 +257,34 @@ impl World {
         let dexterity = sheet.value(Stat::Dexterity, 0);
         let intelligence = sheet.value(Stat::Intelligence, 0);
         for grant in [
+            Grant::new(Stat::Life, crate::stats::Layer::Added, strength / 2),
+            // STR's "increased melee physical" — a CONDITIONAL grant in the same
+            // loop (#86): the retired MeleePhys bucket, now the unified mechanism's
+            // first client (phys while wielding melee; unarmed counts).
             Grant {
-                stat: Stat::Life,
-                layer: crate::stats::Layer::Added,
-                value: strength / 2,
-            },
-            Grant {
-                stat: Stat::Accuracy,
-                layer: crate::stats::Layer::Added,
-                value: dexterity * 2,
-            },
-            Grant {
-                stat: Stat::Evasion,
-                layer: crate::stats::Layer::Increased,
-                value: dexterity * 20,
-            },
-            Grant {
-                stat: Stat::Mana,
-                layer: crate::stats::Layer::Added,
-                value: intelligence / 2,
-            },
-            Grant {
-                stat: Stat::EnergyShield,
-                layer: crate::stats::Layer::Increased,
-                value: intelligence * 20,
-            },
-        ] {
-            if grant.value != 0 {
-                sheet.apply(&grant);
-            }
-        }
-        // STR's "increased melee physical" is the general conditional mechanism's
-        // first client (#86): increased phys damage while wielding melee (unarmed
-        // counts), replacing the old MeleePhys bucket + `if !projectile` fold.
-        // Behavior-identical — same strength*20 into damage_phys.increased when melee.
-        if strength != 0
-            && crate::stats::Condition::WieldingWeaponClass(crate::stats::WeaponClass::Melee)
-                .holds(&ctx)
-        {
-            sheet.apply(&Grant {
                 stat: Stat::DamagePhys,
                 layer: crate::stats::Layer::Increased,
                 value: strength * 20,
-            });
+                condition: Some(crate::stats::Condition::WieldingWeaponClass(
+                    crate::stats::WeaponClass::Melee,
+                )),
+            },
+            Grant::new(Stat::Accuracy, crate::stats::Layer::Added, dexterity * 2),
+            Grant::new(
+                Stat::Evasion,
+                crate::stats::Layer::Increased,
+                dexterity * 20,
+            ),
+            Grant::new(Stat::Mana, crate::stats::Layer::Added, intelligence / 2),
+            Grant::new(
+                Stat::EnergyShield,
+                crate::stats::Layer::Increased,
+                intelligence * 20,
+            ),
+        ] {
+            if grant.value != 0 {
+                apply_conditional(&mut sheet, &grant, &ctx);
+            }
         }
 
         let (dmg_base, range, use_base, projectile) = match weapon {
@@ -401,6 +395,42 @@ impl World {
             c.poise = poise;
             c.knockback_cu = knockback_cu;
         }
+    }
+}
+
+#[cfg(test)]
+mod grant_tests {
+    use super::apply_conditional;
+    use crate::stats::{Condition, EvalContext, Grant, Layer, Stat, StatSheet, WeaponClass};
+
+    #[test]
+    fn apply_conditional_gates_every_power_source_uniformly() {
+        // The single fold path (#86): a conditional grant — from an affix, a tree
+        // node, OR a buff — applies only when its condition holds; unconditional
+        // grants always do. Mutation: drop the condition check in apply_conditional
+        // and the bow case wrongly gains the bonus.
+        let melee = EvalContext {
+            weapon_class: Some(WeaponClass::Melee),
+        };
+        let bow = EvalContext {
+            weapon_class: Some(WeaponClass::Bow),
+        };
+        let cond = Grant {
+            stat: Stat::DamagePhys,
+            layer: Layer::Increased,
+            value: 5000, // +50%
+            condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+        };
+        let plain = Grant::new(Stat::DamagePhys, Layer::Increased, 5000);
+
+        let val = |g: &Grant, ctx: &EvalContext| {
+            let mut s = StatSheet::new();
+            apply_conditional(&mut s, g, ctx);
+            s.value(Stat::DamagePhys, 100)
+        };
+        assert_eq!(val(&cond, &melee), 150, "conditional applies under melee");
+        assert_eq!(val(&cond, &bow), 100, "conditional gated off under bow");
+        assert_eq!(val(&plain, &bow), 150, "unconditional always applies");
     }
 }
 
