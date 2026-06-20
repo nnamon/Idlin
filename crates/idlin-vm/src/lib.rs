@@ -91,7 +91,8 @@ pub const SYS_USE_FLASK: i32 = 29;
 /// #54 PR2a: on-demand per-skill definitional detail (shape/radius/target_mode/
 /// skill_kind) stripped from ReadSkills — call when you need to know HOW to aim.
 pub const SYS_SKILL_INFO: i32 = 30;
-/// #54 PR2a: an inventory item's rolled affix instances (affix_num, value, tier).
+/// #54 PR2a: an inventory item's rolled affixes — one 4-word record PER EFFECT
+/// (affix_num, effect_index, value, tier); a hybrid affix (#86) emits several.
 pub const SYS_READ_ITEM_MODS: i32 = 31;
 /// #54 PR3: the currently worn gear, per slot (slot, base_num, rarity, item_level)
 /// — so a bot can score its own gear instead of leaning on `equip_best`.

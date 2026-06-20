@@ -6,10 +6,9 @@ AffixDef(
     kind: suffix,
     pool: "weapon",
     weight: 50,
-    stat: damage_chaos,
-    layer: added,
+    effects: [(stat: damage_chaos, layer: added)],
     tiers: [
-        (ilvl: 2, min: 2, max: 4, name: "of Venom", weight: 100),
-        (ilvl: 5, min: 5, max: 9, name: "of Blight", weight: 45),
+        (ilvl: 2, name: "of Venom", weight: 100, rolls: [(min: 2, max: 4)]),
+        (ilvl: 5, name: "of Blight", weight: 45, rolls: [(min: 5, max: 9)]),
     ],
 )

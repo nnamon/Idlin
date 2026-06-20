@@ -54,8 +54,11 @@ pub const SKILL_RECORD_SIZE: u16 = 40; // 10 words
 /// definitional — look them up by `base_num` in the docs). Record: base_num,
 /// rarity, item_level, x, y.
 pub const INVENTORY_RECORD_SIZE: u16 = 20; // 5 words
-/// Size of one ReadItemMods record in bytes: affix_num, value, tier.
-pub const ITEM_MODS_RECORD_SIZE: u16 = 12; // 3 words
+/// Size of one ReadItemMods record in bytes: affix_num, effect_index, value,
+/// tier. One record PER EFFECT — a hybrid affix (#86) emits several, sharing an
+/// affix_num and counting up effect_index; the granted stat is definitional
+/// (look up `affixes[affix_num].effects[effect_index].stat` in content-docs).
+pub const ITEM_MODS_RECORD_SIZE: u16 = 16; // 4 words
 /// Size of one ReadEquipment record in bytes (#54 PR3): slot, base_num (-1 if
 /// the slot is empty), rarity, item_level. One record per gear slot.
 pub const EQUIPMENT_RECORD_SIZE: u16 = 16; // 4 words
@@ -799,21 +802,26 @@ impl World {
                 let Some(item) = placed.item.as_gear() else {
                     return 0;
                 };
-                // Record: affix_num, rolled value, tier.
-                let records: Vec<[i32; 3]> = item
+                // Record PER EFFECT: affix_num, effect_index, rolled value, tier.
+                // A hybrid affix (#86) expands to one row per rolled value, all
+                // sharing affix_num; the stat is definitional (docs lookup).
+                let records: Vec<[i32; 4]> = item
                     .affixes
                     .iter()
-                    .take(max)
-                    .map(|a| {
-                        [
-                            self.content_num(
-                                idlin_content::ids::Category::Affix,
-                                a.affix_idx as usize,
-                            ),
-                            a.value.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
-                            a.tier as i32,
-                        ]
+                    .flat_map(|a| {
+                        let num = self
+                            .content_num(idlin_content::ids::Category::Affix, a.affix_idx as usize);
+                        let tier = a.tier as i32;
+                        a.values.iter().enumerate().map(move |(ei, &v)| {
+                            [
+                                num,
+                                ei as i32,
+                                v.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+                                tier,
+                            ]
+                        })
                     })
+                    .take(max)
                     .collect();
                 for (i, rec) in records.iter().enumerate() {
                     let base = out.wrapping_add(i as u16 * ITEM_MODS_RECORD_SIZE);

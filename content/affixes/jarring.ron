@@ -4,9 +4,9 @@ AffixDef(
     id: "jarring", name: "Jarring", kind: prefix, pool: "weapon",
     public: true,
     weight: 60,
-    stat: stagger, layer: increased,
+    effects: [(stat: stagger, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 1500, max: 2500, name: "Jarring", weight: 100),
-        (ilvl: 6, min: 2501, max: 4000, name: "Staggering", weight: 40),
+        (ilvl: 1, name: "Jarring", weight: 100, rolls: [(min: 1500, max: 2500)]),
+        (ilvl: 6, name: "Staggering", weight: 40, rolls: [(min: 2501, max: 4000)]),
     ],
 )

@@ -713,14 +713,88 @@ impl World {
         }
     }
 
-    /// Re-attach content after deserializing a snapshot. Fails on hash
-    /// mismatch: a snapshot is only meaningful against its exact content.
-    pub fn attach_content(&mut self, content: &ContentDb) -> Result<(), u64> {
+    /// Re-attach content after deserializing a snapshot. Fails (with a human
+    /// reason) on a content-hash mismatch — a snapshot is only meaningful against
+    /// its exact content — OR on a malformed rolled affix. The hash gate already
+    /// guarantees affix shapes match for an honestly-rolled snapshot; the affix
+    /// check is the fail-closed backstop against a corrupt/foreign one, so
+    /// `AffixDef::grants` can never silently drop a hybrid's effect (#86).
+    pub fn attach_content(&mut self, content: &ContentDb) -> Result<(), String> {
         if content.content_hash != self.content_hash {
-            return Err(self.content_hash);
+            return Err(format!(
+                "content hash {:016x} != loaded content {:016x}",
+                self.content_hash, content.content_hash
+            ));
         }
         self.content = content.clone();
+        if let Some(why) = self.first_malformed_affix() {
+            return Err(format!("malformed snapshot: {why}"));
+        }
         Ok(())
+    }
+
+    /// First malformed rolled affix on ONE item (bad index or values/effects
+    /// count mismatch), as a human reason. The leaf shared by every walk below.
+    fn first_malformed_item_affix(
+        content: &ContentDb,
+        item: &crate::entity::Item,
+    ) -> Option<String> {
+        item.affixes.iter().find_map(|ra| {
+            content
+                .check_rolled_affix(ra.affix_idx, ra.values.len())
+                .err()
+        })
+    }
+
+    /// First malformed rolled affix on a character's items (worn + bagged gear),
+    /// as a human reason. Shared by live entities AND pending arrivals (the ferry
+    /// payload), so a malformed snapshot character can never reach `grants`.
+    pub fn first_malformed_character_affix(
+        content: &ContentDb,
+        ch: &crate::entity::CharacterState,
+    ) -> Option<String> {
+        for it in ch.equipment.iter().flatten() {
+            if let Some(why) = Self::first_malformed_item_affix(content, it) {
+                return Some(why);
+            }
+        }
+        for pi in &ch.inventory {
+            if let Some(it) = pi.item.as_gear()
+                && let Some(why) = Self::first_malformed_item_affix(content, it)
+            {
+                return Some(why);
+            }
+        }
+        None
+    }
+
+    /// First malformed rolled affix anywhere in this world (characters, monster
+    /// rolls, gear loot), as a human reason. `None` when every item is well-formed.
+    fn first_malformed_affix(&self) -> Option<String> {
+        for (_, e) in self.zone.iter() {
+            if let Some(ch) = &e.character
+                && let Some(why) = Self::first_malformed_character_affix(&self.content, ch)
+            {
+                return Some(why);
+            }
+            if let Some(m) = &e.monster {
+                for ra in &m.affixes {
+                    if let Err(why) = self
+                        .content
+                        .check_rolled_affix(ra.affix_idx, ra.values.len())
+                    {
+                        return Some(why);
+                    }
+                }
+            }
+            if let Some(l) = &e.loot
+                && let crate::entity::LootPayload::Gear(it) = &l.payload
+                && let Some(why) = Self::first_malformed_item_affix(&self.content, it)
+            {
+                return Some(why);
+            }
+        }
+        None
     }
 
     pub(crate) fn content_monsters(&self) -> &[MonsterDef] {
@@ -1583,11 +1657,9 @@ impl World {
             let mut sheet = crate::stats::StatSheet::new();
             for ra in &affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                sheet.apply(&crate::stats::Grant {
-                    stat: a.stat,
-                    layer: a.layer,
-                    value: ra.value,
-                });
+                for g in a.grants(&ra.values) {
+                    sheet.apply(&g);
+                }
             }
             stats.life_max =
                 sheet.value(idlin_content::stats::Stat::Life, scaled_life) * bulk / 10000;

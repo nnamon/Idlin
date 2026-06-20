@@ -289,7 +289,7 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 24 | `ReadCurrency` | out_addr, max (≤16) | a positional count array: obol stacks as u32 words in registry order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. The slot's matching id is the `CURRENCY_*` const at the same position — read the count here, spend by num below. |
 | 25 | `UseCurrency` | currency_num, inv_idx | spend one obol on the bag item at inv_idx. `currency_num` is the currency's stable tagged num (#54) — pass a `CURRENCY_*` const, not an array position. 0 ok; −1 unknown/non-currency num / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 | 30 | `SkillInfo` | slot, out_addr | the static geometry of the skill in `slot` (same 1-based slot space as ReadSkills) → a 3-word record at out_addr: `shape (0 target / 1 nova / 2 cone / 3 line / 4 point-AoE / 5 projectile), radius (Q16.16), skill_kind (0 attack / 1 spell)`. Returns 0, or −1 for an empty/invalid slot. You only need this to position AoE — `target_mode` rides in ReadSkills. |
-| 31 | `ReadItemMods` | inv_idx, out_addr, max (≤16) | the rolled affixes on the bag item at `inv_idx` (its position in the ReadInventory list) → 3-word records: `affix_num (stable tagged, match `AFFIX_*` / content-docs), value (the rolled amount), tier`. Returns the count written, or −1 for a bad index. The item BASE's facts (slot, dims, base stats) live in content-docs; this is the per-instance roll. |
+| 31 | `ReadItemMods` | inv_idx, out_addr, max (≤16) | the rolled affixes on the bag item at `inv_idx` (its position in the ReadInventory list) → **4-word (16-byte) records, one PER EFFECT**: `affix_num (stable tagged, match `AFFIX_*` / content-docs), effect_index, value (the rolled amount), tier`. A plain affix emits one record; a HYBRID emits several sharing `affix_num`, counting up `effect_index` — `max` caps the total records. Which stat each row grants is definitional: look up `affixes[affix_num].effects[effect_index].stat` in content-docs. Returns the count written, or −1 for a bad index. The item BASE's facts (slot, dims, base stats) live in content-docs; this is the per-instance roll. |
 | 32 | `ReadEquipment` | out_addr, max (≤12) | the WORN gear, one 4-word record per gear slot → `slot (0 weapon · 1 offhand · 2 helm · 3 chest · 4 boots · 5/6 flask · 7/8 ring · 9 belt · 10 amulet · 11 gloves), base_num (−1 if the slot is empty), rarity, item_level`. Returns the count written. Definitional facts (an item's slot/dims) live in content-docs; an empty slot reads `base_num −1`. Pair with `ItemSlot` to score bag candidates against what you wear. |
 | 33 | `Equip` | inv_idx | wear the bag item at `inv_idx` in its content-defined slot — the MANUAL counterpart to `EquipBest`, so your own scoring decides. The displaced piece returns to the bag (first-fit, into the cells the incoming item vacates). 0 ok; −1 if the slot isn't gear, you don't meet its requirements, it's an offhand while a two-hander is wielded, **or the displaced piece can't re-home in the bag** (a deliberate swap never drops gear — free space first; unlike `EquipBest`, which juggles by dropping the worse piece). A two-handed weapon also sheds the offhand, which must fit too. |
 | 34 | `ItemSlot` | base_num | the gear slot a gear item num belongs to (0 weapon … 5 flask, 7 ring, 9 belt, 10 amulet, 11 gloves), or −1 for a gem / unknown / non-gear num. The one definitional escape hatch (RFC #54 Q2): base reads stay pure, but matching a bag candidate to the worn piece needs `base_num → slot`. It does NOT tell you the weapon CLASS — keep a whitelist of the weapon bases your build can actually wield (a wand/bow would silence a melee skill at the weapon gate). |
@@ -448,16 +448,22 @@ needed to aim AoE:
 +8  skill_kind 1          // 0 attack · 1 spell
 ```
 
-`read_item_mods(0, 0xD300, 16)` on that magic cleaver returns `2`; two 12-byte
-records — the per-instance rolls (the base's static facts are in content-docs):
+`read_item_mods(0, 0xD300, 16)` on that magic cleaver returns the record count;
+**one 16-byte (4-word) record PER EFFECT** — the per-instance rolls (the base's
+static facts are in content-docs). A plain affix is one record; a HYBRID affix
+emits several, sharing `affix_num` and counting `effect_index`:
 
 ```
-record 0 @ +0:  affix_num 25165825  // AFFIX_HALE  (>>23 == CAT_AFFIX)
-                value     24         // the rolled amount (flat life here)
-                tier      0          // which tier rolled (index into the affix's tiers)
-record 1 @ +12: affix_num …         // the second roll
+record 0 @ +0:  affix_num    25165825  // AFFIX_HALE  (>>23 == CAT_AFFIX)
+                effect_index 0         // which of the affix's effects this row is
+                value        24        // the rolled amount (flat life here)
+                tier         0         // which tier rolled (index into the affix's tiers)
+record 1 @ +16: affix_num    …         // the next effect (same affix_num if hybrid)
                 …
 ```
+
+The granted stat isn't in the record — look it up by identity:
+`content-docs → affixes[affix_num].effects[effect_index].stat`.
 
 ### Manual gem & gear selection (the optimization path)
 

@@ -478,7 +478,10 @@ impl World {
             h.write_u64(item.affixes.len() as u64);
             for ra in &item.affixes {
                 h.write_u32(ra.affix_idx);
-                h.write_i64(ra.value);
+                h.write_u64(ra.values.len() as u64);
+                for &v in &ra.values {
+                    h.write_i64(v);
+                }
             }
         };
         for (slot, e) in self.zone.iter() {

@@ -217,11 +217,9 @@ impl World {
             let def = &self.content.items[item.base_idx as usize];
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
-                sheet.apply(&Grant {
-                    stat: a.stat,
-                    layer: a.layer,
-                    value: ra.value,
-                });
+                for g in a.grants(&ra.values) {
+                    sheet.apply(&g);
+                }
             }
             if i == GearSlot::Weapon.idx() {
                 weapon = Some(item);

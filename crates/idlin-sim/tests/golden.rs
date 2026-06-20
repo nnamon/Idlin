@@ -10,21 +10,19 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #98 (skill life cost + general support cost multiplier). Two
-/// REPRESENTATION changes move the hash while the sim TRAJECTORY stays identical.
-/// One: the 6 support gems renamed `mana_mult` → `cost_mult` in their RON and
-/// `hostile_melee.bot` widened its ReadSkills stride 36 → 40 — both edit files
-/// under content/, moving `content_hash` (FNV over content/), which folds into
-/// `state_hash`. Two: the ReadSkills record grew a 10th word (life_cost), so the
-/// grinder template recompiled to a 40-byte stride and the two golden grinder
-/// bots carry that new bytecode in hashed state. Behavior is identical — mana
-/// cost is computed byte-for-byte as before, no content carries a life cost
-/// (default 0), and the bot reader/writer record strides ALWAYS agree, so every
-/// bot reads the same logical (ready, target_mode) it read before (life_cost is
-/// appended past them at +36 and unread by the stock bots); only the
-/// representation shifted.
-/// (Prior: #91 accessory/gloves slots + affixes; #54 PR3 grinder rewrite; etc.)
-const GOLDEN_HASH: u64 = 0x2779_BEAA_C621_F4D7;
+/// Re-pinned for the affix-model overhaul Phase A (#86): affixes became a LIST of
+/// effects (hybrid support), so `RolledAffix` stores `values: Vec<i64>` and the
+/// schema moved. Three intentional sources move the hash: (1) `content_hash` (FNV
+/// over content/) — all 31 affix files rewritten to the `effects`/`rolls` shape,
+/// plus the new `of_the_fox` hybrid affix and the regenerated `ids.ron`; (2) the
+/// item-affix hash format in `world/views.rs` now writes the per-effect `values`
+/// vec (length-prefixed) instead of one `value`; (3) `of_the_fox` joins the
+/// `armour` affix pool, so the grinder rolls a different (still deterministic) set
+/// of mods over the 2000-tick replay. Single-effect affixes draw the SAME one RNG
+/// value as before (per-effect rolls iterate one range), so the only trajectory
+/// change is the new pool member — no determinism bug.
+/// (Prior: #98 skill life cost + cost_mult; #91 accessory/gloves slots; etc.)
+const GOLDEN_HASH: u64 = 0x0A71_7DDC_482C_633D;
 
 #[test]
 fn golden_replay() {

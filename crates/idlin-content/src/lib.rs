@@ -372,12 +372,29 @@ pub enum AffixKind {
     Suffix,
 }
 
-/// One rollable tier: eligible from `ilvl`, value rolled in `min..=max`.
+/// One effect of an affix: a `(stat, layer)` grant template. The rolled value
+/// comes from the matching positional `RollRange` in each tier. An affix with
+/// more than one effect is a HYBRID (#86) — one roll, several stats.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffixEffect {
+    pub stat: Stat,
+    pub layer: Layer,
+}
+
+/// The `min..=max` value range for one effect within one tier.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct RollRange {
+    pub min: i64,
+    pub max: i64,
+}
+
+/// One rollable tier: eligible from `ilvl`; each effect rolls in its positional
+/// `rolls` range (`rolls.len() == effects.len()`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixTier {
     pub ilvl: u32,
-    pub min: i64,
-    pub max: i64,
+    /// One range per affix effect, positional. Hybrids roll each independently.
+    pub rolls: Vec<RollRange>,
     /// THIS tier's display name — magic-item names are built from the
     /// rolled tier ("Heavy" vs "Brutal"), PoE-style. Empty = fall back
     /// to the affix family name.
@@ -456,8 +473,9 @@ pub struct NamingDef {
     pub second: Vec<String>,
 }
 
-/// A rollable item affix: a (stat, layer) grant whose value comes from the
-/// highest tier the item level allows.
+/// A rollable item affix: one or more `(stat, layer)` effects whose values come
+/// from the highest tier the item level allows. One effect = a plain mod; many
+/// effects = a HYBRID (#86), one roll granting several stats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffixDef {
     pub id: String,
@@ -474,10 +492,36 @@ pub struct AffixDef {
     pub pool: String,
     #[serde(default = "default_weight")]
     pub weight: u32,
-    pub stat: Stat,
-    pub layer: Layer,
-    /// Must be sorted by ilvl ascending.
+    /// The stats this affix grants — one for a plain mod, several for a hybrid.
+    pub effects: Vec<AffixEffect>,
+    /// Must be sorted by ilvl ascending; each tier's `rolls.len()` == `effects.len()`.
     pub tiers: Vec<AffixTier>,
+}
+
+impl AffixDef {
+    /// The grants this affix yields for one rolled instance: each effect paired
+    /// with its positional rolled value (a hybrid yields several). The single
+    /// fold path every power-source site shares — `values` come from a
+    /// `RolledAffix`. Lengths always match for real data: the loader validates
+    /// content tiers, the roll path produces one value per effect, and snapshot
+    /// resume validates it (`World::attach_content`). The `debug_assert` makes a
+    /// roller/code bug loud in test/CI; the zip truncates safely in release if a
+    /// corrupt snapshot ever slipped the resume gate.
+    pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
+        debug_assert_eq!(
+            self.effects.len(),
+            values.len(),
+            "affix {} has {} effects but {} rolled values",
+            self.id,
+            self.effects.len(),
+            values.len()
+        );
+        self.effects.iter().zip(values).map(|(eff, &value)| Grant {
+            stat: eff.stat,
+            layer: eff.layer,
+            value,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1119,6 +1163,26 @@ impl ContentDb {
         ContentDb::default()
     }
 
+    /// Validate one rolled affix against the registry: the index must exist AND
+    /// carry exactly one value per effect (positional, #86). `Err` is a human
+    /// reason. The fail-closed gate for snapshot resume — a malformed roll would
+    /// otherwise misalign/drop a hybrid's stats (`AffixDef::grants`) or panic on
+    /// a direct `affixes[idx]` index downstream.
+    pub fn check_rolled_affix(&self, affix_idx: u32, values_len: usize) -> Result<(), String> {
+        match self.affixes.get(affix_idx as usize) {
+            None => Err(format!(
+                "affix #{affix_idx} is out of range ({} affixes)",
+                self.affixes.len()
+            )),
+            Some(a) if a.effects.len() != values_len => Err(format!(
+                "affix '{}' (#{affix_idx}) carries {values_len} rolled value(s) but expects {}",
+                a.id,
+                a.effects.len()
+            )),
+            Some(_) => Ok(()),
+        }
+    }
+
     /// The string id of the def at `idx` in `cat`'s sorted vec.
     fn def_id(&self, cat: ids::Category, idx: usize) -> Option<&str> {
         use ids::Category::*;
@@ -1622,6 +1686,12 @@ impl ContentDb {
         // scanning from the back, so tier order is load-bearing — reject
         // violations here instead of rolling wrong values at runtime.
         for affix in &db.affixes {
+            if affix.effects.is_empty() {
+                return Err(ContentError::BadAffixTiers {
+                    affix: affix.id.clone(),
+                    msg: "has no effects (grants nothing)".into(),
+                });
+            }
             if affix.tiers.is_empty() {
                 return Err(ContentError::BadAffixTiers {
                     affix: affix.id.clone(),
@@ -1638,6 +1708,30 @@ impl ContentDb {
                             w[0].ilvl, w[1].ilvl
                         ),
                     });
+                }
+            }
+            // Each tier must roll exactly one range per effect, every min <= max —
+            // a hybrid's components are positional, so a length mismatch would
+            // silently drop or misalign a stat at roll time.
+            for (ti, tier) in affix.tiers.iter().enumerate() {
+                if tier.rolls.len() != affix.effects.len() {
+                    return Err(ContentError::BadAffixTiers {
+                        affix: affix.id.clone(),
+                        msg: format!(
+                            "tier {ti} has {} roll range(s) but the affix has {} effect(s) \
+                             (need one range per effect)",
+                            tier.rolls.len(),
+                            affix.effects.len()
+                        ),
+                    });
+                }
+                for (ri, r) in tier.rolls.iter().enumerate() {
+                    if r.min > r.max {
+                        return Err(ContentError::BadAffixTiers {
+                            affix: affix.id.clone(),
+                            msg: format!("tier {ti} roll {ri}: min {} > max {}", r.min, r.max),
+                        });
+                    }
                 }
             }
         }
@@ -2353,12 +2447,19 @@ mod tests {
             "formulas serialize as base/per_level"
         );
 
-        // Affix tiers carry roll ranges + weights (crafting bots need them).
-        let tier = &cats["affix"].as_array().unwrap()[0]["tiers"]
-            .as_array()
-            .unwrap()[0];
+        // Affix effects + per-effect tier roll ranges + weights (crafting bots
+        // need them; hybrids carry several effects/rolls).
+        let affix0 = &cats["affix"].as_array().unwrap()[0];
         assert!(
-            tier.get("min").is_some() && tier.get("max").is_some() && tier.get("weight").is_some()
+            affix0["effects"].as_array().is_some_and(|e| !e.is_empty()),
+            "affix exposes its effect list"
+        );
+        let tier = &affix0["tiers"].as_array().unwrap()[0];
+        let roll0 = &tier["rolls"].as_array().unwrap()[0];
+        assert!(
+            roll0.get("min").is_some()
+                && roll0.get("max").is_some()
+                && tier.get("weight").is_some()
         );
 
         // Nodes expose BOTH the tagged num and the u16 build_ref, plus grants.
@@ -2402,8 +2503,8 @@ mod tests {
 
     const AFFIX_OK: &str = r#"AffixDef(
         id: "hale", name: "Hale", kind: prefix, pool: "armour",
-        stat: life, layer: added,
-        tiers: [(ilvl: 1, min: 8, max: 15), (ilvl: 3, min: 16, max: 28)],
+        effects: [(stat: life, layer: added)],
+        tiers: [(ilvl: 1, rolls: [(min: 8, max: 15)]), (ilvl: 3, rolls: [(min: 16, max: 28)])],
     )"#;
 
     const TILESET_OK: &str = r##"TilesetDef(
@@ -2422,6 +2523,69 @@ mod tests {
         tileset: Some("cave"),
         packs: [],
     )"#;
+
+    #[test]
+    fn check_rolled_affix_rejects_bad_index_and_count_mismatch() {
+        // The fail-closed gate snapshot resume uses (#86). of_the_fox is a 2-effect
+        // hybrid; hale is single-effect. Mutation: relax either arm and a corrupt
+        // snapshot's rolled affix would resume and misalign/panic downstream.
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let fox = db
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_fox")
+            .unwrap() as u32;
+        let hale = db.affixes.iter().position(|a| a.id == "hale").unwrap() as u32;
+        assert!(
+            db.check_rolled_affix(fox, 2).is_ok(),
+            "hybrid wants 2 values"
+        );
+        assert!(
+            db.check_rolled_affix(fox, 1).is_err(),
+            "1 value for a 2-effect affix"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 1).is_ok(),
+            "single-effect wants 1"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 2).is_err(),
+            "2 values for 1 effect"
+        );
+        assert!(
+            db.check_rolled_affix(u32::MAX, 1).is_err(),
+            "an out-of-range affix index is rejected, not silently OK"
+        );
+    }
+
+    #[test]
+    fn affix_grants_pairs_each_effect_with_its_rolled_value() {
+        // A HYBRID affix (#86) yields one grant per effect, each carrying its
+        // positional rolled value. Mutation: a fold that only applied the first
+        // effect (or mispaired values) fails the second/both assertions.
+        let fox: AffixDef = ron::from_str(
+            r#"AffixDef(
+                id: "of_the_fox", name: "of the Fox", kind: suffix, pool: "armour",
+                effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
+                tiers: [(ilvl: 1, rolls: [(min: 5, max: 10), (min: 500, max: 900)])],
+            )"#,
+        )
+        .unwrap();
+        let grants: Vec<_> = fox.grants(&[7, 700]).collect();
+        assert_eq!(grants.len(), 2, "a 2-effect affix yields 2 grants");
+        assert_eq!(grants[0].stat, Stat::Dexterity);
+        assert_eq!(grants[0].layer, Layer::Added);
+        assert_eq!(grants[0].value, 7);
+        assert_eq!(grants[1].stat, Stat::Evasion);
+        assert_eq!(grants[1].layer, Layer::Increased);
+        assert_eq!(grants[1].value, 700);
+
+        // A plain single-effect affix yields exactly one grant (the common path).
+        let hale: AffixDef = ron::from_str(AFFIX_OK).unwrap();
+        let g: Vec<_> = hale.grants(&[12]).collect();
+        assert_eq!(g.len(), 1);
+        assert_eq!((g[0].stat, g[0].value), (Stat::Life, 12));
+    }
 
     #[test]
     fn area_map_binds_to_its_zone_and_derives_dims() {
@@ -2532,6 +2696,54 @@ mod tests {
     }
 
     #[test]
+    fn a_tier_must_roll_one_range_per_effect() {
+        // A HYBRID's effects and a tier's rolls are positional (#86), so a tier
+        // missing a range would silently drop a stat — reject at load. Mutation:
+        // remove the rolls.len()==effects.len() check and this loads instead.
+        let tc = TempContent::new(
+            "hybrid_mismatch",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: suffix, pool: "armour",
+                    effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadAffixTiers { affix, msg }) => {
+                assert_eq!(affix, "bad");
+                assert!(
+                    msg.contains("roll range") && msg.contains("effect"),
+                    "msg: {msg}"
+                );
+            }
+            other => panic!("expected BadAffixTiers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_affix_with_no_effects_is_rejected() {
+        // Mutation: drop the effects-non-empty check and a grant-nothing affix loads.
+        let tc = TempContent::new(
+            "no_effects",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
+                    effects: [],
+                    tiers: [(ilvl: 1, rolls: [])],
+                )"#,
+            )],
+        );
+        assert!(matches!(
+            ContentDb::load(&tc.0),
+            Err(ContentError::BadAffixTiers { .. })
+        ));
+    }
+
+    #[test]
     fn unsorted_affix_tiers_are_rejected() {
         let tc = TempContent::new(
             "tiers",
@@ -2539,8 +2751,8 @@ mod tests {
                 "affixes/bad.ron",
                 r#"AffixDef(
                     id: "bad", name: "Bad", kind: prefix, pool: "armour",
-                    stat: life, layer: added,
-                    tiers: [(ilvl: 5, min: 1, max: 2), (ilvl: 2, min: 3, max: 4)],
+                    effects: [(stat: life, layer: added)],
+                    tiers: [(ilvl: 5, rolls: [(min: 1, max: 2)]), (ilvl: 2, rolls: [(min: 3, max: 4)])],
                 )"#,
             )],
         );
@@ -2558,7 +2770,7 @@ mod tests {
                 "affixes/empty.ron",
                 r#"AffixDef(
                     id: "empty", name: "Empty", kind: prefix, pool: "armour",
-                    stat: life, layer: added, tiers: [],
+                    effects: [(stat: life, layer: added)], tiers: [],
                 )"#,
             )],
         );

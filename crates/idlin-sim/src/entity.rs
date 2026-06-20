@@ -195,8 +195,9 @@ pub const SAY_COOLDOWN_MONSTER: u64 = 50;
 pub struct RolledAffix {
     /// Index into ContentDb::affixes.
     pub affix_idx: u32,
-    /// The rolled value (flat units or basis points per the affix layer).
-    pub value: i64,
+    /// One rolled value per affix effect, positional (flat units or basis points
+    /// per each effect's layer). A plain affix has one; a hybrid (#86) has several.
+    pub values: Vec<i64>,
     /// Which tier rolled (index into AffixDef::tiers) — names and rerolls
     /// are tier-aware.
     #[serde(default)]
@@ -458,3 +459,46 @@ impl Entity {
 pub const KIND_CHARACTER: u8 = 1;
 pub const KIND_MONSTER: u8 = 2;
 pub const KIND_LOOT: u8 = 3;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hybrid_rolled_affix_survives_a_postcard_round_trip() {
+        // The snapshot serializer is postcard (non-self-describing), so the
+        // multi-value layout must round-trip byte-exactly (#86 Phase A). A hybrid
+        // affix carries several values; a single-effect one carries a vec of one.
+        // Mutation: revert RolledAffix.values → a scalar `value` and this won't
+        // compile; a layout drift makes the decoded item != the original.
+        let item = Item {
+            base_idx: 3,
+            rarity: Rarity::Magic,
+            item_level: 12,
+            affixes: vec![
+                RolledAffix {
+                    affix_idx: 7,
+                    values: vec![9, 700],
+                    tier: 1,
+                }, // hybrid
+                RolledAffix {
+                    affix_idx: 2,
+                    values: vec![15],
+                    tier: 0,
+                }, // plain
+            ],
+            name: "Test".into(),
+            charges: 0,
+        };
+        let bytes = postcard::to_allocvec(&item).expect("serialize");
+        let back: Item = postcard::from_bytes(&bytes).expect("deserialize");
+        assert_eq!(back.affixes.len(), 2);
+        assert_eq!(
+            back.affixes[0].values,
+            vec![9, 700],
+            "hybrid values preserved"
+        );
+        assert_eq!(back.affixes[1].values, vec![15], "plain value preserved");
+        assert_eq!(back.affixes[0].tier, 1);
+    }
+}

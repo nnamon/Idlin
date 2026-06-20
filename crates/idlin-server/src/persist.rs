@@ -44,7 +44,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v4 (#91): the equipment array grew 7 → 12 — accessory slots (2 rings, a
 /// belt, an amulet) plus a gloves slot — so `Character` serializes five more
 /// `Option<Item>`.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 4;
+/// v5 (#86 Phase A): affixes became multi-effect (hybrid support), so
+/// `RolledAffix` serializes `values: Vec<i64>` instead of a single `value` — a
+/// v4 snapshot's items would fail to decode, so refuse them cleanly.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 5;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -150,6 +153,19 @@ pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<Chara
     };
     match world.attach_content(content) {
         Ok(()) => {
+            // Pendings ride ALONGSIDE the world (in-flight arrivals), so
+            // attach_content didn't see them; validate their items too — an
+            // arrival's malformed affix would otherwise reach AffixDef::grants
+            // when apply_joins refreshes it (#86 fail-closed resume).
+            if let Some((i, why)) = pendings.iter().enumerate().find_map(|(i, b)| {
+                World::first_malformed_character_affix(content, &b.character).map(|w| (i, w))
+            }) {
+                warn!(
+                    "snapshot at {}: pending arrival {i}: {why}; starting fresh",
+                    path.display()
+                );
+                return None;
+            }
             info!(
                 tick = world.tick_count(),
                 pending = pendings.len(),
@@ -158,12 +174,8 @@ pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<Chara
             );
             Some((world, pendings))
         }
-        Err(snapshot_hash) => {
-            warn!(
-                "snapshot content hash {snapshot_hash:016x} != loaded content \
-                 {:016x}; starting fresh",
-                content.content_hash
-            );
+        Err(why) => {
+            warn!("snapshot at {}: {why}; starting fresh", path.display());
             None
         }
     }
@@ -234,6 +246,39 @@ mod tests {
         let (_, pendings) = load_managed(&content, &dir).expect("load");
         assert_eq!(pendings.len(), 1, "the in-flight character survives");
         assert_eq!(pendings[0].character.name, "InFlight");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_malformed_pending_affix_refuses_the_resume() {
+        // Pendings ride alongside the world; a malformed rolled affix on an
+        // in-flight character must fail the resume CLOSED (#86) — otherwise it
+        // reaches AffixDef::grants when the arrival refreshes. With empty content
+        // any affix_idx is out of range, so this rolled affix is unresolvable.
+        // Mutation: drop the pending-validation loop in load_managed and this
+        // resumes (Some) instead of starting fresh (None).
+        use idlin_sim::entity::{Item, Rarity, RolledAffix};
+        let content = ContentDb::empty();
+        let world = World::new(7, &content);
+        let mut b = bundle("Corrupt");
+        b.character.equipment[0] = Some(Item {
+            base_idx: 0,
+            rarity: Rarity::Magic,
+            item_level: 1,
+            affixes: vec![RolledAffix {
+                affix_idx: 0,
+                values: vec![1],
+                tier: 0,
+            }],
+            name: String::new(),
+            charges: 0,
+        });
+        let dir = temp_dir("bad-pending");
+        save_managed(&world, &[b], &dir).expect("save");
+        assert!(
+            load_managed(&content, &dir).is_none(),
+            "a malformed pending arrival fails the resume closed"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

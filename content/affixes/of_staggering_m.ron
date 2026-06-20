@@ -4,8 +4,8 @@ AffixDef(
     id: "of_staggering_m", name: "of Staggering", kind: suffix, pool: "monster",
     public: true,
     weight: 40,
-    stat: stagger, layer: increased,
+    effects: [(stat: stagger, layer: increased)],
     tiers: [
-        (ilvl: 1, min: 2000, max: 3500, name: "of Staggering", weight: 100),
+        (ilvl: 1, name: "of Staggering", weight: 100, rolls: [(min: 2000, max: 3500)]),
     ],
 )

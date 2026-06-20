@@ -6,11 +6,10 @@ AffixDef(
     kind: suffix,
     pool: "armour",
     weight: 80,
-    stat: resist_lightning,
-    layer: added,
+    effects: [(stat: resist_lightning, layer: added)],
     tiers: [
-        (ilvl: 1, min: 500, max: 900, name: "of Storms", weight: 100),
-        (ilvl: 3, min: 901, max: 1500, name: "of Tempests", weight: 45),
-        (ilvl: 6, min: 1501, max: 2400, name: "of the Maelstrom", weight: 15),
+        (ilvl: 1, name: "of Storms", weight: 100, rolls: [(min: 500, max: 900)]),
+        (ilvl: 3, name: "of Tempests", weight: 45, rolls: [(min: 901, max: 1500)]),
+        (ilvl: 6, name: "of the Maelstrom", weight: 15, rolls: [(min: 1501, max: 2400)]),
     ],
 )

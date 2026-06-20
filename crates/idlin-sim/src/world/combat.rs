@@ -2316,8 +2316,8 @@ mod tests {
         let content = content();
         let mut world = World::new(0x5141, &content);
         // One debug() per value (debug is single-arg): skill_info return, then
-        // shape/skill_kind from its record; mod count, then affix_num/value/tier
-        // from the first mod.
+        // shape/skill_kind from its record; mod count, then affix_num/effect_index/
+        // value/tier from the first mod record (4 words, #86 hybrid-aware).
         let program = idlin_botc::compile(
             "fn main() {\n\
              debug(skill_info(1, 0xE000));\n\
@@ -2328,6 +2328,7 @@ mod tests {
              debug(mem[0xE100]);\n\
              debug(mem[0xE104]);\n\
              debug(mem[0xE108]);\n\
+             debug(mem[0xE10C]);\n\
              debug(skill_info(9, 0xE200));\n\
              debug(read_item_mods(9, 0xE300, 8));\n\
              debug(skill_info(0, 0xE200));\n\
@@ -2378,7 +2379,7 @@ mod tests {
                     item_level: 5,
                     affixes: vec![RolledAffix {
                         affix_idx: hale_idx,
-                        value: 12,
+                        values: vec![12],
                         tier: 0,
                     }],
                     name: String::new(),
@@ -2397,20 +2398,172 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(vals.len(), 11, "eleven debug emits: {vals:?}");
+        assert_eq!(vals.len(), 12, "twelve debug emits: {vals:?}");
         assert_eq!(vals[0], 0, "skill_info(1) is a valid slot");
         assert_eq!(vals[1], 1, "frost_nova shape = nova");
         assert_eq!(vals[2], 1, "frost_nova kind = spell");
-        assert_eq!(vals[3], 1, "one rolled mod on the item");
+        assert_eq!(vals[3], 1, "one rolled mod record (hale is single-effect)");
         assert_eq!(vals[4], expect_affix_num, "the rolled affix's tagged num");
-        assert_eq!(vals[5], 12, "the rolled value");
-        assert_eq!(vals[6], 0, "the rolled tier");
+        assert_eq!(vals[5], 0, "the effect index (0 — hale's only effect)");
+        assert_eq!(vals[6], 12, "the rolled value");
+        assert_eq!(vals[7], 0, "the rolled tier");
         // Out-of-range / zero / negative slot and a bad item index are all
         // rejected with -1 — never garbage, never a panic (slot is raw input).
-        assert_eq!(vals[7], -1, "skill_info on an empty slot → -1");
-        assert_eq!(vals[8], -1, "read_item_mods on a bad index → -1");
-        assert_eq!(vals[9], -1, "skill_info on slot 0 (basic attack) → -1");
-        assert_eq!(vals[10], -1, "skill_info on a negative slot → -1");
+        assert_eq!(vals[8], -1, "skill_info on an empty slot → -1");
+        assert_eq!(vals[9], -1, "read_item_mods on a bad index → -1");
+        assert_eq!(vals[10], -1, "skill_info on slot 0 (basic attack) → -1");
+        assert_eq!(vals[11], -1, "skill_info on a negative slot → -1");
+    }
+
+    #[test]
+    fn read_item_mods_expands_a_hybrid_into_one_row_per_effect() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(0xF0F0, &content);
+        // Read the count, then rec0 (affix_num/effect_index/value @ +0/+4/+8) and
+        // rec1 (@ +16/+20/+24). A hybrid emits two rows sharing affix_num (#86).
+        let program = idlin_botc::compile(
+            "fn main() {\n\
+             debug(read_item_mods(0, 0xE100, 8));\n\
+             debug(mem[0xE100]); debug(mem[0xE104]); debug(mem[0xE108]);\n\
+             debug(mem[0xE110]); debug(mem[0xE114]); debug(mem[0xE118]);\n\
+             }\n",
+        )
+        .expect("compiles");
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Jeweler".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character");
+        let net = world.zone.get(slot).unwrap().net_id;
+        let fox = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_fox")
+            .expect("of_the_fox exists") as u32;
+        let fox_num = content.content_num(Category::Affix, fox as usize).unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(Item {
+                    base_idx: 0,
+                    rarity: Rarity::Magic,
+                    item_level: 5,
+                    affixes: vec![RolledAffix {
+                        affix_idx: fox,
+                        values: vec![9, 700],
+                        tier: 0,
+                    }],
+                    name: String::new(),
+                    charges: 0,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let events = world.tick(&crate::TickInputs::default());
+        let vals: Vec<i32> = events
+            .iter()
+            .filter_map(|e| match e {
+                super::SimEvent::BotDebug { id, values } if *id == net => values.first().copied(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(vals.len(), 7, "count + two 3-field records: {vals:?}");
+        assert_eq!(vals[0], 2, "a 2-effect hybrid yields TWO records");
+        assert_eq!(vals[1], fox_num, "rec0 affix_num");
+        assert_eq!(vals[2], 0, "rec0 effect_index");
+        assert_eq!(vals[3], 9, "rec0 value (dexterity roll)");
+        assert_eq!(vals[4], fox_num, "rec1 shares the affix_num");
+        assert_eq!(vals[5], 1, "rec1 effect_index");
+        assert_eq!(vals[6], 700, "rec1 value (evasion roll)");
+    }
+
+    #[test]
+    fn attach_content_rejects_malformed_rolled_affixes() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xBAD0, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Resumer".into(),
+                program: halt,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let fox = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_fox")
+            .unwrap() as u32;
+        let put = |world: &mut World, ra: RolledAffix| {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                base_idx: 0,
+                rarity: Rarity::Magic,
+                item_level: 5,
+                affixes: vec![ra],
+                name: String::new(),
+                charges: 0,
+            });
+        };
+
+        // Same content → hash matches; a WELL-FORMED world attaches cleanly.
+        assert!(world.attach_content(&content).is_ok(), "baseline attaches");
+
+        // A 2-effect hybrid with only ONE rolled value → fail closed on resume.
+        put(
+            &mut world,
+            RolledAffix {
+                affix_idx: fox,
+                values: vec![5],
+                tier: 0,
+            },
+        );
+        let err = world
+            .attach_content(&content)
+            .expect_err("count mismatch refused");
+        assert!(err.contains("malformed snapshot"), "reason: {err}");
+        // The shared helper persist uses for PENDING arrivals catches it too.
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert!(World::first_malformed_character_affix(&content, ch).is_some());
+
+        // An OUT-OF-RANGE affix index → refused, never a silent pass then a panic.
+        put(
+            &mut world,
+            RolledAffix {
+                affix_idx: u32::MAX,
+                values: vec![1],
+                tier: 0,
+            },
+        );
+        assert!(
+            world.attach_content(&content).is_err(),
+            "bad affix_idx refused"
+        );
     }
 
     #[test]
@@ -3267,7 +3420,7 @@ mod tests {
             item_level: 10,
             affixes: vec![RolledAffix {
                 affix_idx: hardy,
-                value: val,
+                values: vec![val],
                 tier: 0,
             }],
             name: String::new(),
@@ -3550,7 +3703,7 @@ mod tests {
             item_level: 10,
             affixes: vec![RolledAffix {
                 affix_idx: bold,
-                value: strength,
+                values: vec![strength],
                 tier: 0,
             }],
             name: String::new(),
@@ -3586,7 +3739,7 @@ mod tests {
             .as_ref()
             .expect("first ring loop is filled")
             .affixes[0]
-            .value;
+            .values[0];
         assert_eq!(
             worn_str, 24,
             "EquipBest put the higher-STR ring in the first loop (item_score values attributes)"

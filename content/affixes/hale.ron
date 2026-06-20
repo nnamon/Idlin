@@ -6,11 +6,10 @@ AffixDef(
     kind: prefix,
     pool: "armour",
     weight: 100,
-    stat: life,
-    layer: added,
+    effects: [(stat: life, layer: added)],
     tiers: [
-        (ilvl: 1, min: 8, max: 15, name: "Hale", weight: 100),
-        (ilvl: 3, min: 16, max: 28, name: "Stalwart", weight: 45),
-        (ilvl: 6, min: 29, max: 45, name: "Indomitable", weight: 15),
+        (ilvl: 1, name: "Hale", weight: 100, rolls: [(min: 8, max: 15)]),
+        (ilvl: 3, name: "Stalwart", weight: 45, rolls: [(min: 16, max: 28)]),
+        (ilvl: 6, name: "Indomitable", weight: 15, rolls: [(min: 29, max: 45)]),
     ],
 )

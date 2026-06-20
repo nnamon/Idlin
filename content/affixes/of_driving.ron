@@ -4,9 +4,9 @@ AffixDef(
     id: "of_driving", name: "of Driving", kind: suffix, pool: "weapon",
     public: true,
     weight: 50,
-    stat: knockback, layer: added,
+    effects: [(stat: knockback, layer: added)],
     tiers: [
-        (ilvl: 2, min: 25, max: 45, name: "of Driving", weight: 100),
-        (ilvl: 8, min: 46, max: 75, name: "of Hurling", weight: 35),
+        (ilvl: 2, name: "of Driving", weight: 100, rolls: [(min: 25, max: 45)]),
+        (ilvl: 8, name: "of Hurling", weight: 35, rolls: [(min: 46, max: 75)]),
     ],
 )

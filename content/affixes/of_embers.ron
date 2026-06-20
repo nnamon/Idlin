@@ -6,10 +6,9 @@ AffixDef(
     kind: suffix,
     pool: "weapon",
     weight: 80,
-    stat: damage_fire,
-    layer: added,
+    effects: [(stat: damage_fire, layer: added)],
     tiers: [
-        (ilvl: 1, min: 2, max: 5, name: "of Embers", weight: 100),
-        (ilvl: 4, min: 6, max: 11, name: "of Cinders", weight: 45),
+        (ilvl: 1, name: "of Embers", weight: 100, rolls: [(min: 2, max: 5)]),
+        (ilvl: 4, name: "of Cinders", weight: 45, rolls: [(min: 6, max: 11)]),
     ],
 )
