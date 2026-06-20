@@ -2567,6 +2567,106 @@ mod tests {
     }
 
     #[test]
+    fn strength_raises_melee_phys_but_not_bow_phys() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        // The retired MeleePhys, now the general condition mechanism (#86 Phase B):
+        // STR grants increased phys damage ONLY while wielding melee. Mutation:
+        // drop the WieldingWeaponClass(Melee) gate and the bow gets the bonus too,
+        // breaking the != assertions.
+        let content = content();
+        let mut world = World::new(0x57A7, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Brawler".into(),
+                program: halt,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        let bow = content
+            .items
+            .iter()
+            .position(|i| i.id == "driftwood_bow")
+            .unwrap() as u32;
+        let coral = content
+            .items
+            .iter()
+            .position(|i| i.id == "coral_ring")
+            .unwrap() as u32;
+        let bold = content.affixes.iter().position(|a| a.id == "bold").unwrap() as u32;
+
+        let plain = |base_idx: u32| Item {
+            base_idx,
+            rarity: Rarity::Normal,
+            item_level: 1,
+            affixes: vec![],
+            name: String::new(),
+            charges: 0,
+        };
+        let str_ring = Item {
+            base_idx: coral,
+            rarity: Rarity::Magic,
+            item_level: 10,
+            affixes: vec![RolledAffix {
+                affix_idx: bold,
+                values: vec![100],
+                tier: 0,
+            }],
+            name: String::new(),
+            charges: 0,
+        };
+        // phys damage with `weapon` equipped, optionally with a +100 STR ring.
+        let phys = |world: &mut World, weapon: u32, with_str: bool| -> i64 {
+            {
+                let ch = world
+                    .zone
+                    .get_mut(slot)
+                    .unwrap()
+                    .character
+                    .as_mut()
+                    .unwrap();
+                ch.equipment = Default::default();
+                ch.equipment[GearSlot::Weapon.idx()] = Some(plain(weapon));
+                if with_str {
+                    ch.equipment[GearSlot::RING_SLOTS[0]] = Some(str_ring.clone());
+                }
+            }
+            world.refresh_derived_stats(slot);
+            world
+                .zone
+                .get(slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .damage[0]
+        };
+
+        let melee_no_str = phys(&mut world, cleaver, false);
+        let melee_str = phys(&mut world, cleaver, true);
+        let bow_no_str = phys(&mut world, bow, false);
+        let bow_str = phys(&mut world, bow, true);
+
+        assert!(
+            melee_str > melee_no_str,
+            "STR raises melee phys ({melee_no_str} -> {melee_str})"
+        );
+        assert_eq!(
+            bow_str, bow_no_str,
+            "STR gives NO phys bonus on a bow (condition is false off-melee)"
+        );
+    }
+
+    #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
         let fx = events

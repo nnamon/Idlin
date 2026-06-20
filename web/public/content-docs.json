@@ -4,6 +4,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "mana"
           }
@@ -53,6 +54,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "strength"
           }
@@ -102,6 +104,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "life"
           }
@@ -151,6 +154,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "life"
           }
@@ -200,6 +204,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_phys"
           }
@@ -249,6 +254,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_phys"
           }
@@ -298,6 +304,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "life"
           }
@@ -336,6 +343,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "stagger"
           }
@@ -374,6 +382,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "accuracy"
           }
@@ -412,6 +421,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "intelligence"
           }
@@ -461,6 +471,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "knockback"
           }
@@ -499,6 +510,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_fire"
           }
@@ -537,6 +549,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity"
           }
@@ -586,6 +599,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "attack_speed"
           }
@@ -624,6 +638,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "item_quantity"
           }
@@ -662,6 +677,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "armour"
           }
@@ -700,6 +716,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "item_rarity"
           }
@@ -738,6 +755,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "poise"
           }
@@ -776,6 +794,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "crit_chance"
           }
@@ -814,6 +833,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "life"
           }
@@ -852,6 +872,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "stagger"
           }
@@ -879,6 +900,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_lightning"
           }
@@ -928,6 +950,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_cold"
           }
@@ -977,10 +1000,12 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity"
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "evasion"
           }
@@ -1027,6 +1052,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "move_speed"
           }
@@ -1065,6 +1091,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_chaos"
           }
@@ -1103,6 +1130,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_fire"
           }
@@ -1141,6 +1169,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_fire"
           }
@@ -1179,6 +1208,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "evasion"
           }
@@ -1217,6 +1247,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_phys"
           }
@@ -1255,6 +1286,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "energy_shield"
           }
@@ -1304,6 +1336,7 @@
       {
         "effects": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "attack_speed"
           }

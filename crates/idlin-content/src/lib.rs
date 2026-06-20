@@ -18,6 +18,7 @@ pub mod ids;
 pub mod stats;
 
 use serde::{Deserialize, Serialize};
+pub use stats::{Condition, WeaponClass};
 use stats::{Grant, Layer, Stat};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -185,15 +186,8 @@ fn default_radius_cu() -> i32 {
     45
 }
 
-/// What kind of weapon a base is — attack skills gate on this (a bow
-/// skill refuses to fire off a cleaver). Spells don't care.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WeaponClass {
-    Melee,
-    Bow,
-    Wand,
-}
+// WeaponClass moved to `stats` (a Condition reads it, and Grant/Condition are
+// the lower layer); re-exported below so `idlin_content::WeaponClass` still resolves.
 
 /// What kind of place a zone is — drives death rules (story zones
 /// respawn you at the entrance; maps will return you to the town portal).
@@ -379,6 +373,11 @@ pub enum AffixKind {
 pub struct AffixEffect {
     pub stat: Stat,
     pub layer: Layer,
+    /// Gates this effect (#86): `None` = always; `Some(cond)` applies only while
+    /// the condition holds, evaluated by the sim at fold time. Def-side only —
+    /// never enters the rolled-instance (`RolledAffix`) or any hashed state.
+    #[serde(default)]
+    pub condition: Option<Condition>,
 }
 
 /// The `min..=max` value range for one effect within one tier.
@@ -499,15 +498,19 @@ pub struct AffixDef {
 }
 
 impl AffixDef {
-    /// The grants this affix yields for one rolled instance: each effect paired
-    /// with its positional rolled value (a hybrid yields several). The single
+    /// The grants this affix yields for one rolled instance, each paired with its
+    /// `condition` (a hybrid yields several; `None` = unconditional). The single
     /// fold path every power-source site shares — `values` come from a
     /// `RolledAffix`. Lengths always match for real data: the loader validates
     /// content tiers, the roll path produces one value per effect, and snapshot
     /// resume validates it (`World::attach_content`). The `debug_assert` makes a
     /// roller/code bug loud in test/CI; the zip truncates safely in release if a
-    /// corrupt snapshot ever slipped the resume gate.
-    pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
+    /// corrupt snapshot ever slipped the resume gate. The sim evaluates each
+    /// condition against its `EvalContext` before applying the grant.
+    pub fn conditional_grants<'a>(
+        &'a self,
+        values: &'a [i64],
+    ) -> impl Iterator<Item = (Grant, Option<Condition>)> + 'a {
         debug_assert_eq!(
             self.effects.len(),
             values.len(),
@@ -516,11 +519,24 @@ impl AffixDef {
             self.effects.len(),
             values.len()
         );
-        self.effects.iter().zip(values).map(|(eff, &value)| Grant {
-            stat: eff.stat,
-            layer: eff.layer,
-            value,
+        self.effects.iter().zip(values).map(|(eff, &value)| {
+            (
+                Grant {
+                    stat: eff.stat,
+                    layer: eff.layer,
+                    value,
+                },
+                eff.condition,
+            )
         })
+    }
+
+    /// The grants at FACE VALUE — conditions ignored (as if every one holds).
+    /// For context-free uses (item scoring, attribute totals) where no entity
+    /// state exists to evaluate against; the derive path uses
+    /// `conditional_grants` + an `EvalContext` instead.
+    pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
+        self.conditional_grants(values).map(|(g, _)| g)
     }
 }
 
@@ -2556,6 +2572,43 @@ mod tests {
             db.check_rolled_affix(u32::MAX, 1).is_err(),
             "an out-of-range affix index is rejected, not silently OK"
         );
+    }
+
+    #[test]
+    fn conditional_grants_carry_the_effect_condition() {
+        use crate::stats::{Condition, EvalContext, WeaponClass};
+        // A content-authored conditional effect (#86 Phase B): the grant rides with
+        // its condition; the sim evaluates it. Mutation: drop the condition from
+        // AffixEffect (or conditional_grants) → the pairing is lost, this fails.
+        let a: AffixDef = ron::from_str(
+            r#"AffixDef(
+                id: "of_savagery", name: "of Savagery", kind: suffix, pool: "weapon",
+                effects: [(stat: damage_phys, layer: increased, condition: Some(wielding_weapon_class(melee)))],
+                tiers: [(ilvl: 1, rolls: [(min: 1500, max: 2500)])],
+            )"#,
+        )
+        .unwrap();
+        let (grant, cond) = a.conditional_grants(&[2000]).next().unwrap();
+        assert_eq!(grant.stat, Stat::DamagePhys);
+        assert_eq!(grant.value, 2000);
+        assert_eq!(
+            cond,
+            Some(Condition::WieldingWeaponClass(WeaponClass::Melee))
+        );
+        // Holds for a melee wielder, not a bow wielder.
+        let c = cond.unwrap();
+        assert!(c.holds(&EvalContext {
+            weapon_class: Some(WeaponClass::Melee)
+        }));
+        assert!(!c.holds(&EvalContext {
+            weapon_class: Some(WeaponClass::Bow)
+        }));
+        // grants() ignores the condition (face value, for context-free scoring).
+        assert!(a.grants(&[2000]).next().is_some());
+
+        // A plain affix carries no condition.
+        let hale: AffixDef = ron::from_str(AFFIX_OK).unwrap();
+        assert_eq!(hale.conditional_grants(&[10]).next().unwrap().1, None);
     }
 
     #[test]
