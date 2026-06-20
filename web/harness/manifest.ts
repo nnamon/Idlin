@@ -55,6 +55,9 @@ export const FIXTURES: FixtureMeta[] = [
       "DoT 48/s",
       // War Cry's life cost renders on the skill card (#98).
       "30 life",
+      // Firing cadence (#94): the swing rate + War Cry's cooldown.
+      "atk/s",
+      "cd 4s",
     ],
   },
   {
