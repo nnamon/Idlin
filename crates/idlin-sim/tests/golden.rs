@@ -10,18 +10,21 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for the affix-model overhaul Phase D (#86): ten new affix files make
-/// the engine's reachable-but-unauthored stats usable in-game — `of_the_leech`
-/// (leech_life+leech_mana hybrid), `of_ruin` (crit_multi), `of_frost`/`of_sparks`
-/// (cold/lightning), `of_savagery` (CONDITIONAL: phys while wielding melee),
-/// `of_renewal` (life_regen), `of_sealing` (resist_chaos), `of_channeling`
-/// (mana_regen), `of_casting` (cast_speed), `of_greed` (rarity+quantity hybrid).
-/// They join the weapon/armour/arcana/find pools, so the grinder rolls a
-/// different (still deterministic) set of mods over the 2000-tick replay —
-/// `content_hash` moves (new files + regenerated `ids.ron`) and the trajectory
-/// shifts with the new pool members. No sim-rule change; pure content.
-/// (Prior: Phase A 0x0A71 — effects-list schema; #98 skill life cost; etc.)
-const GOLDEN_HASH: u64 = 0x5755_BB24_B7D6_156A;
+/// Re-pinned for the #86 grant-unification follow-up: `state_hash` was widened to
+/// fingerprint all REPLAY-RELEVANT world state it had silently dropped — active-
+/// buff grant internals, the full projectile payload, `intents.move_to`,
+/// `CharacterState.build_plan`, the WHOLE `CombatStats` (regen/leech/range/stagger/
+/// poise/knockback/use_ticks/speed/projectile/find factors), `MonsterState`
+/// (pack_idx/affixes/display_name/skill supports), and the World's zone identity
+/// (zone_idx/level/lines). The world is byte-identical (no sim-rule or content
+/// change — `content_hash` is unchanged); only the FINGERPRINT widened, so the
+/// digest of the same 2000-tick replay moves. The determinism trio still agrees
+/// under the wider hash, confirming a representation change, not a leak. (The
+/// later item-charges/affix-tier additions left the digest at this value — the
+/// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
+/// (Prior: 0x8541 — earlier hash-completeness step; Phase D 0x5755 — ten new affix
+/// files; Phase A 0x0A71 — effects-list schema; #98 skill life cost; etc.)
+const GOLDEN_HASH: u64 = 0x5662_D967_D6E4_BF38;
 
 #[test]
 fn golden_replay() {

@@ -164,16 +164,31 @@ impl Condition {
     }
 }
 
-/// One concrete grant. Tree nodes carry these with fixed values; item
-/// affixes carry rolled values. Unconditional — a content effect's condition
-/// rides on `AffixEffect`/the def and is evaluated before this grant is applied,
-/// so `Grant` (which also lives in hashed/serialized buff state) stays flat.
+/// One concrete grant — the SINGLE power-source unit (#86): item affixes (rolled
+/// value), tree nodes, and gem buffs all produce these, and each may carry a
+/// `condition`. The fold sites evaluate `condition` against an `EvalContext`
+/// before applying, so one path covers every source. `None` = unconditional.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grant {
     pub stat: Stat,
     pub layer: Layer,
     /// Added: flat units. Increased/More: basis points.
     pub value: i64,
+    #[serde(default)]
+    pub condition: Option<Condition>,
+}
+
+impl Grant {
+    /// An unconditional grant (the common case — attribute conversions, fixed
+    /// engine bonuses). Conditional grants set `condition` directly.
+    pub fn new(stat: Stat, layer: Layer, value: i64) -> Grant {
+        Grant {
+            stat,
+            layer,
+            value,
+            condition: None,
+        }
+    }
 }
 
 #[cfg(test)]

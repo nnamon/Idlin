@@ -139,6 +139,12 @@ pub struct Zone {
     pub packs: Vec<PackState>,
     slots: Vec<Option<Entity>>,
     free: Vec<u32>,
+    /// net_id -> slot lookup. A pure derived index over `slots`, so it is NOT
+    /// serialized — it is rebuilt from `slots` on resume (`rebuild_net_index`),
+    /// never trusted from a snapshot. Keeps it impossible for the index to drift
+    /// from the authoritative `slots` (and out of `state_hash`, which hashes the
+    /// slots it derives from).
+    #[serde(skip)]
     by_net: BTreeMap<u32, u32>,
 }
 
@@ -184,6 +190,19 @@ impl Zone {
 
     pub fn get_net_mut(&mut self, net_id: u32) -> Option<&mut Entity> {
         self.slot_of(net_id).and_then(|s| self.get_mut(s))
+    }
+
+    /// Rebuild the net_id -> slot index from the authoritative `slots`. Called
+    /// after a snapshot is deserialized (`by_net` is `#[serde(skip)]`), so the
+    /// lookup index is always reconstructed from disk-restored slots rather than
+    /// trusted from the snapshot bytes.
+    pub fn rebuild_net_index(&mut self) {
+        self.by_net.clear();
+        for (slot, cell) in self.slots.iter().enumerate() {
+            if let Some(e) = cell {
+                self.by_net.insert(e.net_id, slot as u32);
+            }
+        }
     }
 
     /// Insert an entity, reusing the lowest free slot (deterministic).

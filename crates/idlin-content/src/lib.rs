@@ -62,12 +62,29 @@ pub enum ContentError {
     DuplicateId { path: String, id: String },
     #[error("affix `{affix}`: {msg}")]
     BadAffixTiers { affix: String, msg: String },
+    #[error(
+        "{at}: a condition cannot gate an attribute \
+             (strength/dexterity/intelligence) — attributes feed gear requirements \
+             at face value, so a conditional attribute would meet a requirement \
+             while inactive in derived stats"
+    )]
+    ConditionalAttribute { at: String },
     #[error("tile map for `{zone}`: {msg}")]
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
     #[error("the committed id registry `ids.ron` is malformed: {msg}")]
     BadRegistry { msg: String },
+}
+
+/// A condition must NOT gate an attribute (#86): attribute totals feed gear
+/// requirements at FACE VALUE (`attribute_totals` → `meets_requirements`), so a
+/// conditional attribute could satisfy a requirement while inactive in derived
+/// stats — incoherent. Enforced at EVERY power source (affix effect, tree-node
+/// grant, gem buff/debuff grant) so no source can slip a conditional attribute
+/// past, until requirement evaluation is made condition-aware.
+fn is_conditional_attribute(stat: Stat, condition: &Option<Condition>) -> bool {
+    condition.is_some() && matches!(stat, Stat::Strength | Stat::Dexterity | Stat::Intelligence)
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -498,19 +515,16 @@ pub struct AffixDef {
 }
 
 impl AffixDef {
-    /// The grants this affix yields for one rolled instance, each paired with its
-    /// `condition` (a hybrid yields several; `None` = unconditional). The single
-    /// fold path every power-source site shares — `values` come from a
-    /// `RolledAffix`. Lengths always match for real data: the loader validates
-    /// content tiers, the roll path produces one value per effect, and snapshot
-    /// resume validates it (`World::attach_content`). The `debug_assert` makes a
-    /// roller/code bug loud in test/CI; the zip truncates safely in release if a
-    /// corrupt snapshot ever slipped the resume gate. The sim evaluates each
-    /// condition against its `EvalContext` before applying the grant.
-    pub fn conditional_grants<'a>(
-        &'a self,
-        values: &'a [i64],
-    ) -> impl Iterator<Item = (Grant, Option<Condition>)> + 'a {
+    /// The grants this affix yields for one rolled instance — each effect paired
+    /// with its rolled value, carrying the effect's `condition` (a hybrid yields
+    /// several). The single fold path every power-source site shares; the sim
+    /// evaluates each `Grant.condition` against an `EvalContext` before applying
+    /// (context-free callers like `attribute_totals` ignore it — face value).
+    /// `values` come from a `RolledAffix`. Lengths always match for real data:
+    /// the loader validates tiers, the roll produces one value per effect, and
+    /// resume validates it (`World::attach_content`); the `debug_assert` makes a
+    /// bug loud in test/CI, the zip truncates safely in release otherwise.
+    pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
         debug_assert_eq!(
             self.effects.len(),
             values.len(),
@@ -519,25 +533,12 @@ impl AffixDef {
             self.effects.len(),
             values.len()
         );
-        self.effects.iter().zip(values).map(|(eff, &value)| {
-            (
-                Grant {
-                    stat: eff.stat,
-                    layer: eff.layer,
-                    value,
-                },
-                eff.condition,
-            )
+        self.effects.iter().zip(values).map(|(eff, &value)| Grant {
+            stat: eff.stat,
+            layer: eff.layer,
+            value,
+            condition: eff.condition,
         })
-    }
-
-    /// The grants at FACE VALUE — conditions ignored (as if every one holds).
-    /// For the one context-free use left, `attribute_totals` (gear requirements),
-    /// which only reads attributes — and conditional attributes are rejected at
-    /// load. Every context-bearing path (character/monster derive, item scoring)
-    /// uses `conditional_grants` + an `EvalContext` instead.
-    pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
-        self.conditional_grants(values).map(|(g, _)| g)
     }
 }
 
@@ -803,9 +804,6 @@ pub struct GemDef {
     /// What socketing this support does to its skill.
     #[serde(default)]
     pub effects: Vec<SupportEffect>,
-    /// Legacy stat grants (tree-node style); still applied if present.
-    #[serde(default)]
-    pub grants: Vec<Grant>,
 }
 
 fn default_cone_cos() -> i64 {
@@ -1709,25 +1707,12 @@ impl ContentDb {
                     msg: "has no effects (grants nothing)".into(),
                 });
             }
-            // A condition must NOT gate an attribute (#86 Phase B): attribute
-            // totals feed gear requirements at FACE VALUE (`attribute_totals`),
-            // so a conditional attribute would satisfy a requirement while
-            // inactive in derived stats — incoherent. Forbid it until requirement
-            // evaluation is condition-aware.
+            // Conditional attributes are forbidden at every power source (#86);
+            // see `is_conditional_attribute`.
             for eff in &affix.effects {
-                if eff.condition.is_some()
-                    && matches!(
-                        eff.stat,
-                        Stat::Strength | Stat::Dexterity | Stat::Intelligence
-                    )
-                {
-                    return Err(ContentError::BadAffixTiers {
-                        affix: affix.id.clone(),
-                        msg: format!(
-                            "effect on {:?} is conditional — attributes feed gear \
-                             requirements at face value and cannot be conditional",
-                            eff.stat
-                        ),
+                if is_conditional_attribute(eff.stat, &eff.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("affix `{}`", affix.id),
                     });
                 }
             }
@@ -1781,6 +1766,31 @@ impl ContentDb {
                     path: "gems/".into(),
                     id: w[0].id.clone(),
                 });
+            }
+        }
+        // A gem buff/debuff grant feeds the same conditional-grant fold as
+        // tree/affix grants (#86), so it is subject to the same attribute rule.
+        for gem in &db.gems {
+            for (kind, buff) in [("buff", &gem.buff), ("debuff", &gem.debuff)] {
+                let Some(buff) = buff else { continue };
+                for g in &buff.grants {
+                    if is_conditional_attribute(g.stat, &g.condition) {
+                        return Err(ContentError::ConditionalAttribute {
+                            at: format!("gem `{}` {kind}", gem.id),
+                        });
+                    }
+                }
+            }
+        }
+        // Tree-node grants are condition-capable too (#86), so the same rule
+        // applies — a conditional attribute on a node would game requirements.
+        for node in &db.tree {
+            for g in &node.grants {
+                if is_conditional_attribute(g.stat, &g.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("tree node `{}`", node.id),
+                    });
+                }
             }
         }
         db.build_tree()?;
@@ -2648,8 +2658,8 @@ mod tests {
     fn conditional_grants_carry_the_effect_condition() {
         use crate::stats::{Condition, EvalContext, WeaponClass};
         // A content-authored conditional effect (#86 Phase B): the grant rides with
-        // its condition; the sim evaluates it. Mutation: drop the condition from
-        // AffixEffect (or conditional_grants) → the pairing is lost, this fails.
+        // its condition; the sim evaluates Grant.condition. Mutation: drop the
+        // condition from AffixEffect/grants() → it's lost, this fails.
         let a: AffixDef = ron::from_str(
             r#"AffixDef(
                 id: "of_savagery", name: "of Savagery", kind: suffix, pool: "weapon",
@@ -2658,27 +2668,25 @@ mod tests {
             )"#,
         )
         .unwrap();
-        let (grant, cond) = a.conditional_grants(&[2000]).next().unwrap();
+        let grant = a.grants(&[2000]).next().unwrap();
         assert_eq!(grant.stat, Stat::DamagePhys);
         assert_eq!(grant.value, 2000);
         assert_eq!(
-            cond,
+            grant.condition,
             Some(Condition::WieldingWeaponClass(WeaponClass::Melee))
         );
         // Holds for a melee wielder, not a bow wielder.
-        let c = cond.unwrap();
+        let c = grant.condition.unwrap();
         assert!(c.holds(&EvalContext {
             weapon_class: Some(WeaponClass::Melee)
         }));
         assert!(!c.holds(&EvalContext {
             weapon_class: Some(WeaponClass::Bow)
         }));
-        // grants() ignores the condition (face value, for context-free scoring).
-        assert!(a.grants(&[2000]).next().is_some());
 
         // A plain affix carries no condition.
         let hale: AffixDef = ron::from_str(AFFIX_OK).unwrap();
-        assert_eq!(hale.conditional_grants(&[10]).next().unwrap().1, None);
+        assert_eq!(hale.grants(&[10]).next().unwrap().condition, None);
     }
 
     #[test]
@@ -2848,9 +2856,9 @@ mod tests {
 
     #[test]
     fn a_conditional_attribute_effect_is_rejected() {
-        // Attributes feed gear requirements at face value (#86 Phase B), so a
-        // conditional attribute is incoherent — reject at load. Mutation: remove
-        // the attribute-condition guard and this malformed affix loads.
+        // Attributes feed gear requirements at face value (#86), so a conditional
+        // attribute is incoherent — reject at load. Mutation: remove the
+        // attribute-condition guard and this malformed affix loads.
         let tc = TempContent::new(
             "cond_attr",
             &[(
@@ -2863,14 +2871,64 @@ mod tests {
             )],
         );
         match ContentDb::load(&tc.0) {
-            Err(ContentError::BadAffixTiers { affix, msg }) => {
-                assert_eq!(affix, "bad");
-                assert!(
-                    msg.contains("conditional") && msg.contains("attribute"),
-                    "msg: {msg}"
-                );
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
             }
-            other => panic!("expected BadAffixTiers, got {other:?}"),
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_conditional_attribute_tree_node_is_rejected() {
+        // The unified Grant lets tree nodes be conditional too (#86) — but the
+        // attribute rule binds every source: a node's conditional +STR would
+        // satisfy a gear requirement while inactive in derived stats. The node is
+        // `start` (build_tree finds the root by id), so with the check neutralized
+        // the tree is OTHERWISE valid and loads — the mutation then surfaces as a
+        // missing rejection, not an incidental NoStartNode.
+        let tc = TempContent::new(
+            "cond_attr_tree",
+            &[(
+                "tree/bad.ron",
+                r#"TreeDef(nodes: [
+                    NodeDef(id: "start", num: 1, name: "Start", pos: (0, 0), kind: socket,
+                            grants: [(stat: strength, layer: added, value: 10,
+                                      condition: Some(wielding_weapon_class(melee)))]),
+                ])"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("tree node") && at.contains("start"), "at: {at}");
+            }
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_conditional_attribute_gem_buff_is_rejected() {
+        // A gem buff/debuff grant folds through the same conditional path (#86),
+        // so it is bound by the attribute rule too. Mutation: drop the gem arm of
+        // the check and this buff loads, letting a timed +DEX game requirements.
+        let tc = TempContent::new(
+            "cond_attr_gem",
+            &[(
+                "gems/bad.ron",
+                r#"GemDef(
+                    id: "bad", name: "Bad", kind: skill,
+                    buff: Some(BuffDef(
+                        grants: [(stat: dexterity, layer: added, value: 10,
+                                  condition: Some(wielding_weapon_class(melee)))],
+                        duration_ticks: 100,
+                    )),
+                )"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("gem") && at.contains("bad"), "at: {at}");
+            }
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
         }
     }
 

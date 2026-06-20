@@ -699,10 +699,8 @@ impl World {
         let mut sheet = StatSheet::new();
         for ra in &item.affixes {
             let a = &self.content.affixes[ra.affix_idx as usize];
-            for (g, cond) in a.conditional_grants(&ra.values) {
-                if cond.is_none_or(|c| c.holds(&ctx)) {
-                    sheet.apply(&g);
-                }
+            for g in a.grants(&ra.values) {
+                crate::world::progression::apply_conditional(&mut sheet, &g, &ctx);
             }
         }
         if def.slot == GearSlot::Flask {

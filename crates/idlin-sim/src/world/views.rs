@@ -432,11 +432,38 @@ impl World {
 
     /// Canonical state hash for determinism checks (replays, snapshots, CI).
     pub fn state_hash(&self) -> u64 {
+        // Canonical fingerprint of all REPLAY-RELEVANT world state: enough that two
+        // worlds with the same hash compute the same future under the same inputs.
+        // Deliberate exclusions, each sound:
+        //  - Content-loaded constants (zone geometry/grid, gem/affix defs, the
+        //    zone-brain program) are immutable at runtime and already folded into
+        //    `content_hash`.
+        //  - The slot/bot allocator free-lists (`Zone::free`, `BotArena::free`)
+        //    are excluded: their ONLY observable effect is WHERE the next
+        //    entity/bot lands, and the slot/idx index is hashed per entity/bot
+        //    below — so any allocation divergence surfaces immediately as a
+        //    changed slot at the next spawn. They roundtrip via postcard, so
+        //    snapshot resume is exact. (`Zone::by_net` is NOT serialized at all —
+        //    it is a derived index rebuilt from `slots` on resume, so it can never
+        //    drift from the hashed slots it mirrors.)
+        //  - `intents.attack`/`pickup` are wiped by `clear_transient_intents` at the
+        //    top of every tick before any read, so their tick-boundary value cannot
+        //    affect the resumed sim.
+        //  - Server-level ferry state (pending arrivals) lives outside `World`; the
+        //    server snapshot's integrity is handled at that layer.
         let mut h = Fnv1a64::new();
         h.write_u64(self.seed);
         h.write_u64(self.content_hash);
         h.write_u64(self.tick);
         h.write_u32(self.next_net_id);
+        // Which zone this world runs (bots read it via SelfStatus), its level, and
+        // the zone's authored speech — all serialized World state.
+        h.write_u32(self.zone_idx);
+        h.write_u32(self.zone_level);
+        h.write_u64(self.zone_lines.len() as u64);
+        for line in &self.zone_lines {
+            h.write_bytes(line.as_bytes());
+        }
         for rng in [
             &self.rng_ai,
             &self.rng_combat,
@@ -475,12 +502,33 @@ impl World {
             h.write_u8(item.rarity as u8);
             h.write_u32(item.item_level);
             h.write_bytes(item.name.as_bytes());
+            // Flask charges are mutable runtime state (spent on drink, gained on
+            // kill); the rolled tier feeds equip requirements and bot-visible
+            // ReadItemMods. Both steer future behavior, so both are hashed.
+            h.write_u32(item.charges);
             h.write_u64(item.affixes.len() as u64);
             for ra in &item.affixes {
                 h.write_u32(ra.affix_idx);
+                h.write_u32(ra.tier);
                 h.write_u64(ra.values.len() as u64);
                 for &v in &ra.values {
                     h.write_i64(v);
+                }
+            }
+        };
+        // One grant-hashing routine for every site a `Grant` enters the canonical
+        // hash (#86): a grant is condition-capable, so its stat/layer/value AND
+        // condition are all future-relevant state. Used by both the active-buff
+        // arm and the projectile debuff payload so no carrier can drop a field.
+        let fold_grant = |h: &mut Fnv1a64, g: &crate::stats::Grant| {
+            h.write_u8(g.stat.idx() as u8);
+            h.write_u8(g.layer as u8);
+            h.write_i64(g.value);
+            match g.condition {
+                None => h.write_u8(0),
+                Some(crate::stats::Condition::WieldingWeaponClass(wc)) => {
+                    h.write_u8(1);
+                    h.write_u8(wc as u8);
                 }
             }
         };
@@ -490,6 +538,19 @@ impl World {
             h.write_i32(e.pos.x.raw());
             h.write_i32(e.pos.y.raw());
             h.write_u32(e.bot.map(|b| b + 1).unwrap_or(0));
+            // `move_to` persists across ticks (cleared only on arrival) and steers
+            // the next movement pass, so it is independent future state. `attack`/
+            // `pickup` are NOT hashed: `clear_transient_intents` wipes them at the
+            // top of every tick before they're read, so their tick-boundary value
+            // can never affect the resumed simulation.
+            match e.intents.move_to {
+                None => h.write_u8(0),
+                Some(v) => {
+                    h.write_u8(1);
+                    h.write_i32(v.x.raw());
+                    h.write_i32(v.y.raw());
+                }
+            }
             if let Some(c) = &e.combat {
                 h.write_i64(c.life);
                 h.write_i64(c.life_max);
@@ -514,6 +575,24 @@ impl World {
                 h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
                 h.write_i32(c.radius.raw());
+                // The remaining combat fields are derived for characters (refresh
+                // recomputes them from hashed inputs) but spawn-set for monsters
+                // (e.g. stagger/poise/knockback from rolled affixes), so the
+                // derived-vs-independent line is fragile — hash the WHOLE struct so
+                // no field can be omitted or argued.
+                h.write_i64(c.life_regen);
+                h.write_i64(c.mana_regen);
+                h.write_i64(c.leech_life);
+                h.write_i64(c.leech_mana);
+                h.write_i32(c.range.raw());
+                h.write_i64(c.stagger);
+                h.write_i64(c.poise);
+                h.write_i64(c.knockback_cu);
+                h.write_u32(c.use_ticks);
+                h.write_i32(c.speed_per_tick.raw());
+                h.write_u8(c.projectile as u8);
+                h.write_i64(c.item_rarity);
+                h.write_i64(c.item_quantity);
             }
             if let Some(ch) = &e.character {
                 h.write_bytes(ch.name.as_bytes());
@@ -552,6 +631,13 @@ impl World {
                 }
                 h.write_u64(ch.allocated.len() as u64);
                 for &n in &ch.allocated {
+                    h.write_u32(n);
+                }
+                // The declared build drives future auto-allocation as levels
+                // arrive, so it is independent future state, not derivable from
+                // `allocated` alone (two builds can share an allocation prefix).
+                h.write_u64(ch.build_plan.len() as u64);
+                for &n in &ch.build_plan {
                     h.write_u32(n);
                 }
                 for count in &ch.currency {
@@ -593,21 +679,43 @@ impl World {
                         h.write_u8(2);
                         h.write_u64(grants.len() as u64);
                         h.write_u32(*ticks_left);
+                        for g in grants {
+                            fold_grant(&mut h, g);
+                        }
                     }
                 }
             }
             if let Some(m) = &e.monster {
                 h.write_u32(m.def_idx);
+                h.write_u32(m.pack_idx);
                 h.write_u8(m.rarity as u8);
                 h.write_u32(m.level);
                 h.write_u8(m.hostile as u8);
                 h.write_i32(m.anchor.x.raw());
                 h.write_i32(m.anchor.y.raw());
                 h.write_u64(m.decay_at.unwrap_or(0));
+                h.write_bytes(m.display_name.as_bytes());
+                // Rolled spawn mods are independent persisted state (their EFFECT
+                // shows in the derived combat stats above, but their identity does
+                // not), just like the affixes on a character's items.
+                h.write_u64(m.affixes.len() as u64);
+                for ra in &m.affixes {
+                    h.write_u32(ra.affix_idx);
+                    h.write_u32(ra.tier);
+                    h.write_u64(ra.values.len() as u64);
+                    for &v in &ra.values {
+                        h.write_i64(v);
+                    }
+                }
                 for sg in &m.skills {
                     h.write_u32(sg.gem.gem_idx);
                     h.write_u32(sg.gem.level);
                     h.write_u32(sg.cooldown_left);
+                    h.write_u64(sg.supports.len() as u64);
+                    for sup in &sg.supports {
+                        h.write_u32(sup.gem_idx);
+                        h.write_u32(sup.level);
+                    }
                 }
             }
             if let Some(l) = &e.loot {
@@ -642,9 +750,52 @@ impl World {
             h.write_i32(p.vel.x.raw());
             h.write_i32(p.vel.y.raw());
             h.write_i32(p.remaining.raw());
+            h.write_i32(p.radius.raw());
             h.write_u32(p.source);
-            h.write_u32(p.pierce);
+            h.write_bytes(p.source_name.as_bytes());
+            h.write_u8(p.source_is_char as u8);
+            h.write_u8(p.hostile_to_players as u8);
             h.write_u8(p.spell as u8);
+            h.write_i64(p.accuracy);
+            for d in p.damage {
+                h.write_i64(d);
+            }
+            h.write_i64(p.crit_bp);
+            h.write_i64(p.crit_multi);
+            h.write_u32(p.pierce);
+            // Pierce state: which targets this projectile already passed through —
+            // it changes whether the next overlap connects, so it is future state.
+            h.write_u64(p.already_hit.len() as u64);
+            for id in &p.already_hit {
+                h.write_u32(*id);
+            }
+            // On-impact payload: a DoT and a debuff (condition-capable grants,
+            // #86) are applied when the projectile lands, so two otherwise
+            // identical in-flight projectiles with different payloads are
+            // different future state and must hash apart.
+            match &p.dot {
+                None => h.write_u8(0),
+                Some((dtype, per_second, ticks, skill)) => {
+                    h.write_u8(1);
+                    h.write_u8(*dtype);
+                    h.write_i64(*per_second);
+                    h.write_u32(*ticks);
+                    h.write_u32(*skill);
+                }
+            }
+            match &p.debuff {
+                None => h.write_u8(0),
+                Some((grants, duration)) => {
+                    h.write_u8(1);
+                    h.write_u64(grants.len() as u64);
+                    h.write_u32(*duration);
+                    for g in grants {
+                        fold_grant(&mut h, g);
+                    }
+                }
+            }
+            h.write_i64(p.stagger);
+            h.write_i64(p.knockback_cu);
         }
         for ex in &self.zone.exits {
             h.write_i32(ex.pos.x.raw());

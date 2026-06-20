@@ -13,7 +13,7 @@ use crate::entity::{
     SocketedGem,
 };
 use crate::fixed::{Fx, FxV2};
-use crate::stats::{Grant, Stat, StatSheet, apply_resist, hit_chance_bp, mitigate_phys};
+use crate::stats::{Grant, apply_resist, hit_chance_bp, mitigate_phys};
 use crate::zone::Projectile;
 use idlin_content::{GemKind, SkillKind, SkillShape, SupportEffect};
 
@@ -576,33 +576,18 @@ impl World {
         let level = sg.gem.level;
         let is_spell = gem_def.skill_kind == SkillKind::Spell;
 
-        // Supports: behavior effects folded down, plus legacy stat grants on a
-        // per-use sheet.
+        // Supports: behavior effects (more/added/speed/proj/etc.) folded down.
         let mods = self.support_mods(&sg.supports);
 
-        let mut sheet = StatSheet::new();
-        for sup in &sg.supports {
-            let sdef = &self.content.gems[sup.gem_idx as usize];
-            for g in &sdef.grants {
-                sheet.apply(g);
-            }
-        }
-
         // Damage: attacks scale the weapon plus the gem's own flat; spells are
-        // the gem's flat alone.
+        // the gem's flat alone. (Supports contribute via `mods`; the old per-use
+        // legacy-grant sheet went away with the dead `GemDef.grants`, #86.)
         let added = [
             gem_def.added_phys.at(level),
             gem_def.added_fire.at(level),
             gem_def.added_cold.at(level),
             gem_def.added_lightning.at(level),
             gem_def.added_chaos.at(level),
-        ];
-        let stats = [
-            Stat::DamagePhys,
-            Stat::DamageFire,
-            Stat::DamageCold,
-            Stat::DamageLightning,
-            Stat::DamageChaos,
         ];
         let mut damage = [0i64; DMG_COUNT];
         for i in 0..DMG_COUNT {
@@ -611,7 +596,7 @@ impl World {
             } else {
                 char_damage[i] * gem_def.coeff_bp / 10000
             };
-            damage[i] = sheet.value(stats[i], weapon_part + added[i] + mods.added[i]);
+            damage[i] = (weapon_part + added[i] + mods.added[i]).max(0);
             damage[i] = damage[i] * mods.more_bp[i] / 10000;
         }
 
@@ -3167,6 +3152,655 @@ mod tests {
     }
 
     #[test]
+    fn state_hash_fingerprints_buff_grant_internals() {
+        // #86 regression: an active buff's grants are now condition-capable, and a
+        // grant's stat/layer/value/condition are all future-relevant state (a
+        // condition can flip on equip and change derivation). state_hash must
+        // distinguish buffs that differ in ANY of them. Mutation: drop the
+        // grant-hashing loop in views.rs (leaving only len/ticks_left) and every
+        // assert_ne! below collapses to equal — this test fails.
+        use crate::stats::{Condition, Grant, Layer, Stat, WeaponClass};
+        let content = content();
+        let hash_with = |grant: Grant| {
+            let mut world = World::new(31_41, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .effects
+                .push(ActiveEffect::Buff {
+                    grants: vec![grant],
+                    ticks_left: 50,
+                });
+            world.state_hash()
+        };
+        let base = Grant::new(Stat::Strength, Layer::Added, 10);
+        let h_base = hash_with(base);
+        assert_eq!(
+            h_base,
+            hash_with(base),
+            "identical buff grants must hash identically"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant {
+                condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+                ..base
+            }),
+            "a buff grant's condition must change the state hash"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant::new(Stat::Strength, Layer::Added, 11)),
+            "a buff grant's value must change the state hash"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant::new(Stat::Dexterity, Layer::Added, 10)),
+            "a buff grant's stat must change the state hash"
+        );
+        assert_ne!(
+            h_base,
+            hash_with(Grant {
+                layer: Layer::Increased,
+                ..base
+            }),
+            "a buff grant's layer must change the state hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_projectile_payload() {
+        // Determinism (§4): the projectile hash once fingerprinted only motion
+        // (pos/vel/remaining/source/pierce/spell), silently dropping the on-impact
+        // payload — damage, crit, dot, debuff grants, and pierce's already-hit
+        // set. Two worlds with identical in-flight motion but different payloads
+        // hashed alike, then diverged at impact. This test mutates EVERY field the
+        // projectile hash loop writes, one assert_ne! each; dropping any one field
+        // from the loop fails the matching assert.
+        use crate::stats::{Condition, Grant, Layer, Stat, WeaponClass};
+        let content = content();
+        let base_proj = || Projectile {
+            pos: FxV2::new(Fx::from_int(1), Fx::from_int(2)),
+            vel: FxV2::new(Fx::ONE, Fx::ZERO),
+            remaining: Fx::from_int(10),
+            radius: Fx::from_int(1),
+            source: 7,
+            source_name: "A".into(),
+            source_is_char: true,
+            hostile_to_players: false,
+            spell: true,
+            accuracy: 0,
+            damage: [0; DMG_COUNT],
+            crit_bp: 0,
+            crit_multi: 150,
+            pierce: 1,
+            already_hit: Vec::new(),
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+        };
+        let hash_with = |mutate: &dyn Fn(&mut Projectile)| {
+            let mut world = World::new(27_18, &content);
+            let mut p = base_proj();
+            mutate(&mut p);
+            world.zone.projectiles.push(p);
+            world.state_hash()
+        };
+        let base = hash_with(&|_p| {});
+        assert_eq!(
+            base,
+            hash_with(&|_p| {}),
+            "identical projectiles must hash identically"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.damage[0] = 6),
+            "projectile damage must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.crit_bp = 500),
+            "projectile crit must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.already_hit.push(9)),
+            "projectile pierce state must change the hash"
+        );
+        // Dot payload: presence AND each tuple field (dtype, per_second, ticks,
+        // skill) is hashed — compare from a non-None base so each field is proven.
+        assert_ne!(
+            base,
+            hash_with(&|p| p.dot = Some((1, 3, 20, 0))),
+            "projectile dot presence must change the hash"
+        );
+        let dot = |t: (u8, i64, u32, u32)| hash_with(&move |p| p.dot = Some(t));
+        let dot_base = dot((1, 3, 20, 5));
+        assert_ne!(
+            dot_base,
+            dot((2, 3, 20, 5)),
+            "projectile dot dtype must change the hash"
+        );
+        assert_ne!(
+            dot_base,
+            dot((1, 4, 20, 5)),
+            "projectile dot per_second must change the hash"
+        );
+        assert_ne!(
+            dot_base,
+            dot((1, 3, 21, 5)),
+            "projectile dot ticks must change the hash"
+        );
+        assert_ne!(
+            dot_base,
+            dot((1, 3, 20, 6)),
+            "projectile dot skill must change the hash"
+        );
+        // Debuff payload: presence, grant internals (via fold_grant), AND duration.
+        assert_ne!(
+            base,
+            hash_with(&|p| p.debuff = Some((
+                vec![Grant::new(Stat::MoveSpeed, Layer::Increased, -3000)],
+                30
+            ))),
+            "projectile debuff grants must change the hash"
+        );
+        let g = Grant::new(Stat::Strength, Layer::Added, 1);
+        assert_ne!(
+            hash_with(&|p| p.debuff = Some((vec![g], 30))),
+            hash_with(&|p| p.debuff = Some((vec![g], 31))),
+            "a projectile debuff duration must change the hash"
+        );
+        assert_ne!(
+            hash_with(&|p| p.debuff = Some((vec![g], 30))),
+            hash_with(&|p| p.debuff = Some((
+                vec![Grant {
+                    condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+                    ..g
+                }],
+                30
+            ))),
+            "a projectile debuff grant's condition must change the hash"
+        );
+        // Every remaining hashed field — motion, identity, flags, reactions.
+        assert_ne!(
+            base,
+            hash_with(&|p| p.pos.x = Fx::from_int(9)),
+            "projectile pos must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.vel.y = Fx::from_int(9)),
+            "projectile vel must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.remaining = Fx::from_int(99)),
+            "projectile remaining must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.radius = Fx::from_int(9)),
+            "projectile radius must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.source = 99),
+            "projectile source must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.source_name = "Z".into()),
+            "projectile source_name must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.source_is_char = false),
+            "projectile source_is_char must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.hostile_to_players = true),
+            "projectile hostile_to_players must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.spell = false),
+            "projectile spell flag must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.accuracy = 500),
+            "projectile accuracy must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.crit_multi = 999),
+            "projectile crit_multi must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.pierce = 9),
+            "projectile pierce must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.stagger = 9),
+            "projectile stagger must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.knockback_cu = 9),
+            "projectile knockback must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_entity_persistent_intents_and_build() {
+        // Determinism (§4): `intents.move_to` (cleared only on arrival) and
+        // `build_plan` (drives future auto-allocation) are independent persistent
+        // state — not derivable from other hashed fields — so the fingerprint must
+        // distinguish entities that differ in them. Mutation: drop either write in
+        // views.rs and the matching assert_ne! collapses to equal.
+        use crate::fixed::{Fx, FxV2};
+        let content = content();
+        let build = |mutate: &dyn Fn(&mut World, usize)| {
+            let mut world = World::new(5_55, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            // Start from a clean slate so the mutation is the only difference.
+            {
+                let e = world.zone.get_mut(slot).unwrap();
+                e.intents.move_to = None;
+                e.character.as_mut().unwrap().build_plan.clear();
+            }
+            mutate(&mut world, slot);
+            world.state_hash()
+        };
+        let base = build(&|_w, _s| {});
+        assert_eq!(
+            base,
+            build(&|_w, _s| {}),
+            "identical entities must hash identically"
+        );
+        assert_ne!(
+            base,
+            build(&|w, s| w.zone.get_mut(s).unwrap().intents.move_to =
+                Some(FxV2::new(Fx::from_int(3), Fx::from_int(4)))),
+            "intents.move_to must change the state hash"
+        );
+        assert_ne!(
+            base,
+            build(&|w, s| w
+                .zone
+                .get_mut(s)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .build_plan = vec![1, 2, 3]),
+            "build_plan must change the state hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_combat_stats() {
+        // The hash fingerprints the WHOLE CombatStats — derived for characters
+        // (recomputed by refresh), but spawn-set for monsters (stagger/poise/
+        // knockback from rolled affixes), so the derived-vs-independent line is
+        // fragile and every field is hashed. Mutation: drop any field's write from
+        // the combat block in views.rs and its assert_ne! fails.
+        use crate::entity::CombatStats;
+        use crate::fixed::Fx;
+        let content = content();
+        let hash_with = |mutate: &dyn Fn(&mut CombatStats)| {
+            let mut world = World::new(6_06, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            mutate(c);
+            world.state_hash()
+        };
+        let base = hash_with(&|_c| {});
+        assert_eq!(
+            base,
+            hash_with(&|_c| {}),
+            "identical combat stats must hash identically"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.life_regen += 1),
+            "life_regen must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.mana_regen += 1),
+            "mana_regen must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.leech_life += 1),
+            "leech_life must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.leech_mana += 1),
+            "leech_mana must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.range += Fx::from_int(1)),
+            "range must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.stagger += 1),
+            "stagger must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.poise += 1),
+            "poise must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.knockback_cu += 1),
+            "knockback_cu must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.use_ticks += 1),
+            "use_ticks must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.speed_per_tick += Fx::from_int(1)),
+            "speed_per_tick must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.projectile = !c.projectile),
+            "projectile flag must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.item_rarity += 1),
+            "item_rarity must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.item_quantity += 1),
+            "item_quantity must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_monster_state() {
+        // Independent monster state: the pack link, rolled spawn affixes, composed
+        // name, and skill supports. Mutation: drop any from the monster block in
+        // views.rs and its assert_ne! fails.
+        use crate::entity::{GemInstance, MonsterState, RolledAffix, SocketedGem};
+        let content = content();
+        let hash_with = |mutate: &dyn Fn(&mut MonsterState)| {
+            let mut world = World::new(7_07, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = world
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.is_some())
+                .map(|(s, _)| s)
+                .expect("a monster spawned");
+            let m = world.zone.get_mut(slot).unwrap().monster.as_mut().unwrap();
+            mutate(m);
+            world.state_hash()
+        };
+        let base = hash_with(&|_m| {});
+        assert_eq!(
+            base,
+            hash_with(&|_m| {}),
+            "identical monster state must hash identically"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|m| m.pack_idx += 1),
+            "monster pack_idx must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|m| m.display_name = "Z".into()),
+            "monster display_name must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|m| m.affixes.push(RolledAffix {
+                affix_idx: 0,
+                values: vec![5],
+                tier: 0,
+            })),
+            "monster rolled affixes must change the hash"
+        );
+        // The rolled tier is part of the affix identity — isolate it.
+        assert_ne!(
+            hash_with(&|m| m.affixes.push(RolledAffix {
+                affix_idx: 0,
+                values: vec![5],
+                tier: 0
+            })),
+            hash_with(&|m| m.affixes.push(RolledAffix {
+                affix_idx: 0,
+                values: vec![5],
+                tier: 1
+            })),
+            "monster affix tier must change the hash"
+        );
+        // Isolate supports: same skill gem, with vs without a support.
+        assert_ne!(
+            hash_with(&|m| m.skills.push(SocketedGem {
+                gem: GemInstance {
+                    gem_idx: 0,
+                    level: 1,
+                    xp: 0
+                },
+                cooldown_left: 0,
+                supports: vec![],
+            })),
+            hash_with(&|m| m.skills.push(SocketedGem {
+                gem: GemInstance {
+                    gem_idx: 0,
+                    level: 1,
+                    xp: 0
+                },
+                cooldown_left: 0,
+                supports: vec![GemInstance {
+                    gem_idx: 1,
+                    level: 1,
+                    xp: 0
+                }],
+            })),
+            "monster skill supports must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_world_zone_identity() {
+        // Which zone the world runs (read by bots via SelfStatus), its level, and
+        // the zone's authored speech are serialized World state. Mutation: drop any
+        // from the hash header in views.rs and its assert_ne! fails.
+        let content = content();
+        let build = |mutate: &dyn Fn(&mut World)| {
+            let mut world = World::new(8_08, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            mutate(&mut world);
+            world.state_hash()
+        };
+        let base = build(&|_w| {});
+        assert_eq!(
+            base,
+            build(&|_w| {}),
+            "identical worlds must hash identically"
+        );
+        assert_ne!(
+            base,
+            build(&|w| w.zone_idx += 1),
+            "zone_idx must change the hash"
+        );
+        assert_ne!(
+            base,
+            build(&|w| w.zone_level += 1),
+            "zone_level must change the hash"
+        );
+        assert_ne!(
+            base,
+            build(&|w| w.zone_lines.push("x".into())),
+            "zone_lines must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_item_charges_and_affix_tier() {
+        // `fold_item` covers every item the hash visits (bag, equipment, ground
+        // loot). Flask charges are mutable runtime state; the rolled affix tier
+        // feeds requirements and bot-visible ReadItemMods. Mutation: drop either
+        // write from fold_item in views.rs and the matching assert_ne! fails.
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        let content = content();
+        let hash_with = |charges: u32, tier: u32| {
+            let mut world = World::new(9_09, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            let item = Item {
+                base_idx: 0,
+                rarity: Rarity::Magic,
+                item_level: 1,
+                affixes: vec![RolledAffix {
+                    affix_idx: 0,
+                    values: vec![5],
+                    tier,
+                }],
+                name: "Probe".into(),
+                charges,
+            };
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .inventory
+                .push(PlacedItem {
+                    item: BagItem::Gear(item),
+                    x: 0,
+                    y: 0,
+                });
+            world.state_hash()
+        };
+        let base = hash_with(3, 0);
+        assert_eq!(
+            base,
+            hash_with(3, 0),
+            "identical items must hash identically"
+        );
+        assert_ne!(base, hash_with(4, 0), "item charges must change the hash");
+        assert_ne!(
+            base,
+            hash_with(3, 1),
+            "rolled affix tier must change the hash"
+        );
+    }
+
+    #[test]
+    fn by_net_index_is_rebuilt_on_resume() {
+        // `Zone::by_net` is `#[serde(skip)]`, so it deserializes empty; attach_content
+        // must rebuild it from slots or post-resume net_id lookups (inspect,
+        // syscalls) break. Mutation: drop the rebuild_net_index call in
+        // attach_content and get_net returns None here.
+        let content = content();
+        let mut world = World::new(13_13, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "A".into(),
+                program,
+            }],
+        });
+        let (net, slot) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .map(|(s, e)| (e.net_id, s))
+            .expect("a character joined");
+        let bytes = postcard::to_allocvec(&world).expect("serialize");
+        let mut restored: World = postcard::from_bytes(&bytes).expect("deserialize");
+        restored.attach_content(&content).expect("content matches");
+        assert_eq!(
+            restored.zone.slot_of(net),
+            Some(slot),
+            "by_net must resolve the net_id to its slot after resume"
+        );
+        assert_eq!(
+            restored.zone.get_net(net).map(|e| e.net_id),
+            Some(net),
+            "get_net must find the entity after resume"
+        );
+    }
+
+    #[test]
     fn attack_skills_demand_an_eligible_weapon() {
         let content = content();
         let mut world = World::new(99_99, &content);
@@ -3273,16 +3907,8 @@ mod tests {
         chill.shape = idlin_content::SkillShape::Target;
         chill.debuff = Some(idlin_content::BuffDef {
             grants: vec![
-                Grant {
-                    stat: Stat::MoveSpeed,
-                    layer: Layer::Increased,
-                    value: -3000,
-                },
-                Grant {
-                    stat: Stat::AttackSpeed,
-                    layer: Layer::Increased,
-                    value: -3000,
-                },
+                Grant::new(Stat::MoveSpeed, Layer::Increased, -3000),
+                Grant::new(Stat::AttackSpeed, Layer::Increased, -3000),
             ],
             duration_ticks: 20,
         });

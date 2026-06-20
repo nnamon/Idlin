@@ -1919,7 +1919,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "added_embers",
         "kind": "support",
         "life_cost": {
@@ -1979,7 +1978,6 @@
         "debuff": null,
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "arc",
         "kind": "skill",
         "life_cost": {
@@ -2039,7 +2037,6 @@
         "debuff": null,
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "cleave",
         "kind": "skill",
         "life_cost": {
@@ -2103,7 +2100,6 @@
         "debuff": null,
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "ember_bolt",
         "kind": "skill",
         "life_cost": {
@@ -2165,11 +2161,13 @@
           "duration_ticks": 30,
           "grants": [
             {
+              "condition": null,
               "layer": "increased",
               "stat": "move_speed",
               "value": -2500
             },
             {
+              "condition": null,
               "layer": "increased",
               "stat": "attack_speed",
               "value": -2500
@@ -2178,7 +2176,6 @@
         },
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "frost_nova",
         "kind": "skill",
         "life_cost": {
@@ -2251,7 +2248,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "heavier_blows",
         "kind": "support",
         "life_cost": {
@@ -2310,7 +2306,6 @@
         "debuff": null,
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "heavy_swing",
         "kind": "skill",
         "life_cost": {
@@ -2384,7 +2379,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "lingering",
         "kind": "support",
         "life_cost": {
@@ -2450,7 +2444,6 @@
           }
         },
         "effects": [],
-        "grants": [],
         "id": "plague_cloud",
         "kind": "skill",
         "life_cost": {
@@ -2512,7 +2505,6 @@
         "debuff": null,
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "power_shot",
         "kind": "skill",
         "life_cost": {
@@ -2581,7 +2573,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "quickening",
         "kind": "support",
         "life_cost": {
@@ -2657,7 +2648,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "split_quiver",
         "kind": "support",
         "life_cost": {
@@ -2727,7 +2717,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "swift_casting",
         "kind": "support",
         "life_cost": {
@@ -2781,6 +2770,7 @@
           "duration_ticks": 100,
           "grants": [
             {
+              "condition": null,
               "layer": "increased",
               "stat": "damage_phys",
               "value": 2500
@@ -2795,7 +2785,6 @@
         "debuff": null,
         "dot": null,
         "effects": [],
-        "grants": [],
         "id": "war_cry",
         "kind": "skill",
         "life_cost": {
@@ -2866,7 +2855,6 @@
             }
           }
         ],
-        "grants": [],
         "id": "widening",
         "kind": "support",
         "life_cost": {
@@ -3669,6 +3657,7 @@
         "build_ref": 30,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "armour",
             "value": 30
@@ -3690,6 +3679,7 @@
         "build_ref": 31,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "life",
             "value": 800
@@ -3711,6 +3701,7 @@
         "build_ref": 32,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "armour",
             "value": 1000
@@ -3732,11 +3723,13 @@
         "build_ref": 33,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "armour",
             "value": 2000
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "life",
             "value": 20
@@ -3758,6 +3751,7 @@
         "build_ref": 34,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "life",
             "value": 18
@@ -3779,11 +3773,13 @@
         "build_ref": 25,
         "grants": [
           {
+            "condition": null,
             "layer": "more",
             "stat": "damage_phys",
             "value": 2500
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "armour",
             "value": -1500
@@ -3805,11 +3801,13 @@
         "build_ref": 95,
         "grants": [
           {
+            "condition": null,
             "layer": "more",
             "stat": "damage_chaos",
             "value": 3000
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "life",
             "value": -1000
@@ -3831,6 +3829,7 @@
         "build_ref": 50,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "accuracy",
             "value": 20
@@ -3852,6 +3851,7 @@
         "build_ref": 51,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "attack_speed",
             "value": 600
@@ -3873,6 +3873,7 @@
         "build_ref": 52,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "accuracy",
             "value": 30
@@ -3894,11 +3895,13 @@
         "build_ref": 53,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "accuracy",
             "value": 40
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "attack_speed",
             "value": 1000
@@ -3920,6 +3923,7 @@
         "build_ref": 54,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_phys",
             "value": 1000
@@ -3941,6 +3945,7 @@
         "build_ref": 40,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity",
             "value": 10
@@ -3960,6 +3965,7 @@
         "build_ref": 41,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity",
             "value": 10
@@ -3981,11 +3987,13 @@
         "build_ref": 42,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity",
             "value": 20
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "evasion",
             "value": 10
@@ -4007,16 +4015,19 @@
         "build_ref": 80,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_fire",
             "value": 1000
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_cold",
             "value": 1000
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_lightning",
             "value": 1000
@@ -4038,16 +4049,19 @@
         "build_ref": 81,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_fire",
             "value": 1
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_cold",
             "value": 1
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_lightning",
             "value": 1
@@ -4069,16 +4083,19 @@
         "build_ref": 82,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_fire",
             "value": 1000
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_cold",
             "value": 1000
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_lightning",
             "value": 1000
@@ -4100,31 +4117,37 @@
         "build_ref": 83,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_fire",
             "value": 2200
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_cold",
             "value": 2200
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_lightning",
             "value": 2200
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_fire",
             "value": 1
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_cold",
             "value": 1
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_lightning",
             "value": 1
@@ -4146,16 +4169,19 @@
         "build_ref": 84,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_fire",
             "value": 1200
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_cold",
             "value": 1200
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_lightning",
             "value": 1200
@@ -4177,11 +4203,13 @@
         "build_ref": 55,
         "grants": [
           {
+            "condition": null,
             "layer": "more",
             "stat": "accuracy",
             "value": 5000
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "evasion",
             "value": -1000
@@ -4203,6 +4231,7 @@
         "build_ref": 70,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "intelligence",
             "value": 10
@@ -4222,6 +4251,7 @@
         "build_ref": 71,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "intelligence",
             "value": 10
@@ -4243,21 +4273,25 @@
         "build_ref": 72,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "intelligence",
             "value": 20
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_fire",
             "value": 500
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_cold",
             "value": 500
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_lightning",
             "value": 500
@@ -4279,11 +4313,13 @@
         "build_ref": 35,
         "grants": [
           {
+            "condition": null,
             "layer": "more",
             "stat": "armour",
             "value": 4000
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "attack_speed",
             "value": -1000
@@ -4305,21 +4341,25 @@
         "build_ref": 85,
         "grants": [
           {
+            "condition": null,
             "layer": "more",
             "stat": "damage_fire",
             "value": 3000
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "damage_cold",
             "value": 3000
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "damage_lightning",
             "value": 3000
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "armour",
             "value": -1000
@@ -4341,11 +4381,13 @@
         "build_ref": 65,
         "grants": [
           {
+            "condition": null,
             "layer": "more",
             "stat": "evasion",
             "value": 3500
           },
           {
+            "condition": null,
             "layer": "more",
             "stat": "life",
             "value": -1200
@@ -4367,6 +4409,7 @@
         "build_ref": 90,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_chaos",
             "value": 1200
@@ -4388,6 +4431,7 @@
         "build_ref": 91,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_chaos",
             "value": 3
@@ -4409,6 +4453,7 @@
         "build_ref": 92,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "resist_chaos",
             "value": 1000
@@ -4430,11 +4475,13 @@
         "build_ref": 93,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_chaos",
             "value": 2200
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_chaos",
             "value": 3
@@ -4456,6 +4503,7 @@
         "build_ref": 94,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_chaos",
             "value": 1200
@@ -4477,11 +4525,13 @@
         "build_ref": 110,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "strength",
             "value": 5
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "intelligence",
             "value": 5
@@ -4611,6 +4661,7 @@
         "build_ref": 10,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "strength",
             "value": 10
@@ -4630,6 +4681,7 @@
         "build_ref": 11,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "strength",
             "value": 10
@@ -4651,11 +4703,13 @@
         "build_ref": 12,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "strength",
             "value": 20
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "life",
             "value": 10
@@ -4677,11 +4731,13 @@
         "build_ref": 112,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "strength",
             "value": 5
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity",
             "value": 5
@@ -4704,11 +4760,13 @@
         "build_ref": 111,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "dexterity",
             "value": 5
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "intelligence",
             "value": 5
@@ -4731,6 +4789,7 @@
         "build_ref": 20,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_phys",
             "value": 800
@@ -4752,6 +4811,7 @@
         "build_ref": 21,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "damage_phys",
             "value": 4
@@ -4773,6 +4833,7 @@
         "build_ref": 22,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "attack_speed",
             "value": 600
@@ -4794,11 +4855,13 @@
         "build_ref": 23,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_phys",
             "value": 2000
           },
           {
+            "condition": null,
             "layer": "added",
             "stat": "life",
             "value": 15
@@ -4820,6 +4883,7 @@
         "build_ref": 24,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "damage_phys",
             "value": 1000
@@ -4841,6 +4905,7 @@
         "build_ref": 60,
         "grants": [
           {
+            "condition": null,
             "layer": "added",
             "stat": "evasion",
             "value": 20
@@ -4862,6 +4927,7 @@
         "build_ref": 61,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "move_speed",
             "value": 700
@@ -4883,6 +4949,7 @@
         "build_ref": 62,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "evasion",
             "value": 1000
@@ -4904,11 +4971,13 @@
         "build_ref": 63,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "evasion",
             "value": 2000
           },
           {
+            "condition": null,
             "layer": "increased",
             "stat": "move_speed",
             "value": 600
@@ -4930,6 +4999,7 @@
         "build_ref": 64,
         "grants": [
           {
+            "condition": null,
             "layer": "increased",
             "stat": "attack_speed",
             "value": 800
