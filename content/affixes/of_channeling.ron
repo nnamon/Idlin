@@ -1,0 +1,14 @@
+// "... of Channeling" — mana regeneration on caster gear (flat per second).
+AffixDef(
+    id: "of_channeling",
+    public: true,
+    name: "of Channeling",
+    kind: suffix,
+    pool: "arcana",
+    weight: 75,
+    effects: [(stat: mana_regen, layer: added)],
+    tiers: [
+        (ilvl: 1, name: "of Channeling", weight: 100, rolls: [(min: 2, max: 4)]),
+        (ilvl: 4, name: "of the Wellspring", weight: 45, rolls: [(min: 5, max: 8)]),
+    ],
+)

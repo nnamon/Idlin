@@ -472,6 +472,84 @@
         "effects": [
           {
             "condition": null,
+            "layer": "increased",
+            "stat": "cast_speed"
+          }
+        ],
+        "id": "of_casting",
+        "kind": "suffix",
+        "name": "of Casting",
+        "num": 25165856,
+        "pool": "arcana",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Casting",
+            "rolls": [
+              {
+                "max": 1400,
+                "min": 800
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Conjuring",
+            "rolls": [
+              {
+                "max": 2200,
+                "min": 1401
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 60
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "mana_regen"
+          }
+        ],
+        "id": "of_channeling",
+        "kind": "suffix",
+        "name": "of Channeling",
+        "num": 25165857,
+        "pool": "arcana",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Channeling",
+            "rolls": [
+              {
+                "max": 4,
+                "min": 2
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of the Wellspring",
+            "rolls": [
+              {
+                "max": 8,
+                "min": 5
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 75
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
             "layer": "added",
             "stat": "knockback"
           }
@@ -595,6 +673,97 @@
           }
         ],
         "weight": 100
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "damage_cold"
+          }
+        ],
+        "id": "of_frost",
+        "kind": "suffix",
+        "name": "of Frost",
+        "num": 25165858,
+        "pool": "weapon",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Frost",
+            "rolls": [
+              {
+                "max": 5,
+                "min": 2
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Rime",
+            "rolls": [
+              {
+                "max": 11,
+                "min": 6
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 80
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "increased",
+            "stat": "item_rarity"
+          },
+          {
+            "condition": null,
+            "layer": "increased",
+            "stat": "item_quantity"
+          }
+        ],
+        "id": "of_greed",
+        "kind": "suffix",
+        "name": "of Greed",
+        "num": 25165859,
+        "pool": "find",
+        "tiers": [
+          {
+            "ilvl": 3,
+            "name": "of Greed",
+            "rolls": [
+              {
+                "max": 1200,
+                "min": 600
+              },
+              {
+                "max": 600,
+                "min": 300
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 7,
+            "name": "of Excess",
+            "rolls": [
+              {
+                "max": 2000,
+                "min": 1300
+              },
+              {
+                "max": 1100,
+                "min": 700
+              }
+            ],
+            "weight": 40
+          }
+        ],
+        "weight": 20
       },
       {
         "effects": [
@@ -835,6 +1004,84 @@
           {
             "condition": null,
             "layer": "added",
+            "stat": "life_regen"
+          }
+        ],
+        "id": "of_renewal",
+        "kind": "suffix",
+        "name": "of Renewal",
+        "num": 25165860,
+        "pool": "armour",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Renewal",
+            "rolls": [
+              {
+                "max": 5,
+                "min": 2
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Regrowth",
+            "rolls": [
+              {
+                "max": 10,
+                "min": 6
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 75
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "crit_multi"
+          }
+        ],
+        "id": "of_ruin",
+        "kind": "suffix",
+        "name": "of Ruin",
+        "num": 25165861,
+        "pool": "weapon",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Ruin",
+            "rolls": [
+              {
+                "max": 1800,
+                "min": 1000
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Annihilation",
+            "rolls": [
+              {
+                "max": 2800,
+                "min": 1801
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 50
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
             "stat": "life"
           }
         ],
@@ -868,6 +1115,125 @@
           }
         ],
         "weight": 100
+      },
+      {
+        "effects": [
+          {
+            "condition": {
+              "wielding_weapon_class": "melee"
+            },
+            "layer": "increased",
+            "stat": "damage_phys"
+          }
+        ],
+        "id": "of_savagery",
+        "kind": "suffix",
+        "name": "of Savagery",
+        "num": 25165862,
+        "pool": "weapon",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Savagery",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Butchery",
+            "rolls": [
+              {
+                "max": 4000,
+                "min": 2501
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 50
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "resist_chaos"
+          }
+        ],
+        "id": "of_sealing",
+        "kind": "suffix",
+        "name": "of Sealing",
+        "num": 25165863,
+        "pool": "armour",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Sealing",
+            "rolls": [
+              {
+                "max": 1200,
+                "min": 500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Purity",
+            "rolls": [
+              {
+                "max": 2200,
+                "min": 1300
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 70
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "damage_lightning"
+          }
+        ],
+        "id": "of_sparks",
+        "kind": "suffix",
+        "name": "of Sparks",
+        "num": 25165864,
+        "pool": "weapon",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Sparks",
+            "rolls": [
+              {
+                "max": 5,
+                "min": 2
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 4,
+            "name": "of Arcing",
+            "rolls": [
+              {
+                "max": 11,
+                "min": 6
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 80
       },
       {
         "effects": [
@@ -1087,6 +1453,58 @@
           }
         ],
         "weight": 70
+      },
+      {
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "leech_life"
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "leech_mana"
+          }
+        ],
+        "id": "of_the_leech",
+        "kind": "suffix",
+        "name": "of the Leech",
+        "num": 25165865,
+        "pool": "weapon",
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of the Leech",
+            "rolls": [
+              {
+                "max": 200,
+                "min": 100
+              },
+              {
+                "max": 300,
+                "min": 150
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 5,
+            "name": "of the Vampire",
+            "rolls": [
+              {
+                "max": 350,
+                "min": 201
+              },
+              {
+                "max": 500,
+                "min": 301
+              }
+            ],
+            "weight": 35
+          }
+        ],
+        "weight": 50
       },
       {
         "effects": [
@@ -4533,7 +4951,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "7b686952d98e0ab0",
+  "fingerprint": "0c42b0cdf653993c",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23
 }

@@ -1,0 +1,19 @@
+// "... of Greed" — a HYBRID find suffix (#86): one roll grants both item rarity
+// and quantity. Rarer than the single find mods (of_plunder / of_hoarding) — a
+// chase roll. Drives the KILLER's drops (find factors are read at kill time).
+AffixDef(
+    id: "of_greed",
+    public: true,
+    name: "of Greed",
+    kind: suffix,
+    pool: "find",
+    weight: 20,
+    effects: [
+        (stat: item_rarity, layer: increased),
+        (stat: item_quantity, layer: increased),
+    ],
+    tiers: [
+        (ilvl: 3, name: "of Greed", weight: 100, rolls: [(min: 600, max: 1200), (min: 300, max: 600)]),
+        (ilvl: 7, name: "of Excess", weight: 40, rolls: [(min: 1300, max: 2000), (min: 700, max: 1100)]),
+    ],
+)

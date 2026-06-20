@@ -532,9 +532,10 @@ impl AffixDef {
     }
 
     /// The grants at FACE VALUE — conditions ignored (as if every one holds).
-    /// For context-free uses (item scoring, attribute totals) where no entity
-    /// state exists to evaluate against; the derive path uses
-    /// `conditional_grants` + an `EvalContext` instead.
+    /// For the one context-free use left, `attribute_totals` (gear requirements),
+    /// which only reads attributes — and conditional attributes are rejected at
+    /// load. Every context-bearing path (character/monster derive, item scoring)
+    /// uses `conditional_grants` + an `EvalContext` instead.
     pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
         self.conditional_grants(values).map(|(g, _)| g)
     }
@@ -2561,6 +2562,53 @@ mod tests {
         tileset: Some("cave"),
         packs: [],
     )"#;
+
+    #[test]
+    fn phase_d_affixes_grant_their_intended_stats() {
+        use crate::stats::{Condition, WeaponClass};
+        // Phase D (#86) makes the engine's reachable-but-unauthored stats usable.
+        // Pin each new affix's effects (a misfiled stat slips past pool/tier
+        // checks). Hybrids carry two effects; of_savagery carries a condition.
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let find = |id: &str| {
+            db.affixes
+                .iter()
+                .find(|a| a.id == id)
+                .unwrap_or_else(|| panic!("{id}"))
+        };
+        let stats = |id: &str| -> Vec<Stat> { find(id).effects.iter().map(|e| e.stat).collect() };
+
+        // Singles.
+        assert_eq!(stats("of_ruin"), vec![Stat::CritMulti]);
+        assert_eq!(stats("of_frost"), vec![Stat::DamageCold]);
+        assert_eq!(stats("of_sparks"), vec![Stat::DamageLightning]);
+        assert_eq!(stats("of_renewal"), vec![Stat::LifeRegen]);
+        assert_eq!(stats("of_sealing"), vec![Stat::ResistChaos]);
+        assert_eq!(stats("of_channeling"), vec![Stat::ManaRegen]);
+        assert_eq!(stats("of_casting"), vec![Stat::CastSpeed]);
+        // Hybrids — two effects, each with its own per-tier roll range.
+        assert_eq!(
+            stats("of_the_leech"),
+            vec![Stat::LeechLife, Stat::LeechMana]
+        );
+        assert_eq!(
+            stats("of_greed"),
+            vec![Stat::ItemRarity, Stat::ItemQuantity]
+        );
+        for id in ["of_the_leech", "of_greed"] {
+            for t in &find(id).tiers {
+                assert_eq!(t.rolls.len(), 2, "{id} tier rolls one range per effect");
+            }
+        }
+        // Conditional content — the first authored affix gated by a condition.
+        let savagery = find("of_savagery");
+        assert_eq!(savagery.effects[0].stat, Stat::DamagePhys);
+        assert_eq!(
+            savagery.effects[0].condition,
+            Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+            "of_savagery gates phys on wielding melee"
+        );
+    }
 
     #[test]
     fn check_rolled_affix_rejects_bad_index_and_count_mismatch() {
