@@ -116,12 +116,13 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 60_000,
   },
   {
-    // Individual idler view (#79): the name banner + the "your idler" chip prove
-    // the overlay is in individual mode, and Brakka's pinned inspect proves
-    // focus-by-name. A regression to broadcast mode drops these.
+    // Individual idler view (#79): the focus panel names Brakka — the pinned
+    // idler, NOT the director cue (which points at Veles in this fixture). The
+    // rigorous focus-by-name guard is the behavioral test in capture.spec.ts;
+    // this is the coarse screenshot check.
     name: "idler-view",
     kind: "overlay",
-    expect: ["Brakka", "your idler"],
+    expect: ["Brakka"],
   },
   {
     // Per-idler management page (#79): the header (idler + "manage") and the

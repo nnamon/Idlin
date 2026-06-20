@@ -277,7 +277,10 @@ export function Overlay({
               <span className="display" style={{ fontSize: 17 }}>
                 {focused.state.name}
               </span>
-              <span className="chip">{idler ? "your idler" : store.cue?.reason}</span>
+              {/* the chip shows the director's reason for this cut — broadcast
+                  chrome only. An individual page has no cue; an ownership badge
+                  waits for real auth (#79), so no chip here for now. */}
+              {!idler && <span className="chip">{store.cue?.reason}</span>}
             </div>
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
