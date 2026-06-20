@@ -137,8 +137,8 @@ export function Overlay({
 
   // Individual view (#79): focus is pinned to the named idler (no director-cue
   // fallback — an absent idler shows no focus panel, never the broadcast's pick
-  // mislabelled "your idler"); broadcast follows the cue. Shared with the scene
-  // camera via resolveFocusId so the two never disagree.
+  // presented as the page's idler); broadcast follows the cue. Shared with the
+  // scene camera via resolveFocusId so the two never disagree.
   const focusId = resolveFocusId(
     idler,
     store.characters().map((c) => c.state),
@@ -215,16 +215,6 @@ export function Overlay({
 
   return (
     <>
-      {/* individual idler view (#79): a header framing the page as one idler's,
-          distinct from the director broadcast. The shell the management portal
-          (bot editor, debug console) will extend. */}
-      {idler && (
-        <div className="idler-banner">
-          {/* the canonical name (`Kargan`), not the URL casing (`kargan`);
-              `focused` is always present here — the not-in-realms branch returned. */}
-          <span className="idler-banner-name">{focused?.state.name ?? idler}</span>
-        </div>
-      )}
       {/* top-center: boss life bars */}
       {bosses.length > 0 && (
         <div className="hud-boss">
@@ -273,15 +263,9 @@ export function Overlay({
       <div className={drawer ? "hud-right open" : "hud-right"}>
         {focused && focused.state.kind === "Character" && (
           <div className="panel" style={{ marginBottom: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span className="display" style={{ fontSize: 17 }}>
-                {focused.state.name}
-              </span>
-              {/* the chip shows the director's reason for this cut — broadcast
-                  chrome only. An individual page has no cue; an ownership badge
-                  waits for real auth (#79), so no chip here for now. */}
-              {!idler && <span className="chip">{store.cue?.reason}</span>}
-            </div>
+            <span className="display" style={{ fontSize: 17 }}>
+              {focused.state.name}
+            </span>
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
             </div>

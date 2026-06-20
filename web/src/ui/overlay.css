@@ -413,36 +413,6 @@
   transition: width 0.25s ease;
 }
 
-/* Individual idler view (#79): a slim top-center header naming the idler whose
-   page this is — frames it as distinct from the director broadcast. */
-.idler-banner {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  padding: 5px 14px;
-  border-radius: 8px;
-  background: rgba(8, 8, 12, 0.62);
-  border: 1px solid rgba(70, 56, 31, 0.7);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
-  z-index: 20;
-  pointer-events: none;
-}
-.idler-banner-name {
-  font-family: "Idlin Mono", ui-monospace, Menlo, monospace;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.5px;
-  color: #ecc97e;
-}
-/* When the banner is present, the boss bars drop below it (sibling-aware). */
-.idler-banner ~ .hud-boss {
-  top: 56px;
-}
-
 /* Per-idler MANAGEMENT page (#79 → #17): an opaque full surface (no 3D scene)
    fed by the idler's stream. For now: a header + the live event stream; the bot
    editor / debug console (#77) / whisper log (#78) plug in here later. */
