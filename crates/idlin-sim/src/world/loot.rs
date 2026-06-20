@@ -631,11 +631,10 @@ fn apply_currency_op(
             }
             for ra in item.affixes.iter_mut() {
                 let affix = &content.affixes[ra.affix_idx as usize];
-                // NOTE (#106): this rerolls from the HIGHEST eligible tier, not the
-                // rolled `ra.tier` — a pre-existing bug (contradicts mechanics.md).
-                // Left as-is here to keep #86 Phase A behavior-preserving; the fix
-                // (reroll within ra.tier) moves the golden and rides #106.
-                if let Some(tier) = affix.tiers.iter().rev().find(|t| t.ilvl <= item.item_level) {
+                // Reroll within the affix's OWN rolled tier (#106): Divine rerolls
+                // the VALUES, never the tier — so the tier name stays accurate and
+                // the value band can't drift to a tier the item never rolled.
+                if let Some(tier) = affix.tiers.get(ra.tier as usize) {
                     // Reroll every component in effect order (hybrid-aware, #86).
                     ra.values = tier
                         .rolls
@@ -818,24 +817,29 @@ mod craft_tests {
                 || item.affixes.len() < 6
         );
 
-        // Divine keeps the affix set and rerolls each value within a tier's
-        // ranges. (CURRENT behavior rerolls from the highest item-level-eligible
-        // tier, not the rolled `ra.tier` — pre-existing, tracked by #106; the
-        // assertion below checks the highest-eligible tier to match what ships.)
-        let ids_before: Vec<u32> = item.affixes.iter().map(|a| a.affix_idx).collect();
+        // Divine keeps the affix set AND each affix's rolled tier, rerolling only
+        // the values within that tier's ranges (#106). Mutation: reroll from the
+        // highest-eligible tier instead of `ra.tier` → a value can land outside
+        // the rolled tier's band and the tier-bound assertion fails.
+        let before: Vec<(u32, u32)> = item.affixes.iter().map(|a| (a.affix_idx, a.tier)).collect();
         assert!(apply_currency_op(
             &content,
             &mut rng,
             RerollValues,
             &mut item
         ));
-        let ids_after: Vec<u32> = item.affixes.iter().map(|a| a.affix_idx).collect();
-        assert_eq!(ids_before, ids_after, "divine keeps the affixes");
+        let after: Vec<(u32, u32)> = item.affixes.iter().map(|a| (a.affix_idx, a.tier)).collect();
+        assert_eq!(before, after, "divine keeps the affixes AND their tiers");
         for ra in &item.affixes {
             let affix = &content.affixes[ra.affix_idx as usize];
-            let tier = affix.tiers.iter().rev().find(|t| t.ilvl <= 5).unwrap();
+            let tier = &affix.tiers[ra.tier as usize]; // the ROLLED tier, not highest-eligible
             for (v, r) in ra.values.iter().zip(&tier.rolls) {
-                assert!(*v >= r.min && *v <= r.max);
+                assert!(
+                    *v >= r.min && *v <= r.max,
+                    "rerolled value {v} stays within its rolled tier's [{}, {}]",
+                    r.min,
+                    r.max
+                );
             }
         }
 
@@ -844,6 +848,39 @@ mod craft_tests {
         assert_eq!(item.rarity, Rarity::Normal);
         assert!(item.affixes.is_empty());
         assert_eq!(item.name, "Driftwood Bow");
+    }
+
+    #[test]
+    fn divine_rerolls_within_the_rolled_tier_not_the_highest() {
+        use CurrencyOp::RerollValues;
+        let (content, mut rng, mut item) = setup();
+        let hale = content.affixes.iter().position(|a| a.id == "hale").unwrap() as u32;
+        // hale: tier0 [8,15] (ilvl1), tier1 [16,28] (ilvl3), tier2 [29,45] (ilvl6).
+        // item_level 5 makes the HIGHEST eligible tier1, but we roll the affix at
+        // tier0. Divine must reroll within tier0's [8,15] (disjoint from tier1), so
+        // the buggy highest-eligible behavior is caught on the first reroll.
+        item.item_level = 5;
+        item.rarity = Rarity::Magic;
+        item.affixes = vec![RolledAffix {
+            affix_idx: hale,
+            values: vec![10],
+            tier: 0,
+        }];
+        for _ in 0..50 {
+            assert!(apply_currency_op(
+                &content,
+                &mut rng,
+                RerollValues,
+                &mut item
+            ));
+            let ra = &item.affixes[0];
+            assert_eq!(ra.tier, 0, "Divine preserves the rolled tier");
+            assert!(
+                (8..=15).contains(&ra.values[0]),
+                "value {} stays in tier 0 [8,15]; the bug would land in tier 1 [16,28]",
+                ra.values[0]
+            );
+        }
     }
 }
 
