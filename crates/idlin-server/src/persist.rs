@@ -153,6 +153,19 @@ pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<Chara
     };
     match world.attach_content(content) {
         Ok(()) => {
+            // Pendings ride ALONGSIDE the world (in-flight arrivals), so
+            // attach_content didn't see them; validate their items too — an
+            // arrival's malformed affix would otherwise reach AffixDef::grants
+            // when apply_joins refreshes it (#86 fail-closed resume).
+            if let Some((i, why)) = pendings.iter().enumerate().find_map(|(i, b)| {
+                World::first_malformed_character_affix(content, &b.character).map(|w| (i, w))
+            }) {
+                warn!(
+                    "snapshot at {}: pending arrival {i}: {why}; starting fresh",
+                    path.display()
+                );
+                return None;
+            }
             info!(
                 tick = world.tick_count(),
                 pending = pendings.len(),

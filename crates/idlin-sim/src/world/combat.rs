@@ -2483,6 +2483,81 @@ mod tests {
     }
 
     #[test]
+    fn attach_content_rejects_malformed_rolled_affixes() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        let content = content();
+        let mut world = World::new(0xBAD0, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Resumer".into(),
+                program: halt,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let fox = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_fox")
+            .unwrap() as u32;
+        let put = |world: &mut World, ra: RolledAffix| {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                base_idx: 0,
+                rarity: Rarity::Magic,
+                item_level: 5,
+                affixes: vec![ra],
+                name: String::new(),
+                charges: 0,
+            });
+        };
+
+        // Same content → hash matches; a WELL-FORMED world attaches cleanly.
+        assert!(world.attach_content(&content).is_ok(), "baseline attaches");
+
+        // A 2-effect hybrid with only ONE rolled value → fail closed on resume.
+        put(
+            &mut world,
+            RolledAffix {
+                affix_idx: fox,
+                values: vec![5],
+                tier: 0,
+            },
+        );
+        let err = world
+            .attach_content(&content)
+            .expect_err("count mismatch refused");
+        assert!(err.contains("malformed snapshot"), "reason: {err}");
+        // The shared helper persist uses for PENDING arrivals catches it too.
+        let ch = world.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert!(World::first_malformed_character_affix(&content, ch).is_some());
+
+        // An OUT-OF-RANGE affix index → refused, never a silent pass then a panic.
+        put(
+            &mut world,
+            RolledAffix {
+                affix_idx: u32::MAX,
+                values: vec![1],
+                tier: 0,
+            },
+        );
+        assert!(
+            world.attach_content(&content).is_err(),
+            "bad affix_idx refused"
+        );
+    }
+
+    #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
         let fx = events

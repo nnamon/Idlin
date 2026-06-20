@@ -733,60 +733,65 @@ impl World {
         Ok(())
     }
 
-    /// The first rolled affix whose `values` count disagrees with its affix's
-    /// effect count (a hybrid is positional — a mismatch would misalign or drop
-    /// stats), as a human reason. `None` when every item is well-formed.
+    /// First malformed rolled affix on ONE item (bad index or values/effects
+    /// count mismatch), as a human reason. The leaf shared by every walk below.
+    fn first_malformed_item_affix(
+        content: &ContentDb,
+        item: &crate::entity::Item,
+    ) -> Option<String> {
+        item.affixes.iter().find_map(|ra| {
+            content
+                .check_rolled_affix(ra.affix_idx, ra.values.len())
+                .err()
+        })
+    }
+
+    /// First malformed rolled affix on a character's items (worn + bagged gear),
+    /// as a human reason. Shared by live entities AND pending arrivals (the ferry
+    /// payload), so a malformed snapshot character can never reach `grants`.
+    pub fn first_malformed_character_affix(
+        content: &ContentDb,
+        ch: &crate::entity::CharacterState,
+    ) -> Option<String> {
+        for it in ch.equipment.iter().flatten() {
+            if let Some(why) = Self::first_malformed_item_affix(content, it) {
+                return Some(why);
+            }
+        }
+        for pi in &ch.inventory {
+            if let Some(it) = pi.item.as_gear()
+                && let Some(why) = Self::first_malformed_item_affix(content, it)
+            {
+                return Some(why);
+            }
+        }
+        None
+    }
+
+    /// First malformed rolled affix anywhere in this world (characters, monster
+    /// rolls, gear loot), as a human reason. `None` when every item is well-formed.
     fn first_malformed_affix(&self) -> Option<String> {
-        let check = |ra: &crate::entity::RolledAffix| -> Option<String> {
-            let want = self
-                .content
-                .affixes
-                .get(ra.affix_idx as usize)?
-                .effects
-                .len();
-            (ra.values.len() != want).then(|| {
-                format!(
-                    "affix #{} carries {} rolled value(s) but its effects expect {}",
-                    ra.affix_idx,
-                    ra.values.len(),
-                    want
-                )
-            })
-        };
         for (_, e) in self.zone.iter() {
-            if let Some(ch) = &e.character {
-                for it in ch.equipment.iter().flatten() {
-                    for ra in &it.affixes {
-                        if let Some(m) = check(ra) {
-                            return Some(m);
-                        }
-                    }
-                }
-                for pi in &ch.inventory {
-                    if let Some(it) = pi.item.as_gear() {
-                        for ra in &it.affixes {
-                            if let Some(m) = check(ra) {
-                                return Some(m);
-                            }
-                        }
-                    }
-                }
+            if let Some(ch) = &e.character
+                && let Some(why) = Self::first_malformed_character_affix(&self.content, ch)
+            {
+                return Some(why);
             }
             if let Some(m) = &e.monster {
                 for ra in &m.affixes {
-                    if let Some(why) = check(ra) {
+                    if let Err(why) = self
+                        .content
+                        .check_rolled_affix(ra.affix_idx, ra.values.len())
+                    {
                         return Some(why);
                     }
                 }
             }
             if let Some(l) = &e.loot
                 && let crate::entity::LootPayload::Gear(it) = &l.payload
+                && let Some(why) = Self::first_malformed_item_affix(&self.content, it)
             {
-                for ra in &it.affixes {
-                    if let Some(m) = check(ra) {
-                        return Some(m);
-                    }
-                }
+                return Some(why);
             }
         }
         None

@@ -1163,6 +1163,26 @@ impl ContentDb {
         ContentDb::default()
     }
 
+    /// Validate one rolled affix against the registry: the index must exist AND
+    /// carry exactly one value per effect (positional, #86). `Err` is a human
+    /// reason. The fail-closed gate for snapshot resume — a malformed roll would
+    /// otherwise misalign/drop a hybrid's stats (`AffixDef::grants`) or panic on
+    /// a direct `affixes[idx]` index downstream.
+    pub fn check_rolled_affix(&self, affix_idx: u32, values_len: usize) -> Result<(), String> {
+        match self.affixes.get(affix_idx as usize) {
+            None => Err(format!(
+                "affix #{affix_idx} is out of range ({} affixes)",
+                self.affixes.len()
+            )),
+            Some(a) if a.effects.len() != values_len => Err(format!(
+                "affix '{}' (#{affix_idx}) carries {values_len} rolled value(s) but expects {}",
+                a.id,
+                a.effects.len()
+            )),
+            Some(_) => Ok(()),
+        }
+    }
+
     /// The string id of the def at `idx` in `cat`'s sorted vec.
     fn def_id(&self, cat: ids::Category, idx: usize) -> Option<&str> {
         use ids::Category::*;
@@ -2503,6 +2523,40 @@ mod tests {
         tileset: Some("cave"),
         packs: [],
     )"#;
+
+    #[test]
+    fn check_rolled_affix_rejects_bad_index_and_count_mismatch() {
+        // The fail-closed gate snapshot resume uses (#86). of_the_fox is a 2-effect
+        // hybrid; hale is single-effect. Mutation: relax either arm and a corrupt
+        // snapshot's rolled affix would resume and misalign/panic downstream.
+        let db = ContentDb::load(Path::new("../../content")).unwrap();
+        let fox = db
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_fox")
+            .unwrap() as u32;
+        let hale = db.affixes.iter().position(|a| a.id == "hale").unwrap() as u32;
+        assert!(
+            db.check_rolled_affix(fox, 2).is_ok(),
+            "hybrid wants 2 values"
+        );
+        assert!(
+            db.check_rolled_affix(fox, 1).is_err(),
+            "1 value for a 2-effect affix"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 1).is_ok(),
+            "single-effect wants 1"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 2).is_err(),
+            "2 values for 1 effect"
+        );
+        assert!(
+            db.check_rolled_affix(u32::MAX, 1).is_err(),
+            "an out-of-range affix index is rejected, not silently OK"
+        );
+    }
 
     #[test]
     fn affix_grants_pairs_each_effect_with_its_rolled_value() {
