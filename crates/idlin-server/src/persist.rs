@@ -161,12 +161,8 @@ pub fn load_managed(content: &ContentDb, dir: &Path) -> Option<(World, Vec<Chara
             );
             Some((world, pendings))
         }
-        Err(snapshot_hash) => {
-            warn!(
-                "snapshot content hash {snapshot_hash:016x} != loaded content \
-                 {:016x}; starting fresh",
-                content.content_hash
-            );
+        Err(why) => {
+            warn!("snapshot at {}: {why}; starting fresh", path.display());
             None
         }
     }

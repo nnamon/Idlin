@@ -2407,6 +2407,82 @@ mod tests {
     }
 
     #[test]
+    fn read_item_mods_expands_a_hybrid_into_one_row_per_effect() {
+        use crate::entity::{BagItem, Item, PlacedItem, Rarity, RolledAffix};
+        use idlin_content::ids::Category;
+        let content = content();
+        let mut world = World::new(0xF0F0, &content);
+        // Read the count, then rec0 (affix_num/effect_index/value @ +0/+4/+8) and
+        // rec1 (@ +16/+20/+24). A hybrid emits two rows sharing affix_num (#86).
+        let program = idlin_botc::compile(
+            "fn main() {\n\
+             debug(read_item_mods(0, 0xE100, 8));\n\
+             debug(mem[0xE100]); debug(mem[0xE104]); debug(mem[0xE108]);\n\
+             debug(mem[0xE110]); debug(mem[0xE114]); debug(mem[0xE118]);\n\
+             }\n",
+        )
+        .expect("compiles");
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Jeweler".into(),
+                program,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character");
+        let net = world.zone.get(slot).unwrap().net_id;
+        let fox = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_fox")
+            .expect("of_the_fox exists") as u32;
+        let fox_num = content.content_num(Category::Affix, fox as usize).unwrap();
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.inventory.push(PlacedItem {
+                item: BagItem::Gear(Item {
+                    base_idx: 0,
+                    rarity: Rarity::Magic,
+                    item_level: 5,
+                    affixes: vec![RolledAffix {
+                        affix_idx: fox,
+                        values: vec![9, 700],
+                        tier: 0,
+                    }],
+                    name: String::new(),
+                    charges: 0,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let events = world.tick(&crate::TickInputs::default());
+        let vals: Vec<i32> = events
+            .iter()
+            .filter_map(|e| match e {
+                super::SimEvent::BotDebug { id, values } if *id == net => values.first().copied(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(vals.len(), 7, "count + two 3-field records: {vals:?}");
+        assert_eq!(vals[0], 2, "a 2-effect hybrid yields TWO records");
+        assert_eq!(vals[1], fox_num, "rec0 affix_num");
+        assert_eq!(vals[2], 0, "rec0 effect_index");
+        assert_eq!(vals[3], 9, "rec0 value (dexterity roll)");
+        assert_eq!(vals[4], fox_num, "rec1 shares the affix_num");
+        assert_eq!(vals[5], 1, "rec1 effect_index");
+        assert_eq!(vals[6], 700, "rec1 value (evasion roll)");
+    }
+
+    #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
         let fx = events

@@ -713,14 +713,83 @@ impl World {
         }
     }
 
-    /// Re-attach content after deserializing a snapshot. Fails on hash
-    /// mismatch: a snapshot is only meaningful against its exact content.
-    pub fn attach_content(&mut self, content: &ContentDb) -> Result<(), u64> {
+    /// Re-attach content after deserializing a snapshot. Fails (with a human
+    /// reason) on a content-hash mismatch — a snapshot is only meaningful against
+    /// its exact content — OR on a malformed rolled affix. The hash gate already
+    /// guarantees affix shapes match for an honestly-rolled snapshot; the affix
+    /// check is the fail-closed backstop against a corrupt/foreign one, so
+    /// `AffixDef::grants` can never silently drop a hybrid's effect (#86).
+    pub fn attach_content(&mut self, content: &ContentDb) -> Result<(), String> {
         if content.content_hash != self.content_hash {
-            return Err(self.content_hash);
+            return Err(format!(
+                "content hash {:016x} != loaded content {:016x}",
+                self.content_hash, content.content_hash
+            ));
         }
         self.content = content.clone();
+        if let Some(why) = self.first_malformed_affix() {
+            return Err(format!("malformed snapshot: {why}"));
+        }
         Ok(())
+    }
+
+    /// The first rolled affix whose `values` count disagrees with its affix's
+    /// effect count (a hybrid is positional — a mismatch would misalign or drop
+    /// stats), as a human reason. `None` when every item is well-formed.
+    fn first_malformed_affix(&self) -> Option<String> {
+        let check = |ra: &crate::entity::RolledAffix| -> Option<String> {
+            let want = self
+                .content
+                .affixes
+                .get(ra.affix_idx as usize)?
+                .effects
+                .len();
+            (ra.values.len() != want).then(|| {
+                format!(
+                    "affix #{} carries {} rolled value(s) but its effects expect {}",
+                    ra.affix_idx,
+                    ra.values.len(),
+                    want
+                )
+            })
+        };
+        for (_, e) in self.zone.iter() {
+            if let Some(ch) = &e.character {
+                for it in ch.equipment.iter().flatten() {
+                    for ra in &it.affixes {
+                        if let Some(m) = check(ra) {
+                            return Some(m);
+                        }
+                    }
+                }
+                for pi in &ch.inventory {
+                    if let Some(it) = pi.item.as_gear() {
+                        for ra in &it.affixes {
+                            if let Some(m) = check(ra) {
+                                return Some(m);
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(m) = &e.monster {
+                for ra in &m.affixes {
+                    if let Some(why) = check(ra) {
+                        return Some(why);
+                    }
+                }
+            }
+            if let Some(l) = &e.loot
+                && let crate::entity::LootPayload::Gear(it) = &l.payload
+            {
+                for ra in &it.affixes {
+                    if let Some(m) = check(ra) {
+                        return Some(m);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub(crate) fn content_monsters(&self) -> &[MonsterDef] {

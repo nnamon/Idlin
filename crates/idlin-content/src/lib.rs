@@ -502,9 +502,20 @@ impl AffixDef {
     /// The grants this affix yields for one rolled instance: each effect paired
     /// with its positional rolled value (a hybrid yields several). The single
     /// fold path every power-source site shares — `values` come from a
-    /// `RolledAffix`; extras beyond the effect count are ignored, missing ones
-    /// drop their effect (the loader guarantees the lengths match for real content).
+    /// `RolledAffix`. Lengths always match for real data: the loader validates
+    /// content tiers, the roll path produces one value per effect, and snapshot
+    /// resume validates it (`World::attach_content`). The `debug_assert` makes a
+    /// roller/code bug loud in test/CI; the zip truncates safely in release if a
+    /// corrupt snapshot ever slipped the resume gate.
     pub fn grants<'a>(&'a self, values: &'a [i64]) -> impl Iterator<Item = Grant> + 'a {
+        debug_assert_eq!(
+            self.effects.len(),
+            values.len(),
+            "affix {} has {} effects but {} rolled values",
+            self.id,
+            self.effects.len(),
+            values.len()
+        );
         self.effects.iter().zip(values).map(|(eff, &value)| Grant {
             stat: eff.stat,
             layer: eff.layer,
@@ -2628,6 +2639,54 @@ mod tests {
             Err(ContentError::DuplicateId { id, .. }) => assert_eq!(id, "hale"),
             other => panic!("expected DuplicateId, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_tier_must_roll_one_range_per_effect() {
+        // A HYBRID's effects and a tier's rolls are positional (#86), so a tier
+        // missing a range would silently drop a stat — reject at load. Mutation:
+        // remove the rolls.len()==effects.len() check and this loads instead.
+        let tc = TempContent::new(
+            "hybrid_mismatch",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: suffix, pool: "armour",
+                    effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadAffixTiers { affix, msg }) => {
+                assert_eq!(affix, "bad");
+                assert!(
+                    msg.contains("roll range") && msg.contains("effect"),
+                    "msg: {msg}"
+                );
+            }
+            other => panic!("expected BadAffixTiers, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_affix_with_no_effects_is_rejected() {
+        // Mutation: drop the effects-non-empty check and a grant-nothing affix loads.
+        let tc = TempContent::new(
+            "no_effects",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
+                    effects: [],
+                    tiers: [(ilvl: 1, rolls: [])],
+                )"#,
+            )],
+        );
+        assert!(matches!(
+            ContentDb::load(&tc.0),
+            Err(ContentError::BadAffixTiers { .. })
+        ));
     }
 
     #[test]
