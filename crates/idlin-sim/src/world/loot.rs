@@ -818,7 +818,10 @@ mod craft_tests {
                 || item.affixes.len() < 6
         );
 
-        // Divine rerolls values within their tiers only.
+        // Divine keeps the affix set and rerolls each value within a tier's
+        // ranges. (CURRENT behavior rerolls from the highest item-level-eligible
+        // tier, not the rolled `ra.tier` — pre-existing, tracked by #106; the
+        // assertion below checks the highest-eligible tier to match what ships.)
         let ids_before: Vec<u32> = item.affixes.iter().map(|a| a.affix_idx).collect();
         assert!(apply_currency_op(
             &content,
