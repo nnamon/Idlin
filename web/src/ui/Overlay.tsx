@@ -176,8 +176,14 @@ export function Overlay({
   // Drop any open item tooltip when the focused character changes: the hovered
   // gear/bag cell can unmount without firing onMouseLeave (a focus switch swaps
   // the whole sheet), which would otherwise strand the tooltip and keep the
-  // bag/obols deck paused (`paused={!!hover}`) forever.
-  useEffect(() => setHover(null), [focusId]);
+  // bag/obols deck paused (`paused={!!hover}`) forever. Key on the SAME identity
+  // the sheet guard uses — (id, world, name) — because net ids overlap across
+  // worlds: a cross-world cut to a different character can reuse id 1, so `focusId`
+  // alone wouldn't change.
+  useEffect(
+    () => setHover(null),
+    [focusId, store.zone?.worldKey, focused?.state.name],
+  );
 
   // Keep the focus panel fresh: re-request the sheet while a character is
   // in frame (cheap: one small message per second).
