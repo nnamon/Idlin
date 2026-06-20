@@ -438,12 +438,14 @@ impl World {
         //  - Content-loaded constants (zone geometry/grid, gem/affix defs, the
         //    zone-brain program) are immutable at runtime and already folded into
         //    `content_hash`.
-        //  - The slot/bot allocators' free-lists (`Zone::{free,by_net}`,
-        //    `BotArena::free`) are excluded: their ONLY observable effect is WHERE
-        //    the next entity/bot lands, and the slot/idx index is hashed per
-        //    entity/bot below — so any allocation divergence surfaces immediately
-        //    as a changed slot at the next spawn. They roundtrip via postcard, so
-        //    snapshot resume is exact.
+        //  - The slot/bot allocator free-lists (`Zone::free`, `BotArena::free`)
+        //    are excluded: their ONLY observable effect is WHERE the next
+        //    entity/bot lands, and the slot/idx index is hashed per entity/bot
+        //    below — so any allocation divergence surfaces immediately as a
+        //    changed slot at the next spawn. They roundtrip via postcard, so
+        //    snapshot resume is exact. (`Zone::by_net` is NOT serialized at all —
+        //    it is a derived index rebuilt from `slots` on resume, so it can never
+        //    drift from the hashed slots it mirrors.)
         //  - `intents.attack`/`pickup` are wiped by `clear_transient_intents` at the
         //    top of every tick before any read, so their tick-boundary value cannot
         //    affect the resumed sim.

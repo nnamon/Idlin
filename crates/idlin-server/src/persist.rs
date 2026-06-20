@@ -55,7 +55,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// conditional model for affixes, tree, and buffs), changing the postcard layout
 /// of every serialized `Grant` — in active-buff and projectile-debuff state
 /// alike — so a v6 snapshot's grants would mis-decode; refuse them cleanly.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 7;
+/// v8 (#86 unify): `Zone::by_net` became a `#[serde(skip)]` derived index
+/// (rebuilt from `slots` on resume rather than trusted from the snapshot), so it
+/// left the postcard byte stream — a v7 snapshot's `Zone` would mis-decode.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 8;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.

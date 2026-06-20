@@ -727,6 +727,10 @@ impl World {
             ));
         }
         self.content = content.clone();
+        // `Zone::by_net` is `#[serde(skip)]`, so a freshly deserialized world has
+        // an empty lookup index — rebuild it from the restored slots before any
+        // get_net/slot_of (inspect, syscalls) runs against this world.
+        self.zone.rebuild_net_index();
         if let Some(why) = self.first_malformed_affix() {
             return Err(format!("malformed snapshot: {why}"));
         }

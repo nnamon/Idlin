@@ -3765,6 +3765,43 @@ mod tests {
     }
 
     #[test]
+    fn by_net_index_is_rebuilt_on_resume() {
+        // `Zone::by_net` is `#[serde(skip)]`, so it deserializes empty; attach_content
+        // must rebuild it from slots or post-resume net_id lookups (inspect,
+        // syscalls) break. Mutation: drop the rebuild_net_index call in
+        // attach_content and get_net returns None here.
+        let content = content();
+        let mut world = World::new(13_13, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "A".into(),
+                program,
+            }],
+        });
+        let (net, slot) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .map(|(s, e)| (e.net_id, s))
+            .expect("a character joined");
+        let bytes = postcard::to_allocvec(&world).expect("serialize");
+        let mut restored: World = postcard::from_bytes(&bytes).expect("deserialize");
+        restored.attach_content(&content).expect("content matches");
+        assert_eq!(
+            restored.zone.slot_of(net),
+            Some(slot),
+            "by_net must resolve the net_id to its slot after resume"
+        );
+        assert_eq!(
+            restored.zone.get_net(net).map(|e| e.net_id),
+            Some(net),
+            "get_net must find the entity after resume"
+        );
+    }
+
+    #[test]
     fn attack_skills_demand_an_eligible_weapon() {
         let content = content();
         let mut world = World::new(99_99, &content);
