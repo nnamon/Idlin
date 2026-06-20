@@ -3219,8 +3219,9 @@ mod tests {
         // (pos/vel/remaining/source/pierce/spell), silently dropping the on-impact
         // payload — damage, crit, dot, debuff grants, and pierce's already-hit
         // set. Two worlds with identical in-flight motion but different payloads
-        // hashed alike, then diverged at impact. Each assert_ne! guards one field;
-        // mutation: drop that field from the projectile hash loop and it fails.
+        // hashed alike, then diverged at impact. This test mutates EVERY field the
+        // projectile hash loop writes, one assert_ne! each; dropping any one field
+        // from the loop fails the matching assert.
         use crate::stats::{Condition, Grant, Layer, Stat, WeaponClass};
         let content = content();
         let base_proj = || Projectile {
@@ -3297,6 +3298,134 @@ mod tests {
                 30
             ))),
             "a projectile debuff grant's condition must change the hash"
+        );
+        // Every remaining hashed field — motion, identity, flags, reactions.
+        assert_ne!(
+            base,
+            hash_with(&|p| p.pos.x = Fx::from_int(9)),
+            "projectile pos must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.vel.y = Fx::from_int(9)),
+            "projectile vel must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.remaining = Fx::from_int(99)),
+            "projectile remaining must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.radius = Fx::from_int(9)),
+            "projectile radius must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.source = 99),
+            "projectile source must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.source_name = "Z".into()),
+            "projectile source_name must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.source_is_char = false),
+            "projectile source_is_char must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.hostile_to_players = true),
+            "projectile hostile_to_players must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.spell = false),
+            "projectile spell flag must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.accuracy = 500),
+            "projectile accuracy must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.crit_multi = 999),
+            "projectile crit_multi must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.pierce = 9),
+            "projectile pierce must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.stagger = 9),
+            "projectile stagger must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.knockback_cu = 9),
+            "projectile knockback must change the hash"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_entity_persistent_intents_and_build() {
+        // Determinism (§4): `intents.move_to` (cleared only on arrival) and
+        // `build_plan` (drives future auto-allocation) are independent persistent
+        // state — not derivable from other hashed fields — so the fingerprint must
+        // distinguish entities that differ in them. Mutation: drop either write in
+        // views.rs and the matching assert_ne! collapses to equal.
+        use crate::fixed::{Fx, FxV2};
+        let content = content();
+        let build = |mutate: &dyn Fn(&mut World, usize)| {
+            let mut world = World::new(5_55, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "A".into(),
+                    program,
+                }],
+            });
+            let slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .expect("a character joined");
+            // Start from a clean slate so the mutation is the only difference.
+            {
+                let e = world.zone.get_mut(slot).unwrap();
+                e.intents.move_to = None;
+                e.character.as_mut().unwrap().build_plan.clear();
+            }
+            mutate(&mut world, slot);
+            world.state_hash()
+        };
+        let base = build(&|_w, _s| {});
+        assert_eq!(
+            base,
+            build(&|_w, _s| {}),
+            "identical entities must hash identically"
+        );
+        assert_ne!(
+            base,
+            build(&|w, s| w.zone.get_mut(s).unwrap().intents.move_to =
+                Some(FxV2::new(Fx::from_int(3), Fx::from_int(4)))),
+            "intents.move_to must change the state hash"
+        );
+        assert_ne!(
+            base,
+            build(&|w, s| w
+                .zone
+                .get_mut(s)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap()
+                .build_plan = vec![1, 2, 3]),
+            "build_plan must change the state hash"
         );
     }
 

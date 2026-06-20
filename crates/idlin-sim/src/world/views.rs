@@ -506,6 +506,19 @@ impl World {
             h.write_i32(e.pos.x.raw());
             h.write_i32(e.pos.y.raw());
             h.write_u32(e.bot.map(|b| b + 1).unwrap_or(0));
+            // `move_to` persists across ticks (cleared only on arrival) and steers
+            // the next movement pass, so it is independent future state. `attack`/
+            // `pickup` are NOT hashed: `clear_transient_intents` wipes them at the
+            // top of every tick before they're read, so their tick-boundary value
+            // can never affect the resumed simulation.
+            match e.intents.move_to {
+                None => h.write_u8(0),
+                Some(v) => {
+                    h.write_u8(1);
+                    h.write_i32(v.x.raw());
+                    h.write_i32(v.y.raw());
+                }
+            }
             if let Some(c) = &e.combat {
                 h.write_i64(c.life);
                 h.write_i64(c.life_max);
@@ -568,6 +581,13 @@ impl World {
                 }
                 h.write_u64(ch.allocated.len() as u64);
                 for &n in &ch.allocated {
+                    h.write_u32(n);
+                }
+                // The declared build drives future auto-allocation as levels
+                // arrive, so it is independent future state, not derivable from
+                // `allocated` alone (two builds can share an allocation prefix).
+                h.write_u64(ch.build_plan.len() as u64);
+                for &n in &ch.build_plan {
                     h.write_u32(n);
                 }
                 for count in &ch.currency {
