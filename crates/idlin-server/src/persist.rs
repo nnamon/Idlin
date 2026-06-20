@@ -250,6 +250,39 @@ mod tests {
     }
 
     #[test]
+    fn a_malformed_pending_affix_refuses_the_resume() {
+        // Pendings ride alongside the world; a malformed rolled affix on an
+        // in-flight character must fail the resume CLOSED (#86) — otherwise it
+        // reaches AffixDef::grants when the arrival refreshes. With empty content
+        // any affix_idx is out of range, so this rolled affix is unresolvable.
+        // Mutation: drop the pending-validation loop in load_managed and this
+        // resumes (Some) instead of starting fresh (None).
+        use idlin_sim::entity::{Item, Rarity, RolledAffix};
+        let content = ContentDb::empty();
+        let world = World::new(7, &content);
+        let mut b = bundle("Corrupt");
+        b.character.equipment[0] = Some(Item {
+            base_idx: 0,
+            rarity: Rarity::Magic,
+            item_level: 1,
+            affixes: vec![RolledAffix {
+                affix_idx: 0,
+                values: vec![1],
+                tier: 0,
+            }],
+            name: String::new(),
+            charges: 0,
+        });
+        let dir = temp_dir("bad-pending");
+        save_managed(&world, &[b], &dir).expect("save");
+        assert!(
+            load_managed(&content, &dir).is_none(),
+            "a malformed pending arrival fails the resume closed"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_stray_pending_file_cannot_desync_the_resume() {
         // The pre-v3 format wrote world + pendings as two files; a crash between
         // their renames could pair a fresh world with a stale pending list. The
