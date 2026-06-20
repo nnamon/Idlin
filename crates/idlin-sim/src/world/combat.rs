@@ -59,6 +59,19 @@ fn fan_step(i: u32) -> i32 {
     }
 }
 
+/// Cone membership: is the target inside the cone's half-angle? `dot` = n·to
+/// scaled by 65536 (n the unit aim direction, `to` the vector to the target);
+/// `cone_cos_bp` = cos(half-angle) in basis points; `d2` = |to|² in raw².
+/// The caller guarantees `dot > 0` (target ahead). `cos(θ) ≥ cos_bp/10000`,
+/// squared to dodge a sqrt, is `(dot/65536)²·10000² ≥ cos_bp²·|to|²`. Done in
+/// i128 so a far target (large `d2`) can't overflow i64 and silently flip the
+/// comparison.
+fn cone_hit(dot: i64, cone_cos_bp: i64, d2: i64) -> bool {
+    let l = (dot / 65536) as i128;
+    let cc = cone_cos_bp as i128;
+    l * l * 10000 * 10000 >= cc * cc * (d2 as i128)
+}
+
 /// Every socketed support's behavior effects, folded down for one use.
 pub(super) struct SupportMods {
     /// Multiplicative per-type damage (10000 = unchanged).
@@ -1320,11 +1333,7 @@ impl World {
                 .map(|c| c.radius.raw() as i64)
                 .unwrap_or(0);
             let inside = match shape {
-                SkillShape::Cone => {
-                    // dot/65536 ≥ (cos_bp/10000)·|to|  ⇔ compare squares.
-                    let lhs = dot / 65536;
-                    lhs * lhs * 10000 >= cone_cos_bp * cone_cos_bp / 10000 * d2
-                }
+                SkillShape::Cone => cone_hit(dot, cone_cos_bp, d2),
                 SkillShape::Line => {
                     let cross = (nx * ty - ny * tx).abs() / 65536;
                     cross <= (width.raw() as i64) / 2 + body
@@ -1757,7 +1766,7 @@ impl World {
                     let gain = (amount * leech_life / 10000).min(ac.life_max / 10);
                     ac.life = (ac.life + gain).min(ac.life_max);
                 }
-                if leech_mana > 0 {
+                if leech_mana > 0 && ac.life > 0 {
                     let gain = (amount * leech_mana / 10000).min(ac.mana_max / 10);
                     ac.mana = (ac.mana + gain).min(ac.mana_max);
                 }
@@ -4541,5 +4550,349 @@ mod tests {
             maxed.supports[0].3, 0,
             "a capped support gem has no xp-to-next"
         );
+    }
+
+    // ---- #103: exercise the under-tested combat paths ----
+    // These pipeline capabilities had no focused test. Some are fully dark — no
+    // content grants leech, regen, crit_multi, or the cone shape at all. Others
+    // are reachable but were untested: energy shield (the `shimmering` affix) and
+    // block (the `driftwood_buckler`). The tests construct the stats directly to
+    // prove each path (mutation reasoning); the affix-pool follow-up makes the
+    // fully-dark stats reachable too.
+
+    /// A never-miss spell strike from `attacker` for `damage`, with the given
+    /// crit chance/multiplier — the one builder the strike tests share
+    /// (`StrikeSpec` isn't `Clone`). `is_spell` skips accuracy so the path
+    /// under test is isolated.
+    fn spell_spec(
+        attacker_slot: usize,
+        attacker_net: u32,
+        damage: [i64; DMG_COUNT],
+        crit_bp: i64,
+        crit_multi: i64,
+    ) -> StrikeSpec {
+        StrikeSpec {
+            attacker_slot: Some(attacker_slot),
+            attacker_net,
+            attacker_name: "Harness".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: false,
+            accuracy: 0,
+            damage,
+            crit_bp,
+            crit_multi,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+        }
+    }
+
+    /// Join one inert (`halt`) character and open the gates; returns nothing —
+    /// callers locate entities via `duel`.
+    fn join_inert(world: &mut World, name: &str) {
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: name.into(),
+                program: halt,
+            }],
+        });
+        for g in &mut world.zone.gates {
+            g.open = true;
+        }
+    }
+
+    /// (monster_slot, monster_net, char_slot, char_net) for a struck-target test.
+    fn duel(world: &mut World) -> (usize, u32, usize, u32) {
+        let (m_slot, m_net) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.net_id))
+            .expect("a monster stands somewhere");
+        let (c_slot, c_net) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .map(|(s, e)| (s, e.net_id))
+            .expect("a character joined");
+        (m_slot, m_net, c_slot, c_net)
+    }
+
+    /// Strip a target's mitigation so a strike's `amount` is just damage×variance.
+    fn make_punching_bag(world: &mut World, slot: usize, life: i64) {
+        let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+        c.life = life;
+        c.life_max = life;
+        c.armour = 0;
+        c.resists = [0; 4];
+        c.block = 0;
+        c.es = 0;
+        c.es_max = 0;
+    }
+
+    #[test]
+    fn cone_hit_is_overflow_safe_at_long_range() {
+        // A far on-axis target (~610 cu): the OLD `lhs*lhs*10000` overflowed i64
+        // (a debug-build panic), silently flipping the test; i128 keeps it exact.
+        let d = 40_000_000i64; // raw distance, ~610 cu
+        let on_axis_dot = 65536 * d; // n=(1,0) · to=(d,0)
+        assert!(
+            cone_hit(on_axis_dot, 7000, d * d),
+            "an on-axis target is inside any cone, even at long range"
+        );
+        // A 45°-off target (to=(d,d)) is inside a wide cone (cos 0.5 ≈ 60°)...
+        let off_dot = 65536 * d;
+        let off_d2 = 2 * d * d;
+        assert!(cone_hit(off_dot, 5000, off_d2), "45° is inside a 60° cone");
+        // ...and outside a narrow one (cos 0.8 ≈ 37°).
+        assert!(
+            !cone_hit(off_dot, 8000, off_d2),
+            "45° is outside a 37° cone"
+        );
+    }
+
+    #[test]
+    fn leech_restores_the_attacker_and_skips_a_dead_one() {
+        let content = content();
+        let mut world = World::new(0x1EEC, &content);
+        join_inert(&mut world, "Vamp");
+        let (m_slot, _m_net, c_slot, c_net) = duel(&mut world);
+        make_punching_bag(&mut world, m_slot, 100_000);
+        {
+            let c = world.zone.get_mut(c_slot).unwrap().combat.as_mut().unwrap();
+            c.leech_life = 10_000; // 100% of damage...
+            c.leech_mana = 10_000;
+            c.life = 500;
+            c.life_max = 1_000; // ...capped per strike at life_max/10 = 100.
+            c.mana = 500;
+            c.mana_max = 1_000;
+        }
+        let now = world.tick;
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        world.strike(
+            spell_spec(c_slot, c_net, [5_000, 0, 0, 0, 0], 0, 10_000),
+            m_slot,
+            now,
+            &mut ev,
+            &mut dead,
+            &mut loot,
+        );
+        {
+            let c = world.zone.get(c_slot).unwrap().combat.as_ref().unwrap();
+            assert_eq!(
+                c.life, 600,
+                "life leech adds the per-strike cap (life_max/10)"
+            );
+            assert_eq!(
+                c.mana, 600,
+                "mana leech adds the per-strike cap (mana_max/10)"
+            );
+        }
+        // A DEAD attacker leeches NOTHING. Life leech was already life-gated; the
+        // regression is mana — it was ungated and would heal a corpse.
+        {
+            let c = world.zone.get_mut(c_slot).unwrap().combat.as_mut().unwrap();
+            c.life = 0;
+            c.mana = 500;
+        }
+        world.strike(
+            spell_spec(c_slot, c_net, [5_000, 0, 0, 0, 0], 0, 10_000),
+            m_slot,
+            now,
+            &mut ev,
+            &mut dead,
+            &mut loot,
+        );
+        let c = world.zone.get(c_slot).unwrap().combat.as_ref().unwrap();
+        assert_eq!(c.life, 0, "a dead attacker gains no life");
+        assert_eq!(c.mana, 500, "a dead attacker gains no mana (the fix)");
+    }
+
+    #[test]
+    fn energy_shield_absorbs_before_life_and_delays_recharge() {
+        let content = content();
+        let mut world = World::new(0xE5E5, &content);
+        join_inert(&mut world, "Warder");
+        let (m_slot, _m_net, c_slot, c_net) = duel(&mut world);
+        make_punching_bag(&mut world, m_slot, 1_000);
+        {
+            let c = world.zone.get_mut(m_slot).unwrap().combat.as_mut().unwrap();
+            c.es = 300;
+            c.es_max = 300;
+            c.es_recharge_at = 0;
+        }
+        let now = world.tick;
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        // A small hit (200×[0.75,1.25] = 150..250 < 300 ES): ES absorbs it ALL.
+        world.strike(
+            spell_spec(c_slot, c_net, [200, 0, 0, 0, 0], 0, 10_000),
+            m_slot,
+            now,
+            &mut ev,
+            &mut dead,
+            &mut loot,
+        );
+        {
+            let c = world.zone.get(m_slot).unwrap().combat.as_ref().unwrap();
+            assert_eq!(c.life, 1_000, "life is untouched while ES remains");
+            assert!(c.es > 0 && c.es < 300, "ES took the hit (now {})", c.es);
+            assert_eq!(
+                c.es_recharge_at,
+                now + ES_RECHARGE_DELAY_TICKS,
+                "any damage pushes the recharge delay out"
+            );
+        }
+        // A bigger hit (600×[..] ≥ 450 > remaining ES) blows through into life.
+        world.strike(
+            spell_spec(c_slot, c_net, [600, 0, 0, 0, 0], 0, 10_000),
+            m_slot,
+            now,
+            &mut ev,
+            &mut dead,
+            &mut loot,
+        );
+        let c = world.zone.get(m_slot).unwrap().combat.as_ref().unwrap();
+        assert_eq!(c.es, 0, "ES is depleted before life takes the overflow");
+        assert!(
+            c.life < 1_000,
+            "life takes the post-ES overflow (now {})",
+            c.life
+        );
+    }
+
+    #[test]
+    fn regen_stats_restore_per_second() {
+        let content = content();
+        let mut world = World::new(0x4E6E, &content);
+        join_inert(&mut world, "Mender");
+        let (_m_slot, _m_net, c_slot, _c_net) = duel(&mut world);
+        world.tick = 10; // a second edge, well before the 50-tick out-of-combat burst
+        {
+            let c = world.zone.get_mut(c_slot).unwrap().combat.as_mut().unwrap();
+            c.life = 100;
+            c.life_max = 1_000;
+            c.life_regen = 25;
+            c.mana = 100;
+            c.mana_max = 1_000;
+            c.mana_regen = 15;
+            c.es = 0;
+            c.es_max = 0;
+            c.last_combat_tick = world.tick; // in combat → no out-of-combat burst
+        }
+        world.regen();
+        let c = world.zone.get(c_slot).unwrap().combat.as_ref().unwrap();
+        assert_eq!(c.life, 125, "life regen adds life_regen per second");
+        // mana = base 2%/s of max (20) + mana_regen (15).
+        assert_eq!(c.mana, 135, "mana regen adds the 2%/s base + mana_regen");
+    }
+
+    #[test]
+    fn block_negates_some_hits_but_not_all() {
+        let content = content();
+        let mut world = World::new(0xB10C, &content);
+        join_inert(&mut world, "Blocker");
+        let (m_slot, _m_net, c_slot, c_net) = duel(&mut world);
+        make_punching_bag(&mut world, m_slot, 1_000_000_000);
+        world
+            .zone
+            .get_mut(m_slot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .block = 7_500; // the 75% cap
+        let now = world.tick;
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        let n = 200;
+        let mut blocked = 0;
+        for _ in 0..n {
+            let before = world
+                .zone
+                .get(m_slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .life;
+            world.strike(
+                spell_spec(c_slot, c_net, [1_000, 0, 0, 0, 0], 0, 10_000),
+                m_slot,
+                now,
+                &mut ev,
+                &mut dead,
+                &mut loot,
+            );
+            let after = world
+                .zone
+                .get(m_slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .life;
+            if after == before {
+                blocked += 1; // a blocked hit deals nothing
+            }
+        }
+        assert!(blocked > 0, "block must negate some hits");
+        assert!(blocked < n, "block is capped at 75% — never all hits");
+        assert!(
+            (n / 2..n).contains(&blocked),
+            "≈75% blocked, got {blocked}/{n}"
+        );
+    }
+
+    #[test]
+    fn crit_multiplier_scales_crit_damage() {
+        let content = content();
+        let mut world = World::new(0xC817, &content);
+        join_inert(&mut world, "Striker");
+        let (m_slot, _m_net, c_slot, c_net) = duel(&mut world);
+        make_punching_bag(&mut world, m_slot, 1_000_000_000);
+        let now = world.tick;
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        // 50% crit, ×3 on crit, 1000 base, no mitigation: non-crit hits land in
+        // 750..1250, crits in 2250..3750 — disjoint bands.
+        let mut saw_crit = false;
+        let mut saw_normal = false;
+        for _ in 0..60 {
+            let before = world
+                .zone
+                .get(m_slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .life;
+            world.strike(
+                spell_spec(c_slot, c_net, [1_000, 0, 0, 0, 0], 5_000, 30_000),
+                m_slot,
+                now,
+                &mut ev,
+                &mut dead,
+                &mut loot,
+            );
+            let after = world
+                .zone
+                .get(m_slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .life;
+            let dealt = before - after;
+            if dealt >= 2_000 {
+                saw_crit = true; // only a ×3 crit reaches this band
+            } else if dealt <= 1_300 {
+                saw_normal = true;
+            }
+        }
+        assert!(saw_crit, "a crit applies crit_multi (×3 → ≥2000 damage)");
+        assert!(saw_normal, "non-crit hits still occur (≤1300 damage)");
     }
 }

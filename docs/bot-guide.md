@@ -248,7 +248,7 @@ address you supply and return a count/status.
 | 2 | `ReadEntities` | out_addr, max (≤16), filter | count; sorted by distance |
 | 5 | `ReadInventory` | out_addr, max (≤60) | count |
 | 6 | `MoveTo` | x, y (Q16.16) | 0 |
-| 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **-1** unknown slot / on cooldown |
+| 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **<0** a defined failure (slot / cooldown / busy / mana / range / LoS / mode / target / weapon — see the skill error-code table below) |
 | 8 | `PickUp` | loot_id | 0 |
 | 12 | `EquipBest` | — | number of swaps made |
 | 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; the table is packed i32 stable tagged node nums, translated to tree nodes at deploy) |
