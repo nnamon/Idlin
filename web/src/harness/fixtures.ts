@@ -27,6 +27,8 @@ export type Fixture =
       status: NetStatus;
       /** Messages applied via `store.handle()` before the first render. */
       messages: S2C[];
+      /** #79: render the overlay in INDIVIDUAL idler-view mode for this idler. */
+      idler?: string;
     }
   | {
       kind: "scene";
@@ -48,6 +50,18 @@ export type Fixture =
       seed: number;
       frames?: number;
       camera?: number[];
+      messages: S2C[];
+      /** #79: render the HUD in INDIVIDUAL idler-view mode for this idler
+       *  (focus pinned by name, banner shown, director carousel dropped). */
+      idler?: string;
+    }
+  | {
+      // Per-idler MANAGEMENT page (#79): an opaque surface (no 3D scene) fed by
+      // the idler's stream — for now just the live event ticker.
+      kind: "manage";
+      label: string;
+      status: NetStatus;
+      idler: string;
       messages: S2C[];
     };
 
@@ -583,6 +597,81 @@ const hudEdge: Fixture = {
   ],
 };
 
+// The INDIVIDUAL idler view (#79): the same world + HUD as full-shore, but the
+// overlay is in individual mode for Brakka — focus pinned by name, the "your
+// idler" banner shown, the director rotation carousel dropped. The page shell the
+// management portal (bot editor, debug console) will extend.
+// The events burst from full-shore, reused so the individual view's ticker is
+// populated in the shot.
+const eventsBurst = fullShore.messages.find((m) => m.type === "Events")!;
+
+// Individual idler view (#79): focus is pinned to the REQUESTED idler (Brakka) BY
+// NAME — explicitly NOT the director cue, which here points at a DIFFERENT idler
+// (Veles). So a regression to cue-based focus would frame Veles and fail the
+// focus-pinning assertion (capture.spec) — the fixture is non-vacuous.
+//
+// An OVERLAY fixture (no 3D scene): this proves the individual-mode HUD (banner,
+// focus-by-name, no carousel) deterministically. The scene under it is covered by
+// scene-shore / full-shore; subjecting the watch view's WebGL body to the
+// byte-stable check buys nothing but the known same-machine flake.
+const idlerView: Fixture = {
+  kind: "overlay",
+  label: "Individual idler view (#79): focus pinned to Brakka by name, not the director cue (Veles)",
+  status: LIVE_STATUS,
+  idler: NAME,
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Withered Shore",
+      entities: [
+        character({
+          id: FOCUS_ID,
+          name: NAME,
+          model: "idler",
+          level: 42,
+          life_pct: 90,
+          weapon: "cleaver",
+          weapon_rarity: 2,
+          gear: ["ranger_body", "ranger_legs", "ranger_feet"],
+          gear_rarity: [2, 1, 1],
+        }),
+        character({ id: 2, name: "Veles", model: "idler", level: 41, life_pct: 80 }),
+      ],
+    }),
+    directorCue(2, "carving the strand"), // the broadcast would frame VELES (id 2)
+    eventsBurst,
+    fullSheetMsg, // Brakka's sheet (id 1) — the inspect must pin to Brakka
+  ],
+};
+
+// The per-idler MANAGEMENT page (#79 → #17): Brakka's management surface, fed by
+// the same stream. For now it shows the live event ticker — reuse full-shore's
+// event burst so the stream is populated.
+const idlerManage: Fixture = {
+  kind: "manage",
+  label: "Individual idler management page (#79): Brakka's event stream",
+  status: LIVE_STATUS,
+  idler: NAME,
+  messages: fullShore.messages,
+};
+
+// Individual view for an ABSENT idler (#79): the page is "Ghost"'s, but Ghost is
+// not in the streamed world, while the director cue points at a PRESENT idler
+// (Brakka). Individual mode must show NO focus panel — never the cue's pick
+// mislabelled "your idler". Mutation: restore the `?? store.cue?.focus` fallback
+// → Brakka's focus panel appears → the focus assertion (capture.spec) fails.
+const idlerAbsent: Fixture = {
+  kind: "overlay",
+  label: "Individual view, idler absent (#79): no focus panel, never the director's pick",
+  status: LIVE_STATUS,
+  idler: "Ghost",
+  messages: [
+    zoneSnapshot({
+      entities: [character({ id: FOCUS_ID, name: NAME, model: "idler", level: 42, life_pct: 90 })],
+    }),
+    directorCue(FOCUS_ID, "carving the strand"), // the director focuses Brakka
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
@@ -593,4 +682,7 @@ export const FIXTURES: Record<string, Fixture> = {
   "full-shore": fullShore,
   "full-bloodied": fullBloodied,
   "full-fresh": fullFresh,
+  "idler-view": idlerView,
+  "idler-manage": idlerManage,
+  "idler-absent": idlerAbsent,
 };

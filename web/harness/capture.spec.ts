@@ -2,6 +2,7 @@ import { test, expect, type Browser, type BrowserContextOptions, type Page } fro
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { FIXTURES } from "./manifest";
+import { resolveFocusId } from "../src/world/focus";
 
 const SHOTS_DIR = join(import.meta.dirname, "shots");
 mkdirSync(SHOTS_DIR, { recursive: true });
@@ -26,10 +27,10 @@ async function loadFixture(browser: Browser, name: string) {
 }
 
 /** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
-function shotTarget(page: Page, kind: "overlay" | "scene" | "full") {
+function shotTarget(page: Page, kind: "overlay" | "scene" | "full" | "manage") {
   if (kind === "scene") return page.locator("#scene canvas");
   if (kind === "full") return page.locator("body"); // 3D scene canvas + HUD overlay
-  return page.locator("#overlay");
+  return page.locator("#overlay"); // overlay + manage are #overlay surfaces
 }
 
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
@@ -52,7 +53,7 @@ for (const fx of FIXTURES) {
   test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
     const target = shotTarget(page, fx.kind);
-    if (fx.kind === "overlay" || fx.kind === "full") {
+    if (fx.kind === "overlay" || fx.kind === "full" || fx.kind === "manage") {
       // Non-vacuous: the authored HUD content must actually be on screen, or a
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);
@@ -277,4 +278,51 @@ test("globe readout: ES and Reserved lines drop out at zero (full-fresh)", async
   await expect(overlay).not.toContainText("ES:");
   await expect(overlay).not.toContainText("Reserved:");
   await ctx.close();
+});
+
+test("idler-view: focus is pinned to the requested idler, not the director cue", async ({
+  browser,
+}) => {
+  // The fixture is Brakka's page (/idler/Brakka) but the director cue points at
+  // Veles (id 2). Individual mode must focus Brakka BY NAME — the focus panel must
+  // read Brakka. Mutation: fall focusId back to store.cue?.focus → the panel reads
+  // "Veles" and this fails. (This is the non-vacuous proof of name-pinned focus.)
+  const { ctx, page } = await loadFixture(browser, "idler-view");
+  await expect(page.locator(".display")).toHaveText("Brakka");
+  await ctx.close();
+});
+
+test("idler-absent: an absent idler shows no focus panel, never the director's pick", async ({
+  browser,
+}) => {
+  // The page is /idler/Ghost but Ghost isn't in the streamed world; the director
+  // cue points at the present Brakka. Individual mode must NOT fall back to the
+  // cue — the banner names Ghost, but there is no focus panel. Mutation: restore
+  // the `?? store.cue?.focus` fallback → Brakka's panel (.display) appears → fails.
+  const { ctx, page } = await loadFixture(browser, "idler-absent");
+  // The page is /idler/Ghost; Ghost isn't streamed, the cue points at Brakka.
+  // Individual mode must show the clean "not in the realms" message — NOT focus
+  // the cue's Brakka. Mutation: restore `?? store.cue?.focus` → Brakka's panel
+  // (.display) renders and the message is gone → both assertions fail.
+  await expect(page.locator(".not-in-realms-name")).toHaveText("Ghost");
+  await expect(page.locator("#overlay")).toContainText("not in the realms");
+  await expect(page.locator(".display")).toHaveCount(0);
+  await ctx.close();
+});
+
+test("resolveFocusId pins to the named idler with no director-cue fallback (#79)", () => {
+  // The pure focus rule shared by the HUD overlay AND the scene camera — so a
+  // regression to cue-fallback in EITHER (the renderer's path isn't otherwise
+  // capture-covered) is caught here. The cue is deliberately a DIFFERENT idler.
+  const entities = [
+    { id: 1, name: "Brakka", kind: "Character" },
+    { id: 2, name: "Veles", kind: "Character" },
+    { id: 3, name: "Bone Stalker", kind: "Monster" },
+  ];
+  expect(resolveFocusId("Brakka", entities, 2)).toBe(1); // pinned + present → that idler, not the cue
+  expect(resolveFocusId("brakka", entities, 2)).toBe(1); // CASE-INSENSITIVE: /idler/brakka resolves Brakka
+  expect(resolveFocusId("BRAKKA", entities, 2)).toBe(1); // ...any casing the operator types
+  expect(resolveFocusId("Ghost", entities, 2)).toBeUndefined(); // pinned + ABSENT → nobody, never the cue
+  expect(resolveFocusId("bone stalker", entities, 2)).toBeUndefined(); // a monster's shared name never resolves (even lowercased)
+  expect(resolveFocusId(null, entities, 2)).toBe(2); // unpinned → the director's cue
 });

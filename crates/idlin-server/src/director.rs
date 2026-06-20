@@ -48,12 +48,6 @@ const IDLE_HOLD_TICKS: u32 = 80;
 /// cues aren't in the snapshot, so without this a viewer who connects
 /// after the last cut idles in overview forever.
 const REFRESH_TICKS: u64 = 50;
-/// A deliberate sweeping look at the current zone, once a minute…
-const OVERVIEW_EVERY: u64 = 600;
-/// …held for five seconds before the camera returns to the people.
-const OVERVIEW_HOLD: u32 = 50;
-/// Sentinel focus: matches no entity, so the client plays its overview.
-pub const OVERVIEW_FOCUS: u32 = 0;
 
 // Event scoring: (score, hold_ticks) per event class. Higher score wins the
 // tick and interrupts a weaker hold. Presentation tuning, not game balance —
@@ -78,8 +72,6 @@ pub struct Director {
     rotation_idx: usize,
     /// Tick of the last cue actually broadcast (drives the refresher).
     last_emit: u64,
-    /// Next scheduled overview beat.
-    next_overview: u64,
 }
 
 impl Director {
@@ -92,7 +84,6 @@ impl Director {
             cooldowns: HashMap::new(),
             rotation_idx: 0,
             last_emit: 0,
-            next_overview: OVERVIEW_EVERY,
         }
     }
 
@@ -161,26 +152,6 @@ impl Director {
 
         // The full roster, every world, deterministic order.
         let roster = roster(worlds);
-
-        // A scheduled overview beat: a sweeping look at the CURRENT zone,
-        // never interrupting an event hold; the rotation resumes after.
-        if tick >= self.next_overview && tick >= self.hold_until && !roster.is_empty() {
-            self.next_overview = tick + OVERVIEW_EVERY;
-            self.focus_name = None;
-            self.current_score = 0;
-            self.hold_until = tick + OVERVIEW_HOLD as u64;
-            self.last_emit = tick;
-            let world = self
-                .current_world
-                .clone()
-                .unwrap_or_else(|| roster[0].0.clone());
-            return Some(Cue {
-                world_key: world,
-                focus: OVERVIEW_FOCUS,
-                reason: "the wider shore".to_string(),
-                hold_ticks: OVERVIEW_HOLD,
-            });
-        }
 
         // Idle rotation across all characters everywhere. Even an unchanged
         // focus is re-broadcast periodically — cues aren't in the snapshot,
@@ -252,6 +223,11 @@ fn roster(worlds: &[WorldView<'_>]) -> Vec<(String, u32, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sentinel the (removed) overview beat used: a cue focus matching no
+    /// entity, so the client plays its overview. Real idler net ids are >= 1, so
+    /// the rotation must never emit this — asserted below.
+    const OVERVIEW_FOCUS: u32 = 0;
 
     fn death(id: u32) -> SimEvent {
         SimEvent::CharacterDied {
@@ -429,37 +405,15 @@ mod tests {
     }
 
     #[test]
-    fn overview_beats_arrive_and_yield_to_people() {
+    fn rotation_never_sweeps_to_overview() {
+        // The scheduled overview beat was removed: with idlers present and no
+        // events, every cue must stay on a person — never the OVERVIEW_FOCUS
+        // sentinel. Runs well past the old beat interval. (Mutation: restore the
+        // beat → a sentinel cue fires around tick 600 and this fails.)
         let mut d = Director::new();
         let no_ev: Vec<SimEvent> = vec![];
         let ch = chars(&[7]);
-        d.update(
-            1,
-            &[WorldView {
-                key: "a",
-                events: &no_ev,
-                characters: &ch,
-            }],
-        )
-        .expect("initial cue");
-        let mut saw_overview_at = None;
-        for t in 2..OVERVIEW_EVERY + 200 {
-            if let Some(c) = d.update(
-                t,
-                &[WorldView {
-                    key: "a",
-                    events: &no_ev,
-                    characters: &ch,
-                }],
-            ) && c.focus == OVERVIEW_FOCUS
-            {
-                saw_overview_at = Some(t);
-                break;
-            }
-        }
-        let t0 = saw_overview_at.expect("a scheduled overview must fire");
-        let mut returned = false;
-        for t in t0 + 1..t0 + 200 {
+        for t in 1..1500 {
             if let Some(c) = d.update(
                 t,
                 &[WorldView {
@@ -468,11 +422,11 @@ mod tests {
                     characters: &ch,
                 }],
             ) {
-                assert_eq!(c.focus, 7, "people come back after the sweep");
-                returned = true;
-                break;
+                assert_ne!(
+                    c.focus, OVERVIEW_FOCUS,
+                    "the director must keep an idler in focus, not sweep to overview (tick {t})"
+                );
             }
         }
-        assert!(returned);
     }
 }

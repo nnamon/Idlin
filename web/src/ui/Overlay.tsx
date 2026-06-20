@@ -3,6 +3,7 @@ import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { SkillStat } from "../gen/SkillStat";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore } from "../world/store";
+import { resolveFocusId } from "../world/focus";
 import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
 import "./overlay.css";
 
@@ -99,7 +100,31 @@ function Globe({
   );
 }
 
-export function Overlay({ client, store }: { client: NetClient; store: WorldStore }) {
+/** The individual view when the idler isn't in any world (#79): a clean message,
+ *  not an empty scene + HUD. The server sends no feed in this state. */
+function NotInRealms({ idler }: { idler: string }) {
+  return (
+    <div className="not-in-realms">
+      <div className="not-in-realms-card">
+        <div className="not-in-realms-name">{idler}</div>
+        <div className="not-in-realms-msg">is not in the realms</div>
+      </div>
+    </div>
+  );
+}
+
+export function Overlay({
+  client,
+  store,
+  idler = null,
+}: {
+  client: NetClient;
+  store: WorldStore;
+  /** Individual idler view (#79): the idler whose page this is. null = the
+   *  director broadcast. Pins focus + inspect to this idler and drops the
+   *  director chrome (rotation carousel, cue reason). */
+  idler?: string | null;
+}) {
   const [status, setStatus] = useState<NetStatus | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [, setVersion] = useState(0);
@@ -110,7 +135,15 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
     return () => clearInterval(h);
   }, [store]);
 
-  const focusId = store.cue?.focus;
+  // Individual view (#79): focus is pinned to the named idler (no director-cue
+  // fallback — an absent idler shows no focus panel, never the broadcast's pick
+  // presented as the page's idler); broadcast follows the cue. Shared with the
+  // scene camera via resolveFocusId so the two never disagree.
+  const focusId = resolveFocusId(
+    idler,
+    store.characters().map((c) => c.state),
+    store.cue?.focus,
+  );
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
 
   // Keep the focus panel fresh: re-request the sheet while a character is
@@ -172,6 +205,14 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
     });
   });
 
+  // Individual view for an idler that isn't in any world: the server sends no
+  // feed (it's one idler only), so there's nothing to show — a clean "not in the
+  // realms" message instead of an empty scene + HUD (#79). Reactive: the moment
+  // the idler's world streams in, `focused` resolves and the view takes over.
+  if (idler && !focused) {
+    return <NotInRealms idler={idler} />;
+  }
+
   return (
     <>
       {/* top-center: boss life bars */}
@@ -222,12 +263,9 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
       <div className={drawer ? "hud-right open" : "hud-right"}>
         {focused && focused.state.kind === "Character" && (
           <div className="panel" style={{ marginBottom: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span className="display" style={{ fontSize: 17 }}>
-                {focused.state.name}
-              </span>
-              <span className="chip">{store.cue?.reason}</span>
-            </div>
+            <span className="display" style={{ fontSize: 17 }}>
+              {focused.state.name}
+            </span>
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
             </div>
@@ -235,8 +273,8 @@ export function Overlay({ client, store }: { client: NetClient; store: WorldStor
             <div style={{ fontSize: 12.5, color: "#ab9d7a" }}>
               {focused.state.kills} kills · {focused.state.items} items
             </div>
-            {/* the idler rotation, folded into a compact carousel */}
-            <FocusCarousel names={rosterNames} current={rosterIdx} />
+            {/* the idler rotation carousel is director chrome — broadcast only */}
+            {!idler && <FocusCarousel names={rosterNames} current={rosterIdx} />}
           </div>
         )}
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}

@@ -10,6 +10,7 @@ import type { WorldStore } from "../world/store";
 import { DirectorCamera } from "../camera/DirectorCamera";
 import { AssetLibrary } from "./Assets";
 import { EntityVisual, SharedResources } from "./EntityVisuals";
+import { resolveFocusId } from "../world/focus";
 import { FxSystem } from "./FxSystem";
 import { IconFactory } from "./IconFactory";
 import { Terrain } from "./Terrain";
@@ -156,9 +157,12 @@ export class ZoneRenderer {
   constructor(
     private container: HTMLElement,
     private store: WorldStore,
-    opts: { capture?: boolean; camera?: number[] } = {},
+    opts: { capture?: boolean; camera?: number[]; follow?: string } = {},
   ) {
     this.capture = opts.capture ?? false;
+    // The individual view (/idler/<name>) and ?watch= pass the followed idler
+    // explicitly; it wins over the URL-param read in the field initializer (#79).
+    if (opts.follow) this.followOverride = opts.follow;
     // A fixed camera for capture: [x,y,z, targetX,targetY,targetZ]. Reuses the
     // existing ?cam= pin path (frame()), so the shot frames a chosen subject
     // deterministically without waiting for the director to converge.
@@ -247,6 +251,12 @@ export class ZoneRenderer {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
+  }
+
+  /** Lazy view of entity states for resolveFocusId — no per-frame array (the
+   *  focus resolver stops at the first match and filters to characters). */
+  private *entityStates(): Generator<{ id: number; name: string; kind: string }> {
+    for (const er of this.store.entities.values()) yield er.state;
   }
 
   private buildZone(): void {
@@ -650,17 +660,16 @@ export class ZoneRenderer {
       this.composer.render();
       return;
     }
-    let focusId = this.store.cue?.focus;
     const zoom = this.zoomOverride;
-    if (this.followOverride) {
-      const name = this.followOverride.toLowerCase();
-      for (const er of this.store.entities.values()) {
-        if (er.state.name.toLowerCase() === name) {
-          focusId = er.state.id;
-          break;
-        }
-      }
-    }
+    // Pinned to one idler (/idler/<name>, ?watch=, ?follow=): the camera tracks
+    // THEM, or nobody if they're absent — never the director's pick (that would
+    // silently frame a different idler on someone's page, #79). Broadcast follows
+    // the cue. Shared with the HUD via resolveFocusId so they always agree.
+    const focusId = resolveFocusId(
+      this.followOverride,
+      this.entityStates(),
+      this.store.cue?.focus,
+    );
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;
     if (focus) {
       this.focusRing.visible = true;
@@ -672,6 +681,11 @@ export class ZoneRenderer {
       const pulse = 1 + Math.sin(t * 4) * 0.12;
       this.focusRing.scale.set(pulse, pulse, 1);
       this.director.follow(focus.group.position, dt, zoom);
+    } else if (this.followOverride) {
+      // Pinned view (/idler/<name>): the idler isn't on screen right now (still
+      // loading, transferring, or respawning). HOLD the camera — never orbit into
+      // the overview, which is broadcast-only chrome (#79).
+      this.focusRing.visible = false;
     } else {
       this.focusRing.visible = false;
       this.director.idle(dt);

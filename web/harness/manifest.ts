@@ -28,6 +28,13 @@ export type FixtureMeta =
       kind: "full";
       expect: string[];
       minBytes: number;
+    }
+  | {
+      // Per-idler management page (#79): an opaque overlay surface, no 3D scene.
+      // Asserted by text needles like an overlay.
+      name: string;
+      kind: "manage";
+      expect: string[];
     };
 
 export const FIXTURES: FixtureMeta[] = [
@@ -107,5 +114,30 @@ export const FIXTURES: FixtureMeta[] = [
     kind: "full",
     expect: ["Brakka", "Life: 1530/1530"],
     minBytes: 60_000,
+  },
+  {
+    // Individual idler view (#79): the focus panel names Brakka — the pinned
+    // idler, NOT the director cue (which points at Veles in this fixture). The
+    // rigorous focus-by-name guard is the behavioral test in capture.spec.ts;
+    // this is the coarse screenshot check.
+    name: "idler-view",
+    kind: "overlay",
+    expect: ["Brakka"],
+  },
+  {
+    // Per-idler management page (#79): the header (idler + "manage") and the
+    // streamed event lines prove the page rendered and the ticker fed it. A
+    // broken stream / wrong render leaves the empty state and fails these.
+    name: "idler-manage",
+    kind: "manage",
+    expect: ["Brakka", "manage", "Event stream", "Bone Stalker"],
+  },
+  {
+    // Individual view for an idler not in any world (#79): a clean "not in the
+    // realms" message (no scene/HUD). The no-focus-panel + no-cue-fallback is
+    // asserted by a dedicated test.
+    name: "idler-absent",
+    kind: "overlay",
+    expect: ["Ghost", "not in the realms"],
   },
 ];

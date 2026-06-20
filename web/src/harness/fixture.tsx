@@ -11,6 +11,7 @@
 import { createRoot } from "react-dom/client";
 import { WorldStore } from "../world/store";
 import { Overlay } from "../ui/Overlay";
+import { ManagePage } from "../ui/ManagePage";
 import { ZoneRenderer } from "../scene/ZoneRenderer";
 import { silhouette } from "../scene/IconFactory";
 import { stubClient } from "./stubClient";
@@ -53,7 +54,9 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   for (const msg of fixture.messages) store.handle(msg);
 
   const client = stubClient(fixture.status);
-  createRoot(overlay).render(<Overlay client={client} store={store} />);
+  createRoot(overlay).render(
+    <Overlay client={client} store={store} idler={fixture.idler ?? null} />,
+  );
 
   // Drain the scheduler so the status effect (link plaque) commits, then wait
   // for the bundled font so text pixels are stable.
@@ -64,6 +67,17 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   await Promise.all(
     Array.from(overlay.querySelectorAll("img")).map((img) => img.decode().catch(() => {})),
   );
+}
+
+/** The per-idler management page (#79): no 3D scene — an opaque surface fed by
+ *  the idler's stream (here, canned messages populate the event ticker). */
+async function renderManage(fixture: Extract<Fixture, { kind: "manage" }>): Promise<void> {
+  const overlay = document.getElementById("overlay")!;
+  const store = new WorldStore();
+  for (const msg of fixture.messages) store.handle(msg);
+  createRoot(overlay).render(<ManagePage store={store} idler={fixture.idler} />);
+  for (let i = 0; i < 6; i++) await nextTask();
+  await document.fonts.ready;
 }
 
 async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promise<void> {
@@ -98,7 +112,9 @@ async function renderFull(fixture: Extract<Fixture, { kind: "full" }>): Promise<
 
   const overlay = document.getElementById("overlay")!;
   const client = stubClient(fixture.status);
-  createRoot(overlay).render(<Overlay client={client} store={store} />);
+  createRoot(overlay).render(
+    <Overlay client={client} store={store} idler={fixture.idler ?? null} />,
+  );
   for (let i = 0; i < 6; i++) await nextTask();
   await document.fonts.ready;
   await Promise.all(
@@ -133,6 +149,7 @@ async function main(): Promise<void> {
 
   if (fixture.kind === "scene") await renderScene(fixture);
   else if (fixture.kind === "full") await renderFull(fixture);
+  else if (fixture.kind === "manage") await renderManage(fixture);
   else await renderOverlay(fixture);
 
   window.__harness = { ready: true, name, label: fixture.label };

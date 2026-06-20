@@ -413,6 +413,117 @@
   transition: width 0.25s ease;
 }
 
+/* Per-idler MANAGEMENT page (#79 → #17): an opaque full surface (no 3D scene)
+   fed by the idler's stream. For now: a header + the live event stream; the bot
+   editor / debug console (#77) / whisper log (#78) plug in here later. */
+.manage-page {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(120% 100% at 50% 0%, #11131b, #07070d 70%);
+  color: #e9e4d4;
+  font-family: "Idlin Mono", ui-monospace, Menlo, monospace;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+.manage-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #2a2418;
+  background: rgba(8, 8, 12, 0.6);
+}
+.manage-back {
+  color: #ab9d7a;
+  text-decoration: none;
+  font-size: 13px;
+}
+.manage-back:hover {
+  color: #ecc97e;
+}
+.manage-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ecc97e;
+}
+.manage-tab {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: #ab9d7a;
+  border: 1px solid #46381f;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.manage-panel {
+  margin: 18px 20px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #2a2418;
+  border-radius: 9px;
+  background: rgba(8, 8, 12, 0.55);
+  overflow: hidden;
+}
+.manage-panel-title {
+  padding: 10px 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #ab9d7a;
+  border-bottom: 1px solid #2a2418;
+}
+.manage-stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.manage-line {
+  text-shadow: 0 1px 2px #000;
+}
+.manage-empty {
+  color: #6a6456;
+  font-style: italic;
+}
+
+/* Individual view for an idler not in any world (#79): a clean centered message,
+   no scene/HUD — the server sends no feed in this state. */
+.not-in-realms {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(120% 100% at 50% 40%, #11131b, #07070d 70%);
+  font-family: "Idlin Mono", ui-monospace, Menlo, monospace;
+  pointer-events: auto;
+}
+.not-in-realms-card {
+  text-align: center;
+  opacity: 0.92;
+}
+.not-in-realms-name {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ecc97e;
+  margin-bottom: 8px;
+}
+.not-in-realms-msg {
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: #ab9d7a;
+}
+
 @media (max-width: 860px) {
   /* Keep the original orb size on a phone — 1.5× orbs would crowd the narrow
      between-globes ticker and the close toggle, which are tuned to 112px (#100). */
