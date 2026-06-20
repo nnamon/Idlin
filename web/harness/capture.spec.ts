@@ -320,7 +320,9 @@ test("resolveFocusId pins to the named idler with no director-cue fallback (#79)
     { id: 3, name: "Bone Stalker", kind: "Monster" },
   ];
   expect(resolveFocusId("Brakka", entities, 2)).toBe(1); // pinned + present → that idler, not the cue
+  expect(resolveFocusId("brakka", entities, 2)).toBe(1); // CASE-INSENSITIVE: /idler/brakka resolves Brakka
+  expect(resolveFocusId("BRAKKA", entities, 2)).toBe(1); // ...any casing the operator types
   expect(resolveFocusId("Ghost", entities, 2)).toBeUndefined(); // pinned + ABSENT → nobody, never the cue
-  expect(resolveFocusId("Bone Stalker", entities, 2)).toBeUndefined(); // a monster's shared name never resolves
+  expect(resolveFocusId("bone stalker", entities, 2)).toBeUndefined(); // a monster's shared name never resolves (even lowercased)
   expect(resolveFocusId(null, entities, 2)).toBe(2); // unpinned → the director's cue
 });

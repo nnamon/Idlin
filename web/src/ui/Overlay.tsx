@@ -220,7 +220,9 @@ export function Overlay({
           (bot editor, debug console) will extend. */}
       {idler && (
         <div className="idler-banner">
-          <span className="idler-banner-name">{idler}</span>
+          {/* the canonical name (`Kargan`), not the URL casing (`kargan`);
+              `focused` is always present here — the not-in-realms branch returned. */}
+          <span className="idler-banner-name">{focused?.state.name ?? idler}</span>
           <span className="idler-banner-tag">individual view</span>
         </div>
       )}

@@ -451,6 +451,19 @@ impl SubState {
     }
 }
 
+/// The world key for a watched character, matched CASE-INSENSITIVELY so
+/// `/idler/kargan` binds `Kargan`'s world (#79 — an operator-typed URL shouldn't
+/// have to match the proper-noun casing). Idler names are unique proper nouns, so
+/// at most one key matches (the iteration order can't pick differently). This is
+/// the delivery layer — never hashed state — so the map walk is fine here.
+fn world_for_watch(routing: &replication::Routing, name: &str) -> Option<String> {
+    routing
+        .by_character
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.clone())
+}
+
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut tx, mut rx) = socket.split();
 
@@ -554,7 +567,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 // (if online), then deliver the bound feed's snapshot.
                 if welcomed_now {
                     if let SubState::Watch { name, world } = &mut sub {
-                        let key = routing.borrow().by_character.get(name.as_str()).cloned();
+                        let key = world_for_watch(&routing.borrow(), name.as_str());
                         match key.and_then(|k| {
                             state.feeds.read().expect("feeds lock").get(&k).cloned().map(|f| (k, f))
                         }) {
@@ -601,7 +614,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             changed = routing.changed(), if sub.watch_name().is_some() => {
                 if changed.is_err() { break; }
                 let SubState::Watch { name, world } = &mut sub else { continue };
-                let key = routing.borrow().by_character.get(name.as_str()).cloned();
+                let key = world_for_watch(&routing.borrow(), name.as_str());
                 if key.as_deref() == world.as_deref() {
                     continue; // binding unchanged
                 }
