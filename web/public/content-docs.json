@@ -2,6 +2,7 @@
   "categories": {
     "affix": [
       {
+        "description": "+# Mana",
         "effects": [
           {
             "condition": null,
@@ -52,6 +53,7 @@
         "weight": 70
       },
       {
+        "description": "+# Strength",
         "effects": [
           {
             "condition": null,
@@ -102,6 +104,7 @@
         "weight": 100
       },
       {
+        "description": "+# Life",
         "effects": [
           {
             "condition": null,
@@ -152,6 +155,7 @@
         "weight": 100
       },
       {
+        "description": "+# Life",
         "effects": [
           {
             "condition": null,
@@ -202,6 +206,7 @@
         "weight": 90
       },
       {
+        "description": "#% increased Physical Damage",
         "effects": [
           {
             "condition": null,
@@ -252,6 +257,7 @@
         "weight": 100
       },
       {
+        "description": "+# Physical Damage",
         "effects": [
           {
             "condition": null,
@@ -302,6 +308,7 @@
         "weight": 100
       },
       {
+        "description": "#% increased Life",
         "effects": [
           {
             "condition": null,
@@ -341,6 +348,7 @@
         "weight": 100
       },
       {
+        "description": "#% increased Stagger",
         "effects": [
           {
             "condition": null,
@@ -380,6 +388,7 @@
         "weight": 60
       },
       {
+        "description": "+# Accuracy",
         "effects": [
           {
             "condition": null,
@@ -419,6 +428,7 @@
         "weight": 70
       },
       {
+        "description": "+# Intelligence",
         "effects": [
           {
             "condition": null,
@@ -469,6 +479,7 @@
         "weight": 100
       },
       {
+        "description": "#% increased Cast Speed",
         "effects": [
           {
             "condition": null,
@@ -508,6 +519,7 @@
         "weight": 60
       },
       {
+        "description": "+# Mana Regeneration per second",
         "effects": [
           {
             "condition": null,
@@ -547,6 +559,7 @@
         "weight": 75
       },
       {
+        "description": "+# Knockback",
         "effects": [
           {
             "condition": null,
@@ -586,6 +599,7 @@
         "weight": 50
       },
       {
+        "description": "+# Fire Damage",
         "effects": [
           {
             "condition": null,
@@ -625,6 +639,7 @@
         "weight": 80
       },
       {
+        "description": "+# Dexterity",
         "effects": [
           {
             "condition": null,
@@ -675,6 +690,7 @@
         "weight": 100
       },
       {
+        "description": "+# Cold Damage",
         "effects": [
           {
             "condition": null,
@@ -714,6 +730,7 @@
         "weight": 80
       },
       {
+        "description": "#% increased Item Rarity, #% increased Item Quantity",
         "effects": [
           {
             "condition": null,
@@ -766,6 +783,7 @@
         "weight": 20
       },
       {
+        "description": "#% increased Attack Speed",
         "effects": [
           {
             "condition": null,
@@ -805,6 +823,7 @@
         "weight": 80
       },
       {
+        "description": "#% increased Item Quantity",
         "effects": [
           {
             "condition": null,
@@ -844,6 +863,7 @@
         "weight": 35
       },
       {
+        "description": "+# Armour",
         "effects": [
           {
             "condition": null,
@@ -883,6 +903,7 @@
         "weight": 90
       },
       {
+        "description": "#% increased Item Rarity",
         "effects": [
           {
             "condition": null,
@@ -922,6 +943,7 @@
         "weight": 50
       },
       {
+        "description": "#% increased Poise",
         "effects": [
           {
             "condition": null,
@@ -961,6 +983,7 @@
         "weight": 70
       },
       {
+        "description": "#% increased Critical Strike Chance",
         "effects": [
           {
             "condition": null,
@@ -1000,6 +1023,7 @@
         "weight": 60
       },
       {
+        "description": "+# Life Regeneration per second",
         "effects": [
           {
             "condition": null,
@@ -1039,6 +1063,7 @@
         "weight": 75
       },
       {
+        "description": "+#% Critical Strike Multiplier",
         "effects": [
           {
             "condition": null,
@@ -1078,6 +1103,7 @@
         "weight": 50
       },
       {
+        "description": "+# Life",
         "effects": [
           {
             "condition": null,
@@ -1117,6 +1143,7 @@
         "weight": 100
       },
       {
+        "description": "#% increased Physical Damage (while wielding a melee weapon)",
         "effects": [
           {
             "condition": {
@@ -1158,6 +1185,7 @@
         "weight": 50
       },
       {
+        "description": "+#% Chaos Resistance",
         "effects": [
           {
             "condition": null,
@@ -1197,6 +1225,7 @@
         "weight": 70
       },
       {
+        "description": "+# Lightning Damage",
         "effects": [
           {
             "condition": null,
@@ -1236,6 +1265,7 @@
         "weight": 80
       },
       {
+        "description": "#% increased Stagger",
         "effects": [
           {
             "condition": null,
@@ -1264,6 +1294,7 @@
         "weight": 40
       },
       {
+        "description": "+#% Lightning Resistance",
         "effects": [
           {
             "condition": null,
@@ -1314,6 +1345,7 @@
         "weight": 80
       },
       {
+        "description": "+#% Cold Resistance",
         "effects": [
           {
             "condition": null,
@@ -1364,6 +1396,7 @@
         "weight": 80
       },
       {
+        "description": "+# Dexterity, #% increased Evasion",
         "effects": [
           {
             "condition": null,
@@ -1416,6 +1449,7 @@
         "weight": 55
       },
       {
+        "description": "#% increased Movement Speed",
         "effects": [
           {
             "condition": null,
@@ -1455,6 +1489,7 @@
         "weight": 70
       },
       {
+        "description": "+#% Life Leech, +#% Mana Leech",
         "effects": [
           {
             "condition": null,
@@ -1507,6 +1542,7 @@
         "weight": 50
       },
       {
+        "description": "+# Chaos Damage",
         "effects": [
           {
             "condition": null,
@@ -1546,6 +1582,7 @@
         "weight": 50
       },
       {
+        "description": "+#% Fire Resistance",
         "effects": [
           {
             "condition": null,
@@ -1585,6 +1622,7 @@
         "weight": 80
       },
       {
+        "description": "+#% Fire Resistance",
         "effects": [
           {
             "condition": null,
@@ -1624,6 +1662,7 @@
         "weight": 70
       },
       {
+        "description": "+# Evasion",
         "effects": [
           {
             "condition": null,
@@ -1663,6 +1702,7 @@
         "weight": 90
       },
       {
+        "description": "#% increased Physical Damage",
         "effects": [
           {
             "condition": null,
@@ -1702,6 +1742,7 @@
         "weight": 90
       },
       {
+        "description": "+# Energy Shield",
         "effects": [
           {
             "condition": null,
@@ -1752,6 +1793,7 @@
         "weight": 70
       },
       {
+        "description": "#% increased Attack Speed",
         "effects": [
           {
             "condition": null,
@@ -5023,5 +5065,205 @@
   },
   "fingerprint": "0c42b0cdf653993c",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
-  "seq_bits": 23
+  "seq_bits": 23,
+  "stats": [
+    {
+      "added_unit": "flat",
+      "desc": "Attribute: grants Life and — while wielding a melee weapon — increased physical damage.",
+      "key": "strength",
+      "name": "Strength"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Attribute: grants Accuracy and increased Evasion.",
+      "key": "dexterity",
+      "name": "Dexterity"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Attribute: grants Mana and increased Energy Shield.",
+      "key": "intelligence",
+      "name": "Intelligence"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Maximum life; reaching 0 is death.",
+      "key": "life",
+      "name": "Life"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Maximum mana; skills draw on it and running dry blocks casting.",
+      "key": "mana",
+      "name": "Mana"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "A buffer depleted before life; recharges after a delay untouched.",
+      "key": "energy_shield",
+      "name": "Energy Shield"
+    },
+    {
+      "added_unit": "per_second",
+      "desc": "Life recovered per second (integer-divided per tick).",
+      "key": "life_regen",
+      "name": "Life Regeneration"
+    },
+    {
+      "added_unit": "per_second",
+      "desc": "Mana recovered per second (integer-divided per tick).",
+      "key": "mana_regen",
+      "name": "Mana Regeneration"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Damage dealt recovered as life, rate-capped.",
+      "key": "leech_life",
+      "name": "Life Leech"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Damage dealt recovered as mana, rate-capped.",
+      "key": "leech_mana",
+      "name": "Mana Leech"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Physical hit damage.",
+      "key": "damage_phys",
+      "name": "Physical Damage"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Fire hit damage.",
+      "key": "damage_fire",
+      "name": "Fire Damage"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Cold hit damage.",
+      "key": "damage_cold",
+      "name": "Cold Damage"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Lightning hit damage.",
+      "key": "damage_lightning",
+      "name": "Lightning Damage"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Chaos hit damage (ignores armour and elemental resists).",
+      "key": "damage_chaos",
+      "name": "Chaos Damage"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Factor on attack rate (base 10000; higher is faster).",
+      "key": "attack_speed",
+      "name": "Attack Speed"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Factor on cast rate (base 10000; higher is faster).",
+      "key": "cast_speed",
+      "name": "Cast Speed"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Factor on movement rate (base 10000; higher is faster).",
+      "key": "move_speed",
+      "name": "Movement Speed"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Attenuates incoming physical damage.",
+      "key": "armour",
+      "name": "Armour"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Chance for incoming hits to miss.",
+      "key": "evasion",
+      "name": "Evasion"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Improves the chance your attacks land against evasion.",
+      "key": "accuracy",
+      "name": "Accuracy"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chance to negate an incoming hit entirely (needs a shield).",
+      "key": "block",
+      "name": "Block"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Scales a skill's base critical-strike chance.",
+      "key": "crit_chance",
+      "name": "Critical Strike Chance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Bonus damage on a critical strike (base 5000 = +50%).",
+      "key": "crit_multi",
+      "name": "Critical Strike Multiplier"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Fire damage mitigated (capped at use).",
+      "key": "resist_fire",
+      "name": "Fire Resistance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Cold damage mitigated (capped at use).",
+      "key": "resist_cold",
+      "name": "Cold Resistance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Lightning damage mitigated (capped at use).",
+      "key": "resist_lightning",
+      "name": "Lightning Resistance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chaos damage mitigated (capped at use).",
+      "key": "resist_chaos",
+      "name": "Chaos Resistance"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Factor scaling drop-rarity weights on your kills (base 10000).",
+      "key": "item_rarity",
+      "name": "Item Rarity"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Factor scaling how many drop rolls your kills make (base 10000).",
+      "key": "item_quantity",
+      "name": "Item Quantity"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Makes your hits stun more easily (shifts the victim's stun bar).",
+      "key": "stagger",
+      "name": "Stagger"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Makes you harder to stun and shortens stuns against you.",
+      "key": "poise",
+      "name": "Poise"
+    },
+    {
+      "added_unit": "centi_units",
+      "desc": "Flat knockback (centi-units) added to your hits.",
+      "key": "knockback",
+      "name": "Knockback"
+    }
+  ]
 }

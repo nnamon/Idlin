@@ -6,7 +6,7 @@
 use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
-    PropState, SkillStat, SkillSupport, TileMapState, TileVisual,
+    PropState, RolledModView, SkillStat, SkillSupport, TileMapState, TileVisual,
 };
 use idlin_sim::world::{CharacterSheetView, SkillStatView};
 use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -361,6 +361,17 @@ fn clamp_i32(v: i64) -> i32 {
     v.clamp(i32::MIN as i64, i32::MAX as i64) as i32
 }
 
+/// Map a sim item's rolled affixes (affix_num, tier, values) to the wire view.
+fn rolled_mods(mods: &[(i32, u32, Vec<i64>)]) -> Vec<RolledModView> {
+    mods.iter()
+        .map(|(num, tier, values)| RolledModView {
+            num: *num,
+            tier: *tier,
+            values: values.iter().map(|v| clamp_i32(*v)).collect(),
+        })
+        .collect()
+}
+
 /// Map one computed skill readout to the wire type. XP is clamped nonnegative
 /// (parity with the gem-row clamp) so corrupt state can't render a negative bar.
 fn skill_to_proto(s: SkillStatView) -> SkillStat {
@@ -437,26 +448,40 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         equipment: v
             .equipment
             .into_iter()
-            .map(|(slot, item, dimmed)| {
-                let (name, rarity) = item.unwrap_or_default();
-                GearSlotView {
+            .map(|(slot, item, dimmed)| match item {
+                Some(it) => GearSlotView {
                     slot: slot.to_string(),
-                    name,
-                    rarity,
+                    name: it.name,
+                    rarity: it.rarity,
                     dimmed,
-                }
+                    base_num: it.base_num,
+                    item_level: it.item_level,
+                    mods: rolled_mods(&it.mods),
+                },
+                None => GearSlotView {
+                    slot: slot.to_string(),
+                    name: String::new(),
+                    rarity: 0,
+                    dimmed,
+                    base_num: -1,
+                    item_level: 0,
+                    mods: Vec::new(),
+                },
             })
             .collect(),
         inventory: v
             .inventory
             .into_iter()
-            .map(|(name, rarity, x, y, w, h)| InvItemView {
-                name,
-                rarity,
+            .map(|(it, x, y, w, h)| InvItemView {
+                name: it.name,
+                rarity: it.rarity,
                 x,
                 y,
                 w,
                 h,
+                base_num: it.base_num,
+                item_level: it.item_level,
+                mods: rolled_mods(&it.mods),
             })
             .collect(),
         gems: v

@@ -463,7 +463,14 @@ record 1 @ +16: affix_num    …         // the next effect (same affix_num if h
 ```
 
 The granted stat isn't in the record — look it up by identity:
-`content-docs → affixes[affix_num].effects[effect_index].stat`.
+`content-docs → affixes[affix_num].effects[effect_index].stat`. What that stat
+*means* is in the top-level `stats` vocabulary of content-docs: each entry has
+`key` (the snake_case name `effects[].stat` uses), a human `name`, a one-line
+`desc`, and `added_unit` — the unit an `Added`-layer value carries
+(`flat` · `basis_points` · `per_second` · `factor_bp` · `centi_units`;
+Increased/More layers are always basis-point percentages). Each affix doc also
+carries an auto-derived `description` — the number-free mod template
+(`"+# Dexterity, #% increased Evasion"`).
 
 ### Manual gem & gear selection (the optimization path)
 

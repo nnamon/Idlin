@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // 36: EntityState.es_pct (#100 — energy shield on the overhead bar).
-pub const PROTO_VERSION: u32 = 36;
+pub const PROTO_VERSION: u32 = 37;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -297,6 +297,19 @@ pub enum GameEvent {
     },
 }
 
+/// One rolled affix on an item, for the tooltip (#87). The client resolves the
+/// affix name / kind / per-effect stat+layer + the tier's roll ranges from
+/// `content-docs.json` by `num`, and formats the line with the rolled `values`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct RolledModView {
+    /// Affix registry num (key into content-docs `affix`).
+    pub num: i32,
+    /// Which tier rolled (index into the affix's `tiers`).
+    pub tier: u32,
+    /// One rolled value per affix effect (positional; a hybrid has several).
+    pub values: Vec<i32>,
+}
+
 /// One equipment slot on the inspect sheet ("" name = empty slot).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GearSlotView {
@@ -306,6 +319,12 @@ pub struct GearSlotView {
     /// Shown greyed: a two-handed weapon mirrors into the offhand slot to
     /// signal it claims both hands (the offhand can't be filled).
     pub dimmed: bool,
+    /// Base item def num (content-docs lookup for base type + requirements);
+    /// -1 for an empty slot.
+    pub base_num: i32,
+    pub item_level: u32,
+    /// Rolled affixes for the tooltip (empty for an empty slot).
+    pub mods: Vec<RolledModView>,
 }
 
 /// One bag item on the inspect sheet (grid placement + footprint).
@@ -317,6 +336,11 @@ pub struct InvItemView {
     pub y: u8,
     pub w: u8,
     pub h: u8,
+    /// Base item def num (content-docs lookup); -1 for a gem shown in the bag.
+    pub base_num: i32,
+    pub item_level: u32,
+    /// Rolled affixes for the tooltip (empty for gems / plain items).
+    pub mods: Vec<RolledModView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

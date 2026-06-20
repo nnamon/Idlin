@@ -27,10 +27,10 @@ async function loadFixture(browser: Browser, name: string) {
 }
 
 /** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
-function shotTarget(page: Page, kind: "overlay" | "scene" | "full" | "manage") {
+function shotTarget(page: Page, kind: "overlay" | "scene" | "full" | "manage" | "tooltip") {
   if (kind === "scene") return page.locator("#scene canvas");
   if (kind === "full") return page.locator("body"); // 3D scene canvas + HUD overlay
-  return page.locator("#overlay"); // overlay + manage are #overlay surfaces
+  return page.locator("#overlay"); // overlay + manage + tooltip are #overlay surfaces
 }
 
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
@@ -53,7 +53,12 @@ for (const fx of FIXTURES) {
   test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
     const target = shotTarget(page, fx.kind);
-    if (fx.kind === "overlay" || fx.kind === "full" || fx.kind === "manage") {
+    if (
+      fx.kind === "overlay" ||
+      fx.kind === "full" ||
+      fx.kind === "manage" ||
+      fx.kind === "tooltip"
+    ) {
       // Non-vacuous: the authored HUD content must actually be on screen, or a
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);
@@ -204,23 +209,56 @@ test("the bag/obols shared slot cycles Bag → Obols → Bag on its timer", asyn
     () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
   );
 
-  const bag = page.getByText("Bag", { exact: true });
-  const obols = page.getByText("Obols", { exact: true });
+  // The [Bag|Obols] chip labels the deck; the active face is identified by the
+  // chip's aria-selected tab and by the bag grid being mounted (one face at a
+  // time). The panels no longer carry their own header (#87).
+  const chipBag = page.getByRole("tab", { name: "Bag" });
+  const chipObols = page.getByRole("tab", { name: "Obols" });
+  const bagGrid = page.locator(".bag");
 
-  // starts on the Bag face; the Obols face is not in the DOM (one at a time)
-  await expect(bag).toBeVisible();
-  await expect(obols).toHaveCount(0);
+  // starts on the Bag face
+  await expect(chipBag).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toBeVisible();
 
-  // one period → the slot flips to Obols (and Bag leaves the DOM)
+  // one period → the slot flips to Obols (and the bag grid leaves the DOM)
   await page.clock.fastForward(7000);
-  await expect(obols).toBeVisible();
-  await expect(bag).toHaveCount(0);
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
   await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "obols-face.png") });
 
   // another period → it loops back to Bag
   await page.clock.fastForward(7000);
-  await expect(bag).toBeVisible();
-  await expect(obols).toHaveCount(0);
+  await expect(chipBag).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toBeVisible();
+
+  await ctx.close();
+});
+
+test("the [Bag|Obols] chip pins the deck face on hover", async ({ browser }) => {
+  // Hovering a chip segment FORCES that face without waiting for the cycle timer;
+  // unhovering resumes the auto cursor. No fake clock here — page.clock.install()
+  // freezes the rAF that Playwright's hover actionability waits on, so a real
+  // pointer test must run on the live clock (the 7s auto-cycle never fires within
+  // this sub-second test, so the auto face stays Bag throughout).
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  const chipObols = page.getByRole("tab", { name: "Obols" });
+  const bagGrid = page.locator(".bag");
+
+  // auto face is Bag
+  await expect(bagGrid).toBeVisible();
+  // hovering Obols forces the obols face (bag grid unmounts)
+  await chipObols.hover();
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+  // moving the pointer off the chip restores the auto face (still Bag)
+  await page.mouse.move(2, 2);
+  await expect(bagGrid).toBeVisible();
 
   await ctx.close();
 });

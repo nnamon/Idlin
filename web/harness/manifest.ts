@@ -35,6 +35,13 @@ export type FixtureMeta =
       name: string;
       kind: "manage";
       expect: string[];
+    }
+  | {
+      // PoE-style item tooltip (#87): a standalone #overlay surface, asserted by
+      // text needles (item name, base, mod lines) like an overlay.
+      name: string;
+      kind: "tooltip";
+      expect: string[];
     };
 
 export const FIXTURES: FixtureMeta[] = [
@@ -63,6 +70,20 @@ export const FIXTURES: FixtureMeta[] = [
     name: "hud-edge",
     kind: "overlay",
     expect: ["Solo", "Life: 0/1180"],
+  },
+  {
+    // PoE-style item tooltip (#87): the rare amulet's name, base type, item
+    // level, and a formatted mod line with its tier prove the render is real.
+    name: "item-tooltip",
+    kind: "tooltip",
+    expect: [
+      "Vortex Scarab",
+      "Onyx Amulet",
+      "Item Level: 84",
+      "Physical Damage",
+      "Critical Strike Chance",
+      "Tier 1",
+    ],
   },
   {
     name: "scene-shore",
