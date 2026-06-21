@@ -7,12 +7,14 @@ import {
   character,
   characterSheet,
   directorCue,
+  fire,
   gear,
   invItem,
   monster,
   sheet,
   simXY,
   skill,
+  zoneDelta,
   zoneSnapshot,
 } from "./builders";
 
@@ -793,8 +795,80 @@ const itemTooltip: Fixture = {
   },
 };
 
+/**
+ * Skill fire pulse (#94 Part B): a focused idler whose Arc skill (socket 200)
+ * just fired — a `UseFx` in the trailing `ZoneDelta` bumps that card's fire
+ * counter, so ONLY the Arc card flashes; the other two (untouched socket keys)
+ * stay calm. Distinct socket keys prove the pulse targets the firing card, not
+ * the whole list.
+ */
+const FIRE_PULSE_SLOT = 200;
+const skillPulse: Fixture = {
+  kind: "overlay",
+  label: "Skill fire pulse: only the just-fired skill's card flashes (#94 Part B)",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [
+        character({ id: 1, name: "Brakka", level: 30, model: "marauder", life_pct: 80, kills: 120 }),
+      ],
+    }),
+    directorCue(1, "carving the strand"),
+    focusQueue(["Brakka"], 0),
+    characterSheet(
+      sheet({
+        id: 1,
+        name: "Brakka",
+        level: 30,
+        life: 900,
+        life_max: 1100,
+        mana: 120,
+        mana_max: 200,
+        skills: [
+          skill({
+            slot: 100,
+            name: "Heavy Swing",
+            kind: "attack",
+            level: 12,
+            damage: [320, 0, 0, 0, 0],
+            dps: 612,
+            use_ticks: 8,
+          }),
+          skill({
+            slot: FIRE_PULSE_SLOT,
+            name: "Arc",
+            kind: "spell",
+            shape: "line",
+            level: 8,
+            damage: [0, 0, 0, 160, 0],
+            dps: 240,
+            use_ticks: 8,
+            mana_cost: 12,
+            range_cu: 600,
+            width_cu: 130,
+          }),
+          skill({
+            slot: 300,
+            name: "Frost Nova",
+            kind: "spell",
+            shape: "nova",
+            level: 6,
+            damage: [0, 0, 90, 0, 0],
+            dps: 120,
+            mana_cost: 20,
+            radius_cu: 200,
+          }),
+        ],
+      }),
+    ),
+    // Arc fired this tick → only its card pulses.
+    zoneDelta({ tick: 5, uses: [fire(1, FIRE_PULSE_SLOT, true)] }),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
+  "skill-pulse": skillPulse,
   "hud-edge": hudEdge,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,

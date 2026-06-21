@@ -7,7 +7,12 @@ import type { SkillSupport } from "./SkillSupport";
  * for damage skills; the dot / buff / debuff fields carry the pertinent number
  * for skills that deal no direct hit (a DoT, an aura, an on-hit debuff).
  */
-export type SkillStat = { name: string, level: number, 
+export type SkillStat = { 
+/**
+ * Socket key this skill fires from (UseSkill(slot) / ReadSkills slot_no).
+ * The HUD matches `UseFx.slot` against this to pulse the card on fire (#94).
+ */
+slot: number, name: string, level: number, 
 /**
  * Gem XP into the current level, and the amount for the next (0 at cap).
  */

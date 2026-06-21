@@ -376,6 +376,8 @@ fn rolled_mods(mods: &[(i32, u32, Vec<i64>)]) -> Vec<RolledModView> {
 /// (parity with the gem-row clamp) so corrupt state can't render a negative bar.
 fn skill_to_proto(s: SkillStatView) -> SkillStat {
     SkillStat {
+        // Socket key is a tagged positive num → fits i32; clamp for safety.
+        slot: clamp_i32(s.slot as i64),
         name: s.name,
         level: s.level,
         xp: clamp_i32(s.xp.max(0)),
@@ -533,6 +535,7 @@ mod tests {
     #[test]
     fn skill_to_proto_clamps_negative_xp_to_zero() {
         let view = SkillStatView {
+            slot: 8_388_613,
             name: "Corrupt".into(),
             level: 3,
             xp: -50,

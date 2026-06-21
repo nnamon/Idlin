@@ -429,6 +429,7 @@ fn collect_uses(events: &[SimEvent]) -> Vec<UseFx> {
                 y,
                 use_ticks,
                 contact_ticks,
+                slot,
             } => Some(UseFx {
                 attacker: *id,
                 spell: *spell,
@@ -436,6 +437,7 @@ fn collect_uses(events: &[SimEvent]) -> Vec<UseFx> {
                 y: *y,
                 use_ticks: *use_ticks,
                 contact_ticks: *contact_ticks,
+                slot: *slot,
             }),
             _ => None,
         })

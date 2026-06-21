@@ -15,7 +15,7 @@ use ts_rs::TS;
 //     new RolledModView, for the #87 item tooltip.
 // 38: CharacterSheet gains stat_sources (per-stat source breakdown, #87) + the
 //     new StatSourceView.
-pub const PROTO_VERSION: u32 = 38;
+pub const PROTO_VERSION: u32 = 39;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -107,6 +107,10 @@ pub struct UseFx {
     pub use_ticks: u32,
     /// Ticks from start to the blow landing (<= use_ticks).
     pub contact_ticks: u32,
+    /// Socket key of the fired skill — matches `SkillStat.slot` / `ReadSkills`
+    /// slot_no, so the HUD can pulse the firing skill's card (#94 Part B).
+    /// `-1` for a basic weapon attack (no gem, no card).
+    pub slot: i32,
 }
 
 /// A projectile took flight; the client animates the streak (hits arrive
@@ -384,6 +388,9 @@ pub struct SkillSupport {
 /// for skills that deal no direct hit (a DoT, an aura, an on-hit debuff).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct SkillStat {
+    /// Socket key this skill fires from (UseSkill(slot) / ReadSkills slot_no).
+    /// The HUD matches `UseFx.slot` against this to pulse the card on fire (#94).
+    pub slot: i32,
     pub name: String,
     pub level: u32,
     /// Gem XP into the current level, and the amount for the next (0 at cap).
@@ -724,7 +731,15 @@ mod tests {
                 freeze: false,
             }],
             projectiles: vec![],
-            uses: Vec::new(),
+            uses: vec![UseFx {
+                attacker: 1,
+                spell: false,
+                x: 0,
+                y: 0,
+                use_ticks: 8,
+                contact_ticks: 4,
+                slot: 8_388_613,
+            }],
             skills: vec![SkillFx {
                 attacker: 1,
                 spell: true,
@@ -740,7 +755,12 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: S2C = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, S2C::ZoneDelta { tick: 42, .. }));
+        let S2C::ZoneDelta { tick: 42, uses, .. } = &back else {
+            panic!("expected ZoneDelta");
+        };
+        // #94 Part B: the firing slot survives the wire so the HUD can pulse the
+        // matching skill card (it's the socket key, not a positional index).
+        assert_eq!(uses[0].slot, 8_388_613, "UseFx firing slot survives the wire");
 
         // The per-skill readout (#19) survives the wire — notably `width_cu`,
         // the newest field, and a nested support.
@@ -807,6 +827,7 @@ mod tests {
                 }],
                 gems: vec![],
                 skills: vec![SkillStat {
+                    slot: 8_388_613,
                     name: "Arc".into(),
                     level: 5,
                     xp: 120,
@@ -857,6 +878,10 @@ mod tests {
             panic!("expected CharacterSheet");
         };
         assert_eq!(sheet.skills.len(), 1);
+        assert_eq!(
+            sheet.skills[0].slot, 8_388_613,
+            "skill socket key survives the wire (#94: HUD matches it to UseFx.slot)"
+        );
         assert_eq!(
             sheet.skills[0].width_cu, 130,
             "line width survives the wire"

@@ -296,7 +296,7 @@ export function Overlay({
           tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
         </div>
       </div>
-      {sheet && <StatsPanel sheet={sheet} />}
+      {sheet && <StatsPanel sheet={sheet} fireCount={(slot) => store.skillFireCount(sheet.id, slot)} />}
       </div>
 
       {/* top-right: focus + leaderboard */}
@@ -334,7 +334,7 @@ export function Overlay({
         {/* phones hide the left column; the drawer carries the numbers */}
         {sheet && (
           <div className="mobile-only">
-            <StatsPanel sheet={sheet} />
+            <StatsPanel sheet={sheet} fireCount={(slot) => store.skillFireCount(sheet.id, slot)} />
           </div>
         )}
       </div>
@@ -773,7 +773,7 @@ function XpBar({ xp, xpNext, className = "xp-bar" }: { xp: number; xpNext: numbe
 /** One socketed skill's computed readout. DPS leads for damage skills; a DoT,
  *  buff, or debuff skill shows its own pertinent number instead of a
  *  misleading "0 DPS". All numbers come from the sim (see `SkillStat`). */
-function SkillCard({ skill }: { skill: SkillStat }) {
+function SkillCard({ skill, fired = 0 }: { skill: SkillStat; fired?: number }) {
   // The headline metric, chosen by what the skill actually does.
   const head =
     skill.dps > 0
@@ -788,6 +788,9 @@ function SkillCard({ skill }: { skill: SkillStat }) {
   const manaPerSec = skill.use_ticks > 0 ? Math.round((skill.mana_cost * TICK_HZ) / skill.use_ticks) : 0;
   return (
     <div className="skill-card">
+      {/* #94 Part B: each fire of this skill bumps `fired`; the changed key
+          remounts the flash layer so its one-shot pulse animation replays. */}
+      {fired > 0 && <span key={fired} className="skill-flash" aria-hidden="true" />}
       <div className="skill-head">
         <span>
           ◆ {skill.name} <span style={{ color: "#ab9d7a" }}>lv{skill.level}</span>
@@ -828,7 +831,14 @@ function SkillCard({ skill }: { skill: SkillStat }) {
 }
 
 /** Left column: the focused idler's numbers — stats, gems, obols. */
-function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
+function StatsPanel({
+  sheet,
+  fireCount,
+}: {
+  sheet: CharacterSheet;
+  /** #94 Part B: fire count for a skill's socket slot — drives the card pulse. */
+  fireCount?: (slot: number) => number;
+}) {
   const setHover = useContext(ItemHoverContext);
   // Each row hovers to its source breakdown (#87): the stat keys it covers feed
   // the tooltip, which lists the contributing gear/passive/buff. Rows with no
@@ -885,7 +895,7 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
               left column (plaque + stats + this) on screen. */}
           <AutoScroll maxVh={50}>
             {sheet.skills.map((s, i) => (
-              <SkillCard key={i} skill={s} />
+              <SkillCard key={i} skill={s} fired={fireCount?.(s.slot)} />
             ))}
           </AutoScroll>
         </>

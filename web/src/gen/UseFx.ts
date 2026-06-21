@@ -21,4 +21,10 @@ use_ticks: number,
 /**
  * Ticks from start to the blow landing (<= use_ticks).
  */
-contact_ticks: number, };
+contact_ticks: number, 
+/**
+ * Socket key of the fired skill — matches `SkillStat.slot` / `ReadSkills`
+ * slot_no, so the HUD can pulse the firing skill's card (#94 Part B).
+ * `-1` for a basic weapon attack (no gem, no card).
+ */
+slot: number, };

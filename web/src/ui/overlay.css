@@ -604,11 +604,44 @@
 /* Per-skill readout cards (#19): DPS or the skill's pertinent metric, a
    five-type damage bar, a compact stat line, and support chips. */
 .skill-card {
+  position: relative; /* anchors the #94 fire-pulse flash overlay */
   margin: 4px 0;
   padding: 5px 7px;
   border: 1px solid #2c2415;
   border-radius: 3px;
   background: linear-gradient(180deg, rgba(40, 32, 18, 0.5), rgba(20, 15, 8, 0.5));
+}
+
+/* #94 Part B: a one-shot golden flash over the card when its skill fires. The
+   element is remounted (keyed on the fire count) so the animation replays each
+   time; it's decorative (pointer-events: none) and ends fully transparent. Under
+   the capture harness (animations disabled) it's pinned at frame 0, so the shot
+   proves the right card fired. */
+.skill-flash {
+  position: absolute;
+  inset: -1px;
+  border-radius: 4px;
+  pointer-events: none;
+  transform-origin: center;
+  animation: skill-fire 280ms ease-out forwards;
+}
+@keyframes skill-fire {
+  0% {
+    opacity: 1;
+    transform: scale(1.05);
+    background: rgba(224, 200, 120, 0.28);
+    box-shadow:
+      0 0 0 1.5px #e6cd76,
+      0 0 16px 3px rgba(224, 200, 120, 0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+    background: rgba(224, 200, 120, 0);
+    box-shadow:
+      0 0 0 1.5px rgba(224, 200, 120, 0),
+      0 0 16px 3px rgba(224, 200, 120, 0);
+  }
 }
 .skill-head {
   display: flex;

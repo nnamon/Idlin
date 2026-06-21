@@ -138,6 +138,11 @@ export class WorldStore {
   pendingProjectiles: ActiveProjectile[] = [];
   pendingSkills: ActiveSkill[] = [];
   pendingUses: ActiveUse[] = [];
+  /** #94 Part B: per `${attacker}:${socketKey}` monotonic fire counter, bumped
+   *  when that skill's use begins. The HUD keys its card pulse on this — a counter
+   *  (not a timestamp) so the React key changes on every fire, even two in one
+   *  frame, and the pulse animation deterministically replays. */
+  skillFires = new Map<string, number>();
   cue: Cue | null = null;
   /** All idlers, all worlds, in upcoming-focus order (featured feed). */
   focusQueue: FocusQueueEntry[] = [];
@@ -255,6 +260,12 @@ export class WorldStore {
             tick: d.tick,
             at: now,
           });
+          // #94 Part B: a socketed-skill use (slot >= 0; basic attacks are -1)
+          // bumps the per-skill fire counter the focus panel pulses on.
+          if (u.slot >= 0) {
+            const k = `${u.attacker}:${u.slot}`;
+            this.skillFires.set(k, (this.skillFires.get(k) ?? 0) + 1);
+          }
         }
         for (const s of d.skills) {
           this.pendingSkills.push({
@@ -328,6 +339,13 @@ export class WorldStore {
     }
     this.pendingProjectiles = later;
     return due;
+  }
+
+  /** #94 Part B: how many times `attacker` has fired the skill at socket `slot`.
+   *  The focus panel keys each card's fire pulse on this — a new value replays the
+   *  flash. Monotonic, never drained (it's a counter, not a queue). */
+  skillFireCount(attacker: number, slot: number): number {
+    return this.skillFires.get(`${attacker}:${slot}`) ?? 0;
   }
 
   /** Renderer drains skill uses once per frame. */

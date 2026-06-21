@@ -29,6 +29,9 @@ pub type GearSlotRow = (&'static str, Option<ItemRow>, bool);
 /// the dot / buff / debuff durations carry the pertinent number for skills
 /// that deal no direct hit (a DoT, an aura, an on-hit debuff).
 pub struct SkillStatView {
+    /// Socket key this skill fires from (the `ch.sockets` key / ReadSkills
+    /// slot_no); the HUD matches `UseFx.slot` to it to pulse the card (#94).
+    pub slot: u32,
     pub name: String,
     pub level: u32,
     /// Gem XP into the current level, and the amount for the next (0 at cap).

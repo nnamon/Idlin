@@ -243,6 +243,9 @@ pub enum SimEvent {
         y: i32,
         use_ticks: u32,
         contact_ticks: u32,
+        /// Socket key of the fired skill (`-1` for a basic weapon attack) — the
+        /// HUD pulses that skill's card on fire (#94 Part B).
+        slot: i32,
     },
     SkillFx {
         attacker: u32,

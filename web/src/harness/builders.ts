@@ -9,6 +9,7 @@ import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { GearSlotView } from "../gen/GearSlotView";
 import type { InvItemView } from "../gen/InvItemView";
 import type { SkillStat } from "../gen/SkillStat";
+import type { UseFx } from "../gen/UseFx";
 
 /** Q16.16 fixed-point scale — wire coordinates are raw fixed-point ints. */
 const FX = 65536;
@@ -123,6 +124,7 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
  *  numbers (dps for a damage skill, dot/buff/debuff for the rest). */
 export function skill(over: Require<SkillStat, "name">): SkillStat {
   return {
+    slot: 0,
     level: 1,
     xp: 0,
     xp_next: 100,
@@ -181,4 +183,29 @@ export function directorCue(focus: number, reason: string, holdTicks = 80): S2C 
 /** `CharacterSheet` S2C — populates the stats + gear + bag panels. */
 export function characterSheet(s: CharacterSheet): S2C {
   return { type: "CharacterSheet", data: { sheet: s } };
+}
+
+/** A `UseFx` for `slot` fired by `attacker` (#94 Part B). The HUD bumps that
+ *  skill's fire counter and pulses its card. */
+export function fire(attacker: number, slot: number, spell = false): UseFx {
+  return { attacker, spell, x: 0, y: 0, use_ticks: 8, contact_ticks: 4, slot };
+}
+
+/** A minimal `ZoneDelta` S2C carrying only the FX a fixture cares about (every
+ *  other channel empty). Used to drive the skill-fire pulse from canned state. */
+export function zoneDelta(over: { tick?: number; uses?: UseFx[] }): S2C {
+  return {
+    type: "ZoneDelta",
+    data: {
+      tick: over.tick ?? 1,
+      spawned: [],
+      moved: [],
+      updated: [],
+      removed: [],
+      hits: [],
+      projectiles: [],
+      skills: [],
+      uses: over.uses ?? [],
+    },
+  };
 }

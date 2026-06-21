@@ -155,6 +155,27 @@ test("inspect-panel: a few-skill loadout fits the panel WITHOUT clipping", async
   await ctx.close();
 });
 
+test("skill-pulse: only the just-fired skill's card flashes (#94 Part B)", async ({ browser }) => {
+  // The fixture fires Arc (socket 200) via a UseFx in its trailing ZoneDelta. The
+  // pulse must land on Arc's card ONLY — proving the HUD keys the flash by the
+  // firing socket, not "pulse everything". Non-vacuous: break the slot match
+  // (fired={0}) and zero cards flash; key it wrong and the wrong card does.
+  const { ctx, page } = await loadFixture(browser, "skill-pulse");
+  // Arc (the fired socket) carries the pulse. (Counts span both the desktop and
+  // mobile-drawer copies of the panel, so assert by card, not a global total.)
+  await expect(
+    page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash"),
+  ).not.toHaveCount(0);
+  // ...and the pulse is keyed to that socket — no other card flashes.
+  await expect(
+    page.locator(".skill-card", { hasText: "Heavy Swing" }).locator(".skill-flash"),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".skill-card", { hasText: "Frost Nova" }).locator(".skill-flash"),
+  ).toHaveCount(0);
+  await ctx.close();
+});
+
 test("the skills auto-scroll actually moves when motion is allowed, and is off under reduced-motion", async ({
   browser,
 }) => {
