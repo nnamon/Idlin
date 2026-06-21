@@ -146,6 +146,18 @@ const inspectPanel: Fixture = {
         resist_chaos_bp: -600,
         item_rarity_bp: 4200,
         item_quantity_bp: 800,
+        // #87 per-stat source breakdown (shown on hover over a stats row).
+        stat_sources: [
+          { stat: "armour", source: "Brinescoured Helm", layer: 0, value: 800 },
+          { stat: "armour", source: "Kelp-Woven Vest", layer: 0, value: 1400 },
+          { stat: "accuracy", source: "Rusted Cleaver", layer: 0, value: 120 },
+          { stat: "accuracy", source: "Eagle Eye", layer: 1, value: 2500 },
+          { stat: "evasion", source: "Wader's Boots", layer: 0, value: 90 },
+          { stat: "damage_phys", source: "Rusted Cleaver", layer: 0, value: 40 },
+          { stat: "damage_phys", source: "Berserking", layer: 1, value: 3000 },
+          { stat: "resist_fire", source: "Brinescoured Helm", layer: 0, value: 1500 },
+          { stat: "item_rarity", source: "Greedy Grips", layer: 1, value: 4200 },
+        ],
         equipment: [
           // A real rare (base + rolled affixes by content num) so the hover
           // tooltip resolves a full mod list from content-docs (#87 in-context shot).
@@ -505,6 +517,18 @@ const fullShore: Fixture = {
         resist_chaos_bp: -600,
         item_rarity_bp: 4200,
         item_quantity_bp: 800,
+        // #87 per-stat source breakdown (shown on hover over a stats row).
+        stat_sources: [
+          { stat: "armour", source: "Brinescoured Helm", layer: 0, value: 800 },
+          { stat: "armour", source: "Kelp-Woven Vest", layer: 0, value: 1400 },
+          { stat: "accuracy", source: "Rusted Cleaver", layer: 0, value: 120 },
+          { stat: "accuracy", source: "Eagle Eye", layer: 1, value: 2500 },
+          { stat: "evasion", source: "Wader's Boots", layer: 0, value: 90 },
+          { stat: "damage_phys", source: "Rusted Cleaver", layer: 0, value: 40 },
+          { stat: "damage_phys", source: "Berserking", layer: 1, value: 3000 },
+          { stat: "resist_fire", source: "Brinescoured Helm", layer: 0, value: 1500 },
+          { stat: "item_rarity", source: "Greedy Grips", layer: 1, value: 4200 },
+        ],
         equipment: [
           gear("Weapon", "Rusted Cleaver", 2),
           gear("Offhand", "Rusted Cleaver", 2, true),

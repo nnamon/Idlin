@@ -13,20 +13,21 @@ import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore } from "../world/store";
 import { resolveFocusId } from "../world/focus";
 import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
-import { ContentDocs, loadContentDocs } from "../world/contentDocs";
+import { ContentDocs, formatContribution, loadContentDocs } from "../world/contentDocs";
+import type { StatSourceView } from "../gen/StatSourceView";
 import { ItemTooltip, type TooltipItem } from "./ItemTooltip";
 import "./overlay.css";
 
 type Icons = { icon(name: string, kind: string): string | null } | null;
 
-/** A hovered item plus the cursor anchor, lifted to the overlay so the single
- *  floating tooltip can render anchored to the cursor while any cell (gear doll or
- *  bag) sets it. */
-interface HoverState {
-  item: TooltipItem;
-  x: number;
-  y: number;
-}
+/** A hovered surface plus the cursor anchor, lifted to the overlay so the single
+ *  floating tooltip can render anchored to the cursor while any cell sets it. A
+ *  hover is either an item (gear/bag → ItemTooltip) or a stat row (stats panel →
+ *  source breakdown, #87). */
+type HoverState = { x: number; y: number } & (
+  | { kind: "item"; item: TooltipItem }
+  | { kind: "stat"; statKeys: string[]; label: string }
+);
 const ItemHoverContext = createContext<(h: HoverState | null) => void>(() => {});
 
 /** Best-guess silhouette family for a bag item (until items carry kinds). */
@@ -375,15 +376,23 @@ export function Overlay({
         ))}
       </div>
 
-      {/* floating PoE-style item tooltip, anchored to the cursor */}
-      {hover && <FloatingTooltip hover={hover} docs={docs} />}
+      {/* floating tooltip (item OR stat-source breakdown), anchored to the cursor */}
+      {hover && <FloatingTooltip hover={hover} docs={docs} sheet={sheet} />}
     </ItemHoverContext.Provider>
   );
 }
 
-/** Renders the item tooltip as a fixed overlay near the cursor, flipping to the
- *  left when it would run off the right edge. */
-function FloatingTooltip({ hover, docs }: { hover: HoverState; docs: ContentDocs | null }) {
+/** Renders the hover tooltip — an item card or a stat-source breakdown — as a
+ *  fixed overlay near the cursor, flipping left near the right edge. */
+function FloatingTooltip({
+  hover,
+  docs,
+  sheet,
+}: {
+  hover: HoverState;
+  docs: ContentDocs | null;
+  sheet: CharacterSheet | null;
+}) {
   const flipLeft = hover.x > window.innerWidth - 360;
   return (
     <div
@@ -396,7 +405,83 @@ function FloatingTooltip({ hover, docs }: { hover: HoverState; docs: ContentDocs
         pointerEvents: "none",
       }}
     >
-      <ItemTooltip item={hover.item} docs={docs} />
+      {hover.kind === "item" ? (
+        <ItemTooltip item={hover.item} docs={docs} />
+      ) : (
+        <StatBreakdown
+          statKeys={hover.statKeys}
+          label={hover.label}
+          sources={sheet?.stat_sources ?? []}
+          docs={docs}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Per-stat source breakdown (#87): for the stat(s) of a hovered stats-panel row,
+ *  list every contributing gear/passive/buff and what it grants. */
+function StatBreakdown({
+  statKeys,
+  label,
+  sources,
+  docs,
+}: {
+  statKeys: string[];
+  label: string;
+  sources: StatSourceView[];
+  docs: ContentDocs | null;
+}) {
+  const groups = statKeys
+    .map((key) => ({
+      key,
+      name: docs?.stat(key)?.name ?? key,
+      entries: sources.filter((s) => s.stat === key),
+    }))
+    .filter((g) => g.entries.length > 0);
+  return (
+    <div
+      className="item-tooltip"
+      style={{
+        minWidth: 190,
+        maxWidth: 320,
+        background: "rgba(8, 6, 3, 0.97)",
+        border: "1px solid #46381f",
+        boxShadow: "0 4px 18px rgba(0,0,0,0.6)",
+        color: "#c9bb95",
+        fontSize: 12,
+        lineHeight: 1.45,
+        padding: "6px 10px",
+        pointerEvents: "none",
+      }}
+    >
+      <div className="display" style={{ color: "#f0e2bf", fontSize: 12.5, marginBottom: 3 }}>
+        {label}
+      </div>
+      {groups.length === 0 ? (
+        <div style={{ color: "#6f6346", fontStyle: "italic", fontSize: 11.5 }}>
+          no gear/passive/buff sources — base or attribute-derived
+        </div>
+      ) : (
+        groups.map((g) => (
+          <div key={g.key} style={{ marginTop: 2 }}>
+            {statKeys.length > 1 && (
+              <div style={{ color: "#8c7f5e", fontSize: 10.5 }}>{g.name}</div>
+            )}
+            {g.entries.map((e, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+              >
+                <span style={{ color: "#ab9d7a" }}>{e.source}</span>
+                <span style={{ color: "#8aa0d8" }}>
+                  {formatContribution(e.layer, e.value, docs?.stat(e.stat))}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -426,9 +511,9 @@ function SlotBox({
   const hoverProps = filled
     ? {
         onMouseEnter: (e: React.MouseEvent) =>
-          setHover({ item: gear as TooltipItem, x: e.clientX, y: e.clientY }),
+          setHover({ kind: "item", item: gear as TooltipItem, x: e.clientX, y: e.clientY }),
         onMouseMove: (e: React.MouseEvent) =>
-          setHover({ item: gear as TooltipItem, x: e.clientX, y: e.clientY }),
+          setHover({ kind: "item", item: gear as TooltipItem, x: e.clientX, y: e.clientY }),
         onMouseLeave: () => setHover(null),
       }
     : {};
@@ -475,10 +560,10 @@ function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
             key={i}
             className="bagitem"
             onMouseEnter={(e) =>
-              setHover({ item: it as TooltipItem, x: e.clientX, y: e.clientY })
+              setHover({ kind: "item", item: it as TooltipItem, x: e.clientX, y: e.clientY })
             }
             onMouseMove={(e) =>
-              setHover({ item: it as TooltipItem, x: e.clientX, y: e.clientY })
+              setHover({ kind: "item", item: it as TooltipItem, x: e.clientX, y: e.clientY })
             }
             onMouseLeave={() => setHover(null)}
             style={{
@@ -744,12 +829,28 @@ function SkillCard({ skill }: { skill: SkillStat }) {
 
 /** Left column: the focused idler's numbers — stats, gems, obols. */
 function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
-  const stat = (label: string, value: string) => (
-    <div key={label} className="row">
-      <span className="k">{label}</span>
-      <span className="v">{value}</span>
-    </div>
-  );
+  const setHover = useContext(ItemHoverContext);
+  // Each row hovers to its source breakdown (#87): the stat keys it covers feed
+  // the tooltip, which lists the contributing gear/passive/buff. Rows with no
+  // backing stat (passives) pass none and stay non-interactive.
+  const stat = (label: string, value: string, statKeys: string[] = []) => {
+    const hoverable = statKeys.length > 0;
+    const move = (e: React.MouseEvent) =>
+      setHover({ kind: "stat", statKeys, label, x: e.clientX, y: e.clientY });
+    return (
+      <div
+        key={label}
+        className="row"
+        onMouseEnter={hoverable ? move : undefined}
+        onMouseMove={hoverable ? move : undefined}
+        onMouseLeave={hoverable ? () => setHover(null) : undefined}
+        style={hoverable ? { cursor: "help" } : undefined}
+      >
+        <span className="k">{label}</span>
+        <span className="v">{value}</span>
+      </div>
+    );
+  };
   const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
   const resPct = (bp: number) => Math.min(75, Math.round(bp / 100));
   const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
@@ -757,16 +858,23 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
     <div className="panel" style={{ lineHeight: 1.5 }}>
       <Header first>Stats</Header>
       {/* life + mana now read off the HUD globes; energy shield stays (no orb) */}
-      {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`)}
-      {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`)}
-      {stat("dmg p/f/c/l/ch", dmg.join("/"))}
-      {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`)}
-      {stat("armour", `${sheet.armour}`)}
-      {stat("res f/c/l/ch", res)}
+      {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`, ["energy_shield"])}
+      {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`, ["block"])}
+      {stat("dmg p/f/c/l/ch", dmg.join("/"), [
+        "damage_phys",
+        "damage_fire",
+        "damage_cold",
+        "damage_lightning",
+        "damage_chaos",
+      ])}
+      {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`, ["accuracy", "evasion"])}
+      {stat("armour", `${sheet.armour}`, ["armour"])}
+      {stat("res f/c/l/ch", res, ["resist_fire", "resist_cold", "resist_lightning", "resist_chaos"])}
       {(sheet.item_rarity_bp > 0 || sheet.item_quantity_bp > 0) &&
         stat(
           "find rar/qty",
           `+${(sheet.item_rarity_bp / 100).toFixed(0)}% / +${(sheet.item_quantity_bp / 100).toFixed(0)}%`,
+          ["item_rarity", "item_quantity"],
         )}
       {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
       {sheet.skills.length > 0 && (

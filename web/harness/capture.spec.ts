@@ -269,6 +269,48 @@ test("the [Bag|Obols] chip pins the deck face, and the pin STICKS when the curso
   await ctx.close();
 });
 
+test("the chip pin's resume timer is cancelled on re-hover (no late snap-back)", async ({
+  browser,
+}) => {
+  // The maintainer's explicit risk case: leave the deck, then return BEFORE the
+  // resume window elapses — the pending resume MUST be cancelled, or it fires late
+  // and snaps the pinned face away while the cursor is back on the deck. Fake clock
+  // to drive the 10s window deterministically; page.mouse.move (not locator.hover)
+  // for pointer input, because clock.install() freezes the rAF that hover
+  // actionability waits on. Reverting the effect cleanup (clearTimeout) to a no-op
+  // lets the stale timer fire at +10s and this snaps to Bag — so this is non-vacuous.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+  const chipObols = page.getByRole("tab", { name: "Obols" });
+  const bagGrid = page.locator(".bag");
+  const moveOntoObols = async () => {
+    const b = (await chipObols.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  };
+
+  // pin Obols, then leave the deck — the resume timer is now pending
+  await moveOntoObols();
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+  await page.mouse.move(2, 2);
+
+  // wait ALMOST the whole resume window, then return to the deck (cancels the timer)
+  await page.clock.fastForward(9000);
+  await moveOntoObols();
+  // advance PAST the original 10s deadline: a stale (uncancelled) timer would fire
+  // here and snap back to Bag; the cancellation keeps Obols pinned, cursor on it.
+  await page.clock.fastForward(2000);
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+
+  await ctx.close();
+});
+
 test("the item tooltip floats BY the hovered item with the HUD intact (#87)", async ({
   browser,
 }) => {
@@ -295,6 +337,31 @@ test("the item tooltip floats BY the hovered item with the HUD intact (#87)", as
   // (the Equipment panel the weapon lives in is still on screen).
   await expect(page.getByText("Equipment", { exact: true })).toBeVisible();
   await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "item-tooltip-incontext.png") });
+
+  await ctx.close();
+});
+
+test("a stats row hovers to its per-source breakdown (#87)", async ({ browser }) => {
+  // Hovering a stats-panel row floats the source breakdown for that stat — the
+  // contributing gear/passive/buff and what each grants. Live clock (hover
+  // actionability needs rAF), inspect-panel carries seeded stat_sources.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  // (the stats panel is mounted twice — desktop + a mobile-drawer copy; the
+  // first is the visible desktop one)
+  await page.getByText("armour", { exact: true }).first().hover();
+  // the breakdown tooltip lists each contributing source + its formatted amount
+  const tip = page.locator(".item-tooltip", { hasText: "Brinescoured Helm" });
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText("Kelp-Woven Vest");
+  await expect(tip).toContainText("+800");
+  await expect(tip).toContainText("+1400");
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "stat-breakdown.png") });
 
   await ctx.close();
 });
