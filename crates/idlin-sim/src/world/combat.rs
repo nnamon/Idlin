@@ -1239,8 +1239,8 @@ impl World {
                 y: aim.y.raw(),
                 use_ticks: busy_ticks as u32,
                 contact_ticks: contact as u32,
-                // The socket key fired (a tagged positive num, fits i32); a basic
-                // weapon attack has no gem/card, so `-1`.
+                // The socket key fired (an allocated tree-node index, fits i32); a
+                // basic weapon attack has no gem/card, so `-1`.
                 slot: skill.map_or(-1, |k| k as i32),
             });
         }

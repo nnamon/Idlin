@@ -109,11 +109,11 @@ pub struct UseFx {
     pub use_ticks: u32,
     /// Ticks from start to the blow landing (<= use_ticks).
     pub contact_ticks: u32,
-    /// Socket key of the fired skill: the `ch.sockets` key (a tree-node num) the
-    /// skill is socketed under. The HUD matches it to `SkillStat.slot` to pulse
-    /// that card (#94 Part B). `-1` for a basic weapon attack (no gem, no card).
-    /// NB: this is the internal socket key, NOT the bot-facing 1-based
-    /// `UseSkill(slot)` / `ReadSkills` order index.
+    /// Socket key of the fired skill: the `ch.sockets` key (the allocated
+    /// tree-node index) the skill is socketed under. The HUD matches it to
+    /// `SkillStat.slot` to pulse that card (#94 Part B). `-1` for a basic weapon
+    /// attack (no gem, no card). NB: this is the internal socket key, NOT the
+    /// bot-facing 1-based `UseSkill(slot)` / `ReadSkills` order index.
     pub slot: i32,
 }
 
@@ -743,7 +743,7 @@ mod tests {
                 y: 0,
                 use_ticks: 8,
                 contact_ticks: 4,
-                slot: 8_388_613,
+                slot: 12,
             }],
             skills: vec![SkillFx {
                 attacker: 1,
@@ -763,12 +763,9 @@ mod tests {
         let S2C::ZoneDelta { tick: 42, uses, .. } = &back else {
             panic!("expected ZoneDelta");
         };
-        // #94 Part B: the firing slot survives the wire so the HUD can pulse the
-        // matching skill card (it's the socket key, not a positional index).
-        assert_eq!(
-            uses[0].slot, 8_388_613,
-            "UseFx firing slot survives the wire"
-        );
+        // #94 Part B: the firing slot (the socket key — an allocated tree-node
+        // index) survives the wire so the HUD can pulse the matching skill card.
+        assert_eq!(uses[0].slot, 12, "UseFx firing slot survives the wire");
 
         // The per-skill readout (#19) survives the wire — notably `width_cu`,
         // the newest field, and a nested support.
@@ -835,7 +832,7 @@ mod tests {
                 }],
                 gems: vec![],
                 skills: vec![SkillStat {
-                    slot: 8_388_613,
+                    slot: 12,
                     name: "Arc".into(),
                     level: 5,
                     xp: 120,
@@ -887,7 +884,7 @@ mod tests {
         };
         assert_eq!(sheet.skills.len(), 1);
         assert_eq!(
-            sheet.skills[0].slot, 8_388_613,
+            sheet.skills[0].slot, 12,
             "skill socket key survives the wire (#94: HUD matches it to UseFx.slot)"
         );
         assert_eq!(
