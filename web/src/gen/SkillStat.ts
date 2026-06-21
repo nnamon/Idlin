@@ -9,8 +9,9 @@ import type { SkillSupport } from "./SkillSupport";
  */
 export type SkillStat = { 
 /**
- * Socket key this skill fires from (UseSkill(slot) / ReadSkills slot_no).
- * The HUD matches `UseFx.slot` against this to pulse the card on fire (#94).
+ * Socket key this skill is socketed under (the `ch.sockets` key). The HUD
+ * matches `UseFx.slot` against it to pulse the card on fire (#94). Internal
+ * socket key, not the bot's 1-based UseSkill/ReadSkills order index.
  */
 slot: number, name: string, level: number, 
 /**

@@ -161,13 +161,11 @@ test("skill-pulse: only the just-fired skill's card flashes (#94 Part B)", async
   // firing socket, not "pulse everything". Non-vacuous: break the slot match
   // (fired={0}) and zero cards flash; key it wrong and the wrong card does.
   const { ctx, page } = await loadFixture(browser, "skill-pulse");
-  // Arc (the fired socket) carries the pulse, and it's actually VISIBLE — not just
-  // present in the DOM (a `display:none` regression would pass a count-only check).
-  // (Counts span both the desktop and mobile-drawer panel copies, so assert by
-  // card, not a global total; `.first()` is the visible desktop one.)
+  // Arc (the fired socket) carries the pulse. (Counts span both the desktop and
+  // mobile-drawer panel copies, so assert by card, not a global total.)
   await expect(
-    page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash").first(),
-  ).toBeVisible();
+    page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash"),
+  ).not.toHaveCount(0);
   // ...and the pulse is keyed to that socket — no other card flashes.
   await expect(
     page.locator(".skill-card", { hasText: "Heavy Swing" }).locator(".skill-flash"),
@@ -175,6 +173,31 @@ test("skill-pulse: only the just-fired skill's card flashes (#94 Part B)", async
   await expect(
     page.locator(".skill-card", { hasText: "Frost Nova" }).locator(".skill-flash"),
   ).toHaveCount(0);
+  await ctx.close();
+});
+
+test("skill-pulse: the flash renders as an OPAQUE pulse, not just a present node (#94)", async ({
+  browser,
+}) => {
+  // toBeVisible() ignores opacity and the byte-stable shot fast-forwards the pulse
+  // to its opacity:0 end — neither proves the flash is actually SEEN. Read the
+  // running CSS animation's first keyframe: it must be the `skill-fire` pulse,
+  // starting opaque. Catches display:none (no running animation), a removed/renamed
+  // animation, and a 0%-opacity regression — none of which a count check would.
+  const { ctx, page } = await loadFixture(browser, "skill-pulse");
+  const start = await page
+    .locator(".skill-card", { hasText: "Arc" })
+    .locator(".skill-flash")
+    .first()
+    .evaluate((el) => {
+      const anim = el.getAnimations()[0] as (Animation & { animationName?: string }) | undefined;
+      if (!anim) return null;
+      const frames = (anim.effect as KeyframeEffect).getKeyframes();
+      return { name: anim.animationName, opacity: Number(frames[0]?.opacity ?? "0") };
+    });
+  expect(start, "the flash has a running CSS animation (not display:none)").not.toBeNull();
+  expect(start!.name).toBe("skill-fire");
+  expect(start!.opacity).toBeGreaterThan(0.5); // the pulse starts opaque, then fades
   await ctx.close();
 });
 

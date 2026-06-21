@@ -142,9 +142,9 @@ export class WorldStore {
    *  when that skill's use begins. The HUD keys its card pulse on this, so a new
    *  count replays the flash. Cleared on `ZoneSnapshot` and pruned when an entity
    *  is removed, so a reused net id can't inherit a stale count and false-flash a
-   *  card that never fired. (Two fires landing between overlay polls coalesce to a
-   *  single flash — fine for a sub-second flourish; a skill's own use-time keeps
-   *  real same-skill double-fires more than one poll apart.) */
+   *  card that never fired. (Multiple fires of the SAME skill landing between the
+   *  overlay's polls coalesce into one flash — acceptable for a sub-second
+   *  flourish; the flash is feedback, not an exact fire count.) */
   skillFires = new Map<string, number>();
   cue: Cue | null = null;
   /** All idlers, all worlds, in upcoming-focus order (featured feed). */

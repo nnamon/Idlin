@@ -23,8 +23,10 @@ use_ticks: number,
  */
 contact_ticks: number, 
 /**
- * Socket key of the fired skill — matches `SkillStat.slot` / `ReadSkills`
- * slot_no, so the HUD can pulse the firing skill's card (#94 Part B).
- * `-1` for a basic weapon attack (no gem, no card).
+ * Socket key of the fired skill: the `ch.sockets` key (a tree-node num) the
+ * skill is socketed under. The HUD matches it to `SkillStat.slot` to pulse
+ * that card (#94 Part B). `-1` for a basic weapon attack (no gem, no card).
+ * NB: this is the internal socket key, NOT the bot-facing 1-based
+ * `UseSkill(slot)` / `ReadSkills` order index.
  */
 slot: number, };

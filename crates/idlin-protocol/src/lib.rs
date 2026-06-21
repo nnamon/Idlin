@@ -109,9 +109,11 @@ pub struct UseFx {
     pub use_ticks: u32,
     /// Ticks from start to the blow landing (<= use_ticks).
     pub contact_ticks: u32,
-    /// Socket key of the fired skill — matches `SkillStat.slot` / `ReadSkills`
-    /// slot_no, so the HUD can pulse the firing skill's card (#94 Part B).
-    /// `-1` for a basic weapon attack (no gem, no card).
+    /// Socket key of the fired skill: the `ch.sockets` key (a tree-node num) the
+    /// skill is socketed under. The HUD matches it to `SkillStat.slot` to pulse
+    /// that card (#94 Part B). `-1` for a basic weapon attack (no gem, no card).
+    /// NB: this is the internal socket key, NOT the bot-facing 1-based
+    /// `UseSkill(slot)` / `ReadSkills` order index.
     pub slot: i32,
 }
 
@@ -390,8 +392,9 @@ pub struct SkillSupport {
 /// for skills that deal no direct hit (a DoT, an aura, an on-hit debuff).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct SkillStat {
-    /// Socket key this skill fires from (UseSkill(slot) / ReadSkills slot_no).
-    /// The HUD matches `UseFx.slot` against this to pulse the card on fire (#94).
+    /// Socket key this skill is socketed under (the `ch.sockets` key). The HUD
+    /// matches `UseFx.slot` against it to pulse the card on fire (#94). Internal
+    /// socket key, not the bot's 1-based UseSkill/ReadSkills order index.
     pub slot: i32,
     pub name: String,
     pub level: u32,
