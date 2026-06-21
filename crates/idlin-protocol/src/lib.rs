@@ -15,6 +15,8 @@ use ts_rs::TS;
 //     new RolledModView, for the #87 item tooltip.
 // 38: CharacterSheet gains stat_sources (per-stat source breakdown, #87) + the
 //     new StatSourceView.
+// 39: UseFx + SkillStat gain `slot` (the firing socket key) for the #94 Part B
+//     skill-fire pulse.
 pub const PROTO_VERSION: u32 = 39;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -760,7 +762,10 @@ mod tests {
         };
         // #94 Part B: the firing slot survives the wire so the HUD can pulse the
         // matching skill card (it's the socket key, not a positional index).
-        assert_eq!(uses[0].slot, 8_388_613, "UseFx firing slot survives the wire");
+        assert_eq!(
+            uses[0].slot, 8_388_613,
+            "UseFx firing slot survives the wire"
+        );
 
         // The per-skill readout (#19) survives the wire — notably `width_cu`,
         // the newest field, and a nested support.

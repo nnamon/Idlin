@@ -139,9 +139,12 @@ export class WorldStore {
   pendingSkills: ActiveSkill[] = [];
   pendingUses: ActiveUse[] = [];
   /** #94 Part B: per `${attacker}:${socketKey}` monotonic fire counter, bumped
-   *  when that skill's use begins. The HUD keys its card pulse on this — a counter
-   *  (not a timestamp) so the React key changes on every fire, even two in one
-   *  frame, and the pulse animation deterministically replays. */
+   *  when that skill's use begins. The HUD keys its card pulse on this, so a new
+   *  count replays the flash. Cleared on `ZoneSnapshot` and pruned when an entity
+   *  is removed, so a reused net id can't inherit a stale count and false-flash a
+   *  card that never fired. (Two fires landing between overlay polls coalesce to a
+   *  single flash — fine for a sub-second flourish; a skill's own use-time keeps
+   *  real same-skill double-fires more than one poll apart.) */
   skillFires = new Map<string, number>();
   cue: Cue | null = null;
   /** All idlers, all worlds, in upcoming-focus order (featured feed). */
@@ -177,6 +180,9 @@ export class WorldStore {
         this.renderTick = d.tick - PLAYOUT_DELAY_TICKS;
         this.snapshotGen++;
         this.entities.clear();
+        // A fresh world view: drop fire counters so a net id reused in the new
+        // world can't inherit a stale count and false-flash a card (#94 Part B).
+        this.skillFires.clear();
         const now = performance.now();
         for (const e of d.entities) this.upsert(e, now);
         this.version++;
@@ -218,7 +224,15 @@ export class WorldStore {
           er.state.gear = u.gear;
           er.state.gear_rarity = u.gear_rarity;
         }
-        for (const id of d.removed) this.entities.delete(id);
+        for (const id of d.removed) {
+          this.entities.delete(id);
+          // Drop the removed entity's fire counters so a later spawn reusing this
+          // net id starts clean — and the map stays bounded to live entities.
+          const prefix = `${id}:`;
+          for (const k of this.skillFires.keys()) {
+            if (k.startsWith(prefix)) this.skillFires.delete(k);
+          }
+        }
         for (const h of d.hits) {
           this.pendingHits.push({
             attacker: h.attacker,

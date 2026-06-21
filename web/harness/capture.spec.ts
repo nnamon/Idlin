@@ -161,11 +161,13 @@ test("skill-pulse: only the just-fired skill's card flashes (#94 Part B)", async
   // firing socket, not "pulse everything". Non-vacuous: break the slot match
   // (fired={0}) and zero cards flash; key it wrong and the wrong card does.
   const { ctx, page } = await loadFixture(browser, "skill-pulse");
-  // Arc (the fired socket) carries the pulse. (Counts span both the desktop and
-  // mobile-drawer copies of the panel, so assert by card, not a global total.)
+  // Arc (the fired socket) carries the pulse, and it's actually VISIBLE — not just
+  // present in the DOM (a `display:none` regression would pass a count-only check).
+  // (Counts span both the desktop and mobile-drawer panel copies, so assert by
+  // card, not a global total; `.first()` is the visible desktop one.)
   await expect(
-    page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash"),
-  ).not.toHaveCount(0);
+    page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash").first(),
+  ).toBeVisible();
   // ...and the pulse is keyed to that socket — no other card flashes.
   await expect(
     page.locator(".skill-card", { hasText: "Heavy Swing" }).locator(".skill-flash"),
@@ -173,6 +175,19 @@ test("skill-pulse: only the just-fired skill's card flashes (#94 Part B)", async
   await expect(
     page.locator(".skill-card", { hasText: "Frost Nova" }).locator(".skill-flash"),
   ).toHaveCount(0);
+  await ctx.close();
+});
+
+test("skill-pulse-stale: a reused net id in a new world does NOT inherit a stale pulse (#94)", async ({
+  browser,
+}) => {
+  // The fixture fires Arc as Brakka (id 1), then a fresh ZoneSnapshot reuses id 1
+  // for Edda with NO new fire. Edda's Arc card must stay calm — the store clears
+  // the fire counters on snapshot, so a reused id can't false-flash. Reverting the
+  // `skillFires.clear()` on ZoneSnapshot makes Edda's card flash and this fails.
+  const { ctx, page } = await loadFixture(browser, "skill-pulse-stale");
+  await expect(page.getByText("Edda").first()).toBeVisible(); // the new occupant rendered
+  await expect(page.locator(".skill-flash")).toHaveCount(0); // no stale pulse anywhere
   await ctx.close();
 });
 

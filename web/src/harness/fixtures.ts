@@ -866,9 +866,89 @@ const skillPulse: Fixture = {
   ],
 };
 
+/**
+ * Skill-pulse lifecycle (#94 Part B): Brakka (net id 1) fires Arc, then a fresh
+ * ZoneSnapshot reuses net id 1 for Edda with NO fire. Edda's Arc card must NOT
+ * flash — the store clears fire counters on snapshot, so a reused id can't inherit
+ * a stale pulse. (Guards the critic's snapshot/id-reuse false-flash.)
+ */
+const skillPulseStale: Fixture = {
+  kind: "overlay",
+  label: "Skill-pulse lifecycle: a reused net id in a new world inherits no stale pulse (#94)",
+  status: LIVE_STATUS,
+  messages: [
+    // World A: Brakka (id 1) fires Arc (socket 200).
+    zoneSnapshot({
+      entities: [character({ id: 1, name: "Brakka", level: 30, model: "marauder", life_pct: 80 })],
+      world_key: "withered_shore_A",
+    }),
+    directorCue(1, "carving the strand"),
+    focusQueue(["Brakka"], 0),
+    characterSheet(
+      sheet({
+        id: 1,
+        name: "Brakka",
+        level: 30,
+        life: 900,
+        life_max: 1100,
+        mana: 120,
+        mana_max: 200,
+        skills: [
+          skill({
+            slot: 200,
+            name: "Arc",
+            kind: "spell",
+            shape: "line",
+            level: 8,
+            damage: [0, 0, 0, 160, 0],
+            dps: 240,
+            use_ticks: 8,
+            range_cu: 600,
+            width_cu: 130,
+          }),
+        ],
+      }),
+    ),
+    zoneDelta({ tick: 5, uses: [fire(1, 200, true)] }),
+    // World B: a FRESH snapshot reuses net id 1 for Edda — no fire this time.
+    zoneSnapshot({
+      entities: [character({ id: 1, name: "Edda", level: 22, model: "marauder", life_pct: 90 })],
+      world_key: "withered_shore_B",
+    }),
+    directorCue(1, "stalking the shallows"),
+    focusQueue(["Edda"], 0),
+    characterSheet(
+      sheet({
+        id: 1,
+        name: "Edda",
+        level: 22,
+        life: 600,
+        life_max: 700,
+        mana: 80,
+        mana_max: 120,
+        skills: [
+          skill({
+            slot: 200,
+            name: "Arc",
+            kind: "spell",
+            shape: "line",
+            level: 5,
+            damage: [0, 0, 0, 120, 0],
+            dps: 180,
+            use_ticks: 8,
+            range_cu: 600,
+            width_cu: 130,
+          }),
+        ],
+      }),
+    ),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "skill-pulse": skillPulse,
+  "skill-pulse-stale": skillPulseStale,
   "hud-edge": hudEdge,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,
