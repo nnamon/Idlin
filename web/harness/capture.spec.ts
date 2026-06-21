@@ -263,6 +263,36 @@ test("the [Bag|Obols] chip pins the deck face on hover", async ({ browser }) => 
   await ctx.close();
 });
 
+test("the item tooltip floats BY the hovered item with the HUD intact (#87)", async ({
+  browser,
+}) => {
+  // The tooltip is a cursor-anchored floating layer over the live overlay — it
+  // does NOT replace the HUD. Hover the weapon (a real rare via content nums) and
+  // assert: the tooltip shows the resolved mods AND the Equipment/Stats panels are
+  // still on screen behind it. Live clock (hover needs rAF). Captures the
+  // in-context shot for the PR (the standalone `item-tooltip` fixture shows the
+  // component alone — this shows it where it actually lives).
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  // The weapon is the first filled paper-doll slot.
+  await page.locator(".slot.filled").first().hover();
+  // The tooltip resolves mod text from content-docs (loaded async) — wait for it.
+  const tip = page.locator(".item-tooltip", { hasText: "Brine Reaver" });
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText("Physical Damage");
+  // The HUD is STILL there behind the floating tooltip — nothing was replaced
+  // (the Equipment panel the weapon lives in is still on screen).
+  await expect(page.getByText("Equipment", { exact: true })).toBeVisible();
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "item-tooltip-incontext.png") });
+
+  await ctx.close();
+});
+
 test("mobile: bottom HUD clears the globes when closed, and hides under the open drawer", async ({
   browser,
 }) => {

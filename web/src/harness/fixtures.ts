@@ -147,8 +147,26 @@ const inspectPanel: Fixture = {
         item_rarity_bp: 4200,
         item_quantity_bp: 800,
         equipment: [
-          gear("Weapon", "Rusted Cleaver", 2),
-          gear("Offhand", "Rusted Cleaver", 2, true), // 2H mirror — dimmed
+          // A real rare (base + rolled affixes by content num) so the hover
+          // tooltip resolves a full mod list from content-docs (#87 in-context shot).
+          gear("Weapon", "Brine Reaver", 2, false, {
+            base_num: 16777221, // rusted_cleaver
+            item_level: 72,
+            mods: [
+              { num: 25165825, tier: 0, values: [12] }, // hale → +Life
+              { num: 25165862, tier: 0, values: [2000] }, // of_savagery → +#% phys (melee)
+              { num: 25165861, tier: 0, values: [1400] }, // of_ruin → +#% crit multi
+            ],
+          }),
+          gear("Offhand", "Brine Reaver", 2, true, {
+            base_num: 16777221,
+            item_level: 72,
+            mods: [
+              { num: 25165825, tier: 0, values: [12] },
+              { num: 25165862, tier: 0, values: [2000] },
+              { num: 25165861, tier: 0, values: [1400] },
+            ],
+          }), // 2H mirror — dimmed
           gear("Helm", "Brinescoured Helm", 1),
           gear("Chest", "Kelp-Woven Vest", 0),
           gear("Boots", "Wader's Boots", 1),
