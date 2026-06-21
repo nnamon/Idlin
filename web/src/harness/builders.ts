@@ -7,6 +7,7 @@ import type { S2C } from "../gen/S2C";
 import type { EntityState } from "../gen/EntityState";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { GearSlotView } from "../gen/GearSlotView";
+import type { InvItemView } from "../gen/InvItemView";
 import type { SkillStat } from "../gen/SkillStat";
 
 /** Q16.16 fixed-point scale — wire coordinates are raw fixed-point ints. */
@@ -44,9 +45,30 @@ export function monster(over: Require<EntityState, "id" | "name" | "model">): En
 }
 
 /** One equipment slot. `dimmed` greys a two-handed weapon mirrored into the
- *  offhand cell (the panel renders it at 0.4 opacity). */
-export function gear(slot: string, name: string, rarity = 0, dimmed = false): GearSlotView {
-  return { slot, name, rarity, dimmed };
+ *  offhand cell (the panel renders it at 0.4 opacity). `mods` (rolled affixes)
+ *  feed the hover tooltip; pass them via the 5th arg when a fixture needs them. */
+export function gear(
+  slot: string,
+  name: string,
+  rarity = 0,
+  dimmed = false,
+  extra: Partial<GearSlotView> = {},
+): GearSlotView {
+  return { slot, name, rarity, dimmed, base_num: -1, item_level: 0, mods: [], ...extra };
+}
+
+/** One bag item (grid placement + footprint). Pass `extra` for tooltip data
+ *  (base_num / item_level / rolled mods). */
+export function invItem(
+  name: string,
+  rarity: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  extra: Partial<InvItemView> = {},
+): InvItemView {
+  return { name, rarity, x, y, w, h, base_num: -1, item_level: 0, mods: [], ...extra };
 }
 
 /** Convert sim units to the Q16.16 raw ints the wire uses for positions. */

@@ -1,12 +1,14 @@
 import type { S2C } from "../gen/S2C";
 import type { CharacterSheet } from "../gen/CharacterSheet";
 import type { NetStatus } from "../net/client";
+import type { TooltipItem } from "../ui/ItemTooltip";
 import { LIVE_STATUS } from "./stubClient";
 import {
   character,
   characterSheet,
   directorCue,
   gear,
+  invItem,
   monster,
   sheet,
   simXY,
@@ -63,6 +65,15 @@ export type Fixture =
       status: NetStatus;
       idler: string;
       messages: S2C[];
+    }
+  | {
+      // The PoE-style item tooltip (#87), rendered standalone from a fixed item +
+      // a self-contained docs blob (no fetch, no hover) so the shot is stable.
+      kind: "tooltip";
+      label: string;
+      item: TooltipItem;
+      /** A minimal content-docs payload covering the item's affixes/stats. */
+      docsJson: unknown;
     };
 
 const FOCUS_ID = 1;
@@ -136,8 +147,26 @@ const inspectPanel: Fixture = {
         item_rarity_bp: 4200,
         item_quantity_bp: 800,
         equipment: [
-          gear("Weapon", "Rusted Cleaver", 2),
-          gear("Offhand", "Rusted Cleaver", 2, true), // 2H mirror — dimmed
+          // A real rare (base + rolled affixes by content num) so the hover
+          // tooltip resolves a full mod list from content-docs (#87 in-context shot).
+          gear("Weapon", "Brine Reaver", 2, false, {
+            base_num: 16777221, // rusted_cleaver
+            item_level: 72,
+            mods: [
+              { num: 25165825, tier: 0, values: [12] }, // hale → +Life
+              { num: 25165862, tier: 0, values: [2000] }, // of_savagery → +#% phys (melee)
+              { num: 25165861, tier: 0, values: [1400] }, // of_ruin → +#% crit multi
+            ],
+          }),
+          gear("Offhand", "Brine Reaver", 2, true, {
+            base_num: 16777221,
+            item_level: 72,
+            mods: [
+              { num: 25165825, tier: 0, values: [12] },
+              { num: 25165862, tier: 0, values: [2000] },
+              { num: 25165861, tier: 0, values: [1400] },
+            ],
+          }), // 2H mirror — dimmed
           gear("Helm", "Brinescoured Helm", 1),
           gear("Chest", "Kelp-Woven Vest", 0),
           gear("Boots", "Wader's Boots", 1),
@@ -150,10 +179,10 @@ const inspectPanel: Fixture = {
           gear("Gloves", "Kelp Grips", 1),
         ],
         inventory: [
-          { name: "Small Mana Flask", rarity: 0, x: 0, y: 0, w: 1, h: 2 },
-          { name: "Frost Nova", rarity: 0, x: 2, y: 0, w: 1, h: 1 }, // a skill gem (1×1)
-          { name: "Coral Band", rarity: 1, x: 4, y: 1, w: 1, h: 1 },
-          { name: "Quickening", rarity: 0, x: 6, y: 0, w: 1, h: 1 }, // a support gem (1×1)
+          invItem("Small Mana Flask", 0, 0, 0, 1, 2),
+          invItem("Frost Nova", 0, 2, 0, 1, 1), // a skill gem (1×1)
+          invItem("Coral Band", 1, 4, 1, 1, 1),
+          invItem("Quickening", 0, 6, 0, 1, 1), // a support gem (1×1)
         ],
         gems: [
           { name: "Heavy Swing", level: 12, xp: 40, xp_next: 100, support: false },
@@ -491,9 +520,9 @@ const fullShore: Fixture = {
           gear("Gloves", "Kelp Grips", 1),
         ],
         inventory: [
-          { name: "Small Mana Flask", rarity: 0, x: 0, y: 0, w: 1, h: 2 },
-          { name: "Frost Nova", rarity: 0, x: 2, y: 0, w: 1, h: 1 },
-          { name: "Coral Band", rarity: 1, x: 4, y: 1, w: 1, h: 1 },
+          invItem("Small Mana Flask", 0, 0, 0, 1, 2),
+          invItem("Frost Nova", 0, 2, 0, 1, 1),
+          invItem("Coral Band", 1, 4, 1, 1, 1),
         ],
         currency: [
           { name: "Transmute Obol", count: 47, tier: 1 },
@@ -672,9 +701,78 @@ const idlerAbsent: Fixture = {
   ],
 };
 
+/**
+ * The PoE-style item tooltip (#87): a rare amulet with two prefixes and two
+ * suffixes, each showing its rolled value and the tier's range. Self-contained
+ * docs (no fetch) so the shot is byte-stable. This is the §6 reference for the
+ * mod-surfacing feature.
+ */
+const itemTooltip: Fixture = {
+  kind: "tooltip",
+  label: "Item tooltip — rare amulet",
+  item: {
+    name: "Vortex Scarab",
+    rarity: 2,
+    base_num: 2001,
+    item_level: 84,
+    mods: [
+      { num: 1001, tier: 0, values: [24] },
+      { num: 1002, tier: 0, values: [83] },
+      { num: 1003, tier: 0, values: [3800] },
+      { num: 1004, tier: 0, values: [3600] },
+    ],
+  },
+  docsJson: {
+    stats: [
+      { key: "damage_phys", name: "Physical Damage", desc: "", added_unit: "flat" },
+      { key: "life", name: "Life", desc: "", added_unit: "flat" },
+      { key: "crit_multi", name: "Critical Strike Multiplier", desc: "", added_unit: "basis_points" },
+      { key: "crit_chance", name: "Critical Strike Chance", desc: "", added_unit: "basis_points" },
+    ],
+    categories: {
+      item: [{ num: 2001, name: "Onyx Amulet", req_level: 60 }],
+      affix: [
+        {
+          num: 1001,
+          name: "Flaring",
+          kind: "prefix",
+          effects: [{ stat: "damage_phys", layer: "added", condition: null }],
+          tiers: [{ ilvl: 80, name: "Flaring", rolls: [{ min: 22, max: 26 }], weight: 100 }],
+          description: "+# Physical Damage",
+        },
+        {
+          num: 1002,
+          name: "Athlete's",
+          kind: "prefix",
+          effects: [{ stat: "life", layer: "added", condition: null }],
+          tiers: [{ ilvl: 80, name: "Athlete's", rolls: [{ min: 80, max: 89 }], weight: 100 }],
+          description: "+# Life",
+        },
+        {
+          num: 1003,
+          name: "of Destruction",
+          kind: "suffix",
+          effects: [{ stat: "crit_multi", layer: "added", condition: null }],
+          tiers: [{ ilvl: 80, name: "of Destruction", rolls: [{ min: 3500, max: 3800 }], weight: 100 }],
+          description: "+#% Critical Strike Multiplier",
+        },
+        {
+          num: 1004,
+          name: "of Incision",
+          kind: "suffix",
+          effects: [{ stat: "crit_chance", layer: "increased", condition: null }],
+          tiers: [{ ilvl: 80, name: "of Incision", rolls: [{ min: 3500, max: 3800 }], weight: 100 }],
+          description: "#% increased Critical Strike Chance",
+        },
+      ],
+    },
+  },
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
+  "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,
   "skill-overflow": skillOverflow,

@@ -35,6 +35,13 @@ export type FixtureMeta =
       name: string;
       kind: "manage";
       expect: string[];
+    }
+  | {
+      // PoE-style item tooltip (#87): a standalone #overlay surface, asserted by
+      // text needles (item name, base, mod lines) like an overlay.
+      name: string;
+      kind: "tooltip";
+      expect: string[];
     };
 
 export const FIXTURES: FixtureMeta[] = [
@@ -63,6 +70,25 @@ export const FIXTURES: FixtureMeta[] = [
     name: "hud-edge",
     kind: "overlay",
     expect: ["Solo", "Life: 0/1180"],
+  },
+  {
+    // PoE-style item tooltip (#87). The needles assert the EXACT formatted mod
+    // strings, not just substrings — so basis-point scaling (3800 → 38%) and the
+    // value(min-max) range rendering are non-vacuously proven: drop the ÷100 in
+    // formatEffect and "+38(35-38)%" becomes "+3800(...)%" and this fails.
+    name: "item-tooltip",
+    kind: "tooltip",
+    expect: [
+      "Vortex Scarab",
+      "Onyx Amulet",
+      "Item Level: 84",
+      "Requires Level 60",
+      "+24(22-26) Physical Damage", // flat, with range
+      "+83(80-89) Life",
+      "+38(35-38)% Critical Strike Multiplier", // basis points ÷100
+      "36(35-38)% increased Critical Strike Chance", // increased layer ÷100
+      "Tier 1",
+    ],
   },
   {
     name: "scene-shore",

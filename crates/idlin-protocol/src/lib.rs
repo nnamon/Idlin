@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // 36: EntityState.es_pct (#100 — energy shield on the overhead bar).
-pub const PROTO_VERSION: u32 = 36;
+// 37: GearSlotView/InvItemView gain base_num + item_level + rolled mods, and a
+//     new RolledModView, for the #87 item tooltip.
+pub const PROTO_VERSION: u32 = 37;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -297,6 +299,19 @@ pub enum GameEvent {
     },
 }
 
+/// One rolled affix on an item, for the tooltip (#87). The client resolves the
+/// affix name / kind / per-effect stat+layer + the tier's roll ranges from
+/// `content-docs.json` by `num`, and formats the line with the rolled `values`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct RolledModView {
+    /// Affix registry num (key into content-docs `affix`).
+    pub num: i32,
+    /// Which tier rolled (index into the affix's `tiers`).
+    pub tier: u32,
+    /// One rolled value per affix effect (positional; a hybrid has several).
+    pub values: Vec<i32>,
+}
+
 /// One equipment slot on the inspect sheet ("" name = empty slot).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GearSlotView {
@@ -306,6 +321,12 @@ pub struct GearSlotView {
     /// Shown greyed: a two-handed weapon mirrors into the offhand slot to
     /// signal it claims both hands (the offhand can't be filled).
     pub dimmed: bool,
+    /// Base item def num (content-docs lookup for base type + requirements);
+    /// -1 for an empty slot.
+    pub base_num: i32,
+    pub item_level: u32,
+    /// Rolled affixes for the tooltip (empty for an empty slot).
+    pub mods: Vec<RolledModView>,
 }
 
 /// One bag item on the inspect sheet (grid placement + footprint).
@@ -317,6 +338,11 @@ pub struct InvItemView {
     pub y: u8,
     pub w: u8,
     pub h: u8,
+    /// Base item def num (content-docs lookup); -1 for a gem shown in the bag.
+    pub base_num: i32,
+    pub item_level: u32,
+    /// Rolled affixes for the tooltip (empty for gems / plain items).
+    pub mods: Vec<RolledModView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -730,8 +756,36 @@ mod tests {
                 resist_chaos_bp: 0,
                 item_rarity_bp: 0,
                 item_quantity_bp: 0,
-                equipment: vec![],
-                inventory: vec![],
+                // #87: the tooltip fields (base_num, item_level, rolled mods) must
+                // survive the wire — populate them so the roundtrip is non-vacuous.
+                equipment: vec![GearSlotView {
+                    slot: "weapon".into(),
+                    name: "Vortex Cleaver".into(),
+                    rarity: 2,
+                    dimmed: false,
+                    base_num: 2001,
+                    item_level: 84,
+                    mods: vec![RolledModView {
+                        num: 1001,
+                        tier: 1,
+                        values: vec![24],
+                    }],
+                }],
+                inventory: vec![InvItemView {
+                    name: "Athlete's Coral Band".into(),
+                    rarity: 1,
+                    x: 0,
+                    y: 0,
+                    w: 1,
+                    h: 1,
+                    base_num: 2002,
+                    item_level: 70,
+                    mods: vec![RolledModView {
+                        num: 1002,
+                        tier: 0,
+                        values: vec![83, 900],
+                    }],
+                }],
                 gems: vec![],
                 skills: vec![SkillStat {
                     name: "Arc".into(),
@@ -797,6 +851,32 @@ mod tests {
         assert_eq!(
             sheet.skills[0].supports[0].xp_next, 90,
             "support xp-to-next survives the wire"
+        );
+        // #87: the item tooltip fields survive the wire (base_num, item_level, and
+        // the rolled mods incl. a hybrid's multiple values).
+        assert_eq!(
+            sheet.equipment[0].base_num, 2001,
+            "gear base_num on the wire"
+        );
+        assert_eq!(
+            sheet.equipment[0].item_level, 84,
+            "gear item_level on the wire"
+        );
+        assert_eq!(sheet.equipment[0].mods[0].num, 1001);
+        assert_eq!(
+            sheet.equipment[0].mods[0].tier, 1,
+            "rolled tier on the wire"
+        );
+        assert_eq!(sheet.equipment[0].mods[0].values, vec![24]);
+        assert_eq!(
+            sheet.inventory[0].base_num, 2002,
+            "bag base_num on the wire"
+        );
+        assert_eq!(sheet.inventory[0].item_level, 70);
+        assert_eq!(
+            sheet.inventory[0].mods[0].values,
+            vec![83, 900],
+            "a hybrid's multiple rolled values survive the wire"
         );
     }
 
