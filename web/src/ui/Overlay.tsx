@@ -786,6 +786,11 @@ function SkillCard({ skill }: { skill: SkillStat }) {
             ? { k: "Debuff", v: `${Math.round(skill.debuff_duration_ticks / TICK_HZ)}s` }
             : { k: skill.shape, v: "" };
   const manaPerSec = skill.use_ticks > 0 ? Math.round((skill.mana_cost * TICK_HZ) / skill.use_ticks) : 0;
+  // Firing cadence (#94): use_ticks → uses/sec (the swing/cast rhythm), and the
+  // special-skill cooldown in seconds. Both already on the wire; client-only.
+  const rate = skill.use_ticks > 0 ? TICK_HZ / skill.use_ticks : 0;
+  const rateLabel = skill.kind === "spell" ? "cast" : "atk";
+  const fmtSec = (s: number) => (Number.isInteger(s) ? `${s}` : s.toFixed(1));
   return (
     <div className="skill-card">
       <div className="skill-head">
@@ -799,6 +804,12 @@ function SkillCard({ skill }: { skill: SkillStat }) {
       <XpBar xp={skill.xp} xpNext={skill.xp_next} />
       <div className="skill-meta">
         <span>{skill.kind}</span>
+        {rate > 0 && (
+          <span>
+            {rate >= 10 ? rate.toFixed(0) : rate.toFixed(1)} {rateLabel}/s
+          </span>
+        )}
+        {skill.cooldown_ticks > 0 && <span>cd {fmtSec(skill.cooldown_ticks / TICK_HZ)}s</span>}
         {skill.mana_cost > 0 && (
           <span>
             {skill.mana_cost} mana ({manaPerSec}/s)

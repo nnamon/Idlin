@@ -62,6 +62,12 @@ export const FIXTURES: FixtureMeta[] = [
       "DoT 48/s",
       // War Cry's life cost renders on the skill card (#98).
       "30 life",
+      // Firing cadence (#94): EXACT strings pin the rate math AND the attack/spell
+      // label, not just a substring. Heavy Swing (attack, use_ticks 8) → 1.3 atk/s;
+      // Arc (spell, use_ticks 8) → 1.3 cast/s; War Cry's cooldown → cd 4s.
+      "1.3 atk/s",
+      "1.3 cast/s",
+      "cd 4s",
     ],
   },
   {
