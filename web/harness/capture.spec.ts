@@ -27,10 +27,10 @@ async function loadFixture(browser: Browser, name: string) {
 }
 
 /** What we screenshot for a fixture: the overlay HUD, or the 3D canvas. */
-function shotTarget(page: Page, kind: "overlay" | "scene" | "full" | "manage") {
+function shotTarget(page: Page, kind: "overlay" | "scene" | "full" | "manage" | "tooltip") {
   if (kind === "scene") return page.locator("#scene canvas");
   if (kind === "full") return page.locator("body"); // 3D scene canvas + HUD overlay
-  return page.locator("#overlay"); // overlay + manage are #overlay surfaces
+  return page.locator("#overlay"); // overlay + manage + tooltip are #overlay surfaces
 }
 
 test("fixture registry and manifest cover exactly the same fixtures", async ({ browser }) => {
@@ -53,7 +53,12 @@ for (const fx of FIXTURES) {
   test(`${fx.name}: renders the fixture and captures a shot`, async ({ browser }) => {
     const { ctx, page } = await loadFixture(browser, fx.name);
     const target = shotTarget(page, fx.kind);
-    if (fx.kind === "overlay" || fx.kind === "full" || fx.kind === "manage") {
+    if (
+      fx.kind === "overlay" ||
+      fx.kind === "full" ||
+      fx.kind === "manage" ||
+      fx.kind === "tooltip"
+    ) {
       // Non-vacuous: the authored HUD content must actually be on screen, or a
       // broken injection would shoot a blank panel and still "pass".
       for (const needle of fx.expect) await expect(target).toContainText(needle);
@@ -204,23 +209,159 @@ test("the bag/obols shared slot cycles Bag → Obols → Bag on its timer", asyn
     () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
   );
 
-  const bag = page.getByText("Bag", { exact: true });
-  const obols = page.getByText("Obols", { exact: true });
+  // The [Bag|Obols] chip labels the deck; the active face is identified by the
+  // chip's aria-selected tab and by the bag grid being mounted (one face at a
+  // time). The panels no longer carry their own header (#87).
+  const chipBag = page.getByRole("tab", { name: "Bag" });
+  const chipObols = page.getByRole("tab", { name: "Obols" });
+  const bagGrid = page.locator(".bag");
 
-  // starts on the Bag face; the Obols face is not in the DOM (one at a time)
-  await expect(bag).toBeVisible();
-  await expect(obols).toHaveCount(0);
+  // starts on the Bag face
+  await expect(chipBag).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toBeVisible();
 
-  // one period → the slot flips to Obols (and Bag leaves the DOM)
+  // one period → the slot flips to Obols (and the bag grid leaves the DOM)
   await page.clock.fastForward(7000);
-  await expect(obols).toBeVisible();
-  await expect(bag).toHaveCount(0);
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
   await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "obols-face.png") });
 
   // another period → it loops back to Bag
   await page.clock.fastForward(7000);
-  await expect(bag).toBeVisible();
-  await expect(obols).toHaveCount(0);
+  await expect(chipBag).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toBeVisible();
+
+  await ctx.close();
+});
+
+test("the [Bag|Obols] chip pins the deck face, and the pin STICKS when the cursor leaves", async ({
+  browser,
+}) => {
+  // Hovering a chip segment FORCES that face immediately; the pin then STICKS — it
+  // must NOT snap back the moment the cursor leaves the segment (the reported bug:
+  // it reverted on the segment's mouseleave). The auto-cycle resumes only after the
+  // WHOLE deck has been mouse-free for the resume window (10s) — too long for a
+  // pointer test, and the auto path itself is covered by the cycle test above. No
+  // fake clock: page.clock.install() freezes the rAF hover actionability waits on.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  const chipObols = page.getByRole("tab", { name: "Obols" });
+  const bagGrid = page.locator(".bag");
+
+  // auto face is Bag
+  await expect(bagGrid).toBeVisible();
+  // hovering Obols forces the obols face (bag grid unmounts)
+  await chipObols.hover();
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+  // leaving the deck entirely: the pinned face STICKS — it does not revert to the
+  // auto face immediately (the cycle is held until the deck is mouse-free for the
+  // full resume window). Reverting the stick fix makes this snap back to Bag here.
+  await page.mouse.move(2, 2);
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+
+  await ctx.close();
+});
+
+test("the chip pin's resume timer is cancelled on re-hover (no late snap-back)", async ({
+  browser,
+}) => {
+  // The maintainer's explicit risk case: leave the deck, then return BEFORE the
+  // resume window elapses — the pending resume MUST be cancelled, or it fires late
+  // and snaps the pinned face away while the cursor is back on the deck. Fake clock
+  // to drive the 10s window deterministically; page.mouse.move (not locator.hover)
+  // for pointer input, because clock.install() freezes the rAF that hover
+  // actionability waits on. Reverting the effect cleanup (clearTimeout) to a no-op
+  // lets the stale timer fire at +10s and this snaps to Bag — so this is non-vacuous.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+  const chipObols = page.getByRole("tab", { name: "Obols" });
+  const bagGrid = page.locator(".bag");
+  const moveOntoObols = async () => {
+    const b = (await chipObols.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  };
+
+  // pin Obols, then leave the deck — the resume timer is now pending
+  await moveOntoObols();
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+  await page.mouse.move(2, 2);
+
+  // wait ALMOST the whole resume window, then return to the deck (cancels the timer)
+  await page.clock.fastForward(9000);
+  await moveOntoObols();
+  // advance PAST the original 10s deadline: a stale (uncancelled) timer would fire
+  // here and snap back to Bag; the cancellation keeps Obols pinned, cursor on it.
+  await page.clock.fastForward(2000);
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
+
+  await ctx.close();
+});
+
+test("the item tooltip floats BY the hovered item with the HUD intact (#87)", async ({
+  browser,
+}) => {
+  // The tooltip is a cursor-anchored floating layer over the live overlay — it
+  // does NOT replace the HUD. Hover the weapon (a real rare via content nums) and
+  // assert: the tooltip shows the resolved mods AND the Equipment/Stats panels are
+  // still on screen behind it. Live clock (hover needs rAF). Captures the
+  // in-context shot for the PR (the standalone `item-tooltip` fixture shows the
+  // component alone — this shows it where it actually lives).
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  // The weapon is the first filled paper-doll slot.
+  await page.locator(".slot.filled").first().hover();
+  // The tooltip resolves mod text from content-docs (loaded async) — wait for it.
+  const tip = page.locator(".item-tooltip", { hasText: "Brine Reaver" });
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText("Physical Damage");
+  // The HUD is STILL there behind the floating tooltip — nothing was replaced
+  // (the Equipment panel the weapon lives in is still on screen).
+  await expect(page.getByText("Equipment", { exact: true })).toBeVisible();
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "item-tooltip-incontext.png") });
+
+  await ctx.close();
+});
+
+test("a stats row hovers to its per-source breakdown (#87)", async ({ browser }) => {
+  // Hovering a stats-panel row floats the source breakdown for that stat — the
+  // contributing gear/passive/buff and what each grants. Live clock (hover
+  // actionability needs rAF), inspect-panel carries seeded stat_sources.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  // (the stats panel is mounted twice — desktop + a mobile-drawer copy; the
+  // first is the visible desktop one)
+  await page.getByText("armour", { exact: true }).first().hover();
+  // the breakdown tooltip lists each contributing source + its formatted amount
+  const tip = page.locator(".item-tooltip", { hasText: "Brinescoured Helm" });
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText("Kelp-Woven Vest");
+  await expect(tip).toContainText("+800");
+  await expect(tip).toContainText("+1400");
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "stat-breakdown.png") });
 
   await ctx.close();
 });

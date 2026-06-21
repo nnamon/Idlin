@@ -4,6 +4,7 @@ import type { GearSlotView } from "./GearSlotView";
 import type { GemView } from "./GemView";
 import type { InvItemView } from "./InvItemView";
 import type { SkillStat } from "./SkillStat";
+import type { StatSourceView } from "./StatSourceView";
 
 /**
  * On-demand character inspection, shown while the director focuses an
@@ -30,4 +31,10 @@ item_rarity_bp: number, item_quantity_bp: number, equipment: Array<GearSlotView>
 /**
  * Computed per-socketed-skill readout (DPS / DoT / buff / footprint).
  */
-skills: Array<SkillStat>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, };
+skills: Array<SkillStat>, currency: Array<CurrencyView>, passive_allocated: number, passive_unspent: number, build_len: number, 
+/**
+ * Per-stat source breakdown (#87): one entry per ACTIVE grant contribution
+ * (gear affix / passive node / buff). The client groups by `stat` to show,
+ * on hover, where a stat's value comes from.
+ */
+stat_sources: Array<StatSourceView>, };

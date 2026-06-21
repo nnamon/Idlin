@@ -18,8 +18,8 @@ pub mod ids;
 pub mod stats;
 
 use serde::{Deserialize, Serialize};
+use stats::{AddedUnit, Grant, Layer, Stat};
 pub use stats::{Condition, WeaponClass};
-use stats::{Grant, Layer, Stat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -515,6 +515,41 @@ pub struct AffixDef {
 }
 
 impl AffixDef {
+    /// Human-readable summary of what this affix grants (#87), derived from its
+    /// effects + the stat vocabulary. `#` stands in for the rolled value (which
+    /// varies by tier/roll) — per-item tooltips fill in the real numbers and the
+    /// tier's range; this is the definitional, number-free template for the docs
+    /// and the bot-guide. Hybrids join their effect clauses with ", ".
+    pub fn description(&self) -> String {
+        self.effects
+            .iter()
+            .map(|e| {
+                let name = e.stat.doc().name;
+                let body = match e.layer {
+                    Layer::Increased => format!("#% increased {name}"),
+                    Layer::More => format!("#% more {name}"),
+                    Layer::Added => match e.stat.doc().added_unit {
+                        AddedUnit::Flat | AddedUnit::CentiUnits => format!("+# {name}"),
+                        AddedUnit::BasisPoints | AddedUnit::Factor => format!("+#% {name}"),
+                        AddedUnit::PerSecond => format!("+# {name} per second"),
+                    },
+                };
+                match e.condition {
+                    None => body,
+                    Some(Condition::WieldingWeaponClass(wc)) => {
+                        let cls = match wc {
+                            WeaponClass::Melee => "a melee weapon",
+                            WeaponClass::Bow => "a bow",
+                            WeaponClass::Wand => "a wand",
+                        };
+                        format!("{body} (while wielding {cls})")
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// The grants this affix yields for one rolled instance — each effect paired
     /// with its rolled value, carrying the effect's `condition` (a hybrid yields
     /// several). The single fold path every power-source site shares; the sim
@@ -1178,12 +1213,18 @@ impl ContentDb {
         ContentDb::default()
     }
 
-    /// Validate one rolled affix against the registry: the index must exist AND
-    /// carry exactly one value per effect (positional, #86). `Err` is a human
-    /// reason. The fail-closed gate for snapshot resume — a malformed roll would
-    /// otherwise misalign/drop a hybrid's stats (`AffixDef::grants`) or panic on
-    /// a direct `affixes[idx]` index downstream.
-    pub fn check_rolled_affix(&self, affix_idx: u32, values_len: usize) -> Result<(), String> {
+    /// Validate one rolled affix against the registry: the index must exist, carry
+    /// exactly one value per effect (positional, #86), AND name a tier the affix
+    /// has. `Err` is a human reason. The fail-closed gate for snapshot resume — a
+    /// malformed roll would otherwise misalign/drop a hybrid's stats
+    /// (`AffixDef::grants`), panic on a direct `affixes[idx]` index downstream, or
+    /// index a nonexistent tier (names, ranges, the #87 tooltip).
+    pub fn check_rolled_affix(
+        &self,
+        affix_idx: u32,
+        values_len: usize,
+        tier: u32,
+    ) -> Result<(), String> {
         match self.affixes.get(affix_idx as usize) {
             None => Err(format!(
                 "affix #{affix_idx} is out of range ({} affixes)",
@@ -1193,6 +1234,11 @@ impl ContentDb {
                 "affix '{}' (#{affix_idx}) carries {values_len} rolled value(s) but expects {}",
                 a.id,
                 a.effects.len()
+            )),
+            Some(a) if tier as usize >= a.tiers.len() => Err(format!(
+                "affix '{}' (#{affix_idx}) rolled tier {tier} but has {} tier(s)",
+                a.id,
+                a.tiers.len()
             )),
             Some(_) => Ok(()),
         }
@@ -1310,7 +1356,6 @@ impl ContentDb {
         }
         cat!(Category::Gem, self.gems);
         cat!(Category::Item, self.items);
-        cat!(Category::Affix, self.affixes);
         cat!(Category::Monster, self.monsters);
         cat!(Category::Zone, self.zones);
         cat!(Category::Currency, self.currency);
@@ -1339,12 +1384,50 @@ impl ContentDb {
             Category::Node.key().to_string(),
             serde_json::Value::Array(nodes),
         );
+        // Affixes carry an auto-derived human-readable `description` (#87) on top
+        // of their raw effects, so a reader needn't reconstruct the mod text.
+        let affixes: Vec<serde_json::Value> = self
+            .affixes
+            .iter()
+            .filter(|d| d.public)
+            .filter_map(|d| {
+                let num = reg.num(Category::Affix, &d.id)?;
+                let mut v = entry(num, d);
+                if let serde_json::Value::Object(map) = &mut v {
+                    map.insert(
+                        "description".to_string(),
+                        serde_json::json!(d.description()),
+                    );
+                }
+                Some(v)
+            })
+            .collect();
+        cats.insert(
+            Category::Affix.key().to_string(),
+            serde_json::Value::Array(affixes),
+        );
+        // The stat vocabulary (#87): what each `Stat` (used by `effects[].stat`)
+        // means and the unit an Added-layer value carries. Lets a reader render
+        // mods without hard-coding stat semantics.
+        let stats: Vec<serde_json::Value> = Stat::ALL
+            .iter()
+            .map(|s| {
+                let d = s.doc();
+                serde_json::json!({
+                    "key": d.key,
+                    "name": d.name,
+                    "desc": d.desc,
+                    "added_unit": d.added_unit.key(),
+                })
+            })
+            .collect();
         serde_json::json!({
             "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. \
                      Bot/player content reference (RFC #54): every public def's full \
                      definitional surface, keyed by category, identified by `num`.",
             "fingerprint": reg.fingerprint,
             "seq_bits": ids::SEQ_BITS,
+            "stats": stats,
             "categories": cats,
         })
     }
@@ -2527,6 +2610,42 @@ mod tests {
             cats["zone"].as_array().unwrap().is_empty(),
             "private zones publish nothing to the docs"
         );
+
+        // Stat vocabulary (#87): every Stat carries a key/name/desc/added_unit so
+        // a reader can render `effects[].stat` without hard-coding semantics.
+        let vocab = docs["stats"].as_array().expect("stats vocabulary");
+        assert_eq!(vocab.len(), stats::STAT_COUNT, "one doc per Stat");
+        let leech = vocab
+            .iter()
+            .find(|s| s["key"] == "leech_life")
+            .expect("leech_life in vocabulary");
+        assert_eq!(leech["name"], "Life Leech");
+        assert_eq!(leech["added_unit"], "basis_points");
+        assert!(leech["desc"].as_str().is_some_and(|d| !d.is_empty()));
+
+        // Every affix carries an auto-derived human-readable description naming
+        // each effect's stat (#87). Non-vacuous: it must mention a real stat name.
+        for a in cats["affix"].as_array().unwrap() {
+            let desc = a["description"].as_str().expect("affix has a description");
+            assert!(
+                !desc.is_empty(),
+                "affix `{}` description non-empty",
+                a["id"]
+            );
+        }
+        let fox = cats["affix"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "of_the_fox");
+        if let Some(fox) = fox {
+            // Hybrid: the description names BOTH effects' stats.
+            let d = fox["description"].as_str().unwrap();
+            assert!(
+                d.contains("Dexterity") && d.contains("Evasion"),
+                "hybrid description names both stats: {d}"
+            );
+        }
     }
 
     /// Build a throwaway content dir from (relative path, contents) pairs.
@@ -2633,24 +2752,40 @@ mod tests {
             .unwrap() as u32;
         let hale = db.affixes.iter().position(|a| a.id == "hale").unwrap() as u32;
         assert!(
-            db.check_rolled_affix(fox, 2).is_ok(),
+            db.check_rolled_affix(fox, 2, 0).is_ok(),
             "hybrid wants 2 values"
         );
         assert!(
-            db.check_rolled_affix(fox, 1).is_err(),
+            db.check_rolled_affix(fox, 1, 0).is_err(),
             "1 value for a 2-effect affix"
         );
         assert!(
-            db.check_rolled_affix(hale, 1).is_ok(),
+            db.check_rolled_affix(hale, 1, 0).is_ok(),
             "single-effect wants 1"
         );
         assert!(
-            db.check_rolled_affix(hale, 2).is_err(),
+            db.check_rolled_affix(hale, 2, 0).is_err(),
             "2 values for 1 effect"
         );
         assert!(
-            db.check_rolled_affix(u32::MAX, 1).is_err(),
+            db.check_rolled_affix(u32::MAX, 1, 0).is_err(),
             "an out-of-range affix index is rejected, not silently OK"
+        );
+        // Tier bound (#87): a roll naming a tier the affix doesn't have is
+        // rejected, not resumed (it indexes names/ranges/the tooltip). Mutation:
+        // drop the tier arm and a corrupt snapshot tier resumes.
+        let hale_tiers = db.affixes[hale as usize].tiers.len() as u32;
+        assert!(
+            db.check_rolled_affix(hale, 1, hale_tiers - 1).is_ok(),
+            "the top valid tier is accepted"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 1, hale_tiers).is_err(),
+            "a tier past the last is rejected"
+        );
+        assert!(
+            db.check_rolled_affix(hale, 1, u32::MAX).is_err(),
+            "a wildly-out-of-range tier is rejected, not silently OK"
         );
     }
 

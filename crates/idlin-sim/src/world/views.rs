@@ -6,10 +6,22 @@ use crate::entity::{Item, LootPayload};
 use crate::hash::Fnv1a64;
 use idlin_content::GearSlot;
 
-/// One inspect-sheet equipment slot: (slot name, Some((item name, rarity)) or
-/// None when empty, dimmed). A two-handed weapon mirrors (dimmed) into the
-/// offhand slot.
-pub type GearSlotRow = (&'static str, Option<(String, u8)>, bool);
+/// Tooltip-grade detail for one item on the inspect sheet (#87): the rolled
+/// display name + rarity, the base def num (client resolves base type +
+/// requirements from content-docs), the item level, and the rolled affixes as
+/// (affix_num, tier, values). Gems shown in the bag use `base_num = -1`, no mods.
+#[derive(Debug, Clone)]
+pub struct ItemRow {
+    pub name: String,
+    pub rarity: u8,
+    pub base_num: i32,
+    pub item_level: u32,
+    pub mods: Vec<(i32, u32, Vec<i64>)>,
+}
+
+/// One inspect-sheet equipment slot: (slot name, the item or None when empty,
+/// dimmed). A two-handed weapon mirrors (dimmed) into the offhand slot.
+pub type GearSlotRow = (&'static str, Option<ItemRow>, bool);
 
 /// Computed readout for one socketed SKILL gem — produced by the sim's own
 /// resolution pipeline (`skill_stat_view`), so the panel can never disagree
@@ -76,8 +88,8 @@ pub struct CharacterSheetView {
     pub item_quantity: i64,
     /// Equipment slots; a two-handed weapon mirrors (dimmed) into the offhand.
     pub equipment: Vec<GearSlotRow>,
-    /// (name, rarity, x, y, w, h) per bag item.
-    pub inventory: Vec<(String, u8, u8, u8, u8, u8)>,
+    /// (item, x, y, w, h) per bag item.
+    pub inventory: Vec<(ItemRow, u8, u8, u8, u8)>,
     /// (name, level, xp, xp_to_next: 0 at cap, is_support) — supports
     /// follow their skill.
     pub gems: Vec<(String, u32, i64, i64, bool)>,
@@ -88,9 +100,35 @@ pub struct CharacterSheetView {
     pub passive_allocated: u32,
     pub passive_unspent: u32,
     pub build_len: u32,
+    /// Per-stat source breakdown (#87): (stat_key, source, layer u8, value) for
+    /// every ACTIVE grant contribution (gear affix / passive node / buff).
+    pub stat_sources: Vec<(String, String, u8, i64)>,
 }
 
 impl World {
+    /// Tooltip-grade detail for one item (#87): display name, rarity, base def
+    /// num, item level, and the rolled affixes as (affix_num, tier, values).
+    pub(crate) fn item_row(&self, it: &Item) -> ItemRow {
+        let mods = it
+            .affixes
+            .iter()
+            .map(|ra| {
+                (
+                    self.content_num(idlin_content::ids::Category::Affix, ra.affix_idx as usize),
+                    ra.tier,
+                    ra.values.clone(),
+                )
+            })
+            .collect();
+        ItemRow {
+            name: self.item_display(it),
+            rarity: it.rarity as u8,
+            base_num: self.content_num(idlin_content::ids::Category::Item, it.base_idx as usize),
+            item_level: it.item_level,
+            mods,
+        }
+    }
+
     /// Inspect one character by net id (None for monsters/loot/unknown).
     pub fn character_sheet(&self, net_id: u32) -> Option<CharacterSheetView> {
         const SLOT_NAMES: [&str; 12] = [
@@ -107,8 +145,7 @@ impl World {
             .map(|(i, s)| {
                 (
                     SLOT_NAMES[i],
-                    s.as_ref()
-                        .map(|item| (self.item_display(item), item.rarity as u8)),
+                    s.as_ref().map(|item| self.item_row(item)),
                     false,
                 )
             })
@@ -129,19 +166,18 @@ impl World {
             .map(|p| match &p.item {
                 crate::entity::BagItem::Gear(it) => {
                     let def = &self.content.items[it.base_idx as usize];
-                    (
-                        self.item_display(it),
-                        it.rarity as u8,
-                        p.x,
-                        p.y,
-                        def.w,
-                        def.h,
-                    )
+                    (self.item_row(it), p.x, p.y, def.w, def.h)
                 }
-                // Gems show as 1×1, Normal-rarity entries named by their gem def.
+                // Gems show as 1×1, Normal-rarity entries named by their gem def,
+                // with no base/mods (the tooltip falls back to the bare name).
                 crate::entity::BagItem::Gem(g) => (
-                    self.content.gems[g.gem_idx as usize].name.clone(),
-                    crate::entity::Rarity::Normal as u8,
+                    ItemRow {
+                        name: self.content.gems[g.gem_idx as usize].name.clone(),
+                        rarity: crate::entity::Rarity::Normal as u8,
+                        base_num: -1,
+                        item_level: 0,
+                        mods: Vec::new(),
+                    },
                     p.x,
                     p.y,
                     1,
@@ -189,6 +225,58 @@ impl World {
                 (def.name.clone(), *c, def.tier)
             })
             .collect();
+        // Per-stat source breakdown (#87): every ACTIVE grant's contribution from
+        // gear / tree / buffs, the same grants `refresh_character_stats` folds,
+        // filtered to those whose condition currently holds. View-only (not hashed).
+        let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
+            .as_ref()
+            .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
+        let ctx = crate::stats::EvalContext { weapon_class };
+        let mut stat_sources: Vec<(String, String, u8, i64)> = Vec::new();
+        for it in ch.equipment.iter().flatten() {
+            let name = self.item_display(it);
+            for ra in &it.affixes {
+                let a = &self.content.affixes[ra.affix_idx as usize];
+                for g in a.grants(&ra.values) {
+                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            name.clone(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
+        }
+        for &node_idx in &ch.allocated {
+            if let Some(node) = self.content.tree.get(node_idx as usize) {
+                for g in &node.grants {
+                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            node.name.clone(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
+        }
+        for ef in &e.effects {
+            if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
+                for g in grants {
+                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            "Buff".to_string(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
+        }
         Some(CharacterSheetView {
             id: e.net_id,
             name: ch.name.clone(),
@@ -223,6 +311,7 @@ impl World {
             passive_allocated: ch.allocated.len() as u32,
             passive_unspent: ch.passive_points(),
             build_len: ch.build_plan.len() as u32,
+            stat_sources,
         })
     }
 

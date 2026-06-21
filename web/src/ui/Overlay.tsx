@@ -1,13 +1,34 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { CharacterSheet } from "../gen/CharacterSheet";
+import type { GearSlotView } from "../gen/GearSlotView";
 import type { SkillStat } from "../gen/SkillStat";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore } from "../world/store";
 import { resolveFocusId } from "../world/focus";
 import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
+import { ContentDocs, formatContribution, loadContentDocs } from "../world/contentDocs";
+import type { StatSourceView } from "../gen/StatSourceView";
+import { ItemTooltip, type TooltipItem } from "./ItemTooltip";
 import "./overlay.css";
 
 type Icons = { icon(name: string, kind: string): string | null } | null;
+
+/** A hovered surface plus the cursor anchor, lifted to the overlay so the single
+ *  floating tooltip can render anchored to the cursor while any cell sets it. A
+ *  hover is either an item (gear/bag → ItemTooltip) or a stat row (stats panel →
+ *  source breakdown, #87). */
+type HoverState = { x: number; y: number } & (
+  | { kind: "item"; item: TooltipItem }
+  | { kind: "stat"; statKeys: string[]; label: string }
+);
+const ItemHoverContext = createContext<(h: HoverState | null) => void>(() => {});
 
 /** Best-guess silhouette family for a bag item (until items carry kinds). */
 function bagKind(name: string, w: number, h: number): string {
@@ -128,12 +149,20 @@ export function Overlay({
   const [status, setStatus] = useState<NetStatus | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [, setVersion] = useState(0);
+  const [docs, setDocs] = useState<ContentDocs | null>(null);
+  const [hover, setHover] = useState<HoverState | null>(null);
 
   useEffect(() => client.onStatus(setStatus), [client]);
   useEffect(() => {
     const h = setInterval(() => setVersion(store.version), 200);
     return () => clearInterval(h);
   }, [store]);
+  // The mod tooltip needs the content reference (affix defs + stat vocabulary).
+  useEffect(() => {
+    loadContentDocs()
+      .then(setDocs)
+      .catch(() => {});
+  }, []);
 
   // Individual view (#79): focus is pinned to the named idler (no director-cue
   // fallback — an absent idler shows no focus panel, never the broadcast's pick
@@ -145,6 +174,17 @@ export function Overlay({
     store.cue?.focus,
   );
   const focused = focusId !== undefined ? store.entities.get(focusId) : undefined;
+
+  // Drop any open item tooltip when the focused character changes: the hovered
+  // gear/bag cell can unmount without firing onMouseLeave (a focus switch swaps
+  // the whole sheet), which would otherwise strand the tooltip — a FloatingTooltip
+  // left over an item no longer on screen. Key on the SAME identity the sheet guard
+  // uses — (id, world, name) — because net ids overlap across worlds: a cross-world
+  // cut to a different character can reuse id 1, so `focusId` alone wouldn't change.
+  useEffect(
+    () => setHover(null),
+    [focusId, store.zone?.worldKey, focused?.state.name],
+  );
 
   // Keep the focus panel fresh: re-request the sheet while a character is
   // in frame (cheap: one small message per second).
@@ -214,7 +254,7 @@ export function Overlay({
   }
 
   return (
-    <>
+    <ItemHoverContext.Provider value={setHover}>
       {/* top-center: boss life bars */}
       {bosses.length > 0 && (
         <div className="hud-boss">
@@ -278,12 +318,16 @@ export function Overlay({
           </div>
         )}
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
-        {/* bag + obols share one slot, cycling while the idler is on screen */}
+        {/* bag + obols share one slot, cycling while the idler is on screen;
+            hovering the deck (or pinning a face via the [Bag|Obols] chip) holds
+            it, and the cycle resumes only after the deck is mouse-free a while */}
         {sheet && (
           <CycleDeck
             faces={[
-              <BagPanel key="bag" sheet={sheet} icons={store.icons} />,
-              ...(sheet.currency.length > 0 ? [<ObolsPanel key="obols" sheet={sheet} />] : []),
+              { label: "Bag", node: <BagPanel sheet={sheet} icons={store.icons} /> },
+              ...(sheet.currency.length > 0
+                ? [{ label: "Obols", node: <ObolsPanel sheet={sheet} /> }]
+                : []),
             ]}
           />
         )}
@@ -331,7 +375,114 @@ export function Overlay({
           </div>
         ))}
       </div>
-    </>
+
+      {/* floating tooltip (item OR stat-source breakdown), anchored to the cursor */}
+      {hover && <FloatingTooltip hover={hover} docs={docs} sheet={sheet} />}
+    </ItemHoverContext.Provider>
+  );
+}
+
+/** Renders the hover tooltip — an item card or a stat-source breakdown — as a
+ *  fixed overlay near the cursor, flipping left near the right edge. */
+function FloatingTooltip({
+  hover,
+  docs,
+  sheet,
+}: {
+  hover: HoverState;
+  docs: ContentDocs | null;
+  sheet: CharacterSheet | null;
+}) {
+  const flipLeft = hover.x > window.innerWidth - 360;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: Math.min(hover.y + 14, window.innerHeight - 220),
+        left: flipLeft ? undefined : hover.x + 16,
+        right: flipLeft ? window.innerWidth - hover.x + 16 : undefined,
+        zIndex: 50,
+        pointerEvents: "none",
+      }}
+    >
+      {hover.kind === "item" ? (
+        <ItemTooltip item={hover.item} docs={docs} />
+      ) : (
+        <StatBreakdown
+          statKeys={hover.statKeys}
+          label={hover.label}
+          sources={sheet?.stat_sources ?? []}
+          docs={docs}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Per-stat source breakdown (#87): for the stat(s) of a hovered stats-panel row,
+ *  list every contributing gear/passive/buff and what it grants. */
+function StatBreakdown({
+  statKeys,
+  label,
+  sources,
+  docs,
+}: {
+  statKeys: string[];
+  label: string;
+  sources: StatSourceView[];
+  docs: ContentDocs | null;
+}) {
+  const groups = statKeys
+    .map((key) => ({
+      key,
+      name: docs?.stat(key)?.name ?? key,
+      entries: sources.filter((s) => s.stat === key),
+    }))
+    .filter((g) => g.entries.length > 0);
+  return (
+    <div
+      className="item-tooltip"
+      style={{
+        minWidth: 190,
+        maxWidth: 320,
+        background: "rgba(8, 6, 3, 0.97)",
+        border: "1px solid #46381f",
+        boxShadow: "0 4px 18px rgba(0,0,0,0.6)",
+        color: "#c9bb95",
+        fontSize: 12,
+        lineHeight: 1.45,
+        padding: "6px 10px",
+        pointerEvents: "none",
+      }}
+    >
+      <div className="display" style={{ color: "#f0e2bf", fontSize: 12.5, marginBottom: 3 }}>
+        {label}
+      </div>
+      {groups.length === 0 ? (
+        <div style={{ color: "#6f6346", fontStyle: "italic", fontSize: 11.5 }}>
+          no gear/passive/buff sources — base or attribute-derived
+        </div>
+      ) : (
+        groups.map((g) => (
+          <div key={g.key} style={{ marginTop: 2 }}>
+            {statKeys.length > 1 && (
+              <div style={{ color: "#8c7f5e", fontSize: 10.5 }}>{g.name}</div>
+            )}
+            {g.entries.map((e, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+              >
+                <span style={{ color: "#ab9d7a" }}>{e.source}</span>
+                <span style={{ color: "#8aa0d8" }}>
+                  {formatContribution(e.layer, e.value, docs?.stat(e.stat))}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 
@@ -343,10 +494,11 @@ function SlotBox({
   icons,
 }: {
   label: string;
-  gear: { name: string; rarity: number; dimmed?: boolean } | undefined;
+  gear: GearSlotView | undefined;
   area: string;
   icons: Icons;
 }) {
+  const setHover = useContext(ItemHoverContext);
   const filled = !!gear?.name;
   const color = filled ? RARITY_COLORS[gear.rarity] : "#3a2f1b";
   // A two-handed weapon mirrors into the offhand slot, shown greyed.
@@ -354,12 +506,21 @@ function SlotBox({
   const kind = label.toLowerCase();
   // Icon-only paper doll (PoE-style): the worn item's icon when filled, else a
   // FAINT glyph of what the slot takes so an empty slot stays identifiable. The
-  // item name rides the hover title — no text crammed into the tiny cells.
+  // full item rides the hover tooltip — no text crammed into the tiny cells.
   const src = filled ? icons?.icon(gear!.name, kind) : icons?.icon(label, kind);
+  const hoverProps = filled
+    ? {
+        onMouseEnter: (e: React.MouseEvent) =>
+          setHover({ kind: "item", item: gear as TooltipItem, x: e.clientX, y: e.clientY }),
+        onMouseMove: (e: React.MouseEvent) =>
+          setHover({ kind: "item", item: gear as TooltipItem, x: e.clientX, y: e.clientY }),
+        onMouseLeave: () => setHover(null),
+      }
+    : {};
   return (
     <div
       className={filled ? "slot filled" : "slot"}
-      title={dimmed ? `${gear!.name} (two-handed)` : gear?.name || label}
+      {...hoverProps}
       style={{
         gridArea: area,
         ["--rar" as string]: color,
@@ -379,6 +540,7 @@ function SlotBox({
 /** The bag: a dark 12×5 vault; items are art spanning their footprint. */
 function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
   const CELL = 21;
+  const setHover = useContext(ItemHoverContext);
   return (
     <div
       className="bag"
@@ -397,7 +559,13 @@ function BagGrid({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
           <div
             key={i}
             className="bagitem"
-            title={it.name}
+            onMouseEnter={(e) =>
+              setHover({ kind: "item", item: it as TooltipItem, x: e.clientX, y: e.clientY })
+            }
+            onMouseMove={(e) =>
+              setHover({ kind: "item", item: it as TooltipItem, x: e.clientX, y: e.clientY })
+            }
+            onMouseLeave={() => setHover(null)}
             style={{
               left: it.x * CELL + 1,
               top: it.y * CELL + 1,
@@ -468,26 +636,78 @@ function GearPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
 /** The bag, as its own panel so it can share space with the obols panel via the
  *  CycleDeck. */
 function BagPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
+  // No header: the [Bag|Obols] chip above the deck labels the active face.
   return (
-    <div className="panel" style={{ marginTop: 8 }}>
-      <Header first>Bag</Header>
+    <div className="panel" style={{ marginTop: 4 }}>
       <BagGrid sheet={sheet} icons={icons} />
     </div>
   );
 }
 
-/** Cycle through panels in one shared slot — the bag and obols take turns rather
- *  than both claiming vertical room, advancing on a timer while the idler is
- *  focused. The capture harness shoots the initial face (index 0); the timer
- *  never fires within a (sub-second) capture, so the shot stays deterministic. */
-function CycleDeck({ faces, periodMs = 7000 }: { faces: React.ReactNode[]; periodMs?: number }) {
+/** Cycle through labelled panels in one shared slot — the bag and obols take turns
+ *  rather than both claiming vertical room, advancing on a timer while the idler
+ *  is focused. A [Bag|Obols] chip lets the viewer FORCE a face by hovering its
+ *  segment; the forced face STICKS (it doesn't snap back when the cursor leaves
+ *  the segment). The auto-cycle only resumes once the WHOLE deck — chip and the
+ *  face below it — has been mouse-free for `resumeMs`, so brushing past an item
+ *  or pinning Obols holds steady while you read, then eases back to the rotation.
+ *  The capture harness shoots the initial face (index 0); the timer never fires
+ *  within a (sub-second) capture, so the shot stays deterministic. */
+function CycleDeck({
+  faces,
+  periodMs = 7000,
+  resumeMs = 10_000,
+}: {
+  faces: { label: string; node: React.ReactNode }[];
+  periodMs?: number;
+  resumeMs?: number;
+}) {
   const [i, setI] = useState(0);
+  // Chip-forced face index (sticks until auto resumes), or null to follow the cursor.
+  const [selected, setSelected] = useState<number | null>(null);
+  // True while the cursor is anywhere on the deck (the chip OR the face below it).
+  const [hovering, setHovering] = useState(false);
+  // Auto (broadcast) mode: the cursor advances on its own. It's held off the
+  // moment the deck gets mouse attention and only RESUMES once the whole deck has
+  // been mouse-free for resumeMs — so leaving the panel doesn't snap the face back.
+  const [auto, setAuto] = useState(true);
   useEffect(() => {
-    if (faces.length <= 1) return;
+    if (hovering) {
+      setAuto(false);
+      return;
+    }
+    const h = setTimeout(() => {
+      setAuto(true);
+      setSelected(null);
+    }, resumeMs);
+    return () => clearTimeout(h);
+  }, [hovering, resumeMs]);
+  useEffect(() => {
+    if (faces.length <= 1 || !auto) return;
     const h = setInterval(() => setI((n) => (n + 1) % faces.length), periodMs);
     return () => clearInterval(h);
-  }, [faces.length, periodMs]);
-  return <>{faces[Math.min(i, faces.length - 1)]}</>;
+  }, [faces.length, periodMs, auto]);
+  const shown = (selected ?? i) % Math.max(1, faces.length);
+  return (
+    <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      {faces.length > 1 && (
+        <div className="deck-chip" role="tablist" aria-label="panel selector">
+          {faces.map((f, idx) => (
+            <span
+              key={f.label}
+              role="tab"
+              aria-selected={shown === idx}
+              className={shown === idx ? "deck-chip-seg on" : "deck-chip-seg"}
+              onMouseEnter={() => setSelected(idx)}
+            >
+              {f.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {faces[shown]?.node}
+    </div>
+  );
 }
 
 /**
@@ -620,12 +840,28 @@ function SkillCard({ skill }: { skill: SkillStat }) {
 
 /** Left column: the focused idler's numbers — stats, gems, obols. */
 function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
-  const stat = (label: string, value: string) => (
-    <div key={label} className="row">
-      <span className="k">{label}</span>
-      <span className="v">{value}</span>
-    </div>
-  );
+  const setHover = useContext(ItemHoverContext);
+  // Each row hovers to its source breakdown (#87): the stat keys it covers feed
+  // the tooltip, which lists the contributing gear/passive/buff. Rows with no
+  // backing stat (passives) pass none and stay non-interactive.
+  const stat = (label: string, value: string, statKeys: string[] = []) => {
+    const hoverable = statKeys.length > 0;
+    const move = (e: React.MouseEvent) =>
+      setHover({ kind: "stat", statKeys, label, x: e.clientX, y: e.clientY });
+    return (
+      <div
+        key={label}
+        className="row"
+        onMouseEnter={hoverable ? move : undefined}
+        onMouseMove={hoverable ? move : undefined}
+        onMouseLeave={hoverable ? () => setHover(null) : undefined}
+        style={hoverable ? { cursor: "help" } : undefined}
+      >
+        <span className="k">{label}</span>
+        <span className="v">{value}</span>
+      </div>
+    );
+  };
   const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
   const resPct = (bp: number) => Math.min(75, Math.round(bp / 100));
   const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
@@ -633,16 +869,23 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
     <div className="panel" style={{ lineHeight: 1.5 }}>
       <Header first>Stats</Header>
       {/* life + mana now read off the HUD globes; energy shield stays (no orb) */}
-      {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`)}
-      {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`)}
-      {stat("dmg p/f/c/l/ch", dmg.join("/"))}
-      {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`)}
-      {stat("armour", `${sheet.armour}`)}
-      {stat("res f/c/l/ch", res)}
+      {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`, ["energy_shield"])}
+      {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`, ["block"])}
+      {stat("dmg p/f/c/l/ch", dmg.join("/"), [
+        "damage_phys",
+        "damage_fire",
+        "damage_cold",
+        "damage_lightning",
+        "damage_chaos",
+      ])}
+      {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`, ["accuracy", "evasion"])}
+      {stat("armour", `${sheet.armour}`, ["armour"])}
+      {stat("res f/c/l/ch", res, ["resist_fire", "resist_cold", "resist_lightning", "resist_chaos"])}
       {(sheet.item_rarity_bp > 0 || sheet.item_quantity_bp > 0) &&
         stat(
           "find rar/qty",
           `+${(sheet.item_rarity_bp / 100).toFixed(0)}% / +${(sheet.item_quantity_bp / 100).toFixed(0)}%`,
+          ["item_rarity", "item_quantity"],
         )}
       {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
       {sheet.skills.length > 0 && (
@@ -667,9 +910,9 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
  *  off-screen, and currency belongs with the inventory anyway. */
 function ObolsPanel({ sheet }: { sheet: CharacterSheet }) {
   if (sheet.currency.length === 0) return null;
+  // No header: the [Bag|Obols] chip above the deck labels the active face.
   return (
-    <div className="panel" style={{ marginTop: 8 }}>
-      <Header first>Obols</Header>
+    <div className="panel" style={{ marginTop: 4 }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
         {sheet.currency.map((c, i) => (
           <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>

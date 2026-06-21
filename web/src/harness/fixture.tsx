@@ -11,6 +11,8 @@
 import { createRoot } from "react-dom/client";
 import { WorldStore } from "../world/store";
 import { Overlay } from "../ui/Overlay";
+import { ItemTooltip } from "../ui/ItemTooltip";
+import { ContentDocs } from "../world/contentDocs";
 import { ManagePage } from "../ui/ManagePage";
 import { ZoneRenderer } from "../scene/ZoneRenderer";
 import { silhouette } from "../scene/IconFactory";
@@ -76,6 +78,18 @@ async function renderManage(fixture: Extract<Fixture, { kind: "manage" }>): Prom
   const store = new WorldStore();
   for (const msg of fixture.messages) store.handle(msg);
   createRoot(overlay).render(<ManagePage store={store} idler={fixture.idler} />);
+  for (let i = 0; i < 6; i++) await nextTask();
+  await document.fonts.ready;
+}
+
+async function renderTooltip(fixture: Extract<Fixture, { kind: "tooltip" }>): Promise<void> {
+  const overlay = document.getElementById("overlay")!;
+  const docs = new ContentDocs(fixture.docsJson);
+  createRoot(overlay).render(
+    <div style={{ padding: 24, display: "inline-block" }}>
+      <ItemTooltip item={fixture.item} docs={docs} />
+    </div>,
+  );
   for (let i = 0; i < 6; i++) await nextTask();
   await document.fonts.ready;
 }
@@ -150,6 +164,7 @@ async function main(): Promise<void> {
   if (fixture.kind === "scene") await renderScene(fixture);
   else if (fixture.kind === "full") await renderFull(fixture);
   else if (fixture.kind === "manage") await renderManage(fixture);
+  else if (fixture.kind === "tooltip") await renderTooltip(fixture);
   else await renderOverlay(fixture);
 
   window.__harness = { ready: true, name, label: fixture.label };
