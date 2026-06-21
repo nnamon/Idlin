@@ -86,6 +86,13 @@ export const FIXTURES: FixtureMeta[] = [
     expect: ["Edda", "Arc"],
   },
   {
+    // #94 Part B: a newly-focused idler's off-focus fire must not replay as a
+    // pulse; the no-flash placement is asserted behaviorally in capture.spec.ts.
+    name: "skill-pulse-offfocus",
+    kind: "overlay",
+    expect: ["Edda", "Arc"],
+  },
+  {
     // PoE-style item tooltip (#87). The needles assert the EXACT formatted mod
     // strings, not just substrings — so basis-point scaling (3800 → 38%) and the
     // value(min-max) range rendering are non-vacuously proven: drop the ÷100 in

@@ -155,49 +155,62 @@ test("inspect-panel: a few-skill loadout fits the panel WITHOUT clipping", async
   await ctx.close();
 });
 
-test("skill-pulse: only the just-fired skill's card flashes (#94 Part B)", async ({ browser }) => {
-  // The fixture fires Arc (socket 200) via a UseFx in its trailing ZoneDelta. The
-  // pulse must land on Arc's card ONLY — proving the HUD keys the flash by the
-  // firing socket, not "pulse everything". Non-vacuous: break the slot match
-  // (fired={0}) and zero cards flash; key it wrong and the wrong card does.
+// Inject an S2C into the mounted fixture's store (a fire while the card is on
+// screen) and return once applied. The overlay re-renders on its own poll.
+async function injectFire(page: Page, attacker: number, slot: number) {
+  await page.evaluate(
+    ([a, s]) => {
+      const store = (window as unknown as { __harnessStore: { handle(m: unknown): void } })
+        .__harnessStore;
+      store.handle({
+        type: "ZoneDelta",
+        data: {
+          tick: 99,
+          spawned: [],
+          moved: [],
+          updated: [],
+          removed: [],
+          hits: [],
+          projectiles: [],
+          skills: [],
+          uses: [{ attacker: a, spell: true, x: 0, y: 0, use_ticks: 8, contact_ticks: 4, slot: s }],
+        },
+      });
+    },
+    [attacker, slot],
+  );
+}
+
+test("skill-pulse: a fire WHILE focused flashes only that card, as an opaque pulse (#94 Part B)", async ({
+  browser,
+}) => {
+  // The card mounts calm, then a UseFx for Arc (socket 200) is injected — the live
+  // path: a fire that lands while the card is on screen. Only Arc flashes (keyed by
+  // the firing socket), and it's a real opaque pulse (the running `skill-fire`
+  // animation starts opaque), not just a present node. Non-vacuous: break the slot
+  // match → no flash; key it wrong → wrong card; opacity-zero the 0% keyframe → the
+  // opaque check fails; flash-on-mount regression → it'd flash before the inject.
   const { ctx, page } = await loadFixture(browser, "skill-pulse");
-  // Arc (the fired socket) carries the pulse. (Counts span both the desktop and
-  // mobile-drawer panel copies, so assert by card, not a global total.)
-  await expect(
-    page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash"),
-  ).not.toHaveCount(0);
-  // ...and the pulse is keyed to that socket — no other card flashes.
+  await expect(page.locator(".skill-flash")).toHaveCount(0); // calm before any fire
+  await injectFire(page, 1, 200); // idler 1 fires Arc
+  const arcFlash = page.locator(".skill-card", { hasText: "Arc" }).locator(".skill-flash");
+  await expect(arcFlash).not.toHaveCount(0); // ...flashes once the overlay polls
+  const start = await arcFlash.first().evaluate((el) => {
+    const anim = el.getAnimations()[0] as (Animation & { animationName?: string }) | undefined;
+    if (!anim) return null;
+    const frames = (anim.effect as KeyframeEffect).getKeyframes();
+    return { name: anim.animationName, opacity: Number(frames[0]?.opacity ?? "0") };
+  });
+  expect(start, "the flash has a running CSS animation (not display:none)").not.toBeNull();
+  expect(start!.name).toBe("skill-fire");
+  expect(start!.opacity).toBeGreaterThan(0.5); // the pulse starts opaque, then fades
+  // ...and no other card flashes.
   await expect(
     page.locator(".skill-card", { hasText: "Heavy Swing" }).locator(".skill-flash"),
   ).toHaveCount(0);
   await expect(
     page.locator(".skill-card", { hasText: "Frost Nova" }).locator(".skill-flash"),
   ).toHaveCount(0);
-  await ctx.close();
-});
-
-test("skill-pulse: the flash renders as an OPAQUE pulse, not just a present node (#94)", async ({
-  browser,
-}) => {
-  // toBeVisible() ignores opacity and the byte-stable shot fast-forwards the pulse
-  // to its opacity:0 end — neither proves the flash is actually SEEN. Read the
-  // running CSS animation's first keyframe: it must be the `skill-fire` pulse,
-  // starting opaque. Catches display:none (no running animation), a removed/renamed
-  // animation, and a 0%-opacity regression — none of which a count check would.
-  const { ctx, page } = await loadFixture(browser, "skill-pulse");
-  const start = await page
-    .locator(".skill-card", { hasText: "Arc" })
-    .locator(".skill-flash")
-    .first()
-    .evaluate((el) => {
-      const anim = el.getAnimations()[0] as (Animation & { animationName?: string }) | undefined;
-      if (!anim) return null;
-      const frames = (anim.effect as KeyframeEffect).getKeyframes();
-      return { name: anim.animationName, opacity: Number(frames[0]?.opacity ?? "0") };
-    });
-  expect(start, "the flash has a running CSS animation (not display:none)").not.toBeNull();
-  expect(start!.name).toBe("skill-fire");
-  expect(start!.opacity).toBeGreaterThan(0.5); // the pulse starts opaque, then fades
   await ctx.close();
 });
 
@@ -211,6 +224,20 @@ test("skill-pulse-stale: a reused net id in a new world does NOT inherit a stale
   const { ctx, page } = await loadFixture(browser, "skill-pulse-stale");
   await expect(page.getByText("Edda").first()).toBeVisible(); // the new occupant rendered
   await expect(page.locator(".skill-flash")).toHaveCount(0); // no stale pulse anywhere
+  await ctx.close();
+});
+
+test("skill-pulse-offfocus: focusing an idler who fired off-screen does NOT replay a pulse (#94)", async ({
+  browser,
+}) => {
+  // Edda fired Arc while the panel was on Brakka (same world, no snapshot), then the
+  // director switches focus to Edda with no new fire. Her card mounts with that fire
+  // in its count and must stay calm — the card baselines its count at mount and only
+  // flashes on a later increase. Reverting that baseline (flash whenever count > 0)
+  // makes Edda's card flash here, so this is non-vacuous.
+  const { ctx, page } = await loadFixture(browser, "skill-pulse-offfocus");
+  await expect(page.getByText("Edda").first()).toBeVisible();
+  await expect(page.locator(".skill-flash")).toHaveCount(0);
   await ctx.close();
 });
 

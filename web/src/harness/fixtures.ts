@@ -796,16 +796,16 @@ const itemTooltip: Fixture = {
 };
 
 /**
- * Skill fire pulse (#94 Part B): a focused idler whose Arc skill (socket 200)
- * just fired — a `UseFx` in the trailing `ZoneDelta` bumps that card's fire
- * counter, so ONLY the Arc card flashes; the other two (untouched socket keys)
- * stay calm. Distinct socket keys prove the pulse targets the firing card, not
- * the whole list.
+ * Skill loadout (#94 Part B): a focused idler with three distinct-socket skills,
+ * mounted with NO fire yet. The pulse-on-fire behavior is exercised by injecting a
+ * `UseFx` post-mount in capture.spec.ts (a fire must land WHILE the card is on
+ * screen to flash — a baked, pre-mount fire correctly does not). Distinct socket
+ * keys let the test prove the pulse targets only the firing card.
  */
 const FIRE_PULSE_SLOT = 200;
 const skillPulse: Fixture = {
   kind: "overlay",
-  label: "Skill fire pulse: only the just-fired skill's card flashes (#94 Part B)",
+  label: "Skill loadout: three distinct-socket skills, calm until a fire is injected (#94)",
   status: LIVE_STATUS,
   messages: [
     zoneSnapshot({
@@ -861,8 +861,64 @@ const skillPulse: Fixture = {
         ],
       }),
     ),
-    // Arc fired this tick → only its card pulses.
-    zoneDelta({ tick: 5, uses: [fire(1, FIRE_PULSE_SLOT, true)] }),
+    // No fire baked in — the card mounts calm; capture.spec.ts injects a UseFx.
+  ],
+};
+
+/**
+ * Off-focus fire (#94 Part B): idler Edda (id 2) fired Arc while the panel was on
+ * someone else, then the director switches focus to Edda — with NO new fire. Edda's
+ * card mounts with a non-zero fire count from history and must STAY CALM (the card
+ * baselines its count at mount; only a fire while it's on screen flashes). Guards
+ * the same class as the id-reuse case, across a focus switch.
+ */
+const skillPulseOffFocus: Fixture = {
+  kind: "overlay",
+  label: "Off-focus fire: a newly-focused idler's earlier fire does NOT replay as a pulse (#94)",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [
+        character({ id: 1, name: "Brakka", level: 30, model: "marauder", life_pct: 80 }),
+        character({ id: 2, name: "Edda", level: 22, model: "marauder", life_pct: 90 }),
+      ],
+    }),
+    // Panel starts on Brakka.
+    directorCue(1, "carving the strand"),
+    focusQueue(["Brakka", "Edda"], 0),
+    characterSheet(
+      sheet({
+        id: 1,
+        name: "Brakka",
+        level: 30,
+        skills: [skill({ slot: 100, name: "Heavy Swing", kind: "attack", level: 12, dps: 612 })],
+      }),
+    ),
+    // Edda (id 2) fires Arc OFF-FOCUS (no snapshot — same world).
+    zoneDelta({ tick: 5, uses: [fire(2, FIRE_PULSE_SLOT, true)] }),
+    // Director switches focus to Edda; her card mounts with that fire in history.
+    directorCue(2, "stalking the shallows"),
+    characterSheet(
+      sheet({
+        id: 2,
+        name: "Edda",
+        level: 22,
+        skills: [
+          skill({
+            slot: FIRE_PULSE_SLOT,
+            name: "Arc",
+            kind: "spell",
+            shape: "line",
+            level: 5,
+            damage: [0, 0, 0, 120, 0],
+            dps: 180,
+            use_ticks: 8,
+            range_cu: 600,
+            width_cu: 130,
+          }),
+        ],
+      }),
+    ),
   ],
 };
 
@@ -949,6 +1005,7 @@ export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "skill-pulse": skillPulse,
   "skill-pulse-stale": skillPulseStale,
+  "skill-pulse-offfocus": skillPulseOffFocus,
   "hud-edge": hudEdge,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,

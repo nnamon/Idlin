@@ -54,6 +54,9 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   // with real icons rather than the cramped name-text fallback.
   store.icons = { icon: (_name, kind) => silhouette(kind) };
   for (const msg of fixture.messages) store.handle(msg);
+  // Expose the store so behavioral tests can inject post-mount S2C (e.g. a UseFx
+  // to fire a skill while its card is on screen — #94 Part B pulse).
+  (window as unknown as { __harnessStore?: WorldStore }).__harnessStore = store;
 
   const client = stubClient(fixture.status);
   createRoot(overlay).render(

@@ -773,7 +773,25 @@ function XpBar({ xp, xpNext, className = "xp-bar" }: { xp: number; xpNext: numbe
 /** One socketed skill's computed readout. DPS leads for damage skills; a DoT,
  *  buff, or debuff skill shows its own pertinent number instead of a
  *  misleading "0 DPS". All numbers come from the sim (see `SkillStat`). */
-function SkillCard({ skill, fired = 0 }: { skill: SkillStat; fired?: number }) {
+function SkillCard({
+  skill,
+  fired = 0,
+  owner = 0,
+}: {
+  skill: SkillStat;
+  /** Monotonic fire count for (owner, this skill's socket) — see WorldStore. */
+  fired?: number;
+  /** The focused idler's id, so the pulse keys to THIS idler's fires. */
+  owner?: number;
+}) {
+  // #94 Part B: flash only on a fire that happens WHILE this card is showing this
+  // (idler, skill) — never on the count a freshly-mounted card inherits from
+  // history (focusing an idler who fired off-screen, or a reused net id). Baseline
+  // the count at the identity it mounted with; flash once it climbs past that.
+  const seen = useRef({ id: `${owner}:${skill.slot}`, base: fired });
+  const id = `${owner}:${skill.slot}`;
+  if (seen.current.id !== id) seen.current = { id, base: fired }; // new identity → rebaseline, no flash
+  const flashing = fired > seen.current.base;
   // The headline metric, chosen by what the skill actually does.
   const head =
     skill.dps > 0
@@ -788,9 +806,9 @@ function SkillCard({ skill, fired = 0 }: { skill: SkillStat; fired?: number }) {
   const manaPerSec = skill.use_ticks > 0 ? Math.round((skill.mana_cost * TICK_HZ) / skill.use_ticks) : 0;
   return (
     <div className="skill-card">
-      {/* #94 Part B: each fire of this skill bumps `fired`; the changed key
-          remounts the flash layer so its one-shot pulse animation replays. */}
-      {fired > 0 && <span key={fired} className="skill-flash" aria-hidden="true" />}
+      {/* #94 Part B: a fire WHILE mounted (fired past the mount baseline) shows the
+          pulse; the changed key remounts the flash layer so it replays each fire. */}
+      {flashing && <span key={fired} className="skill-flash" aria-hidden="true" />}
       <div className="skill-head">
         <span>
           ◆ {skill.name} <span style={{ color: "#ab9d7a" }}>lv{skill.level}</span>
@@ -895,7 +913,7 @@ function StatsPanel({
               left column (plaque + stats + this) on screen. */}
           <AutoScroll maxVh={50}>
             {sheet.skills.map((s, i) => (
-              <SkillCard key={i} skill={s} fired={fireCount?.(s.slot)} />
+              <SkillCard key={i} skill={s} fired={fireCount?.(s.slot)} owner={sheet.id} />
             ))}
           </AutoScroll>
         </>
