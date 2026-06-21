@@ -234,12 +234,15 @@ test("the bag/obols shared slot cycles Bag → Obols → Bag on its timer", asyn
   await ctx.close();
 });
 
-test("the [Bag|Obols] chip pins the deck face on hover", async ({ browser }) => {
-  // Hovering a chip segment FORCES that face without waiting for the cycle timer;
-  // unhovering resumes the auto cursor. No fake clock here — page.clock.install()
-  // freezes the rAF that Playwright's hover actionability waits on, so a real
-  // pointer test must run on the live clock (the 7s auto-cycle never fires within
-  // this sub-second test, so the auto face stays Bag throughout).
+test("the [Bag|Obols] chip pins the deck face, and the pin STICKS when the cursor leaves", async ({
+  browser,
+}) => {
+  // Hovering a chip segment FORCES that face immediately; the pin then STICKS — it
+  // must NOT snap back the moment the cursor leaves the segment (the reported bug:
+  // it reverted on the segment's mouseleave). The auto-cycle resumes only after the
+  // WHOLE deck has been mouse-free for the resume window (10s) — too long for a
+  // pointer test, and the auto path itself is covered by the cycle test above. No
+  // fake clock: page.clock.install() freezes the rAF hover actionability waits on.
   const ctx = await browser.newContext(CONTEXT);
   const page = await ctx.newPage();
   await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
@@ -256,9 +259,12 @@ test("the [Bag|Obols] chip pins the deck face on hover", async ({ browser }) => 
   await chipObols.hover();
   await expect(chipObols).toHaveAttribute("aria-selected", "true");
   await expect(bagGrid).toHaveCount(0);
-  // moving the pointer off the chip restores the auto face (still Bag)
+  // leaving the deck entirely: the pinned face STICKS — it does not revert to the
+  // auto face immediately (the cycle is held until the deck is mouse-free for the
+  // full resume window). Reverting the stick fix makes this snap back to Bag here.
   await page.mouse.move(2, 2);
-  await expect(bagGrid).toBeVisible();
+  await expect(chipObols).toHaveAttribute("aria-selected", "true");
+  await expect(bagGrid).toHaveCount(0);
 
   await ctx.close();
 });

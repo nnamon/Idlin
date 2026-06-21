@@ -317,11 +317,11 @@ export function Overlay({
           </div>
         )}
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
-        {/* bag + obols share one slot, cycling while the idler is on screen —
-            frozen while a tooltip is open, and pinnable via the [Bag|Obols] chip */}
+        {/* bag + obols share one slot, cycling while the idler is on screen;
+            hovering the deck (or pinning a face via the [Bag|Obols] chip) holds
+            it, and the cycle resumes only after the deck is mouse-free a while */}
         {sheet && (
           <CycleDeck
-            paused={!!hover}
             faces={[
               { label: "Bag", node: <BagPanel sheet={sheet} icons={store.icons} /> },
               ...(sheet.currency.length > 0
@@ -561,31 +561,50 @@ function BagPanel({ sheet, icons }: { sheet: CharacterSheet; icons: Icons }) {
 
 /** Cycle through labelled panels in one shared slot — the bag and obols take turns
  *  rather than both claiming vertical room, advancing on a timer while the idler
- *  is focused. A [Bag|Obols] chip lets the viewer FORCE a face on hover (the
- *  forced face shows without disturbing the auto cursor; unhovering resumes the
- *  cycle), and `paused` freezes the timer while an item tooltip is open. The
- *  capture harness shoots the initial face (index 0); the timer never fires within
- *  a (sub-second) capture, so the shot stays deterministic. */
+ *  is focused. A [Bag|Obols] chip lets the viewer FORCE a face by hovering its
+ *  segment; the forced face STICKS (it doesn't snap back when the cursor leaves
+ *  the segment). The auto-cycle only resumes once the WHOLE deck — chip and the
+ *  face below it — has been mouse-free for `resumeMs`, so brushing past an item
+ *  or pinning Obols holds steady while you read, then eases back to the rotation.
+ *  The capture harness shoots the initial face (index 0); the timer never fires
+ *  within a (sub-second) capture, so the shot stays deterministic. */
 function CycleDeck({
   faces,
-  paused = false,
   periodMs = 7000,
+  resumeMs = 10_000,
 }: {
   faces: { label: string; node: React.ReactNode }[];
-  paused?: boolean;
   periodMs?: number;
+  resumeMs?: number;
 }) {
   const [i, setI] = useState(0);
-  // Chip-forced face index, or null to follow the auto cursor.
-  const [pin, setPin] = useState<number | null>(null);
+  // Chip-forced face index (sticks until auto resumes), or null to follow the cursor.
+  const [selected, setSelected] = useState<number | null>(null);
+  // True while the cursor is anywhere on the deck (the chip OR the face below it).
+  const [hovering, setHovering] = useState(false);
+  // Auto (broadcast) mode: the cursor advances on its own. It's held off the
+  // moment the deck gets mouse attention and only RESUMES once the whole deck has
+  // been mouse-free for resumeMs — so leaving the panel doesn't snap the face back.
+  const [auto, setAuto] = useState(true);
   useEffect(() => {
-    if (faces.length <= 1 || paused || pin !== null) return;
+    if (hovering) {
+      setAuto(false);
+      return;
+    }
+    const h = setTimeout(() => {
+      setAuto(true);
+      setSelected(null);
+    }, resumeMs);
+    return () => clearTimeout(h);
+  }, [hovering, resumeMs]);
+  useEffect(() => {
+    if (faces.length <= 1 || !auto) return;
     const h = setInterval(() => setI((n) => (n + 1) % faces.length), periodMs);
     return () => clearInterval(h);
-  }, [faces.length, periodMs, paused, pin]);
-  const shown = (pin ?? i) % Math.max(1, faces.length);
+  }, [faces.length, periodMs, auto]);
+  const shown = (selected ?? i) % Math.max(1, faces.length);
   return (
-    <>
+    <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       {faces.length > 1 && (
         <div className="deck-chip" role="tablist" aria-label="panel selector">
           {faces.map((f, idx) => (
@@ -594,8 +613,7 @@ function CycleDeck({
               role="tab"
               aria-selected={shown === idx}
               className={shown === idx ? "deck-chip-seg on" : "deck-chip-seg"}
-              onMouseEnter={() => setPin(idx)}
-              onMouseLeave={() => setPin(null)}
+              onMouseEnter={() => setSelected(idx)}
             >
               {f.label}
             </span>
@@ -603,7 +621,7 @@ function CycleDeck({
         </div>
       )}
       {faces[shown]?.node}
-    </>
+    </div>
   );
 }
 
