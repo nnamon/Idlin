@@ -19,8 +19,9 @@ import "./overlay.css";
 
 type Icons = { icon(name: string, kind: string): string | null } | null;
 
-/** A hovered item plus the cursor anchor, lifted so the floating tooltip and the
- *  bag/obols deck (which pauses while a tooltip is open) can both react. */
+/** A hovered item plus the cursor anchor, lifted to the overlay so the single
+ *  floating tooltip can render anchored to the cursor while any cell (gear doll or
+ *  bag) sets it. */
 interface HoverState {
   item: TooltipItem;
   x: number;
@@ -175,11 +176,10 @@ export function Overlay({
 
   // Drop any open item tooltip when the focused character changes: the hovered
   // gear/bag cell can unmount without firing onMouseLeave (a focus switch swaps
-  // the whole sheet), which would otherwise strand the tooltip and keep the
-  // bag/obols deck paused (`paused={!!hover}`) forever. Key on the SAME identity
-  // the sheet guard uses — (id, world, name) — because net ids overlap across
-  // worlds: a cross-world cut to a different character can reuse id 1, so `focusId`
-  // alone wouldn't change.
+  // the whole sheet), which would otherwise strand the tooltip — a FloatingTooltip
+  // left over an item no longer on screen. Key on the SAME identity the sheet guard
+  // uses — (id, world, name) — because net ids overlap across worlds: a cross-world
+  // cut to a different character can reuse id 1, so `focusId` alone wouldn't change.
   useEffect(
     () => setHover(null),
     [focusId, store.zone?.worldKey, focused?.state.name],
