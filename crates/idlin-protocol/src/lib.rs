@@ -13,7 +13,9 @@ use ts_rs::TS;
 // 36: EntityState.es_pct (#100 — energy shield on the overhead bar).
 // 37: GearSlotView/InvItemView gain base_num + item_level + rolled mods, and a
 //     new RolledModView, for the #87 item tooltip.
-pub const PROTO_VERSION: u32 = 37;
+// 38: CharacterSheet gains stat_sources (per-stat source breakdown, #87) + the
+//     new StatSourceView.
+pub const PROTO_VERSION: u32 = 38;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -552,6 +554,23 @@ pub struct CharacterSheet {
     pub passive_allocated: u32,
     pub passive_unspent: u32,
     pub build_len: u32,
+    /// Per-stat source breakdown (#87): one entry per ACTIVE grant contribution
+    /// (gear affix / passive node / buff). The client groups by `stat` to show,
+    /// on hover, where a stat's value comes from.
+    pub stat_sources: Vec<StatSourceView>,
+}
+
+/// One contribution to a derived stat, for the breakdown tooltip (#87).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct StatSourceView {
+    /// Stat key (snake_case, matches content-docs `stats[].key`).
+    pub stat: String,
+    /// Where it comes from — an item name, a passive node name, or "Buff".
+    pub source: String,
+    /// 0 added · 1 increased · 2 more (the value's layer).
+    pub layer: u8,
+    /// Rolled/granted amount in the layer's unit (flat or basis points).
+    pub value: i32,
 }
 
 /// Client → server.
@@ -822,6 +841,14 @@ mod tests {
                 passive_allocated: 0,
                 passive_unspent: 0,
                 build_len: 0,
+                // #87: the per-stat source breakdown survives the wire (a
+                // non-zero layer + value, so both fields are non-vacuously checked).
+                stat_sources: vec![StatSourceView {
+                    stat: "damage_phys".into(),
+                    source: "of Savagery".into(),
+                    layer: 1,
+                    value: 2000,
+                }],
             },
         };
         let json = serde_json::to_string(&sheet).unwrap();
@@ -877,6 +904,16 @@ mod tests {
             sheet.inventory[0].mods[0].values,
             vec![83, 900],
             "a hybrid's multiple rolled values survive the wire"
+        );
+        assert_eq!(sheet.stat_sources[0].stat, "damage_phys");
+        assert_eq!(sheet.stat_sources[0].source, "of Savagery");
+        assert_eq!(
+            sheet.stat_sources[0].layer, 1,
+            "the contribution layer survives the wire"
+        );
+        assert_eq!(
+            sheet.stat_sources[0].value, 2000,
+            "the stat source breakdown survives the wire"
         );
     }
 

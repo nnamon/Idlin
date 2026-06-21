@@ -136,6 +136,23 @@ function numWithRange(
   return `${fmt(value)}(${fmt(range.min)}-${fmt(range.max)})`;
 }
 
+/** One source contribution to a stat, short form (#87): "+10", "+30% increased",
+ *  "30% more", "+5/s" — no range (a single granted value). `layer`: 0 added,
+ *  1 increased, 2 more. */
+export function formatContribution(
+  layer: number,
+  value: number,
+  stat: StatDoc | undefined,
+): string {
+  const pct = layer !== 0;
+  const scale = pct || stat?.added_unit === "basis_points" || stat?.added_unit === "factor_bp";
+  const n = scale ? value / 100 : value;
+  if (layer === 1) return `${n}% increased`;
+  if (layer === 2) return `${n}% more`;
+  if (scale) return `+${n}%`;
+  return stat?.added_unit === "per_second" ? `+${n}/s` : `+${n}`;
+}
+
 /** Fetch + parse the content reference once. */
 export async function loadContentDocs(base = "/"): Promise<ContentDocs> {
   const json = await (await fetch(`${base}content-docs.json`)).json();

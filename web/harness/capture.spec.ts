@@ -299,6 +299,31 @@ test("the item tooltip floats BY the hovered item with the HUD intact (#87)", as
   await ctx.close();
 });
 
+test("a stats row hovers to its per-source breakdown (#87)", async ({ browser }) => {
+  // Hovering a stats-panel row floats the source breakdown for that stat — the
+  // contributing gear/passive/buff and what each grants. Live clock (hover
+  // actionability needs rAF), inspect-panel carries seeded stat_sources.
+  const ctx = await browser.newContext(CONTEXT);
+  const page = await ctx.newPage();
+  await page.goto(`/harness/fixture.html?fixture=inspect-panel`);
+  await page.waitForFunction(
+    () => (window as unknown as { __harness?: { ready?: boolean } }).__harness?.ready === true,
+  );
+
+  // (the stats panel is mounted twice — desktop + a mobile-drawer copy; the
+  // first is the visible desktop one)
+  await page.getByText("armour", { exact: true }).first().hover();
+  // the breakdown tooltip lists each contributing source + its formatted amount
+  const tip = page.locator(".item-tooltip", { hasText: "Brinescoured Helm" });
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText("Kelp-Woven Vest");
+  await expect(tip).toContainText("+800");
+  await expect(tip).toContainText("+1400");
+  await page.locator("#overlay").screenshot({ path: join(SHOTS_DIR, "stat-breakdown.png") });
+
+  await ctx.close();
+});
+
 test("mobile: bottom HUD clears the globes when closed, and hides under the open drawer", async ({
   browser,
 }) => {
