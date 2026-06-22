@@ -58,7 +58,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v8 (#86 unify): `Zone::by_net` became a `#[serde(skip)]` derived index
 /// (rebuilt from `slots` on resume rather than trusted from the snapshot), so it
 /// left the postcard byte stream — a v7 snapshot's `Zone` would mis-decode.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 8;
+/// v9 (#109): `CombatStats` gained `has_strike_conditions: bool` (the strike-time
+/// conditional cache), adding a serialized field to every entity's combat block —
+/// a v8 snapshot's `CombatStats` would mis-decode; refuse it cleanly.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 9;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.

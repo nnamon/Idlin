@@ -1,0 +1,18 @@
+// "... of Desperation" — STRIKE-TIME CONDITIONAL (#109 B2a, first content client):
+// increased physical damage WHILE BELOW 35% LIFE. Unlike #86's derive-time
+// conditions (weapon class), this varies mid-combat with no re-derive — the sim
+// folds it into a per-strike effective sheet, so the bonus kicks in the moment
+// the wielder drops under the threshold and falls off the moment they heal past it.
+AffixDef(
+    id: "of_desperation",
+    public: true,
+    name: "of Desperation",
+    kind: suffix,
+    pool: "weapon",
+    weight: 30,
+    effects: [(stat: damage_phys, layer: increased, condition: Some(below_life_pct(3500)))],
+    tiers: [
+        (ilvl: 5, name: "of Desperation", weight: 100, rolls: [(min: 2000, max: 4000)]),   // +20-40%
+        (ilvl: 12, name: "of Last Stands", weight: 40, rolls: [(min: 4001, max: 6000)]),    // +40-60%
+    ],
+)

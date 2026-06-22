@@ -388,18 +388,62 @@ pub enum WeaponClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
-    /// While the wielded weapon is this class. Unarmed (no weapon) counts as
-    /// Melee — fists are melee attacks (subsumes the legacy MeleePhys rule).
+    /// DERIVE-TIME. While the wielded weapon is this class. Unarmed (no weapon)
+    /// counts as Melee — fists are melee attacks (subsumes the legacy MeleePhys
+    /// rule). Changes only on equip/unequip, so it folds into the cached sheet.
     WieldingWeaponClass(WeaponClass),
+    /// STRIKE-TIME (#109). While the attacker's current life is BELOW this fraction
+    /// of its max (basis points, 0..10000). Varies mid-combat with no re-derive, so
+    /// it folds into a per-strike effective sheet, not the cached one.
+    BelowLifePct(i64),
+    /// STRIKE-TIME (#109). While the attacker's current life is ABOVE this fraction
+    /// of its max (basis points, 0..10000).
+    AboveLifePct(i64),
+    /// STRIKE-TIME (#109). While the attacker is at full life (life == max).
+    FullLife,
+}
+
+impl Condition {
+    /// STRIKE-TIME conditions vary between derives (life/target state), so they
+    /// CANNOT be baked into the cached stat sheet — the sim folds them per-strike.
+    /// DERIVE-TIME conditions (weapon class) change only on a re-derive trigger and
+    /// fold into the cached sheet as usual (#109).
+    pub fn is_strike_time(&self) -> bool {
+        match self {
+            Condition::WieldingWeaponClass(_) => false,
+            Condition::BelowLifePct(_) | Condition::AboveLifePct(_) | Condition::FullLife => true,
+        }
+    }
 }
 
 /// The hashed-state facts a `Condition` reads, built by the sim per entity at
 /// fold time. Pure data so the predicate (`Condition::holds`) stays in content
 /// and deterministic. Grows as new conditions land (life %, target ailments, …).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct EvalContext {
     /// The wielded weapon's class; `None` = unarmed (counts as melee).
     pub weapon_class: Option<WeaponClass>,
+    /// STRIKE-TIME (#109): the entity's current life as basis points of its max
+    /// (0..10000). Only meaningful when folding strike-time conditions; the cached
+    /// derive ignores it (it skips strike-time conditions entirely).
+    pub life_pct: i64,
+    /// STRIKE-TIME PHASE (#109): when `false` (the cached derive) the fold SKIPS
+    /// strike-time conditions — they vary mid-combat and can't bake into the cached
+    /// sheet, so the sim folds them per-strike with this set `true`.
+    pub include_strike: bool,
+}
+
+impl Default for EvalContext {
+    fn default() -> Self {
+        // Full life, derive phase: the neutral default. Derive-time folds never
+        // read life_pct (they skip strike-time conditions), and a bare context
+        // shouldn't read as hurt or as the strike phase.
+        EvalContext {
+            weapon_class: None,
+            life_pct: 10000,
+            include_strike: false,
+        }
+    }
 }
 
 impl Condition {
@@ -413,6 +457,11 @@ impl Condition {
                 matches!(ctx.weapon_class, Some(WeaponClass::Melee) | None)
             }
             Condition::WieldingWeaponClass(want) => ctx.weapon_class == Some(*want),
+            // Strike-time life thresholds (#109): strict below / above, full at the
+            // cap. life_pct is clamped 0..10000 by the sim when it builds the ctx.
+            Condition::BelowLifePct(bp) => ctx.life_pct < *bp,
+            Condition::AboveLifePct(bp) => ctx.life_pct > *bp,
+            Condition::FullLife => ctx.life_pct >= 10000,
         }
     }
 }
@@ -461,10 +510,15 @@ mod tests {
         // Melee gate: a melee weapon OR unarmed (fists) — the legacy MeleePhys rule.
         let melee = EvalContext {
             weapon_class: Some(WeaponClass::Melee),
+            ..Default::default()
         };
-        let unarmed = EvalContext { weapon_class: None };
+        let unarmed = EvalContext {
+            weapon_class: None,
+            ..Default::default()
+        };
         let bow = EvalContext {
             weapon_class: Some(WeaponClass::Bow),
+            ..Default::default()
         };
         assert!(W(WeaponClass::Melee).holds(&melee));
         assert!(
@@ -482,5 +536,38 @@ mod tests {
     fn condition_round_trips_through_ron() {
         let c: Condition = ron::from_str("wielding_weapon_class(bow)").unwrap();
         assert_eq!(c, Condition::WieldingWeaponClass(WeaponClass::Bow));
+        // Strike-time life conditions (#109) round-trip too.
+        let b: Condition = ron::from_str("below_life_pct(3500)").unwrap();
+        assert_eq!(b, Condition::BelowLifePct(3500));
+        let f: Condition = ron::from_str("full_life").unwrap();
+        assert_eq!(f, Condition::FullLife);
+    }
+
+    #[test]
+    fn life_threshold_conditions_evaluate_against_life_pct() {
+        // #109 strike-time conditions read `life_pct` (bp of max). Below/Above are
+        // strict; FullLife is the cap. Mutation: flip `<`/`>` in holds → these fail.
+        let at = |life_pct: i64| EvalContext {
+            life_pct,
+            ..Default::default()
+        };
+        assert!(Condition::BelowLifePct(3500).holds(&at(3499)));
+        assert!(!Condition::BelowLifePct(3500).holds(&at(3500))); // strict: not at the line
+        assert!(!Condition::BelowLifePct(3500).holds(&at(10000)));
+        assert!(Condition::AboveLifePct(7500).holds(&at(7501)));
+        assert!(!Condition::AboveLifePct(7500).holds(&at(7500))); // strict
+        assert!(Condition::FullLife.holds(&at(10000)));
+        assert!(!Condition::FullLife.holds(&at(9999)));
+    }
+
+    #[test]
+    fn strike_time_conditions_are_classified() {
+        // #109: only the life conditions are strike-time; weapon class is derive-time.
+        // Mutation: misclassify any arm → the cached derive would (in)correctly fold
+        // it and the sim's phase split breaks.
+        assert!(!Condition::WieldingWeaponClass(WeaponClass::Melee).is_strike_time());
+        assert!(Condition::BelowLifePct(3500).is_strike_time());
+        assert!(Condition::AboveLifePct(7500).is_strike_time());
+        assert!(Condition::FullLife.is_strike_time());
     }
 }

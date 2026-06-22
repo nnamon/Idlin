@@ -231,14 +231,22 @@ impl World {
         let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
             .as_ref()
             .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
-        let ctx = crate::stats::EvalContext { weapon_class };
+        // Derive-phase ctx: the breakdown mirrors the CACHED stats, which omit
+        // strike-time conditions (#109) — so the filter below skips them too,
+        // rather than showing a situational mod as always-on.
+        let ctx = crate::stats::EvalContext {
+            weapon_class,
+            ..Default::default()
+        };
         let mut stat_sources: Vec<(String, String, u8, i64)> = Vec::new();
         for it in ch.equipment.iter().flatten() {
             let name = self.item_display(it);
             for ra in &it.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
                 for g in a.grants(&ra.values) {
-                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                    if g.condition
+                        .is_none_or(|c| !c.is_strike_time() && c.holds(&ctx))
+                    {
                         stat_sources.push((
                             g.stat.doc().key.to_string(),
                             name.clone(),
@@ -252,7 +260,9 @@ impl World {
         for &node_idx in &ch.allocated {
             if let Some(node) = self.content.tree.get(node_idx as usize) {
                 for g in &node.grants {
-                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                    if g.condition
+                        .is_none_or(|c| !c.is_strike_time() && c.holds(&ctx))
+                    {
                         stat_sources.push((
                             g.stat.doc().key.to_string(),
                             node.name.clone(),
@@ -266,7 +276,9 @@ impl World {
         for ef in &e.effects {
             if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    if g.condition.is_none_or(|c| c.holds(&ctx)) {
+                    if g.condition
+                        .is_none_or(|c| !c.is_strike_time() && c.holds(&ctx))
+                    {
                         stat_sources.push((
                             g.stat.doc().key.to_string(),
                             "Buff".to_string(),
@@ -619,6 +631,16 @@ impl World {
                     h.write_u8(1);
                     h.write_u8(wc as u8);
                 }
+                // Strike-time conditions (#109): distinct tags + the threshold bp.
+                Some(crate::stats::Condition::BelowLifePct(bp)) => {
+                    h.write_u8(2);
+                    h.write_i64(bp);
+                }
+                Some(crate::stats::Condition::AboveLifePct(bp)) => {
+                    h.write_u8(3);
+                    h.write_i64(bp);
+                }
+                Some(crate::stats::Condition::FullLife) => h.write_u8(4),
             }
         };
         for (slot, e) in self.zone.iter() {
@@ -682,6 +704,10 @@ impl World {
                 h.write_u8(c.projectile as u8);
                 h.write_i64(c.item_rarity);
                 h.write_i64(c.item_quantity);
+                // Derived strike-condition cache (#109) — hashed with the rest of
+                // the struct (whole-struct rule), though it's a pure function of
+                // the already-hashed affixes/tree/buffs.
+                h.write_u8(c.has_strike_conditions as u8);
             }
             if let Some(ch) = &e.character {
                 h.write_bytes(ch.name.as_bytes());

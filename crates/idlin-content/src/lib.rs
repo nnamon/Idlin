@@ -69,6 +69,12 @@ pub enum ContentError {
              while inactive in derived stats"
     )]
     ConditionalAttribute { at: String },
+    #[error(
+        "{at}: a life-threshold condition's basis points ({bp}) are out of range — \
+             must be 0..=10000 (runtime life % is clamped there, so an out-of-range \
+             threshold is silently always- or never-true)"
+    )]
+    BadConditionThreshold { at: String, bp: i64 },
     #[error("tile map for `{zone}`: {msg}")]
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
@@ -85,6 +91,21 @@ pub enum ContentError {
 /// past, until requirement evaluation is made condition-aware.
 fn is_conditional_attribute(stat: Stat, condition: &Option<Condition>) -> bool {
     condition.is_some() && matches!(stat, Stat::Strength | Stat::Dexterity | Stat::Intelligence)
+}
+
+/// A strike-time life threshold must be 0..=10000 bp (#109): runtime `life_pct`
+/// is clamped to that range, so a threshold outside it is silently always-true
+/// (`below_life_pct(20000)`) or never-true. Returns the offending bp if invalid.
+/// Caught at every power source so no source can author a dead/always-on mod.
+fn invalid_condition_threshold(condition: &Option<Condition>) -> Option<i64> {
+    match condition {
+        Some(Condition::BelowLifePct(bp)) | Some(Condition::AboveLifePct(bp))
+            if !(0..=10000).contains(bp) =>
+        {
+            Some(*bp)
+        }
+        _ => None,
+    }
 }
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
@@ -544,6 +565,15 @@ impl AffixDef {
                         };
                         format!("{body} (while wielding {cls})")
                     }
+                    // Strike-time life thresholds (#109): the threshold is a fixed
+                    // part of the affix (not rolled), so show its real percentage.
+                    Some(Condition::BelowLifePct(bp)) => {
+                        format!("{body} (while below {}% life)", bp / 100)
+                    }
+                    Some(Condition::AboveLifePct(bp)) => {
+                        format!("{body} (while above {}% life)", bp / 100)
+                    }
+                    Some(Condition::FullLife) => format!("{body} (while on full life)"),
                 }
             })
             .collect::<Vec<_>>()
@@ -1798,6 +1828,12 @@ impl ContentDb {
                         at: format!("affix `{}`", affix.id),
                     });
                 }
+                if let Some(bp) = invalid_condition_threshold(&eff.condition) {
+                    return Err(ContentError::BadConditionThreshold {
+                        at: format!("affix `{}`", affix.id),
+                        bp,
+                    });
+                }
             }
             if affix.tiers.is_empty() {
                 return Err(ContentError::BadAffixTiers {
@@ -1862,6 +1898,12 @@ impl ContentDb {
                             at: format!("gem `{}` {kind}", gem.id),
                         });
                     }
+                    if let Some(bp) = invalid_condition_threshold(&g.condition) {
+                        return Err(ContentError::BadConditionThreshold {
+                            at: format!("gem `{}` {kind}", gem.id),
+                            bp,
+                        });
+                    }
                 }
             }
         }
@@ -1872,6 +1914,12 @@ impl ContentDb {
                 if is_conditional_attribute(g.stat, &g.condition) {
                     return Err(ContentError::ConditionalAttribute {
                         at: format!("tree node `{}`", node.id),
+                    });
+                }
+                if let Some(bp) = invalid_condition_threshold(&g.condition) {
+                    return Err(ContentError::BadConditionThreshold {
+                        at: format!("tree node `{}`", node.id),
+                        bp,
                     });
                 }
             }
@@ -2737,6 +2785,16 @@ mod tests {
             Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
             "of_savagery gates phys on wielding melee"
         );
+        // Strike-time conditional content (#109): of_desperation gates phys on
+        // being below 35% life. A miswired stat or threshold slips past the loader
+        // but fails here.
+        let desperation = find("of_desperation");
+        assert_eq!(desperation.effects[0].stat, Stat::DamagePhys);
+        assert_eq!(
+            desperation.effects[0].condition,
+            Some(Condition::BelowLifePct(3500)),
+            "of_desperation gates phys on being below 35% life"
+        );
     }
 
     #[test]
@@ -2813,10 +2871,12 @@ mod tests {
         // Holds for a melee wielder, not a bow wielder.
         let c = grant.condition.unwrap();
         assert!(c.holds(&EvalContext {
-            weapon_class: Some(WeaponClass::Melee)
+            weapon_class: Some(WeaponClass::Melee),
+            ..Default::default()
         }));
         assert!(!c.holds(&EvalContext {
-            weapon_class: Some(WeaponClass::Bow)
+            weapon_class: Some(WeaponClass::Bow),
+            ..Default::default()
         }));
 
         // A plain affix carries no condition.
@@ -3010,6 +3070,79 @@ mod tests {
                 assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
             }
             other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_out_of_range_life_threshold_is_rejected() {
+        // #109: a life-threshold condition's bp must be 0..=10000 — runtime life_pct
+        // is clamped there, so an out-of-range threshold is silently always- or
+        // never-true. Reject at EVERY power source (affix / tree node / gem buff), so
+        // each arm of invalid_condition_threshold is covered. Mutation: drop any one
+        // arm and the matching case below loads.
+
+        // Affix arm: below_life_pct(20000) — always-true.
+        let affix = TempContent::new(
+            "bad_threshold_affix",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    effects: [(stat: damage_phys, layer: increased, condition: Some(below_life_pct(20000)))],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&affix.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
+                assert_eq!(bp, 20000);
+            }
+            other => panic!("affix: expected BadConditionThreshold, got {other:?}"),
+        }
+
+        // Tree-node arm: below_life_pct(-1) — never-true. `start` keeps the tree
+        // otherwise valid so the mutation surfaces as a missing rejection.
+        let tree = TempContent::new(
+            "bad_threshold_tree",
+            &[(
+                "tree/bad.ron",
+                r#"TreeDef(nodes: [
+                    NodeDef(id: "start", num: 1, name: "Start", pos: (0, 0), kind: socket,
+                            grants: [(stat: damage_phys, layer: increased, value: 1000,
+                                      condition: Some(below_life_pct(-1)))]),
+                ])"#,
+            )],
+        );
+        match ContentDb::load(&tree.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("tree node") && at.contains("start"), "at: {at}");
+                assert_eq!(bp, -1);
+            }
+            other => panic!("tree: expected BadConditionThreshold, got {other:?}"),
+        }
+
+        // Gem-buff arm: above_life_pct(20000) — never-true.
+        let gem = TempContent::new(
+            "bad_threshold_gem",
+            &[(
+                "gems/bad.ron",
+                r#"GemDef(
+                    id: "bad", name: "Bad", kind: skill,
+                    buff: Some(BuffDef(
+                        grants: [(stat: damage_phys, layer: increased, value: 1000,
+                                  condition: Some(above_life_pct(20000)))],
+                        duration_ticks: 100,
+                    )),
+                )"#,
+            )],
+        );
+        match ContentDb::load(&gem.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("gem") && at.contains("bad"), "at: {at}");
+                assert_eq!(bp, 20000);
+            }
+            other => panic!("gem: expected BadConditionThreshold, got {other:?}"),
         }
     }
 

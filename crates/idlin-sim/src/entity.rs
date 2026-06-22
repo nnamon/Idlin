@@ -112,6 +112,12 @@ pub struct CombatStats {
     pub item_quantity: i64,
     /// Last tick this entity dealt or took damage (drives out-of-combat regen).
     pub last_combat_tick: u64,
+    /// Derived cache (#109): does any of this entity's power sources carry a
+    /// STRIKE-TIME condition (life %, …)? Set at derive (those grants are NOT
+    /// folded into the cached fields here — they vary mid-combat); when true the
+    /// hit path re-derives an effective sheet per strike. Pure function of hashed
+    /// inputs, but hashed like the rest of CombatStats (whole-struct rule).
+    pub has_strike_conditions: bool,
 }
 
 impl CombatStats {

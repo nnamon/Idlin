@@ -14,10 +14,71 @@ use idlin_content::GearSlot;
 /// Fold one grant into a sheet IF its condition holds (`None` = always) — the
 /// single conditional-apply path every power source shares (#86): affixes, tree
 /// nodes, and buffs all route through here against the entity's `EvalContext`.
-pub(crate) fn apply_conditional(sheet: &mut StatSheet, g: &Grant, ctx: &EvalContext) {
-    if g.condition.is_none_or(|c| c.holds(ctx)) {
+///
+/// Phase (#109): a STRIKE-TIME condition (life %, …) is SKIPPED unless
+/// `ctx.include_strike` — the cached derive defers it so it can't bake a
+/// mid-combat-varying bonus into the sheet; the per-strike re-derive sets the
+/// flag and folds it. Returns whether the grant carried a strike-time condition,
+/// so the caller can cache a `has_strike_conditions` flag (callers that don't
+/// care ignore it).
+pub(crate) fn apply_conditional(sheet: &mut StatSheet, g: &Grant, ctx: &EvalContext) -> bool {
+    let is_strike = g.condition.is_some_and(|c| c.is_strike_time());
+    let fold = match g.condition {
+        None => true,
+        Some(_) if is_strike && !ctx.include_strike => false, // deferred to strike phase
+        Some(c) => c.holds(ctx),
+    };
+    if fold {
         sheet.apply(g);
     }
+    is_strike
+}
+
+/// The derived combat values a character's stat sheet produces (#109) — the
+/// fields `refresh_character_stats` assigns and the per-strike re-derive reads.
+/// Live pools (life/mana/ES and timers) are NOT here: the cached refresh
+/// preserves the entity's actual pools, and the strike path only reads the
+/// offensive values. `has_strike` flags whether any strike-time condition exists.
+struct CharDerived {
+    life_max: i64,
+    mana_max: i64,
+    es_max: i64,
+    life_regen: i64,
+    mana_regen: i64,
+    leech_life: i64,
+    leech_mana: i64,
+    block: i64,
+    crit_inc: i64,
+    crit_multi: i64,
+    cast_speed: i64,
+    damage: [i64; DMG_COUNT],
+    accuracy: i64,
+    evasion: i64,
+    armour: i64,
+    resists: [i64; RES_COUNT],
+    range: Fx,
+    use_ticks: u32,
+    speed: Fx,
+    projectile: bool,
+    item_rarity: i64,
+    item_quantity: i64,
+    stagger: i64,
+    poise: i64,
+    knockback_cu: i64,
+    has_strike: bool,
+}
+
+/// The OFFENSIVE subset of a per-strike effective re-derive (#109) — the only
+/// values `resolve_skill` reads from the attacker. Returned by `effective_offense`
+/// so the full `CharDerived` stays private to the derive.
+pub(super) struct EffectiveOffense {
+    pub damage: [i64; DMG_COUNT],
+    pub crit_inc: i64,
+    pub crit_multi: i64,
+    pub accuracy: i64,
+    pub range: Fx,
+    pub stagger: i64,
+    pub knockback_cu: i64,
 }
 
 /// XP to advance from `level` to `level+1`. Hybrid curve: a quadratic
@@ -141,7 +202,14 @@ impl World {
         let Some(m) = &e.monster else { return };
         let def_idx = m.def_idx;
         // Monsters wield no weapon → unarmed (counts as melee) for conditions.
-        let ctx = EvalContext { weapon_class: None };
+        // Derive phase (#109): strike-time conditions are deferred. Monster
+        // strike-time mods are not surfaced this pass (no monster content carries
+        // one); they stay inert rather than mis-applying — full monster parity is
+        // a follow-up on #109.
+        let ctx = EvalContext {
+            weapon_class: None,
+            ..Default::default()
+        };
         let mut sheet = StatSheet::new();
         for ef in &e.effects {
             if let ActiveEffect::Buff { grants, .. } = ef {
@@ -194,26 +262,42 @@ impl World {
         }
     }
 
-    /// Build the full stat sheet for a character: tree grants + gear affixes,
-    /// evaluated over universal bases and gear base stats. The weapon defines
-    /// the normal attack; armour/evasion bases sum across gear.
-    fn refresh_character_stats(&mut self, slot: usize) {
-        let Some(e) = self.zone.get(slot) else { return };
-        let Some(ch) = &e.character else { return };
+    /// Pure derive (#109): build a character's effective combat stats for a given
+    /// life fraction (basis points) and condition phase. The cached `refresh`
+    /// calls this with full life + the DERIVE phase (strike-time conditions are
+    /// deferred); the hit path calls it with the live life % + the STRIKE phase so
+    /// strike-time conditions (e.g. "while below 35% life") fold per-strike.
+    /// `has_strike` reports whether any power source carried a strike-time
+    /// condition, so the caller can cache the gate flag. Reads only; the caller
+    /// assigns (preserving the live life/mana/ES pools).
+    fn character_derived_stats(
+        &self,
+        slot: usize,
+        life_pct: i64,
+        include_strike: bool,
+    ) -> Option<CharDerived> {
+        let e = self.zone.get(slot)?;
+        let ch = e.character.as_ref()?;
         let level = ch.level;
 
         let mut sheet = StatSheet::new();
+        let mut has_strike = false;
         // The condition context up front (wielded weapon class; None = unarmed,
         // which counts as melee) so EVERY power source — tree, buffs, affixes —
-        // evaluates its grant conditions against it through one path (#86).
+        // evaluates its grant conditions against it through one path (#86). The
+        // life % + phase carry #109's strike-time conditions.
         let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
             .as_ref()
             .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
-        let ctx = crate::stats::EvalContext { weapon_class };
+        let ctx = crate::stats::EvalContext {
+            weapon_class,
+            life_pct,
+            include_strike,
+        };
         for &node_idx in &ch.allocated {
             if let Some(node) = self.content.tree.get(node_idx as usize) {
                 for g in &node.grants {
-                    apply_conditional(&mut sheet, g, &ctx);
+                    has_strike |= apply_conditional(&mut sheet, g, &ctx);
                 }
             }
         }
@@ -222,7 +306,7 @@ impl World {
         for ef in &e.effects {
             if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    apply_conditional(&mut sheet, g, &ctx);
+                    has_strike |= apply_conditional(&mut sheet, g, &ctx);
                 }
             }
         }
@@ -236,7 +320,7 @@ impl World {
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
                 for g in a.grants(&ra.values) {
-                    apply_conditional(&mut sheet, &g, &ctx);
+                    has_strike |= apply_conditional(&mut sheet, &g, &ctx);
                 }
             }
             if i == GearSlot::Weapon.idx() {
@@ -283,7 +367,7 @@ impl World {
             ),
         ] {
             if grant.value != 0 {
-                apply_conditional(&mut sheet, &grant, &ctx);
+                has_strike |= apply_conditional(&mut sheet, &grant, &ctx);
             }
         }
 
@@ -358,43 +442,103 @@ impl World {
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
 
+        Some(CharDerived {
+            life_max,
+            mana_max,
+            es_max,
+            life_regen,
+            mana_regen,
+            leech_life,
+            leech_mana,
+            block,
+            crit_inc,
+            crit_multi,
+            cast_speed,
+            damage,
+            accuracy,
+            evasion,
+            armour,
+            resists,
+            range,
+            use_ticks,
+            speed,
+            projectile,
+            item_rarity,
+            item_quantity,
+            stagger,
+            poise,
+            knockback_cu,
+            has_strike,
+        })
+    }
+
+    /// Refresh a character's cached combat stats (#86/#109): derive at full life
+    /// in the DERIVE phase (strike-time conditions deferred), then assign —
+    /// preserving the live life/mana/ES pools — and cache the strike-gate flag.
+    fn refresh_character_stats(&mut self, slot: usize) {
+        let Some(d) = self.character_derived_stats(slot, 10000, false) else {
+            return;
+        };
         if let Some(me) = self.zone.get_mut(slot)
             && let Some(c) = me.combat.as_mut()
         {
-            let delta = life_max - c.life_max;
-            c.life_max = life_max;
+            let delta = d.life_max - c.life_max;
+            c.life_max = d.life_max;
             if c.life > 0 {
-                c.life = (c.life + delta.max(0)).min(life_max);
+                c.life = (c.life + delta.max(0)).min(d.life_max);
             }
-            let mana_delta = mana_max - c.mana_max;
-            c.mana_max = mana_max;
-            c.mana = (c.mana + mana_delta.max(0)).clamp(0, mana_max);
-            let es_delta = es_max - c.es_max;
-            c.es_max = es_max;
-            c.es = (c.es + es_delta.max(0)).clamp(0, es_max);
-            c.life_regen = life_regen;
-            c.mana_regen = mana_regen;
-            c.leech_life = leech_life;
-            c.leech_mana = leech_mana;
-            c.block = block;
-            c.crit_inc = crit_inc;
-            c.crit_multi = crit_multi;
-            c.cast_speed = cast_speed;
-            c.damage = damage;
-            c.accuracy = accuracy;
-            c.evasion = evasion;
-            c.armour = armour;
-            c.resists = resists;
-            c.range = range;
-            c.use_ticks = use_ticks;
-            c.speed_per_tick = speed;
-            c.projectile = projectile;
-            c.item_rarity = item_rarity;
-            c.item_quantity = item_quantity;
-            c.stagger = stagger;
-            c.poise = poise;
-            c.knockback_cu = knockback_cu;
+            let mana_delta = d.mana_max - c.mana_max;
+            c.mana_max = d.mana_max;
+            c.mana = (c.mana + mana_delta.max(0)).clamp(0, d.mana_max);
+            let es_delta = d.es_max - c.es_max;
+            c.es_max = d.es_max;
+            c.es = (c.es + es_delta.max(0)).clamp(0, d.es_max);
+            c.life_regen = d.life_regen;
+            c.mana_regen = d.mana_regen;
+            c.leech_life = d.leech_life;
+            c.leech_mana = d.leech_mana;
+            c.block = d.block;
+            c.crit_inc = d.crit_inc;
+            c.crit_multi = d.crit_multi;
+            c.cast_speed = d.cast_speed;
+            c.damage = d.damage;
+            c.accuracy = d.accuracy;
+            c.evasion = d.evasion;
+            c.armour = d.armour;
+            c.resists = d.resists;
+            c.range = d.range;
+            c.use_ticks = d.use_ticks;
+            c.speed_per_tick = d.speed;
+            c.projectile = d.projectile;
+            c.item_rarity = d.item_rarity;
+            c.item_quantity = d.item_quantity;
+            c.stagger = d.stagger;
+            c.poise = d.poise;
+            c.knockback_cu = d.knockback_cu;
+            c.has_strike_conditions = d.has_strike;
         }
+    }
+
+    /// Per-strike effective offense (#109): re-derive a CHARACTER's offensive stats
+    /// against its LIVE life %, folding strike-time conditions (e.g. "while below
+    /// 35% life"). Only the offensive subset `resolve_skill` reads. Callers should
+    /// gate on `has_strike_conditions` — this re-runs the full sheet fold, so it's
+    /// not free; with no strike-time conditions the result equals the cached stats.
+    pub(super) fn effective_offense(&self, slot: usize) -> Option<EffectiveOffense> {
+        let e = self.zone.get(slot)?;
+        let c = e.combat.as_ref()?;
+        // Live life as basis points of max (clamped 0..10000).
+        let life_pct = (c.life.max(0) * 10000 / c.life_max.max(1)).clamp(0, 10000);
+        let d = self.character_derived_stats(slot, life_pct, true)?;
+        Some(EffectiveOffense {
+            damage: d.damage,
+            crit_inc: d.crit_inc,
+            crit_multi: d.crit_multi,
+            accuracy: d.accuracy,
+            range: d.range,
+            stagger: d.stagger,
+            knockback_cu: d.knockback_cu,
+        })
     }
 }
 
@@ -411,9 +555,11 @@ mod grant_tests {
         // and the bow case wrongly gains the bonus.
         let melee = EvalContext {
             weapon_class: Some(WeaponClass::Melee),
+            ..Default::default()
         };
         let bow = EvalContext {
             weapon_class: Some(WeaponClass::Bow),
+            ..Default::default()
         };
         let cond = Grant {
             stat: Stat::DamagePhys,
@@ -431,6 +577,50 @@ mod grant_tests {
         assert_eq!(val(&cond, &melee), 150, "conditional applies under melee");
         assert_eq!(val(&cond, &bow), 100, "conditional gated off under bow");
         assert_eq!(val(&plain, &bow), 150, "unconditional always applies");
+    }
+
+    #[test]
+    fn derive_phase_defers_strike_time_conditions() {
+        // #109: in the DERIVE phase a strike-time condition is SKIPPED (deferred to
+        // the per-strike re-derive) regardless of whether it would hold; in the
+        // STRIKE phase it folds when it holds. Mutation: drop the include_strike
+        // gate in apply_conditional → the derive-phase value wrongly gains it.
+        let below = Grant {
+            stat: Stat::DamagePhys,
+            layer: Layer::Increased,
+            value: 5000, // +50% while below 35% life
+            condition: Some(Condition::BelowLifePct(3500)),
+        };
+        let val = |life_pct: i64, include_strike: bool| {
+            let mut s = StatSheet::new();
+            let is_strike = apply_conditional(
+                &mut s,
+                &below,
+                &EvalContext {
+                    life_pct,
+                    include_strike,
+                    ..Default::default()
+                },
+            );
+            (s.value(Stat::DamagePhys, 100), is_strike)
+        };
+        // Derive phase: deferred even though 10% < 35% would hold.
+        assert_eq!(
+            val(1000, false),
+            (100, true),
+            "derive phase defers + reports strike"
+        );
+        // Strike phase: folds when below the threshold, not when above.
+        assert_eq!(
+            val(1000, true),
+            (150, true),
+            "strike phase folds below-life"
+        );
+        assert_eq!(
+            val(5000, true),
+            (100, true),
+            "strike phase: above threshold, no fold"
+        );
     }
 }
 

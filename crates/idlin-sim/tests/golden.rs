@@ -22,9 +22,17 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// under the wider hash, confirming a representation change, not a leak. (The
 /// later item-charges/affix-tier additions left the digest at this value — the
 /// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
-/// (Prior: 0x8541 — earlier hash-completeness step; Phase D 0x5755 — ten new affix
-/// files; Phase A 0x0A71 — effects-list schema; #98 skill life cost; etc.)
-const GOLDEN_HASH: u64 = 0x5662_D967_D6E4_BF38;
+/// Re-pinned for #109 (strike-time conditional affixes): (1) `CombatStats` gained
+/// `has_strike_conditions`, folded into `state_hash` (whole-struct rule) — a
+/// FINGERPRINT widening; AND (2) a content change — the new `of_desperation` affix
+/// (strike-time "+phys while below 35% life") shifts `content_hash`
+/// (0x31EC…→0x400E_EE4F_FED9_A16C) and the weighted weapon-suffix pool, so the
+/// 2000-tick grind's rolls/outcomes move. The strike-time mechanism itself is inert
+/// until a character actually wields such an affix below the threshold; the
+/// determinism trio still agrees, confirming no leak.
+/// (Prior: 0x5662 — #86 state_hash widening; 0x8541 — earlier hash-completeness;
+/// Phase D 0x5755 — ten new affix files; Phase A 0x0A71 — effects-list schema; etc.)
+const GOLDEN_HASH: u64 = 0xC190_1754_45A1_A5DE;
 
 #[test]
 fn golden_replay() {

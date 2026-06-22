@@ -439,6 +439,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         item_rarity: 10000,
         item_quantity: 10000,
         last_combat_tick: 0,
+        has_strike_conditions: false,
     }
 }
 
@@ -505,6 +506,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         item_rarity: 10000,
         item_quantity: 10000,
         last_combat_tick: 0,
+        has_strike_conditions: false,
     }
 }
 
@@ -1660,8 +1662,13 @@ impl World {
             };
             // Monsters wield no weapon → unarmed, which counts as melee, so a
             // melee condition holds and bow/wand conditions don't (#86). Evaluate
-            // so a conditional monster affix isn't applied unconditionally.
-            let ctx = crate::stats::EvalContext { weapon_class: None };
+            // so a conditional monster affix isn't applied unconditionally. Derive
+            // phase (#109): strike-time conditions are deferred (inert for monsters
+            // this pass — no monster content carries one).
+            let ctx = crate::stats::EvalContext {
+                weapon_class: None,
+                ..Default::default()
+            };
             let mut sheet = crate::stats::StatSheet::new();
             for ra in &affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
