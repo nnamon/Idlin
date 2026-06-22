@@ -10,9 +10,10 @@
 //!   only honored by `Debug` (capped) — lying about argc hurts only the bot
 //! - every syscall pushes exactly one result word; unknown numbers push -1
 //!
-//! SelfStatus layout (i32 words): +0 x, +4 y, +8 life, +12 life_max,
-//! +16 level, +20 xp, +24 map_w, +28 map_h, +32 flags (bit0 = dead),
-//! +36 anchor_x, +40 anchor_y, +44 aggro_radius, +48 attack_range.
+//! SelfStatus + every record stride are the VM-ABI, single-owned in
+//! `idlin_vm::abi` (#50) — the host writers below consume those consts (a pin test
+//! locks their values). The `.bot` side still hardcodes the matching offsets;
+//! emitting a generated include for it is the planned part-2 follow-up.
 
 use crate::fixed::{Fx, FxV2};
 use crate::rng::Pcg32;
@@ -26,8 +27,17 @@ pub const SYSCALL_COST: u32 = 20;
 pub const QUERY_RADIUS: Fx = Fx::from_int(50);
 /// Hard cap on entity-query results.
 pub const MAX_QUERY_RESULTS: usize = 16;
-/// Size of one ReadEntities record in bytes.
-pub const ENTITY_RECORD_SIZE: u16 = 24;
+
+// Record strides come from idlin_vm::abi — the single VM-ABI owner (#50). (Doc
+// comments for each record's field layout live there. The `.bot` side still
+// hardcodes the matching strides; a generated include is the part-2 follow-up.)
+pub use idlin_vm::abi::{
+    ENTITY_RECORD_SIZE, EQUIPMENT_RECORD_SIZE, INVENTORY_RECORD_SIZE, ITEM_MODS_RECORD_SIZE,
+    SKILL_RECORD_SIZE,
+};
+// The SelfStatus field offsets (SS_*) are read below at their named addresses, so
+// the host's write layout IS the single owner (no implicit array-order contract).
+use idlin_vm::abi;
 
 // Syscall numbers come from idlin_vm — the single ABI owner shared with
 // the compiler's BUILTINS table.
@@ -42,26 +52,8 @@ use idlin_vm::{
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
-/// Size of one ReadSkills record in bytes (#54 PR2a: the pure-def geometry —
-/// shape/radius/skill_kind — moved to SkillInfo). Record: slot_no, gem_num,
-/// level, cooldown_left, range, mana_cost, use_ticks, target_mode, ready,
-/// life_cost (#98: the FINAL per-use life cost, support cost-mults folded in —
-/// 0 for the vast majority of skills; ungated, so it does NOT gate `ready`).
-pub const SKILL_RECORD_SIZE: u16 = 40; // 10 words
-// SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline.
-
-/// Size of one ReadInventory record in bytes (#54 PR2a: slot/w/h are
-/// definitional — look them up by `base_num` in the docs). Record: base_num,
-/// rarity, item_level, x, y.
-pub const INVENTORY_RECORD_SIZE: u16 = 20; // 5 words
-/// Size of one ReadItemMods record in bytes: affix_num, effect_index, value,
-/// tier. One record PER EFFECT — a hybrid affix (#86) emits several, sharing an
-/// affix_num and counting up effect_index; the granted stat is definitional
-/// (look up `affixes[affix_num].effects[effect_index].stat` in content-docs).
-pub const ITEM_MODS_RECORD_SIZE: u16 = 16; // 4 words
-/// Size of one ReadEquipment record in bytes (#54 PR3): slot, base_num (-1 if
-/// the slot is empty), rarity, item_level. One record per gear slot.
-pub const EQUIPMENT_RECORD_SIZE: u16 = 16; // 4 words
+// SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline —
+// distinct from the ReadSkills record stride (SKILL_RECORD_SIZE, in idlin_vm::abi).
 /// Hard cap on inventory query results (a 12×5 bag of 1×1s caps at 60).
 pub const MAX_INVENTORY_RESULTS: usize = 60;
 /// Hard cap on rolled-mod results per item.
@@ -247,31 +239,39 @@ impl World {
                 let es = combat
                     .map(|c| c.es.clamp(0, i32::MAX as i64) as i32)
                     .unwrap_or(0);
-                let fields = [
-                    e.pos.x.raw(),
-                    e.pos.y.raw(),
-                    life,
-                    life_max,
-                    level,
-                    xp,
-                    self.zone.width.raw(),
-                    self.zone.height.raw(),
-                    dead as i32,
-                    anchor.x.raw(),
-                    anchor.y.raw(),
-                    aggro,
-                    range,
-                    mana,
-                    mana_max,
-                    es,
-                    // Which map this is: the zone's stable tagged num (#54).
-                    // Bot writers branch their whole strategy on it — grind the
-                    // shore, stroll the town.
+                // Each field at its named SS_ offset (idlin_vm::abi, #50) — the
+                // single owner the `.bot` reads mirror. Order/values unchanged.
+                bot.vm.store_i32(out.wrapping_add(abi::SS_X), e.pos.x.raw());
+                bot.vm.store_i32(out.wrapping_add(abi::SS_Y), e.pos.y.raw());
+                bot.vm.store_i32(out.wrapping_add(abi::SS_LIFE), life);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_LIFE_MAX), life_max);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_LEVEL), level);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_XP), xp);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_MAP_W), self.zone.width.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_MAP_H), self.zone.height.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_FLAGS), dead as i32);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_ANCHOR_X), anchor.x.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_ANCHOR_Y), anchor.y.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_AGGRO_RADIUS), aggro);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_ATTACK_RANGE), range);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_MANA), mana);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_MANA_MAX), mana_max);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_ES), es);
+                // Which map this is: the zone's stable tagged num (#54). Bot writers
+                // branch their whole strategy on it — grind the shore, stroll the town.
+                bot.vm.store_i32(
+                    out.wrapping_add(abi::SS_ZONE),
                     self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
-                ];
-                for (i, v) in fields.into_iter().enumerate() {
-                    bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);
-                }
+                );
                 0
             }
             SYS_READ_ENTITIES => {
@@ -519,7 +519,7 @@ impl World {
                 let max = bot.vm.pop().clamp(0, 16) as usize;
                 let n = self.zone.exits.len().min(max);
                 for (i, exit) in self.zone.exits.iter().take(n).enumerate() {
-                    let base = out.wrapping_add(16 * i as u16);
+                    let base = out.wrapping_add(abi::EXIT_RECORD_SIZE * i as u16);
                     bot.vm.store_i32(base, exit.pos.x.raw());
                     bot.vm.store_i32(base.wrapping_add(4), exit.pos.y.raw());
                     bot.vm.store_i32(base.wrapping_add(8), exit.open as i32);
