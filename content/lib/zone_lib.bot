@@ -14,9 +14,13 @@
 // compound condition; nest the ifs instead.
 // ============================================================
 
-const ZL_EVS = 0xE000;     // PollEvents records (16 bytes each)
-const ZL_Q = 0xE400;       // QueryCharacters records (32 bytes each)
-const ZL_STATE = 0xD000;   // per-character rows: [net, flags] (8 bytes)
+// VM-ABI strides (#50): CHAR_RECORD_SIZE, EVENT_RECORD_SIZE (idlin_vm::abi).
+include "gen_abi.bot";
+
+const ZL_EVS = 0xE000;     // PollEvents records (EVENT_RECORD_SIZE bytes each)
+const ZL_Q = 0xE400;       // QueryCharacters records (CHAR_RECORD_SIZE bytes each)
+const ZL_STATE = 0xD000;   // per-char rows: [net, flags, timer, spare] (16 bytes —
+                           // the brain's OWN table, NOT a VM-ABI record)
 const ZL_MAX_CHARS = 16;
 
 // QueryCharacters record field offsets.
@@ -30,8 +34,8 @@ const QC_LIFE = 24;
 const QC_DEAD = 28;
 const QC_BUILD = 32;   // declared build length (0 = no build yet)
 const QC_ARCH = 36;    // build archetype: 0 melee / 1 bow / 2 wand / -1 unknown
-// Record stride: 10 words per character.
-const QC_STRIDE = 40;
+// Record stride: use CHAR_RECORD_SIZE (gen_abi.bot, #50) at the read sites — the
+// .bot language forbids a const defined from another const, so there's no alias.
 
 // PollEvents record fields and kinds.
 const PE_KIND = 0;

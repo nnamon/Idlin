@@ -103,7 +103,7 @@ fn main() {
     // -- state-driven beats: the lesson ladder, south to north --
     var i = 0;
     while (i < nq) {
-        var r = ZL_Q + i * QC_STRIDE;
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
         var net = mem[r + QC_NET];
         var kills = mem[r + QC_KILLS];
         var x = mem[r + QC_X];
@@ -209,7 +209,7 @@ fn main() {
     var ne = poll_events(ZL_EVS, 32);
     var j = 0;
     while (j < ne) {
-        var ev = ZL_EVS + j * 16;
+        var ev = ZL_EVS + j * EVENT_RECORD_SIZE;
         var kind = mem[ev + PE_KIND];
         var who = mem[ev + PE_WHO];
         if (kind == EV_EQUIP) { zl_narrate_once(who, F_ARMED, L_ARMED); }
@@ -239,7 +239,7 @@ fn main() {
             if (zl_once(who, F_ELITEDOWN) == 1) {
                 var k = 0;
                 while (k < nq) {
-                    var qr = ZL_Q + k * QC_STRIDE;
+                    var qr = ZL_Q + k * CHAR_RECORD_SIZE;
                     if (mem[qr + QC_NET] == who) {
                         var sup = SUP_QUICKENING;
                         var wc2 = mem[qr + QC_WCLASS];
@@ -260,7 +260,7 @@ fn main() {
             // Walking through it is the killer's own decision (use_exit).
             var k2 = 0;
             while (k2 < nq) {
-                var qr2 = ZL_Q + k2 * QC_STRIDE;
+                var qr2 = ZL_Q + k2 * CHAR_RECORD_SIZE;
                 if (mem[qr2 + QC_NET] == who) {
                     drop_loot(3, 8, mem[qr2 + QC_X], mem[qr2 + QC_Y], who);
                     var sup2 = (random() & 0x7FFFFFFF) % 3;
