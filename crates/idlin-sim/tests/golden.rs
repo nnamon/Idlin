@@ -22,9 +22,20 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// under the wider hash, confirming a representation change, not a leak. (The
 /// later item-charges/affix-tier additions left the digest at this value — the
 /// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
-/// (Prior: 0x8541 — earlier hash-completeness step; Phase D 0x5755 — ten new affix
-/// files; Phase A 0x0A71 — effects-list schema; #98 skill life cost; etc.)
-const GOLDEN_HASH: u64 = 0x5662_D967_D6E4_BF38;
+/// Re-pinned for #88 first-class ailments: a content_hash change (5 new ailment
+/// affixes; `frost_nova`'s hardcoded chill debuff replaced by an inherent Chill
+/// ailment) AND a sim-rule change (cold/fire/lightning hits now proc Ignite/Shock/
+/// Chill on crit or via ailment-chance), so the 2000-tick grind's outcomes move.
+/// content_hash 0x31EC…→0x75F9_99E7_B49D_1E61. AND the FINGERPRINT widened again:
+/// the five new ailment `CombatStats` fields (ailment_chance/crits_no_ailment/
+/// shock_max/chill_max/ailment_duration — spawn-set for monsters from rolled
+/// affixes) and the in-flight projectile's `ailment_chance` are now folded into
+/// `state_hash`, so the digest of the same replay moves a second time (content_hash
+/// stays 0x75F9…). The determinism trio still agrees.
+/// (Prior: 0x95E7 — #88 content+rule, pre-fingerprint-widen; 0x5662 — #86 state_hash
+/// widening; 0x8541 — earlier hash-completeness; Phase D 0x5755 — ten new affix
+/// files; Phase A 0x0A71 — effects-list schema; etc.)
+const GOLDEN_HASH: u64 = 0x5349_587B_4EB7_84BA;
 
 #[test]
 fn golden_replay() {

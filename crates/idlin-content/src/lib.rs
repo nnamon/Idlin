@@ -781,6 +781,11 @@ pub struct GemDef {
     /// Base critical chance in basis points (global crit stats scale it).
     #[serde(default)]
     pub crit_bp: i64,
+    /// Inherent ailment chance in basis points (#88), ADDED to the attacker's
+    /// AilmentChance at proc time — so a themed skill (e.g. Frost Nova) reliably
+    /// inflicts its element's ailment. 0 = no inherent chance (crit still inflicts).
+    #[serde(default)]
+    pub ailment_chance: i64,
     // -- costs & timing --
     /// Mana drawn per use, scaling with gem level. Gated: a use needs the mana.
     #[serde(default)]
@@ -2715,6 +2720,13 @@ mod tests {
         assert_eq!(stats("of_sealing"), vec![Stat::ResistChaos]);
         assert_eq!(stats("of_channeling"), vec![Stat::ManaRegen]);
         assert_eq!(stats("of_casting"), vec![Stat::CastSpeed]);
+        // Ailment levers (#88) — one stat each; a miswire (e.g. of_permafrost
+        // granting shock_max) slips past pool/tier checks but fails here.
+        assert_eq!(stats("of_affliction"), vec![Stat::AilmentChance]);
+        assert_eq!(stats("of_composure"), vec![Stat::CritAilmentDenied]);
+        assert_eq!(stats("of_the_tempest"), vec![Stat::ShockMax]);
+        assert_eq!(stats("of_permafrost"), vec![Stat::ChillMax]);
+        assert_eq!(stats("of_smouldering"), vec![Stat::AilmentDuration]);
         // Hybrids — two effects, each with its own per-tier roll range.
         assert_eq!(
             stats("of_the_leech"),

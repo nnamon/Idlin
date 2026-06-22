@@ -1,0 +1,16 @@
+// "... of Affliction" — chance to inflict an ailment (ignite/shock/chill) on hit
+// (#88). Stacks with crit-inflict; the rolled value is added to the attacker's
+// AilmentChance at proc time.
+AffixDef(
+    id: "of_affliction",
+    public: true,
+    name: "of Affliction",
+    kind: suffix,
+    pool: "weapon",
+    weight: 50,
+    effects: [(stat: ailment_chance, layer: added)],
+    tiers: [
+        (ilvl: 1, name: "of Affliction", weight: 100, rolls: [(min: 500, max: 1500)]),   // +5-15%
+        (ilvl: 8, name: "of Suffering", weight: 45, rolls: [(min: 1501, max: 3000)]),     // +15-30%
+    ],
+)

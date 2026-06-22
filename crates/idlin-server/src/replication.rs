@@ -511,6 +511,7 @@ fn diff(
                     || old.weapon_rarity != state.weapon_rarity
                     || old.gear != state.gear
                     || old.gear_rarity != state.gear_rarity
+                    || old.ailments != state.ailments
                 {
                     updated.push(EntityPatch {
                         id: *id,
@@ -524,6 +525,7 @@ fn diff(
                         weapon_rarity: state.weapon_rarity,
                         gear: state.gear.clone(),
                         gear_rarity: state.gear_rarity.clone(),
+                        ailments: state.ailments,
                     });
                 }
             }
@@ -584,6 +586,7 @@ fn to_state(v: &EntityView) -> EntityState {
         dead: v.dead,
         kills: v.kills.min(u32::MAX as u64) as u32,
         items: v.items.min(u32::MAX as u64) as u32,
+        ailments: v.ailments,
     }
 }
 
@@ -776,6 +779,7 @@ mod tests {
             dead: false,
             kills: 0,
             items: 0,
+            ailments: 0,
         }
     }
 

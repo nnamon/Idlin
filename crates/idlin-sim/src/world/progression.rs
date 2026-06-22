@@ -181,6 +181,13 @@ impl World {
         next.speed_per_tick = crate::fixed::Fx::from_raw(
             (super::speed_from_cps(def.speed_cps).raw() as i64 * move_factor / 10000) as i32,
         );
+        // Ailments (#88): full monster parity — caps start at the base defaults
+        // (4000/3000 from monster_base_stats) and rolled mods raise them.
+        next.ailment_chance = sheet.value(Stat::AilmentChance, next.ailment_chance).max(0);
+        next.crits_no_ailment = sheet.value(Stat::CritAilmentDenied, 0) > 0;
+        next.shock_max = sheet.value(Stat::ShockMax, next.shock_max).max(0);
+        next.chill_max = sheet.value(Stat::ChillMax, next.chill_max).max(0);
+        next.ailment_duration = sheet.value(Stat::AilmentDuration, next.ailment_duration);
 
         if let Some(me) = self.zone.get_mut(slot)
             && let Some(c) = me.combat.as_mut()
@@ -354,6 +361,13 @@ impl World {
         let stagger = sheet.value(Stat::Stagger, 0).max(0);
         let poise = sheet.value(Stat::Poise, 0).max(0);
         let knockback_cu = sheet.value(Stat::Knockback, 0).max(0);
+        // Ailments (#88): chance + flag + per-ailment caps (base 4000/3000, raised
+        // by the Added layer) + duration scale.
+        let ailment_chance = sheet.value(Stat::AilmentChance, 0).max(0);
+        let crits_no_ailment = sheet.value(Stat::CritAilmentDenied, 0) > 0;
+        let shock_max = sheet.value(Stat::ShockMax, 4000).max(0);
+        let chill_max = sheet.value(Stat::ChillMax, 3000).max(0);
+        let ailment_duration = sheet.value(Stat::AilmentDuration, 0);
         let speed = Fx::from_raw(
             ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
         );
@@ -394,6 +408,11 @@ impl World {
             c.stagger = stagger;
             c.poise = poise;
             c.knockback_cu = knockback_cu;
+            c.ailment_chance = ailment_chance;
+            c.crits_no_ailment = crits_no_ailment;
+            c.shock_max = shock_max;
+            c.chill_max = chill_max;
+            c.ailment_duration = ailment_duration;
         }
     }
 }

@@ -9,8 +9,8 @@
 
 use super::{ES_RECHARGE_DELAY_TICKS, RESPAWN_TICKS, SimEvent, World, XP_SHARE_RADIUS, fx_from_cu};
 use crate::entity::{
-    ActiveEffect, AttackIntent, DMG_COUNT, DMG_PHYS, GemInstance, LootPayload, SkillTarget,
-    SocketedGem,
+    ActiveEffect, AilmentKind, AttackIntent, DMG_COUNT, DMG_FIRE, DMG_PHYS, GemInstance,
+    LootPayload, SkillTarget, SocketedGem,
 };
 use crate::fixed::{Fx, FxV2};
 use crate::stats::{Grant, apply_resist, hit_chance_bp, mitigate_phys};
@@ -138,6 +138,9 @@ pub(super) struct StrikeSpec {
     /// Hit reactions (attacker-derived): bp easier to stun, flat shove cu.
     pub stagger: i64,
     pub knockback_cu: i64,
+    /// The firing skill's INHERENT ailment chance (bp, #88), added to the
+    /// attacker's AilmentChance at proc time. 0 for basic attacks / dots.
+    pub ailment_chance: i64,
 }
 
 impl StrikeSpec {
@@ -160,6 +163,7 @@ impl StrikeSpec {
                 debuff: self.debuff.clone(),
                 stagger: self.stagger,
                 knockback_cu: self.knockback_cu,
+                ailment_chance: self.ailment_chance,
             }
         }
     }
@@ -644,6 +648,7 @@ impl World {
             debuff,
             stagger: a_stagger,
             knockback_cu: a_knockback,
+            ailment_chance: gem_def.ailment_chance,
         };
 
         Some(ResolvedSkill {
@@ -832,6 +837,7 @@ impl World {
                     debuff: None,
                     stagger: a_stagger,
                     knockback_cu: a_knockback,
+                    ailment_chance: 0, // basic attack: no inherent ailment chance
                 };
                 if weapon_projectile {
                     let toward = t.pos;
@@ -1096,6 +1102,8 @@ impl World {
             let attacker_faction = e.faction();
             let pos = e.pos;
             let (weapon_range, weapon_use, cast_speed) = (c.range, c.use_ticks, c.cast_speed);
+            // #88: Chill slows the actor's whole action (applied to busy_ticks below).
+            let chill_bp = e.ailment(AilmentKind::Chill);
 
             // What does this use cost, how long does it take, and where
             // is it aimed? Refusals here are FREE (nothing committed).
@@ -1198,7 +1206,10 @@ impl World {
 
             // Contact: spells land their effect when the cast completes;
             // attacks connect ~60% through the swing, recovery after.
-            let busy_ticks = busy_ticks.max(1);
+            // #88: Chill lengthens the action — slower speed ⇒ more ticks (the
+            // effective chill is clamped <100% so the divisor stays positive).
+            let chill_div = (10000 - chill_bp.clamp(0, 9000)).max(1) as u64;
+            let busy_ticks = (busy_ticks.max(1) * 10000 / chill_div).max(1);
             let contact = if is_spell {
                 busy_ticks
             } else {
@@ -1397,6 +1408,7 @@ impl World {
             debuff: spec.debuff,
             stagger: spec.stagger,
             knockback_cu: spec.knockback_cu,
+            ailment_chance: spec.ailment_chance,
         });
     }
 
@@ -1486,6 +1498,7 @@ impl World {
                     debuff: p.debuff.clone(),
                     stagger: p.stagger,
                     knockback_cu: p.knockback_cu,
+                    ailment_chance: p.ailment_chance,
                 };
                 self.strike(spec, ts, now, events, &mut dead, &mut loot);
                 p.already_hit.push(net);
@@ -1558,6 +1571,23 @@ impl World {
         let (t_evasion, t_armour, t_resists, t_block) =
             (tc_ro.evasion, tc_ro.armour, tc_ro.resists, tc_ro.block);
         let (t_life_max, t_poise) = (tc_ro.life_max, tc_ro.poise);
+        // #88 ailments: the victim's Shock amplifies the incoming hit (read now,
+        // before the mutable borrow below); the attacker's levers drive the proc.
+        let v_shock_bp = t.ailment(AilmentKind::Shock);
+        let (a_chance, a_no_crit_ail, a_shock_max, a_chill_max, a_ail_dur) = self
+            .zone
+            .get_net(spec.attacker_net)
+            .and_then(|a| a.combat.as_ref())
+            .map(|c| {
+                (
+                    c.ailment_chance,
+                    c.crits_no_ailment,
+                    c.shock_max,
+                    c.chill_max,
+                    c.ailment_duration,
+                )
+            })
+            .unwrap_or((0, false, 0, 0, 0));
 
         // Accuracy: attacks can miss; spells and dots cannot.
         let mut hit = spec.is_spell
@@ -1575,6 +1605,11 @@ impl World {
         let mut amount = 0i64;
         let mut dmg_type = 0u8;
         let mut crit = false;
+        // #88: the dominant type's post-crit damage — the basis an ailment proc
+        // scales its magnitude from. `dom_typed` is post-mitigation (Shock/Chill
+        // ramp); `dom_raw` is pre-mitigation (Ignite, which re-resists on burn).
+        let mut dom_typed = 0i64;
+        let mut dom_raw = 0i64;
         if hit {
             // Crit, then one variance roll, then per-type mitigation.
             let mut scale = 100i64;
@@ -1593,10 +1628,16 @@ impl World {
                 taken[i] = apply_resist(spec.damage[i] * scale / 100, t_resists[i - 1]);
             }
             amount = taken.iter().sum::<i64>();
+            let crit_factor = if crit {
+                spec.crit_multi.max(10000)
+            } else {
+                10000
+            };
             if crit {
-                amount = amount * spec.crit_multi.max(10000) / 10000;
+                amount = amount * crit_factor / 10000;
             }
-            amount = amount.max(1);
+            // The victim's Shock raises all incoming damage (hits and burns).
+            amount = (amount * (10000 + v_shock_bp) / 10000).max(1);
             let mut best = 0;
             for i in 1..DMG_COUNT {
                 if taken[i] > taken[best] {
@@ -1604,6 +1645,15 @@ impl World {
                 }
             }
             dmg_type = best as u8;
+            // Post-crit damage of the dominant type → Shock/Chill ramp basis. This
+            // is POST-mitigation: the ramp asks "how big was the landed hit vs life".
+            dom_typed = taken[best] * crit_factor / 10000;
+            // Ignite is a fire DoT that re-resists when it burns (effects_tick →
+            // strike), exactly like a skill DoT whose authored per_second is raw.
+            // So its basis is the PRE-resist dominant damage — the single burn-time
+            // resist then nets the felt total to ~90% of the fire hit (the locked
+            // design), instead of resisting twice (post-resist basis + burn resist).
+            dom_raw = (spec.damage[best] * scale / 100) * crit_factor / 10000;
         }
 
         let t = self.zone.get_mut(target_slot).unwrap();
@@ -1676,6 +1726,50 @@ impl World {
             stun,
             freeze,
         });
+
+        // On-hit rider: ailment proc (#88). A crit guarantees an ailment unless
+        // the attacker "cannot cause ailments on crit"; the ailment-chance roll is
+        // independent and applies either way. The kind follows the dominant damage
+        // type (fire→Ignite, lightning→Shock, cold→Chill).
+        if hit && !spec.is_dot && !killed && amount > 0 {
+            let kind = match dmg_type {
+                1 => Some(AilmentKind::Ignite),
+                2 => Some(AilmentKind::Chill),
+                3 => Some(AilmentKind::Shock),
+                _ => None, // phys / chaos: no v1 ailment
+            };
+            if let Some(kind) = kind {
+                let by_crit = crit && !a_no_crit_ail;
+                // Effective chance = attacker's AilmentChance + the firing skill's
+                // inherent chance (#88), capped at 100%.
+                let eff_chance = (a_chance + spec.ailment_chance).clamp(0, 10000);
+                let by_chance =
+                    eff_chance > 0 && (self.rng_combat.next_range(10000) as i64) < eff_chance;
+                if by_crit || by_chance {
+                    // Duration: 4s base, scaled by the attacker's AilmentDuration.
+                    let dur = ((40 * (10000 + a_ail_dur) / 10000).max(1)) as u32;
+                    // Shock/Chill ramp 0→cap as the typed hit goes 0→15% of max life.
+                    let ramp = |cap: i64| -> i64 {
+                        let ratio = dom_typed * 10000 / t_life_max.max(1);
+                        (cap * ratio / 1500).clamp(0, cap)
+                    };
+                    let magnitude = match kind {
+                        // Ignite: ~90% of the fire hit spread over the duration, so
+                        // per-second = total × TICK_HZ / dur (shorter dur = faster).
+                        // Basis is `dom_raw` (pre-resist) — the burn re-resists in
+                        // effects_tick, netting the felt total to ~90% of the hit.
+                        AilmentKind::Ignite => {
+                            (dom_raw * 90 / 100) * super::TICK_HZ as i64 / dur.max(1) as i64
+                        }
+                        AilmentKind::Shock => ramp(a_shock_max),
+                        AilmentKind::Chill => ramp(a_chill_max),
+                    };
+                    if magnitude > 0 {
+                        self.apply_ailment(target_slot, kind, magnitude, dur, spec.attacker_net);
+                    }
+                }
+            }
+        }
 
         // On-hit rider: apply/refresh the skill's dot (strongest wins per
         // source+skill; reapply refreshes the clock).
@@ -1908,7 +2002,49 @@ impl World {
         }
     }
 
-    /// Apply (or refresh) a self-buff and re-derive stats.
+    /// Apply or refresh an ailment on the victim (#88): one entry per kind —
+    /// the STRONGEST magnitude owns it. A stronger-or-equal reapply takes over
+    /// magnitude, duration, AND source together (it earned the burn, so it owns
+    /// the kill credit / leech); a WEAKER reapply leaves the existing ailment
+    /// untouched, so a chip hit can't steal credit from — or refresh the clock of —
+    /// a bigger ailment it didn't deal. No stat re-derive (Shock/Chill are read
+    /// where they bite, not folded).
+    fn apply_ailment(
+        &mut self,
+        slot: usize,
+        kind: AilmentKind,
+        magnitude: i64,
+        dur: u32,
+        source: u32,
+    ) {
+        let Some(e) = self.zone.get_mut(slot) else {
+            return;
+        };
+        for ef in e.effects.iter_mut() {
+            if let ActiveEffect::Ailment {
+                kind: k,
+                magnitude: m,
+                ticks_left,
+                source: s,
+            } = ef
+                && *k == kind
+            {
+                if magnitude >= *m {
+                    *m = magnitude;
+                    *ticks_left = dur;
+                    *s = source;
+                }
+                return;
+            }
+        }
+        e.effects.push(ActiveEffect::Ailment {
+            kind,
+            magnitude,
+            ticks_left: dur,
+            source,
+        });
+    }
+
     fn apply_buff(&mut self, slot: usize, grants: Vec<Grant>, duration_ticks: u32) {
         if let Some(e) = self.zone.get_mut(slot) {
             for ef in e.effects.iter_mut() {
@@ -1951,14 +2087,22 @@ impl World {
             let mut burns: Vec<(u8, i64, u32)> = Vec::new();
             if second_edge {
                 for ef in &e.effects {
-                    if let ActiveEffect::Dot {
-                        dtype,
-                        per_second,
-                        source,
-                        ..
-                    } = ef
-                    {
-                        burns.push((*dtype, *per_second, *source));
+                    match ef {
+                        ActiveEffect::Dot {
+                            dtype,
+                            per_second,
+                            source,
+                            ..
+                        } => burns.push((*dtype, *per_second, *source)),
+                        // Ignite (#88) burns like a DoT: its `magnitude` is the
+                        // per-second fire damage (total / duration, set at proc).
+                        ActiveEffect::Ailment {
+                            kind: AilmentKind::Ignite,
+                            magnitude,
+                            source,
+                            ..
+                        } => burns.push((DMG_FIRE as u8, *magnitude, *source)),
+                        _ => {}
                     }
                 }
             }
@@ -1994,6 +2138,7 @@ impl World {
                     debuff: None,
                     stagger: 0,
                     knockback_cu: 0,
+                    ailment_chance: 0, // a burn tick can't re-inflict (is_dot skips the proc)
                 };
                 self.strike(spec, slot, now, events, &mut dead, &mut loot);
             }
@@ -2012,11 +2157,17 @@ impl World {
                                 buff_expired = true;
                             }
                         }
+                        // Ailments (#88) just count down — Shock/Chill are read
+                        // where they bite, so expiry needs no stat re-derive.
+                        ActiveEffect::Ailment { ticks_left, .. } => {
+                            *ticks_left = ticks_left.saturating_sub(1);
+                        }
                     }
                 }
                 e.effects.retain(|ef| match ef {
                     ActiveEffect::Dot { ticks_left, .. } => *ticks_left > 0,
                     ActiveEffect::Buff { ticks_left, .. } => *ticks_left > 0,
+                    ActiveEffect::Ailment { ticks_left, .. } => *ticks_left > 0,
                 });
                 if buff_expired {
                     needs_refresh.push(slot);
@@ -2146,6 +2297,7 @@ mod tests {
             debuff: None,
             stagger: 0,
             knockback_cu: 60,
+            ailment_chance: 0,
         };
         let now = world.tick;
         let mut events = Vec::new();
@@ -2975,6 +3127,7 @@ mod tests {
             debuff: None,
             stagger: 0,
             knockback_cu: 0,
+            ailment_chance: 0,
         });
         let mut events = Vec::new();
         world.step_projectiles(&mut events);
@@ -3251,6 +3404,7 @@ mod tests {
             debuff: None,
             stagger: 0,
             knockback_cu: 0,
+            ailment_chance: 0,
         };
         let hash_with = |mutate: &dyn Fn(&mut Projectile)| {
             let mut world = World::new(27_18, &content);
@@ -3405,6 +3559,11 @@ mod tests {
             base,
             hash_with(&|p| p.knockback_cu = 9),
             "projectile knockback must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|p| p.ailment_chance = 10000),
+            "projectile ailment_chance must change the hash (#88)"
         );
     }
 
@@ -3562,6 +3721,33 @@ mod tests {
             base,
             hash_with(&|c| c.item_quantity += 1),
             "item_quantity must change the hash"
+        );
+        // Ailments (#88): spawn-set for monsters from rolled affixes, so each must
+        // be in the hash. Mutation: drop any write from views.rs and one fails.
+        assert_ne!(
+            base,
+            hash_with(&|c| c.ailment_chance += 1),
+            "ailment_chance must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.crits_no_ailment = !c.crits_no_ailment),
+            "crits_no_ailment must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.shock_max += 1),
+            "shock_max must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.chill_max += 1),
+            "chill_max must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.ailment_duration += 1),
+            "ailment_duration must change the hash"
         );
     }
 
@@ -4109,6 +4295,596 @@ mod tests {
         let c = e.combat.as_ref().unwrap();
         assert_eq!(c.speed_per_tick, base_speed, "speed restores on expiry");
         assert_eq!(c.use_ticks, base_use, "swing time restores on expiry");
+    }
+
+    #[test]
+    fn ailment_proc_applies_by_damage_type_and_burns() {
+        // #88: a fire hit with 100% ailment chance ignites the target; the ignite
+        // then burns it (the dot path). Mutation: drop the proc block in strike →
+        // no Ailment lands; drop the Ignite arm in effects_tick → no burn.
+        use crate::entity::{ActiveEffect, AilmentKind, DMG_FIRE};
+        let content = content();
+        let mut world = World::new(7_77, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "A".into(),
+                program,
+            }],
+        });
+        let attacker_slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let attacker_net = world.zone.get(attacker_slot).unwrap().net_id;
+        // Force a guaranteed proc independent of crit.
+        world
+            .zone
+            .get_mut(attacker_slot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .ailment_chance = 10000;
+        let (mon_slot, _) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.net_id))
+            .unwrap();
+        let mut damage = [0i64; DMG_COUNT];
+        damage[DMG_FIRE] = 20; // small: won't kill (monsters have >=38 life)
+        let spec = StrikeSpec {
+            attacker_slot: Some(attacker_slot),
+            attacker_net,
+            attacker_name: "A".into(),
+            attacker_is_char: true,
+            is_spell: true, // skip the accuracy roll → guaranteed hit
+            is_dot: false,
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+        };
+        let now = world.tick;
+        let (mut events, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        world.strike(spec, mon_slot, now, &mut events, &mut dead, &mut loot);
+        // The fire hit ignited the monster.
+        let ignite_mag = world
+            .zone
+            .get(mon_slot)
+            .unwrap()
+            .ailment(AilmentKind::Ignite);
+        assert!(ignite_mag > 0, "a fire hit at 100% ailment chance ignites");
+        assert!(
+            world
+                .zone
+                .get(mon_slot)
+                .unwrap()
+                .effects
+                .iter()
+                .any(|e| matches!(
+                    e,
+                    ActiveEffect::Ailment {
+                        kind: AilmentKind::Ignite,
+                        ..
+                    }
+                ))
+        );
+        // The ignite burns: drive a second-edge effects tick and life drops.
+        let life_before = world
+            .zone
+            .get(mon_slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .life;
+        world.tick = world.tick - (world.tick % 10) + 10; // land on a second edge
+        let mut ev = Vec::new();
+        world.effects_tick(&mut ev);
+        let life_after = world
+            .zone
+            .get(mon_slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .life;
+        assert!(
+            life_after < life_before,
+            "the ignite burns the target each second"
+        );
+    }
+
+    // ---- #88 ailment test helpers ----
+    /// A world with a spawned character (attacker) and a live monster (target).
+    fn ailment_world() -> (World, usize, u32, usize) {
+        let content = content();
+        let mut world = World::new(7_77, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "A".into(),
+                program,
+            }],
+        });
+        let attacker_slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let attacker_net = world.zone.get(attacker_slot).unwrap().net_id;
+        let mon_slot = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, _)| s)
+            .unwrap();
+        (world, attacker_slot, attacker_net, mon_slot)
+    }
+
+    fn typed_spec(
+        attacker_slot: usize,
+        attacker_net: u32,
+        dtype: usize,
+        amount: i64,
+    ) -> StrikeSpec {
+        let mut damage = [0i64; DMG_COUNT];
+        damage[dtype] = amount;
+        StrikeSpec {
+            attacker_slot: Some(attacker_slot),
+            attacker_net,
+            attacker_name: "A".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: false,
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+        }
+    }
+
+    fn beef_up_target(world: &mut World, slot: usize) {
+        let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+        c.life_max = 1_000_000;
+        c.life = 1_000_000;
+    }
+
+    #[test]
+    fn shock_amplifies_incoming_damage() {
+        use crate::entity::{ActiveEffect, AilmentKind, DMG_FIRE};
+        let (mut world, aslot, anet, mslot) = ailment_world();
+        beef_up_target(&mut world, mslot);
+        let now = world.tick;
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        // Use is_dot specs: no variance/crit/proc → a clean, deterministic compare.
+        let mk = || {
+            let mut s = typed_spec(aslot, anet, DMG_FIRE, 100);
+            s.is_dot = true;
+            s
+        };
+        let before = world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life;
+        world.strike(mk(), mslot, now, &mut ev, &mut dead, &mut loot);
+        let plain = before - world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life;
+        // Shock the target (+50% damage taken), then the identical hit lands harder.
+        world
+            .zone
+            .get_mut(mslot)
+            .unwrap()
+            .effects
+            .push(ActiveEffect::Ailment {
+                kind: AilmentKind::Shock,
+                magnitude: 5000,
+                ticks_left: 40,
+                source: anet,
+            });
+        let before2 = world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life;
+        world.strike(mk(), mslot, now, &mut ev, &mut dead, &mut loot);
+        let shocked = before2 - world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life;
+        assert_eq!(
+            shocked,
+            plain * 15000 / 10000,
+            "shock raises the hit by its magnitude"
+        );
+    }
+
+    #[test]
+    fn crit_inflicts_ailment_unless_denied_then_chance_still_rolls() {
+        use crate::entity::{AilmentKind, DMG_FIRE};
+        let (mut world, aslot, anet, mslot) = ailment_world();
+        beef_up_target(&mut world, mslot);
+        let now = world.tick;
+        let strike_n = |world: &mut World, n: usize| {
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..n {
+                let mut spec = typed_spec(aslot, anet, DMG_FIRE, 60);
+                spec.crit_bp = 10000; // ~95% per hit → a crit lands within a few
+                world.strike(spec, mslot, now, &mut ev, &mut dead, &mut loot);
+            }
+        };
+        let ignited =
+            |world: &World| world.zone.get(mslot).unwrap().ailment(AilmentKind::Ignite) > 0;
+        let clear = |world: &mut World| world.zone.get_mut(mslot).unwrap().effects.clear();
+
+        // Crits inflict (no ailment_chance needed).
+        {
+            let c = world.zone.get_mut(aslot).unwrap().combat.as_mut().unwrap();
+            c.ailment_chance = 0;
+            c.crits_no_ailment = false;
+        }
+        strike_n(&mut world, 8);
+        assert!(ignited(&world), "crits inflict ailments");
+
+        // "Crits cannot cause ailments" + no chance → crits never inflict.
+        clear(&mut world);
+        world
+            .zone
+            .get_mut(aslot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .crits_no_ailment = true;
+        strike_n(&mut world, 8);
+        assert!(!ignited(&world), "the mod denies the crit-ailment");
+
+        // ...but the ailment-chance roll STILL applies under the mod (decision (a)).
+        clear(&mut world);
+        world
+            .zone
+            .get_mut(aslot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .ailment_chance = 10000;
+        strike_n(&mut world, 1);
+        assert!(
+            ignited(&world),
+            "ailment chance still rolls on a crit under the mod"
+        );
+    }
+
+    #[test]
+    fn shock_magnitude_clamps_to_the_cap_and_strongest_stacks() {
+        use crate::entity::{AilmentKind, DMG_LIGHTNING};
+        let (mut world, aslot, anet, mslot) = ailment_world();
+        // A small-life target + a big lightning hit drives the ramp past the cap.
+        let cap = world
+            .zone
+            .get(aslot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .shock_max;
+        world
+            .zone
+            .get_mut(aslot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .ailment_chance = 10000;
+        let now = world.tick;
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        let mlife = world
+            .zone
+            .get(mslot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .life_max;
+        // Lightning ~= 50% of max life → well past the 15% ramp → clamps to cap.
+        world.strike(
+            typed_spec(aslot, anet, DMG_LIGHTNING, mlife / 2),
+            mslot,
+            now,
+            &mut ev,
+            &mut dead,
+            &mut loot,
+        );
+        let after_big = world.zone.get(mslot).unwrap().ailment(AilmentKind::Shock);
+        assert_eq!(after_big, cap, "shock clamps to the cap");
+        // A weaker follow-up must NOT downgrade the stack (strongest wins).
+        world.strike(
+            typed_spec(aslot, anet, DMG_LIGHTNING, mlife / 100),
+            mslot,
+            now,
+            &mut ev,
+            &mut dead,
+            &mut loot,
+        );
+        assert_eq!(
+            world.zone.get(mslot).unwrap().ailment(AilmentKind::Shock),
+            cap,
+            "a weaker reapply keeps the strongest magnitude"
+        );
+        // Exactly one Shock entry (no duplicate stacking).
+        let shocks = world
+            .zone
+            .get(mslot)
+            .unwrap()
+            .effects
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    crate::entity::ActiveEffect::Ailment {
+                        kind: AilmentKind::Shock,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(shocks, 1, "one Shock entry, strongest-replaces");
+    }
+
+    #[test]
+    fn ailment_credit_follows_the_strongest() {
+        // #88: the strongest ailment of a kind OWNS it — magnitude, duration, AND
+        // source (kill credit / leech). A WEAKER reapply must not steal the source
+        // or refresh the clock of a bigger ailment it didn't deal; a stronger-or-
+        // equal one takes over fully. Mutation: move the source/ticks_left writes
+        // outside the `magnitude >= *m` guard in apply_ailment → the weak-reapply
+        // assert fails.
+        use crate::entity::{ActiveEffect, AilmentKind};
+        let (mut world, _aslot, _anet, mslot) = ailment_world();
+        let read = |world: &World| -> (i64, u32, u32) {
+            world
+                .zone
+                .get(mslot)
+                .unwrap()
+                .effects
+                .iter()
+                .find_map(|e| match e {
+                    ActiveEffect::Ailment {
+                        kind: AilmentKind::Ignite,
+                        magnitude,
+                        ticks_left,
+                        source,
+                    } => Some((*magnitude, *ticks_left, *source)),
+                    _ => None,
+                })
+                .expect("an ignite is present")
+        };
+        let set_ticks = |world: &mut World, n: u32| {
+            for e in world.zone.get_mut(mslot).unwrap().effects.iter_mut() {
+                if let ActiveEffect::Ailment {
+                    kind: AilmentKind::Ignite,
+                    ticks_left,
+                    ..
+                } = e
+                {
+                    *ticks_left = n;
+                }
+            }
+        };
+        let (a, b) = (11u32, 22u32);
+        // A lands a strong ignite; burn it down partway so a clock refresh shows.
+        world.apply_ailment(mslot, AilmentKind::Ignite, 100, 40, a);
+        assert_eq!(read(&world), (100, 40, a));
+        set_ticks(&mut world, 5);
+        // B's weaker reapply changes nothing — no credit theft, no clock refresh.
+        world.apply_ailment(mslot, AilmentKind::Ignite, 1, 40, b);
+        assert_eq!(
+            read(&world),
+            (100, 5, a),
+            "a weaker reapply leaves magnitude, clock, and source alone"
+        );
+        // B's stronger reapply takes over magnitude, duration, AND source.
+        world.apply_ailment(mslot, AilmentKind::Ignite, 200, 40, b);
+        assert_eq!(
+            read(&world),
+            (200, 40, b),
+            "a stronger reapply owns the ailment"
+        );
+    }
+
+    #[test]
+    fn chill_slows_movement() {
+        // #88: a chilled entity covers less ground per tick. Mutation: drop the
+        // chill scale in `movement` and d_chilled == d_plain → this fails.
+        use crate::entity::{ActiveEffect, AilmentKind};
+        use crate::fixed::{Fx, FxV2};
+        let (mut world, _aslot, _anet, mslot) = ailment_world();
+        let start = world.zone.get(mslot).unwrap().pos;
+        let far = FxV2::new(start.x + Fx::from_int(50), start.y);
+        let setup = |world: &mut World| {
+            let e = world.zone.get_mut(mslot).unwrap();
+            e.pos = start;
+            e.intents.attack = None; // don't stop-to-fight
+            e.intents.move_to = Some(far);
+            e.combat.as_mut().unwrap().busy_until = 0;
+        };
+        setup(&mut world);
+        world.movement();
+        let d_plain = start.dist(world.zone.get(mslot).unwrap().pos).raw();
+        // Same move, now chilled 50% → covers less ground.
+        setup(&mut world);
+        world
+            .zone
+            .get_mut(mslot)
+            .unwrap()
+            .effects
+            .push(ActiveEffect::Ailment {
+                kind: AilmentKind::Chill,
+                magnitude: 5000,
+                ticks_left: 40,
+                source: 0,
+            });
+        world.movement();
+        let d_chilled = start.dist(world.zone.get(mslot).unwrap().pos).raw();
+        assert!(
+            d_chilled < d_plain,
+            "chill slows movement ({d_chilled} < {d_plain})"
+        );
+    }
+
+    #[test]
+    fn chill_slows_actions() {
+        // #88: a chilled actor's action takes LONGER to complete — start_uses
+        // stretches busy_ticks by `* 10000 / (10000 - chill)`. Two identical-seed
+        // worlds cast the same spell; the chilled caster's busy window is exactly
+        // doubled at 50% chill. Mutation: drop the chill_div in start_uses and the
+        // two windows match → `assert_eq!` fails. (Separate read-site from the
+        // movement slow that `chill_slows_movement` covers.)
+        use crate::entity::{ActiveEffect, AilmentKind};
+        use crate::fixed::{Fx, FxV2};
+        let busy_window = |chill_bp: i64| -> u64 {
+            let mut content = content();
+            // A Target-shaped spell that commits against an entity (mirrors the
+            // BuffDef-chill test's setup, minus the debuff — we chill the CASTER).
+            let mut sp = content
+                .gems
+                .iter()
+                .find(|g| g.id == "ember_bolt")
+                .unwrap()
+                .clone();
+            sp.id = "zz_test_cast".into();
+            sp.shape = idlin_content::SkillShape::Target;
+            content.gems.push(sp);
+            let mut world = World::new(909, &content);
+            let program = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "Caster".into(),
+                    program,
+                }],
+            });
+            let char_slot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .unwrap();
+            let (monster_net, monster_pos) = world
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.is_some() && e.alive())
+                .map(|(_, e)| (e.net_id, e.pos))
+                .unwrap();
+            let node = content
+                .tree
+                .iter()
+                .position(|n| n.kind == idlin_content::NodeKind::Socket)
+                .unwrap() as u32;
+            {
+                let e = world.zone.get_mut(char_slot).unwrap();
+                e.pos = FxV2::new(monster_pos.x + Fx::from_raw(0x4000), monster_pos.y);
+                e.character.as_mut().unwrap().sockets.insert(
+                    node,
+                    SocketedGem {
+                        gem: instance(&content, "zz_test_cast", 1),
+                        cooldown_left: 0,
+                        supports: Vec::new(),
+                    },
+                );
+                let c = e.combat.as_mut().unwrap();
+                c.mana = 100;
+                c.busy_until = 0;
+                e.intents.attack = Some(AttackIntent {
+                    target: SkillTarget::Entity(monster_net),
+                    skill: Some(node),
+                });
+                if chill_bp > 0 {
+                    e.effects.push(ActiveEffect::Ailment {
+                        kind: AilmentKind::Chill,
+                        magnitude: chill_bp,
+                        ticks_left: 40,
+                        source: 0,
+                    });
+                }
+            }
+            let now = world.tick;
+            let mut ev = Vec::new();
+            world.attacks(&mut ev);
+            let busy = world
+                .zone
+                .get(char_slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .busy_until;
+            assert!(
+                busy > now,
+                "the caster committed an action (busy {busy} > {now})"
+            );
+            busy - now
+        };
+        let plain = busy_window(0);
+        let chilled = busy_window(5000); // 50% chill
+        assert_eq!(
+            chilled,
+            plain * 2,
+            "50% chill doubles the action window ({chilled} vs {plain})"
+        );
+    }
+
+    #[test]
+    fn ignite_magnitude_is_pre_resist() {
+        // #88: Ignite is a fire DoT that re-resists when it burns (effects_tick →
+        // strike), so its magnitude basis is the PRE-resist hit (`dom_raw`) — the
+        // single burn-time resist then nets the felt total to ~90% of the fire hit
+        // (the locked design), instead of resisting twice. Proof: the SAME fire hit
+        // on two identical-seed worlds — one target at 0% fire resist, one at 50% —
+        // yields the SAME ignite magnitude (resist applies once, later, on burn).
+        // Mutation: revert the basis to `dom_typed` (post-resist) and the resistant
+        // target's magnitude halves → `assert_eq!` fails.
+        use crate::entity::{AilmentKind, DMG_FIRE, RES_FIRE};
+        let mag = |fire_res_bp: i64| -> i64 {
+            let (mut world, aslot, anet, mslot) = ailment_world();
+            // Big life: the 400 hit is ~0% of max → no kill and no stun/knockback
+            // ramp, so the two worlds draw rng in lockstep (only resist differs).
+            beef_up_target(&mut world, mslot);
+            world
+                .zone
+                .get_mut(aslot)
+                .unwrap()
+                .combat
+                .as_mut()
+                .unwrap()
+                .ailment_chance = 10000;
+            world
+                .zone
+                .get_mut(mslot)
+                .unwrap()
+                .combat
+                .as_mut()
+                .unwrap()
+                .resists[RES_FIRE] = fire_res_bp;
+            let now = world.tick;
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            world.strike(
+                typed_spec(aslot, anet, DMG_FIRE, 400),
+                mslot,
+                now,
+                &mut ev,
+                &mut dead,
+                &mut loot,
+            );
+            world.zone.get(mslot).unwrap().ailment(AilmentKind::Ignite)
+        };
+        let m_unresisted = mag(0);
+        let m_resisted = mag(5000); // 50% fire resist
+        assert!(m_unresisted > 0, "the fire hit ignites");
+        assert_eq!(
+            m_unresisted, m_resisted,
+            "ignite magnitude is pre-resist: resistance applies once, on burn"
+        );
     }
 
     #[test]
@@ -5694,6 +6470,7 @@ mod tests {
             debuff: None,
             stagger: 0,
             knockback_cu: 0,
+            ailment_chance: 0,
         }
     }
 

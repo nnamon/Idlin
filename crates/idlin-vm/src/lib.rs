@@ -111,6 +111,10 @@ pub const SYS_ITEM_SLOT: i32 = 34;
 /// slot empty (the deliberate counterpart to `equip`'s swap). Unlike a swap,
 /// this REFUSES (-1) when the bag is full rather than dropping the item.
 pub const SYS_UNEQUIP: i32 = 35;
+/// #88: the active ailments on an entity (by net id) as a bitmask — bit0 Ignite,
+/// bit1 Shock, bit2 Chill; 0 if the entity is unknown or unafflicted. Lets a bot
+/// read self/target ailment state (and is the read #109's vs-ailing condition uses).
+pub const SYS_READ_AILMENTS: i32 = 36;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -661,6 +665,7 @@ mod tests {
         assert_eq!(SYS_EQUIP, 33);
         assert_eq!(SYS_ITEM_SLOT, 34);
         assert_eq!(SYS_UNEQUIP, 35);
+        assert_eq!(SYS_READ_AILMENTS, 36);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);

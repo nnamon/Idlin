@@ -65,9 +65,25 @@ pub enum Stat {
     Poise,
     /// Attacker: flat knockback in centi-units added to every hit.
     Knockback,
+    // -- ailments (#88): attacker-side proc + magnitude levers --
+    /// Attacker: basis-point chance to inflict an ailment on a hit. Crits inflict
+    /// regardless (unless CritAilmentDenied); this roll is independent of crit.
+    AilmentChance,
+    /// Attacker flag (Added sum > 0 ⇒ true): critical strikes cannot cause
+    /// ailments — drops the guaranteed crit-inflict; the chance roll still applies.
+    CritAilmentDenied,
+    /// Attacker: basis-point cap on the Shock magnitude you inflict (the default
+    /// cap is raised by the Added layer). Shock = % increased damage the victim takes.
+    ShockMax,
+    /// Attacker: basis-point cap on the Chill magnitude you inflict (the default
+    /// cap is raised by the Added layer). Chill = % the victim's actions are slowed.
+    ChillMax,
+    /// Attacker: basis points scaling the duration of ailments you inflict (Ignite
+    /// spreads a fixed total over the duration, so a shorter duration burns faster).
+    AilmentDuration,
 }
 
-pub const STAT_COUNT: usize = 33;
+pub const STAT_COUNT: usize = 38;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -104,6 +120,11 @@ impl Stat {
         Stat::Stagger,
         Stat::Poise,
         Stat::Knockback,
+        Stat::AilmentChance,
+        Stat::CritAilmentDenied,
+        Stat::ShockMax,
+        Stat::ChillMax,
+        Stat::AilmentDuration,
     ];
 
     pub fn idx(self) -> usize {
@@ -315,6 +336,36 @@ impl Stat {
                 "Knockback",
                 "Flat knockback (centi-units) added to your hits.",
                 AddedUnit::CentiUnits,
+            ),
+            Stat::AilmentChance => (
+                "ailment_chance",
+                "Ailment Chance",
+                "Chance for your hits to inflict an ailment (ignite/shock/chill); crits inflict regardless.",
+                AddedUnit::BasisPoints,
+            ),
+            Stat::CritAilmentDenied => (
+                "crit_ailment_denied",
+                "Critical Strikes Cannot Cause Ailments",
+                "Flag: your critical strikes no longer auto-inflict ailments (the ailment-chance roll still applies).",
+                AddedUnit::Flat,
+            ),
+            Stat::ShockMax => (
+                "shock_max",
+                "Maximum Shock Effect",
+                "Raises the cap on the increased-damage-taken your Shock inflicts.",
+                AddedUnit::BasisPoints,
+            ),
+            Stat::ChillMax => (
+                "chill_max",
+                "Maximum Chill Effect",
+                "Raises the cap on the action slow your Chill inflicts.",
+                AddedUnit::BasisPoints,
+            ),
+            Stat::AilmentDuration => (
+                "ailment_duration",
+                "Ailment Duration",
+                "Scales how long your ailments last (Ignite spreads a fixed total, so shorter burns faster).",
+                AddedUnit::BasisPoints,
             ),
         };
         StatDoc {

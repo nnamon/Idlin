@@ -15,7 +15,9 @@ use ts_rs::TS;
 //     new RolledModView, for the #87 item tooltip.
 // 38: CharacterSheet gains stat_sources (per-stat source breakdown, #87) + the
 //     new StatSourceView.
-pub const PROTO_VERSION: u32 = 38;
+// 39: EntityState/EntityPatch gain an `ailments` bitmask (ignite/shock/chill) for
+//     the overhead nameplate (#88 first-class ailments).
+pub const PROTO_VERSION: u32 = 39;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -64,6 +66,9 @@ pub struct EntityState {
     pub dead: bool,
     pub kills: u32,
     pub items: u32,
+    /// Active-ailment bitmask for the overhead nameplate (#88): bit0 Ignite,
+    /// bit1 Shock, bit2 Chill. 0 = unafflicted.
+    pub ailments: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -90,6 +95,8 @@ pub struct EntityPatch {
     /// Armor visual part keys; patched so upgrades show up mid-stream.
     pub gear: Vec<String>,
     pub gear_rarity: Vec<u8>,
+    /// Ailment bitmask (#88), patched so the nameplate tracks proc/expire.
+    pub ailments: u8,
 }
 
 /// A use BEGAN (any attack, skill, or cast): the windup the client

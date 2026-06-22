@@ -58,7 +58,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v8 (#86 unify): `Zone::by_net` became a `#[serde(skip)]` derived index
 /// (rebuilt from `slots` on resume rather than trusted from the snapshot), so it
 /// left the postcard byte stream — a v7 snapshot's `Zone` would mis-decode.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 8;
+/// v9 (#88 ailments): the `Stat` enum grew (discriminants in serialized `Grant`s),
+/// `ActiveEffect` gained an `Ailment` variant, and `CombatStats` gained 5 fields —
+/// all change the postcard layout, so a v8 snapshot would mis-decode; refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 9;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
