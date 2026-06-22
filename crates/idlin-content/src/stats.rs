@@ -401,6 +401,10 @@ pub enum Condition {
     AboveLifePct(i64),
     /// STRIKE-TIME (#109). While the attacker is at full life (life == max).
     FullLife,
+    /// STRIKE-TIME (#109). For this many ticks after the attacker's last kill —
+    /// a momentum window (e.g. "+X% damage for 4s after a kill"). The window is a
+    /// tick count (>= 0); `ticks_since_kill` is `now - last_kill_tick`, or "never".
+    RecentlyKilled(i64),
 }
 
 impl Condition {
@@ -411,7 +415,10 @@ impl Condition {
     pub fn is_strike_time(&self) -> bool {
         match self {
             Condition::WieldingWeaponClass(_) => false,
-            Condition::BelowLifePct(_) | Condition::AboveLifePct(_) | Condition::FullLife => true,
+            Condition::BelowLifePct(_)
+            | Condition::AboveLifePct(_)
+            | Condition::FullLife
+            | Condition::RecentlyKilled(_) => true,
         }
     }
 }
@@ -427,6 +434,10 @@ pub struct EvalContext {
     /// (0..10000). Only meaningful when folding strike-time conditions; the cached
     /// derive ignores it (it skips strike-time conditions entirely).
     pub life_pct: i64,
+    /// STRIKE-TIME (#109): ticks since the attacker's last kill (`now -
+    /// last_kill_tick`), or a large sentinel when it has never killed. Read by
+    /// `RecentlyKilled`.
+    pub ticks_since_kill: i64,
     /// STRIKE-TIME PHASE (#109): when `false` (the cached derive) the fold SKIPS
     /// strike-time conditions — they vary mid-combat and can't bake into the cached
     /// sheet, so the sim folds them per-strike with this set `true`.
@@ -441,6 +452,8 @@ impl Default for EvalContext {
         EvalContext {
             weapon_class: None,
             life_pct: 10000,
+            // "never killed": no RecentlyKilled window can hold by default.
+            ticks_since_kill: i64::MAX,
             include_strike: false,
         }
     }
@@ -462,6 +475,9 @@ impl Condition {
             Condition::BelowLifePct(bp) => ctx.life_pct < *bp,
             Condition::AboveLifePct(bp) => ctx.life_pct > *bp,
             Condition::FullLife => ctx.life_pct >= 10000,
+            // Within the post-kill window (inclusive). Sentinel ticks_since_kill
+            // (never killed) exceeds any window, so it reads false.
+            Condition::RecentlyKilled(window) => ctx.ticks_since_kill <= *window,
         }
     }
 }
@@ -541,6 +557,28 @@ mod tests {
         assert_eq!(b, Condition::BelowLifePct(3500));
         let f: Condition = ron::from_str("full_life").unwrap();
         assert_eq!(f, Condition::FullLife);
+        let k: Condition = ron::from_str("recently_killed(40)").unwrap();
+        assert_eq!(k, Condition::RecentlyKilled(40));
+    }
+
+    #[test]
+    fn recently_killed_evaluates_against_ticks_since_kill() {
+        // #109: RecentlyKilled holds for `window` ticks (inclusive) after a kill;
+        // the "never killed" sentinel (i64::MAX) exceeds any window. Mutation: flip
+        // `<=` to `<` or `>` in holds → the boundary/sentinel cases fail.
+        let since = |ticks_since_kill: i64| EvalContext {
+            ticks_since_kill,
+            ..Default::default()
+        };
+        assert!(Condition::RecentlyKilled(40).holds(&since(0))); // just killed
+        assert!(Condition::RecentlyKilled(40).holds(&since(40))); // inclusive edge
+        assert!(!Condition::RecentlyKilled(40).holds(&since(41))); // window lapsed
+        assert!(!Condition::RecentlyKilled(40).holds(&since(i64::MAX))); // never killed
+        // The default context reads as "never killed".
+        assert!(!Condition::RecentlyKilled(40).holds(&EvalContext::default()));
+        // Never-killed stays inert even at the MAX valid window (36_000, the loader
+        // cap) — the sentinel sits far above it, so no collision (#109 critic).
+        assert!(!Condition::RecentlyKilled(36_000).holds(&since(i64::MAX)));
     }
 
     #[test]
@@ -569,5 +607,6 @@ mod tests {
         assert!(Condition::BelowLifePct(3500).is_strike_time());
         assert!(Condition::AboveLifePct(7500).is_strike_time());
         assert!(Condition::FullLife.is_strike_time());
+        assert!(Condition::RecentlyKilled(40).is_strike_time());
     }
 }

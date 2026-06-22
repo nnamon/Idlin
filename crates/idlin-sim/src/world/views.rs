@@ -641,6 +641,10 @@ impl World {
                     h.write_i64(bp);
                 }
                 Some(crate::stats::Condition::FullLife) => h.write_u8(4),
+                Some(crate::stats::Condition::RecentlyKilled(window)) => {
+                    h.write_u8(5);
+                    h.write_i64(window);
+                }
             }
         };
         for (slot, e) in self.zone.iter() {
@@ -685,6 +689,7 @@ impl World {
                 h.write_i64(c.cast_speed);
                 h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
+                h.write_u64(c.last_kill_tick);
                 h.write_i32(c.radius.raw());
                 // The remaining combat fields are derived for characters (refresh
                 // recomputes them from hashed inputs) but spawn-set for monsters

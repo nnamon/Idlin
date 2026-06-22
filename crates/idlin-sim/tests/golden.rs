@@ -30,9 +30,14 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// 2000-tick grind's rolls/outcomes move. The strike-time mechanism itself is inert
 /// until a character actually wields such an affix below the threshold; the
 /// determinism trio still agrees, confirming no leak.
-/// (Prior: 0x5662 — #86 state_hash widening; 0x8541 — earlier hash-completeness;
-/// Phase D 0x5755 — ten new affix files; Phase A 0x0A71 — effects-list schema; etc.)
-const GOLDEN_HASH: u64 = 0xC190_1754_45A1_A5DE;
+/// Re-pinned for #109 RecentlyKilled (the deferred self strike-time condition):
+/// (1) `CombatStats` gained `last_kill_tick: u64`, folded into `state_hash`; AND
+/// (2) the new `of_the_hunt` affix ("+phys for 4s after a kill") shifts content_hash
+/// (→0x7AD5_C0B2_7F9F_A5C3) and the weapon-suffix pool. Inert until a character
+/// wields it and lands a kill; the determinism trio still agrees.
+/// (Prior: 0xC190 — #109 B2a; 0x5662 — #86 state_hash widening; 0x8541 — earlier
+/// hash-completeness; Phase D 0x5755 — ten new affix files; Phase A 0x0A71; etc.)
+const GOLDEN_HASH: u64 = 0x4BCC_A9D3_F91F_A6AE;
 
 #[test]
 fn golden_replay() {

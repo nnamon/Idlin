@@ -61,7 +61,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v9 (#109): `CombatStats` gained `has_strike_conditions: bool` (the strike-time
 /// conditional cache), adding a serialized field to every entity's combat block —
 /// a v8 snapshot's `CombatStats` would mis-decode; refuse it cleanly.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 9;
+/// v10 (#109 RecentlyKilled): `CombatStats` gained `last_kill_tick: u64` (the
+/// post-kill window) — another serialized combat field; a v9 snapshot mis-decodes.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 10;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.

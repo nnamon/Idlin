@@ -112,6 +112,10 @@ pub struct CombatStats {
     pub item_quantity: i64,
     /// Last tick this entity dealt or took damage (drives out-of-combat regen).
     pub last_combat_tick: u64,
+    /// Tick of this entity's most recent kill (#109 RecentlyKilled). 0 = never
+    /// killed (the sentinel; a kill can't land at tick 0). Drives the post-kill
+    /// momentum window for strike-time conditional affixes.
+    pub last_kill_tick: u64,
     /// Derived cache (#109): does any of this entity's power sources carry a
     /// STRIKE-TIME condition (life %, …)? Set at derive (those grants are NOT
     /// folded into the cached fields here — they vary mid-combat); when true the

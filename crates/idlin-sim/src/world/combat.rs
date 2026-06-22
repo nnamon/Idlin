@@ -2805,6 +2805,101 @@ mod tests {
     }
 
     #[test]
+    fn of_the_hunt_folds_within_the_post_kill_window() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        // #109 RecentlyKilled: of_the_hunt grants +phys for 40 ticks AFTER A KILL.
+        // Inert before any kill (sentinel) and after the window lapses; folds in the
+        // window. Drives the kill stamp through the REAL path (grant_xp credit_kill).
+        // Mutations: drop the last_kill_tick stamp in grant_xp → no bonus after kill;
+        // flip `<=` in holds / drop the effective re-derive → the window check fails.
+        let content = content();
+        let mut world = World::new(0x4117, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Hunter".into(),
+                program: halt,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        let hunt = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_hunt")
+            .unwrap() as u32;
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment = Default::default();
+            ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                base_idx: cleaver,
+                rarity: Rarity::Magic,
+                item_level: 14,
+                affixes: vec![RolledAffix {
+                    affix_idx: hunt,
+                    values: vec![5000], // +50% increased phys for 4s after a kill
+                    tier: 0,
+                }],
+                name: String::new(),
+                charges: 0,
+            });
+        }
+        world.refresh_derived_stats(slot);
+        let cached = {
+            let c = world.zone.get(slot).unwrap().combat.as_ref().unwrap();
+            assert!(c.has_strike_conditions, "a strike-time affix sets the flag");
+            c.damage[0]
+        };
+        // Before any kill: the sentinel reads as "never killed" → inert.
+        assert_eq!(
+            world.effective_offense(slot).unwrap().damage[0],
+            cached,
+            "before a kill: of_the_hunt is inert"
+        );
+        // Land a kill via the real credit path (stamps last_kill_tick = now).
+        let mut ev = Vec::new();
+        world.grant_xp(slot, 0, true, &mut ev);
+        let just_killed = world.effective_offense(slot).unwrap().damage[0];
+        assert!(
+            just_killed > cached,
+            "within the window: of_the_hunt adds phys ({just_killed} > {cached})"
+        );
+        // Advance past the 40-tick window: the bonus falls off.
+        world.tick += 41;
+        assert_eq!(
+            world.effective_offense(slot).unwrap().damage[0],
+            cached,
+            "after the window lapses: of_the_hunt is inert again"
+        );
+
+        // Wrap guard (#109 critic): an absurd elapsed (> i64::MAX ticks since the
+        // kill) must SATURATE to "long ago", never wrap negative (which would make
+        // any window re-activate). Mutation: drop `.min(i64::MAX as u64)` in
+        // character_derived_stats → the u64→i64 cast goes negative → of_the_hunt
+        // re-activates and this assert fails.
+        world.tick = (i64::MAX as u64).wrapping_add(5);
+        assert_eq!(
+            world.effective_offense(slot).unwrap().damage[0],
+            cached,
+            "huge elapsed saturates (inert), does not wrap into the window"
+        );
+    }
+
+    #[test]
     fn of_desperation_strike_time_conditional_folds_below_life() {
         use crate::entity::{Item, Rarity, RolledAffix, SocketedGem};
         use idlin_content::GearSlot;
@@ -3838,6 +3933,11 @@ mod tests {
             base,
             hash_with(&|c| c.has_strike_conditions = !c.has_strike_conditions),
             "has_strike_conditions must change the hash (#109)"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.last_kill_tick += 1),
+            "last_kill_tick must change the hash (#109 RecentlyKilled)"
         );
     }
 

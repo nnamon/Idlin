@@ -112,9 +112,20 @@ impl World {
         credit_kill: bool,
         events: &mut Vec<SimEvent>,
     ) {
+        let now = self.tick;
         let Some(e) = self.zone.get_mut(slot) else {
             return;
         };
+        // Stamp the kill tick on the combat block (#109 RecentlyKilled) before
+        // borrowing the character — opens the post-kill momentum window. CHARACTERS
+        // only: RecentlyKilled is read solely through the character effective sheet
+        // (effective_offense), so a monster killer keeps a clean 0 (no dead state).
+        if credit_kill
+            && e.character.is_some()
+            && let Some(c) = e.combat.as_mut()
+        {
+            c.last_kill_tick = now;
+        }
         let net_id = e.net_id;
         let Some(ch) = e.character.as_mut() else {
             return;
@@ -289,9 +300,30 @@ impl World {
         let weapon_class = ch.equipment[GearSlot::Weapon.idx()]
             .as_ref()
             .and_then(|it| self.content.items[it.base_idx as usize].weapon_class);
+        // Ticks since this entity last killed (#109 RecentlyKilled). last_kill_tick
+        // 0 is the "never killed" sentinel → i64::MAX (no window holds); a real kill
+        // can't land at tick 0 (combat needs a windup first). Otherwise now - then.
+        let ticks_since_kill = e
+            .combat
+            .as_ref()
+            .map(|c| {
+                if c.last_kill_tick == 0 {
+                    i64::MAX
+                } else {
+                    // Saturate the u64→i64 cast: an absurd elapsed (> i64::MAX ticks,
+                    // ~29Gyr — never in practice) must read as "long ago", never wrap
+                    // negative (which would re-activate any window). Valid windows are
+                    // capped far below i64::MAX (loader), so this can't false-positive.
+                    self.tick
+                        .saturating_sub(c.last_kill_tick)
+                        .min(i64::MAX as u64) as i64
+                }
+            })
+            .unwrap_or(i64::MAX);
         let ctx = crate::stats::EvalContext {
             weapon_class,
             life_pct,
+            ticks_since_kill,
             include_strike,
         };
         for &node_idx in &ch.allocated {
