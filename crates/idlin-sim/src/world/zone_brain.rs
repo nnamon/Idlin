@@ -30,8 +30,8 @@ use idlin_vm::{
 
 /// QueryCharacters record (10 words): net, kills, level, x, y, weapon_class,
 /// life_pct, dead, build_len, archetype. Stride single-owned in `idlin_vm::abi`
-/// (#50) — `CHAR_RECORD_SIZE` bytes. (The matching `.bot` read still hardcodes the
-/// stride; a generated include is the part-2 follow-up.)
+/// (#50) — `CHAR_RECORD_SIZE` bytes. The matching `.bot` read consumes the same
+/// owner via the generated `content/lib/gen_abi.bot` include.
 use idlin_vm::abi::{CHAR_RECORD_SIZE, EVENT_RECORD_SIZE};
 
 impl World {

@@ -130,9 +130,9 @@ pub const SYS_SPAWN_ELITE: i32 = 108;
 /// describe ITS memory layout. All values are BYTES (VM addresses are byte offsets;
 /// each word is 4 bytes).
 ///
-/// PART 2 (a planned follow-up, NOT yet done): a `gen`-emitted `.bot` include will
-/// expose these to the bot side, so the `.bot` reads — which still carry magic
-/// numbers today — consume the same owner.
+/// The bot side consumes the SAME owner: `gen` emits these to
+/// `content/lib/gen_abi.bot`, which the `.bot` files include (the grinder template
+/// prepends it) — so a stride/offset can't drift between the engine and the brains.
 pub mod abi {
     /// `ReadEntities` record stride (6 words): net_id, kind, x, y, life, hp_pct.
     pub const ENTITY_RECORD_SIZE: u16 = 24;
@@ -730,9 +730,10 @@ mod tests {
     #[test]
     fn vm_abi_contracts_are_pinned() {
         // #50: the VM-ABI record strides + SelfStatus offsets are a binary contract
-        // the `.bot` side mirrors (today as hardcoded magic numbers; part 2 will
-        // generate an include from these). A wrong stride silently misreads VM
-        // memory — no compile error — so pin every value here at the owner.
+        // the `.bot` side consumes via the generated content/lib/gen_abi.bot include.
+        // A wrong stride silently misreads VM memory — no compile error — so pin
+        // every value here at the owner (the gen-freshness CI gate locks gen_abi.bot
+        // to these).
         use abi::*;
         assert_eq!(ENTITY_RECORD_SIZE, 24);
         assert_eq!(SKILL_RECORD_SIZE, 40);

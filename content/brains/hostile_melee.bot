@@ -7,9 +7,12 @@
 // behavior is content, not engine code. ReadEntities filter 1 is
 // "enemies of me", so this brain hunts players automatically.
 
+// VM-ABI strides + SelfStatus offsets (#50), single-owned in idlin_vm::abi.
+include "gen_abi.bot";
+
 const SELF = 0xE000;
 const ENTS = 0xE100;
-const SKL = 0xE400;        // ReadSkills records (40 bytes each)
+const SKL = 0xE400;        // ReadSkills records (SKILL_RECORD_SIZE each)
 const F_ENEMY = 1;
 const LEASH = 0x190000;    // 25 units (Q16.16) manhattan from home
 
@@ -24,9 +27,9 @@ fn main() {
     self_status(SELF);
 
     // Too far from home? Walk back (out-of-combat regen heals us).
-    if (dist_manhattan(mem[SELF], mem[SELF + 4],
-                       mem[SELF + 36], mem[SELF + 40]) > LEASH) {
-        move_to(mem[SELF + 36], mem[SELF + 40]);
+    if (dist_manhattan(mem[SELF], mem[SELF + SS_Y],
+                       mem[SELF + SS_ANCHOR_X], mem[SELF + SS_ANCHOR_Y]) > LEASH) {
+        move_to(mem[SELF + SS_ANCHOR_X], mem[SELF + SS_ANCHOR_Y]);
         return;
     }
 
@@ -40,10 +43,10 @@ fn main() {
     var ty = 0;
     var k = 0;
     while (k < nen) {
-        var cand = ENTS + k * 24;
+        var cand = ENTS + k * ENTITY_RECORD_SIZE;
         var cx = mem[cand + 8];
         var cy = mem[cand + 12];
-        if (dist_manhattan(cx, cy, mem[SELF], mem[SELF + 4]) <= mem[SELF + 44]) {
+        if (dist_manhattan(cx, cy, mem[SELF], mem[SELF + SS_Y]) <= mem[SELF + SS_AGGRO_RADIUS]) {
             if (line_of_sight(cx, cy) == 1) {
                 target = mem[cand];
                 tx = cx;
@@ -67,12 +70,12 @@ fn main() {
         var n = read_skills(SKL, 4);
         var i = 0;
         while (i < n) {
-            var rec = SKL + i * 40;
+            var rec = SKL + i * SKILL_RECORD_SIZE;
             if (mem[rec + 32] == 1) {
                 if (mem[rec + 28] == 0) { used = use_skill(i + 1, target, 0, 0); }
                 if (mem[rec + 28] == 1) { used = use_skill_at(i + 1, tx, ty); }
                 if (mem[rec + 28] == 2) {
-                    used = use_skill_dir(i + 1, tx - mem[SELF], ty - mem[SELF + 4]);
+                    used = use_skill_dir(i + 1, tx - mem[SELF], ty - mem[SELF + SS_Y]);
                 }
                 if (used == 0) { i = n; }
             }
@@ -88,8 +91,8 @@ fn main() {
     // Idle: pick a fresh wander point near home every 3-9 seconds.
     wander_timer = wander_timer - 1;
     if (wander_timer <= 0) {
-        move_to(mem[SELF + 36] + (random() & 0x7FFFFFFF) % 0x80000 - 0x40000,
-                mem[SELF + 40] + (random() & 0x7FFFFFFF) % 0x80000 - 0x40000);
+        move_to(mem[SELF + SS_ANCHOR_X] + (random() & 0x7FFFFFFF) % 0x80000 - 0x40000,
+                mem[SELF + SS_ANCHOR_Y] + (random() & 0x7FFFFFFF) % 0x80000 - 0x40000);
         wander_timer = 30 + (random() & 0x7FFFFFFF) % 60;
     }
 }

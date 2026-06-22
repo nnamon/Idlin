@@ -12,8 +12,8 @@
 //!
 //! SelfStatus + every record stride are the VM-ABI, single-owned in
 //! `idlin_vm::abi` (#50) — the host writers below consume those consts (a pin test
-//! locks their values). The `.bot` side still hardcodes the matching offsets;
-//! emitting a generated include for it is the planned part-2 follow-up.
+//! locks their values), and the bot side consumes the same owner via the generated
+//! `content/lib/gen_abi.bot` include, so the two can't drift.
 
 use crate::fixed::{Fx, FxV2};
 use crate::rng::Pcg32;
@@ -29,8 +29,8 @@ pub const QUERY_RADIUS: Fx = Fx::from_int(50);
 pub const MAX_QUERY_RESULTS: usize = 16;
 
 // Record strides come from idlin_vm::abi — the single VM-ABI owner (#50). (Doc
-// comments for each record's field layout live there. The `.bot` side still
-// hardcodes the matching strides; a generated include is the part-2 follow-up.)
+// comments for each record's field layout live there. The `.bot` side reads the
+// same values via the generated content/lib/gen_abi.bot include.)
 pub use idlin_vm::abi::{
     ENTITY_RECORD_SIZE, EQUIPMENT_RECORD_SIZE, INVENTORY_RECORD_SIZE, ITEM_MODS_RECORD_SIZE,
     SKILL_RECORD_SIZE,
@@ -897,7 +897,7 @@ mod tests {
     /// land at the `EQUIPMENT_RECORD_SIZE` (16-byte) stride the bot-guide
     /// promises. The pure-records unit test pins field order; THIS pins the
     /// syscall's memory writes — a wrong stride would pass that test yet feed
-    /// bots garbage (they read at a hard-coded 16).
+    /// bots garbage (they read at `EQUIPMENT_RECORD_SIZE`, the single owner #50).
     #[test]
     fn read_equipment_syscall_writes_records_at_the_documented_stride() {
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
@@ -958,10 +958,10 @@ mod tests {
         assert_eq!(rd(out, 1), cleaver_num, "record 0 base_num");
         assert_eq!(rd(out, 3), 4, "record 0 item_level");
         // Record 1 (empty offhand) read at the LITERAL 16-byte stride the
-        // bot-guide promises and grinder.bot hard-codes (`s * 16`) — NOT the
-        // const, so a regression that changed the const (and the dispatch with
-        // it) to a different stride would land record 1's slot index elsewhere
-        // and fail here.
+        // bot-guide promises (the `.bot` side now consumes EQUIPMENT_RECORD_SIZE
+        // from gen_abi.bot, #50) — pinned here as a LITERAL, NOT the const, so a
+        // regression that changed the owner (and the dispatch with it) to a
+        // different stride would land record 1's slot index elsewhere and fail here.
         assert_eq!(EQUIPMENT_RECORD_SIZE, 16, "the documented record stride");
         assert_eq!(rd(out.wrapping_add(16), 0), 1, "record 1 slot index @ +16");
         assert_eq!(

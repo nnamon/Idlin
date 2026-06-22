@@ -54,7 +54,7 @@ fn fire_skill(rec, slot, target, tx, ty) {
     var mode = mem[rec + 28];
     if (mode == 0) { return use_skill(slot, target, 0, 0); }
     if (mode == 1) { return use_skill_at(slot, tx, ty); }
-    return use_skill_dir(slot, tx - mem[SELF], ty - mem[SELF + 4]);
+    return use_skill_dir(slot, tx - mem[SELF], ty - mem[SELF + SS_Y]);
 }
 
 // Socket the planned gem NUM into socket `node`, if a loose copy is in the bag.
@@ -64,7 +64,7 @@ fn socket_into(node, gem_num) {
     var n = read_inventory(INV, 60);
     var i = 0;
     while (i < n) {
-        if (mem[INV + i * 20] == gem_num) {
+        if (mem[INV + i * INVENTORY_RECORD_SIZE] == gem_num) {
             // socket_gem returns the COUNT socketed (>0 ok, -1 fail). Stop on
             // success: socketing shifts the bag, so the scanned buffer is now
             // stale — a later stale index would point at the wrong item.
@@ -90,7 +90,7 @@ fn upkeep_gear() {
     var n = read_inventory(INV, 60);
     var i = 0;
     while (i < n) {
-        var rec = INV + i * 20;
+        var rec = INV + i * INVENTORY_RECORD_SIZE;
         var num = mem[rec];
         var s = item_slot(num);                 // -1 unless this is gear
         if (s >= 0) {
@@ -107,7 +107,7 @@ fn upkeep_gear() {
                 if (num == ITEM_RUSTED_CLEAVER) { ok = 1; }
             }
             if (ok == 1) {
-                var er = EQ + s * 16;
+                var er = EQ + s * EQUIPMENT_RECORD_SIZE;
                 // Empty slot (worn base_num -1), or a higher item level, wins.
                 if (mem[er + 4] < 0 || mem[rec + 8] > mem[er + 12]) {
                     if (equip(i) == 0) { return; }   // equipped; the bag shifted
@@ -120,11 +120,11 @@ fn upkeep_gear() {
 
 fn main() {
     self_status(SELF);
-    if (mem[SELF + 32] & 1) { return; }        // dead: wait for respawn
+    if (mem[SELF + SS_FLAGS] & 1) { return; }        // dead: wait for respawn
 
     // Crossed into a new zone: fresh intent. Grind what it feeds us;
     // departures must be EARNED by boredom again.
-    var zid = mem[SELF + 64];
+    var zid = mem[SELF + SS_ZONE];
     if (zid != last_zone) {
         last_zone = zid;
         bored = 0;
@@ -132,7 +132,7 @@ fn main() {
     }
 
     // A word when the shore concedes a level (speech.ron line 2).
-    var lvl = mem[SELF + 16];
+    var lvl = mem[SELF + SS_LEVEL];
     if (last_level == 0) { last_level = lvl; }
     if (lvl > last_level) {
         last_level = lvl;
@@ -140,7 +140,7 @@ fn main() {
     }
 
     // Below 40% life: drink. The flask is the survival lesson.
-    if (mem[SELF + 8] * 5 < mem[SELF + 12] * 2) {
+    if (mem[SELF + SS_LIFE] * 5 < mem[SELF + SS_LIFE_MAX] * 2) {
         use_flask();
     }
 
@@ -187,7 +187,7 @@ fn main() {
     var nxits = read_exits(EXITS, 4);
     var e = 0;
     while (e < nxits) {
-        var er = EXITS + e * 16;
+        var er = EXITS + e * EXIT_RECORD_SIZE;
         if (mem[er + 8] == 1) {
             open_ex = 1;
             ex = mem[er];
@@ -208,7 +208,7 @@ fn main() {
     var ty = 0;
     var k = 0;
     while (k < nen) {
-        var cand = ENTS + k * 24;
+        var cand = ENTS + k * ENTITY_RECORD_SIZE;
         if (line_of_sight(mem[cand + 8], mem[cand + 12]) == 1) {
             target = mem[cand];
             tx = mem[cand + 8];
@@ -233,15 +233,15 @@ fn main() {
         if (stuck_t >= 30) {
             var sdx = mem[SELF] - stuck_x;
             if (sdx < 0) { sdx = 0 - sdx; }
-            var sdy = mem[SELF + 4] - stuck_y;
+            var sdy = mem[SELF + SS_Y] - stuck_y;
             if (sdy < 0) { sdy = 0 - sdy; }
             if (sdx < 0x8000 && sdy < 0x8000) {
                 // Within attack reach we WANT to stand still (we're
                 // swinging); beyond it, parked means pinned.
-                var reach = mem[SELF + 48] + 0x18000;
+                var reach = mem[SELF + SS_ATTACK_RANGE] + 0x18000;
                 var tdx = tx - mem[SELF];
                 if (tdx < 0) { tdx = 0 - tdx; }
-                var tdy = ty - mem[SELF + 4];
+                var tdy = ty - mem[SELF + SS_Y];
                 if (tdy < 0) { tdy = 0 - tdy; }
                 if (tdx > reach || tdy > reach) {
                     unstick = 40;
@@ -250,7 +250,7 @@ fn main() {
                 }
             }
             stuck_x = mem[SELF];
-            stuck_y = mem[SELF + 4];
+            stuck_y = mem[SELF + SS_Y];
             stuck_t = 0;
         }
     }
@@ -270,7 +270,7 @@ fn main() {
         if (open_ex == 1 && leaving == 1) {
             var adx = tx - mem[SELF];
             if (adx < 0) { adx = 0 - adx; }
-            var ady = ty - mem[SELF + 4];
+            var ady = ty - mem[SELF + SS_Y];
             if (ady < 0) { ady = 0 - ady; }
             if (adx > 0x60000 || ady > 0x60000) {
                 if (use_exit() == 0) { return; }
@@ -281,13 +281,13 @@ fn main() {
         // Mana budget: gem skills only above 20% mana — the basic
         // attack is free, and the pool wants emergency headroom.
         var used = -1;
-        if (mem[SELF + 52] * 5 >= mem[SELF + 56]) {
+        if (mem[SELF + SS_MANA] * 5 >= mem[SELF + SS_MANA_MAX]) {
             // First READY skill wins (record +32; ready already folds
             // cooldown, mana, use-time, and the weapon gate).
             var n = read_skills(SKL, 4);
             var i = 0;
             while (i < n) {
-                var rec = SKL + i * 40;
+                var rec = SKL + i * SKILL_RECORD_SIZE;
                 if (mem[rec + 32] == 1) {
                     used = fire_skill(rec, i + 1, target, tx, ty);
                     if (used == 0) { i = n; }
@@ -319,8 +319,8 @@ fn main() {
         return;
     }
     if (wander_left <= 0) {
-        wander_x = (random() & 0x7FFFFFFF) % mem[SELF + 24];
-        wander_y = (random() & 0x7FFFFFFF) % mem[SELF + 28];
+        wander_x = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_W];
+        wander_y = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_H];
         wander_left = 50 + ((random() & 0x7FFFFFFF) % 70);
     }
     wander_left = wander_left - 1;
