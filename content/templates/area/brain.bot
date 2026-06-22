@@ -19,7 +19,7 @@ fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
     var i = 0;
     while (i < nq) {
-        var r = ZL_Q + i * QC_STRIDE;
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
         var net = mem[r + QC_NET];
         zl_narrate_once(net, F_WELCOME, L_WELCOME);
         // State-driven beats go here: gate on mem[r + QC_KILLS],
@@ -30,7 +30,7 @@ fn main() {
     var ne = poll_events(ZL_EVS, 32);
     var j = 0;
     while (j < ne) {
-        var ev = ZL_EVS + j * 16;
+        var ev = ZL_EVS + j * EVENT_RECORD_SIZE;
         // Event-driven beats: mem[ev + PE_KIND] is EV_KILL / EV_EQUIP /
         // EV_SOCKET / EV_LEVEL / EV_DIED / EV_PICKUP; PE_WHO the
         // character; EV_KILL's PE_A is the monster num (matches `monster "..."`).

@@ -22,9 +22,20 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// under the wider hash, confirming a representation change, not a leak. (The
 /// later item-charges/affix-tier additions left the digest at this value — the
 /// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
-/// (Prior: 0x8541 — earlier hash-completeness step; Phase D 0x5755 — ten new affix
-/// files; Phase A 0x0A71 — effects-list schema; #98 skill life cost; etc.)
-const GOLDEN_HASH: u64 = 0x5662_D967_D6E4_BF38;
+/// Re-pinned for #50 part 2 (VM-ABI generation): a new generated `content/lib/
+/// gen_abi.bot` plus the `.bot` files rewritten to consume it (grinder template,
+/// hostile_melee/villager brains, zone_lib + the area brains) move `content_hash`
+/// (0x31EC…→0xFEBB_7013_FB93_413D). The change is REPRESENTATION-ONLY: each `.bot`
+/// literal was replaced by a const whose VALUE equals it — the gen consts mirror
+/// `idlin_vm::abi` (locked by the `vm_abi_contracts_are_pinned` pin + the gen-
+/// freshness CI gate), so every compiled brain's bytecode is byte-identical (verified
+/// by a compiled-bytecode diff vs the pre-conversion brains during development).
+/// `sim_integration` also passes unchanged (corroborating, though it does NOT
+/// exhaustively exercise every field read). Only content_hash — which folds into
+/// state_hash — moves the digest; the determinism trio still agrees.
+/// (Prior: 0x5662 — #86 state_hash widening; 0x8541 — earlier hash-completeness;
+/// Phase D 0x5755 — ten new affix files; Phase A 0x0A71 — effects-list schema; etc.)
+const GOLDEN_HASH: u64 = 0xF08B_6E32_6CA3_06BF;
 
 #[test]
 fn golden_replay() {

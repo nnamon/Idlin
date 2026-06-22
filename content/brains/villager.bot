@@ -6,6 +6,9 @@
 // everything in it is.
 // ============================================================
 
+// SelfStatus offsets (#50), single-owned in idlin_vm::abi.
+include "gen_abi.bot";
+
 const SELF = 0xE000;
 
 var wx;
@@ -14,12 +17,12 @@ var wt;
 
 fn main() {
     self_status(SELF);
-    if (mem[SELF + 32] & 1) { return; }
+    if (mem[SELF + SS_FLAGS] & 1) { return; }
 
     if (wt <= 0) {
         // A new errand within ~5u of home; mostly just standing about.
-        wx = mem[SELF + 36] - 0x50000 + ((random() & 0x7FFFFFFF) % 0xA0000);
-        wy = mem[SELF + 40] - 0x50000 + ((random() & 0x7FFFFFFF) % 0xA0000);
+        wx = mem[SELF + SS_ANCHOR_X] - 0x50000 + ((random() & 0x7FFFFFFF) % 0xA0000);
+        wy = mem[SELF + SS_ANCHOR_Y] - 0x50000 + ((random() & 0x7FFFFFFF) % 0xA0000);
         wt = 90 + ((random() & 0x7FFFFFFF) % 160);
         if ((random() & 7) == 0) {
             say((random() & 0x7FFFFFFF) % 6);
