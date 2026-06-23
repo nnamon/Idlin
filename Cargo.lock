@@ -455,6 +455,7 @@ name = "idlin-content"
 version = "0.0.1"
 dependencies = [
  "idlin-botc",
+ "idlin-vm",
  "ron",
  "serde",
  "serde_json",

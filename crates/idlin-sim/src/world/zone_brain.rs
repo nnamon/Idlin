@@ -28,9 +28,11 @@ use idlin_vm::{
     SYS_SET_EXIT, SYS_SET_GATE, SYS_SPAWN_ELITE, SYS_SPAWN_MONSTER,
 };
 
-/// QueryCharacters record: net, kills, level, x, y, weapon_class, life_pct,
-/// dead — 8 words.
-const CHAR_RECORD_WORDS: u16 = 10;
+/// QueryCharacters record (10 words): net, kills, level, x, y, weapon_class,
+/// life_pct, dead, build_len, archetype. Stride single-owned in `idlin_vm::abi`
+/// (#50) — `CHAR_RECORD_SIZE` bytes. The matching `.bot` read consumes the same
+/// owner via the generated `content/lib/gen_abi.bot` include.
+use idlin_vm::abi::{CHAR_RECORD_SIZE, EVENT_RECORD_SIZE};
 
 impl World {
     /// Translate this tick's events for the brain, then run it. Runs at the
@@ -145,7 +147,7 @@ impl World {
                             -1
                         }
                     };
-                    let rec: [i32; CHAR_RECORD_WORDS as usize] = [
+                    let rec: [i32; (CHAR_RECORD_SIZE / 4) as usize] = [
                         e.net_id as i32,
                         ch.kills.min(i32::MAX as u64) as i32,
                         ch.level as i32,
@@ -157,7 +159,7 @@ impl World {
                         ch.build_plan.len() as i32,
                         arch,
                     ];
-                    let base = out.wrapping_add(n * CHAR_RECORD_WORDS * 4);
+                    let base = out.wrapping_add(n * CHAR_RECORD_SIZE);
                     for (j, v) in rec.iter().enumerate() {
                         bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
                     }
@@ -170,7 +172,7 @@ impl World {
                 let max = bot.vm.pop().clamp(0, 32) as usize;
                 let n = self.zone_brain_inbox.len().min(max);
                 for (i, rec) in self.zone_brain_inbox.drain(..n).enumerate() {
-                    let base = out.wrapping_add(i as u16 * 16);
+                    let base = out.wrapping_add(i as u16 * EVENT_RECORD_SIZE);
                     for (j, v) in rec.iter().enumerate() {
                         bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
                     }

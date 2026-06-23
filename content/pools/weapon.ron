@@ -1,0 +1,15 @@
+// The weapon affix pool — offense mods that roll on weapons. Weapon base items
+// subscribe to it via `affix_pools: ["weapon"]`; the pool owns its membership here.
+AffixPool(
+    id: "weapon",
+    affixes: [
+        "heavy", "honed", "jarring", "keen", "swift",
+        "of_driving", "of_precision", "of_ruin", "of_savagery", "of_the_leech", "of_venom",
+        // Strike-time conditional (#109).
+        "of_desperation",
+        // Ailment mods (#88): per-element chance + the all-elemental hybrid + caps/duration.
+        "of_kindling", "of_conduction", "of_numbing", "of_affliction",
+        "of_embers", "of_sparks", "of_frost",
+        "of_the_tempest", "of_permafrost", "of_smouldering",
+    ],
+)

@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Arcane",
     kind: prefix,
-    pool: "arcana",
     weight: 70,
     effects: [(stat: mana, layer: added)],
     tiers: [

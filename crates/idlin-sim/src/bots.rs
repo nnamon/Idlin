@@ -10,9 +10,10 @@
 //!   only honored by `Debug` (capped) — lying about argc hurts only the bot
 //! - every syscall pushes exactly one result word; unknown numbers push -1
 //!
-//! SelfStatus layout (i32 words): +0 x, +4 y, +8 life, +12 life_max,
-//! +16 level, +20 xp, +24 map_w, +28 map_h, +32 flags (bit0 = dead),
-//! +36 anchor_x, +40 anchor_y, +44 aggro_radius, +48 attack_range.
+//! SelfStatus + every record stride are the VM-ABI, single-owned in
+//! `idlin_vm::abi` (#50) — the host writers below consume those consts (a pin test
+//! locks their values), and the bot side consumes the same owner via the generated
+//! `content/lib/gen_abi.bot` include, so the two can't drift.
 
 use crate::fixed::{Fx, FxV2};
 use crate::rng::Pcg32;
@@ -26,42 +27,33 @@ pub const SYSCALL_COST: u32 = 20;
 pub const QUERY_RADIUS: Fx = Fx::from_int(50);
 /// Hard cap on entity-query results.
 pub const MAX_QUERY_RESULTS: usize = 16;
-/// Size of one ReadEntities record in bytes.
-pub const ENTITY_RECORD_SIZE: u16 = 24;
+
+// Record strides come from idlin_vm::abi — the single VM-ABI owner (#50). (Doc
+// comments for each record's field layout live there. The `.bot` side reads the
+// same values via the generated content/lib/gen_abi.bot include.)
+pub use idlin_vm::abi::{
+    ENTITY_RECORD_SIZE, EQUIPMENT_RECORD_SIZE, INVENTORY_RECORD_SIZE, ITEM_MODS_RECORD_SIZE,
+    SKILL_RECORD_SIZE,
+};
+// The SelfStatus field offsets (SS_*) are read below at their named addresses, so
+// the host's write layout IS the single owner (no implicit array-order contract).
+use idlin_vm::abi;
 
 // Syscall numbers come from idlin_vm — the single ABI owner shared with
 // the compiler's BUILTINS table.
 use idlin_vm::{
     SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
-    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY,
-    SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY, SYS_READ_ITEM_MODS,
-    SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM,
-    SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
-    SYS_USE_SKILL_DIR,
+    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_AILMENTS,
+    SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY,
+    SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO,
+    SYS_SOCKET_GEM, SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL,
+    SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
 
-/// Size of one ReadSkills record in bytes (#54 PR2a: the pure-def geometry —
-/// shape/radius/skill_kind — moved to SkillInfo). Record: slot_no, gem_num,
-/// level, cooldown_left, range, mana_cost, use_ticks, target_mode, ready,
-/// life_cost (#98: the FINAL per-use life cost, support cost-mults folded in —
-/// 0 for the vast majority of skills; ungated, so it does NOT gate `ready`).
-pub const SKILL_RECORD_SIZE: u16 = 40; // 10 words
-// SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline.
-
-/// Size of one ReadInventory record in bytes (#54 PR2a: slot/w/h are
-/// definitional — look them up by `base_num` in the docs). Record: base_num,
-/// rarity, item_level, x, y.
-pub const INVENTORY_RECORD_SIZE: u16 = 20; // 5 words
-/// Size of one ReadItemMods record in bytes: affix_num, effect_index, value,
-/// tier. One record PER EFFECT — a hybrid affix (#86) emits several, sharing an
-/// affix_num and counting up effect_index; the granted stat is definitional
-/// (look up `affixes[affix_num].effects[effect_index].stat` in content-docs).
-pub const ITEM_MODS_RECORD_SIZE: u16 = 16; // 4 words
-/// Size of one ReadEquipment record in bytes (#54 PR3): slot, base_num (-1 if
-/// the slot is empty), rarity, item_level. One record per gear slot.
-pub const EQUIPMENT_RECORD_SIZE: u16 = 16; // 4 words
+// SkillInfo writes a single 3-word record (shape, radius, skill_kind) inline —
+// distinct from the ReadSkills record stride (SKILL_RECORD_SIZE, in idlin_vm::abi).
 /// Hard cap on inventory query results (a 12×5 bag of 1×1s caps at 60).
 pub const MAX_INVENTORY_RESULTS: usize = 60;
 /// Hard cap on rolled-mod results per item.
@@ -205,6 +197,26 @@ impl World {
                 events.push(SimEvent::BotDebug { id, values });
                 0
             }
+            SYS_READ_AILMENTS => {
+                // arg: target net id → a bitmask of its active ailments (#88):
+                // bit0 Ignite, bit1 Shock, bit2 Chill. 0 if unknown/unafflicted.
+                let net = bot.vm.pop() as u32;
+                let Some(e) = self.zone.get_net(net) else {
+                    return 0;
+                };
+                use crate::entity::AilmentKind;
+                let mut bits = 0;
+                if e.ailment(AilmentKind::Ignite) > 0 {
+                    bits |= 1;
+                }
+                if e.ailment(AilmentKind::Shock) > 0 {
+                    bits |= 2;
+                }
+                if e.ailment(AilmentKind::Chill) > 0 {
+                    bits |= 4;
+                }
+                bits
+            }
             SYS_SELF_STATUS => {
                 let out = bot.vm.pop() as u16;
                 let Some(e) = self.zone.get(slot) else {
@@ -247,31 +259,39 @@ impl World {
                 let es = combat
                     .map(|c| c.es.clamp(0, i32::MAX as i64) as i32)
                     .unwrap_or(0);
-                let fields = [
-                    e.pos.x.raw(),
-                    e.pos.y.raw(),
-                    life,
-                    life_max,
-                    level,
-                    xp,
-                    self.zone.width.raw(),
-                    self.zone.height.raw(),
-                    dead as i32,
-                    anchor.x.raw(),
-                    anchor.y.raw(),
-                    aggro,
-                    range,
-                    mana,
-                    mana_max,
-                    es,
-                    // Which map this is: the zone's stable tagged num (#54).
-                    // Bot writers branch their whole strategy on it — grind the
-                    // shore, stroll the town.
+                // Each field at its named SS_ offset (idlin_vm::abi, #50) — the
+                // single owner the `.bot` reads mirror. Order/values unchanged.
+                bot.vm.store_i32(out.wrapping_add(abi::SS_X), e.pos.x.raw());
+                bot.vm.store_i32(out.wrapping_add(abi::SS_Y), e.pos.y.raw());
+                bot.vm.store_i32(out.wrapping_add(abi::SS_LIFE), life);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_LIFE_MAX), life_max);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_LEVEL), level);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_XP), xp);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_MAP_W), self.zone.width.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_MAP_H), self.zone.height.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_FLAGS), dead as i32);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_ANCHOR_X), anchor.x.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_ANCHOR_Y), anchor.y.raw());
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_AGGRO_RADIUS), aggro);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_ATTACK_RANGE), range);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_MANA), mana);
+                bot.vm
+                    .store_i32(out.wrapping_add(abi::SS_MANA_MAX), mana_max);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_ES), es);
+                // Which map this is: the zone's stable tagged num (#54). Bot writers
+                // branch their whole strategy on it — grind the shore, stroll the town.
+                bot.vm.store_i32(
+                    out.wrapping_add(abi::SS_ZONE),
                     self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
-                ];
-                for (i, v) in fields.into_iter().enumerate() {
-                    bot.vm.store_i32(out.wrapping_add(4 * i as u16), v);
-                }
+                );
                 0
             }
             SYS_READ_ENTITIES => {
@@ -519,7 +539,7 @@ impl World {
                 let max = bot.vm.pop().clamp(0, 16) as usize;
                 let n = self.zone.exits.len().min(max);
                 for (i, exit) in self.zone.exits.iter().take(n).enumerate() {
-                    let base = out.wrapping_add(16 * i as u16);
+                    let base = out.wrapping_add(abi::EXIT_RECORD_SIZE * i as u16);
                     bot.vm.store_i32(base, exit.pos.x.raw());
                     bot.vm.store_i32(base.wrapping_add(4), exit.pos.y.raw());
                     bot.vm.store_i32(base.wrapping_add(8), exit.open as i32);
@@ -897,7 +917,7 @@ mod tests {
     /// land at the `EQUIPMENT_RECORD_SIZE` (16-byte) stride the bot-guide
     /// promises. The pure-records unit test pins field order; THIS pins the
     /// syscall's memory writes — a wrong stride would pass that test yet feed
-    /// bots garbage (they read at a hard-coded 16).
+    /// bots garbage (they read at `EQUIPMENT_RECORD_SIZE`, the single owner #50).
     #[test]
     fn read_equipment_syscall_writes_records_at_the_documented_stride() {
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
@@ -958,16 +978,78 @@ mod tests {
         assert_eq!(rd(out, 1), cleaver_num, "record 0 base_num");
         assert_eq!(rd(out, 3), 4, "record 0 item_level");
         // Record 1 (empty offhand) read at the LITERAL 16-byte stride the
-        // bot-guide promises and grinder.bot hard-codes (`s * 16`) — NOT the
-        // const, so a regression that changed the const (and the dispatch with
-        // it) to a different stride would land record 1's slot index elsewhere
-        // and fail here.
+        // bot-guide promises (the `.bot` side now consumes EQUIPMENT_RECORD_SIZE
+        // from gen_abi.bot, #50) — pinned here as a LITERAL, NOT the const, so a
+        // regression that changed the owner (and the dispatch with it) to a
+        // different stride would land record 1's slot index elsewhere and fail here.
         assert_eq!(EQUIPMENT_RECORD_SIZE, 16, "the documented record stride");
         assert_eq!(rd(out.wrapping_add(16), 0), 1, "record 1 slot index @ +16");
         assert_eq!(
             rd(out.wrapping_add(16), 1),
             -1,
             "record 1 empty → base_num -1"
+        );
+        world.bots.put_back(bot_idx, bot);
+    }
+
+    #[test]
+    fn read_ailments_syscall_returns_the_bitmask() {
+        // #88: ReadAilments(net) → bit0 Ignite | bit1 Shock | bit2 Chill, 0 if
+        // unknown. Mutation: drop a bit in the dispatch → the assert fails.
+        use crate::entity::{ActiveEffect, AilmentKind};
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut world = World::new(13, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Reader".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let (mon_slot, mon_net) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.net_id))
+            .unwrap();
+        let effs = &mut world.zone.get_mut(mon_slot).unwrap().effects;
+        effs.push(ActiveEffect::Ailment {
+            kind: AilmentKind::Ignite,
+            magnitude: 5,
+            ticks_left: 40,
+            source: 0,
+        });
+        effs.push(ActiveEffect::Ailment {
+            kind: AilmentKind::Shock,
+            magnitude: 1000,
+            ticks_left: 40,
+            source: 0,
+        });
+        let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
+        let mut bot = world.bots.take(bot_idx).unwrap();
+        let mut ev = Vec::new();
+        bot.vm.push(mon_net as i32);
+        assert_eq!(
+            world.syscall(slot, &mut bot, SYS_READ_AILMENTS, 1, &mut ev),
+            1 | 2,
+            "ignite|shock bitmask"
+        );
+        bot.vm.push(999_999);
+        assert_eq!(
+            world.syscall(slot, &mut bot, SYS_READ_AILMENTS, 1, &mut ev),
+            0,
+            "unknown entity → 0"
+        );
+        // A negative net id casts to a huge u32 → no entity → 0, no panic.
+        bot.vm.push(-1);
+        assert_eq!(
+            world.syscall(slot, &mut bot, SYS_READ_AILMENTS, 1, &mut ev),
+            0,
+            "negative net id → 0 (no panic)"
         );
         world.bots.put_back(bot_idx, bot);
     }

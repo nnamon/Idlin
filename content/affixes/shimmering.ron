@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Shimmering",
     kind: prefix,
-    pool: "armour",
     weight: 70,
     effects: [(stat: energy_shield, layer: added)],
     tiers: [

@@ -1,4 +1,72 @@
 {
+  "affix_pools": {
+    "accessory": [
+      25165851,
+      25165852,
+      25165853,
+      25165854
+    ],
+    "arcana": [
+      25165824,
+      25165856,
+      25165857
+    ],
+    "armour": [
+      25165825,
+      25165835,
+      25165837,
+      25165860,
+      25165863,
+      25165841,
+      25165842,
+      25165855,
+      25165845,
+      25165847,
+      25165849
+    ],
+    "find": [
+      25165859,
+      25165834,
+      25165836
+    ],
+    "flask": [
+      25165839
+    ],
+    "monster": [
+      25165828,
+      25165833,
+      25165840,
+      25165846,
+      25165848
+    ],
+    "stride": [
+      25165843
+    ],
+    "weapon": [
+      25165826,
+      25165827,
+      25165829,
+      25165830,
+      25165866,
+      25165871,
+      25165874,
+      25165831,
+      25165832,
+      25165858,
+      25165872,
+      25165873,
+      25165868,
+      25165838,
+      25165861,
+      25165862,
+      25165869,
+      25165864,
+      25165865,
+      25165870,
+      25165844,
+      25165850
+    ]
+  },
   "categories": {
     "affix": [
       {
@@ -14,7 +82,6 @@
         "kind": "prefix",
         "name": "Arcane",
         "num": 25165824,
-        "pool": "arcana",
         "tiers": [
           {
             "ilvl": 1,
@@ -65,7 +132,6 @@
         "kind": "prefix",
         "name": "Bold",
         "num": 25165851,
-        "pool": "accessory",
         "tiers": [
           {
             "ilvl": 1,
@@ -116,7 +182,6 @@
         "kind": "prefix",
         "name": "Hale",
         "num": 25165825,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -167,7 +232,6 @@
         "kind": "prefix",
         "name": "Hardy",
         "num": 25165852,
-        "pool": "accessory",
         "tiers": [
           {
             "ilvl": 1,
@@ -218,7 +282,6 @@
         "kind": "prefix",
         "name": "Heavy",
         "num": 25165826,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -269,7 +332,6 @@
         "kind": "prefix",
         "name": "Honed",
         "num": 25165827,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -320,7 +382,6 @@
         "kind": "prefix",
         "name": "Hulking",
         "num": 25165828,
-        "pool": "monster",
         "tiers": [
           {
             "ilvl": 1,
@@ -360,7 +421,6 @@
         "kind": "prefix",
         "name": "Jarring",
         "num": 25165829,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -400,7 +460,6 @@
         "kind": "prefix",
         "name": "Keen",
         "num": 25165830,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -440,7 +499,6 @@
         "kind": "suffix",
         "name": "of Acumen",
         "num": 25165853,
-        "pool": "accessory",
         "tiers": [
           {
             "ilvl": 1,
@@ -479,6 +537,71 @@
         "weight": 100
       },
       {
+        "description": "+#% Ignite Chance, +#% Shock Chance, +#% Chill Chance",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "ignite_chance"
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "shock_chance"
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "chill_chance"
+          }
+        ],
+        "id": "of_affliction",
+        "kind": "suffix",
+        "name": "of Affliction",
+        "num": 25165866,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Affliction",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 500
+              },
+              {
+                "max": 1500,
+                "min": 500
+              },
+              {
+                "max": 1500,
+                "min": 500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 8,
+            "name": "of Suffering",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1501
+              },
+              {
+                "max": 3000,
+                "min": 1501
+              },
+              {
+                "max": 3000,
+                "min": 1501
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 20
+      },
+      {
         "description": "#% increased Cast Speed",
         "effects": [
           {
@@ -491,7 +614,6 @@
         "kind": "suffix",
         "name": "of Casting",
         "num": 25165856,
-        "pool": "arcana",
         "tiers": [
           {
             "ilvl": 1,
@@ -531,7 +653,6 @@
         "kind": "suffix",
         "name": "of Channeling",
         "num": 25165857,
-        "pool": "arcana",
         "tiers": [
           {
             "ilvl": 1,
@@ -559,6 +680,45 @@
         "weight": 75
       },
       {
+        "description": "+#% Shock Chance",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "shock_chance"
+          }
+        ],
+        "id": "of_conduction",
+        "kind": "suffix",
+        "name": "of Conduction",
+        "num": 25165871,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Conduction",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 8,
+            "name": "of Electrocution",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1501
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 50
+      },
+      {
         "description": "#% increased Physical Damage (while below 35% life)",
         "effects": [
           {
@@ -572,8 +732,7 @@
         "id": "of_desperation",
         "kind": "suffix",
         "name": "of Desperation",
-        "num": 25165866,
-        "pool": "weapon",
+        "num": 25165874,
         "tiers": [
           {
             "ilvl": 5,
@@ -613,7 +772,6 @@
         "kind": "suffix",
         "name": "of Driving",
         "num": 25165831,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 2,
@@ -653,7 +811,6 @@
         "kind": "suffix",
         "name": "of Embers",
         "num": 25165832,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -693,7 +850,6 @@
         "kind": "suffix",
         "name": "of Finesse",
         "num": 25165854,
-        "pool": "accessory",
         "tiers": [
           {
             "ilvl": 1,
@@ -744,7 +900,6 @@
         "kind": "suffix",
         "name": "of Frost",
         "num": 25165858,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -789,7 +944,6 @@
         "kind": "suffix",
         "name": "of Greed",
         "num": 25165859,
-        "pool": "find",
         "tiers": [
           {
             "ilvl": 3,
@@ -837,7 +991,6 @@
         "kind": "suffix",
         "name": "of Haste",
         "num": 25165833,
-        "pool": "monster",
         "tiers": [
           {
             "ilvl": 1,
@@ -877,7 +1030,6 @@
         "kind": "suffix",
         "name": "of Hoarding",
         "num": 25165834,
-        "pool": "find",
         "tiers": [
           {
             "ilvl": 2,
@@ -917,7 +1069,6 @@
         "kind": "suffix",
         "name": "of Iron",
         "num": 25165835,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -945,6 +1096,112 @@
         "weight": 90
       },
       {
+        "description": "+#% Ignite Chance",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "ignite_chance"
+          }
+        ],
+        "id": "of_kindling",
+        "kind": "suffix",
+        "name": "of Kindling",
+        "num": 25165872,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Kindling",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 8,
+            "name": "of Searing",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1501
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 50
+      },
+      {
+        "description": "+#% Chill Chance",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "chill_chance"
+          }
+        ],
+        "id": "of_numbing",
+        "kind": "suffix",
+        "name": "of Numbing",
+        "num": 25165873,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Numbing",
+            "rolls": [
+              {
+                "max": 1500,
+                "min": 500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 8,
+            "name": "of Frostbite",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1501
+              }
+            ],
+            "weight": 45
+          }
+        ],
+        "weight": 50
+      },
+      {
+        "description": "+#% Maximum Chill Effect",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "chill_max"
+          }
+        ],
+        "id": "of_permafrost",
+        "kind": "suffix",
+        "name": "of Permafrost",
+        "num": 25165868,
+        "tiers": [
+          {
+            "ilvl": 4,
+            "name": "of Permafrost",
+            "rolls": [
+              {
+                "max": 800,
+                "min": 300
+              }
+            ],
+            "weight": 100
+          }
+        ],
+        "weight": 35
+      },
+      {
         "description": "#% increased Item Rarity",
         "effects": [
           {
@@ -957,7 +1214,6 @@
         "kind": "suffix",
         "name": "of Plunder",
         "num": 25165836,
-        "pool": "find",
         "tiers": [
           {
             "ilvl": 1,
@@ -997,7 +1253,6 @@
         "kind": "suffix",
         "name": "of Poise",
         "num": 25165837,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1037,7 +1292,6 @@
         "kind": "suffix",
         "name": "of Precision",
         "num": 25165838,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -1077,7 +1331,6 @@
         "kind": "suffix",
         "name": "of Renewal",
         "num": 25165860,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1117,7 +1370,6 @@
         "kind": "suffix",
         "name": "of Ruin",
         "num": 25165861,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -1157,7 +1409,6 @@
         "kind": "suffix",
         "name": "of Sating",
         "num": 25165839,
-        "pool": "flask",
         "tiers": [
           {
             "ilvl": 1,
@@ -1199,7 +1450,6 @@
         "kind": "suffix",
         "name": "of Savagery",
         "num": 25165862,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -1239,7 +1489,6 @@
         "kind": "suffix",
         "name": "of Sealing",
         "num": 25165863,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1267,6 +1516,34 @@
         "weight": 70
       },
       {
+        "description": "+#% Ailment Duration",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "ailment_duration"
+          }
+        ],
+        "id": "of_smouldering",
+        "kind": "suffix",
+        "name": "of Smouldering",
+        "num": 25165869,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Smouldering",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1000
+              }
+            ],
+            "weight": 100
+          }
+        ],
+        "weight": 40
+      },
+      {
         "description": "+# Lightning Damage",
         "effects": [
           {
@@ -1279,7 +1556,6 @@
         "kind": "suffix",
         "name": "of Sparks",
         "num": 25165864,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -1319,7 +1595,6 @@
         "kind": "suffix",
         "name": "of Staggering",
         "num": 25165840,
-        "pool": "monster",
         "tiers": [
           {
             "ilvl": 1,
@@ -1348,7 +1623,6 @@
         "kind": "suffix",
         "name": "of Storms",
         "num": 25165841,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1399,7 +1673,6 @@
         "kind": "suffix",
         "name": "of the Depths",
         "num": 25165842,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1455,7 +1728,6 @@
         "kind": "suffix",
         "name": "of the Fox",
         "num": 25165855,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1503,7 +1775,6 @@
         "kind": "suffix",
         "name": "of the Hare",
         "num": 25165843,
-        "pool": "stride",
         "tiers": [
           {
             "ilvl": 1,
@@ -1548,7 +1819,6 @@
         "kind": "suffix",
         "name": "of the Leech",
         "num": 25165865,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -1584,6 +1854,34 @@
         "weight": 50
       },
       {
+        "description": "+#% Maximum Shock Effect",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "shock_max"
+          }
+        ],
+        "id": "of_the_tempest",
+        "kind": "suffix",
+        "name": "of the Tempest",
+        "num": 25165870,
+        "tiers": [
+          {
+            "ilvl": 4,
+            "name": "of the Tempest",
+            "rolls": [
+              {
+                "max": 800,
+                "min": 300
+              }
+            ],
+            "weight": 100
+          }
+        ],
+        "weight": 35
+      },
+      {
         "description": "+# Chaos Damage",
         "effects": [
           {
@@ -1596,7 +1894,6 @@
         "kind": "suffix",
         "name": "of Venom",
         "num": 25165844,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 2,
@@ -1636,7 +1933,6 @@
         "kind": "suffix",
         "name": "of Warding",
         "num": 25165845,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1676,7 +1972,6 @@
         "kind": "suffix",
         "name": "of Wards",
         "num": 25165846,
-        "pool": "monster",
         "tiers": [
           {
             "ilvl": 1,
@@ -1716,7 +2011,6 @@
         "kind": "suffix",
         "name": "of the Wind",
         "num": 25165847,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1756,7 +2050,6 @@
         "kind": "prefix",
         "name": "Savage",
         "num": 25165848,
-        "pool": "monster",
         "tiers": [
           {
             "ilvl": 1,
@@ -1796,7 +2089,6 @@
         "kind": "prefix",
         "name": "Shimmering",
         "num": 25165849,
-        "pool": "armour",
         "tiers": [
           {
             "ilvl": 1,
@@ -1847,7 +2139,6 @@
         "kind": "prefix",
         "name": "Swift",
         "num": 25165850,
-        "pool": "weapon",
         "tiers": [
           {
             "ilvl": 1,
@@ -1979,6 +2270,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -2053,6 +2345,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 7,
         "coeff_bp": 0,
@@ -2112,6 +2405,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 11000,
@@ -2175,6 +2469,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 7,
         "coeff_bp": 0,
@@ -2235,29 +2530,14 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 10000,
         "buff": null,
         "cast_ticks": 8,
         "coeff_bp": 0,
         "cone_cos_bp": 7000,
         "cooldown_ticks": 0,
         "crit_bp": 600,
-        "debuff": {
-          "duration_ticks": 30,
-          "grants": [
-            {
-              "condition": null,
-              "layer": "increased",
-              "stat": "move_speed",
-              "value": -2500
-            },
-            {
-              "condition": null,
-              "layer": "increased",
-              "stat": "attack_speed",
-              "value": -2500
-            }
-          ]
-        },
+        "debuff": null,
         "dot": null,
         "effects": [],
         "id": "frost_nova",
@@ -2311,6 +2591,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -2381,6 +2662,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 14500,
@@ -2443,6 +2725,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -2512,6 +2795,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 10,
         "coeff_bp": 0,
@@ -2580,6 +2864,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 17000,
@@ -2642,6 +2927,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -2706,6 +2992,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -2781,6 +3068,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -2850,6 +3138,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": {
           "duration_ticks": 100,
           "grants": [
@@ -2919,6 +3208,7 @@
           "base": 0,
           "per_level": 0
         },
+        "ailment_chance": 0,
         "buff": null,
         "cast_ticks": 0,
         "coeff_bp": 0,
@@ -5105,7 +5395,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "984d7d2f81125a2c",
+  "fingerprint": "7bdb0ebc02b62f2a",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23,
   "stats": [
@@ -5306,6 +5596,48 @@
       "desc": "Flat knockback (centi-units) added to your hits.",
       "key": "knockback",
       "name": "Knockback"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chance for your fire hits to Ignite; crits inflict regardless.",
+      "key": "ignite_chance",
+      "name": "Ignite Chance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chance for your lightning hits to Shock; crits inflict regardless.",
+      "key": "shock_chance",
+      "name": "Shock Chance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chance for your cold hits to Chill; crits inflict regardless.",
+      "key": "chill_chance",
+      "name": "Chill Chance"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Flag: your critical strikes no longer auto-inflict ailments (the ailment-chance roll still applies).",
+      "key": "crit_ailment_denied",
+      "name": "Critical Strikes Cannot Cause Ailments"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Raises the cap on the increased-damage-taken your Shock inflicts.",
+      "key": "shock_max",
+      "name": "Maximum Shock Effect"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Raises the cap on the action slow your Chill inflicts.",
+      "key": "chill_max",
+      "name": "Maximum Chill Effect"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Scales how long your ailments last (Ignite spreads a fixed total, so shorter burns faster).",
+      "key": "ailment_duration",
+      "name": "Ailment Duration"
     }
   ]
 }

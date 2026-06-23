@@ -6,7 +6,6 @@ AffixDef(
     public: true,
     name: "of Savagery",
     kind: suffix,
-    pool: "weapon",
     weight: 50,
     effects: [(stat: damage_phys, layer: increased, condition: Some(wielding_weapon_class(melee)))],
     tiers: [

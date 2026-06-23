@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of the Wind",
     kind: suffix,
-    pool: "armour",
     weight: 90,
     effects: [(stat: evasion, layer: added)],
     tiers: [

@@ -1,0 +1,15 @@
+// "... of Kindling" — chance for your FIRE hits to Ignite (#88). The per-element
+// counterpart to the all-elemental `of_affliction` hybrid (which composes all three
+// chances); a single-element pick is the common case, the hybrid the deliberate one.
+AffixDef(
+    id: "of_kindling",
+    public: true,
+    name: "of Kindling",
+    kind: suffix,
+    weight: 50,
+    effects: [(stat: ignite_chance, layer: added)],
+    tiers: [
+        (ilvl: 1, name: "of Kindling", weight: 100, rolls: [(min: 500, max: 1500)]),   // +5-15%
+        (ilvl: 8, name: "of Searing", weight: 45, rolls: [(min: 1501, max: 3000)]),    // +15-30%
+    ],
+)

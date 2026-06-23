@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Hardy",
     kind: prefix,
-    pool: "accessory",
     weight: 90,
     effects: [(stat: life, layer: added)],
     tiers: [

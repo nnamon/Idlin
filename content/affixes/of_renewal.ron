@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Renewal",
     kind: suffix,
-    pool: "armour",
     weight: 75,
     effects: [(stat: life_regen, layer: added)],
     tiers: [

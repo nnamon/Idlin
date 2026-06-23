@@ -19,7 +19,7 @@ const BAR_H = 40;
  *  aligned at any camera angle — the old two-sprite bar offset the fill in the
  *  group's LOCAL space, which the angled camera projected diagonally off the
  *  track (#100). `esPct < 0` means no shield → only the life bar is drawn. */
-function drawBar(canvas: HTMLCanvasElement, lifePct: number, esPct: number): void {
+function drawBar(canvas: HTMLCanvasElement, lifePct: number, esPct: number, ailments: number): void {
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, BAR_W, BAR_H);
   const band = (y: number, h: number, pct: number, track: string, fill: string) => {
@@ -37,6 +37,25 @@ function drawBar(canvas: HTMLCanvasElement, lifePct: number, esPct: number): voi
     band(19, 19, lifePct, "#331111", "#b73433"); // life below (crimson, globe red)
   } else {
     band(10, 20, lifePct, "#331111", "#b73433"); // life only, vertically centred
+  }
+  // #88: ailment pips, right-aligned along the bar — Ignite (orange), Shock
+  // (yellow), Chill (cyan). One bright square per active bit; absent = nothing.
+  if (ailments) {
+    const pips: [number, string][] = [
+      [1, "#ff7a2a"],
+      [2, "#ffe14a"],
+      [4, "#7fe0ff"],
+    ];
+    const active = pips.filter(([bit]) => ailments & bit);
+    const sz = 18;
+    let px = BAR_W - active.length * (sz + 4) - 1;
+    for (const [, color] of active) {
+      ctx.fillStyle = "rgba(0,0,0,0.85)";
+      ctx.fillRect(px, 0, sz + 2, sz + 2); // dark border for contrast on any bg
+      ctx.fillStyle = color;
+      ctx.fillRect(px + 2, 1, sz - 2, sz - 1);
+      px += sz + 4;
+    }
   }
 }
 
@@ -103,6 +122,7 @@ export class EntityVisual {
   private barTex: THREE.CanvasTexture | null = null;
   private lastLifePct = -1;
   private lastEsPct = -2; // sentinel below any real es_pct (-1..100) → first draw runs
+  private lastAilments = -1; // sentinel below any real bitmask (0..7) → first draw runs
   private label: THREE.Sprite | null = null;
   private weaponKey = "";
   private oneShot: THREE.AnimationAction | null = null;
@@ -659,19 +679,23 @@ export class EntityVisual {
     if (this.bar && this.barTex && this.barCanvas) {
       const lifePct = er.state.life_pct;
       const esPct = er.state.es_pct;
-      if (lifePct !== this.lastLifePct || esPct !== this.lastEsPct) {
+      const ailments = er.state.ailments;
+      if (lifePct !== this.lastLifePct || esPct !== this.lastEsPct || ailments !== this.lastAilments) {
         this.lastLifePct = lifePct;
         this.lastEsPct = esPct;
+        this.lastAilments = ailments;
         // Life reads the same crimson as the HUD life globe; the shield the same
         // light blue as the globe's ES — bar and orbs are one visual language.
-        drawBar(this.barCanvas, lifePct, esPct);
+        // Ailment pips (#88) ride the top-right corner.
+        drawBar(this.barCanvas, lifePct, esPct, ailments);
         this.barTex.needsUpdate = true;
       }
-      // A monster at full life hides its bar — but keep it shown if a shield is down.
+      // A monster at full life hides its bar — but keep it shown if a shield is
+      // down OR it's ailing (so the ailment pips stay visible, #88).
       const esFull = esPct < 0 || esPct >= 100;
       const hide =
         er.state.dead ||
-        (er.state.kind === "Monster" && er.state.life_pct >= 100 && esFull);
+        (er.state.kind === "Monster" && er.state.life_pct >= 100 && esFull && ailments === 0);
       this.bar.visible = !hide;
     }
 

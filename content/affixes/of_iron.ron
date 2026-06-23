@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Iron",
     kind: suffix,
-    pool: "armour",
     weight: 90,
     effects: [(stat: armour, layer: added)],
     tiers: [

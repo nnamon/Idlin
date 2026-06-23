@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Hale",
     kind: prefix,
-    pool: "armour",
     weight: 100,
     effects: [(stat: life, layer: added)],
     tiers: [

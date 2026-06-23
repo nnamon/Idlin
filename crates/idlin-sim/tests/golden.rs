@@ -22,17 +22,48 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// under the wider hash, confirming a representation change, not a leak. (The
 /// later item-charges/affix-tier additions left the digest at this value — the
 /// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
-/// Re-pinned for #109 (strike-time conditional affixes): (1) `CombatStats` gained
-/// `has_strike_conditions`, folded into `state_hash` (whole-struct rule) — a
-/// FINGERPRINT widening; AND (2) a content change — the new `of_desperation` affix
-/// (strike-time "+phys while below 35% life") shifts `content_hash`
-/// (0x31EC…→0x400E_EE4F_FED9_A16C) and the weighted weapon-suffix pool, so the
-/// 2000-tick grind's rolls/outcomes move. The strike-time mechanism itself is inert
-/// until a character actually wields such an affix below the threshold; the
-/// determinism trio still agrees, confirming no leak.
-/// (Prior: 0x5662 — #86 state_hash widening; 0x8541 — earlier hash-completeness;
-/// Phase D 0x5755 — ten new affix files; Phase A 0x0A71 — effects-list schema; etc.)
-const GOLDEN_HASH: u64 = 0xC190_1754_45A1_A5DE;
+/// Re-pinned for #109 (strike-time conditional affixes) re-integrated onto current main
+/// (which carries #88 per-element ailments + the #124 affix-pool inversion): (1)
+/// `CombatStats` gained `has_strike_conditions`, folded into `state_hash` (a FINGERPRINT
+/// widening); AND (2) the new `of_desperation` affix (strike-time "+phys while below 35%
+/// life"), now a member of the `weapon` pool, shifts content_hash and the weighted
+/// weapon-suffix rolls, so the 2000-tick grind's outcomes move. The strike-time mechanism
+/// is inert until a character wields such an affix below the threshold; the determinism
+/// trio still agrees, confirming no leak.
+/// --- prior #88/#124 re-pin chain (kept for the bisect trail) ---
+/// Re-pinned for #88 first-class ailments MERGED onto a `main` that already carries
+/// #50 (VM-ABI generation; main was 0xF08B…). #88 brings: a content_hash change (new
+/// ailment affixes; `frost_nova`'s hardcoded chill debuff replaced by an inherent
+/// Chill ailment) AND a sim-rule change (cold/fire/lightning hits proc Ignite/Shock/
+/// Chill on crit or via ailment-chance), so the 2000-tick grind's outcomes move; AND
+/// a FINGERPRINT widening — the ailment `CombatStats` fields (the per-element inflict
+/// chances/crits_no_ailment/shock_max/chill_max/ailment_duration, spawn-set for
+/// monsters from rolled affixes) and the in-flight projectile's `ailment_chance` now
+/// fold into `state_hash`.
+/// Re-pinned again for the per-element ailment-chance rework: the single blanket
+/// `AilmentChance` stat (which scaled all ailments at once — too strong) is SPLIT into
+/// `IgniteChance`/`ShockChance`/`ChillChance`, the proc picks chance by the hit's
+/// element, `of_affliction` becomes a HYBRID composed of the three, and the keystone-
+/// only `of_composure` weapon affix is DELETED (tombstoned). This moves content_hash
+/// (affix effects + tombstone + stat vocab → 0xBA6F31C912F0421D), the fingerprint (3
+/// chance fields hashed instead of 1), AND grind outcomes (monsters with of_affliction
+/// now derive per-element chances). The determinism trio still agrees.
+/// Re-pinned again for the single-element chance affixes: of_kindling (ignite),
+/// of_conduction (shock), of_numbing (chill) added to the weapon pool, and the
+/// all-elemental of_affliction hybrid made rarer (weight 50→20). Three new content
+/// files + the weight edit move content_hash (→0xC089DD7B8DD3B1C1), and the weapon-
+/// pool affix rolls shift monster stats over the 2000-tick grind. Both intentional.
+/// Re-pinned for the affix-pool inversion: eligibility moves entirely to the pool
+/// side — `AffixDef.pool` is removed, `content/pools/*.ron` now LIST their member
+/// affixes, and items/monsters subscribe by name. This is content_hash-ONLY: the
+/// `pool:` field stripped from 49 affix files + 8 new pool files change content_hash
+/// (→0x95F068BD5300692A), but the resolved affix→pool membership is preserved EXACTLY
+/// (pinned per-pool in `affix_pool_subscriptions_resolve`), so the roller's candidate
+/// sets — and thus every loot roll and grind outcome — are byte-identical. The
+/// determinism trio still agrees.
+/// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
+/// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
+const GOLDEN_HASH: u64 = 0x7FFF_2836_4A8D_7FE9;
 
 #[test]
 fn golden_replay() {

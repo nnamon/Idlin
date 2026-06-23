@@ -212,6 +212,7 @@ export class WorldStore {
           er.state.weapon_rarity = u.weapon_rarity;
           er.state.gear = u.gear;
           er.state.gear_rarity = u.gear_rarity;
+          er.state.ailments = u.ailments; // #88: nameplate ailment pips track the patch
         }
         for (const id of d.removed) this.entities.delete(id);
         for (const h of d.hits) {

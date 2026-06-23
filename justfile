@@ -118,7 +118,7 @@ gen-content:
 
 # Fail if generated content artifacts are stale (CI gate `just check` once missed).
 content-check: gen-content
-    git diff --exit-code content/ids.ron content/lib/gen_ids.bot web/public/content-docs.json
+    git diff --exit-code content/ids.ron content/lib/gen_ids.bot content/lib/gen_abi.bot web/public/content-docs.json
 
 # Boot the world fresh (4 built-in bots) with the production frontend.
 demo: web-build

@@ -142,6 +142,27 @@ fn syscalls_follow_the_abi() {
 }
 
 #[test]
+fn read_ailments_builtin_emits_the_syscall() {
+    // #88: the `read_ailments(net)` builtin compiles to syscall 36, argc 1, the
+    // net popped first-arg-first; its host result lands in the target word.
+    // Mutation: drop the BUILTINS entry → `read_ailments` no longer compiles.
+    let prog = compile("fn main() { mem[0xC800] = read_ailments(0xE100); }").unwrap();
+    let mut vm = Vm::new(&prog).unwrap();
+    let mut budget = 100_000;
+    assert_eq!(
+        vm.run(&mut budget),
+        RunExit::Syscall {
+            number: 36,
+            argc: 1
+        }
+    );
+    assert_eq!(vm.pop(), 0xE100); // arg1: target net id
+    vm.push(0b101); // host result: ignite|chill bitmask
+    assert_eq!(vm.run(&mut budget), RunExit::Halted);
+    assert_eq!(vm.load_i32(0xC800), 0b101);
+}
+
+#[test]
 fn halt_mid_function_resumes_next_tick() {
     let prog = compile(
         "fn main() {

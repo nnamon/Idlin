@@ -8,7 +8,6 @@ AffixDef(
     public: true,
     name: "of Desperation",
     kind: suffix,
-    pool: "weapon",
     weight: 30,
     effects: [(stat: damage_phys, layer: increased, condition: Some(below_life_pct(3500)))],
     tiers: [

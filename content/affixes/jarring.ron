@@ -1,7 +1,7 @@
 // Weapon prefix: stagger — your hits count as bigger against the
 // victim's stun bar (see mechanics.md "Use timing" / hit reactions).
 AffixDef(
-    id: "jarring", name: "Jarring", kind: prefix, pool: "weapon",
+    id: "jarring", name: "Jarring", kind: prefix,
     public: true,
     weight: 60,
     effects: [(stat: stagger, layer: increased)],
