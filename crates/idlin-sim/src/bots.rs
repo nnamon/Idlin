@@ -43,11 +43,11 @@ use idlin_vm::abi;
 // the compiler's BUILTINS table.
 use idlin_vm::{
     SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
-    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_CURRENCY,
-    SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY, SYS_READ_ITEM_MODS,
-    SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM,
-    SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
-    SYS_USE_SKILL_DIR,
+    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_AILMENTS,
+    SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY,
+    SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO,
+    SYS_SOCKET_GEM, SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL,
+    SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
@@ -196,6 +196,26 @@ impl World {
                 let id = self.zone.get(slot).map(|e| e.net_id).unwrap_or(0);
                 events.push(SimEvent::BotDebug { id, values });
                 0
+            }
+            SYS_READ_AILMENTS => {
+                // arg: target net id → a bitmask of its active ailments (#88):
+                // bit0 Ignite, bit1 Shock, bit2 Chill. 0 if unknown/unafflicted.
+                let net = bot.vm.pop() as u32;
+                let Some(e) = self.zone.get_net(net) else {
+                    return 0;
+                };
+                use crate::entity::AilmentKind;
+                let mut bits = 0;
+                if e.ailment(AilmentKind::Ignite) > 0 {
+                    bits |= 1;
+                }
+                if e.ailment(AilmentKind::Shock) > 0 {
+                    bits |= 2;
+                }
+                if e.ailment(AilmentKind::Chill) > 0 {
+                    bits |= 4;
+                }
+                bits
             }
             SYS_SELF_STATUS => {
                 let out = bot.vm.pop() as u16;
@@ -968,6 +988,68 @@ mod tests {
             rd(out.wrapping_add(16), 1),
             -1,
             "record 1 empty → base_num -1"
+        );
+        world.bots.put_back(bot_idx, bot);
+    }
+
+    #[test]
+    fn read_ailments_syscall_returns_the_bitmask() {
+        // #88: ReadAilments(net) → bit0 Ignite | bit1 Shock | bit2 Chill, 0 if
+        // unknown. Mutation: drop a bit in the dispatch → the assert fails.
+        use crate::entity::{ActiveEffect, AilmentKind};
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut world = World::new(13, &content);
+        let program = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Reader".into(),
+                program,
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let (mon_slot, mon_net) = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, e)| (s, e.net_id))
+            .unwrap();
+        let effs = &mut world.zone.get_mut(mon_slot).unwrap().effects;
+        effs.push(ActiveEffect::Ailment {
+            kind: AilmentKind::Ignite,
+            magnitude: 5,
+            ticks_left: 40,
+            source: 0,
+        });
+        effs.push(ActiveEffect::Ailment {
+            kind: AilmentKind::Shock,
+            magnitude: 1000,
+            ticks_left: 40,
+            source: 0,
+        });
+        let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
+        let mut bot = world.bots.take(bot_idx).unwrap();
+        let mut ev = Vec::new();
+        bot.vm.push(mon_net as i32);
+        assert_eq!(
+            world.syscall(slot, &mut bot, SYS_READ_AILMENTS, 1, &mut ev),
+            1 | 2,
+            "ignite|shock bitmask"
+        );
+        bot.vm.push(999_999);
+        assert_eq!(
+            world.syscall(slot, &mut bot, SYS_READ_AILMENTS, 1, &mut ev),
+            0,
+            "unknown entity → 0"
+        );
+        // A negative net id casts to a huge u32 → no entity → 0, no panic.
+        bot.vm.push(-1);
+        assert_eq!(
+            world.syscall(slot, &mut bot, SYS_READ_AILMENTS, 1, &mut ev),
+            0,
+            "negative net id → 0 (no panic)"
         );
         world.bots.put_back(bot_idx, bot);
     }

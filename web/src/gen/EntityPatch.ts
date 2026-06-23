@@ -13,4 +13,8 @@ weapon: string, weapon_rarity: number,
 /**
  * Armor visual part keys; patched so upgrades show up mid-stream.
  */
-gear: Array<string>, gear_rarity: Array<number>, };
+gear: Array<string>, gear_rarity: Array<number>, 
+/**
+ * Ailment bitmask (#88), patched so the nameplate tracks proc/expire.
+ */
+ailments: number, };

@@ -22,20 +22,31 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// under the wider hash, confirming a representation change, not a leak. (The
 /// later item-charges/affix-tier additions left the digest at this value — the
 /// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
-/// Re-pinned for #50 part 2 (VM-ABI generation): a new generated `content/lib/
-/// gen_abi.bot` plus the `.bot` files rewritten to consume it (grinder template,
-/// hostile_melee/villager brains, zone_lib + the area brains) move `content_hash`
-/// (0x31EC…→0xFEBB_7013_FB93_413D). The change is REPRESENTATION-ONLY: each `.bot`
-/// literal was replaced by a const whose VALUE equals it — the gen consts mirror
-/// `idlin_vm::abi` (locked by the `vm_abi_contracts_are_pinned` pin + the gen-
-/// freshness CI gate), so every compiled brain's bytecode is byte-identical (verified
-/// by a compiled-bytecode diff vs the pre-conversion brains during development).
-/// `sim_integration` also passes unchanged (corroborating, though it does NOT
-/// exhaustively exercise every field read). Only content_hash — which folds into
-/// state_hash — moves the digest; the determinism trio still agrees.
-/// (Prior: 0x5662 — #86 state_hash widening; 0x8541 — earlier hash-completeness;
-/// Phase D 0x5755 — ten new affix files; Phase A 0x0A71 — effects-list schema; etc.)
-const GOLDEN_HASH: u64 = 0xF08B_6E32_6CA3_06BF;
+/// Re-pinned for #88 first-class ailments MERGED onto a `main` that already carries
+/// #50 (VM-ABI generation; main was 0xF08B…). #88 brings: a content_hash change (new
+/// ailment affixes; `frost_nova`'s hardcoded chill debuff replaced by an inherent
+/// Chill ailment) AND a sim-rule change (cold/fire/lightning hits proc Ignite/Shock/
+/// Chill on crit or via ailment-chance), so the 2000-tick grind's outcomes move; AND
+/// a FINGERPRINT widening — the ailment `CombatStats` fields (the per-element inflict
+/// chances/crits_no_ailment/shock_max/chill_max/ailment_duration, spawn-set for
+/// monsters from rolled affixes) and the in-flight projectile's `ailment_chance` now
+/// fold into `state_hash`.
+/// Re-pinned again for the per-element ailment-chance rework: the single blanket
+/// `AilmentChance` stat (which scaled all ailments at once — too strong) is SPLIT into
+/// `IgniteChance`/`ShockChance`/`ChillChance`, the proc picks chance by the hit's
+/// element, `of_affliction` becomes a HYBRID composed of the three, and the keystone-
+/// only `of_composure` weapon affix is DELETED (tombstoned). This moves content_hash
+/// (affix effects + tombstone + stat vocab → 0xBA6F31C912F0421D), the fingerprint (3
+/// chance fields hashed instead of 1), AND grind outcomes (monsters with of_affliction
+/// now derive per-element chances). The determinism trio still agrees.
+/// Re-pinned again for the single-element chance affixes: of_kindling (ignite),
+/// of_conduction (shock), of_numbing (chill) added to the weapon pool, and the
+/// all-elemental of_affliction hybrid made rarer (weight 50→20). Three new content
+/// files + the weight edit move content_hash (→0xC089DD7B8DD3B1C1), and the weapon-
+/// pool affix rolls shift monster stats over the 2000-tick grind. Both intentional.
+/// (Prior: 0x53B5 — per-element split; 0xBB5A — #88-onto-#50 merge, blanket
+/// AilmentChance; 0xF08B — #50 part 2 on main; 0x5662 — #86 state_hash widening; etc.)
+const GOLDEN_HASH: u64 = 0x4839_C42D_D58B_1053;
 
 #[test]
 fn golden_replay() {

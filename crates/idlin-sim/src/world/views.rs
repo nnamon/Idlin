@@ -514,6 +514,20 @@ impl World {
                     dead,
                     kills,
                     items,
+                    ailments: {
+                        use crate::entity::AilmentKind;
+                        let mut b = 0u8;
+                        if e.ailment(AilmentKind::Ignite) > 0 {
+                            b |= 1;
+                        }
+                        if e.ailment(AilmentKind::Shock) > 0 {
+                            b |= 2;
+                        }
+                        if e.ailment(AilmentKind::Chill) > 0 {
+                            b |= 4;
+                        }
+                        b
+                    },
                 }
             })
             .collect()
@@ -682,6 +696,15 @@ impl World {
                 h.write_u8(c.projectile as u8);
                 h.write_i64(c.item_rarity);
                 h.write_i64(c.item_quantity);
+                // Ailments (#88): spawn-set for monsters from rolled affixes, so
+                // hash them too (per the whole-struct rule above).
+                h.write_i64(c.ignite_chance);
+                h.write_i64(c.shock_chance);
+                h.write_i64(c.chill_chance);
+                h.write_u8(c.crits_no_ailment as u8);
+                h.write_i64(c.shock_max);
+                h.write_i64(c.chill_max);
+                h.write_i64(c.ailment_duration);
             }
             if let Some(ch) = &e.character {
                 h.write_bytes(ch.name.as_bytes());
@@ -771,6 +794,20 @@ impl World {
                         for g in grants {
                             fold_grant(&mut h, g);
                         }
+                    }
+                    // Ailment (#88): replay-relevant (shock changes damage taken,
+                    // chill changes timing, ignite burns) → folds into the hash.
+                    crate::entity::ActiveEffect::Ailment {
+                        kind,
+                        magnitude,
+                        ticks_left,
+                        source,
+                    } => {
+                        h.write_u8(3);
+                        h.write_u8(*kind as u8);
+                        h.write_i64(*magnitude);
+                        h.write_u32(*ticks_left);
+                        h.write_u32(*source);
                     }
                 }
             }
@@ -885,6 +922,10 @@ impl World {
             }
             h.write_i64(p.stagger);
             h.write_i64(p.knockback_cu);
+            // On-impact ailment chance (#88): two otherwise identical in-flight
+            // projectiles with different ailment_chance proc differently when they
+            // land, so it is future state and must hash apart.
+            h.write_i64(p.ailment_chance);
         }
         for ex in &self.zone.exits {
             h.write_i32(ex.pos.x.raw());

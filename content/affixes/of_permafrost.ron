@@ -1,0 +1,14 @@
+// "... of Permafrost" — raises the cap on the Chill you inflict (#88): the Added
+// layer lifts the default 30% action-slow ceiling.
+AffixDef(
+    id: "of_permafrost",
+    public: true,
+    name: "of Permafrost",
+    kind: suffix,
+    pool: "weapon",
+    weight: 35,
+    effects: [(stat: chill_max, layer: added)],
+    tiers: [
+        (ilvl: 4, name: "of Permafrost", weight: 100, rolls: [(min: 300, max: 800)]),   // +3-8% cap
+    ],
+)

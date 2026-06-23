@@ -109,6 +109,13 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 50_000,
   },
   {
+    // Ailment pips (#88): four monsters — ignited / shocked / chilled / all three
+    // — eyeball that the orange/yellow/cyan pips ride the overhead bar.
+    name: "scene-ailments",
+    kind: "scene",
+    minBytes: 50_000,
+  },
+  {
     // All eight skills are in the DOM (clipped, not absent) — the first and last
     // prove the full list rendered; the bounded-box test proves it's clipped.
     name: "skill-overflow",

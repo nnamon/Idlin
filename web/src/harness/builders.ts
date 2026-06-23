@@ -34,6 +34,7 @@ export function character(over: Require<EntityState, "id" | "name">): EntityStat
     dead: false,
     kills: 0,
     items: 0,
+    ailments: 0, // #88: a fixture sets a bitmask (1 ignite|2 shock|4 chill) for pips
     ...over,
   };
 }

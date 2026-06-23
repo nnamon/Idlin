@@ -328,6 +328,26 @@ const sceneShore: Fixture = {
  * track at any pool level (the old two-sprite bar slid the fill off diagonally),
  * and an entity with energy shield shows a cyan band above the life bar.
  */
+const sceneAilments: Fixture = {
+  kind: "scene",
+  label: "Ailment pips: ignite/shock/chill indicators on the overhead bar (#88)",
+  seed: 0x1d71c0de,
+  frames: 40,
+  camera: [34, 8, 32, 34, 1.5, 22.5],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Withered Shore",
+      entities: [
+        // One pip each (ignite / shock / chill), then all three.
+        monster({ id: 1, name: "Ignited", model: "stalker", level: 40, life_pct: 70, ailments: 1, ...simXY(31, 22.5) }),
+        monster({ id: 2, name: "Shocked", model: "husk", level: 40, life_pct: 70, ailments: 2, ...simXY(34, 22) }),
+        monster({ id: 3, name: "Chilled", model: "shambler", level: 40, life_pct: 70, ailments: 4, ...simXY(37, 22.5) }),
+        monster({ id: 4, name: "Afflicted", model: "stalker", level: 40, life_pct: 70, ailments: 7, rarity: 2, ...simXY(40, 22) }),
+      ],
+    }),
+  ],
+};
+
 const sceneBars: Fixture = {
   kind: "scene",
   label: "Overhead bars: aligned life fill + energy-shield band (#100)",
@@ -801,6 +821,7 @@ export const FIXTURES: Record<string, Fixture> = {
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,
+  "scene-ailments": sceneAilments,
   "skill-overflow": skillOverflow,
   globes,
   "full-shore": fullShore,
