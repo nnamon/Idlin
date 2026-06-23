@@ -10,6 +10,16 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #125 full monster/character parity: monsters now derive through the
+/// SAME pipeline as characters (`derive_from_sheet`) — folding rolled affixes + a new
+/// fixed passive set + buffs + attribute conversion over the level/rarity-scaled def,
+/// computing EVERY field (crit/leech/regen/ES/block/stagger/poise/knockback/cast-speed
+/// were previously hardcoded). This fixes a real bug — a refresh (e.g. on chill) used to
+/// rebuild from the RAW def, dropping the spawn-time scaling AND rolled affixes — and
+/// folds the elite bulk into the base (flat-life affixes no longer bulk-scaled), so
+/// every monster's stats over the 2000-tick grind move; `tide_husk` also gains a passive
+/// kit (incl. a strike-time enrage). content_hash + grind outcomes both shift. The
+/// determinism trio still agrees. (Prior: 0x960F — #109 RecentlyKilled re-integration.)
 /// Re-pinned for the #86 grant-unification follow-up: `state_hash` was widened to
 /// fingerprint all REPLAY-RELEVANT world state it had silently dropped — active-
 /// buff grant internals, the full projectile payload, `intents.move_to`,
@@ -70,7 +80,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x960F_AE41_0340_E456;
+const GOLDEN_HASH: u64 = 0x82D3_BFD4_7503_916E;
 
 #[test]
 fn golden_replay() {

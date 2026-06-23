@@ -16,6 +16,15 @@ MonsterDef(
     skills: [
         (gem: "arc", level: 2),
     ],
+    // A fixed passive kit (#125, full monster parity) — same Grant vocabulary as the
+    // player tree, folded into the husk's derived stats every refresh. Bloated bulk +
+    // a strike-time ENRAGE: it hits harder once it's been wounded past half life
+    // (a monster strike-time condition, the mirror of `of_desperation`).
+    passives: [
+        (stat: life, layer: increased, value: 5000),    // +50% life (bloated)
+        (stat: armour, layer: added, value: 60),         // thicker hide
+        (stat: damage_phys, layer: increased, value: 4000, condition: Some(below_life_pct(5000))),
+    ],
     use_ticks: 16,
     aggro_radius_cu: 1300,
     armour: 80,

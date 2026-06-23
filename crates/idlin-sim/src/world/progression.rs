@@ -6,7 +6,7 @@ use super::{
     BASE_SPEED_CPS, SimEvent, UNARMED_RANGE_CU, UNARMED_USE_TICKS, World, base_accuracy,
     base_evasion, base_life, base_mana, base_unarmed_damage, fx_from_cu, speed_from_cps,
 };
-use crate::entity::{DMG_COUNT, GEM_LEVEL_CAP, Item, RES_COUNT, gem_xp_to_next};
+use crate::entity::{DMG_COUNT, GEM_LEVEL_CAP, Item, RES_COUNT, Rarity, gem_xp_to_next};
 use crate::fixed::Fx;
 use crate::stats::{EvalContext, Grant, Stat, StatSheet};
 use idlin_content::GearSlot;
@@ -86,6 +86,183 @@ pub(super) struct EffectiveOffense {
     pub range: Fx,
     pub stagger: i64,
     pub knockback_cu: i64,
+}
+
+/// The per-kind BASE each stat starts from before the sheet (grants) folds over it
+/// (#125 monster parity). Characters fill it from level + gear + weapon; monsters
+/// from the level/rarity-scaled def. The compute that turns base + sheet into a
+/// `CharDerived` (`derive_from_sheet`) is IDENTICAL for both, so the two kinds can
+/// never drift — only the grant sources and these bases differ.
+struct DeriveBase {
+    life: i64,
+    mana: i64,
+    damage: [i64; DMG_COUNT],
+    accuracy: i64,
+    evasion: i64,
+    armour: i64,
+    resists: [i64; RES_COUNT],
+    use_ticks: u32,
+    speed: Fx,
+    range: Fx,
+    projectile: bool,
+    block: i64,
+}
+
+/// The shared derive core (#125): fold attribute conversions into the sheet, then
+/// compute every `CombatStats` field from `sheet.value(stat, base)`. Used by BOTH
+/// the character and monster derives so the field math can't diverge. `has_strike`
+/// carries whether the source grants (tree/gear/affixes/passives/buffs) held a
+/// strike-time condition — attribute grants never are, so this only ever passes it
+/// through (the `|=` keeps the contract explicit).
+fn derive_from_sheet(
+    mut sheet: StatSheet,
+    base: DeriveBase,
+    ctx: &EvalContext,
+    mut has_strike: bool,
+) -> CharDerived {
+    use crate::stats::{Condition, Layer, WeaponClass};
+    // Attribute conversions (PoE-classic, user-locked; ratios flagged for redline).
+    // Each point of: Strength → +0.5 life, +0.2% increased MELEE phys (unarmed
+    // counts); Dexterity → +2 accuracy, +0.2% increased evasion; Intelligence →
+    // +0.5 mana, +0.2% increased energy shield. Folded as grants so the STR melee
+    // bonus runs the same conditional path as everything else (#86).
+    let strength = sheet.value(Stat::Strength, 0);
+    let dexterity = sheet.value(Stat::Dexterity, 0);
+    let intelligence = sheet.value(Stat::Intelligence, 0);
+    for grant in [
+        Grant::new(Stat::Life, Layer::Added, strength / 2),
+        Grant {
+            stat: Stat::DamagePhys,
+            layer: Layer::Increased,
+            value: strength * 20,
+            condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+        },
+        Grant::new(Stat::Accuracy, Layer::Added, dexterity * 2),
+        Grant::new(Stat::Evasion, Layer::Increased, dexterity * 20),
+        Grant::new(Stat::Mana, Layer::Added, intelligence / 2),
+        Grant::new(Stat::EnergyShield, Layer::Increased, intelligence * 20),
+    ] {
+        if grant.value != 0 {
+            has_strike |= apply_conditional(&mut sheet, &grant, ctx);
+        }
+    }
+
+    const DMG_STATS: [Stat; DMG_COUNT] = [
+        Stat::DamagePhys,
+        Stat::DamageFire,
+        Stat::DamageCold,
+        Stat::DamageLightning,
+        Stat::DamageChaos,
+    ];
+    let mut damage = [0i64; DMG_COUNT];
+    for i in 0..DMG_COUNT {
+        damage[i] = sheet.value(DMG_STATS[i], base.damage[i]);
+    }
+    const RES_STATS: [Stat; RES_COUNT] = [
+        Stat::ResistFire,
+        Stat::ResistCold,
+        Stat::ResistLightning,
+        Stat::ResistChaos,
+    ];
+    let mut resists = [0i64; RES_COUNT];
+    for i in 0..RES_COUNT {
+        resists[i] = sheet.value(RES_STATS[i], base.resists[i]);
+    }
+    let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
+    let move_factor = sheet.value(Stat::MoveSpeed, 10000).max(1000);
+    CharDerived {
+        life_max: sheet.value(Stat::Life, base.life).max(1),
+        mana_max: sheet.value(Stat::Mana, base.mana).max(0),
+        es_max: sheet.value(Stat::EnergyShield, 0),
+        life_regen: sheet.value(Stat::LifeRegen, 0),
+        mana_regen: sheet.value(Stat::ManaRegen, 0),
+        leech_life: sheet.value(Stat::LeechLife, 0),
+        leech_mana: sheet.value(Stat::LeechMana, 0),
+        block: sheet.value(Stat::Block, base.block).min(7500),
+        crit_inc: sheet.value(Stat::CritChance, 10000).max(0),
+        crit_multi: (15000 + sheet.value(Stat::CritMulti, 0)).max(10000),
+        cast_speed: sheet.value(Stat::CastSpeed, 10000).max(1000),
+        damage,
+        accuracy: sheet.value(Stat::Accuracy, base.accuracy),
+        evasion: sheet.value(Stat::Evasion, base.evasion),
+        armour: sheet.value(Stat::Armour, base.armour),
+        resists,
+        range: base.range,
+        use_ticks: ((base.use_ticks as i64 * 10000 / attack_factor).max(2)) as u32,
+        speed: Fx::from_raw((base.speed.raw() as i64 * move_factor / 10000) as i32),
+        projectile: base.projectile,
+        item_rarity: sheet.value(Stat::ItemRarity, 10000).max(0),
+        item_quantity: sheet.value(Stat::ItemQuantity, 10000).max(0),
+        stagger: sheet.value(Stat::Stagger, 0).max(0),
+        poise: sheet.value(Stat::Poise, 0).max(0),
+        knockback_cu: sheet.value(Stat::Knockback, 0).max(0),
+        ignite_chance: sheet.value(Stat::IgniteChance, 0).max(0),
+        shock_chance: sheet.value(Stat::ShockChance, 0).max(0),
+        chill_chance: sheet.value(Stat::ChillChance, 0).max(0),
+        crits_no_ailment: sheet.value(Stat::CritAilmentDenied, 0) > 0,
+        shock_max: sheet.value(Stat::ShockMax, 4000).max(0),
+        chill_max: sheet.value(Stat::ChillMax, 3000).max(0),
+        ailment_duration: sheet.value(Stat::AilmentDuration, 0),
+        has_strike,
+    }
+}
+
+/// A monster's pre-grant base (#125): the def's stats with the per-instance level
+/// and elite-bulk scaling baked in (the monster analogue of `base_life(level)` for a
+/// character). Only life + damage scale with level/rarity; everything else is the raw
+/// def. The derive then folds rolled affixes + passives + buffs over this, every
+/// refresh — so the scaling (and affixes) can no longer be lost when a monster is
+/// chilled. (Bulk multiplies the base here rather than post-affix as the old spawn
+/// did; flat-life affixes are no longer bulk-scaled — a small, intentional shift.)
+fn monster_scaled_base(
+    def: &idlin_content::MonsterDef,
+    eff_level: u32,
+    rarity: Rarity,
+) -> DeriveBase {
+    let delta = eff_level as i64 - def.level as i64;
+    let life_bp = (10000 + delta * 1200).max(2500);
+    let dmg_bp = (10000 + delta * 1000).max(2500);
+    let bulk = match rarity {
+        Rarity::Magic => 16000,
+        Rarity::Rare => 26000,
+        _ => 10000,
+    };
+    let scale = |v: i64, bp: i64| v * bp / 10000 * bulk / 10000;
+    let raw = [
+        def.damage,
+        def.damage_fire,
+        def.damage_cold,
+        def.damage_lightning,
+        def.damage_chaos,
+    ];
+    let mut damage = [0i64; DMG_COUNT];
+    for i in 0..DMG_COUNT {
+        damage[i] = scale(raw[i], dmg_bp);
+    }
+    let accuracy = if def.accuracy > 0 {
+        def.accuracy
+    } else {
+        60 + 15 * def.level as i64
+    };
+    DeriveBase {
+        life: scale(def.life, life_bp).max(1),
+        mana: def.mana,
+        damage,
+        accuracy,
+        evasion: def.evasion,
+        armour: def.armour,
+        resists: [
+            def.resist_fire,
+            def.resist_cold,
+            def.resist_lightning,
+            def.resist_chaos,
+        ],
+        use_ticks: def.use_ticks,
+        speed: speed_from_cps(def.speed_cps),
+        range: fx_from_cu(def.range_cu),
+        projectile: def.projectile,
+        block: 0,
+    }
 }
 
 /// XP to advance from `level` to `level+1`. Hybrid curve: a quadratic
@@ -211,81 +388,121 @@ impl World {
         }
     }
 
-    /// Monsters: def base + active effect grants. Folds the combat-relevant
-    /// stats (life, damage, accuracy/evasion/armour, resists, attack and
-    /// move speed) with the same clamps the character path uses.
-    fn refresh_monster_stats(&mut self, slot: usize) {
-        use crate::entity::ActiveEffect;
-        let Some(e) = self.zone.get(slot) else { return };
-        let Some(m) = &e.monster else { return };
-        let def_idx = m.def_idx;
+    /// Pure derive for a MONSTER (#125 parity) — the mirror of
+    /// `character_derived_stats`. Folds rolled affixes, the def's fixed passive set,
+    /// and active buffs (plus attribute conversion, via the shared core) over the
+    /// level/rarity-scaled def base, computing EVERY field a character does. The
+    /// cached refresh calls it at full life in the DERIVE phase; the hit path calls it
+    /// at live life % in the STRIKE phase so strike-time conditions fold per-strike.
+    fn monster_derived_stats(
+        &self,
+        slot: usize,
+        life_pct: i64,
+        include_strike: bool,
+    ) -> Option<CharDerived> {
+        let e = self.zone.get(slot)?;
+        let m = e.monster.as_ref()?;
+        let def = &self.content.monsters[m.def_idx as usize];
+        // Ticks since this monster last killed (#125: RecentlyKilled works for
+        // monsters too) — same 0=never sentinel + saturating cast as the char path.
+        let ticks_since_kill = e
+            .combat
+            .as_ref()
+            .map(|c| {
+                if c.last_kill_tick == 0 {
+                    i64::MAX
+                } else {
+                    self.tick
+                        .saturating_sub(c.last_kill_tick)
+                        .min(i64::MAX as u64) as i64
+                }
+            })
+            .unwrap_or(i64::MAX);
         // Monsters wield no weapon → unarmed (counts as melee) for conditions.
-        // Derive phase (#109): strike-time conditions are deferred. Monster
-        // strike-time mods are not surfaced this pass (no monster content carries
-        // one); they stay inert rather than mis-applying — full monster parity is
-        // a follow-up on #109.
         let ctx = EvalContext {
             weapon_class: None,
-            ..Default::default()
+            life_pct,
+            ticks_since_kill,
+            include_strike,
         };
         let mut sheet = StatSheet::new();
+        let mut has_strike = false;
+        // Rolled affixes — folded EVERY refresh (not baked at spawn), so a chilled
+        // rare keeps its affix bonuses. Same `grants(values)` path as gear affixes.
+        for ra in &m.affixes {
+            let a = &self.content.affixes[ra.affix_idx as usize];
+            for g in a.grants(&ra.values) {
+                has_strike |= apply_conditional(&mut sheet, &g, &ctx);
+            }
+        }
+        // The def's fixed passive set (#125).
+        for g in &def.passives {
+            has_strike |= apply_conditional(&mut sheet, g, &ctx);
+        }
+        // Active buffs/debuffs (chill/shock/…) — clock-bearing grants, same as chars.
         for ef in &e.effects {
-            if let ActiveEffect::Buff { grants, .. } = ef {
+            if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    apply_conditional(&mut sheet, g, &ctx);
+                    has_strike |= apply_conditional(&mut sheet, g, &ctx);
                 }
             }
         }
-        let def = &self.content.monsters[def_idx as usize];
-        let mut next = super::monster_base_stats(def);
-        next.life_max = sheet.value(Stat::Life, next.life_max).max(1);
-        const DMG_STATS: [Stat; DMG_COUNT] = [
-            Stat::DamagePhys,
-            Stat::DamageFire,
-            Stat::DamageCold,
-            Stat::DamageLightning,
-            Stat::DamageChaos,
-        ];
-        for (i, stat) in DMG_STATS.iter().enumerate() {
-            next.damage[i] = sheet.value(*stat, next.damage[i]).max(0);
-        }
-        next.accuracy = sheet.value(Stat::Accuracy, next.accuracy).max(0);
-        next.evasion = sheet.value(Stat::Evasion, next.evasion).max(0);
-        next.armour = sheet.value(Stat::Armour, next.armour).max(0);
-        const RES_STATS: [Stat; RES_COUNT] = [
-            Stat::ResistFire,
-            Stat::ResistCold,
-            Stat::ResistLightning,
-            Stat::ResistChaos,
-        ];
-        for (i, stat) in RES_STATS.iter().enumerate() {
-            next.resists[i] = sheet.value(*stat, next.resists[i]);
-        }
-        let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
-        next.use_ticks = ((def.use_ticks as i64 * 10000 / attack_factor).max(2)) as u32;
-        let move_factor = sheet.value(Stat::MoveSpeed, 10000).max(1000);
-        next.speed_per_tick = crate::fixed::Fx::from_raw(
-            (super::speed_from_cps(def.speed_cps).raw() as i64 * move_factor / 10000) as i32,
-        );
-        // Ailments (#88): full monster parity — caps start at the base defaults
-        // (4000/3000 from monster_base_stats) and rolled mods raise them.
-        next.ignite_chance = sheet.value(Stat::IgniteChance, next.ignite_chance).max(0);
-        next.shock_chance = sheet.value(Stat::ShockChance, next.shock_chance).max(0);
-        next.chill_chance = sheet.value(Stat::ChillChance, next.chill_chance).max(0);
-        next.crits_no_ailment = sheet.value(Stat::CritAilmentDenied, 0) > 0;
-        next.shock_max = sheet.value(Stat::ShockMax, next.shock_max).max(0);
-        next.chill_max = sheet.value(Stat::ChillMax, next.chill_max).max(0);
-        next.ailment_duration = sheet.value(Stat::AilmentDuration, next.ailment_duration);
+        let base = monster_scaled_base(def, m.level, m.rarity);
+        Some(derive_from_sheet(sheet, base, &ctx, has_strike))
+    }
 
+    /// Refresh a monster's cached combat stats (#125): derive at full life in the
+    /// DERIVE phase (strike-time conditions deferred), then assign onto the live
+    /// `CombatStats` — preserving runtime pools/timers and clamping to new maxes,
+    /// exactly like `refresh_character_stats`.
+    fn refresh_monster_stats(&mut self, slot: usize) {
+        let Some(d) = self.monster_derived_stats(slot, 10000, false) else {
+            return;
+        };
         if let Some(me) = self.zone.get_mut(slot)
             && let Some(c) = me.combat.as_mut()
         {
-            // Runtime state survives the rebuild; life clamps to the new max.
-            next.life = c.life.min(next.life_max);
-            next.busy_until = c.busy_until;
-            next.last_combat_tick = c.last_combat_tick;
-            next.es_recharge_at = c.es_recharge_at;
-            *c = next;
+            let life_delta = d.life_max - c.life_max;
+            c.life_max = d.life_max;
+            if c.life > 0 {
+                c.life = (c.life + life_delta.max(0)).min(d.life_max);
+            }
+            let mana_delta = d.mana_max - c.mana_max;
+            c.mana_max = d.mana_max;
+            c.mana = (c.mana + mana_delta.max(0)).clamp(0, d.mana_max);
+            let es_delta = d.es_max - c.es_max;
+            c.es_max = d.es_max;
+            c.es = (c.es + es_delta.max(0)).clamp(0, d.es_max);
+            c.life_regen = d.life_regen;
+            c.mana_regen = d.mana_regen;
+            c.leech_life = d.leech_life;
+            c.leech_mana = d.leech_mana;
+            c.block = d.block;
+            c.crit_inc = d.crit_inc;
+            c.crit_multi = d.crit_multi;
+            c.cast_speed = d.cast_speed;
+            c.damage = d.damage;
+            c.accuracy = d.accuracy;
+            c.evasion = d.evasion;
+            c.armour = d.armour;
+            c.resists = d.resists;
+            c.range = d.range;
+            c.use_ticks = d.use_ticks;
+            c.speed_per_tick = d.speed;
+            c.projectile = d.projectile;
+            c.item_rarity = d.item_rarity;
+            c.item_quantity = d.item_quantity;
+            c.stagger = d.stagger;
+            c.poise = d.poise;
+            c.knockback_cu = d.knockback_cu;
+            c.ignite_chance = d.ignite_chance;
+            c.shock_chance = d.shock_chance;
+            c.chill_chance = d.chill_chance;
+            c.crits_no_ailment = d.crits_no_ailment;
+            c.shock_max = d.shock_max;
+            c.chill_max = d.chill_max;
+            c.ailment_duration = d.ailment_duration;
+            c.has_strike_conditions = d.has_strike;
         }
     }
 
@@ -380,45 +597,6 @@ impl World {
             }
         }
 
-        // Attribute conversions (PoE-classic, user-locked; ratios flagged
-        // for redline). Each point of:
-        //   Strength:     +0.5 life,     +0.2% increased MELEE phys
-        //   Dexterity:    +2 accuracy,   +0.2% increased evasion
-        //   Intelligence: +0.5 mana,     +0.2% increased energy shield
-        let strength = sheet.value(Stat::Strength, 0);
-        let dexterity = sheet.value(Stat::Dexterity, 0);
-        let intelligence = sheet.value(Stat::Intelligence, 0);
-        for grant in [
-            Grant::new(Stat::Life, crate::stats::Layer::Added, strength / 2),
-            // STR's "increased melee physical" — a CONDITIONAL grant in the same
-            // loop (#86): the retired MeleePhys bucket, now the unified mechanism's
-            // first client (phys while wielding melee; unarmed counts).
-            Grant {
-                stat: Stat::DamagePhys,
-                layer: crate::stats::Layer::Increased,
-                value: strength * 20,
-                condition: Some(crate::stats::Condition::WieldingWeaponClass(
-                    crate::stats::WeaponClass::Melee,
-                )),
-            },
-            Grant::new(Stat::Accuracy, crate::stats::Layer::Added, dexterity * 2),
-            Grant::new(
-                Stat::Evasion,
-                crate::stats::Layer::Increased,
-                dexterity * 20,
-            ),
-            Grant::new(Stat::Mana, crate::stats::Layer::Added, intelligence / 2),
-            Grant::new(
-                Stat::EnergyShield,
-                crate::stats::Layer::Increased,
-                intelligence * 20,
-            ),
-        ] {
-            if grant.value != 0 {
-                has_strike |= apply_conditional(&mut sheet, &grant, &ctx);
-            }
-        }
-
         let (dmg_base, range, use_base, projectile) = match weapon {
             Some(item) => {
                 let def = &self.content.items[item.base_idx as usize];
@@ -442,98 +620,24 @@ impl World {
                 false,
             ),
         };
-
-        let life_max = sheet.value(Stat::Life, base_life(level)).max(1);
-        const DMG_STATS: [Stat; DMG_COUNT] = [
-            Stat::DamagePhys,
-            Stat::DamageFire,
-            Stat::DamageCold,
-            Stat::DamageLightning,
-            Stat::DamageChaos,
-        ];
-        let mut damage = [0i64; DMG_COUNT];
-        for i in 0..DMG_COUNT {
-            damage[i] = sheet.value(DMG_STATS[i], dmg_base[i]);
-        }
-        let accuracy = sheet.value(Stat::Accuracy, base_accuracy(level));
-        let evasion = sheet.value(Stat::Evasion, evasion_base);
-        let armour = sheet.value(Stat::Armour, armour_base);
-        const RES_STATS: [Stat; RES_COUNT] = [
-            Stat::ResistFire,
-            Stat::ResistCold,
-            Stat::ResistLightning,
-            Stat::ResistChaos,
-        ];
-        let mut resists = [0i64; RES_COUNT];
-        for i in 0..RES_COUNT {
-            resists[i] = sheet.value(RES_STATS[i], 0);
-        }
-        let attack_factor = sheet.value(Stat::AttackSpeed, 10000).max(1000);
-        let use_ticks = ((use_base as i64 * 10000 / attack_factor).max(2)) as u32;
-        let move_factor = sheet.value(Stat::MoveSpeed, 10000).max(1000);
-        let mana_max = sheet.value(Stat::Mana, base_mana(level)).max(0);
-        let es_max = sheet.value(Stat::EnergyShield, 0);
-        let life_regen = sheet.value(Stat::LifeRegen, 0);
-        let mana_regen = sheet.value(Stat::ManaRegen, 0);
-        let leech_life = sheet.value(Stat::LeechLife, 0);
-        let leech_mana = sheet.value(Stat::LeechMana, 0);
-        let block = sheet.value(Stat::Block, block_base).min(7500);
-        let crit_inc = sheet.value(Stat::CritChance, 10000).max(0);
-        let crit_multi = (15000 + sheet.value(Stat::CritMulti, 0)).max(10000);
-        let cast_speed = sheet.value(Stat::CastSpeed, 10000).max(1000);
-        let item_rarity = sheet.value(Stat::ItemRarity, 10000).max(0);
-        let item_quantity = sheet.value(Stat::ItemQuantity, 10000).max(0);
-        let stagger = sheet.value(Stat::Stagger, 0).max(0);
-        let poise = sheet.value(Stat::Poise, 0).max(0);
-        let knockback_cu = sheet.value(Stat::Knockback, 0).max(0);
-        // Ailments (#88): per-element inflict chance + flag + per-ailment caps
-        // (base 4000/3000, raised by the Added layer) + duration scale.
-        let ignite_chance = sheet.value(Stat::IgniteChance, 0).max(0);
-        let shock_chance = sheet.value(Stat::ShockChance, 0).max(0);
-        let chill_chance = sheet.value(Stat::ChillChance, 0).max(0);
-        let crits_no_ailment = sheet.value(Stat::CritAilmentDenied, 0) > 0;
-        let shock_max = sheet.value(Stat::ShockMax, 4000).max(0);
-        let chill_max = sheet.value(Stat::ChillMax, 3000).max(0);
-        let ailment_duration = sheet.value(Stat::AilmentDuration, 0);
-        let speed = Fx::from_raw(
-            ((speed_from_cps(BASE_SPEED_CPS).raw() as i64) * move_factor / 10000) as i32,
-        );
-
-        Some(CharDerived {
-            life_max,
-            mana_max,
-            es_max,
-            life_regen,
-            mana_regen,
-            leech_life,
-            leech_mana,
-            block,
-            crit_inc,
-            crit_multi,
-            cast_speed,
-            damage,
-            accuracy,
-            evasion,
-            armour,
-            resists,
+        // What a character starts each stat from: level-scaled pools/accuracy,
+        // gear-summed armour/evasion/block, the weapon's damage/range/use-time.
+        // Attribute conversion + the field math are shared via `derive_from_sheet`.
+        let base = DeriveBase {
+            life: base_life(level),
+            mana: base_mana(level),
+            damage: dmg_base,
+            accuracy: base_accuracy(level),
+            evasion: evasion_base,
+            armour: armour_base,
+            resists: [0; RES_COUNT],
+            use_ticks: use_base,
+            speed: speed_from_cps(BASE_SPEED_CPS),
             range,
-            use_ticks,
-            speed,
             projectile,
-            item_rarity,
-            item_quantity,
-            stagger,
-            poise,
-            knockback_cu,
-            ignite_chance,
-            shock_chance,
-            chill_chance,
-            crits_no_ailment,
-            shock_max,
-            chill_max,
-            ailment_duration,
-            has_strike,
-        })
+            block: block_base,
+        };
+        Some(derive_from_sheet(sheet, base, &ctx, has_strike))
     }
 
     /// Refresh a character's cached combat stats (#86/#109): derive at full life
@@ -601,7 +705,12 @@ impl World {
         let c = e.combat.as_ref()?;
         // Live life as basis points of max (clamped 0..10000).
         let life_pct = (c.life.max(0) * 10000 / c.life_max.max(1)).clamp(0, 10000);
-        let d = self.character_derived_stats(slot, life_pct, true)?;
+        // #125: monsters re-derive through their own sheet build; both share the core.
+        let d = if e.character.is_some() {
+            self.character_derived_stats(slot, life_pct, true)?
+        } else {
+            self.monster_derived_stats(slot, life_pct, true)?
+        };
         Some(EffectiveOffense {
             damage: d.damage,
             crit_inc: d.crit_inc,

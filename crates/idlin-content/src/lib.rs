@@ -240,6 +240,13 @@ pub struct MonsterDef {
     /// cast through the same syscalls (UseSkill slot 1..N in list order).
     #[serde(default)]
     pub skills: Vec<MonsterSkillDef>,
+    /// A FIXED passive set granted at spawn (#125) — the monster equivalent of an
+    /// allocated tree, but authored directly (no points, no walking, no leveling).
+    /// Same `Grant` type as tree/affix/buff; folded into the monster's derived stats
+    /// every refresh through the shared conditional-grant path. Strike-time and
+    /// attribute grants work exactly as they do for characters.
+    #[serde(default)]
+    pub passives: Vec<Grant>,
 }
 
 fn default_radius_cu() -> i32 {
@@ -2034,6 +2041,23 @@ impl ContentDb {
                             bp,
                         });
                     }
+                }
+            }
+        }
+        // Monster passive grants (#125) fold through the same conditional path as
+        // tree/affix/buff, so they obey the same attribute + threshold rules.
+        for m in &db.monsters {
+            for g in &m.passives {
+                if is_conditional_attribute(g.stat, &g.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("monster `{}` passive", m.id),
+                    });
+                }
+                if let Some(bp) = invalid_condition_threshold(&g.condition) {
+                    return Err(ContentError::BadConditionThreshold {
+                        at: format!("monster `{}` passive", m.id),
+                        bp,
+                    });
                 }
             }
         }

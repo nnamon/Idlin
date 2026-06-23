@@ -601,7 +601,7 @@ impl World {
         // conditions fold for THIS use; otherwise the cached stats are exact. Gated
         // on the flag so the common case pays nothing. (Characters only this pass —
         // monster strike-time conditions are inert; see progression.rs.)
-        let eff = if c.has_strike_conditions && attacker_is_char {
+        let eff = if c.has_strike_conditions {
             self.effective_offense(slot)
         } else {
             None
@@ -849,7 +849,7 @@ impl World {
         // too (e.g. of_desperation below 35% life) — re-derive effective offense
         // when gated, exactly as the socketed-skill path does in resolve_skill;
         // otherwise the cached stats are exact. projectile/use are weapon-fixed.
-        let eff = if c.has_strike_conditions && attacker_is_char {
+        let eff = if c.has_strike_conditions {
             self.effective_offense(slot)
         } else {
             None
@@ -2064,6 +2064,15 @@ impl World {
                 name,
                 killer: attacker_name.to_string(),
             });
+        }
+        // #125 parity: a killer opens its post-kill window (RecentlyKilled). A
+        // character killing a monster is already stamped via grant_xp above; this
+        // also covers a MONSTER killing a character (idempotent on overlap — same
+        // `now`), so the condition works for monsters too.
+        if let Some(ks) = attacker_slot
+            && let Some(c) = self.zone.get_mut(ks).and_then(|e| e.combat.as_mut())
+        {
+            c.last_kill_tick = now;
         }
     }
 
