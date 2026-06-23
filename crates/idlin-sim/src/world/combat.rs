@@ -3445,6 +3445,71 @@ mod tests {
     }
 
     #[test]
+    fn monster_strike_condition_folds_into_a_skill() {
+        use crate::entity::Rarity;
+        use crate::fixed::{Fx, FxV2};
+        use crate::stats::{Condition, Grant, Layer, Stat};
+        // #125: cover the resolve_skill half of the monster strike ungate (combat.rs:604,
+        // distinct from the resolve_use gate at :852). A monster with an ATTACK skill
+        // (heavy_swing scales the attacker's phys) + a +phys enrage below half life: the
+        // RESOLVED skill damage is higher when wounded. Mutation: restore `&&
+        // attacker_is_char` at the resolve_skill gate → resolved damage equal → fails.
+        let mut content = content();
+        let mut mob = content
+            .monsters
+            .iter()
+            .find(|m| m.id == "tide_husk")
+            .cloned()
+            .unwrap();
+        mob.id = "skill_mob".into();
+        mob.skills = vec![idlin_content::MonsterSkillDef {
+            gem: "heavy_swing".into(),
+            level: 1,
+            supports: vec![],
+        }];
+        mob.passives = vec![Grant {
+            stat: Stat::DamagePhys,
+            layer: Layer::Increased,
+            value: 5000, // +50% phys
+            condition: Some(Condition::BelowLifePct(5000)),
+        }];
+        let idx = content.monsters.len() as u32;
+        content.monsters.push(mob);
+        let mut w = World::new(7, &content);
+        w.spawn_monster_rolled(
+            idx,
+            0,
+            FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+            Rarity::Normal,
+            vec![],
+            "SkillMob".into(),
+        );
+        let aslot = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some("SkillMob"))
+            .map(|(s, _)| s)
+            .unwrap();
+        let resolved_phys = |w: &World| {
+            w.resolve_skill(aslot, 0)
+                .expect("skill resolves")
+                .spec_template
+                .damage[crate::entity::DMG_PHYS]
+        };
+        let full = resolved_phys(&w);
+        {
+            let c = w.zone.get_mut(aslot).unwrap().combat.as_mut().unwrap();
+            c.life = c.life_max * 4 / 10;
+        }
+        let wounded = resolved_phys(&w);
+        assert!(full > 0, "the skill resolves to phys damage");
+        assert!(
+            wounded > full,
+            "the enrage folds into resolve_skill below half life ({wounded} > {full})"
+        );
+    }
+
+    #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
         let fx = events
