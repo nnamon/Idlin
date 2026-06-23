@@ -3958,13 +3958,7 @@
             "condition": null,
             "layer": "increased",
             "stat": "life",
-            "value": 5000
-          },
-          {
-            "condition": null,
-            "layer": "added",
-            "stat": "armour",
-            "value": 60
+            "value": 1500
           },
           {
             "condition": {
@@ -3972,7 +3966,7 @@
             },
             "layer": "increased",
             "stat": "damage_phys",
-            "value": 4000
+            "value": 2000
           }
         ],
         "projectile": false,

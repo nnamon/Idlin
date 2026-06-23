@@ -18,10 +18,11 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// rebuild from the RAW def, dropping the spawn-time scaling AND rolled affixes — and
 /// folds the elite bulk into the base (flat-life affixes no longer bulk-scaled), so
 /// every monster's stats over the 2000-tick grind move; `tide_husk` also gains a passive
-/// kit (incl. a strike-time enrage). content_hash + grind outcomes both shift. The
-/// determinism trio still agrees. (Elite bulk multiplies LIFE only, as before — a
-/// first cut also bulked damage; fixed, so this digest is the LIFE-only value.)
-/// (Prior: 0x82D3 — #125 with the elite-damage-bulk bug; 0x960F — #109 RecentlyKilled.)
+/// kit (a small bloat + a gentle strike-time enrage, kept MILD so it doesn't overtune
+/// the tutorial gauntlet). content_hash + grind outcomes both shift. Elite bulk
+/// multiplies LIFE only, as before. The determinism trio still agrees.
+/// (Prior: 0x19A4 — #125 with the overtuned tide_husk kit; 0x82D3 — #125 with the
+/// elite-damage-bulk bug too; 0x960F — #109 RecentlyKilled.)
 /// Re-pinned for the #86 grant-unification follow-up: `state_hash` was widened to
 /// fingerprint all REPLAY-RELEVANT world state it had silently dropped — active-
 /// buff grant internals, the full projectile payload, `intents.move_to`,
@@ -82,7 +83,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x19A4_02A4_FC4B_F04E;
+const GOLDEN_HASH: u64 = 0xA5C3_C922_8DC9_01EC;
 
 #[test]
 fn golden_replay() {
