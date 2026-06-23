@@ -599,8 +599,8 @@ impl World {
         // #109: if the attacker carries strike-time conditions (e.g. "while below
         // 35% life"), re-derive its OFFENSIVE stats against its live life % so those
         // conditions fold for THIS use; otherwise the cached stats are exact. Gated
-        // on the flag so the common case pays nothing. (Characters only this pass —
-        // monster strike-time conditions are inert; see progression.rs.)
+        // on the flag so the common case pays nothing. Monsters re-derive here too
+        // (#125 parity) — effective_offense dispatches on entity kind.
         let eff = if c.has_strike_conditions {
             self.effective_offense(slot)
         } else {
@@ -3360,6 +3360,87 @@ mod tests {
         assert!(
             low > full,
             "of_desperation boosts a basic attack below 35% life ({low} > {full})"
+        );
+    }
+
+    #[test]
+    fn monster_strike_condition_boosts_its_attacks_in_combat() {
+        use crate::entity::Rarity;
+        use crate::fixed::{Fx, FxV2};
+        // #125: the END-TO-END proof that a MONSTER's strike-time condition flows through
+        // the combat gate (resolve_use → the now-ungated effective_offense), not just a
+        // direct effective_offense call. tide_husk enrages (+40% phys) below half life, so
+        // a wounded husk lands MORE than a full-life one on the same target, same seed.
+        // Mutation: restore `&& attacker_is_char` at the resolve_use gate → the husk never
+        // re-derives in combat → both deal the same → assert fails.
+        let content = content();
+        let husk_idx = content
+            .monsters
+            .iter()
+            .position(|m| m.id == "tide_husk")
+            .expect("tide_husk") as u32;
+        let loss = |num: i64, den: i64| -> i64 {
+            let mut world = World::new(0x12500D, &content);
+            let halt = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "Target".into(),
+                    program: halt,
+                }],
+            });
+            let tslot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .unwrap();
+            let (tnet, tpos) = {
+                let e = world.zone.get(tslot).unwrap();
+                (e.net_id, e.pos)
+            };
+            // Spawn a husk in melee of the target.
+            world.spawn_monster_rolled(
+                husk_idx,
+                0,
+                FxV2::new(tpos.x + Fx::from_raw(0x4000), tpos.y),
+                Rarity::Normal,
+                vec![],
+                "Husk".into(),
+            );
+            let aslot = world
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some("Husk"))
+                .map(|(s, _)| s)
+                .unwrap();
+            // Set the husk's live life fraction (effective_offense reads it per strike).
+            {
+                let c = world.zone.get_mut(aslot).unwrap().combat.as_mut().unwrap();
+                c.life = (c.life_max * num / den).max(1);
+            }
+            // Beef the target so the swing lands and never kills.
+            let before = {
+                let c = world.zone.get_mut(tslot).unwrap().combat.as_mut().unwrap();
+                c.life_max = 10_000_000;
+                c.life = 10_000_000;
+                c.evasion = 0;
+                c.life
+            };
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            world.resolve_use(
+                aslot,
+                SkillTarget::Entity(tnet),
+                None,
+                &mut ev,
+                &mut dead,
+                &mut loot,
+            );
+            before - world.zone.get(tslot).unwrap().combat.as_ref().unwrap().life
+        };
+        let full = loss(1, 1); // full life: enrage inert
+        let low = loss(40, 100); // below half: +40% phys
+        assert!(full > 0, "the husk's attack lands");
+        assert!(
+            low > full,
+            "a wounded husk enrages through the combat path ({low} > {full})"
         );
     }
 

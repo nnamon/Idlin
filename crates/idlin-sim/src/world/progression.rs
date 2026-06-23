@@ -301,9 +301,10 @@ impl World {
             return;
         };
         // Stamp the kill tick on the combat block (#109 RecentlyKilled) before
-        // borrowing the character — opens the post-kill momentum window. CHARACTERS
-        // only: RecentlyKilled is read solely through the character effective sheet
-        // (effective_offense), so a monster killer keeps a clean 0 (no dead state).
+        // borrowing the character — opens the post-kill momentum window. This is the
+        // character-side stamp; MONSTER killers are stamped at the kill site
+        // (`handle_kill`, #125), so RecentlyKilled works for monsters too. The two
+        // are idempotent on overlap (a character killing a monster) — same tick.
         if credit_kill
             && e.character.is_some()
             && let Some(c) = e.combat.as_mut()

@@ -3541,6 +3541,54 @@ mod tests {
         }
     }
 
+    // A minimal monster carrying one passive grant — the passive check runs before
+    // the brain/skills checks, so a fake brain is fine.
+    const MONSTER_WITH_PASSIVE: &str = r#"MonsterDef(
+        id: "mob", public: false, name: "Mob",
+        model: "x", brain: "x", hostile: true, level: 1,
+        life: 50, damage: 5, speed_cps: 100, radius_cu: 80, range_cu: 200,
+        use_ticks: 16, aggro_radius_cu: 1000, xp: 10, projectile: false,
+        affix_pools: [],
+        passives: [GRANT],
+    )"#;
+
+    #[test]
+    fn a_conditional_attribute_monster_passive_is_rejected() {
+        // Monster passives (#125) fold through the same conditional path, so a
+        // conditional attribute is rejected like everywhere else. Mutation: drop the
+        // monster-passive arm of the load check and this loads.
+        let body = MONSTER_WITH_PASSIVE.replace(
+            "GRANT",
+            "(stat: strength, layer: added, value: 5, condition: Some(wielding_weapon_class(melee)))",
+        );
+        let tc = TempContent::new("cond_attr_mob", &[("monsters/mob.ron", body.as_str())]);
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("monster") && at.contains("mob"), "at: {at}");
+            }
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_out_of_range_monster_passive_threshold_is_rejected() {
+        // A strike-time life threshold is basis points (0..=10000); a monster passive
+        // out of range is rejected like an affix/tree/gem one. Mutation: drop the
+        // threshold check for monster passives and this loads.
+        let body = MONSTER_WITH_PASSIVE.replace(
+            "GRANT",
+            "(stat: damage_phys, layer: increased, value: 1000, condition: Some(below_life_pct(20000)))",
+        );
+        let tc = TempContent::new("bad_thresh_mob", &[("monsters/mob.ron", body.as_str())]);
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("monster") && at.contains("mob"), "at: {at}");
+                assert_eq!(bp, 20000);
+            }
+            other => panic!("expected BadConditionThreshold, got {other:?}"),
+        }
+    }
+
     #[test]
     fn an_affix_with_no_effects_is_rejected() {
         // Mutation: drop the effects-non-empty check and a grant-nothing affix loads.
