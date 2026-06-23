@@ -99,10 +99,13 @@ pub struct CombatStats {
     pub stagger: i64,
     pub poise: i64,
     pub knockback_cu: i64,
-    /// Ailment levers (#88), attacker-side: basis-point chance to inflict on a
-    /// hit, the "crits cannot cause ailments" flag, the Shock/Chill magnitude
-    /// caps (bp), and a duration scale (bp) applied to ailments this entity inflicts.
-    pub ailment_chance: i64,
+    /// Ailment levers (#88), attacker-side: PER-ELEMENT basis-point chance to
+    /// inflict on a matching-element hit (no blanket all-ailments lever), the
+    /// "crits cannot cause ailments" flag, the Shock/Chill magnitude caps (bp), and
+    /// a duration scale (bp) applied to ailments this entity inflicts.
+    pub ignite_chance: i64,
+    pub shock_chance: i64,
+    pub chill_chance: i64,
     pub crits_no_ailment: bool,
     pub shock_max: i64,
     pub chill_max: i64,

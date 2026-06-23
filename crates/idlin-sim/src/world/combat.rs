@@ -9,8 +9,8 @@
 
 use super::{ES_RECHARGE_DELAY_TICKS, RESPAWN_TICKS, SimEvent, World, XP_SHARE_RADIUS, fx_from_cu};
 use crate::entity::{
-    ActiveEffect, AilmentKind, AttackIntent, DMG_COUNT, DMG_FIRE, DMG_PHYS, GemInstance,
-    LootPayload, SkillTarget, SocketedGem,
+    ActiveEffect, AilmentKind, AttackIntent, DMG_COLD, DMG_COUNT, DMG_FIRE, DMG_LIGHTNING,
+    DMG_PHYS, GemInstance, LootPayload, SkillTarget, SocketedGem,
 };
 use crate::fixed::{Fx, FxV2};
 use crate::stats::{Grant, apply_resist, hit_chance_bp, mitigate_phys};
@@ -115,6 +115,26 @@ pub(crate) struct PendingUse {
     pub resolve_at: u64,
 }
 
+/// The ailment a gem's inherent chance is FOR: the dominant of its authored
+/// elemental damage (fire→Ignite, cold→Chill, lightning→Shock), ties broken by
+/// index order. phys/chaos carry no v1 ailment, and all-zero ⇒ `None`. Computed
+/// from the gem's OWN damage (pre-support) so supports can't redirect the chance.
+fn signature_ailment(added: &[i64; DMG_COUNT]) -> Option<AilmentKind> {
+    let mut best_v = 0i64;
+    let mut best_k = None;
+    for (i, k) in [
+        (DMG_FIRE, AilmentKind::Ignite),
+        (DMG_COLD, AilmentKind::Chill),
+        (DMG_LIGHTNING, AilmentKind::Shock),
+    ] {
+        if added[i] > best_v {
+            best_v = added[i];
+            best_k = Some(k);
+        }
+    }
+    best_k
+}
+
 pub(super) struct StrikeSpec {
     pub attacker_slot: Option<usize>,
     pub attacker_net: u32,
@@ -139,8 +159,15 @@ pub(super) struct StrikeSpec {
     pub stagger: i64,
     pub knockback_cu: i64,
     /// The firing skill's INHERENT ailment chance (bp, #88), added to the
-    /// attacker's AilmentChance at proc time. 0 for basic attacks / dots.
+    /// attacker's per-element chance for the hit's element at proc time. 0 for
+    /// basic attacks / dots.
     pub ailment_chance: i64,
+    /// The ailment the inherent chance is FOR — the gem's own signature element
+    /// (e.g. Frost Nova → Chill), NOT the runtime-dominant element. `ailment_chance`
+    /// applies ONLY when the hit's kind matches this, so a support that shifts the
+    /// dominant damage type can't make a cold skill's reliable-chill ignite instead.
+    /// `None` ⇒ the inherent chance never applies (basic attacks, dots, projectiles).
+    pub inherent_ailment_kind: Option<AilmentKind>,
 }
 
 impl StrikeSpec {
@@ -164,6 +191,9 @@ impl StrikeSpec {
                 stagger: self.stagger,
                 knockback_cu: self.knockback_cu,
                 ailment_chance: self.ailment_chance,
+                // PRESERVE the signature kind — every direct (nova/cone/line) victim
+                // clones through here, so dropping it would strip Frost Nova's chill.
+                inherent_ailment_kind: self.inherent_ailment_kind,
             }
         }
     }
@@ -649,6 +679,13 @@ impl World {
             stagger: a_stagger,
             knockback_cu: a_knockback,
             ailment_chance: gem_def.ailment_chance,
+            // Signature element from the gem's OWN damage (`added`), not the
+            // support-folded `damage` — so supports can't redirect the inherent chance.
+            inherent_ailment_kind: if gem_def.ailment_chance > 0 {
+                signature_ailment(&added)
+            } else {
+                None
+            },
         };
 
         Some(ResolvedSkill {
@@ -838,6 +875,7 @@ impl World {
                     stagger: a_stagger,
                     knockback_cu: a_knockback,
                     ailment_chance: 0, // basic attack: no inherent ailment chance
+                    inherent_ailment_kind: None,
                 };
                 if weapon_projectile {
                     let toward = t.pos;
@@ -1499,6 +1537,7 @@ impl World {
                     stagger: p.stagger,
                     knockback_cu: p.knockback_cu,
                     ailment_chance: p.ailment_chance,
+                    inherent_ailment_kind: None, // projectiles carry no typed inherent kind
                 };
                 self.strike(spec, ts, now, events, &mut dead, &mut loot);
                 p.already_hit.push(net);
@@ -1574,20 +1613,30 @@ impl World {
         // #88 ailments: the victim's Shock amplifies the incoming hit (read now,
         // before the mutable borrow below); the attacker's levers drive the proc.
         let v_shock_bp = t.ailment(AilmentKind::Shock);
-        let (a_chance, a_no_crit_ail, a_shock_max, a_chill_max, a_ail_dur) = self
+        let (
+            a_ignite_chance,
+            a_shock_chance,
+            a_chill_chance,
+            a_no_crit_ail,
+            a_shock_max,
+            a_chill_max,
+            a_ail_dur,
+        ) = self
             .zone
             .get_net(spec.attacker_net)
             .and_then(|a| a.combat.as_ref())
             .map(|c| {
                 (
-                    c.ailment_chance,
+                    c.ignite_chance,
+                    c.shock_chance,
+                    c.chill_chance,
                     c.crits_no_ailment,
                     c.shock_max,
                     c.chill_max,
                     c.ailment_duration,
                 )
             })
-            .unwrap_or((0, false, 0, 0, 0));
+            .unwrap_or((0, 0, 0, false, 0, 0, 0));
 
         // Accuracy: attacks can miss; spells and dots cannot.
         let mut hit = spec.is_spell
@@ -1740,9 +1789,23 @@ impl World {
             };
             if let Some(kind) = kind {
                 let by_crit = crit && !a_no_crit_ail;
-                // Effective chance = attacker's AilmentChance + the firing skill's
-                // inherent chance (#88), capped at 100%.
-                let eff_chance = (a_chance + spec.ailment_chance).clamp(0, 10000);
+                // Effective chance = the attacker's chance for THIS element (no
+                // blanket lever) + the firing skill's inherent chance (#88), capped
+                // at 100%.
+                let a_chance = match kind {
+                    AilmentKind::Ignite => a_ignite_chance,
+                    AilmentKind::Shock => a_shock_chance,
+                    AilmentKind::Chill => a_chill_chance,
+                };
+                // The skill's inherent chance counts ONLY for its own signature
+                // ailment — a support that shifts the dominant element doesn't carry
+                // the inherent chance to the new element.
+                let skill_chance = if spec.inherent_ailment_kind == Some(kind) {
+                    spec.ailment_chance
+                } else {
+                    0
+                };
+                let eff_chance = (a_chance + skill_chance).clamp(0, 10000);
                 let by_chance =
                     eff_chance > 0 && (self.rng_combat.next_range(10000) as i64) < eff_chance;
                 if by_crit || by_chance {
@@ -2139,6 +2202,7 @@ impl World {
                     stagger: 0,
                     knockback_cu: 0,
                     ailment_chance: 0, // a burn tick can't re-inflict (is_dot skips the proc)
+                    inherent_ailment_kind: None,
                 };
                 self.strike(spec, slot, now, events, &mut dead, &mut loot);
             }
@@ -2298,6 +2362,7 @@ mod tests {
             stagger: 0,
             knockback_cu: 60,
             ailment_chance: 0,
+            inherent_ailment_kind: None,
         };
         let now = world.tick;
         let mut events = Vec::new();
@@ -3726,8 +3791,18 @@ mod tests {
         // be in the hash. Mutation: drop any write from views.rs and one fails.
         assert_ne!(
             base,
-            hash_with(&|c| c.ailment_chance += 1),
-            "ailment_chance must change the hash"
+            hash_with(&|c| c.ignite_chance += 1),
+            "ignite_chance must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.shock_chance += 1),
+            "shock_chance must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.chill_chance += 1),
+            "chill_chance must change the hash"
         );
         assert_ne!(
             base,
@@ -4317,7 +4392,7 @@ mod tests {
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
             .unwrap();
         let attacker_net = world.zone.get(attacker_slot).unwrap().net_id;
-        // Force a guaranteed proc independent of crit.
+        // Force a guaranteed ignite proc independent of crit (this is a fire hit).
         world
             .zone
             .get_mut(attacker_slot)
@@ -4325,7 +4400,7 @@ mod tests {
             .combat
             .as_mut()
             .unwrap()
-            .ailment_chance = 10000;
+            .ignite_chance = 10000;
         let (mon_slot, _) = world
             .zone
             .iter()
@@ -4351,6 +4426,7 @@ mod tests {
             stagger: 0,
             knockback_cu: 0,
             ailment_chance: 0,
+            inherent_ailment_kind: None,
         };
         let now = world.tick;
         let (mut events, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
@@ -4454,6 +4530,7 @@ mod tests {
             stagger: 0,
             knockback_cu: 0,
             ailment_chance: 0,
+            inherent_ailment_kind: None,
         }
     }
 
@@ -4519,10 +4596,10 @@ mod tests {
             |world: &World| world.zone.get(mslot).unwrap().ailment(AilmentKind::Ignite) > 0;
         let clear = |world: &mut World| world.zone.get_mut(mslot).unwrap().effects.clear();
 
-        // Crits inflict (no ailment_chance needed).
+        // Crits inflict (no ignite_chance needed).
         {
             let c = world.zone.get_mut(aslot).unwrap().combat.as_mut().unwrap();
-            c.ailment_chance = 0;
+            c.ignite_chance = 0;
             c.crits_no_ailment = false;
         }
         strike_n(&mut world, 8);
@@ -4550,12 +4627,118 @@ mod tests {
             .combat
             .as_mut()
             .unwrap()
-            .ailment_chance = 10000;
+            .ignite_chance = 10000;
         strike_n(&mut world, 1);
         assert!(
             ignited(&world),
             "ailment chance still rolls on a crit under the mod"
         );
+    }
+
+    #[test]
+    fn per_element_chance_does_not_bleed_across_ailments() {
+        // The whole point of splitting the blanket AilmentChance into per-element
+        // chances: ignite/shock chance must NOT make a COLD hit Chill — only
+        // chill_chance does. typed_spec has crit_bp=0 (no crit-inflict) and
+        // is_spell=true (guaranteed hit), so the per-element chance is the ONLY
+        // lever. Mutation: route the proc through one blanket field, or read
+        // ignite_chance for every kind, and the first assert chills off the wrong
+        // lever → fails.
+        use crate::entity::{AilmentKind, DMG_COLD};
+        let (mut world, aslot, anet, mslot) = ailment_world();
+        beef_up_target(&mut world, mslot); // big life: the cold hit chills but won't kill
+        let chilled =
+            |world: &World| world.zone.get(mslot).unwrap().ailment(AilmentKind::Chill) > 0;
+        let set = |world: &mut World, ig: i64, sh: i64, ch: i64| {
+            let c = world.zone.get_mut(aslot).unwrap().combat.as_mut().unwrap();
+            c.ignite_chance = ig;
+            c.shock_chance = sh;
+            c.chill_chance = ch;
+        };
+        let now = world.tick;
+        let strike_cold = |world: &mut World| {
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            world.strike(
+                typed_spec(aslot, anet, DMG_COLD, 100_000),
+                mslot,
+                now,
+                &mut ev,
+                &mut dead,
+                &mut loot,
+            );
+        };
+
+        // ignite + shock chance maxed, chill chance zero → a cold hit does NOT chill.
+        set(&mut world, 10000, 10000, 0);
+        strike_cold(&mut world);
+        assert!(
+            !chilled(&world),
+            "ignite/shock chance must NOT chill a cold hit (no blanket lever)"
+        );
+
+        // Only the matching lever does: chill_chance maxed → the cold hit chills.
+        set(&mut world, 0, 0, 10000);
+        strike_cold(&mut world);
+        assert!(chilled(&world), "chill_chance chills a cold hit");
+    }
+
+    #[test]
+    fn inherent_skill_chance_only_applies_to_its_signature_element() {
+        // A skill's inherent ailment chance is for its OWN element (Frost Nova →
+        // Chill). If a support shifts the runtime-dominant element (e.g. fire), the
+        // inherent chance must NOT ride along and ignite at 100%. Here the attacker
+        // has zero per-element chance, so the inherent chance is the only lever.
+        // Mutation: drop the `inherent_ailment_kind == Some(kind)` gate in the proc
+        // (apply spec.ailment_chance unconditionally) → the fire hit ignites → fails.
+        use crate::entity::{AilmentKind, DMG_COLD, DMG_FIRE};
+        let (mut world, aslot, anet, mslot) = ailment_world();
+        beef_up_target(&mut world, mslot);
+        let now = world.tick;
+        let strike = |world: &mut World, dtype: usize| {
+            let mut spec = typed_spec(aslot, anet, dtype, 100_000);
+            spec.ailment_chance = 10000; // a Frost-Nova-like reliable inherent chance...
+            spec.inherent_ailment_kind = Some(AilmentKind::Chill); // ...FOR chill only
+            // Go through the per-victim clone — the real nova/cone/line path — so the
+            // test also fails if clone_for_next_victim drops the signature kind.
+            let spec = spec.clone_for_next_victim();
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            world.strike(spec, mslot, now, &mut ev, &mut dead, &mut loot);
+        };
+        let has = |world: &World, k: AilmentKind| world.zone.get(mslot).unwrap().ailment(k) > 0;
+
+        // Off-element (fire dominant): the chill-signature inherent chance does NOT ignite.
+        strike(&mut world, DMG_FIRE);
+        assert!(
+            !has(&world, AilmentKind::Ignite),
+            "a chill-signature inherent chance must NOT ignite a fire hit"
+        );
+        // On-element (cold): the same inherent chance reliably chills.
+        strike(&mut world, DMG_COLD);
+        assert!(
+            has(&world, AilmentKind::Chill),
+            "a chill-signature inherent chance chills a cold hit"
+        );
+    }
+
+    #[test]
+    fn projectile_gems_carry_no_inherent_ailment_chance_yet() {
+        // The projectile path does NOT carry the gem's signature ailment kind (only
+        // the direct-strike StrikeSpec does), so a projectile gem's inherent
+        // ailment_chance would silently never apply. Until that's wired (a typed
+        // Projectile field + a SNAPSHOT bump), forbid it in content so the gap can't
+        // ship unnoticed.
+        use idlin_content::SkillShape;
+        let content = content();
+        for g in &content.gems {
+            if g.shape == SkillShape::Projectile {
+                assert_eq!(
+                    g.ailment_chance, 0,
+                    "projectile gem `{}` has inherent ailment_chance {} — not wired; \
+                     type the projectile inherent kind (+SNAPSHOT bump) first",
+                    g.id, g.ailment_chance
+                );
+            }
+        }
     }
 
     #[test]
@@ -4578,7 +4761,7 @@ mod tests {
             .combat
             .as_mut()
             .unwrap()
-            .ailment_chance = 10000;
+            .shock_chance = 10000;
         let now = world.tick;
         let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
         let mlife = world
@@ -4857,7 +5040,7 @@ mod tests {
                 .combat
                 .as_mut()
                 .unwrap()
-                .ailment_chance = 10000;
+                .ignite_chance = 10000;
             world
                 .zone
                 .get_mut(mslot)
@@ -6471,6 +6654,7 @@ mod tests {
             stagger: 0,
             knockback_cu: 0,
             ailment_chance: 0,
+            inherent_ailment_kind: None,
         }
     }
 

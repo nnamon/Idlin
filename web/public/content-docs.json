@@ -479,12 +479,22 @@
         "weight": 100
       },
       {
-        "description": "+#% Ailment Chance",
+        "description": "+#% Ignite Chance, +#% Shock Chance, +#% Chill Chance",
         "effects": [
           {
             "condition": null,
             "layer": "added",
-            "stat": "ailment_chance"
+            "stat": "ignite_chance"
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "shock_chance"
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "chill_chance"
           }
         ],
         "id": "of_affliction",
@@ -500,6 +510,14 @@
               {
                 "max": 1500,
                 "min": 500
+              },
+              {
+                "max": 1500,
+                "min": 500
+              },
+              {
+                "max": 1500,
+                "min": 500
               }
             ],
             "weight": 100
@@ -508,6 +526,14 @@
             "ilvl": 8,
             "name": "of Suffering",
             "rolls": [
+              {
+                "max": 3000,
+                "min": 1501
+              },
+              {
+                "max": 3000,
+                "min": 1501
+              },
               {
                 "max": 3000,
                 "min": 1501
@@ -597,35 +623,6 @@
           }
         ],
         "weight": 75
-      },
-      {
-        "description": "+# Critical Strikes Cannot Cause Ailments",
-        "effects": [
-          {
-            "condition": null,
-            "layer": "added",
-            "stat": "crit_ailment_denied"
-          }
-        ],
-        "id": "of_composure",
-        "kind": "suffix",
-        "name": "of Composure",
-        "num": 25165867,
-        "pool": "weapon",
-        "tiers": [
-          {
-            "ilvl": 6,
-            "name": "of Composure",
-            "rolls": [
-              {
-                "max": 1,
-                "min": 1
-              }
-            ],
-            "weight": 100
-          }
-        ],
-        "weight": 10
       },
       {
         "description": "+# Knockback",
@@ -5422,9 +5419,21 @@
     },
     {
       "added_unit": "basis_points",
-      "desc": "Chance for your hits to inflict an ailment (ignite/shock/chill); crits inflict regardless.",
-      "key": "ailment_chance",
-      "name": "Ailment Chance"
+      "desc": "Chance for your fire hits to Ignite; crits inflict regardless.",
+      "key": "ignite_chance",
+      "name": "Ignite Chance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chance for your lightning hits to Shock; crits inflict regardless.",
+      "key": "shock_chance",
+      "name": "Shock Chance"
+    },
+    {
+      "added_unit": "basis_points",
+      "desc": "Chance for your cold hits to Chill; crits inflict regardless.",
+      "key": "chill_chance",
+      "name": "Chill Chance"
     },
     {
       "added_unit": "flat",

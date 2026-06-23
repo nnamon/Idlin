@@ -698,7 +698,9 @@ impl World {
                 h.write_i64(c.item_quantity);
                 // Ailments (#88): spawn-set for monsters from rolled affixes, so
                 // hash them too (per the whole-struct rule above).
-                h.write_i64(c.ailment_chance);
+                h.write_i64(c.ignite_chance);
+                h.write_i64(c.shock_chance);
+                h.write_i64(c.chill_chance);
                 h.write_u8(c.crits_no_ailment as u8);
                 h.write_i64(c.shock_max);
                 h.write_i64(c.chill_max);

@@ -66,9 +66,18 @@ pub enum Stat {
     /// Attacker: flat knockback in centi-units added to every hit.
     Knockback,
     // -- ailments (#88): attacker-side proc + magnitude levers --
-    /// Attacker: basis-point chance to inflict an ailment on a hit. Crits inflict
+    // Per-element inflict chance — NO blanket "all ailments" stat: scaling every
+    // ailment from one lever is too strong, so each element carries its own chance
+    // and an "all-elemental" affix must be COMPOSED of these three effects.
+    /// Attacker: basis-point chance for a FIRE hit to Ignite. Crits inflict
     /// regardless (unless CritAilmentDenied); this roll is independent of crit.
-    AilmentChance,
+    IgniteChance,
+    /// Attacker: basis-point chance for a LIGHTNING hit to Shock. Crits inflict
+    /// regardless (unless CritAilmentDenied); this roll is independent of crit.
+    ShockChance,
+    /// Attacker: basis-point chance for a COLD hit to Chill. Crits inflict
+    /// regardless (unless CritAilmentDenied); this roll is independent of crit.
+    ChillChance,
     /// Attacker flag (Added sum > 0 ⇒ true): critical strikes cannot cause
     /// ailments — drops the guaranteed crit-inflict; the chance roll still applies.
     CritAilmentDenied,
@@ -83,7 +92,7 @@ pub enum Stat {
     AilmentDuration,
 }
 
-pub const STAT_COUNT: usize = 38;
+pub const STAT_COUNT: usize = 40;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -120,7 +129,9 @@ impl Stat {
         Stat::Stagger,
         Stat::Poise,
         Stat::Knockback,
-        Stat::AilmentChance,
+        Stat::IgniteChance,
+        Stat::ShockChance,
+        Stat::ChillChance,
         Stat::CritAilmentDenied,
         Stat::ShockMax,
         Stat::ChillMax,
@@ -337,10 +348,22 @@ impl Stat {
                 "Flat knockback (centi-units) added to your hits.",
                 AddedUnit::CentiUnits,
             ),
-            Stat::AilmentChance => (
-                "ailment_chance",
-                "Ailment Chance",
-                "Chance for your hits to inflict an ailment (ignite/shock/chill); crits inflict regardless.",
+            Stat::IgniteChance => (
+                "ignite_chance",
+                "Ignite Chance",
+                "Chance for your fire hits to Ignite; crits inflict regardless.",
+                AddedUnit::BasisPoints,
+            ),
+            Stat::ShockChance => (
+                "shock_chance",
+                "Shock Chance",
+                "Chance for your lightning hits to Shock; crits inflict regardless.",
+                AddedUnit::BasisPoints,
+            ),
+            Stat::ChillChance => (
+                "chill_chance",
+                "Chill Chance",
+                "Chance for your cold hits to Chill; crits inflict regardless.",
                 AddedUnit::BasisPoints,
             ),
             Stat::CritAilmentDenied => (

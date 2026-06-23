@@ -434,9 +434,11 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         stagger: 0,
         poise: 0,
         knockback_cu: 0,
-        // Ailment levers (#88): no chance by default; default Shock/Chill caps
-        // (40% / 30%) — characters re-derive these (base + mods) in refresh.
-        ailment_chance: 0,
+        // Ailment levers (#88): no per-element chance by default; default
+        // Shock/Chill caps (40% / 30%) — characters re-derive these in refresh.
+        ignite_chance: 0,
+        shock_chance: 0,
+        chill_chance: 0,
         crits_no_ailment: false,
         shock_max: 4000,
         chill_max: 3000,
@@ -507,9 +509,11 @@ pub fn universal_stats(level: u32) -> CombatStats {
         stagger: 0,
         poise: 0,
         knockback_cu: 0,
-        // Ailment levers (#88): no chance by default; default Shock/Chill caps
-        // (40% / 30%) — characters re-derive these (base + mods) in refresh.
-        ailment_chance: 0,
+        // Ailment levers (#88): no per-element chance by default; default
+        // Shock/Chill caps (40% / 30%) — characters re-derive these in refresh.
+        ignite_chance: 0,
+        shock_chance: 0,
+        chill_chance: 0,
         crits_no_ailment: false,
         shock_max: 4000,
         chill_max: 3000,

@@ -1,6 +1,8 @@
-// "... of Affliction" — chance to inflict an ailment (ignite/shock/chill) on hit
-// (#88). Stacks with crit-inflict; the rolled value is added to the attacker's
-// AilmentChance at proc time.
+// "... of Affliction" — the all-elemental ailment-chance suffix (#88). It is a
+// HYBRID composed of the three PER-ELEMENT chances (ignite/shock/chill), each its
+// own independent roll — NOT a single blanket "all ailments" lever, which would
+// over-scale. Single-element affixes can target one chance off the same stats.
+// Each rolled value is added to the attacker's chance for that element at proc time.
 AffixDef(
     id: "of_affliction",
     public: true,
@@ -8,9 +10,15 @@ AffixDef(
     kind: suffix,
     pool: "weapon",
     weight: 50,
-    effects: [(stat: ailment_chance, layer: added)],
+    effects: [
+        (stat: ignite_chance, layer: added),
+        (stat: shock_chance, layer: added),
+        (stat: chill_chance, layer: added),
+    ],
     tiers: [
-        (ilvl: 1, name: "of Affliction", weight: 100, rolls: [(min: 500, max: 1500)]),   // +5-15%
-        (ilvl: 8, name: "of Suffering", weight: 45, rolls: [(min: 1501, max: 3000)]),     // +15-30%
+        // +5-15% per element (each rolls independently).
+        (ilvl: 1, name: "of Affliction", weight: 100, rolls: [(min: 500, max: 1500), (min: 500, max: 1500), (min: 500, max: 1500)]),
+        // +15-30% per element.
+        (ilvl: 8, name: "of Suffering", weight: 45, rolls: [(min: 1501, max: 3000), (min: 1501, max: 3000), (min: 1501, max: 3000)]),
     ],
 )
