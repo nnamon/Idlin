@@ -39,9 +39,14 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// (affix effects + tombstone + stat vocab → 0xBA6F31C912F0421D), the fingerprint (3
 /// chance fields hashed instead of 1), AND grind outcomes (monsters with of_affliction
 /// now derive per-element chances). The determinism trio still agrees.
-/// (Prior: 0xBB5A — #88-onto-#50 merge, blanket AilmentChance; 0xF08B — #50 part 2 on
-/// main; 0x5349 — #88 standalone, pre-#50-merge; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x53B5_355E_C826_266C;
+/// Re-pinned again for the single-element chance affixes: of_kindling (ignite),
+/// of_conduction (shock), of_numbing (chill) added to the weapon pool, and the
+/// all-elemental of_affliction hybrid made rarer (weight 50→20). Three new content
+/// files + the weight edit move content_hash (→0xC089DD7B8DD3B1C1), and the weapon-
+/// pool affix rolls shift monster stats over the 2000-tick grind. Both intentional.
+/// (Prior: 0x53B5 — per-element split; 0xBB5A — #88-onto-#50 merge, blanket
+/// AilmentChance; 0xF08B — #50 part 2 on main; 0x5662 — #86 state_hash widening; etc.)
+const GOLDEN_HASH: u64 = 0x4839_C42D_D58B_1053;
 
 #[test]
 fn golden_replay() {

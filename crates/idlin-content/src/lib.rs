@@ -2730,6 +2730,12 @@ mod tests {
             stats("of_affliction"),
             vec![Stat::IgniteChance, Stat::ShockChance, Stat::ChillChance]
         );
+        // Per-element chance affixes — one stat each, the single-element counterparts
+        // to the of_affliction hybrid. A miswire (e.g. of_kindling → shock_chance)
+        // fails here.
+        assert_eq!(stats("of_kindling"), vec![Stat::IgniteChance]);
+        assert_eq!(stats("of_conduction"), vec![Stat::ShockChance]);
+        assert_eq!(stats("of_numbing"), vec![Stat::ChillChance]);
         assert_eq!(stats("of_the_tempest"), vec![Stat::ShockMax]);
         assert_eq!(stats("of_permafrost"), vec![Stat::ChillMax]);
         assert_eq!(stats("of_smouldering"), vec![Stat::AilmentDuration]);

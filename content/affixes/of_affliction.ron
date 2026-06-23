@@ -9,7 +9,9 @@ AffixDef(
     name: "of Affliction",
     kind: suffix,
     pool: "weapon",
-    weight: 50,
+    // Rarer than the single-element chance affixes (of_kindling/of_conduction/
+    // of_numbing, weight 50) — covering all three at once is the deliberate pick.
+    weight: 20,
     effects: [
         (stat: ignite_chance, layer: added),
         (stat: shock_chance, layer: added),
