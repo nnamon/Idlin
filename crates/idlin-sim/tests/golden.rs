@@ -22,6 +22,15 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// under the wider hash, confirming a representation change, not a leak. (The
 /// later item-charges/affix-tier additions left the digest at this value — the
 /// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
+/// Re-pinned for #109 (strike-time conditional affixes) re-integrated onto current main
+/// (which carries #88 per-element ailments + the #124 affix-pool inversion): (1)
+/// `CombatStats` gained `has_strike_conditions`, folded into `state_hash` (a FINGERPRINT
+/// widening); AND (2) the new `of_desperation` affix (strike-time "+phys while below 35%
+/// life"), now a member of the `weapon` pool, shifts content_hash and the weighted
+/// weapon-suffix rolls, so the 2000-tick grind's outcomes move. The strike-time mechanism
+/// is inert until a character wields such an affix below the threshold; the determinism
+/// trio still agrees, confirming no leak.
+/// --- prior #88/#124 re-pin chain (kept for the bisect trail) ---
 /// Re-pinned for #88 first-class ailments MERGED onto a `main` that already carries
 /// #50 (VM-ABI generation; main was 0xF08B…). #88 brings: a content_hash change (new
 /// ailment affixes; `frost_nova`'s hardcoded chill debuff replaced by an inherent
@@ -54,7 +63,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x0BF5_1318_2A3B_29C0;
+const GOLDEN_HASH: u64 = 0x7FFF_2836_4A8D_7FE9;
 
 #[test]
 fn golden_replay() {

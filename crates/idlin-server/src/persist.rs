@@ -65,7 +65,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// `IgniteChance`/`ShockChance`/`ChillChance` — `Stat` discriminants shifted (in
 /// serialized `Grant`s) AND `CombatStats`'s one `ailment_chance` field became three;
 /// both change the postcard layout, so a v9 snapshot would mis-decode; refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 10;
+/// v11 (#109 strike conditions): `CombatStats` gained `has_strike_conditions: bool`
+/// (the strike-time conditional cache), adding a serialized field to every entity's
+/// combat block — a v10 snapshot's `CombatStats` would mis-decode; refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 11;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.

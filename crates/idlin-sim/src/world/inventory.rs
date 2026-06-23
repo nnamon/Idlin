@@ -693,8 +693,12 @@ impl World {
         // gated mod is scored only when it would actually fire on this item (#86):
         // of_savagery (phys while melee) counts on a cleaver, scores 0 on a bow.
         // A weapon supplies its class; non-weapons have none (unarmed → melee).
+        // Derive-phase ctx: the naive auto-equip score skips strike-time (#109)
+        // situational mods (they fold to 0 here) — "bots with opinions can do
+        // better" by weighing below-life gear themselves.
         let ctx = crate::stats::EvalContext {
             weapon_class: def.weapon_class,
+            ..Default::default()
         };
         let mut sheet = StatSheet::new();
         for ra in &item.affixes {

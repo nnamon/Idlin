@@ -596,10 +596,26 @@ impl World {
             _ => return None,
         };
         let attacker_is_char = e.character.is_some();
-        let char_damage = c.damage;
-        let (accuracy, weapon_range) = (c.accuracy, c.range);
-        let (crit_inc, crit_multi) = (c.crit_inc, c.crit_multi);
-        let (a_stagger, a_knockback) = (c.stagger, c.knockback_cu);
+        // #109: if the attacker carries strike-time conditions (e.g. "while below
+        // 35% life"), re-derive its OFFENSIVE stats against its live life % so those
+        // conditions fold for THIS use; otherwise the cached stats are exact. Gated
+        // on the flag so the common case pays nothing. (Characters only this pass —
+        // monster strike-time conditions are inert; see progression.rs.)
+        let eff = if c.has_strike_conditions && attacker_is_char {
+            self.effective_offense(slot)
+        } else {
+            None
+        };
+        let char_damage = eff.as_ref().map_or(c.damage, |o| o.damage);
+        let (accuracy, weapon_range) = eff
+            .as_ref()
+            .map_or((c.accuracy, c.range), |o| (o.accuracy, o.range));
+        let (crit_inc, crit_multi) = eff
+            .as_ref()
+            .map_or((c.crit_inc, c.crit_multi), |o| (o.crit_inc, o.crit_multi));
+        let (a_stagger, a_knockback) = eff
+            .as_ref()
+            .map_or((c.stagger, c.knockback_cu), |o| (o.stagger, o.knockback_cu));
 
         let sg = skill_of(e, skill_key)?;
         let gem_def = self.content.gems[sg.gem.gem_idx as usize].clone();
@@ -829,10 +845,27 @@ impl World {
         };
         let attacker_is_char = e.character.is_some();
         let pos = e.pos;
-        let (char_damage, accuracy, weapon_range, weapon_projectile, _weapon_use) =
-            (c.damage, c.accuracy, c.range, c.projectile, c.use_ticks);
-        let (crit_inc, crit_multi, _cast_speed) = (c.crit_inc, c.crit_multi, c.cast_speed);
-        let (a_stagger, a_knockback) = (c.stagger, c.knockback_cu);
+        // #109: a basic weapon attack folds the attacker's strike-time conditions
+        // too (e.g. of_desperation below 35% life) — re-derive effective offense
+        // when gated, exactly as the socketed-skill path does in resolve_skill;
+        // otherwise the cached stats are exact. projectile/use are weapon-fixed.
+        let eff = if c.has_strike_conditions && attacker_is_char {
+            self.effective_offense(slot)
+        } else {
+            None
+        };
+        let char_damage = eff.as_ref().map_or(c.damage, |o| o.damage);
+        let accuracy = eff.as_ref().map_or(c.accuracy, |o| o.accuracy);
+        let weapon_range = eff.as_ref().map_or(c.range, |o| o.range);
+        let (weapon_projectile, _weapon_use) = (c.projectile, c.use_ticks);
+        let (crit_inc, crit_multi, _cast_speed) = eff
+            .as_ref()
+            .map_or((c.crit_inc, c.crit_multi, c.cast_speed), |o| {
+                (o.crit_inc, o.crit_multi, c.cast_speed)
+            });
+        let (a_stagger, a_knockback) = eff
+            .as_ref()
+            .map_or((c.stagger, c.knockback_cu), |o| (o.stagger, o.knockback_cu));
         let hostile_to_players = matches!(attacker_faction, crate::entity::Faction::Hostile);
 
         match skill {
@@ -2989,6 +3022,244 @@ mod tests {
     }
 
     #[test]
+    fn of_desperation_strike_time_conditional_folds_below_life() {
+        use crate::entity::{Item, Rarity, RolledAffix, SocketedGem};
+        use idlin_content::GearSlot;
+        // #109 B2a first content: of_desperation grants +phys WHILE BELOW 35% LIFE —
+        // a STRIKE-TIME condition. It must NOT bake into the cached stats (it varies
+        // mid-combat); it folds into the per-strike effective offense ONLY while below
+        // the threshold. Two mutation guards below:
+        //  - drop the effective re-derive in resolve_skill → eff_low == cached, fails;
+        //  - drop the include_strike gate → eff_high gains the bonus, fails.
+        let content = content();
+        let mut world = World::new(0xDE57, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Doomed".into(),
+                program: halt,
+            }],
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        let desperation = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_desperation")
+            .unwrap() as u32;
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.equipment = Default::default();
+            ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                base_idx: cleaver,
+                rarity: Rarity::Magic,
+                item_level: 12,
+                affixes: vec![RolledAffix {
+                    affix_idx: desperation,
+                    values: vec![4000], // +40% increased phys while below 35% life
+                    tier: 0,
+                }],
+                name: String::new(),
+                charges: 0,
+            });
+        }
+        world.refresh_derived_stats(slot);
+        // The gate flag is set, and the cached phys does NOT include the deferred
+        // strike-time bonus — it only folds per-strike.
+        let cached = {
+            let c = world.zone.get(slot).unwrap().combat.as_ref().unwrap();
+            assert!(
+                c.has_strike_conditions,
+                "a strike-time affix sets has_strike_conditions"
+            );
+            c.damage[0]
+        };
+        // Full life (above the 35% threshold): effective offense equals the cached phys.
+        let eff_high = world.effective_offense(slot).unwrap().damage[0];
+        assert_eq!(eff_high, cached, "above 35% life: of_desperation is inert");
+        // Drop to 30% life: the condition holds, so +40% phys folds in per-strike.
+        {
+            let c = world.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            c.life = c.life_max * 30 / 100;
+        }
+        let eff_low = world.effective_offense(slot).unwrap().damage[0];
+        assert!(
+            eff_low > cached,
+            "below 35% life: of_desperation adds phys ({eff_low} > {cached})"
+        );
+
+        // End-to-end through resolve_skill: a socketed attack (cleave scales weapon
+        // phys) deals MORE while below the threshold — proving resolve_skill actually
+        // consumes the effective offense. Mutation: drop the eff branch in
+        // resolve_skill → resolved_low == resolved_high and this fails.
+        let node = content
+            .tree
+            .iter()
+            .position(|n| n.kind == idlin_content::NodeKind::Socket)
+            .unwrap() as u32;
+        {
+            let ch = world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.allocated.push(node);
+            ch.sockets.insert(
+                node,
+                SocketedGem {
+                    gem: instance(&content, "cleave", 1),
+                    cooldown_left: 0,
+                    supports: Vec::new(),
+                },
+            );
+        }
+        let resolve_phys = |world: &mut World, life_num: i64| -> i64 {
+            world
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .combat
+                .as_mut()
+                .unwrap()
+                .life = life_num;
+            world
+                .resolve_skill(slot, node)
+                .unwrap()
+                .spec_template
+                .damage[0]
+        };
+        let life_max = world
+            .zone
+            .get(slot)
+            .unwrap()
+            .combat
+            .as_ref()
+            .unwrap()
+            .life_max;
+        let resolved_high = resolve_phys(&mut world, life_max); // full life
+        let resolved_low = resolve_phys(&mut world, life_max * 30 / 100); // below 35%
+        assert!(
+            resolved_low > resolved_high,
+            "resolve_skill folds of_desperation below 35% life ({resolved_low} > {resolved_high})"
+        );
+    }
+
+    #[test]
+    fn of_desperation_boosts_basic_attacks_below_life() {
+        use crate::entity::{Item, Rarity, RolledAffix};
+        use crate::fixed::{Fx, FxV2};
+        use idlin_content::GearSlot;
+        // #109: a BASIC weapon attack (skill: None, via resolve_use) must also fold
+        // strike-time conditions — not just socketed skills. Two identical-seed worlds
+        // land the same swing on the same target; the only difference is the
+        // attacker's life, so the below-35% world deals MORE (of_desperation). Same
+        // seed ⇒ identical accuracy/crit/variance rolls. Mutation: revert the eff
+        // branch in resolve_use → both deal the same → assert fails.
+        let content = content();
+        let loss = |life_frac_num: i64, life_frac_den: i64| -> i64 {
+            let mut world = World::new(0xB451C, &content);
+            let halt = idlin_botc::assemble("halt\n").unwrap();
+            world.tick(&crate::TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "Hitter".into(),
+                    program: halt,
+                }],
+            });
+            let aslot = (0..world.zone.slot_count())
+                .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+                .unwrap();
+            let cleaver = content
+                .items
+                .iter()
+                .position(|i| i.id == "rusted_cleaver")
+                .unwrap() as u32;
+            let desperation = content
+                .affixes
+                .iter()
+                .position(|a| a.id == "of_desperation")
+                .unwrap() as u32;
+            let (mslot, mnet, mpos) = world
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.is_some() && e.alive())
+                .map(|(s, e)| (s, e.net_id, e.pos))
+                .unwrap();
+            {
+                let ch = world
+                    .zone
+                    .get_mut(aslot)
+                    .unwrap()
+                    .character
+                    .as_mut()
+                    .unwrap();
+                ch.equipment = Default::default();
+                ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                    base_idx: cleaver,
+                    rarity: Rarity::Magic,
+                    item_level: 12,
+                    affixes: vec![RolledAffix {
+                        affix_idx: desperation,
+                        values: vec![6000], // +60% phys while below 35% life
+                        tier: 0,
+                    }],
+                    name: String::new(),
+                    charges: 0,
+                });
+            }
+            world.refresh_derived_stats(aslot);
+            // Stand on the monster (in melee grace + LoS); set attacker life fraction.
+            {
+                let e = world.zone.get_mut(aslot).unwrap();
+                e.pos = FxV2::new(mpos.x + Fx::from_raw(0x4000), mpos.y);
+                let c = e.combat.as_mut().unwrap();
+                c.life = (c.life_max * life_frac_num / life_frac_den).max(1);
+            }
+            // Beef the target + drop its evasion so the swing always lands (and
+            // never kills) — isolating the damage delta from hit/kill variance.
+            let before = {
+                let c = world.zone.get_mut(mslot).unwrap().combat.as_mut().unwrap();
+                c.life_max = 10_000_000;
+                c.life = 10_000_000;
+                c.evasion = 0;
+                c.life
+            };
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            world.resolve_use(
+                aslot,
+                SkillTarget::Entity(mnet),
+                None,
+                &mut ev,
+                &mut dead,
+                &mut loot,
+            );
+            before - world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life
+        };
+        let full = loss(1, 1); // full life: of_desperation inert
+        let low = loss(30, 100); // below 35%: +60% phys
+        assert!(full > 0, "the basic attack lands");
+        assert!(
+            low > full,
+            "of_desperation boosts a basic attack below 35% life ({low} > {full})"
+        );
+    }
+
+    #[test]
     fn widened_nova_emits_grown_skill_fx() {
         let events = use_supported_skill("cleave", &["widening"]);
         let fx = events
@@ -3823,6 +4094,11 @@ mod tests {
             base,
             hash_with(&|c| c.ailment_duration += 1),
             "ailment_duration must change the hash"
+        );
+        assert_ne!(
+            base,
+            hash_with(&|c| c.has_strike_conditions = !c.has_strike_conditions),
+            "has_strike_conditions must change the hash (#109)"
         );
     }
 
