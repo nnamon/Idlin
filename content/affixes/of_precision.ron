@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Precision",
     kind: suffix,
-    pool: "weapon",
     weight: 60,
     effects: [(stat: crit_chance, layer: increased)],
     tiers: [

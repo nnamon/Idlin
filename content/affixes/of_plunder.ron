@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Plunder",
     kind: suffix,
-    pool: "find",
     weight: 50,
     effects: [(stat: item_rarity, layer: increased)],
     tiers: [(ilvl: 1, name: "of Plunder", weight: 100, rolls: [(min: 800, max: 1500)]), (ilvl: 4, name: "of Avarice", weight: 45, rolls: [(min: 1600, max: 2500)])],

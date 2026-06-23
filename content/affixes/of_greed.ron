@@ -6,7 +6,6 @@ AffixDef(
     public: true,
     name: "of Greed",
     kind: suffix,
-    pool: "find",
     weight: 20,
     effects: [
         (stat: item_rarity, layer: increased),

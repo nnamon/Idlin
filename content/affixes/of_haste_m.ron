@@ -1,6 +1,6 @@
 // Monster suffix: faster swings and feet.
 AffixDef(
-    id: "of_haste_m", name: "of Haste", kind: suffix, pool: "monster",
+    id: "of_haste_m", name: "of Haste", kind: suffix,
     public: true,
     weight: 80,
     effects: [(stat: attack_speed, layer: increased)],

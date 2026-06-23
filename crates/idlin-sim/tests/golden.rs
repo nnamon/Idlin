@@ -44,9 +44,17 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// all-elemental of_affliction hybrid made rarer (weight 50→20). Three new content
 /// files + the weight edit move content_hash (→0xC089DD7B8DD3B1C1), and the weapon-
 /// pool affix rolls shift monster stats over the 2000-tick grind. Both intentional.
-/// (Prior: 0x53B5 — per-element split; 0xBB5A — #88-onto-#50 merge, blanket
-/// AilmentChance; 0xF08B — #50 part 2 on main; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x4839_C42D_D58B_1053;
+/// Re-pinned for the affix-pool inversion: eligibility moves entirely to the pool
+/// side — `AffixDef.pool` is removed, `content/pools/*.ron` now LIST their member
+/// affixes, and items/monsters subscribe by name. This is content_hash-ONLY: the
+/// `pool:` field stripped from 49 affix files + 8 new pool files change content_hash
+/// (→0x95F068BD5300692A), but the resolved affix→pool membership is preserved EXACTLY
+/// (pinned per-pool in `affix_pool_subscriptions_resolve`), so the roller's candidate
+/// sets — and thus every loot roll and grind outcome — are byte-identical. The
+/// determinism trio still agrees.
+/// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
+/// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
+const GOLDEN_HASH: u64 = 0x0BF5_1318_2A3B_29C0;
 
 #[test]
 fn golden_replay() {

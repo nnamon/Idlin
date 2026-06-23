@@ -1,6 +1,6 @@
 // Monster suffix: elemental shrugging.
 AffixDef(
-    id: "of_wards", name: "of Wards", kind: suffix, pool: "monster",
+    id: "of_wards", name: "of Wards", kind: suffix,
     public: true,
     weight: 70,
     effects: [(stat: resist_fire, layer: added)],

@@ -407,8 +407,9 @@ pub(crate) fn roll_affixes_into(
         .affixes
         .iter()
         .enumerate()
-        .filter(|(i, a)| {
-            pools.contains(&a.pool) && !(*affixes).iter().any(|ra| ra.affix_idx == *i as u32)
+        .filter(|(i, _)| {
+            content.affix_in_pools(*i as u32, pools)
+                && !(*affixes).iter().any(|ra| ra.affix_idx == *i as u32)
         })
         .map(|(i, _)| i as u32)
         .collect();

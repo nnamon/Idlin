@@ -1,6 +1,6 @@
 // Flask suffix: the vessel holds more.
 AffixDef(
-    id: "of_sating", name: "of Sating", kind: suffix, pool: "flask",
+    id: "of_sating", name: "of Sating", kind: suffix,
     public: true,
     weight: 100,
     effects: [(stat: life, layer: added)],

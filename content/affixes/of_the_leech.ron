@@ -5,7 +5,6 @@ AffixDef(
     public: true,
     name: "of the Leech",
     kind: suffix,
-    pool: "weapon",
     weight: 50,
     effects: [
         (stat: leech_life, layer: added),

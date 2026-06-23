@@ -5,7 +5,6 @@ AffixDef(
     public: true,
     name: "of Permafrost",
     kind: suffix,
-    pool: "weapon",
     weight: 35,
     effects: [(stat: chill_max, layer: added)],
     tiers: [

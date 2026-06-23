@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Sealing",
     kind: suffix,
-    pool: "armour",
     weight: 70,
     effects: [(stat: resist_chaos, layer: added)],
     tiers: [

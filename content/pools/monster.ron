@@ -1,0 +1,6 @@
+// The monster affix pool — mods that roll on rare/magic monsters (monster defs
+// subscribe via their own `affix_pools`), never on player gear.
+AffixPool(
+    id: "monster",
+    affixes: ["hulking", "savage", "of_haste_m", "of_staggering_m", "of_wards"],
+)

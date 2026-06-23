@@ -1,0 +1,9 @@
+// The armour affix pool — life/defense/resist mods on helm/chest/boots etc.
+AffixPool(
+    id: "armour",
+    affixes: [
+        "hale", "shimmering",
+        "of_iron", "of_poise", "of_renewal", "of_sealing", "of_storms",
+        "of_the_depths", "of_the_fox", "of_warding", "of_wind",
+    ],
+)

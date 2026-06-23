@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Bold",
     kind: prefix,
-    pool: "accessory",
     weight: 100,
     effects: [(stat: strength, layer: added)],
     tiers: [

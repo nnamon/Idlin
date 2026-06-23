@@ -1807,7 +1807,6 @@ mod pack_rarity_tests {
             public: false,
             name: id.into(),
             kind: AffixKind::Suffix,
-            pool: "monster".into(),
             weight: 100,
             effects: vec![AffixEffect {
                 stat: Stat::Life,
