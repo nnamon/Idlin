@@ -343,6 +343,15 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_format_version_is_pinned() {
+        // Deliberate checkpoint (like GOLDEN_HASH / PROTO_VERSION): any serialized-layout
+        // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
+        // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
+        // it together with the layout change and the version-history note above.
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 12);
+    }
+
+    #[test]
     fn version_mismatch_is_refused() {
         // A snapshot stamped with a future format version is refused at the
         // header, before any decode — never mis-decoded.
