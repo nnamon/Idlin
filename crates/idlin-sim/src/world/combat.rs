@@ -3369,7 +3369,7 @@ mod tests {
         use crate::fixed::{Fx, FxV2};
         // #125: the END-TO-END proof that a MONSTER's strike-time condition flows through
         // the combat gate (resolve_use → the now-ungated effective_offense), not just a
-        // direct effective_offense call. tide_husk enrages (+40% phys) below half life, so
+        // direct effective_offense call. tide_husk enrages (+20% phys) below half life, so
         // a wounded husk lands MORE than a full-life one on the same target, same seed.
         // Mutation: restore `&& attacker_is_char` at the resolve_use gate → the husk never
         // re-derives in combat → both deal the same → assert fails.
@@ -3436,7 +3436,7 @@ mod tests {
             before - world.zone.get(tslot).unwrap().combat.as_ref().unwrap().life
         };
         let full = loss(1, 1); // full life: enrage inert
-        let low = loss(40, 100); // below half: +40% phys
+        let low = loss(40, 100); // below half: +20% phys
         assert!(full > 0, "the husk's attack lands");
         assert!(
             low > full,

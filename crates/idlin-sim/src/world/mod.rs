@@ -1921,7 +1921,7 @@ mod pack_rarity_tests {
 
     #[test]
     fn monster_strike_condition_enrages_below_life() {
-        // #125: tide_husk carries a strike-time passive (+40% phys below half life).
+        // #125: tide_husk carries a strike-time passive (+20% phys below half life).
         // Monsters now re-derive per strike (the attacker_is_char gate is gone), so the
         // enrage folds when wounded and is inert at full life. Mutation: restore the
         // gate → effective_offense returns the cached (un-enraged) damage → assert fails.
