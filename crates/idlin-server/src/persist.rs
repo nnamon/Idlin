@@ -68,7 +68,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v11 (#109 strike conditions): `CombatStats` gained `has_strike_conditions: bool`
 /// (the strike-time conditional cache), adding a serialized field to every entity's
 /// combat block — a v10 snapshot's `CombatStats` would mis-decode; refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 11;
+/// v12 (#109 RecentlyKilled): `CombatStats` gained `last_kill_tick: u64` (the post-kill
+/// window) — another serialized combat field; a v11 snapshot's `CombatStats` mis-decodes.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 12;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -338,6 +340,15 @@ mod tests {
         fs::write(dir.join(SNAP_NAME), b"not a postcard world").unwrap();
         assert!(load_managed(&ContentDb::empty(), &dir).is_none());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_format_version_is_pinned() {
+        // Deliberate checkpoint (like GOLDEN_HASH / PROTO_VERSION): any serialized-layout
+        // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
+        // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
+        // it together with the layout change and the version-history note above.
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 12);
     }
 
     #[test]

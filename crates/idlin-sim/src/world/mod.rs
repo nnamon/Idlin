@@ -451,6 +451,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         item_rarity: 10000,
         item_quantity: 10000,
         last_combat_tick: 0,
+        last_kill_tick: 0,
         has_strike_conditions: false,
     }
 }
@@ -527,6 +528,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         item_rarity: 10000,
         item_quantity: 10000,
         last_combat_tick: 0,
+        last_kill_tick: 0,
         has_strike_conditions: false,
     }
 }

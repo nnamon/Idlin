@@ -78,9 +78,10 @@ pub enum ContentError {
     )]
     ConditionalAttribute { at: String },
     #[error(
-        "{at}: a life-threshold condition's basis points ({bp}) are out of range — \
-             must be 0..=10000 (runtime life % is clamped there, so an out-of-range \
-             threshold is silently always- or never-true)"
+        "{at}: a strike-time condition's threshold ({bp}) is out of range — a \
+             life % must be 0..=10000 (runtime life % is clamped there) and a \
+             recently-killed window must be 0..=36000 ticks; an out-of-range value \
+             is silently always- or never-true"
     )]
     BadConditionThreshold { at: String, bp: i64 },
     #[error("tile map for `{zone}`: {msg}")]
@@ -112,9 +113,22 @@ fn invalid_condition_threshold(condition: &Option<Condition>) -> Option<i64> {
         {
             Some(*bp)
         }
+        // A post-kill window (#109) must be 0..=MAX_RECENTLY_KILLED_WINDOW. Negative
+        // is never-true; an absurdly large one (near the i64::MAX "never killed"
+        // sentinel) would make a never-killed character read as active — reject both.
+        Some(Condition::RecentlyKilled(window))
+            if !(0..=MAX_RECENTLY_KILLED_WINDOW).contains(window) =>
+        {
+            Some(*window)
+        }
         _ => None,
     }
 }
+
+/// Max post-kill window (#109): 36_000 ticks = 1 hour at TICK_HZ 10 — generous for
+/// any momentum buff, and FAR below the `i64::MAX` never-killed sentinel so a valid
+/// window can never collide with it.
+const MAX_RECENTLY_KILLED_WINDOW: i64 = 36_000;
 
 /// An NPC brain: a `.bot` (or assembly) program compiled to versioned VM
 /// bytecode. NPCs run the exact same VM and syscalls as player bots —
@@ -591,6 +605,10 @@ impl AffixDef {
                         format!("{body} (while above {}% life)", bp / 100)
                     }
                     Some(Condition::FullLife) => format!("{body} (while on full life)"),
+                    // Tick window → seconds (TICK_HZ = 10) for the human-facing doc.
+                    Some(Condition::RecentlyKilled(ticks)) => {
+                        format!("{body} (for {}s after a kill)", ticks / 10)
+                    }
                 }
             })
             .collect::<Vec<_>>()
@@ -2561,6 +2579,7 @@ mod tests {
                 "keen",
                 "swift",
                 "of_desperation",
+                "of_the_hunt",
                 "of_driving",
                 "of_precision",
                 "of_ruin",
@@ -3044,6 +3063,14 @@ mod tests {
             Some(Condition::BelowLifePct(3500)),
             "of_desperation gates phys on being below 35% life"
         );
+        // #109 RecentlyKilled: of_the_hunt gates phys on a 40-tick post-kill window.
+        let hunt = find("of_the_hunt");
+        assert_eq!(hunt.effects[0].stat, Stat::DamagePhys);
+        assert_eq!(
+            hunt.effects[0].condition,
+            Some(Condition::RecentlyKilled(40)),
+            "of_the_hunt gates phys on the post-kill window"
+        );
     }
 
     #[test]
@@ -3348,6 +3375,47 @@ mod tests {
                 assert_eq!(bp, 20000);
             }
             other => panic!("affix: expected BadConditionThreshold, got {other:?}"),
+        }
+
+        // RecentlyKilled arm: a negative post-kill window (#109) is never-true.
+        let kill = TempContent::new(
+            "bad_threshold_kill",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(-1)))],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&kill.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
+                assert_eq!(bp, -1);
+            }
+            other => panic!("recently_killed: expected BadConditionThreshold, got {other:?}"),
+        }
+
+        // RecentlyKilled arm: a window near the i64::MAX "never killed" sentinel is
+        // rejected — otherwise a never-killed character would read as active (#109).
+        let kill_big = TempContent::new(
+            "bad_threshold_kill_big",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(9223372036854775807)))],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&kill_big.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
+                assert_eq!(bp, i64::MAX);
+            }
+            other => panic!("recently_killed(MAX): expected BadConditionThreshold, got {other:?}"),
         }
 
         // Tree-node arm: below_life_pct(-1) — never-true. `start` keeps the tree
