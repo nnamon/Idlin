@@ -6,7 +6,6 @@ AffixDef(
     public: true,
     name: "of Kindling",
     kind: suffix,
-    pool: "weapon",
     weight: 50,
     effects: [(stat: ignite_chance, layer: added)],
     tiers: [

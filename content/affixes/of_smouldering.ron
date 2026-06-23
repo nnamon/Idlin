@@ -6,7 +6,6 @@ AffixDef(
     public: true,
     name: "of Smouldering",
     kind: suffix,
-    pool: "weapon",
     weight: 40,
     effects: [(stat: ailment_duration, layer: added)],
     tiers: [

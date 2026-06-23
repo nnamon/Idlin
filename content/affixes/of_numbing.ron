@@ -6,7 +6,6 @@ AffixDef(
     public: true,
     name: "of Numbing",
     kind: suffix,
-    pool: "weapon",
     weight: 50,
     effects: [(stat: chill_chance, layer: added)],
     tiers: [

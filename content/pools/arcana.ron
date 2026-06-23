@@ -1,0 +1,5 @@
+// The arcana affix pool — mana/cast mods (helm/chest accessory bases subscribe).
+AffixPool(
+    id: "arcana",
+    affixes: ["arcane", "of_casting", "of_channeling"],
+)

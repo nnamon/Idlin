@@ -5,7 +5,6 @@ AffixDef(
     public: true,
     name: "of the Fox",
     kind: suffix,
-    pool: "armour",
     weight: 55,
     effects: [
         (stat: dexterity, layer: added),

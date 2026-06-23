@@ -1,6 +1,6 @@
 // Monster prefix: more life — the bread-and-butter elite mod.
 AffixDef(
-    id: "hulking", name: "Hulking", kind: prefix, pool: "monster",
+    id: "hulking", name: "Hulking", kind: prefix,
     public: true,
     weight: 100,
     effects: [(stat: life, layer: increased)],

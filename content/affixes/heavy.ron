@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Heavy",
     kind: prefix,
-    pool: "weapon",
     weight: 100,
     effects: [(stat: damage_phys, layer: increased)],
     tiers: [

@@ -218,8 +218,8 @@ quantity = 2 guaranteed + 10% chance of a third). Each roll then picks
 its class (currency ~10%, gems ~12%, gear otherwise); gear rolls
 rarity under the killer's `item_rarity` factor — the normal weight
 (700) never moves while magic (250), rare (45), and unique (5) weights
-scale — then affixes from the pools the BASE SUBSCRIBES to (each affix lives
-in one named pool; the item lists its pools), tiers gated by monster
+scale — then affixes from the pools the BASE SUBSCRIBES to (each pool lists
+its affixes; the item lists the pools it draws from), tiers gated by monster
 level. **Excess normal-rarity gear compacts**: at most one normal item
 drops per kill; the rest convert into low-tier obols, so the shore
 stays readable and trash kills still pay. Both find stats live on the

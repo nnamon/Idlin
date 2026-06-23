@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Frost",
     kind: suffix,
-    pool: "weapon",
     weight: 80,
     effects: [(stat: damage_cold, layer: added)],
     tiers: [

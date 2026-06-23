@@ -5,7 +5,6 @@ AffixDef(
     public: true,
     name: "of the Tempest",
     kind: suffix,
-    pool: "weapon",
     weight: 35,
     effects: [(stat: shock_max, layer: added)],
     tiers: [

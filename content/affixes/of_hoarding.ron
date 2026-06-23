@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Hoarding",
     kind: suffix,
-    pool: "find",
     weight: 35,
     effects: [(stat: item_quantity, layer: increased)],
     tiers: [(ilvl: 2, name: "of Hoarding", weight: 100, rolls: [(min: 400, max: 800)]), (ilvl: 6, name: "of Bounty", weight: 45, rolls: [(min: 900, max: 1500)])],

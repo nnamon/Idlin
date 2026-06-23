@@ -130,8 +130,7 @@ AffixDef(
     id: "heavy",
     name: "Heavy",                     // prefixes prepend, suffixes append
     kind: prefix,                      // prefix | suffix
-    pool: "weapon",                    // ONE named pool; bases subscribe via affix_pools
-    weight: 100,
+    weight: 100,                       // eligibility is NOT here — a pool lists this affix
     effects: [(stat: damage_phys, layer: increased)],  // stat(s) granted; see registry below
     tiers: [
         (ilvl: 1, name: "Heavy",  weight: 100, rolls: [(min: 800,  max: 1500)]),
@@ -144,7 +143,7 @@ A HYBRID names several effects; each tier rolls one range per effect, in order:
 
 ```ron
 AffixDef(
-    id: "of_the_fox", name: "of the Fox", kind: suffix, pool: "armour", weight: 55,
+    id: "of_the_fox", name: "of the Fox", kind: suffix, weight: 55,
     effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
     tiers: [
         (ilvl: 1, name: "of the Fox", weight: 100, rolls: [(min: 5, max: 10), (min: 500, max: 900)]),
@@ -304,17 +303,30 @@ Monsters may also carry `lines:` — things they SAY as speech bubbles
 (the Say syscall); `content/speech.ron` holds the fixed set characters
 may say.
 
-## Affix pools — items subscribe
+## Affix pools — the pool owns its membership
 
-Eligibility is a SUBSCRIPTION: every affix lives in exactly one named
-pool (`pool: "weapon"` on the AffixDef), and every base item lists the
-pools it draws from (`affix_pools: ["armour", "find"]` on the
-ItemDef) — so the item file fully answers "what can roll on me".
+Eligibility lives on the POOL side, never on the affix. A pool file
+(`content/pools/<id>.ron`) LISTS the affixes it contains, and every base
+item/monster lists the pools it draws from (`affix_pools: ["armour",
+"find"]` on the ItemDef). The affix itself is pure stat+tier data with no
+pool of its own — to make an affix roll somewhere, add its id to a pool.
+
+```ron
+// content/pools/weapon.ron
+AffixPool(
+    id: "weapon",
+    affixes: ["heavy", "honed", "of_ruin", "of_kindling", /* ... */],
+)
+```
+
 Current pools: `weapon` (offense), `armour` (life/defenses/resists),
-`arcana` (mana, helm/chest), `stride` (movement, boots), `find`
-(rarity/quantity). New gear granularity is free: give bows their own
-`bow` pool and only bows subscribe. Loading fails on a subscription to
-a pool no affix belongs to.
+`accessory` (rings/amulets/belts), `arcana` (mana/cast), `stride`
+(movement, boots), `find` (rarity/quantity), `flask`, and `monster`
+(rare/magic monster mods, never on player gear). An affix may sit in more
+than one pool. New gear granularity is free: add a `bow` pool listing the
+bow-only affixes and have bows subscribe. Loading fails on a subscription
+to an undefined pool, a pool listing an affix that doesn't exist, or an
+affix that no pool lists (it would be unrollable).
 
 ## `content/currency/*.ron` — CurrencyDef
 
