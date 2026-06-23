@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Keen",
     kind: prefix,
-    pool: "weapon",
     weight: 70,
     effects: [(stat: accuracy, layer: added)],
     tiers: [

@@ -52,8 +52,16 @@ pub enum ContentError {
     UnknownBrain { monster: String, brain: String },
     #[error("monster `{monster}` skill kit is invalid: {msg}")]
     BadMonsterSkills { monster: String, msg: String },
-    #[error("item `{item}` subscribes to affix pool `{pool}` which no affix belongs to")]
+    #[error(
+        "`{item}` subscribes to affix pool `{pool}`, but no such pool is defined in content/pools/"
+    )]
     UnknownAffixPool { item: String, pool: String },
+    #[error("affix pool `{pool}` lists affix `{affix}`, which does not exist")]
+    UnknownAffixInPool { pool: String, affix: String },
+    #[error(
+        "affix `{affix}` belongs to no pool, so nothing can roll it — add it to a content/pools/*.ron"
+    )]
+    OrphanAffix { affix: String },
     #[error("tree node `{node}` links to unknown node `{link}`")]
     UnknownTreeNode { node: String, link: String },
     #[error("the passive tree has nodes but no `start` node")]
@@ -385,8 +393,9 @@ pub struct ItemDef {
     /// (a melee base can be 1H or 2H), so it's authored per base. Default 1H.
     #[serde(default)]
     pub two_handed: bool,
-    /// Affix pools this base draws from when rolling (the subscription
-    /// model: the item declares its pools, affixes declare membership).
+    /// Affix pools this base draws from when rolling. Eligibility is owned by the
+    /// pool side: each `content/pools/*.ron` lists its affixes; the item subscribes
+    /// by name here. The affix itself carries no pool.
     #[serde(default)]
     pub affix_pools: Vec<String>,
     /// Armor: base mitigation/avoidance (armour attenuates physical damage;
@@ -537,16 +546,24 @@ pub struct AffixDef {
     /// Display: prefixes prepend ("Heavy ..."), suffixes append ("... of X").
     pub name: String,
     pub kind: AffixKind,
-    /// The ONE named pool this affix lives in; base items subscribe to
-    /// pools (`ItemDef::affix_pools`), so an item file fully answers
-    /// "what can roll on me".
-    pub pool: String,
     #[serde(default = "default_weight")]
     pub weight: u32,
     /// The stats this affix grants — one for a plain mod, several for a hybrid.
     pub effects: Vec<AffixEffect>,
     /// Must be sorted by ilvl ascending; each tier's `rolls.len()` == `effects.len()`.
     pub tiers: Vec<AffixTier>,
+}
+
+/// A named affix pool (`content/pools/<id>.ron`): the pool OWNS its membership by
+/// listing the affixes it contains, and base items/monsters subscribe to it by name
+/// (`ItemDef::affix_pools`). Eligibility lives entirely on this subscriber side — an
+/// affix is pure stat+tier data and carries no pool of its own. An affix may appear
+/// in more than one pool.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AffixPool {
+    pub id: String,
+    /// The ids of the affixes this pool contains.
+    pub affixes: Vec<String>,
 }
 
 impl AffixDef {
@@ -829,6 +846,12 @@ pub struct GemDef {
     /// Base critical chance in basis points (global crit stats scale it).
     #[serde(default)]
     pub crit_bp: i64,
+    /// Inherent ailment chance in basis points (#88), ADDED to the attacker's
+    /// per-element chance for the hit's element at proc time — so a themed skill
+    /// (e.g. Frost Nova) reliably inflicts its element's ailment. 0 = no inherent
+    /// chance (crit still inflicts). Single-valued (a skill procs only its element).
+    #[serde(default)]
+    pub ailment_chance: i64,
     // -- costs & timing --
     /// Mana drawn per use, scaling with gem level. Gated: a use needs the mana.
     #[serde(default)]
@@ -1230,6 +1253,11 @@ pub struct ContentDb {
     pub items: Vec<ItemDef>,
     /// Sorted by id.
     pub affixes: Vec<AffixDef>,
+    /// Affix eligibility, owned by the pool side (`content/pools/*.ron`): pool id →
+    /// the sorted `affixes` indices that pool contains. Items/monsters subscribe to
+    /// pools by name; the roller takes the union of members for an item's pools. An
+    /// affix carries no pool of its own — this map is the only source of eligibility.
+    pub affix_pool_members: std::collections::BTreeMap<String, Vec<u32>>,
     /// Name word pools for rare/unique items.
     pub naming: NamingDef,
     /// Sorted by id. Currency is COUNTED, not bag-stored.
@@ -1469,6 +1497,27 @@ impl ContentDb {
                 })
             })
             .collect();
+        // Affix-pool membership: pool id → the public affix `num`s it contains.
+        // Eligibility is owned by the pool side now (an affix carries no pool), so a
+        // reader resolves an item's `affix_pools` (names) through this to learn what
+        // can actually roll on it.
+        let affix_pools: serde_json::Map<String, serde_json::Value> = self
+            .affix_pool_members
+            .iter()
+            .map(|(pool, members)| {
+                let nums: Vec<serde_json::Value> = members
+                    .iter()
+                    .filter_map(|&i| {
+                        let a = &self.affixes[i as usize];
+                        a.public
+                            .then(|| reg.num(Category::Affix, &a.id))
+                            .flatten()
+                            .map(|n| serde_json::json!(n))
+                    })
+                    .collect();
+                (pool.clone(), serde_json::Value::Array(nums))
+            })
+            .collect();
         serde_json::json!({
             "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. \
                      Bot/player content reference (RFC #54): every public def's full \
@@ -1476,6 +1525,7 @@ impl ContentDb {
             "fingerprint": reg.fingerprint,
             "seq_bits": ids::SEQ_BITS,
             "stats": stats,
+            "affix_pools": affix_pools,
             "categories": cats,
         })
     }
@@ -1492,6 +1542,23 @@ impl ContentDb {
 
     pub fn item_idx(&self, id: &str) -> Option<usize> {
         self.items.binary_search_by(|i| i.id.as_str().cmp(id)).ok()
+    }
+
+    pub fn affix_idx(&self, id: &str) -> Option<usize> {
+        self.affixes
+            .binary_search_by(|a| a.id.as_str().cmp(id))
+            .ok()
+    }
+
+    /// Is affix `affix_idx` a member of any of these pools? The roller's eligibility
+    /// test — eligibility is owned by the pool side (`affix_pool_members`), never by
+    /// the affix. (`members` is sorted, so the lookup is a binary search.)
+    pub fn affix_in_pools(&self, affix_idx: u32, pools: &[String]) -> bool {
+        pools.iter().any(|p| {
+            self.affix_pool_members
+                .get(p)
+                .is_some_and(|m| m.binary_search(&affix_idx).is_ok())
+        })
     }
 
     pub fn tree_node_idx(&self, id: &str) -> Option<usize> {
@@ -1707,6 +1774,7 @@ impl ContentDb {
         // against the fully sorted database.
         type PendingBrain = (String, String, String, bool);
         let mut pending_brains: Vec<PendingBrain> = Vec::new();
+        let mut pending_pools: Vec<AffixPool> = Vec::new();
         for path in &files {
             let rel = path.strip_prefix(dir).unwrap_or(path);
             let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -1731,6 +1799,10 @@ impl ContentDb {
             } else if rel_str.starts_with("affixes/") {
                 db.affixes
                     .push(ron::from_str::<AffixDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("pools/") {
+                // Affix pools own their membership; resolved to indices after the
+                // affixes are sorted (below), so collect the raw defs for now.
+                pending_pools.push(ron::from_str::<AffixPool>(&text).map_err(parse_err)?);
             } else if rel_str == "naming.ron" {
                 db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
             } else if rel_str == "speech.ron" {
@@ -1894,6 +1966,46 @@ impl ContentDb {
                         });
                     }
                 }
+            }
+        }
+        // Resolve affix pools (content/pools/*.ron): the pool OWNS its membership, so
+        // turn each pool's affix-id list into sorted indices into the now-sorted
+        // `affixes`. Eligibility lives here, not on the affix.
+        for p in &pending_pools {
+            if db.affix_pool_members.contains_key(&p.id) {
+                return Err(ContentError::DuplicateId {
+                    path: "pools/".into(),
+                    id: p.id.clone(),
+                });
+            }
+            let mut members = Vec::with_capacity(p.affixes.len());
+            for aid in &p.affixes {
+                let idx = db
+                    .affixes
+                    .binary_search_by(|a| a.id.as_str().cmp(aid.as_str()))
+                    .map_err(|_| ContentError::UnknownAffixInPool {
+                        pool: p.id.clone(),
+                        affix: aid.clone(),
+                    })?;
+                members.push(idx as u32);
+            }
+            members.sort_unstable();
+            members.dedup();
+            db.affix_pool_members.insert(p.id.clone(), members);
+        }
+        // Every affix must belong to at least one pool — an affix in no pool is
+        // unrollable (the old per-affix `pool` field guaranteed exactly one).
+        let mut in_some_pool = vec![false; db.affixes.len()];
+        for members in db.affix_pool_members.values() {
+            for &i in members {
+                in_some_pool[i as usize] = true;
+            }
+        }
+        for (i, seen) in in_some_pool.iter().enumerate() {
+            if !seen {
+                return Err(ContentError::OrphanAffix {
+                    affix: db.affixes[i].id.clone(),
+                });
             }
         }
         db.gems.sort_by(|a, b| a.id.cmp(&b.id));
@@ -2150,7 +2262,7 @@ impl ContentDb {
         }
         for item in &db.items {
             for pool in &item.affix_pools {
-                if !db.affixes.iter().any(|a| &a.pool == pool) {
+                if !db.affix_pool_members.contains_key(pool) {
                     return Err(ContentError::UnknownAffixPool {
                         item: item.id.clone(),
                         pool: pool.clone(),
@@ -2160,7 +2272,7 @@ impl ContentDb {
         }
         for m in &db.monsters {
             for pool in &m.affix_pools {
-                if !db.affixes.iter().any(|a| &a.pool == pool) {
+                if !db.affix_pool_members.contains_key(pool) {
                     return Err(ContentError::UnknownAffixPool {
                         item: format!("monster {}", m.id),
                         pool: pool.clone(),
@@ -2416,36 +2528,124 @@ mod tests {
 
     #[test]
     fn affix_pool_subscriptions_resolve() {
+        // Eligibility is owned by the pool side now (content/pools/*.ron): pools list
+        // their affixes; items/monsters subscribe by name. `load` already enforces the
+        // invariants (every item pool resolves to a pool file, every pool's affixes
+        // exist, every affix is in ≥1 pool) — so this pins the resolved mapping and
+        // spot-checks that membership matches the intended per-pool buckets.
         let db = ContentDb::load(Path::new("../../content")).unwrap();
-        // Every gear base draws from at least one real pool, and every
-        // affix's pool has at least one subscriber (no orphans).
+        // Every gear base draws from at least one pool, and each subscribed pool is real.
         for item in &db.items {
             assert!(
                 !item.affix_pools.is_empty(),
                 "{} subscribes to no pools",
                 item.id
             );
+            for pool in &item.affix_pools {
+                assert!(
+                    db.affix_pool_members.contains_key(pool),
+                    "{} subscribes to undefined pool `{pool}`",
+                    item.id
+                );
+            }
         }
-        for affix in &db.affixes {
-            assert!(
-                db.items.iter().any(|i| i.affix_pools.contains(&affix.pool))
-                    || db
-                        .monsters
-                        .iter()
-                        .any(|m| m.affix_pools.contains(&affix.pool)),
-                "affix {} sits in pool `{}` with no subscribers",
-                affix.id,
-                affix.pool
-            );
-        }
+        // Every affix belongs to at least one pool (no orphan is unrollable).
+        let total: usize = db.affix_pool_members.values().map(|m| m.len()).sum();
+        assert_eq!(
+            total,
+            db.affixes.len(),
+            "every affix is in exactly one pool (today's 1:1 mapping)"
+        );
+        // Pin the FULL per-pool membership: this refactor must PRESERVE the exact
+        // affix→pool mapping (the golden moves only by content_hash, not by changed
+        // rolls). Counts/spot-checks alone miss a SWAP (e.g. of_driving↔of_iron keeps
+        // counts), so assert each pool's complete member set. From the pre-refactor
+        // `AffixDef.pool` census; order-insensitive (both sides sorted).
+        let pin = |pool: &str, mut expected: Vec<&str>| {
+            let mut got: Vec<&str> = db.affix_pool_members[pool]
+                .iter()
+                .map(|&i| db.affixes[i as usize].id.as_str())
+                .collect();
+            got.sort_unstable();
+            expected.sort_unstable();
+            assert_eq!(got, expected, "pool `{pool}` membership drifted");
+        };
+        pin(
+            "weapon",
+            vec![
+                "heavy",
+                "honed",
+                "jarring",
+                "keen",
+                "swift",
+                "of_desperation",
+                "of_the_hunt",
+                "of_driving",
+                "of_precision",
+                "of_ruin",
+                "of_savagery",
+                "of_the_leech",
+                "of_venom",
+                "of_kindling",
+                "of_conduction",
+                "of_numbing",
+                "of_affliction",
+                "of_embers",
+                "of_sparks",
+                "of_frost",
+                "of_the_tempest",
+                "of_permafrost",
+                "of_smouldering",
+            ],
+        );
+        pin(
+            "armour",
+            vec![
+                "hale",
+                "shimmering",
+                "of_iron",
+                "of_poise",
+                "of_renewal",
+                "of_sealing",
+                "of_storms",
+                "of_the_depths",
+                "of_the_fox",
+                "of_warding",
+                "of_wind",
+            ],
+        );
+        pin(
+            "monster",
+            vec![
+                "hulking",
+                "savage",
+                "of_haste_m",
+                "of_staggering_m",
+                "of_wards",
+            ],
+        );
+        pin(
+            "accessory",
+            vec!["bold", "hardy", "of_acumen", "of_finesse"],
+        );
+        pin("arcana", vec!["arcane", "of_casting", "of_channeling"]);
+        pin("find", vec!["of_greed", "of_hoarding", "of_plunder"]);
+        pin("stride", vec!["of_the_hare"]);
+        pin("flask", vec!["of_sating"]);
     }
 
     #[test]
     fn unknown_affix_pool_subscriptions_are_rejected() {
+        // The affix lives in a real pool (so it isn't an orphan); the item subscribes
+        // to a DIFFERENT pool with no pool file → the subscription is rejected.
         let tc = TempContent::new(
             "badpool",
             &[
                 ("affixes/a.ron", AFFIX_OK),
+                (
+                    "pools/armour.ron",
+                    r#"AffixPool(id: "armour", affixes: ["hale"])"#,
+                ),
                 (
                     "items/sword.ron",
                     r#"ItemDef(
@@ -2461,6 +2661,38 @@ mod tests {
                 assert_eq!(pool, "weapon");
             }
             other => panic!("expected UnknownAffixPool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pool_listing_an_unknown_affix_is_rejected() {
+        // A pool file may only list affixes that exist.
+        let tc = TempContent::new(
+            "ghostaffix",
+            &[
+                ("affixes/a.ron", AFFIX_OK),
+                (
+                    "pools/armour.ron",
+                    r#"AffixPool(id: "armour", affixes: ["hale", "ghost"])"#,
+                ),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::UnknownAffixInPool { pool, affix }) => {
+                assert_eq!(pool, "armour");
+                assert_eq!(affix, "ghost");
+            }
+            other => panic!("expected UnknownAffixInPool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_affix_in_no_pool_is_rejected() {
+        // An affix that no pool lists is unrollable — reject it at load.
+        let tc = TempContent::new("orphan", &[("affixes/a.ron", AFFIX_OK)]);
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::OrphanAffix { affix }) => assert_eq!(affix, "hale"),
+            other => panic!("expected OrphanAffix, got {other:?}"),
         }
     }
 
@@ -2736,7 +2968,7 @@ mod tests {
     }
 
     const AFFIX_OK: &str = r#"AffixDef(
-        id: "hale", name: "Hale", kind: prefix, pool: "armour",
+        id: "hale", name: "Hale", kind: prefix,
         effects: [(stat: life, layer: added)],
         tiers: [(ilvl: 1, rolls: [(min: 8, max: 15)]), (ilvl: 3, rolls: [(min: 16, max: 28)])],
     )"#;
@@ -2781,6 +3013,24 @@ mod tests {
         assert_eq!(stats("of_sealing"), vec![Stat::ResistChaos]);
         assert_eq!(stats("of_channeling"), vec![Stat::ManaRegen]);
         assert_eq!(stats("of_casting"), vec![Stat::CastSpeed]);
+        // Ailment levers (#88) — a miswire (e.g. of_permafrost granting shock_max)
+        // slips past pool/tier checks but fails here. of_affliction is the
+        // all-elemental HYBRID (the three per-element chances, composed in effects
+        // order); the rest grant one stat each. (crit_ailment_denied has NO affix —
+        // it belongs on a keystone, not gear.)
+        assert_eq!(
+            stats("of_affliction"),
+            vec![Stat::IgniteChance, Stat::ShockChance, Stat::ChillChance]
+        );
+        // Per-element chance affixes — one stat each, the single-element counterparts
+        // to the of_affliction hybrid. A miswire (e.g. of_kindling → shock_chance)
+        // fails here.
+        assert_eq!(stats("of_kindling"), vec![Stat::IgniteChance]);
+        assert_eq!(stats("of_conduction"), vec![Stat::ShockChance]);
+        assert_eq!(stats("of_numbing"), vec![Stat::ChillChance]);
+        assert_eq!(stats("of_the_tempest"), vec![Stat::ShockMax]);
+        assert_eq!(stats("of_permafrost"), vec![Stat::ChillMax]);
+        assert_eq!(stats("of_smouldering"), vec![Stat::AilmentDuration]);
         // Hybrids — two effects, each with its own per-tier roll range.
         assert_eq!(
             stats("of_the_leech"),
@@ -2881,7 +3131,7 @@ mod tests {
         // condition from AffixEffect/grants() → it's lost, this fails.
         let a: AffixDef = ron::from_str(
             r#"AffixDef(
-                id: "of_savagery", name: "of Savagery", kind: suffix, pool: "weapon",
+                id: "of_savagery", name: "of Savagery", kind: suffix,
                 effects: [(stat: damage_phys, layer: increased, condition: Some(wielding_weapon_class(melee)))],
                 tiers: [(ilvl: 1, rolls: [(min: 1500, max: 2500)])],
             )"#,
@@ -2917,7 +3167,7 @@ mod tests {
         // effect (or mispaired values) fails the second/both assertions.
         let fox: AffixDef = ron::from_str(
             r#"AffixDef(
-                id: "of_the_fox", name: "of the Fox", kind: suffix, pool: "armour",
+                id: "of_the_fox", name: "of the Fox", kind: suffix,
                 effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
                 tiers: [(ilvl: 1, rolls: [(min: 5, max: 10), (min: 500, max: 900)])],
             )"#,
@@ -3057,7 +3307,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "armour",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: dexterity, layer: added), (stat: evasion, layer: increased)],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3085,7 +3335,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
+                    id: "bad", name: "Bad", kind: prefix,
                     effects: [(stat: strength, layer: added, condition: Some(wielding_weapon_class(melee)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3113,7 +3363,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: damage_phys, layer: increased, condition: Some(below_life_pct(20000)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3275,7 +3525,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
+                    id: "bad", name: "Bad", kind: prefix,
                     effects: [],
                     tiers: [(ilvl: 1, rolls: [])],
                 )"#,
@@ -3294,7 +3544,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: prefix, pool: "armour",
+                    id: "bad", name: "Bad", kind: prefix,
                     effects: [(stat: life, layer: added)],
                     tiers: [(ilvl: 5, rolls: [(min: 1, max: 2)]), (ilvl: 2, rolls: [(min: 3, max: 4)])],
                 )"#,
@@ -3313,7 +3563,7 @@ mod tests {
             &[(
                 "affixes/empty.ron",
                 r#"AffixDef(
-                    id: "empty", name: "Empty", kind: prefix, pool: "armour",
+                    id: "empty", name: "Empty", kind: prefix,
                     effects: [(stat: life, layer: added)], tiers: [],
                 )"#,
             )],

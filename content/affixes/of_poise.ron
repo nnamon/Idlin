@@ -1,6 +1,6 @@
 // Armour suffix: poise — hits count as smaller against your stun bar.
 AffixDef(
-    id: "of_poise", name: "of Poise", kind: suffix, pool: "armour",
+    id: "of_poise", name: "of Poise", kind: suffix,
     public: true,
     weight: 70,
     effects: [(stat: poise, layer: increased)],

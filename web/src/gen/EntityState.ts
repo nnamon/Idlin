@@ -43,4 +43,9 @@ gear: Array<string>,
 /**
  * Rarity per gear entry (aligned with `gear`) for worn-tier glows.
  */
-gear_rarity: Array<number>, dead: boolean, kills: number, items: number, };
+gear_rarity: Array<number>, dead: boolean, kills: number, items: number, 
+/**
+ * Active-ailment bitmask for the overhead nameplate (#88): bit0 Ignite,
+ * bit1 Shock, bit2 Chill. 0 = unafflicted.
+ */
+ailments: number, };

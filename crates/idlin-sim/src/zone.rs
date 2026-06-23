@@ -46,6 +46,8 @@ pub struct Projectile {
     /// Hit reactions carried from the launcher.
     pub stagger: i64,
     pub knockback_cu: i64,
+    /// The firing skill's inherent ailment chance (bp, #88), carried to the hit.
+    pub ailment_chance: i64,
 }
 
 /// Grid collision for authored (tile-mapped) zones: one cell per sim

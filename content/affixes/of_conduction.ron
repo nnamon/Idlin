@@ -1,0 +1,15 @@
+// "... of Conduction" — chance for your LIGHTNING hits to Shock (#88). The per-element
+// counterpart to the all-elemental `of_affliction` hybrid (which composes all three
+// chances); a single-element pick is the common case, the hybrid the deliberate one.
+AffixDef(
+    id: "of_conduction",
+    public: true,
+    name: "of Conduction",
+    kind: suffix,
+    weight: 50,
+    effects: [(stat: shock_chance, layer: added)],
+    tiers: [
+        (ilvl: 1, name: "of Conduction", weight: 100, rolls: [(min: 500, max: 1500)]),     // +5-15%
+        (ilvl: 8, name: "of Electrocution", weight: 45, rolls: [(min: 1501, max: 3000)]),  // +15-30%
+    ],
+)

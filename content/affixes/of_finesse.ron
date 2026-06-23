@@ -1,6 +1,6 @@
 // Accessory suffix: a steadier hand.
 AffixDef(
-    id: "of_finesse", name: "of Finesse", kind: suffix, pool: "accessory",
+    id: "of_finesse", name: "of Finesse", kind: suffix,
     public: true,
     weight: 100,
     effects: [(stat: dexterity, layer: added)],

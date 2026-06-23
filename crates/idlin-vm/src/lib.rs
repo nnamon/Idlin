@@ -111,6 +111,10 @@ pub const SYS_ITEM_SLOT: i32 = 34;
 /// slot empty (the deliberate counterpart to `equip`'s swap). Unlike a swap,
 /// this REFUSES (-1) when the bag is full rather than dropping the item.
 pub const SYS_UNEQUIP: i32 = 35;
+/// #88: the active ailments on an entity (by net id) as a bitmask — bit0 Ignite,
+/// bit1 Shock, bit2 Chill; 0 if the entity is unknown or unafflicted. Lets a bot
+/// read self/target ailment state (and is the read #109's vs-ailing condition uses).
+pub const SYS_READ_AILMENTS: i32 = 36;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -120,6 +124,62 @@ pub const SYS_SPAWN_MONSTER: i32 = 104;
 pub const SYS_SET_EXIT: i32 = 106;
 pub const SYS_SET_GATE: i32 = 107;
 pub const SYS_SPAWN_ELITE: i32 = 108;
+
+/// VM-ABI: the binary memory CONTRACTS bots read out of VM memory (#50). The
+/// SINGLE OWNER of every record stride + `SelfStatus` offset — the Rust host
+/// (idlin-sim's syscall writers) consumes these consts, and a pin test locks their
+/// values. Unlike the TS constants (a stale value trips `tsc`/CI) or the syscall
+/// numbers (pinned), a wrong `.bot` offset produces NO compile error — a deployed
+/// brain just silently misreads memory. These live with the VM because they
+/// describe ITS memory layout. All values are BYTES (VM addresses are byte offsets;
+/// each word is 4 bytes).
+///
+/// The bot side consumes the SAME owner: `gen` emits these to
+/// `content/lib/gen_abi.bot`, which the `.bot` files include (the grinder template
+/// prepends it) — so a stride/offset can't drift between the engine and the brains.
+pub mod abi {
+    /// `ReadEntities` record stride (6 words): net_id, kind, x, y, life, hp_pct.
+    pub const ENTITY_RECORD_SIZE: u16 = 24;
+    /// `ReadSkills` record stride (10 words, #98): slot_no, gem_num, level,
+    /// cooldown_left, range, mana_cost, use_ticks, target_mode, ready, life_cost.
+    pub const SKILL_RECORD_SIZE: u16 = 40;
+    /// `ReadInventory` record stride (5 words): base_num, rarity, item_level, x, y.
+    pub const INVENTORY_RECORD_SIZE: u16 = 20;
+    /// `ReadItemMods` record stride (4 words): affix_num, effect_index, value, tier.
+    pub const ITEM_MODS_RECORD_SIZE: u16 = 16;
+    /// `ReadEquipment` record stride (4 words): slot, base_num, rarity, item_level.
+    pub const EQUIPMENT_RECORD_SIZE: u16 = 16;
+    /// `QueryCharacters` record stride (10 words, zone-brain): the per-character
+    /// block a brain reads. (Was duplicated as `QC_STRIDE`/`CHAR_RECORD_WORDS`.)
+    pub const CHAR_RECORD_SIZE: u16 = 40;
+    /// `ReadExits` record stride (4 words): x, y, open, reserved.
+    pub const EXIT_RECORD_SIZE: u16 = 16;
+    /// `PollEvents` record stride (4 words, zone-brain): the per-event block a
+    /// brain drains from its inbox.
+    pub const EVENT_RECORD_SIZE: u16 = 16;
+
+    /// `SelfStatus` field byte-offsets into the out buffer (17 words). The order
+    /// is the host's write order in `bots.rs`; bots read each field at its offset.
+    pub const SS_X: u16 = 0;
+    pub const SS_Y: u16 = 4;
+    pub const SS_LIFE: u16 = 8;
+    pub const SS_LIFE_MAX: u16 = 12;
+    pub const SS_LEVEL: u16 = 16;
+    pub const SS_XP: u16 = 20;
+    pub const SS_MAP_W: u16 = 24;
+    pub const SS_MAP_H: u16 = 28;
+    pub const SS_FLAGS: u16 = 32; // bit0 = dead
+    pub const SS_ANCHOR_X: u16 = 36;
+    pub const SS_ANCHOR_Y: u16 = 40;
+    pub const SS_AGGRO_RADIUS: u16 = 44;
+    pub const SS_ATTACK_RANGE: u16 = 48;
+    pub const SS_MANA: u16 = 52;
+    pub const SS_MANA_MAX: u16 = 56;
+    pub const SS_ES: u16 = 60;
+    pub const SS_ZONE: u16 = 64;
+    /// Total `SelfStatus` block size (bytes) — the buffer a bot must reserve.
+    pub const SELF_STATUS_SIZE: u16 = 68;
+}
 
 /// Instruction set. Stack machine, RPN: operands are pushed, opcodes pop them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -661,6 +721,7 @@ mod tests {
         assert_eq!(SYS_EQUIP, 33);
         assert_eq!(SYS_ITEM_SLOT, 34);
         assert_eq!(SYS_UNEQUIP, 35);
+        assert_eq!(SYS_READ_AILMENTS, 36);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);
@@ -669,6 +730,48 @@ mod tests {
         assert_eq!(SYS_SET_EXIT, 106);
         assert_eq!(SYS_SET_GATE, 107);
         assert_eq!(SYS_SPAWN_ELITE, 108);
+    }
+
+    #[test]
+    fn vm_abi_contracts_are_pinned() {
+        // #50: the VM-ABI record strides + SelfStatus offsets are a binary contract
+        // the `.bot` side consumes via the generated content/lib/gen_abi.bot include.
+        // A wrong stride silently misreads VM memory — no compile error — so pin
+        // every value here at the owner (the gen-freshness CI gate locks gen_abi.bot
+        // to these).
+        use abi::*;
+        assert_eq!(ENTITY_RECORD_SIZE, 24);
+        assert_eq!(SKILL_RECORD_SIZE, 40);
+        assert_eq!(INVENTORY_RECORD_SIZE, 20);
+        assert_eq!(ITEM_MODS_RECORD_SIZE, 16);
+        assert_eq!(EQUIPMENT_RECORD_SIZE, 16);
+        assert_eq!(CHAR_RECORD_SIZE, 40);
+        assert_eq!(EXIT_RECORD_SIZE, 16);
+        assert_eq!(EVENT_RECORD_SIZE, 16);
+        // SelfStatus: sequential 4-byte words, 17 fields, 68-byte block.
+        let offsets = [
+            SS_X,
+            SS_Y,
+            SS_LIFE,
+            SS_LIFE_MAX,
+            SS_LEVEL,
+            SS_XP,
+            SS_MAP_W,
+            SS_MAP_H,
+            SS_FLAGS,
+            SS_ANCHOR_X,
+            SS_ANCHOR_Y,
+            SS_AGGRO_RADIUS,
+            SS_ATTACK_RANGE,
+            SS_MANA,
+            SS_MANA_MAX,
+            SS_ES,
+            SS_ZONE,
+        ];
+        for (i, off) in offsets.iter().enumerate() {
+            assert_eq!(*off, (i as u16) * 4, "SelfStatus field {i} offset");
+        }
+        assert_eq!(SELF_STATUS_SIZE, offsets.len() as u16 * 4);
     }
 
     /// Run a program with a fresh VM and a generous budget; return the VM

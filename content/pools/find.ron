@@ -1,0 +1,5 @@
+// The find affix pool — item rarity/quantity ("plunder"/"hoarding"/"greed").
+AffixPool(
+    id: "find",
+    affixes: ["of_greed", "of_hoarding", "of_plunder"],
+)

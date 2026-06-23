@@ -311,6 +311,9 @@ pub struct EntityView {
     pub dead: bool,
     pub kills: u64,
     pub items: u64,
+    /// Active-ailment bitmask for the overhead nameplate (#88): bit0 Ignite,
+    /// bit1 Shock, bit2 Chill.
+    pub ailments: u8,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -431,6 +434,15 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         stagger: 0,
         poise: 0,
         knockback_cu: 0,
+        // Ailment levers (#88): no per-element chance by default; default
+        // Shock/Chill caps (40% / 30%) — characters re-derive these in refresh.
+        ignite_chance: 0,
+        shock_chance: 0,
+        chill_chance: 0,
+        crits_no_ailment: false,
+        shock_max: 4000,
+        chill_max: 3000,
+        ailment_duration: 0,
         use_ticks: def.use_ticks,
         busy_until: 0,
         speed_per_tick: speed_from_cps(def.speed_cps),
@@ -499,6 +511,15 @@ pub fn universal_stats(level: u32) -> CombatStats {
         stagger: 0,
         poise: 0,
         knockback_cu: 0,
+        // Ailment levers (#88): no per-element chance by default; default
+        // Shock/Chill caps (40% / 30%) — characters re-derive these in refresh.
+        ignite_chance: 0,
+        shock_chance: 0,
+        chill_chance: 0,
+        crits_no_ailment: false,
+        shock_max: 4000,
+        chill_max: 3000,
+        ailment_duration: 0,
         use_ticks: UNARMED_USE_TICKS,
         busy_until: 0,
         speed_per_tick: speed_from_cps(BASE_SPEED_CPS),
@@ -1135,7 +1156,14 @@ impl World {
             if self.tick < combat.busy_until {
                 continue; // committed to a swing/cast — no moving mid-use
             }
-            let (pos, speed, range) = (e.pos, combat.speed_per_tick, combat.range);
+            let (pos, mut speed, range) = (e.pos, combat.speed_per_tick, combat.range);
+            // #88: Chill slows movement proportionally to its magnitude.
+            let chill_bp = e.ailment(crate::entity::AilmentKind::Chill);
+            if chill_bp > 0 {
+                speed = crate::fixed::Fx::from_raw(
+                    (speed.raw() as i64 * (10000 - chill_bp.clamp(0, 10000)) / 10000) as i32,
+                );
+            }
 
             // Stop to fight: if the attack target is already in range, hold.
             if let Some(att) = e.intents.attack
@@ -1788,7 +1816,6 @@ mod pack_rarity_tests {
             public: false,
             name: id.into(),
             kind: AffixKind::Suffix,
-            pool: "monster".into(),
             weight: 100,
             effects: vec![AffixEffect {
                 stat: Stat::Life,

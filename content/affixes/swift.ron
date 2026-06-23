@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "Swift",
     kind: prefix,
-    pool: "weapon",
     weight: 70,
     effects: [(stat: attack_speed, layer: increased)],
     tiers: [

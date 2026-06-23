@@ -29,7 +29,7 @@ jobs:
       - name: Generated content ids/consts/docs are fresh
         run: |
           cargo run -p idlin-content --bin gen
-          git diff --exit-code content/ids.ron content/lib/gen_ids.bot web/public/content-docs.json
+          git diff --exit-code content/ids.ron content/lib/gen_ids.bot content/lib/gen_abi.bot web/public/content-docs.json
 
   web:
     runs-on: ubuntu-latest

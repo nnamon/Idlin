@@ -99,6 +99,17 @@ pub struct CombatStats {
     pub stagger: i64,
     pub poise: i64,
     pub knockback_cu: i64,
+    /// Ailment levers (#88), attacker-side: PER-ELEMENT basis-point chance to
+    /// inflict on a matching-element hit (no blanket all-ailments lever), the
+    /// "crits cannot cause ailments" flag, the Shock/Chill magnitude caps (bp), and
+    /// a duration scale (bp) applied to ailments this entity inflicts.
+    pub ignite_chance: i64,
+    pub shock_chance: i64,
+    pub chill_chance: i64,
+    pub crits_no_ailment: bool,
+    pub shock_max: i64,
+    pub chill_max: i64,
+    pub ailment_duration: i64,
     /// Ticks one use of the basic weapon occupies (speed-scaled).
     pub use_ticks: u32,
     /// Occupied until this tick: no moving, no acting (use-time commitment).
@@ -165,8 +176,22 @@ pub struct AttackIntent {
     pub skill: Option<u32>,
 }
 
-/// A timed effect on an entity: skill-applied damage over time, or a
-/// temporary stat buff (folded into refresh_derived_stats while active).
+/// A first-class ailment kind (#88). v1 ships Ignite/Shock/Chill; freeze/bleed/
+/// poison are future. Each maps from the triggering hit's dominant damage type
+/// (fire→Ignite, lightning→Shock, cold→Chill).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AilmentKind {
+    /// Fire: a damage-over-time burn — a fixed total spread over the duration.
+    Ignite,
+    /// Lightning: the victim takes increased damage while shocked.
+    Shock,
+    /// Cold: the victim's actions and movement are slowed.
+    Chill,
+}
+
+/// A timed effect on an entity: skill-applied damage over time, a temporary stat
+/// buff (folded into refresh_derived_stats while active), or a first-class
+/// ailment (#88).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActiveEffect {
     Dot {
@@ -183,6 +208,17 @@ pub enum ActiveEffect {
     Buff {
         grants: Vec<crate::stats::Grant>,
         ticks_left: u32,
+    },
+    /// A named ailment (#88). Strongest-magnitude replaces; reapply refreshes
+    /// `ticks_left`. One entry per `kind` per entity.
+    Ailment {
+        kind: AilmentKind,
+        /// Ignite: burn per second. Shock: +% damage taken (basis points).
+        /// Chill: +% action/move slow (basis points).
+        magnitude: i64,
+        ticks_left: u32,
+        /// Attacker net id (credit on death-by-ignite goes here).
+        source: u32,
     },
 }
 
@@ -435,6 +471,20 @@ pub struct Entity {
 impl Entity {
     pub fn alive(&self) -> bool {
         self.combat.as_ref().is_some_and(|c| c.alive())
+    }
+
+    /// Magnitude of an active ailment of `kind` on this entity (0 if absent) —
+    /// the read-side for Shock (incoming-damage amp) and Chill (action slow), #88.
+    pub fn ailment(&self, kind: AilmentKind) -> i64 {
+        self.effects
+            .iter()
+            .find_map(|e| match e {
+                ActiveEffect::Ailment {
+                    kind: k, magnitude, ..
+                } if *k == kind => Some(*magnitude),
+                _ => None,
+            })
+            .unwrap_or(0)
     }
 
     pub fn faction(&self) -> Faction {

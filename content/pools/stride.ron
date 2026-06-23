@@ -1,0 +1,5 @@
+// The stride affix pool — movement mods (boots subscribe).
+AffixPool(
+    id: "stride",
+    affixes: ["of_the_hare"],
+)

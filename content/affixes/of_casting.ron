@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Casting",
     kind: suffix,
-    pool: "arcana",
     weight: 60,
     effects: [(stat: cast_speed, layer: increased)],
     tiers: [

@@ -9,7 +9,6 @@ AffixDef(
     public: true,
     name: "of the Hunt",
     kind: suffix,
-    pool: "weapon",
     weight: 30,
     effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(40)))],
     tiers: [

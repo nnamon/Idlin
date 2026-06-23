@@ -58,12 +58,19 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v8 (#86 unify): `Zone::by_net` became a `#[serde(skip)]` derived index
 /// (rebuilt from `slots` on resume rather than trusted from the snapshot), so it
 /// left the postcard byte stream — a v7 snapshot's `Zone` would mis-decode.
-/// v9 (#109): `CombatStats` gained `has_strike_conditions: bool` (the strike-time
-/// conditional cache), adding a serialized field to every entity's combat block —
-/// a v8 snapshot's `CombatStats` would mis-decode; refuse it cleanly.
-/// v10 (#109 RecentlyKilled): `CombatStats` gained `last_kill_tick: u64` (the
-/// post-kill window) — another serialized combat field; a v9 snapshot mis-decodes.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 10;
+/// v9 (#88 ailments): the `Stat` enum grew (discriminants in serialized `Grant`s),
+/// `ActiveEffect` gained an `Ailment` variant, and `CombatStats` gained 5 fields —
+/// all change the postcard layout, so a v8 snapshot would mis-decode; refuse it.
+/// v10 (#88 per-element rework): the blanket `AilmentChance` stat was split into
+/// `IgniteChance`/`ShockChance`/`ChillChance` — `Stat` discriminants shifted (in
+/// serialized `Grant`s) AND `CombatStats`'s one `ailment_chance` field became three;
+/// both change the postcard layout, so a v9 snapshot would mis-decode; refuse it.
+/// v11 (#109 strike conditions): `CombatStats` gained `has_strike_conditions: bool`
+/// (the strike-time conditional cache), adding a serialized field to every entity's
+/// combat block — a v10 snapshot's `CombatStats` would mis-decode; refuse it.
+/// v12 (#109 RecentlyKilled): `CombatStats` gained `last_kill_tick: u64` (the post-kill
+/// window) — another serialized combat field; a v11 snapshot's `CombatStats` mis-decodes.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 12;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.

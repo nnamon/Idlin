@@ -4,7 +4,6 @@ AffixDef(
     public: true,
     name: "of Warding",
     kind: suffix,
-    pool: "armour",
     weight: 80,
     effects: [(stat: resist_fire, layer: added)],
     tiers: [
