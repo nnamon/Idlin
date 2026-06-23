@@ -3336,7 +3336,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: damage_phys, layer: increased, condition: Some(below_life_pct(20000)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
