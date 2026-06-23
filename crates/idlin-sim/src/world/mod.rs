@@ -1969,6 +1969,55 @@ mod pack_rarity_tests {
         );
     }
 
+    #[test]
+    fn elite_bulk_multiplies_life_not_damage() {
+        // #125 regression guard (critic R3): elite bulk (magic/rare) multiplies LIFE
+        // ONLY — magic/rare are bulkier, not harder-hitting. Damage scales with level
+        // (dmg_bp) but NOT bulk (pre-#125 behavior). Mutation: apply bulk to damage in
+        // monster_scaled_base → elite phys inflates 1.6x/2.6x → the damage assert fails.
+        let content = content();
+        let idx = content
+            .monsters
+            .iter()
+            .position(|m| m.id == "bone_stalker")
+            .expect("bone_stalker") as u32;
+        let def = content.monsters[idx as usize].clone();
+        assert!(
+            def.passives.is_empty() && def.damage > 0,
+            "bone_stalker is a bare base for this pin"
+        );
+        let mut w = World::new(7, &content);
+        // No rolled affixes → combat stats are the scaled base alone.
+        w.spawn_monster_rolled(
+            idx,
+            0,
+            FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+            Rarity::Rare,
+            vec![],
+            "Elite".into(),
+        );
+        let (eff_level, c) = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some("Elite"))
+            .map(|(_, e)| (e.monster.as_ref().unwrap().level, e.combat.clone().unwrap()))
+            .expect("spawned");
+        let delta = eff_level as i64 - def.level as i64;
+        let dmg_bp = (10000 + delta * 1000).max(2500);
+        let life_bp = (10000 + delta * 1200).max(2500);
+        let bulk = 26000; // rare
+        assert_eq!(
+            c.damage[crate::entity::DMG_PHYS],
+            def.damage * dmg_bp / 10000,
+            "elite phys damage scales by level, NOT by bulk"
+        );
+        assert_eq!(
+            c.life_max,
+            def.life * life_bp / 10000 * bulk / 10000,
+            "elite life IS bulk-scaled"
+        );
+    }
+
     /// A fresh shore world with ONE multi-member non-unique pack forced
     /// to the given rarity chances (every other pack stays plain), ticked
     /// once so the initial refill runs. Returns the forced pack's index.

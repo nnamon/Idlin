@@ -222,12 +222,13 @@ fn monster_scaled_base(
     let delta = eff_level as i64 - def.level as i64;
     let life_bp = (10000 + delta * 1200).max(2500);
     let dmg_bp = (10000 + delta * 1000).max(2500);
+    // Elite bulk multiplies LIFE ONLY (matching pre-#125 spawn) — magic/rare are
+    // bulkier, not harder-hitting. Damage scales with level (dmg_bp) but never bulk.
     let bulk = match rarity {
         Rarity::Magic => 16000,
         Rarity::Rare => 26000,
         _ => 10000,
     };
-    let scale = |v: i64, bp: i64| v * bp / 10000 * bulk / 10000;
     let raw = [
         def.damage,
         def.damage_fire,
@@ -237,7 +238,7 @@ fn monster_scaled_base(
     ];
     let mut damage = [0i64; DMG_COUNT];
     for i in 0..DMG_COUNT {
-        damage[i] = scale(raw[i], dmg_bp);
+        damage[i] = raw[i] * dmg_bp / 10000;
     }
     let accuracy = if def.accuracy > 0 {
         def.accuracy
@@ -245,7 +246,7 @@ fn monster_scaled_base(
         60 + 15 * def.level as i64
     };
     DeriveBase {
-        life: scale(def.life, life_bp).max(1),
+        life: (def.life * life_bp / 10000 * bulk / 10000).max(1),
         mana: def.mana,
         damage,
         accuracy,
