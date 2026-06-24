@@ -10,6 +10,16 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #109 B2b (target-dependent strike conditions): the new
+/// `Condition::TargetHasAilment` + the per-element "vs-ailed" weapon suffixes
+/// (`of_scorch`/`of_jolt`/`of_rime`, MORE damage vs ignited/shocked/chilled) shift
+/// content_hash (new affix files + their weapon-pool membership reweights the
+/// suffix rolls) AND widen the FINGERPRINT — `CombatStats` gained `target_grants`
+/// (the per-victim target-conditional grants), now folded into `state_hash`. The
+/// 2000-tick grind's monster affix rolls move; the mechanism itself is inert in the
+/// grind (the phys grinders inflict no elemental ailments, so no `TargetHasAilment`
+/// fires) — the unit + strike tests prove it. The determinism trio still agrees.
+/// (Prior: 0xA5C3 — #125 monster parity.)
 /// Re-pinned for #125 full monster/character parity: monsters now derive through the
 /// SAME pipeline as characters (`derive_from_sheet`) — folding rolled affixes + a new
 /// fixed passive set + buffs + attribute conversion over the level/rarity-scaled def,
@@ -83,7 +93,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0xA5C3_C922_8DC9_01EC;
+const GOLDEN_HASH: u64 = 0x4E18_9903_724D_83C7;
 
 #[test]
 fn golden_replay() {

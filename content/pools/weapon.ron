@@ -7,6 +7,8 @@ AffixPool(
         "of_driving", "of_precision", "of_ruin", "of_savagery", "of_the_leech", "of_venom",
         // Strike-time conditional (#109).
         "of_desperation", "of_the_hunt",
+        // Target-dependent conditional (#109 B2b): per-element "more dmg vs <ailed>".
+        "of_scorch", "of_jolt", "of_rime",
         // Ailment mods (#88): per-element chance + the all-elemental hybrid + caps/duration.
         "of_kindling", "of_conduction", "of_numbing", "of_affliction",
         "of_embers", "of_sparks", "of_frost",

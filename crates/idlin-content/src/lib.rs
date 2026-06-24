@@ -19,7 +19,7 @@ pub mod stats;
 
 use serde::{Deserialize, Serialize};
 use stats::{AddedUnit, Grant, Layer, Stat};
-pub use stats::{Condition, WeaponClass};
+pub use stats::{AilmentKind, Condition, WeaponClass};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -84,6 +84,13 @@ pub enum ContentError {
              is silently always- or never-true"
     )]
     BadConditionThreshold { at: String, bp: i64 },
+    #[error(
+        "{at}: a target-dependent condition (target_has_ailment) is only honored on a \
+             DAMAGE stat (phys/fire/cold/lightning/chaos) with the increased/more layer \
+             — the per-victim strike fold scales those factors and nothing else, so on \
+             any other stat or the added layer it would LOAD and advertise but never fire"
+    )]
+    UnsupportedTargetGrant { at: String },
     #[error("tile map for `{zone}`: {msg}")]
     BadMap { zone: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
@@ -100,6 +107,28 @@ pub enum ContentError {
 /// past, until requirement evaluation is made condition-aware.
 fn is_conditional_attribute(stat: Stat, condition: &Option<Condition>) -> bool {
     condition.is_some() && matches!(stat, Stat::Strength | Stat::Dexterity | Stat::Intelligence)
+}
+
+/// A TARGET-DEPENDENT condition (#109 B2b, `target_has_ailment`) is honored ONLY by
+/// `World::strike`'s per-victim damage fold, which scales the five DAMAGE stats through
+/// the increased/more layers (`fold_target_damage`). On any other stat — or the Added
+/// layer, which the multiplicative fold can't represent — such a grant would LOAD and
+/// advertise in the docs but never fire: a silent no-op. Reject it at every power source
+/// (affix effect, tree/buff/passive grant) so no source can author a dead target mod.
+/// Tightens as `fold_target_damage` grows to honor more stats/layers.
+fn unsupported_target_grant(stat: Stat, layer: Layer, condition: &Option<Condition>) -> bool {
+    if !condition.is_some_and(|c| c.is_target_dependent()) {
+        return false;
+    }
+    let damage = matches!(
+        stat,
+        Stat::DamagePhys
+            | Stat::DamageFire
+            | Stat::DamageCold
+            | Stat::DamageLightning
+            | Stat::DamageChaos
+    );
+    !(damage && matches!(layer, Layer::Increased | Layer::More))
 }
 
 /// A strike-time life threshold must be 0..=10000 bp (#109): runtime `life_pct`
@@ -615,6 +644,15 @@ impl AffixDef {
                     // Tick window → seconds (TICK_HZ = 10) for the human-facing doc.
                     Some(Condition::RecentlyKilled(ticks)) => {
                         format!("{body} (for {}s after a kill)", ticks / 10)
+                    }
+                    // Target-dependent (#109 B2b): "vs <ailed> enemies".
+                    Some(Condition::TargetHasAilment(kind)) => {
+                        let ailed = match kind {
+                            AilmentKind::Ignite => "ignited",
+                            AilmentKind::Shock => "shocked",
+                            AilmentKind::Chill => "chilled",
+                        };
+                        format!("{body} (vs {ailed} enemies)")
                     }
                 }
             })
@@ -1931,6 +1969,11 @@ impl ContentDb {
                         bp,
                     });
                 }
+                if unsupported_target_grant(eff.stat, eff.layer, &eff.condition) {
+                    return Err(ContentError::UnsupportedTargetGrant {
+                        at: format!("affix `{}`", affix.id),
+                    });
+                }
             }
             if affix.tiers.is_empty() {
                 return Err(ContentError::BadAffixTiers {
@@ -2041,6 +2084,11 @@ impl ContentDb {
                             bp,
                         });
                     }
+                    if unsupported_target_grant(g.stat, g.layer, &g.condition) {
+                        return Err(ContentError::UnsupportedTargetGrant {
+                            at: format!("gem `{}` {kind}", gem.id),
+                        });
+                    }
                 }
             }
         }
@@ -2059,6 +2107,11 @@ impl ContentDb {
                         bp,
                     });
                 }
+                if unsupported_target_grant(g.stat, g.layer, &g.condition) {
+                    return Err(ContentError::UnsupportedTargetGrant {
+                        at: format!("monster `{}` passive", m.id),
+                    });
+                }
             }
         }
         // Tree-node grants are condition-capable too (#86), so the same rule
@@ -2074,6 +2127,11 @@ impl ContentDb {
                     return Err(ContentError::BadConditionThreshold {
                         at: format!("tree node `{}`", node.id),
                         bp,
+                    });
+                }
+                if unsupported_target_grant(g.stat, g.layer, &g.condition) {
+                    return Err(ContentError::UnsupportedTargetGrant {
+                        at: format!("tree node `{}`", node.id),
                     });
                 }
             }
@@ -2604,6 +2662,10 @@ mod tests {
                 "swift",
                 "of_desperation",
                 "of_the_hunt",
+                // #109 B2b target-dependent "vs-ailed" trio.
+                "of_scorch",
+                "of_jolt",
+                "of_rime",
                 "of_driving",
                 "of_precision",
                 "of_ruin",
@@ -3370,6 +3432,99 @@ mod tests {
                 assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
             }
             other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unsupported_target_grant_is_rejected() {
+        // #109 B2b: a target_has_ailment condition is honored ONLY on a DAMAGE stat with
+        // the increased/more layer (the per-victim strike fold scales those factors and
+        // nothing else). On any other stat, or the Added layer, it would LOAD and
+        // advertise in the docs but never fire — a silent no-op. Reject at EVERY power
+        // source (affix / tree node / gem buff / monster passive), so each arm of the
+        // load check is covered. Mutation: drop any one arm and the matching case loads.
+
+        // Affix arm: damage_phys with the ADDED layer (the LAYER restriction — the
+        // multiplicative fold can't represent a flat-per-victim add). Affix validation
+        // runs before the orphan check, so no pool is needed for the guard to fire.
+        let affix = TempContent::new(
+            "bad_target_affix",
+            &[(
+                "affixes/bad.ron",
+                r#"AffixDef(
+                    id: "bad", name: "Bad", kind: suffix,
+                    effects: [(stat: damage_phys, layer: added, condition: Some(target_has_ailment(chill)))],
+                    tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
+                )"#,
+            )],
+        );
+        match ContentDb::load(&affix.0) {
+            Err(ContentError::UnsupportedTargetGrant { at }) => {
+                assert!(at.contains("affix") && at.contains("bad"), "at: {at}");
+            }
+            other => panic!("affix: expected UnsupportedTargetGrant, got {other:?}"),
+        }
+
+        // Tree-node arm: crit_chance (a NON-damage stat). `start` keeps the tree valid
+        // so the mutation surfaces as a missing rejection, not a tree-shape error.
+        let tree = TempContent::new(
+            "bad_target_tree",
+            &[(
+                "tree/bad.ron",
+                r#"TreeDef(nodes: [
+                    NodeDef(id: "start", num: 1, name: "Start", pos: (0, 0), kind: socket,
+                            grants: [(stat: crit_chance, layer: increased, value: 1000,
+                                      condition: Some(target_has_ailment(shock)))]),
+                ])"#,
+            )],
+        );
+        match ContentDb::load(&tree.0) {
+            Err(ContentError::UnsupportedTargetGrant { at }) => {
+                assert!(at.contains("tree node") && at.contains("start"), "at: {at}");
+            }
+            other => panic!("tree: expected UnsupportedTargetGrant, got {other:?}"),
+        }
+
+        // Gem-buff arm: crit_chance (NON-damage).
+        let gem = TempContent::new(
+            "bad_target_gem",
+            &[(
+                "gems/bad.ron",
+                r#"GemDef(
+                    id: "bad", name: "Bad", kind: skill,
+                    buff: Some(BuffDef(
+                        grants: [(stat: crit_chance, layer: increased, value: 1000,
+                                  condition: Some(target_has_ailment(ignite)))],
+                        duration_ticks: 100,
+                    )),
+                )"#,
+            )],
+        );
+        match ContentDb::load(&gem.0) {
+            Err(ContentError::UnsupportedTargetGrant { at }) => {
+                assert!(at.contains("gem") && at.contains("bad"), "at: {at}");
+            }
+            other => panic!("gem: expected UnsupportedTargetGrant, got {other:?}"),
+        }
+
+        // Monster-passive arm: crit_chance (NON-damage). Uses the shared template with
+        // a valid brain so the only fault is the unsupported target grant.
+        let mob_body = MONSTER_WITH_PASSIVE.replace(
+            "GRANT",
+            "(stat: crit_chance, layer: increased, value: 1000, condition: Some(target_has_ailment(chill)))",
+        );
+        let mob = TempContent::new(
+            "bad_target_mob",
+            &[
+                ("brains/mobbrain.bot", "fn main() {}"),
+                ("monsters/mob.ron", mob_body.as_str()),
+            ],
+        );
+        match ContentDb::load(&mob.0) {
+            Err(ContentError::UnsupportedTargetGrant { at }) => {
+                assert!(at.contains("monster") && at.contains("mob"), "at: {at}");
+            }
+            other => panic!("monster: expected UnsupportedTargetGrant, got {other:?}"),
         }
     }
 

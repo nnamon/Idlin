@@ -456,6 +456,35 @@ pub enum WeaponClass {
     Wand,
 }
 
+/// A first-class ailment kind (#88). v1 ships Ignite/Shock/Chill; freeze/bleed/
+/// poison are future. Each maps from the triggering hit's dominant damage type
+/// (fire→Ignite, lightning→Shock, cold→Chill). Lives here (the leaf) because a
+/// `Condition` reads it (`TargetHasAilment`); re-exported by `idlin-sim::entity`,
+/// where `ActiveEffect::Ailment` carries it. Snapshots encode the variant by
+/// index, so the `snake_case` RON rename doesn't move snapshot bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AilmentKind {
+    /// Fire: a damage-over-time burn — a fixed total spread over the duration.
+    Ignite,
+    /// Lightning: the victim takes increased damage while shocked.
+    Shock,
+    /// Cold: the victim's actions and movement are slowed.
+    Chill,
+}
+
+impl AilmentKind {
+    /// The canonical active-ailment bit (matches the nameplate bitmask): Ignite=1,
+    /// Shock=2, Chill=4. `EvalContext::target_ailments` is an OR of these.
+    pub fn bit(self) -> u8 {
+        match self {
+            AilmentKind::Ignite => 1,
+            AilmentKind::Shock => 2,
+            AilmentKind::Chill => 4,
+        }
+    }
+}
+
 /// A predicate gating an affix effect (#86), read from HASHED STATE ONLY so it
 /// stays deterministic (no floats / wall-clock). The sim evaluates it against an
 /// `EvalContext` at the point the effect folds in. `None` on an effect = always.
@@ -479,6 +508,11 @@ pub enum Condition {
     /// a momentum window (e.g. "+X% damage for 4s after a kill"). The window is a
     /// tick count (>= 0); `ticks_since_kill` is `now - last_kill_tick`, or "never".
     RecentlyKilled(i64),
+    /// STRIKE-TIME + TARGET-DEPENDENT (#109 B2b). While the VICTIM of this hit
+    /// carries the named ailment. Varies per victim (an AoE hits ailed and un-ailed
+    /// enemies in one use), so it folds per-strike against the victim's state, not
+    /// into the attacker's cached sheet — read from `EvalContext::target_ailments`.
+    TargetHasAilment(AilmentKind),
 }
 
 impl Condition {
@@ -492,8 +526,17 @@ impl Condition {
             Condition::BelowLifePct(_)
             | Condition::AboveLifePct(_)
             | Condition::FullLife
-            | Condition::RecentlyKilled(_) => true,
+            | Condition::RecentlyKilled(_)
+            | Condition::TargetHasAilment(_) => true,
         }
+    }
+
+    /// TARGET-DEPENDENT conditions (#109 B2b) read the VICTIM's state, so they vary
+    /// per hit within a single use and can't fold even into the per-USE effective
+    /// sheet — the sim collects these grants at derive and folds them per-VICTIM in
+    /// `World::strike`. (A subset of `is_strike_time`.)
+    pub fn is_target_dependent(&self) -> bool {
+        matches!(self, Condition::TargetHasAilment(_))
     }
 }
 
@@ -516,6 +559,12 @@ pub struct EvalContext {
     /// strike-time conditions — they vary mid-combat and can't bake into the cached
     /// sheet, so the sim folds them per-strike with this set `true`.
     pub include_strike: bool,
+    /// TARGET-DEPENDENT (#109 B2b): the VICTIM's active ailments as an OR of
+    /// `AilmentKind::bit()` (ignite=1, shock=2, chill=4). Only meaningful in the
+    /// per-victim strike fold; 0 everywhere else (so `TargetHasAilment` never holds
+    /// in the cached or per-use derive — those grants are collected and applied
+    /// per-victim instead). Read by `TargetHasAilment`.
+    pub target_ailments: u8,
 }
 
 impl Default for EvalContext {
@@ -529,6 +578,8 @@ impl Default for EvalContext {
             // "never killed": no RecentlyKilled window can hold by default.
             ticks_since_kill: i64::MAX,
             include_strike: false,
+            // No target by default → TargetHasAilment can't hold.
+            target_ailments: 0,
         }
     }
 }
@@ -552,6 +603,8 @@ impl Condition {
             // Within the post-kill window (inclusive). Sentinel ticks_since_kill
             // (never killed) exceeds any window, so it reads false.
             Condition::RecentlyKilled(window) => ctx.ticks_since_kill <= *window,
+            // The victim carries this ailment (#109 B2b). 0 (no target) reads false.
+            Condition::TargetHasAilment(kind) => ctx.target_ailments & kind.bit() != 0,
         }
     }
 }

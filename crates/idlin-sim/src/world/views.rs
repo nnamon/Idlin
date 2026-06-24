@@ -526,20 +526,7 @@ impl World {
                     dead,
                     kills,
                     items,
-                    ailments: {
-                        use crate::entity::AilmentKind;
-                        let mut b = 0u8;
-                        if e.ailment(AilmentKind::Ignite) > 0 {
-                            b |= 1;
-                        }
-                        if e.ailment(AilmentKind::Shock) > 0 {
-                            b |= 2;
-                        }
-                        if e.ailment(AilmentKind::Chill) > 0 {
-                            b |= 4;
-                        }
-                        b
-                    },
+                    ailments: e.ailment_bits(),
                 }
             })
             .collect()
@@ -659,6 +646,11 @@ impl World {
                     h.write_u8(5);
                     h.write_i64(window);
                 }
+                // Target-dependent (#109 B2b): distinct tag + the ailment bit.
+                Some(crate::stats::Condition::TargetHasAilment(kind)) => {
+                    h.write_u8(6);
+                    h.write_u8(kind.bit());
+                }
             }
         };
         for (slot, e) in self.zone.iter() {
@@ -736,6 +728,13 @@ impl World {
                 // the struct (whole-struct rule), though it's a pure function of
                 // the already-hashed affixes/tree/buffs.
                 h.write_u8(c.has_strike_conditions as u8);
+                // Derived target-dependent grants (#109 B2b) — same whole-struct
+                // rule; pure function of the hashed sources, folded via the shared
+                // grant routine so no condition field can silently drop.
+                h.write_u64(c.target_grants.len() as u64);
+                for g in &c.target_grants {
+                    fold_grant(&mut h, g);
+                }
             }
             if let Some(ch) = &e.character {
                 h.write_bytes(ch.name.as_bytes());

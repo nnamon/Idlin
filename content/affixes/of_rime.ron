@@ -1,0 +1,16 @@
+// "... of Rime" — TARGET-DEPENDENT CONDITIONAL (#109 B2b): MORE cold damage WHILE
+// THE VICTIM IS CHILLED. The cold member of the per-element vs-ailed trio (of_scorch /
+// of_jolt / of_rime) — each boosts its own element against its own ailment, folded
+// per-victim in `World::strike`. First-pass magnitudes (playtest redline).
+AffixDef(
+    id: "of_rime",
+    public: true,
+    name: "of Rime",
+    kind: suffix,
+    weight: 30,
+    effects: [(stat: damage_cold, layer: more, condition: Some(target_has_ailment(chill)))],
+    tiers: [
+        (ilvl: 4, name: "of Rime", weight: 100, rolls: [(min: 1000, max: 2000)]),     // +10-20% more
+        (ilvl: 12, name: "of Glaciation", weight: 40, rolls: [(min: 2001, max: 3000)]), // +20-30% more
+    ],
+)
