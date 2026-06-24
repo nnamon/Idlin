@@ -240,6 +240,13 @@ pub struct MonsterDef {
     /// cast through the same syscalls (UseSkill slot 1..N in list order).
     #[serde(default)]
     pub skills: Vec<MonsterSkillDef>,
+    /// A FIXED passive set granted at spawn (#125) — the monster equivalent of an
+    /// allocated tree, but authored directly (no points, no walking, no leveling).
+    /// Same `Grant` type as tree/affix/buff; folded into the monster's derived stats
+    /// every refresh through the shared conditional-grant path. Strike-time and
+    /// attribute grants work exactly as they do for characters.
+    #[serde(default)]
+    pub passives: Vec<Grant>,
 }
 
 fn default_radius_cu() -> i32 {
@@ -2037,6 +2044,23 @@ impl ContentDb {
                 }
             }
         }
+        // Monster passive grants (#125) fold through the same conditional path as
+        // tree/affix/buff, so they obey the same attribute + threshold rules.
+        for m in &db.monsters {
+            for g in &m.passives {
+                if is_conditional_attribute(g.stat, &g.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("monster `{}` passive", m.id),
+                    });
+                }
+                if let Some(bp) = invalid_condition_threshold(&g.condition) {
+                    return Err(ContentError::BadConditionThreshold {
+                        at: format!("monster `{}` passive", m.id),
+                        bp,
+                    });
+                }
+            }
+        }
         // Tree-node grants are condition-capable too (#86), so the same rule
         // applies — a conditional attribute on a node would game requirements.
         for node in &db.tree {
@@ -3514,6 +3538,69 @@ mod tests {
                 assert!(at.contains("gem") && at.contains("bad"), "at: {at}");
             }
             other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    // A minimal monster carrying one passive grant, with a REAL (compilable) brain so
+    // that WITHOUT the passive validation the monster loads CLEAN — i.e. the passive
+    // check is provably the thing that rejects it, not a stray UnknownBrain.
+    const MONSTER_WITH_PASSIVE: &str = r#"MonsterDef(
+        id: "mob", public: false, name: "Mob",
+        model: "x", brain: "mobbrain", hostile: true, level: 1,
+        life: 50, damage: 5, speed_cps: 100, radius_cu: 80, range_cu: 200,
+        use_ticks: 16, aggro_radius_cu: 1000, xp: 10, projectile: false,
+        affix_pools: [],
+        passives: [GRANT],
+    )"#;
+
+    #[test]
+    fn a_conditional_attribute_monster_passive_is_rejected() {
+        // Monster passives (#125) fold through the same conditional path, so a
+        // conditional attribute is rejected like everywhere else. Mutation: drop the
+        // monster-passive arm of the load check → this monster loads clean (its brain
+        // is valid) → the `match` hits the `other`/Ok arm and the test fails.
+        let body = MONSTER_WITH_PASSIVE.replace(
+            "GRANT",
+            "(stat: strength, layer: added, value: 5, condition: Some(wielding_weapon_class(melee)))",
+        );
+        let tc = TempContent::new(
+            "cond_attr_mob",
+            &[
+                ("brains/mobbrain.bot", "fn main() {}"),
+                ("monsters/mob.ron", body.as_str()),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::ConditionalAttribute { at }) => {
+                assert!(at.contains("monster") && at.contains("mob"), "at: {at}");
+            }
+            other => panic!("expected ConditionalAttribute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_out_of_range_monster_passive_threshold_is_rejected() {
+        // A strike-time life threshold is basis points (0..=10000); a monster passive
+        // out of range is rejected like an affix/tree/gem one. Mutation: drop the
+        // threshold check for monster passives → this monster loads clean → the test
+        // fails on the `other`/Ok arm.
+        let body = MONSTER_WITH_PASSIVE.replace(
+            "GRANT",
+            "(stat: damage_phys, layer: increased, value: 1000, condition: Some(below_life_pct(20000)))",
+        );
+        let tc = TempContent::new(
+            "bad_thresh_mob",
+            &[
+                ("brains/mobbrain.bot", "fn main() {}"),
+                ("monsters/mob.ron", body.as_str()),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadConditionThreshold { at, bp }) => {
+                assert!(at.contains("monster") && at.contains("mob"), "at: {at}");
+                assert_eq!(bp, 20000);
+            }
+            other => panic!("expected BadConditionThreshold, got {other:?}"),
         }
     }
 

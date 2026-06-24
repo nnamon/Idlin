@@ -3793,6 +3793,7 @@
         "model": "stalker",
         "name": "Bone Stalker",
         "num": 33554432,
+        "passives": [],
         "projectile": true,
         "radius_cu": 40,
         "range_cu": 750,
@@ -3835,6 +3836,7 @@
         "model": "shambler",
         "name": "Drowned Shambler",
         "num": 33554433,
+        "passives": [],
         "projectile": false,
         "radius_cu": 45,
         "range_cu": 180,
@@ -3871,6 +3873,7 @@
         "model": "shambler",
         "name": "Grasping Drowned",
         "num": 33554434,
+        "passives": [],
         "projectile": false,
         "radius_cu": 40,
         "range_cu": 180,
@@ -3907,6 +3910,7 @@
         "model": "husk",
         "name": "Shoal Witch",
         "num": 33554435,
+        "passives": [],
         "projectile": false,
         "radius_cu": 60,
         "range_cu": 220,
@@ -3949,6 +3953,22 @@
         "model": "husk",
         "name": "Tide Husk",
         "num": 33554436,
+        "passives": [
+          {
+            "condition": null,
+            "layer": "increased",
+            "stat": "life",
+            "value": 1500
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 2000
+          }
+        ],
         "projectile": false,
         "radius_cu": 80,
         "range_cu": 220,
@@ -3995,6 +4015,7 @@
         "model": "tidewarden",
         "name": "The Tidewarden",
         "num": 33554437,
+        "passives": [],
         "projectile": false,
         "radius_cu": 70,
         "range_cu": 200,
@@ -4054,6 +4075,7 @@
         "model": "idler",
         "name": "Survivor",
         "num": 33554438,
+        "passives": [],
         "projectile": false,
         "radius_cu": 40,
         "range_cu": 100,

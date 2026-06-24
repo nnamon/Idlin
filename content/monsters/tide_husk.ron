@@ -16,6 +16,17 @@ MonsterDef(
     skills: [
         (gem: "arc", level: 2),
     ],
+    // A fixed passive kit (#125, full monster parity) — same Grant vocabulary as the
+    // player tree, folded into the husk's derived stats every refresh. Kept MILD: this
+    // is an early tutorial mob, not a mini-boss; the parity mechanics are pinned by the
+    // unit tests, so the live kit just demonstrates a small bloat + a gentle strike-time
+    // ENRAGE (it hits a little harder once wounded past half life).
+    passives: [
+        (stat: life, layer: increased, value: 1500),     // +15% life (bloated)
+        // +20% phys below half life — gentle, but enough to register on the husk's
+        // small base damage (6 → 7), so the strike-time parity is observable.
+        (stat: damage_phys, layer: increased, value: 2000, condition: Some(below_life_pct(5000))),
+    ],
     use_ticks: 16,
     aggro_radius_cu: 1300,
     armour: 80,

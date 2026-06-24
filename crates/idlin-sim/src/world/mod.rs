@@ -1666,85 +1666,12 @@ impl World {
         affixes: Vec<crate::entity::RolledAffix>,
         display_name: String,
     ) {
-        let def = &self.content.monsters[monster_idx as usize];
-        let mut stats = monster_base_stats(def);
-        // Level scaling FIRST: the area lifts the def's baseline before
-        // elite bulk and affixes compound on top. +12% life / +10%
-        // damage per level above the authored baseline.
         let eff_level = self.effective_monster_level(monster_idx, rarity);
-        let delta = eff_level as i64 - def.level as i64;
-        let life_bp = (10000 + delta * 1200).max(2500);
-        let dmg_bp = (10000 + delta * 1000).max(2500);
-        let scaled_life = def.life * life_bp / 10000;
-        if delta != 0 {
-            stats.life_max = scaled_life.max(1);
-            stats.life = stats.life_max;
-            for d in stats.damage.iter_mut() {
-                *d = *d * dmg_bp / 10000;
-            }
-        }
-        if matches!(rarity, Rarity::Magic | Rarity::Rare) {
-            // Inherent elite bulk on TOP of affixes, PoE-style.
-            let bulk = if rarity == Rarity::Magic {
-                16000
-            } else {
-                26000
-            };
-            // Monsters wield no weapon → unarmed, which counts as melee, so a
-            // melee condition holds and bow/wand conditions don't (#86). Evaluate
-            // so a conditional monster affix isn't applied unconditionally. Derive
-            // phase (#109): strike-time conditions are deferred (inert for monsters
-            // this pass — no monster content carries one).
-            let ctx = crate::stats::EvalContext {
-                weapon_class: None,
-                ..Default::default()
-            };
-            let mut sheet = crate::stats::StatSheet::new();
-            for ra in &affixes {
-                let a = &self.content.affixes[ra.affix_idx as usize];
-                for g in a.grants(&ra.values) {
-                    crate::world::progression::apply_conditional(&mut sheet, &g, &ctx);
-                }
-            }
-            stats.life_max =
-                sheet.value(idlin_content::stats::Stat::Life, scaled_life) * bulk / 10000;
-            stats.life = stats.life_max;
-            for (i, base) in [
-                def.damage * dmg_bp / 10000,
-                def.damage_fire * dmg_bp / 10000,
-                def.damage_cold * dmg_bp / 10000,
-                def.damage_lightning * dmg_bp / 10000,
-                def.damage_chaos * dmg_bp / 10000,
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let st = [
-                    idlin_content::stats::Stat::DamagePhys,
-                    idlin_content::stats::Stat::DamageFire,
-                    idlin_content::stats::Stat::DamageCold,
-                    idlin_content::stats::Stat::DamageLightning,
-                    idlin_content::stats::Stat::DamageChaos,
-                ][i];
-                stats.damage[i] = sheet.value(st, base);
-            }
-            // Typed resists and hit reactions roll on elites too — the
-            // SAME sheet items use (of Wards, of Staggering).
-            let res_stats = [
-                idlin_content::stats::Stat::ResistFire,
-                idlin_content::stats::Stat::ResistCold,
-                idlin_content::stats::Stat::ResistLightning,
-                idlin_content::stats::Stat::ResistChaos,
-            ];
-            for (i, st) in res_stats.into_iter().enumerate() {
-                stats.resists[i] = sheet.value(st, stats.resists[i]);
-            }
-            stats.stagger = sheet.value(idlin_content::stats::Stat::Stagger, 0).max(0);
-            stats.poise = sheet.value(idlin_content::stats::Stat::Poise, 0).max(0);
-            stats.knockback_cu = sheet.value(idlin_content::stats::Stat::Knockback, 0).max(0);
-            // (attack cadence lives on the def's use_ticks; the haste
-            // affix still applies wherever derived stats read it)
-        }
+        // Base stats only (radius + runtime defaults). The full derive — level/rarity
+        // scaling (monster_scaled_base), rolled affixes, and the def's passive set —
+        // runs in refresh_derived_stats AFTER insert (#125), so spawn and every later
+        // refresh agree: a chill can no longer drop a rare's scaling/affixes.
+        let stats = monster_base_stats(&self.content.monsters[monster_idx as usize]);
         let def = &self.content.monsters[monster_idx as usize];
         let skills = resolve_monster_skills(&self.content, def);
         let hostile = def.hostile;
@@ -1767,7 +1694,7 @@ impl World {
                 version: 1,
             })
         });
-        self.zone.insert(Entity {
+        let slot = self.zone.insert(Entity {
             net_id,
             pos,
             intents: Default::default(),
@@ -1790,6 +1717,12 @@ impl World {
             }),
             loot: None,
         });
+        // Now that the MonsterState (affixes/level/rarity) is in place, run the full
+        // derive — scaling + affixes + passives fold in (#125) — and spawn at full life.
+        self.refresh_derived_stats(slot);
+        if let Some(c) = self.zone.get_mut(slot).and_then(|e| e.combat.as_mut()) {
+            c.life = c.life_max;
+        }
     }
 }
 
@@ -1873,6 +1806,215 @@ mod pack_rarity_tests {
             life_melee > life_bow,
             "melee condition applies the +life to an (unarmed) monster, bow does not \
              ({life_melee} vs {life_bow})"
+        );
+    }
+
+    // Spawn one monster def by index at Normal rarity and return its CombatStats.
+    fn spawn_one(w: &mut World, idx: u32, name: &str) -> crate::entity::CombatStats {
+        w.spawn_monster_rolled(
+            idx,
+            0,
+            FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+            Rarity::Normal,
+            vec![],
+            name.into(),
+        );
+        w.zone
+            .iter()
+            .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some(name))
+            .and_then(|(_, e)| e.combat.clone())
+            .expect("spawned monster present")
+    }
+
+    #[test]
+    fn monster_passives_fold_the_previously_hardcoded_fields() {
+        use crate::stats::{Grant, Layer, Stat};
+        // #125 parity: a monster's passive set folds into the fields the old monster
+        // derive HARDCODED (crit/leech/regen/block) — proving monsters now run the
+        // same derive. Mutation: revert refresh_monster_stats to the def-base/buffs-only
+        // form → these read their hardcoded defaults (10000/0/0/0) and the asserts fail.
+        let mut content = content();
+        let mut kit = content
+            .monsters
+            .iter()
+            .find(|m| m.id == "tide_husk")
+            .cloned()
+            .expect("tide_husk");
+        kit.id = "kit_test".into();
+        kit.passives = vec![
+            Grant::new(Stat::CritChance, Layer::Added, 1500), // +15% crit
+            Grant::new(Stat::LeechLife, Layer::Added, 500),   // +5% life leech
+            Grant::new(Stat::LifeRegen, Layer::Added, 7),     // +7 life/s
+            Grant::new(Stat::Block, Layer::Added, 2000),      // +20% block
+        ];
+        let idx = content.monsters.len() as u32;
+        content.monsters.push(kit);
+        let mut w = World::new(7, &content);
+        let c = spawn_one(&mut w, idx, "Kitted");
+        assert_eq!(c.crit_inc, 11500, "crit chance folds (was hardcoded 10000)");
+        assert_eq!(c.leech_life, 500, "life leech folds (was hardcoded 0)");
+        assert_eq!(c.life_regen, 7, "life regen folds (was hardcoded 0)");
+        assert_eq!(c.block, 2000, "block folds (was hardcoded 0)");
+    }
+
+    #[test]
+    fn monster_affix_survives_a_refresh() {
+        use crate::stats::{Condition, Layer, Stat, WeaponClass};
+        use idlin_content::{AffixDef, AffixEffect, AffixKind, AffixTier, RollRange};
+        // Regression (#125): the old monster refresh rebuilt from the RAW def + buffs,
+        // so a rare's rolled affix (and the level scaling) were DROPPED on any refresh
+        // (e.g. when chilled). Now the derive re-folds affixes every refresh, so a
+        // re-derive leaves life unchanged. Mutation: restore the raw-def rebuild → the
+        // affix bonus vanishes on refresh and life_max drops → assert fails.
+        let mut content = content();
+        let aidx = content.affixes.len() as u32;
+        content.affixes.push(AffixDef {
+            id: "mob_vigor".into(),
+            public: false,
+            name: "mob_vigor".into(),
+            kind: AffixKind::Suffix,
+            weight: 100,
+            effects: vec![AffixEffect {
+                stat: Stat::Life,
+                layer: Layer::Increased,
+                condition: Some(Condition::WieldingWeaponClass(WeaponClass::Melee)),
+            }],
+            tiers: vec![AffixTier {
+                ilvl: 1,
+                rolls: vec![RollRange {
+                    min: 8000,
+                    max: 8000,
+                }],
+                name: String::new(),
+                weight: 100,
+            }],
+        });
+        let mut w = World::new(7, &content);
+        w.spawn_monster_rolled(
+            0,
+            0,
+            FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+            Rarity::Rare,
+            vec![crate::entity::RolledAffix {
+                affix_idx: aidx,
+                values: vec![8000],
+                tier: 0,
+            }],
+            "Vigorous".into(),
+        );
+        let slot = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some("Vigorous"))
+            .map(|(s, _)| s)
+            .expect("spawned");
+        let before = w.zone.get(slot).unwrap().combat.as_ref().unwrap().life_max;
+        w.refresh_derived_stats(slot);
+        let after = w.zone.get(slot).unwrap().combat.as_ref().unwrap().life_max;
+        assert_eq!(before, after, "a rare's affix life survives a refresh");
+        // And it's genuinely affixed (the +80% lifted it well above the bare base 90).
+        assert!(
+            before > 90,
+            "the +life affix is actually applied ({before})"
+        );
+    }
+
+    #[test]
+    fn monster_strike_condition_enrages_below_life() {
+        // #125: tide_husk carries a strike-time passive (+20% phys below half life).
+        // Monsters now re-derive per strike (the attacker_is_char gate is gone), so the
+        // enrage folds when wounded and is inert at full life. Mutation: restore the
+        // gate → effective_offense returns the cached (un-enraged) damage → assert fails.
+        let content = content();
+        let idx = content
+            .monsters
+            .iter()
+            .position(|m| m.id == "tide_husk")
+            .expect("tide_husk") as u32;
+        let mut w = World::new(7, &content);
+        w.spawn_monster_rolled(
+            idx,
+            0,
+            FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+            Rarity::Normal,
+            vec![],
+            "Husk".into(),
+        );
+        let slot = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some("Husk"))
+            .map(|(s, _)| s)
+            .expect("spawned");
+        assert!(
+            w.zone
+                .get(slot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .has_strike_conditions,
+            "the strike-time passive sets has_strike_conditions"
+        );
+        let full = w.effective_offense(slot).unwrap().damage[crate::entity::DMG_PHYS];
+        // Drop to 40% life and re-read: the enrage folds.
+        {
+            let c = w.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            c.life = c.life_max * 4 / 10;
+        }
+        let wounded = w.effective_offense(slot).unwrap().damage[crate::entity::DMG_PHYS];
+        assert!(
+            wounded > full,
+            "below half life the husk enrages ({wounded} > {full})"
+        );
+    }
+
+    #[test]
+    fn elite_bulk_multiplies_life_not_damage() {
+        // #125 regression guard (critic R3): elite bulk (magic/rare) multiplies LIFE
+        // ONLY — magic/rare are bulkier, not harder-hitting. Damage scales with level
+        // (dmg_bp) but NOT bulk (pre-#125 behavior). Mutation: apply bulk to damage in
+        // monster_scaled_base → elite phys inflates 1.6x/2.6x → the damage assert fails.
+        let content = content();
+        let idx = content
+            .monsters
+            .iter()
+            .position(|m| m.id == "bone_stalker")
+            .expect("bone_stalker") as u32;
+        let def = content.monsters[idx as usize].clone();
+        assert!(
+            def.passives.is_empty() && def.damage > 0,
+            "bone_stalker is a bare base for this pin"
+        );
+        let mut w = World::new(7, &content);
+        // No rolled affixes → combat stats are the scaled base alone.
+        w.spawn_monster_rolled(
+            idx,
+            0,
+            FxV2::new(Fx::from_int(5), Fx::from_int(5)),
+            Rarity::Rare,
+            vec![],
+            "Elite".into(),
+        );
+        let (eff_level, c) = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.as_ref().map(|m| m.display_name.as_str()) == Some("Elite"))
+            .map(|(_, e)| (e.monster.as_ref().unwrap().level, e.combat.clone().unwrap()))
+            .expect("spawned");
+        let delta = eff_level as i64 - def.level as i64;
+        let dmg_bp = (10000 + delta * 1000).max(2500);
+        let life_bp = (10000 + delta * 1200).max(2500);
+        let bulk = 26000; // rare
+        assert_eq!(
+            c.damage[crate::entity::DMG_PHYS],
+            def.damage * dmg_bp / 10000,
+            "elite phys damage scales by level, NOT by bulk"
+        );
+        assert_eq!(
+            c.life_max,
+            def.life * life_bp / 10000 * bulk / 10000,
+            "elite life IS bulk-scaled"
         );
     }
 
