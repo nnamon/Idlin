@@ -133,6 +133,12 @@ pub struct CombatStats {
     /// hit path re-derives an effective sheet per strike. Pure function of hashed
     /// inputs, but hashed like the rest of CombatStats (whole-struct rule).
     pub has_strike_conditions: bool,
+    /// Derived cache (#109 B2b): the entity's TARGET-DEPENDENT conditional grants
+    /// (e.g. "more damage vs ignited"), collected at derive. These can't fold into
+    /// the cached fields NOR the per-use effective sheet — they read the VICTIM's
+    /// state, so `World::strike` folds them per-victim against `target_ailments`.
+    /// Usually empty; hashed like the rest of CombatStats (whole-struct rule).
+    pub target_grants: Vec<crate::stats::Grant>,
 }
 
 impl CombatStats {
@@ -176,18 +182,10 @@ pub struct AttackIntent {
     pub skill: Option<u32>,
 }
 
-/// A first-class ailment kind (#88). v1 ships Ignite/Shock/Chill; freeze/bleed/
-/// poison are future. Each maps from the triggering hit's dominant damage type
-/// (fire→Ignite, lightning→Shock, cold→Chill).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AilmentKind {
-    /// Fire: a damage-over-time burn — a fixed total spread over the duration.
-    Ignite,
-    /// Lightning: the victim takes increased damage while shocked.
-    Shock,
-    /// Cold: the victim's actions and movement are slowed.
-    Chill,
-}
+/// A first-class ailment kind (#88) — defined in `idlin-content` (the leaf) so a
+/// `Condition` can read it (#109 B2b `TargetHasAilment`); re-exported here, where
+/// `ActiveEffect::Ailment` carries it.
+pub use idlin_content::stats::AilmentKind;
 
 /// A timed effect on an entity: skill-applied damage over time, a temporary stat
 /// buff (folded into refresh_derived_stats while active), or a first-class
@@ -485,6 +483,20 @@ impl Entity {
                 _ => None,
             })
             .unwrap_or(0)
+    }
+
+    /// Active-ailment bitmask — an OR of `AilmentKind::bit()` for every ailment
+    /// currently on this entity (ignite=1, shock=2, chill=4). Drives the nameplate
+    /// display and the #109-B2b `TargetHasAilment` strike condition (one builder so
+    /// the two can't disagree on the bit layout).
+    pub fn ailment_bits(&self) -> u8 {
+        let mut b = 0u8;
+        for kind in [AilmentKind::Ignite, AilmentKind::Shock, AilmentKind::Chill] {
+            if self.ailment(kind) > 0 {
+                b |= kind.bit();
+            }
+        }
+        b
     }
 
     pub fn faction(&self) -> Faction {

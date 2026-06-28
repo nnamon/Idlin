@@ -1624,7 +1624,7 @@ impl World {
 
     pub(super) fn strike(
         &mut self,
-        spec: StrikeSpec,
+        mut spec: StrikeSpec,
         target_slot: usize,
         now: u64,
         events: &mut Vec<SimEvent>,
@@ -1646,6 +1646,10 @@ impl World {
         // #88 ailments: the victim's Shock amplifies the incoming hit (read now,
         // before the mutable borrow below); the attacker's levers drive the proc.
         let v_shock_bp = t.ailment(AilmentKind::Shock);
+        // #109 B2b: the victim's active ailments, for the attacker's target-dependent
+        // conditional grants (e.g. "more cold damage vs chilled"). Read while `t` is
+        // still borrowed, before any mutation below.
+        let v_ailments = t.ailment_bits();
         let (
             a_ignite_chance,
             a_shock_chance,
@@ -1654,6 +1658,9 @@ impl World {
             a_shock_max,
             a_chill_max,
             a_ail_dur,
+            // #109 B2b: the attacker's TARGET-DEPENDENT conditional grants, read in the
+            // same attacker lookup as the ailment levers (one `get_net`).
+            a_target_grants,
         ) = self
             .zone
             .get_net(spec.attacker_net)
@@ -1667,9 +1674,26 @@ impl World {
                     c.shock_max,
                     c.chill_max,
                     c.ailment_duration,
+                    c.target_grants.clone(),
                 )
             })
-            .unwrap_or((0, 0, 0, false, 0, 0, 0));
+            .unwrap_or((0, 0, 0, false, 0, 0, 0, Vec::new()));
+
+        // #109 B2b: fold the attacker's target-dependent grants (e.g. "more cold damage
+        // vs chilled") against THIS victim. Collected at derive (the common attacker
+        // carries none and pays nothing) but resolved here — the victim, and its
+        // ailments, are only known per hit (one use can sweep ailed and un-ailed enemies
+        // alike). `fold_target_damage` is pure + RNG-free, so it doesn't perturb the
+        // seeded streams the per-hit rolls below consume. HITS ONLY: a DoT/burn tick is
+        // not a "hit vs an ailed enemy" (and an ignite tick scaling "vs ignited" would
+        // self-amplify), so target conditions are gated off for `is_dot` — matching the
+        // ARPG reading of "more damage vs ailed". Grants come live from the attacker at
+        // resolution, exactly like the per-element ailment chances above (NOT baked into
+        // the spec/projectile at launch) — deterministic, since it reads hashed state.
+        if !spec.is_dot {
+            spec.damage =
+                super::progression::fold_target_damage(spec.damage, &a_target_grants, v_ailments);
+        }
 
         // Accuracy: attacks can miss; spells and dots cannot.
         let mut hit = spec.is_spell
@@ -4355,6 +4379,35 @@ mod tests {
             hash_with(&|c| c.last_kill_tick += 1),
             "last_kill_tick must change the hash (#109 RecentlyKilled)"
         );
+        // #109 B2b: target_grants are fingerprinted by CONTENT, not just count. A
+        // single target grant changes the hash, AND two SAME-LENGTH grant sets with
+        // different stats/conditions must differ (mutation: hash only the len in
+        // views.rs → these two collapse to the same digest).
+        {
+            use crate::stats::{AilmentKind, Condition, Grant, Layer, Stat};
+            let cold = Grant {
+                stat: Stat::DamageCold,
+                layer: Layer::More,
+                value: 2000,
+                condition: Some(Condition::TargetHasAilment(AilmentKind::Chill)),
+            };
+            let fire = Grant {
+                stat: Stat::DamageFire,
+                layer: Layer::More,
+                value: 2000,
+                condition: Some(Condition::TargetHasAilment(AilmentKind::Ignite)),
+            };
+            assert_ne!(
+                base,
+                hash_with(&|c| c.target_grants = vec![cold]),
+                "a target grant must change the hash (#109 B2b)"
+            );
+            assert_ne!(
+                hash_with(&|c| c.target_grants = vec![cold]),
+                hash_with(&|c| c.target_grants = vec![fire]),
+                "two same-length target grants with different contents must differ (#109 B2b)"
+            );
+        }
     }
 
     #[test]
@@ -5106,6 +5159,106 @@ mod tests {
             shocked,
             plain * 15000 / 10000,
             "shock raises the hit by its magnitude"
+        );
+    }
+
+    #[test]
+    fn target_ailment_affix_scales_a_hit_not_a_dot_against_an_ailed_victim() {
+        use crate::entity::{ActiveEffect, AilmentKind, DMG_COLD, Item, Rarity, RolledAffix};
+        use idlin_content::GearSlot;
+        // #109 B2b end-to-end: of_rime grants MORE cold damage vs a CHILLED victim,
+        // COLLECTED at derive (it reads the victim, so it can't bake into the cached
+        // sheet) and FOLDED per-victim in strike() — HITS ONLY (DoT/burn ticks gated
+        // out). Each scenario rebuilds a fresh world from the SAME seed; equip / chill /
+        // refresh draw no combat RNG, so a non-DoT hit's one variance roll is identical
+        // across runs and the ONLY difference is of_rime. Mutations: drop the collection
+        // (fold_and_collect) → tg==0; drop the strike fold → hit_chilled == hit_plain;
+        // drop the `!is_dot` gate → dot_chilled != dot_plain.
+        let cdb = content();
+        let rime = cdb.affixes.iter().position(|a| a.id == "of_rime").unwrap() as u32;
+        let cleaver = cdb
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        // (damage dealt, attacker's collected target-grant count) for one strike.
+        let hit = |chilled: bool, dot: bool| -> (i64, usize) {
+            let (mut world, aslot, anet, mslot) = ailment_world();
+            beef_up_target(&mut world, mslot);
+            {
+                let ch = world
+                    .zone
+                    .get_mut(aslot)
+                    .unwrap()
+                    .character
+                    .as_mut()
+                    .unwrap();
+                ch.equipment = Default::default();
+                ch.equipment[GearSlot::Weapon.idx()] = Some(Item {
+                    base_idx: cleaver,
+                    rarity: Rarity::Magic,
+                    item_level: 1,
+                    affixes: vec![RolledAffix {
+                        affix_idx: rime,
+                        values: vec![2000], // +20% more cold vs chilled
+                        tier: 0,
+                    }],
+                    name: String::new(),
+                    charges: 0,
+                });
+            }
+            world.refresh_derived_stats(aslot);
+            let tg = world
+                .zone
+                .get(aslot)
+                .unwrap()
+                .combat
+                .as_ref()
+                .unwrap()
+                .target_grants
+                .len();
+            if chilled {
+                world
+                    .zone
+                    .get_mut(mslot)
+                    .unwrap()
+                    .effects
+                    .push(ActiveEffect::Ailment {
+                        kind: AilmentKind::Chill,
+                        magnitude: 3000,
+                        ticks_left: 40,
+                        source: anet,
+                    });
+            }
+            let mut s = typed_spec(aslot, anet, DMG_COLD, 100);
+            s.is_dot = dot;
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            let before = world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life;
+            world.strike(s, mslot, world.tick, &mut ev, &mut dead, &mut loot);
+            let dmg = before - world.zone.get(mslot).unwrap().combat.as_ref().unwrap().life;
+            (dmg, tg)
+        };
+
+        // Collection wiring: of_rime is collected as a target-dependent grant.
+        let (hit_plain, tg) = hit(false, false);
+        assert_eq!(tg, 1, "of_rime is collected as a target grant");
+        let (hit_chilled, _) = hit(true, false);
+        assert!(hit_plain > 0, "the baseline cold hit lands");
+        // The HIT vs a chilled victim is strictly bigger — and the un-chilled baseline
+        // is NOT pre-boosted, proving the grant is DEFERRED (not baked into the cached
+        // spec) and applied only when the victim's condition holds.
+        assert!(
+            hit_chilled > hit_plain,
+            "of_rime raises a HIT against a chilled victim (got {hit_chilled} vs {hit_plain})",
+        );
+        // A DoT/burn tick is NOT a "hit vs an ailed enemy": it's gated out, so it lands
+        // the same chilled or not (also stops an ignite tick self-amplifying "vs ignited").
+        let (dot_plain, _) = hit(false, true);
+        let (dot_chilled, _) = hit(true, true);
+        assert!(dot_plain > 0, "the dot deals its base damage");
+        assert_eq!(
+            dot_chilled, dot_plain,
+            "target conditions do NOT scale a DoT (hits only)",
         );
     }
 

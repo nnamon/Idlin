@@ -13,7 +13,7 @@
 //! All integer math on i64 basis points (10000 = +100%).
 
 pub use idlin_content::stats::{
-    Condition, EvalContext, Grant, Layer, STAT_COUNT, Stat, WeaponClass,
+    AilmentKind, Condition, EvalContext, Grant, Layer, STAT_COUNT, Stat, WeaponClass,
 };
 
 /// Accumulated grants, ready to evaluate against base values.

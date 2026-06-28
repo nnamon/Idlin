@@ -70,7 +70,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// combat block — a v10 snapshot's `CombatStats` would mis-decode; refuse it.
 /// v12 (#109 RecentlyKilled): `CombatStats` gained `last_kill_tick: u64` (the post-kill
 /// window) — another serialized combat field; a v11 snapshot's `CombatStats` mis-decodes.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 12;
+/// v13 (#109 B2b target conditions): `CombatStats` gained `target_grants: Vec<Grant>` (the
+/// per-victim target-dependent conditional grants, e.g. "vs ignited") — another serialized
+/// combat field; a v12 snapshot's `CombatStats` would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 13;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -348,7 +351,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 12);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 13);
     }
 
     #[test]

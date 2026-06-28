@@ -34,6 +34,66 @@ pub(crate) fn apply_conditional(sheet: &mut StatSheet, g: &Grant, ctx: &EvalCont
     is_strike
 }
 
+/// Fold a grant for the cached/per-use derive (`apply_conditional`) AND, if it
+/// carries a TARGET-DEPENDENT condition (#109 B2b, e.g. "vs ignited"), collect it
+/// for the per-victim strike fold. A target grant never folds into the sheet here
+/// — its predicate reads the victim, and the derive ctx has `target_ailments == 0`
+/// — so it must be applied later, per victim, in `World::strike`. Returns the
+/// strike-time flag, exactly like `apply_conditional`.
+fn fold_and_collect(
+    sheet: &mut StatSheet,
+    g: &Grant,
+    ctx: &EvalContext,
+    targets: &mut Vec<Grant>,
+) -> bool {
+    if g.condition.is_some_and(|c| c.is_target_dependent()) {
+        targets.push(*g);
+    }
+    apply_conditional(sheet, g, ctx)
+}
+
+/// Apply an attacker's TARGET-DEPENDENT conditional grants (#109 B2b) to a per-type
+/// damage array, given the VICTIM's active-ailment bitmask. Each grant whose
+/// condition holds for this victim folds into a fresh sheet; every damage type is
+/// then scaled by its resulting factor — reusing the canonical `StatSheet` layering
+/// rather than reimplementing increased/more. Scales the WHOLE landed hit (the
+/// natural reading of "more damage vs ailed"). Pure + RNG-free, so `World::strike`
+/// can call it per victim without perturbing the seeded streams; a no-op when
+/// `grants` is empty or none hold, so the common hit is unchanged.
+pub(crate) fn fold_target_damage(
+    damage: [i64; DMG_COUNT],
+    grants: &[Grant],
+    victim_ailments: u8,
+) -> [i64; DMG_COUNT] {
+    if grants.is_empty() {
+        return damage;
+    }
+    const DMG_STATS: [Stat; DMG_COUNT] = [
+        Stat::DamagePhys,
+        Stat::DamageFire,
+        Stat::DamageCold,
+        Stat::DamageLightning,
+        Stat::DamageChaos,
+    ];
+    let ctx = EvalContext {
+        target_ailments: victim_ailments,
+        include_strike: true,
+        ..Default::default()
+    };
+    let mut sheet = StatSheet::new();
+    for g in grants {
+        apply_conditional(&mut sheet, g, &ctx);
+    }
+    let mut out = damage;
+    for i in 0..DMG_COUNT {
+        let factor = sheet.value(DMG_STATS[i], 10000);
+        if factor != 10000 {
+            out[i] = (damage[i] * factor / 10000).max(0);
+        }
+    }
+    out
+}
+
 /// The derived combat values a character's stat sheet produces (#109) — the
 /// fields `refresh_character_stats` assigns and the per-strike re-derive reads.
 /// Live pools (life/mana/ES and timers) are NOT here: the cached refresh
@@ -73,6 +133,9 @@ struct CharDerived {
     chill_max: i64,
     ailment_duration: i64,
     has_strike: bool,
+    /// TARGET-DEPENDENT conditional grants (#109 B2b) collected from this entity's
+    /// power sources — applied per-victim in `World::strike`, never folded here.
+    target_grants: Vec<Grant>,
 }
 
 /// The OFFENSIVE subset of a per-strike effective re-derive (#109) — the only
@@ -119,6 +182,7 @@ fn derive_from_sheet(
     base: DeriveBase,
     ctx: &EvalContext,
     mut has_strike: bool,
+    target_grants: Vec<Grant>,
 ) -> CharDerived {
     use crate::stats::{Condition, Layer, WeaponClass};
     // Attribute conversions (PoE-classic, user-locked; ratios flagged for redline).
@@ -204,6 +268,7 @@ fn derive_from_sheet(
         chill_max: sheet.value(Stat::ChillMax, 3000).max(0),
         ailment_duration: sheet.value(Stat::AilmentDuration, 0),
         has_strike,
+        target_grants,
     }
 }
 
@@ -426,31 +491,39 @@ impl World {
             life_pct,
             ticks_since_kill,
             include_strike,
+            target_ailments: 0,
         };
         let mut sheet = StatSheet::new();
         let mut has_strike = false;
+        let mut target_grants = Vec::new();
         // Rolled affixes — folded EVERY refresh (not baked at spawn), so a chilled
         // rare keeps its affix bonuses. Same `grants(values)` path as gear affixes.
         for ra in &m.affixes {
             let a = &self.content.affixes[ra.affix_idx as usize];
             for g in a.grants(&ra.values) {
-                has_strike |= apply_conditional(&mut sheet, &g, &ctx);
+                has_strike |= fold_and_collect(&mut sheet, &g, &ctx, &mut target_grants);
             }
         }
         // The def's fixed passive set (#125).
         for g in &def.passives {
-            has_strike |= apply_conditional(&mut sheet, g, &ctx);
+            has_strike |= fold_and_collect(&mut sheet, g, &ctx, &mut target_grants);
         }
         // Active buffs/debuffs (chill/shock/…) — clock-bearing grants, same as chars.
         for ef in &e.effects {
             if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    has_strike |= apply_conditional(&mut sheet, g, &ctx);
+                    has_strike |= fold_and_collect(&mut sheet, g, &ctx, &mut target_grants);
                 }
             }
         }
         let base = monster_scaled_base(def, m.level, m.rarity);
-        Some(derive_from_sheet(sheet, base, &ctx, has_strike))
+        Some(derive_from_sheet(
+            sheet,
+            base,
+            &ctx,
+            has_strike,
+            target_grants,
+        ))
     }
 
     /// Refresh a monster's cached combat stats (#125): derive at full life in the
@@ -505,6 +578,7 @@ impl World {
             c.chill_max = d.chill_max;
             c.ailment_duration = d.ailment_duration;
             c.has_strike_conditions = d.has_strike;
+            c.target_grants = d.target_grants;
         }
     }
 
@@ -560,11 +634,13 @@ impl World {
             life_pct,
             ticks_since_kill,
             include_strike,
+            target_ailments: 0,
         };
+        let mut target_grants = Vec::new();
         for &node_idx in &ch.allocated {
             if let Some(node) = self.content.tree.get(node_idx as usize) {
                 for g in &node.grants {
-                    has_strike |= apply_conditional(&mut sheet, g, &ctx);
+                    has_strike |= fold_and_collect(&mut sheet, g, &ctx, &mut target_grants);
                 }
             }
         }
@@ -573,7 +649,7 @@ impl World {
         for ef in &e.effects {
             if let crate::entity::ActiveEffect::Buff { grants, .. } = ef {
                 for g in grants {
-                    has_strike |= apply_conditional(&mut sheet, g, &ctx);
+                    has_strike |= fold_and_collect(&mut sheet, g, &ctx, &mut target_grants);
                 }
             }
         }
@@ -587,7 +663,7 @@ impl World {
             for ra in &item.affixes {
                 let a = &self.content.affixes[ra.affix_idx as usize];
                 for g in a.grants(&ra.values) {
-                    has_strike |= apply_conditional(&mut sheet, &g, &ctx);
+                    has_strike |= fold_and_collect(&mut sheet, &g, &ctx, &mut target_grants);
                 }
             }
             if i == GearSlot::Weapon.idx() {
@@ -639,7 +715,13 @@ impl World {
             projectile,
             block: block_base,
         };
-        Some(derive_from_sheet(sheet, base, &ctx, has_strike))
+        Some(derive_from_sheet(
+            sheet,
+            base,
+            &ctx,
+            has_strike,
+            target_grants,
+        ))
     }
 
     /// Refresh a character's cached combat stats (#86/#109): derive at full life
@@ -694,6 +776,7 @@ impl World {
             c.chill_max = d.chill_max;
             c.ailment_duration = d.ailment_duration;
             c.has_strike_conditions = d.has_strike;
+            c.target_grants = d.target_grants;
         }
     }
 
@@ -727,8 +810,52 @@ impl World {
 
 #[cfg(test)]
 mod grant_tests {
-    use super::apply_conditional;
+    use super::{apply_conditional, fold_target_damage};
     use crate::stats::{Condition, EvalContext, Grant, Layer, Stat, StatSheet, WeaponClass};
+
+    #[test]
+    fn target_damage_folds_only_against_a_matching_ailment() {
+        use crate::entity::{DMG_COLD, DMG_COUNT, DMG_PHYS};
+        use crate::stats::AilmentKind;
+        // #109 B2b: "+50% more cold damage vs chilled" — a target-dependent grant.
+        let grant = Grant {
+            stat: Stat::DamageCold,
+            layer: Layer::More,
+            value: 5000,
+            condition: Some(Condition::TargetHasAilment(AilmentKind::Chill)),
+        };
+        let mut base = [0i64; DMG_COUNT];
+        base[DMG_PHYS] = 100;
+        base[DMG_COLD] = 100;
+        // Chilled victim: cold scales ×1.5; a cold-only grant leaves phys alone.
+        let chilled = fold_target_damage(base, &[grant], AilmentKind::Chill.bit());
+        assert_eq!(
+            chilled[DMG_COLD], 150,
+            "cold scales ×1.5 vs a chilled victim"
+        );
+        assert_eq!(
+            chilled[DMG_PHYS], 100,
+            "a cold-only grant leaves phys untouched"
+        );
+        // Mutation: drop the condition gate and the un-ailed case wrongly returns 150.
+        assert_eq!(
+            fold_target_damage(base, &[grant], 0)[DMG_COLD],
+            100,
+            "no scaling when the victim carries no ailment",
+        );
+        // Wrong ailment present (ignited, not chilled): still no scaling.
+        assert_eq!(
+            fold_target_damage(base, &[grant], AilmentKind::Ignite.bit())[DMG_COLD],
+            100,
+            "the chill grant ignores an ignited victim",
+        );
+        // No target grants: identity — the common hit pays nothing.
+        assert_eq!(
+            fold_target_damage(base, &[], AilmentKind::Chill.bit()),
+            base,
+            "no grants = identity",
+        );
+    }
 
     #[test]
     fn apply_conditional_gates_every_power_source_uniformly() {
