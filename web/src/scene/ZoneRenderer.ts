@@ -11,9 +11,10 @@ import { DirectorCamera } from "../camera/DirectorCamera";
 import { AssetLibrary } from "./Assets";
 import { EntityVisual, SharedResources } from "./EntityVisuals";
 import { resolveFocusId } from "../world/focus";
+import { FogOfWar } from "./FogOfWar";
 import { FxSystem } from "./FxSystem";
 import { IconFactory } from "./IconFactory";
-import { Terrain } from "./Terrain";
+import { PAD as TERRAIN_PAD, Terrain } from "./Terrain";
 
 const SKY_COLOR = 0x07070d;
 
@@ -149,6 +150,9 @@ export class ZoneRenderer {
     new URLSearchParams(location.search).get("watch");
   /** Multiplies the follow distance everywhere (cue follows included). */
   private zoomOverride = Number(new URLSearchParams(location.search).get("zoom") ?? "1");
+  /** Fog of war (#129): on by default; `?fog=0` is the dev escape hatch. */
+  private fogEnabled = new URLSearchParams(location.search).get("fog") !== "0";
+  private fog = new FogOfWar();
   private camOverride = new URLSearchParams(location.search)
     .get("cam")
     ?.split(",")
@@ -157,12 +161,15 @@ export class ZoneRenderer {
   constructor(
     private container: HTMLElement,
     private store: WorldStore,
-    opts: { capture?: boolean; camera?: number[]; follow?: string } = {},
+    opts: { capture?: boolean; camera?: number[]; follow?: string; fog?: boolean } = {},
   ) {
     this.capture = opts.capture ?? false;
     // The individual view (/idler/<name>) and ?watch= pass the followed idler
     // explicitly; it wins over the URL-param read in the field initializer (#79).
     if (opts.follow) this.followOverride = opts.follow;
+    // Fixtures whose subject isn't fog opt out (#129) — e.g. a monsters-only
+    // lineup has no reveal source, so fog would bury the thing being eyeballed.
+    if (opts.fog === false) this.fogEnabled = false;
     // A fixed camera for capture: [x,y,z, targetX,targetY,targetZ]. Reuses the
     // existing ?cam= pin path (frame()), so the shot frames a chosen subject
     // deterministically without waiting for the director to converge.
@@ -204,10 +211,15 @@ export class ZoneRenderer {
     this.moon.shadow.normalBias = 0.03;
     this.scene.add(this.moon, this.moon.target);
 
-    // -- post chain: linear HDR render → bloom → vignette → tonemap/sRGB --
+    // -- post chain: linear HDR render → bloom → fog of war → vignette →
+    // tonemap/sRGB. Fog sits AFTER bloom so glow inside the dark is fogged
+    // with its source, and BEFORE the output pass so its multiply happens in
+    // linear space (#129).
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.32, 0.35, 0.9));
+    this.fog.attachCamera(this.camera);
+    this.composer.addPass(this.fog.pass);
     const vignette = new ShaderPass(VignetteShader);
     vignette.uniforms.offset.value = 1.1;
     vignette.uniforms.darkness.value = 1.0;
@@ -292,6 +304,11 @@ export class ZoneRenderer {
     if (zone.tiles) terrain.setTiles(zone.tiles);
     terrain.build(this.assets);
     this.terrain = terrain;
+    // Fog of war (#129): a new zone starts unexplored; the fog pass ray-marches
+    // the baked height field, so it re-bakes with the terrain it must match.
+    if (this.fogEnabled) {
+      this.fog.reset(w, h, (x, z) => terrain.heightAt(x, z), TERRAIN_PAD);
+    }
     // Braziers: authored cells when the map names them, else the classic
     // trail up the strand.
     const brazierSpots: Array<[number, number]> = terrain.brazierSpots.length
@@ -651,6 +668,42 @@ export class ZoneRenderer {
     }
     this.fx.update(now);
 
+    // Who this view is "about" — shared by the fog, the camera, and the focus
+    // ring (resolved ONCE, before the capture camera's early return, so pinned
+    // shots carry the same reveal semantics as the live view). Pinned views
+    // (/idler/<name>, ?watch=, ?follow=) resolve THAT idler or nobody — never
+    // the director's pick (#79); the broadcast follows the cue.
+    const focusId = resolveFocusId(
+      this.followOverride,
+      this.entityStates(),
+      this.store.cue?.focus,
+    );
+
+    // -- fog of war (#129): recompute this frame's reveal, then render --
+    // Follow mode reveals ONLY the followed idler's knowledge (the tighter
+    // /idler/<name> semantics); the broadcast reveals the union of every
+    // character — the collective's knowledge. Only LIVING characters reveal:
+    // a dead or absent idler contributes nothing, so the view falls back to
+    // explored memory (your vision fades with you; matches the Layer-B server
+    // filter, where a dead character streams no live sight).
+    if (this.fogEnabled) {
+      const sources: Array<{ x: number; z: number }> = [];
+      const alive = (id: number): boolean => {
+        const s = this.store.entities.get(id)?.state;
+        return s?.kind === "Character" && !s.dead;
+      };
+      if (this.followOverride) {
+        const v =
+          focusId !== undefined && alive(focusId) ? this.visuals.get(focusId) : undefined;
+        if (v) sources.push({ x: v.group.position.x, z: v.group.position.z });
+      } else {
+        for (const [id, v] of this.visuals) {
+          if (alive(id)) sources.push({ x: v.group.position.x, z: v.group.position.z });
+        }
+      }
+      this.fog.update(sources);
+    }
+
     // -- camera + focus ring --
     if (this.camOverride?.length === 6) {
       const [x, y, z, tx, ty, tz] = this.camOverride;
@@ -661,15 +714,6 @@ export class ZoneRenderer {
       return;
     }
     const zoom = this.zoomOverride;
-    // Pinned to one idler (/idler/<name>, ?watch=, ?follow=): the camera tracks
-    // THEM, or nobody if they're absent — never the director's pick (that would
-    // silently frame a different idler on someone's page, #79). Broadcast follows
-    // the cue. Shared with the HUD via resolveFocusId so they always agree.
-    const focusId = resolveFocusId(
-      this.followOverride,
-      this.entityStates(),
-      this.store.cue?.focus,
-    );
     const focus = focusId !== undefined ? this.visuals.get(focusId) : undefined;
     if (focus) {
       this.focusRing.visible = true;
@@ -715,6 +759,7 @@ export class ZoneRenderer {
     for (const v of this.visuals.values()) v.dispose();
     this.visuals.clear();
     this.fx.dispose();
+    this.fog.dispose();
     this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

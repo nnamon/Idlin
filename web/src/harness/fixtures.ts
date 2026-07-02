@@ -13,6 +13,7 @@ import {
   sheet,
   simXY,
   skill,
+  zoneDelta,
   zoneSnapshot,
 } from "./builders";
 
@@ -41,6 +42,13 @@ export type Fixture =
       frames?: number;
       /** Fixed camera [x,y,z, targetX,targetY,targetZ]; omit to let the director frame. */
       camera?: number[];
+      /** #129: pin the view to this idler — the fog of war then reveals ONLY
+       *  what THEY have explored (the /idler/<name> semantics), instead of the
+       *  broadcast's union of every character. */
+      follow?: string;
+      /** #129: `false` disables fog of war — for fixtures whose subject isn't
+       *  fog (a monsters-only lineup has no reveal source and would go dark). */
+      fog?: boolean;
       messages: S2C[];
     }
   | {
@@ -323,6 +331,83 @@ const sceneShore: Fixture = {
 };
 
 /**
+ * Fog of war, idler view (#129): the camera is pinned to Vex, who WALKS the
+ * strand (snapshot at x=20, moved samples to x=58), so the shot shows all three
+ * fog tiers at once — the screen-wide sight disc around her, the dim explored
+ * corridor she walked out of, and near-black everywhere else. Rin (a second
+ * character) and a Tide Husk stand far outside her sight: both must be
+ * swallowed by the dark. Same layout as `scene-fog-broadcast`, which drops the
+ * `follow` pin — there the fog is the UNION of every character, so Rin is lit.
+ *
+ * The zone is LARGER than the default 60×40: sight is a whole follow-screen
+ * (SIGHT_CELLS in FogOfWar.ts — the fog exists to stop route precomputation,
+ * not to shrink the watched view), so a small zone would be fully explored by
+ * one walk and the tiers would not separate on screen.
+ */
+const FOG_DIMS = simXY(110, 70);
+const fogLayout = (): S2C[] => [
+  zoneSnapshot({
+    zone_name: "The Withered Shore",
+    width: FOG_DIMS.x,
+    height: FOG_DIMS.y,
+    entities: [
+      character({
+        id: 1,
+        name: "Vex",
+        model: "idler",
+        level: 12,
+        weapon: "cleaver",
+        ...simXY(20, 35),
+      }),
+      // Both parked > r+soft from every point of Vex's walk, so they stay in
+      // the never-explored dark even at the screen-wide sight radius.
+      character({ id: 2, name: "Rin", model: "idler", level: 9, ...simXY(84, 8) }),
+      monster({ id: 3, name: "Tide Husk", model: "husk", level: 3, ...simXY(82, 58) }),
+    ],
+  }),
+  // Vex walks east; the playout buffer interpolates the samples, so the fog
+  // stamps a continuous corridor as she goes — long enough that its west end
+  // falls OUT of her sight radius and drops to the memory tier.
+  zoneDelta(4, { moved: [{ id: 1, ...simXY(40, 35) }] }),
+  zoneDelta(8, { moved: [{ id: 1, ...simXY(58, 35) }] }),
+];
+
+const sceneFogIdler: Fixture = {
+  kind: "scene",
+  label: "Fog of war, idler MAP view (#129): sight disc + walked memory trail; Rin and the husk swallowed",
+  seed: 0x1d71c0de,
+  frames: 90, // 1.5 virtual seconds — the walk completes and the trail settles
+  follow: "Vex",
+  // High 3/4 over the strand: the lit disc, the memory corridor west of it,
+  // and the dark where Rin/the husk stand are all in frame.
+  camera: [45, 45, 70, 45, 0, 30],
+  messages: fogLayout(),
+};
+
+const sceneFogFollow: Fixture = {
+  kind: "scene",
+  label:
+    "Fog of war, LIVE follow framing (#129): sight fills the screen — the watched view feels unrestricted",
+  seed: 0x1d71c0de,
+  frames: 90,
+  follow: "Vex",
+  // The DirectorCamera's follow shot, hand-pinned: Vex's final position
+  // (58,35) + FOLLOW_OFFSET (14,16,14) at zoom 1. SIGHT_CELLS is sized to THIS
+  // framing, so the whole screen reads lit and the dark starts off-screen.
+  camera: [72, 16, 49, 58, 1, 35],
+  messages: fogLayout(),
+};
+
+const sceneFogBroadcast: Fixture = {
+  kind: "scene",
+  label: "Fog of war, broadcast (#129): union reveal — Rin lit too; the husk still in the dark",
+  seed: 0x1d71c0de,
+  frames: 90,
+  camera: [45, 45, 70, 45, 0, 30],
+  messages: fogLayout(),
+};
+
+/**
  * Overhead bars (#100): three entities at controlled pools so the fix + the new
  * shield band are both visible. The red life fill must sit EXACTLY on its dark
  * track at any pool level (the old two-sprite bar slid the fill off diagonally),
@@ -333,6 +418,8 @@ const sceneAilments: Fixture = {
   label: "Ailment pips: ignite/shock/chill indicators on the overhead bar (#88)",
   seed: 0x1d71c0de,
   frames: 40,
+  // Monsters only — no reveal source, so fog of war would bury the pips (#129).
+  fog: false,
   camera: [34, 8, 32, 34, 1.5, 22.5],
   messages: [
     zoneSnapshot({
@@ -822,6 +909,9 @@ export const FIXTURES: Record<string, Fixture> = {
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,
   "scene-ailments": sceneAilments,
+  "scene-fog-idler": sceneFogIdler,
+  "scene-fog-follow": sceneFogFollow,
+  "scene-fog-broadcast": sceneFogBroadcast,
   "skill-overflow": skillOverflow,
   globes,
   "full-shore": fullShore,

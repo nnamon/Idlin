@@ -174,6 +174,30 @@ export function zoneSnapshot(
   };
 }
 
+/** `ZoneDelta` S2C — the per-tick stream. A fixture animates an entity by
+ *  streaming `moved` samples the playout buffer then interpolates (the fog
+ *  fixture walks its idler to leave an explored trail, #129). */
+export function zoneDelta(
+  tick: number,
+  over: Partial<Extract<S2C, { type: "ZoneDelta" }>["data"]> = {},
+): S2C {
+  return {
+    type: "ZoneDelta",
+    data: {
+      tick,
+      spawned: [],
+      moved: [],
+      updated: [],
+      removed: [],
+      hits: [],
+      projectiles: [],
+      skills: [],
+      uses: [],
+      ...over,
+    },
+  };
+}
+
 /** `DirectorCue` S2C — names the focused entity id and the rotation reason. */
 export function directorCue(focus: number, reason: string, holdTicks = 80): S2C {
   return { type: "DirectorCue", data: { focus, reason, hold_ticks: holdTicks } };

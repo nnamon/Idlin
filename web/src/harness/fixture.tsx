@@ -104,7 +104,12 @@ async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promis
   for (const msg of fixture.messages) store.handle(msg);
 
   const scene = document.getElementById("scene")!;
-  const renderer = new ZoneRenderer(scene, store, { capture: true, camera: fixture.camera });
+  const renderer = new ZoneRenderer(scene, store, {
+    capture: true,
+    camera: fixture.camera,
+    follow: fixture.follow,
+    fog: fixture.fog,
+  });
   window.__harnessRenderer = renderer;
   await renderer.whenReady; // models + fonts loaded
   renderer.stepFrames(fixture.frames ?? 150); // settle animation deterministically
