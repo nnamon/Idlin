@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { FOG_SIGHT_CELLS } from "../gen/constants";
 
 /**
  * Fog of war (#129, Layer A — the renderer): a post-process pass that darkens
@@ -41,8 +42,11 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
  *  frame (the horizon compresses those last units into a few pixels). r=28
  *  reaches ~86% of screen height at full brightness; the falloff band carries
  *  it to ~95%, leaving only the horizon sliver dark. (First pass was 9 —
- *  torchlight — then 20; both left visible dark bands the operator redlined.) */
-const SIGHT_CELLS = 28;
+ *  torchlight — then 20; both left visible dark bands the operator redlined.)
+ *  The VALUE is owned by the sim (idlin-sim FOG_SIGHT_CELLS, #129 Layer B —
+ *  it stamps each character's `explored` bitset with the same disc) and
+ *  arrives via the generated constants, so sim and renderer can't drift. */
+const SIGHT_CELLS = FOG_SIGHT_CELLS;
 /** Width of the soft falloff band at the sight edge, in cells. */
 const SIGHT_SOFT = 8;
 /** Brightness floor for never-explored cells (linear, pre-tonemap). Low enough

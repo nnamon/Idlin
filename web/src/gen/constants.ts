@@ -6,3 +6,6 @@ export const RARITY_NAMES = ["common", "magic", "rare", "UNIQUE"] as const;
 export const RARITY_COLORS = ["#bfbfbf", "#5a8aff", "#ffd75a", "#ff9a3c"] as const;
 // Numeric forms for the three.js scene (0xrrggbb).
 export const RARITY_COLORS_NUM = RARITY_COLORS.map((c) => parseInt(c.slice(1), 16));
+// Fog-of-war sight radius in cells (#129) — the sim stamps `explored` with
+// this disc; the client fog renderer draws the same one, so they can't drift.
+export const FOG_SIGHT_CELLS = 28;

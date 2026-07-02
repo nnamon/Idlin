@@ -387,6 +387,14 @@ pub struct CharacterState {
     /// Gems socketed into allocated tree socket nodes (keyed by node index;
     /// BTreeMap for deterministic iteration).
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,
+    /// Fog of war (#129): cells this character has DISCOVERED in the current
+    /// zone — a row-major bitset (`bit = y*w + x`, `ceil(w*h/64)` words),
+    /// stamped as a `FOG_SIGHT_CELLS` disc every tick it is alive. The
+    /// deterministic source for the wire's visibility filter (masked tiles /
+    /// reveal deltas). Survives death (knowledge isn't amnesia); RESET on
+    /// zone entry (a new zone starts undiscovered). Hashed + serialized.
+    #[serde(default)]
+    pub explored: Vec<u64>,
 }
 
 /// Total passive points earned by a level: 2 per level-up, with every

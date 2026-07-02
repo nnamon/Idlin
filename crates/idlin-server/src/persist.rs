@@ -73,7 +73,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v13 (#109 B2b target conditions): `CombatStats` gained `target_grants: Vec<Grant>` (the
 /// per-victim target-dependent conditional grants, e.g. "vs ignited") — another serialized
 /// combat field; a v12 snapshot's `CombatStats` would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 13;
+/// v14 (#129 fog of war): `CharacterState` gained `explored: Vec<u64>` (the per-character
+/// discovered-cells bitset that drives the wire visibility filter) — a serialized character
+/// field; a v13 snapshot's `CharacterState` would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 14;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -236,6 +239,7 @@ mod tests {
                 build_plan: Vec::new(),
                 currency: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
+                explored: Vec::new(),
             },
             program: idlin_botc::assemble("halt\n").unwrap(),
             persist: Vec::new(),
@@ -351,7 +355,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 13);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 14);
     }
 
     #[test]
