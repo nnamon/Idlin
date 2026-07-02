@@ -116,6 +116,30 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 50_000,
   },
   {
+    // Fog of war, idler MAP view (#129): the sight disc around Vex, the dim
+    // corridor she walked, near-black elsewhere; Rin + the husk swallowed.
+    // Mostly-dark shots compress hard, so the floor is lower — a blank canvas
+    // is still ~3 KB.
+    name: "scene-fog-idler",
+    kind: "scene",
+    minBytes: 12_000,
+  },
+  {
+    // Fog of war at the LIVE follow framing (#129): sight is sized to the
+    // screen, so this shot must read as a normally-lit scene (fog only at the
+    // far corners) — the "watching feels unrestricted" proof.
+    name: "scene-fog-follow",
+    kind: "scene",
+    minBytes: 40_000,
+  },
+  {
+    // Fog of war, broadcast (#129): the SAME layout unpinned — union reveal, so
+    // Rin gets her own lit disc; the husk (no character near) stays dark.
+    name: "scene-fog-broadcast",
+    kind: "scene",
+    minBytes: 12_000,
+  },
+  {
     // All eight skills are in the DOM (clipped, not absent) — the first and last
     // prove the full list rendered; the bounded-box test proves it's clipped.
     name: "skill-overflow",

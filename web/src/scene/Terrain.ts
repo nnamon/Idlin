@@ -14,8 +14,10 @@ import type { AssetLibrary } from "./Assets";
  * a wide sand band; bluffs rise to the west and close both ends.
  */
 
-/** Padding rendered beyond the playable zone so the world doesn't end. */
-const PAD = 34;
+/** Padding rendered beyond the playable zone so the world doesn't end.
+ *  Exported for the fog-of-war height-field bake (#129), which must cover the
+ *  same span the terrain mesh does. */
+export const PAD = 34;
 const WATER_Y = -0.3;
 /** How far the beach band reaches inland from the waterline. */
 const BEACH_DEPTH = 13;
