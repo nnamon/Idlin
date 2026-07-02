@@ -970,25 +970,6 @@ impl World {
         }
     }
 
-    /// Fog of war (#129): the union of every character's explored bitset —
-    /// what this world's residents collectively know. The replication filter
-    /// masks tiles/entities against this (a per-idler grind instance has one
-    /// resident, so union ≡ that idler's own knowledge).
-    pub fn union_explored(&self) -> Vec<u64> {
-        let w = self.zone.width.floor().max(0) as i64;
-        let h = self.zone.height.floor().max(0) as i64;
-        let words = ((w * h + 63) / 64) as usize;
-        let mut out = vec![0u64; words];
-        for (_, e) in self.zone.iter() {
-            if let Some(ch) = &e.character {
-                for (o, w) in out.iter_mut().zip(ch.explored.iter()) {
-                    *o |= *w;
-                }
-            }
-        }
-        out
-    }
-
     fn alloc_net(&mut self) -> u32 {
         let id = self.next_net_id;
         self.next_net_id += 1;
