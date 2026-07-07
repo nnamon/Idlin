@@ -59,9 +59,129 @@ pub struct ReplicationHandles {
 /// Per-world replication state (diff continuity, snapshot, recorder).
 struct WorldState {
     prev: HashMap<u32, EntityState>,
+    /// Fog of war (#129): the union explored bitset as of the LAST frame —
+    /// newly set bits become this tick's reveal delta. Seeded from the first
+    /// frame (the snapshot already carries everything explored by then).
+    prev_explored: Vec<u64>,
     snap_tx: watch::Sender<Frame>,
     tx: broadcast::Sender<Frame>,
     recorder: Option<std::fs::File>,
+}
+
+/// Fog of war (#129): is a CELL in the residents' explored set? Out-of-range
+/// reads false — an off-map exit/prop can never leak through a bounds bug.
+fn cell_explored(explored: &[u64], w: i64, x: i64, y: i64) -> bool {
+    if w <= 0 || x < 0 || y < 0 || x >= w {
+        return false;
+    }
+    let bit = (y * w + x) as usize;
+    explored
+        .get(bit / 64)
+        .is_some_and(|word| word & (1 << (bit % 64)) != 0)
+}
+
+/// Fog of war (#129): a gate rect counts as explored when ANY of its cells is
+/// — a gate spanning the fog boundary is part of the discovered map.
+fn gate_explored(explored: &[u64], w: i64, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
+    (y0..=y1).any(|y| (x0..=x1).any(|x| cell_explored(explored, w, x as i64, y as i64)))
+}
+
+/// Fog of war (#129): a bit set in `explored` but not in `prev` — newly
+/// discovered this frame. A missing word in `prev` (feed just created against
+/// a stale-length baseline) reads as never-explored, so everything current
+/// counts as new — the caller seeds `prev` from the first frame to avoid that.
+fn newly_explored(explored: &[u64], prev: &[u64], bit: usize) -> bool {
+    let (wi, m) = (bit / 64, 1u64 << (bit % 64));
+    explored.get(wi).is_some_and(|w| w & m != 0) && prev.get(wi).is_none_or(|w| w & m == 0)
+}
+
+/// Fog of war (#129): the tile cells newly explored this frame, with their
+/// TRUE glyphs — the reveal delta that un-masks the map as it is discovered.
+fn reveal_cells(
+    tiles: &idlin_protocol::TileMapState,
+    explored: &[u64],
+    prev: &[u64],
+    zw: i64,
+) -> Vec<idlin_protocol::RevealedCell> {
+    let mut out = Vec::new();
+    if zw <= 0 {
+        return out;
+    }
+    for (wi, &cur) in explored.iter().enumerate() {
+        let mut new_bits = cur & !prev.get(wi).copied().unwrap_or(0);
+        while new_bits != 0 {
+            let b = new_bits.trailing_zeros() as usize;
+            new_bits &= new_bits - 1;
+            let bit = (wi * 64 + b) as i64;
+            let (x, y) = (bit % zw, bit / zw);
+            if let Some(glyph) = tiles
+                .rows
+                .get(y as usize)
+                .and_then(|row| row.chars().nth(x as usize))
+            {
+                out.push(idlin_protocol::RevealedCell {
+                    x: x as i32,
+                    y: y as i32,
+                    glyph: glyph.to_string(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Fog of war (#129): an exit's explored-bitset CELL, or `usize::MAX` when
+/// off-map — which every bit test reads as never-explored, so a stray exit can
+/// never leak through an index wrap. `ExitView` positions are raw Q16.16.
+fn exit_cell(e: &idlin_protocol::ExitView, zw: i64) -> usize {
+    let (x, y) = (((e.x >> 16) as i64), ((e.y >> 16) as i64));
+    if x < 0 || y < 0 || x >= zw {
+        return usize::MAX;
+    }
+    (y * zw + x) as usize
+}
+
+/// Fog of war (#129): may this event reach viewers? Gate/exit CHANGE events
+/// carry positions, so they are dropped until their ground is explored (the
+/// reveal delta then carries the current open state); everything else passes.
+fn event_visible(ev: &GameEvent, explored: &[u64], zw: i64) -> bool {
+    match ev {
+        GameEvent::ExitChanged { x, y, .. } => {
+            cell_explored(explored, zw, (x >> 16) as i64, (y >> 16) as i64)
+        }
+        GameEvent::GateChanged { x0, y0, x1, y1, .. } => {
+            gate_explored(explored, zw, *x0, *y0, *x1, *y1)
+        }
+        _ => true,
+    }
+}
+
+/// Fog of war (#129): the MASKED tile map a snapshot ships — unexplored cells'
+/// glyphs blanked to ' ' (the data is absent from the wire, not client-hidden)
+/// and props on unexplored cells dropped. The legend stays whole: it is the
+/// zone's tile VOCABULARY, not positions.
+fn mask_tiles(
+    tiles: &idlin_protocol::TileMapState,
+    explored: &[u64],
+    w: i64,
+) -> idlin_protocol::TileMapState {
+    let mut out = tiles.clone();
+    for (y, row) in out.rows.iter_mut().enumerate() {
+        *row = row
+            .chars()
+            .enumerate()
+            .map(|(x, g)| {
+                if cell_explored(explored, w, x as i64, y as i64) {
+                    g
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+    }
+    out.props
+        .retain(|p| cell_explored(explored, w, p.x_u as i64, p.y_u as i64));
+    out
 }
 
 /// One world's already-serialized output for this tick, kept so the
@@ -147,6 +267,10 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                         frame.world_key.clone(),
                         WorldState {
                             prev: HashMap::new(),
+                            // Baseline = this frame's explored: everything
+                            // discovered by now rides the SNAPSHOT; reveals
+                            // stream only what is discovered from here on.
+                            prev_explored: frame.explored.clone(),
                             snap_tx,
                             tx,
                             recorder,
@@ -188,6 +312,54 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 skills.retain(|s| sight.sees_raw(s.x, s.y));
                 let mut uses = collect_uses(&frame.events);
                 uses.retain(|u| sight.sees_raw(u.x, u.y));
+
+                // Fog of war (#129 stage 2b): everything POSITIONAL is gated
+                // by the residents' EXPLORED set (terrain is memory — once
+                // seen, it stays on the client), and newly explored ground
+                // streams as a reveal delta with its true glyphs/props/exits.
+                let zw = (frame.zone_width >> 16) as i64;
+                let explored = &frame.explored;
+                // A stale-length baseline (shouldn't happen — a world never
+                // changes zone) degrades to "everything is new": prev = empty.
+                let prev: &[u64] = if ws.prev_explored.len() == explored.len() {
+                    &ws.prev_explored
+                } else {
+                    &[]
+                };
+                let mut revealed = Vec::new();
+                let mut revealed_props = Vec::new();
+                if let Some(tiles) = frame.tiles.as_deref() {
+                    revealed = reveal_cells(tiles, explored, prev, zw);
+                    revealed_props = tiles
+                        .props
+                        .iter()
+                        .filter(|p| {
+                            let (x, y) = (p.x_u as i64, p.y_u as i64);
+                            x >= 0
+                                && x < zw
+                                && y >= 0
+                                && newly_explored(explored, prev, (y * zw + x) as usize)
+                        })
+                        .cloned()
+                        .collect();
+                }
+                let revealed_exits: Vec<_> = frame
+                    .exits
+                    .iter()
+                    .filter(|e| newly_explored(explored, prev, exit_cell(e, zw)))
+                    .cloned()
+                    .collect();
+                let revealed_gates: Vec<_> = frame
+                    .gates
+                    .iter()
+                    .filter(|g| {
+                        gate_explored(explored, zw, g.x0, g.y0, g.x1, g.y1)
+                            && !gate_explored(prev, zw, g.x0, g.y0, g.x1, g.y1)
+                    })
+                    .cloned()
+                    .collect();
+                ws.prev_explored = explored.clone();
+
                 let delta = serialize(&S2C::ZoneDelta {
                     tick: frame.tick,
                     spawned,
@@ -198,9 +370,17 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     projectiles,
                     skills,
                     uses,
+                    revealed,
+                    revealed_props,
+                    revealed_exits,
+                    revealed_gates,
                 });
-                let events: Vec<GameEvent> =
-                    frame.events.iter().filter_map(to_game_event).collect();
+                let events: Vec<GameEvent> = frame
+                    .events
+                    .iter()
+                    .filter_map(to_game_event)
+                    .filter(|ev| event_visible(ev, explored, zw))
+                    .collect();
                 let events_msg = if events.is_empty() {
                     None
                 } else {
@@ -209,7 +389,8 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     }))
                 };
 
-                // Snapshot for this world (joiners + lag resync).
+                // Snapshot for this world (joiners + lag resync): tiles are
+                // MASKED to the explored set; unexplored exits/gates withheld.
                 let mut entities: Vec<EntityState> = current.values().cloned().collect();
                 entities.sort_by_key(|s| s.id);
                 let snapshot = serialize(&S2C::ZoneSnapshot {
@@ -219,9 +400,21 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                     world_key: frame.world_key.clone(),
                     width: frame.zone_width,
                     height: frame.zone_height,
-                    tiles: frame.tiles.as_deref().cloned(),
-                    exits: frame.exits.clone(),
-                    gates: frame.gates.clone(),
+                    tiles: frame.tiles.as_deref().map(|t| mask_tiles(t, explored, zw)),
+                    exits: frame
+                        .exits
+                        .iter()
+                        .filter(|e| {
+                            cell_explored(explored, zw, (e.x >> 16) as i64, (e.y >> 16) as i64)
+                        })
+                        .cloned()
+                        .collect(),
+                    gates: frame
+                        .gates
+                        .iter()
+                        .filter(|g| gate_explored(explored, zw, g.x0, g.y0, g.x1, g.y1))
+                        .cloned()
+                        .collect(),
                     entities,
                 });
 
@@ -872,6 +1065,175 @@ mod tests {
             items: 0,
             ailments: 0,
         }
+    }
+
+    /// A 4×2 tile map: rows "abcd"/"efgh", one prop per corner cell.
+    fn tiny_tiles() -> idlin_protocol::TileMapState {
+        let prop = |x: i32, y: i32| idlin_protocol::PropState {
+            model: "barrel".into(),
+            x_u: x,
+            y_u: y,
+            rot_deg: 0,
+        };
+        idlin_protocol::TileMapState {
+            width: 4,
+            height: 2,
+            rows: vec!["abcd".into(), "efgh".into()],
+            legend: vec![],
+            props: vec![prop(0, 0), prop(3, 1)],
+            features: vec![],
+        }
+    }
+
+    /// Bits for a 4-wide grid: cell (x,y) = bit y*4+x, all in word 0.
+    fn bits(cells: &[(i64, i64)]) -> Vec<u64> {
+        let mut w = 0u64;
+        for &(x, y) in cells {
+            w |= 1 << (y * 4 + x);
+        }
+        vec![w]
+    }
+
+    #[test]
+    fn snapshot_masks_unexplored_tiles_props_exits_and_gates() {
+        // #129 stage 2b: a snapshot must not carry unexplored layout in ANY
+        // form — glyphs blank to ' ', props on unexplored cells drop, and the
+        // explored/gate predicates gate exits and gate rects. Mutations: skip
+        // the row masking → 'd' leaks; skip the props retain → the far barrel
+        // leaks; break gate_explored's any-cell rule → the spanning gate hides.
+        let tiles = tiny_tiles();
+        let explored = bits(&[(0, 0), (1, 0), (0, 1)]); // top-left corner only
+        let masked = mask_tiles(&tiles, &explored, 4);
+        assert_eq!(masked.rows, vec!["ab  ".to_string(), "e   ".to_string()]);
+        assert_eq!(masked.props.len(), 1, "only the explored-corner prop ships");
+        assert_eq!(masked.props[0].x_u, 0);
+        assert_eq!(
+            masked.legend.len(),
+            tiles.legend.len(),
+            "the legend is vocabulary, not positions"
+        );
+        // Exit/gate predicates.
+        assert!(cell_explored(&explored, 4, 1, 0));
+        assert!(!cell_explored(&explored, 4, 3, 1));
+        assert!(
+            !cell_explored(&explored, 4, -1, 0),
+            "off-map is never explored"
+        );
+        assert!(
+            gate_explored(&explored, 4, 1, 0, 3, 1),
+            "a gate rect spanning the fog boundary counts as explored (any cell)"
+        );
+        assert!(
+            !gate_explored(&explored, 4, 2, 1, 3, 1),
+            "a fully dark rect does not"
+        );
+    }
+
+    #[test]
+    fn positioned_events_and_exits_gate_on_explored_ground() {
+        // #129 stage 2b: gate/exit CHANGE events are dropped until their ground
+        // is explored (they carry positions), other events always pass, and the
+        // exit-cell sentinel maps off-map exits to never-explored. Mutations:
+        // flip event_visible's predicate sense → the dark-exit assert fails;
+        // drop the exit_cell bounds guard → the off-map exit aliases cell 0
+        // (which IS explored here) and the sentinel assert fails.
+        let explored = bits(&[(0, 0), (1, 0)]);
+        let exit_ev = |x: i32, y: i32| GameEvent::ExitChanged {
+            x: x << 16,
+            y: y << 16,
+            open: true,
+        };
+        assert!(
+            event_visible(&exit_ev(1, 0), &explored, 4),
+            "explored exit event passes"
+        );
+        assert!(
+            !event_visible(&exit_ev(3, 1), &explored, 4),
+            "dark exit event is dropped"
+        );
+        let gate_ev = GameEvent::GateChanged {
+            x0: 1,
+            y0: 0,
+            x1: 3,
+            y1: 1,
+            open: false,
+        };
+        assert!(
+            event_visible(&gate_ev, &explored, 4),
+            "a gate rect touching explored ground passes (any-cell rule)"
+        );
+        let dark_gate = GameEvent::GateChanged {
+            x0: 2,
+            y0: 1,
+            x1: 3,
+            y1: 1,
+            open: false,
+        };
+        assert!(
+            !event_visible(&dark_gate, &explored, 4),
+            "a fully dark gate is dropped"
+        );
+        let other = GameEvent::CharacterJoined {
+            id: 1,
+            name: "Vex".into(),
+        };
+        assert!(
+            event_visible(&other, &explored, 4),
+            "non-positional events always pass"
+        );
+        // The exit-cell sentinel: off-map coordinates never read as explored.
+        let exit = |x: i32, y: i32| idlin_protocol::ExitView {
+            x: x << 16,
+            y: y << 16,
+            open: true,
+        };
+        assert_eq!(exit_cell(&exit(1, 0), 4), 1);
+        assert_eq!(
+            exit_cell(&exit(-1, 0), 4),
+            usize::MAX,
+            "negative x is off-map"
+        );
+        assert_eq!(
+            exit_cell(&exit(0, -1), 4),
+            usize::MAX,
+            "negative y is off-map"
+        );
+        assert_eq!(
+            exit_cell(&exit(4, 0), 4),
+            usize::MAX,
+            "x >= width is off-map"
+        );
+        assert!(!newly_explored(&explored, &[], exit_cell(&exit(-1, 0), 4)));
+    }
+
+    #[test]
+    fn reveal_delta_streams_only_newly_explored_cells_with_true_glyphs() {
+        // #129 stage 2b: the reveal delta is exactly explored & !prev, carrying
+        // TRUE glyphs. Mutations: diff against nothing → old cells re-reveal
+        // every tick; read the masked rows → blanks stream instead of glyphs.
+        let tiles = tiny_tiles();
+        let prev = bits(&[(0, 0), (1, 0)]);
+        let now = bits(&[(0, 0), (1, 0), (2, 0), (3, 1)]);
+        let mut cells = reveal_cells(&tiles, &now, &prev, 4);
+        cells.sort_by_key(|c| (c.y, c.x));
+        let flat: Vec<(i32, i32, &str)> =
+            cells.iter().map(|c| (c.x, c.y, c.glyph.as_str())).collect();
+        assert_eq!(
+            flat,
+            [(2, 0, "c"), (3, 1, "h")],
+            "only the new cells, true glyphs"
+        );
+        // Steady state: nothing new → nothing streamed.
+        assert!(reveal_cells(&tiles, &now, &now, 4).is_empty());
+        // First frame against an empty baseline: everything explored streams.
+        assert_eq!(reveal_cells(&tiles, &now, &[], 4).len(), 4);
+        // newly_explored agrees with the same window (drives props/exits).
+        assert!(newly_explored(&now, &prev, 2)); // cell (2,0)
+        assert!(!newly_explored(&now, &prev, 0)); // already known
+        assert!(
+            !newly_explored(&now, &prev, usize::MAX / 2),
+            "far off-map is never new"
+        );
     }
 
     #[test]

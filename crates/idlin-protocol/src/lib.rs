@@ -17,7 +17,12 @@ use ts_rs::TS;
 //     new StatSourceView.
 // 39: EntityState/EntityPatch gain an `ailments` bitmask (ignite/shock/chill) for
 //     the overhead nameplate (#88 first-class ailments).
-pub const PROTO_VERSION: u32 = 39;
+// 40: Fog of war (#129 stage 2b): ZoneDelta gains `revealed` (newly explored tile
+//     cells with their true glyphs) + `revealed_props`/`revealed_exits`/
+//     `revealed_gates`, and the new RevealedCell type. Snapshots ship MASKED
+//     tiles (unexplored glyphs blanked to ' ', props/exits/gates filtered by
+//     what the world's residents have explored).
+pub const PROTO_VERSION: u32 = 40;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -484,6 +489,18 @@ pub struct PropState {
     pub rot_deg: i32,
 }
 
+/// Fog of war (#129): one newly explored tile cell with its true glyph —
+/// streamed in `ZoneDelta.revealed` as the residents discover the map (the
+/// snapshot ships unexplored cells masked to ' ').
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct RevealedCell {
+    /// Cell coordinates (sim units).
+    pub x: i32,
+    pub y: i32,
+    /// The cell's true legend glyph (one char).
+    pub glyph: String,
+}
+
 /// An authored zone's tile map, fully resolved for rendering. One char
 /// per sim unit, rows top-to-bottom.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -672,6 +689,21 @@ pub enum S2C {
         /// the strike arrives `contact_ticks` later).
         #[serde(default)]
         uses: Vec<UseFx>,
+        /// Fog of war (#129): tile cells the residents newly explored this
+        /// tick, carrying their TRUE glyphs — the snapshot masked them, this
+        /// is how the map arrives as it is discovered. Empty on generated
+        /// zones (no tile map) and on ticks with no new exploration.
+        #[serde(default)]
+        revealed: Vec<RevealedCell>,
+        /// Authored props whose cell was newly explored this tick.
+        #[serde(default)]
+        revealed_props: Vec<PropState>,
+        /// Exits/gates whose position was newly explored this tick — the
+        /// snapshot withholds unexplored ones, so the client APPENDS these.
+        #[serde(default)]
+        revealed_exits: Vec<ExitView>,
+        #[serde(default)]
+        revealed_gates: Vec<GateView>,
     },
     /// Batched narratable events for this tick.
     Events {
@@ -744,10 +776,41 @@ mod tests {
                 range: 0,
                 dmg_type: 2,
             }],
+            // Fog of war (#129): a reveal batch survives the wire — a masked
+            // cell arriving with its true glyph, plus a prop/exit on the
+            // newly explored ground.
+            revealed: vec![RevealedCell {
+                x: 7,
+                y: 3,
+                glyph: "#".into(),
+            }],
+            revealed_props: vec![PropState {
+                model: "barrel".into(),
+                x_u: 7,
+                y_u: 3,
+                rot_deg: 90,
+            }],
+            revealed_exits: vec![ExitView {
+                x: 65536 * 8,
+                y: 65536 * 3,
+                open: true,
+            }],
+            revealed_gates: vec![],
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: S2C = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, S2C::ZoneDelta { tick: 42, .. }));
+        match &back {
+            S2C::ZoneDelta {
+                tick: 42,
+                revealed,
+                revealed_exits,
+                ..
+            } => {
+                assert_eq!(revealed[0].glyph, "#", "the revealed glyph survives");
+                assert!(revealed_exits[0].open, "the revealed exit survives");
+            }
+            other => panic!("expected ZoneDelta, got {other:?}"),
+        }
 
         // The per-skill readout (#19) survives the wire — notably `width_cu`,
         // the newest field, and a nested support.
