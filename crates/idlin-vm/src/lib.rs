@@ -97,6 +97,7 @@ pub const SYS_READ_ITEM_MODS: i32 = 31;
 /// #54 PR3: the currently worn gear, per slot (slot, base_num, rarity, item_level)
 /// — so a bot can score its own gear instead of leaning on `equip_best`.
 pub const SYS_READ_EQUIPMENT: i32 = 32;
+
 /// #54 PR3: equip a specific bag item into its content-defined slot (manual
 /// counterpart to `equip_best`); the displaced item returns to the bag, or the
 /// swap is REFUSED (-1) if it can't re-home there — never dropped (unlike
@@ -115,6 +116,7 @@ pub const SYS_UNEQUIP: i32 = 35;
 /// bit1 Shock, bit2 Chill; 0 if the entity is unknown or unafflicted. Lets a bot
 /// read self/target ailment state (and is the read #109's vs-ailing condition uses).
 pub const SYS_READ_AILMENTS: i32 = 36;
+pub const SYS_USE_CHART: i32 = 37;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -722,6 +724,7 @@ mod tests {
         assert_eq!(SYS_ITEM_SLOT, 34);
         assert_eq!(SYS_UNEQUIP, 35);
         assert_eq!(SYS_READ_AILMENTS, 36);
+        assert_eq!(SYS_USE_CHART, 37);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);

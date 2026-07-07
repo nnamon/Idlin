@@ -166,6 +166,48 @@ async fn main() -> anyhow::Result<()> {
                 resident.push(b.character.name.clone());
             }
         }
+        // Chart voyages (#136 T4): resume any snapshot whose key no booted
+        // world claims — the idler mid-voyage survives the restart. Runs
+        // AFTER the booted-resume loop so a voyage is never double-loaded;
+        // its characters count as residents like anyone else's. The
+        // content-hash gate inside load_managed refuses stale content, and
+        // only worlds that self-identify as chart instances are accepted.
+        let booted: Vec<PathBuf> = worlds
+            .iter()
+            .map(|mw| persist::world_dir(&snapshot_dir, &mw.key))
+            .collect();
+        for (key, dir) in persist::scan_world_keys(&snapshot_dir) {
+            if booted.contains(&dir) {
+                continue;
+            }
+            let Some((world, pendings)) = persist::load_managed(&content, &dir) else {
+                continue;
+            };
+            if !world.is_chart_instance() {
+                continue;
+            }
+            let zone_id = content.zones[world.zone_index() as usize].id.clone();
+            info!("resuming voyage {key} at tick {}", world.tick_count());
+            for v in world.views() {
+                if v.kind == 1 {
+                    resident.push(v.name);
+                }
+            }
+            for b in &pendings {
+                resident.push(b.character.name.clone());
+            }
+            worlds.push(runner::ManagedWorld {
+                key,
+                zone_id: zone_id.clone(),
+                tiles: runner::resolve_tile_map(&content, &zone_id),
+                max_players: 1,
+                pending: TickInputs {
+                    joins: Vec::new(),
+                    arrivals: pendings,
+                },
+                world,
+            });
+        }
         for mw in &mut worlds {
             mw.pending.joins.retain(|j| {
                 let fresh = !resident.contains(&j.name);
@@ -232,6 +274,8 @@ async fn main() -> anyhow::Result<()> {
         server_tick.clone(),
         persistence,
         shutdown,
+        content.clone(),
+        seed,
     );
     let handles = replication::spawn_replication(frame_rx);
 

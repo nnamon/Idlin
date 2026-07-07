@@ -79,7 +79,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v15 (#136 campaign spine): `CharacterState` gained `story_acts: u32` (campaign progress)
 /// and `ExitState` gained `requires_act: u32` (story-sealed exits) — both serialized; a v14
 /// snapshot would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 15;
+/// v16 (#136 charts): `CharacterBundle` gained `chart: Option<ChartTicket>` and `World`
+/// gained `loot_quantity_bp` / `chart_table` / `is_chart_instance` — all serialized; a v15
+/// snapshot would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 16;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -87,6 +90,36 @@ pub const SAVE_EVERY_TICKS: u64 = 300;
 
 /// A world key's snapshot directory: filesystem-safe name plus a short
 /// hash so sanitization can never collide two keys.
+/// The world's KEY, plaintext, beside its snapshot: `world_dir` hashes the
+/// key one-way, so resuming a world whose key isn't known at boot (a chart
+/// instance, #136 T4) needs it written down.
+pub fn save_world_key(dir: &Path, key: &str) {
+    let _ = std::fs::write(dir.join("key"), key);
+}
+
+/// Every (key, dir) under the snapshot base — booted worlds resume by
+/// derived dir; anything else (chart voyages) resumes from this scan.
+pub fn scan_world_keys(base: &Path) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(base) else {
+        return out;
+    };
+    for entry in rd.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        if let Ok(key) = std::fs::read_to_string(dir.join("key")) {
+            let key = key.trim().to_string();
+            if !key.is_empty() {
+                out.push((key, dir));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 pub fn world_dir(base: &Path, world_key: &str) -> PathBuf {
     let safe: String = world_key
         .chars()
@@ -249,6 +282,7 @@ mod tests {
             persist: Vec::new(),
             params: Vec::new(),
             bot_version: 1,
+            chart: None,
         }
     }
 
@@ -354,6 +388,74 @@ mod tests {
     }
 
     #[test]
+    fn a_crashed_voyage_resumes_by_key_scan() {
+        // #136 T4: chart instances snapshot like any world; their dirs carry
+        // a plaintext `key` file so the boot scan can find them (the dirname
+        // is a one-way hash of the key). The character inside survives the
+        // restart. Mutation: drop save_world_key from the save loop, or the
+        // is_chart_instance marker → the scan (or the accept gate) fails.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let world = World::new_chart_instance(
+            9,
+            &content,
+            "charted_shallows",
+            idlin_sim::ChartTicket {
+                tier: 2,
+                rarity_bp: 0,
+                quantity_bp: 0,
+            },
+        );
+        let base = std::env::temp_dir().join(format!("idlin-voyage-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let key = "charted_shallows#Mariner@7";
+        let dir = world_dir(&base, key);
+        save_managed(&world, &[bundle("Mariner")], &dir).unwrap();
+        save_world_key(&dir, key);
+        let found = scan_world_keys(&base);
+        assert_eq!(found.len(), 1, "the voyage is discoverable");
+        assert_eq!(found[0].0, key);
+        let (back, pendings) = load_managed(&content, &found[0].1).expect("resumes");
+        assert!(back.is_chart_instance(), "ephemerality survives the disk");
+        assert_eq!(
+            content.zones[back.zone_index() as usize].id,
+            "charted_shallows",
+            "the zone id comes back from the state itself"
+        );
+        assert_eq!(pendings[0].character.name, "Mariner");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_pending_chart_ticket_survives_the_snapshot() {
+        // #136 T4: a mid-ferry chart bundle (saved at the post-ferry
+        // boundary) must resume with its ticket intact — otherwise a restart
+        // silently downgrades a paid voyage to a walk home. Mutation: drop
+        // `chart` from the bundle serde → this fails to decode the juice.
+        let content = ContentDb::empty();
+        let world = World::new(3, &content);
+        let mut b = bundle("Mariner");
+        b.chart = Some(idlin_sim::ChartTicket {
+            tier: 4,
+            rarity_bp: 2100,
+            quantity_bp: 900,
+        });
+        let dir = temp_dir("chart-ticket");
+        save_managed(&world, &[b], &dir).unwrap();
+        let (_, pendings) = load_managed(&content, &dir).expect("snapshot loads");
+        let back = &pendings[0];
+        assert_eq!(back.character.name, "Mariner");
+        assert_eq!(
+            back.chart,
+            Some(idlin_sim::ChartTicket {
+                tier: 4,
+                rarity_bp: 2100,
+                quantity_bp: 900,
+            })
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn nonzero_story_progress_survives_the_pending_bundle() {
         // #136: campaign state must roundtrip — every other fixture uses
         // zeros, so a `#[serde(skip)]` on story_acts would pass them all.
@@ -380,7 +482,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 15);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 16);
     }
 
     #[test]

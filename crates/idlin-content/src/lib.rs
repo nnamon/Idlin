@@ -370,6 +370,11 @@ pub struct ItemDef {
     /// only when true; private (the default) defs get an internal num only.
     #[serde(default)]
     pub public: bool,
+    /// A CHART (#136 T4): using it at the Charting Table opens a chart
+    /// instance. The BASE tier; the effective tier scales with the rolled
+    /// item_level. Charts are bag items — never equippable.
+    #[serde(default)]
+    pub chart_tier: Option<u32>,
     pub name: String,
     pub slot: GearSlot,
     /// Requirements: a character must MEET these to equip — and to KEEP —
@@ -1260,6 +1265,10 @@ pub struct ZoneDef {
     pub camp_radius_u: i32,
     #[serde(default)]
     pub kind: ZoneKind,
+    /// The Charting Table's cell (#136 T4): where UseChart works. One per
+    /// game for 1.0 — Saltmere's. None everywhere else.
+    #[serde(default)]
+    pub chart_table: Option<(i32, i32)>,
     /// The zone's BRAIN: a bot program (content/brains) that runs once per
     /// tick with zone-scoped syscalls — scripted encounters, narration,
     /// drops. The dungeon master is a bot too.
@@ -1779,6 +1788,18 @@ impl ContentDb {
                     return Err(bad(format!(
                         "exit {}x{} (to {}) is walkable but UNREACHABLE from spawn",
                         exit.x_u, exit.y_u, exit.dest
+                    )));
+                }
+            }
+            // The Charting Table (#136 T4) is the endgame's front door — a
+            // mis-authored cell would silently strand every voyage.
+            if let Some((tx, ty)) = zone.chart_table {
+                if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
+                    return Err(bad(format!("chart_table {tx}x{ty} is off the map")));
+                }
+                if !walkable_at(tx, ty) || !reachable(tx, ty) {
+                    return Err(bad(format!(
+                        "chart_table {tx}x{ty} must be walkable and reachable from spawn"
                     )));
                 }
             }

@@ -118,6 +118,71 @@ fn route_departure(worlds: &[ManagedWorld], source: usize, dest: &str) -> usize 
         .unwrap_or(source)
 }
 
+/// A chart instance is done when nothing lives there and nothing is bound
+/// for it (#136 T4). Never true for booted worlds — only voyages retire.
+fn chart_instance_emptied(mw: &ManagedWorld) -> bool {
+    mw.world.is_chart_instance()
+        && mw.pending.arrivals.is_empty()
+        && mw.pending.joins.is_empty()
+        && mw.world.views().iter().all(|v| v.kind != 1)
+}
+
+/// The chart-aware ferry (#136 T4): departures carrying a ChartTicket open a
+/// FRESH instance of their (map-kind) destination — keyed
+/// "<zone>#<name>@<tick>", seeded from that key, its area level and juice set
+/// by the ticket — and land there. Everything else rides the normal ferry.
+/// Instances retire at the top of a later tick once they empty (never
+/// mid-tick: frame posting indexes into `worlds`).
+fn ferry_departures_with_charts(
+    worlds: &mut Vec<ManagedWorld>,
+    departures: Vec<(usize, CharacterBundle, String)>,
+    content: &ContentDb,
+    seed: u64,
+    server_tick: u64,
+) {
+    let mut plain = Vec::new();
+    for (source, mut bundle, dest) in departures {
+        let Some(ticket) = bundle.chart.take() else {
+            plain.push((source, bundle, dest));
+            continue;
+        };
+        // Only map-kind zones may be chart-instanced; anything else rides
+        // the normal ferry (and bounces home if unknown) — fail safe.
+        let is_map = content
+            .zone(&dest)
+            .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Map));
+        if !is_map {
+            warn!(
+                "{} chart-sailed for non-map zone {dest}; refunding the trip home",
+                bundle.character.name
+            );
+            plain.push((source, bundle, dest));
+            continue;
+        }
+        let key = format!("{dest}#{}@{server_tick}", bundle.character.name);
+        let mut h = idlin_content::FNV1A_OFFSET;
+        for b in key.bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+        }
+        info!(
+            "charting {} for {} (tier {})",
+            key, bundle.character.name, ticket.tier
+        );
+        let mut mw = ManagedWorld {
+            key: key.clone(),
+            zone_id: dest.clone(),
+            world: World::new_chart_instance(seed ^ h, content, &dest, ticket),
+            tiles: resolve_tile_map(content, &dest),
+            max_players: 1,
+            pending: TickInputs::default(),
+        };
+        mw.pending.arrivals.push(bundle);
+        worlds.push(mw);
+    }
+    ferry_departures(worlds, plain);
+}
+
 /// Land each of this tick's departures into exactly one world's arrivals.
 /// `route_departure` guarantees a valid target — the destination instance, or
 /// the source world when the destination is unknown or full — so a transfer
@@ -254,6 +319,7 @@ pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMa
     }))
 }
 
+#[allow(clippy::too_many_arguments)] // a top-level spawn: each arg is a distinct host wire
 pub fn spawn_tick_loop(
     mut worlds: Vec<ManagedWorld>,
     frames: UnboundedSender<TickBatch>,
@@ -261,15 +327,44 @@ pub fn spawn_tick_loop(
     server_tick: Arc<AtomicU64>,
     snapshot_base: Option<std::path::PathBuf>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
+    // Chart instancing (#136 T4): the ferry mints fresh worlds on demand.
+    content: ContentDb,
+    seed: u64,
 ) {
     std::thread::Builder::new()
         .name("idlin-sim".into())
         .spawn(move || {
             let tick_interval = Duration::from_millis(1000 / TICK_HZ as u64);
             let mut ticks_since_save = 0u64;
+            // Host tick: only for unique chart-instance keys (worlds each
+            // keep their own sim tick).
+            let mut host_tick: u64 = 0;
             loop {
                 let started = std::time::Instant::now();
                 let stopping = shutdown.load(Ordering::Relaxed);
+                host_tick += 1;
+
+                // Retire emptied chart instances (#136 T4) — at the TOP of
+                // the tick so no frame index from the previous loop survives
+                // the removal. A voyage ends when its idler leaves or dies
+                // out; the strand folds back into the sea.
+                worlds.retain(|mw| {
+                    let retire = chart_instance_emptied(mw);
+                    if retire {
+                        info!("chart instance {} emptied; retired", mw.key);
+                        // The voyage's snapshot goes with it — a retired
+                        // instance must never resume as a ghost.
+                        if let Some(base) = &snapshot_base {
+                            let dir = crate::persist::world_dir(base, &mw.key);
+                            if let Err(e) = std::fs::remove_dir_all(&dir)
+                                && dir.exists()
+                            {
+                                warn!("could not clear {}: {e}", dir.display());
+                            }
+                        }
+                    }
+                    !retire
+                });
 
                 // Tick every world, collecting its events and departures.
                 let mut all_departures = Vec::new();
@@ -296,7 +391,13 @@ pub fn spawn_tick_loop(
                 // Ferry: land each departure into its destination world (or
                 // back to its source when that zone is unknown or full) — a
                 // transfer never loses a character (#63).
-                ferry_departures(&mut worlds, all_departures);
+                ferry_departures_with_charts(
+                    &mut worlds,
+                    all_departures,
+                    &content,
+                    seed,
+                    host_tick,
+                );
 
                 // PERSISTENCE: save at the post-ferry boundary — every
                 // character is in exactly one world's state or pending
@@ -309,11 +410,18 @@ pub fn spawn_tick_loop(
                 {
                     ticks_since_save = 0;
                     for mw in &worlds {
+                        // Chart instances snapshot like any world (#136 T4):
+                        // a crash must never cost the CHARACTER inside one.
+                        // Their dirs carry a plaintext `key` file so the boot
+                        // scan can resume them (the dirname is a one-way
+                        // hash); retirement deletes the dir.
                         let dir = crate::persist::world_dir(base, &mw.key);
                         if let Err(e) =
                             crate::persist::save_managed(&mw.world, &mw.pending.arrivals, &dir)
                         {
                             warn!("snapshot for {} failed: {e:#}", mw.key);
+                        } else {
+                            crate::persist::save_world_key(&dir, &mw.key);
                         }
                     }
                     if stopping {
@@ -648,6 +756,79 @@ mod tests {
     }
 
     #[test]
+    fn a_chart_departure_mints_a_voyage_and_it_retires_when_empty() {
+        // #136 T4: a ticketed departure opens a fresh instance of the map
+        // zone (leveled + juiced + ephemeral) holding exactly that bundle;
+        // an unticketed one rides the normal ferry; and the emptied voyage
+        // retires while booted worlds never do. Mutations: drop the ticket
+        // branch, the map-kind guard, or the retire predicate → fails.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let mut worlds = vec![ManagedWorld {
+            key: "saltmere".into(),
+            zone_id: "saltmere".into(),
+            world: World::new_for_zone(3, &content, "saltmere"),
+            tiles: None,
+            max_players: 0,
+            pending: TickInputs::default(),
+        }];
+        let mut b = bundle("Sailor");
+        b.chart = Some(idlin_sim::ChartTicket {
+            tier: 2,
+            rarity_bp: 1000,
+            quantity_bp: 500,
+        });
+        ferry_departures_with_charts(
+            &mut worlds,
+            vec![(0, b, "charted_shallows".to_string())],
+            &content,
+            99,
+            41,
+        );
+        assert_eq!(worlds.len(), 2, "the voyage exists");
+        let mw = &worlds[1];
+        assert_eq!(mw.key, "charted_shallows#Sailor@41");
+        assert_eq!(mw.zone_id, "charted_shallows");
+        assert!(mw.world.is_chart_instance());
+        assert_eq!(mw.world.zone_level(), 14, "12 + tier 2");
+        assert_eq!(mw.pending.arrivals.len(), 1, "the sailor is aboard");
+        // Not yet retired: the arrival is pending.
+        assert!(!chart_instance_emptied(&worlds[1]));
+        // Land the arrival, then walk them home: the instance empties.
+        let inputs = std::mem::take(&mut worlds[1].pending);
+        worlds[1].world.tick(&inputs);
+        assert!(
+            !chart_instance_emptied(&worlds[1]),
+            "occupied voyages persist"
+        );
+        // A booted world is never "emptied", even with zero characters.
+        assert!(!chart_instance_emptied(&worlds[0]));
+        // A ticket for a NON-map zone refunds home instead of minting.
+        let mut b2 = bundle("Confused");
+        b2.chart = Some(idlin_sim::ChartTicket {
+            tier: 1,
+            rarity_bp: 0,
+            quantity_bp: 0,
+        });
+        let before = worlds.len();
+        ferry_departures_with_charts(
+            &mut worlds,
+            vec![(0, b2, "saltmere".to_string())],
+            &content,
+            99,
+            42,
+        );
+        assert_eq!(worlds.len(), before, "no voyage minted for a story zone");
+        assert!(
+            worlds[0]
+                .pending
+                .arrivals
+                .iter()
+                .any(|a| a.character.name == "Confused"),
+            "the confused sailor lands home"
+        );
+    }
+
+    #[test]
     fn boot_worlds_runs_every_live_zone() {
         // #136 T3: THE test that was missing when the Saltworks and the
         // Hollow shipped unbootable — every non-map authored zone must be
@@ -730,6 +911,7 @@ mod tests {
             persist: Vec::new(),
             params: Vec::new(),
             bot_version: 1,
+            chart: None,
         }
     }
 

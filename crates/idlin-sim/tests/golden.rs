@@ -10,6 +10,13 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T4 (charts): content_hash + a fingerprint widening.
+/// Content: the Salt-Stained Chart base, the chart affix pool (of_plenty /
+/// of_shoals), the Charted Shallows map zone, and Saltmere's chart_table
+/// cell. Widening: World now serializes/hashes loot_quantity_bp,
+/// chart_table, and is_chart_instance. The shore replay's BEHAVIOR is
+/// unchanged (no chart exists there; the golden grinders never see one) —
+/// verify by the trio agreeing. (Prior: 0x8AC7 — T3 boot.)
 /// Re-pinned for #136 T3 (the Act 1 zones): content_hash-ONLY — two new
 /// authored zones (the Saltworks, the Tidewarden's Hollow: maps, brains,
 /// packs), six new monster defs incl. the two act bosses, the coast's road
@@ -119,7 +126,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x8AC7_C448_502E_45B6;
+const GOLDEN_HASH: u64 = 0xD1BB_529F_850E_50F1;
 
 #[test]
 fn golden_replay() {

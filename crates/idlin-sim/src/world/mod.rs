@@ -83,6 +83,24 @@ pub struct CharacterBundle {
     pub persist: Vec<u8>,
     pub params: Vec<u8>,
     pub bot_version: u32,
+    /// Charts (#136 T4): set when this departure was a UseChart — the host
+    /// creates a fresh chart instance from it instead of routing to a booted
+    /// world. Consumed by the ferry; never survives into the next departure.
+    #[serde(default)]
+    pub chart: Option<ChartTicket>,
+}
+
+/// A consumed chart, as instance parameters (#136 T4): the tier drives the
+/// instance's area level; the juice bps (from the chart's rolled affixes)
+/// drive spawn rarity and drop quantity inside. Deterministic: rolled once
+/// on the item, carried whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChartTicket {
+    pub tier: u32,
+    /// Added to every pack's magic_bp/rare_bp in the instance.
+    pub rarity_bp: i64,
+    /// Folded into every kill's drop quantity in the instance.
+    pub quantity_bp: i64,
 }
 
 /// Things that happened during a tick that the outside world may care about
@@ -346,6 +364,18 @@ pub struct World {
     /// max(def level, area level); magic +1, rare +2; uniques authored.
     #[serde(default = "default_zone_level")]
     pub(crate) zone_level: u32,
+    /// Chart juice (#136 T4): extra drop quantity in this world (bp; 0 =
+    /// none). Set at chart-instance creation; folded into every kill's
+    /// drop roll. Serialized + hashed — it steers future loot.
+    #[serde(default)]
+    pub(crate) loot_quantity_bp: i64,
+    /// The Charting Table's cell, from the ZoneDef (#136 T4). None = no table.
+    #[serde(default)]
+    pub(crate) chart_table: Option<(i32, i32)>,
+    /// True in a chart instance (#136 T4): charts keep dropping here (the
+    /// loop sustains itself), and the host retires the world when it empties.
+    #[serde(default)]
+    pub(crate) is_chart_instance: bool,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -366,7 +396,7 @@ pub struct World {
     /// UseExit calls staged during bot execution; detached in slot-call
     /// order after bots finish (an entity can't vanish mid-arena-walk).
     #[serde(skip)]
-    pub(crate) pending_exits: Vec<(u32, String)>,
+    pub(crate) pending_exits: Vec<(u32, String, Option<ChartTicket>)>,
     /// Committed uses winding up toward their contact tick.
     #[serde(default)]
     pub(crate) pending_uses: Vec<crate::world::combat::PendingUse>,
@@ -753,6 +783,9 @@ impl World {
             pending_exits: Vec::new(),
             pending_uses: Vec::new(),
             zone_level: content.zone(zone_id).map_or(1, |z| z.level),
+            loot_quantity_bp: 0,
+            chart_table: content.zone(zone_id).and_then(|z| z.chart_table),
+            is_chart_instance: false,
         }
     }
 
@@ -893,6 +926,39 @@ impl World {
         self.zone_level
     }
 
+    /// True for chart instances (#136 T4) — the host retires these when empty.
+    pub fn is_chart_instance(&self) -> bool {
+        self.is_chart_instance
+    }
+
+    /// This world's zone, as an index into `ContentDb::zones` (#136 T4):
+    /// lets the host recover a resumed voyage's zone id (its key file names
+    /// the world; the zone comes from the state itself).
+    pub fn zone_index(&self) -> u32 {
+        self.zone_idx
+    }
+
+    /// A CHART INSTANCE of a map zone (#136 T4): the ticket's tier sets the
+    /// area level (12 + tier — charts begin where Act 1 ends) and its juice
+    /// boosts every pack's rarity rolls and the world's drop quantity. Must
+    /// run before the first tick — packs spawn then, at the lifted level.
+    pub fn new_chart_instance(
+        seed: u64,
+        content: &ContentDb,
+        zone_id: &str,
+        ticket: ChartTicket,
+    ) -> World {
+        let mut w = Self::new_for_zone(seed, content, zone_id);
+        w.is_chart_instance = true;
+        w.zone_level = 12 + ticket.tier;
+        w.loot_quantity_bp = ticket.quantity_bp.max(0);
+        for pack in &mut w.zone.packs {
+            pack.def.magic_bp += ticket.rarity_bp.max(0) as u32;
+            pack.def.rare_bp += (ticket.rarity_bp.max(0) / 3) as u32;
+        }
+        w
+    }
+
     pub fn zone_name(&self) -> &str {
         &self.zone.name
     }
@@ -1008,7 +1074,7 @@ impl World {
     /// exactly one zone. The persist block travels; working VM memory
     /// resets, like a redeploy.
     fn process_exits(&mut self, events: &mut Vec<SimEvent>) {
-        for (net, dest) in std::mem::take(&mut self.pending_exits) {
+        for (net, dest, chart) in std::mem::take(&mut self.pending_exits) {
             let Some(slot) = self.zone.slot_of(net) else {
                 continue; // died and was removed in the same tick
             };
@@ -1030,6 +1096,7 @@ impl World {
                     program: b.program,
                     params: b.params,
                     bot_version: b.version,
+                    chart,
                 },
                 dest.clone(),
             ));
@@ -1224,6 +1291,84 @@ impl World {
             }
             events.push(SimEvent::CharacterJoined { id: net_id, name });
         }
+    }
+
+    /// UseChart (#136 T4): validate, consume, and stage the sail. The chart's
+    /// effective tier is its base tier lifted by the roll's item_level over
+    /// the act's end (ilvl 13 = tier+1, 14 = tier+2…); the ticket's juice
+    /// comes from the chart's rolled quantity/rarity affix values, so the
+    /// obols craft BETTER VOYAGES with the machinery they already have.
+    pub(crate) fn use_chart(&mut self, slot: usize, inv_sel: i32) -> i32 {
+        const TABLE_REACH: i64 = 3; // cells
+        let Some(e) = self.zone.get(slot) else {
+            return -4;
+        };
+        let Some(ch) = e.character.as_ref() else {
+            return -4;
+        };
+        if ch.story_acts & 1 == 0 {
+            return -3; // the sea is sealed until the Mother falls
+        }
+        let Some((tx, ty)) = self.chart_table else {
+            return -2; // no table in this zone
+        };
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let (dx, dy) = (cx - tx as i64, cy - ty as i64);
+        if dx * dx + dy * dy > TABLE_REACH * TABLE_REACH {
+            return -2;
+        }
+        let net = e.net_id;
+        let idx = inv_sel as usize;
+        if inv_sel < 0 || idx >= ch.inventory.len() {
+            return -1;
+        }
+        let crate::entity::BagItem::Gear(item) = &ch.inventory[idx].item else {
+            return -1; // gems are not charts
+        };
+        let def = &self.content.items[item.base_idx as usize];
+        let Some(base_tier) = def.chart_tier else {
+            return -1; // not a chart
+        };
+        // Effective tier: base + how far past the act's end this roll dropped.
+        let tier = base_tier + item.item_level.saturating_sub(12);
+        // Juice from the chart's OWN rolled affixes (quantity/rarity stats).
+        let mut quantity_bp = 0i64;
+        let mut rarity_bp = 0i64;
+        for ra in &item.affixes {
+            let a = &self.content.affixes[ra.affix_idx as usize];
+            for g in a.grants(&ra.values) {
+                match g.stat {
+                    crate::stats::Stat::ItemQuantity => quantity_bp += g.value,
+                    crate::stats::Stat::ItemRarity => rarity_bp += g.value,
+                    _ => {}
+                }
+            }
+        }
+        // A departure is already staged this tick (an exit, or an earlier
+        // chart): refuse WITHOUT consuming — the critic's same-tick trap
+        // (#136 T4 review): consume-before-guard destroyed the chart and
+        // reported success while the bot sailed somewhere else entirely.
+        if self.pending_exits.iter().any(|(n, ..)| *n == net) {
+            return -5;
+        }
+        // Stage the sail, then spend the chart — both or neither.
+        self.pending_exits.push((
+            net,
+            "charted_shallows".into(),
+            Some(ChartTicket {
+                // Tier capped at 16: the ladder ends where the charts do,
+                // not where an overflow would.
+                tier: tier.clamp(1, 16),
+                rarity_bp,
+                quantity_bp,
+            }),
+        ));
+        if let Some(me) = self.zone.get_mut(slot)
+            && let Some(c) = me.character.as_mut()
+        {
+            c.inventory.remove(idx);
+        }
+        0
     }
 
     /// Drain the characters that left this world this tick (the host
@@ -2343,6 +2488,7 @@ mod area_level_tests {
             program: idlin_botc::assemble("halt\n").unwrap(),
             params: Vec::new(),
             bot_version: 1,
+            chart: None,
         };
         w.tick(&TickInputs {
             joins: Vec::new(),
@@ -2482,6 +2628,247 @@ mod area_level_tests {
     }
 
     #[test]
+    fn use_chart_gates_consumes_and_stages_the_voyage() {
+        // #136 T4: the full syscall contract at Saltmere's real table —
+        // -3 mid-campaign, -2 away from the table, -1 for a non-chart,
+        // 0 = the chart is consumed and the ticket (tier from ilvl, juice
+        // from the ROLLED affixes) rides pending_exits. Mutations: drop the
+        // act gate, the reach check, the consume, or the juice mapping →
+        // the matching assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xC4A7, &content, "saltmere");
+        let slot = join_one(&mut w, "Sailor");
+        let chart_base = content
+            .items
+            .iter()
+            .position(|d| d.chart_tier.is_some())
+            .expect("a chart base ships") as u32;
+        let plenty = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_plenty")
+            .unwrap() as u32;
+        let shoals = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_shoals")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: chart_base,
+                    rarity: Rarity::Magic,
+                    item_level: 14, // base tier 1 + 2 over the act's end = 3
+                    affixes: vec![
+                        crate::entity::RolledAffix {
+                            affix_idx: plenty,
+                            values: vec![2000],
+                            tier: 0,
+                        },
+                        crate::entity::RolledAffix {
+                            affix_idx: shoals,
+                            values: vec![1800],
+                            tier: 0,
+                        },
+                    ],
+                    name: "Test Chart".into(),
+                    charges: 0,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let inv_idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        // Mid-campaign: the sea is sealed.
+        assert_eq!(w.use_chart(slot, inv_idx), -3);
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        // Away from the table (the spawn is out of reach of (26,46)).
+        assert_eq!(w.use_chart(slot, inv_idx), -2);
+        let table = w.chart_table.expect("saltmere has the table");
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
+        // A non-chart index refuses.
+        assert_eq!(w.use_chart(slot, 999), -1);
+        // The voyage.
+        let bag_before = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(w.use_chart(slot, inv_idx), 0);
+        let bag_after = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(bag_after, bag_before - 1, "the chart is spent");
+        let (_, dest, ticket) = w.pending_exits.last().expect("the sail is staged");
+        assert_eq!(dest, "charted_shallows");
+        let t = ticket.expect("a chart sail carries its ticket");
+        assert_eq!(t.tier, 3, "tier 1 base + ilvl 14 - 12");
+        assert_eq!(t.quantity_bp, 2000, "of_plenty's roll pays quantity");
+        assert_eq!(t.rarity_bp, 1800, "of_shoals' roll pays rarity");
+    }
+
+    #[test]
+    fn a_staged_departure_never_eats_the_chart() {
+        // #136 T4 (critic's same-tick trap): with ANY departure already
+        // pending — an exit taken earlier this tick, or a previous chart —
+        // UseChart must refuse (-5) WITHOUT consuming. The original code
+        // consumed first and guarded second: the chart vanished, no voyage,
+        // return said success. Mutation: reorder consume before the guard →
+        // the bag_after assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xEA7, &content, "saltmere");
+        let slot = join_one(&mut w, "Hasty");
+        let chart_base = content
+            .items
+            .iter()
+            .position(|d| d.chart_tier.is_some())
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.story_acts = 1;
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: chart_base,
+                    rarity: Rarity::Normal,
+                    item_level: 13,
+                    affixes: Vec::new(),
+                    name: String::new(),
+                    charges: 0,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let table = w.chart_table.unwrap();
+        let net = w.zone.get(slot).unwrap().net_id;
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
+        // An exit is already staged this tick (as if UseExit ran first).
+        w.pending_exits.push((net, "coast".into(), None));
+        let inv_idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        let bag_before = inv_idx + 1;
+        assert_eq!(w.use_chart(slot, inv_idx), -5, "refuse, don't lie");
+        let bag_after = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32;
+        assert_eq!(bag_after, bag_before, "the chart survives the refusal");
+        assert_eq!(w.pending_exits.len(), 1, "no second departure was staged");
+    }
+
+    #[test]
+    fn a_chart_instance_lifts_level_and_juice() {
+        // #136 T4: the ticket becomes a world — area level 12 + tier, pack
+        // rarity juiced, drop quantity juiced, and the instance marked
+        // ephemeral. Mutation: drop any application in new_chart_instance →
+        // the matching assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let plain = World::new_for_zone(0x11, &content, "charted_shallows");
+        let w = World::new_chart_instance(
+            0x11,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 3,
+                rarity_bp: 2100,
+                quantity_bp: 1500,
+            },
+        );
+        assert_eq!(w.zone_level(), 15);
+        assert!(w.is_chart_instance() && !plain.is_chart_instance());
+        assert_eq!(w.loot_quantity_bp, 1500);
+        for (juiced, base) in w.zone.packs.iter().zip(plain.zone.packs.iter()) {
+            assert_eq!(juiced.def.magic_bp, base.def.magic_bp + 2100);
+            assert_eq!(juiced.def.rare_bp, base.def.rare_bp + 700);
+        }
+    }
+
+    #[test]
+    fn charts_are_cargo_not_gear() {
+        // #136 T4: a chart can never be worn — the manual path refuses and
+        // the auto path scores it below any real item. Mutation: drop either
+        // guard in inventory.rs → the matching assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xCA60, &content, "saltmere");
+        let slot = join_one(&mut w, "Porter");
+        let chart_base = content
+            .items
+            .iter()
+            .position(|d| d.chart_tier.is_some())
+            .unwrap() as u32;
+        let chart = crate::entity::Item {
+            base_idx: chart_base,
+            rarity: Rarity::Normal,
+            item_level: 13,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        assert_eq!(w.item_score(&chart), 0, "autos skip cargo");
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(chart),
+                x: 4,
+                y: 0,
+            });
+        }
+        let idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        let mut ev = Vec::new();
+        assert_eq!(w.equip(slot, idx, &mut ev), -1, "manual equip refuses");
+    }
+
+    #[test]
     fn the_mothers_fall_completes_act_1_with_real_content() {
         // #136 T3: the ACTUAL act boss — spawned from her shipped def — sets
         // the killer's act bit through the real kill path. Mutation: strip
@@ -2553,6 +2940,21 @@ mod area_level_tests {
             1,
             "act 1 belongs to the breaker"
         );
+        // The act boss ALWAYS pays a chart (#136 T4): the campaign's finish
+        // line hands you the endgame's key. Mutation: drop the act-boss arm
+        // of the chart drop in handle_kill → this fails.
+        assert!(
+            loot.iter().any(|(_, payload, ..)| matches!(
+                payload,
+                crate::entity::LootPayload::Gear(item)
+                    if self_content_chart(&content, item.base_idx)
+            )),
+            "the Mother's fall must drop a chart"
+        );
+    }
+
+    fn self_content_chart(content: &ContentDb, base_idx: u32) -> bool {
+        content.items[base_idx as usize].chart_tier.is_some()
     }
 
     #[test]

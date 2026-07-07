@@ -25,8 +25,8 @@ pub mod zone;
 pub use entity::{KIND_CHARACTER, KIND_LOOT, KIND_MONSTER, RARITY_COLORS, RARITY_NAMES, Rarity};
 pub use fixed::FX_SCALE;
 pub use world::{
-    CharacterBundle, EntityView, FOG_SIGHT_CELLS, JoinRequest, LOOT_DESPAWN_TICKS, RESPAWN_TICKS,
-    SimEvent, TICK_HZ, TickInputs, World, universal_stats,
+    CharacterBundle, ChartTicket, EntityView, FOG_SIGHT_CELLS, JoinRequest, LOOT_DESPAWN_TICKS,
+    RESPAWN_TICKS, SimEvent, TICK_HZ, TickInputs, World, universal_stats,
 };
 
 #[cfg(test)]

@@ -12,10 +12,14 @@ ZoneDef(
     spawn_radius_u: 3,
     camp_radius_u: 90,      // the whole town is sanctuary
     tileset: Some("town"),
+    // The Charting Table (#136 T4): where charts become voyages, once the
+    // Mother falls. On the plaza, by the south road.
+    chart_table: Some((26, 46)),
     brain: Some("saltmere"),
     lines: [
         (id: "welcome",  text: "Saltmere. Fires that stay lit. Faces that stay alive."),
         (id: "announce", text: "Another wretch crests the bluff. The camp counts one more."),
+        (id: "table", text: "The Charting Table. Salt-stained maps of water no living sailor drew."),
     ],
     packs: [
         // Townsfolk: non-hostile bots with errands and opinions.

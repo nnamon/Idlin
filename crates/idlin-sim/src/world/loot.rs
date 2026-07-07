@@ -99,6 +99,8 @@ impl World {
             .and_then(|e| e.combat.as_ref())
             .map(|c| (c.item_quantity.max(0), c.item_rarity.max(0)))
             .unwrap_or((10000, 10000));
+        // Chart juice (#136 T4): the instance's rolled quantity bonus.
+        quantity += self.loot_quantity_bp;
         match monster_rarity {
             Rarity::Magic => {
                 quantity += 3000;
@@ -143,6 +145,30 @@ impl World {
             drops.push(payload);
         }
         drops
+    }
+
+    /// Roll a CHART (#136 T4): the endgame's own drop, never in the common
+    /// pool (its base has weight 0). Always Magic — 1-2 affixes off the
+    /// chart pool (quantity/rarity juice) — at the kill's item level, so
+    /// deeper waters chart deeper waters.
+    pub(super) fn roll_chart(&mut self, item_level: u32) -> Option<LootPayload> {
+        let base_idx = self
+            .content
+            .items
+            .iter()
+            .position(|d| d.chart_tier.is_some())? as u32;
+        let mut item = Item {
+            base_idx,
+            rarity: Rarity::Magic,
+            item_level,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+        };
+        let affix_count = 1 + self.rng_loot.next_range(2);
+        roll_affixes(&self.content, &mut self.rng_loot, &mut item, affix_count, 1);
+        item.name = compose_name(&self.content, &mut self.rng_loot, &item);
+        Some(LootPayload::Gear(item))
     }
 
     /// A weighted low-tier obol (tier ≤ 1) for trash compaction.

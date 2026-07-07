@@ -46,8 +46,8 @@ use idlin_vm::{
     SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_AILMENTS,
     SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY,
     SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO,
-    SYS_SOCKET_GEM, SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL,
-    SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
+    SYS_SOCKET_GEM, SYS_UNEQUIP, SYS_USE_CHART, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK,
+    SYS_USE_SKILL, SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
@@ -474,6 +474,15 @@ impl World {
                 }
                 n as i32
             }
+            // UseChart (#136 T4): consume a chart from the bag at the Charting
+            // Table and sail. 0 = departing this tick; -1 bad index / not a
+            // chart; -2 not at a table; -3 Act 1 incomplete (the sea is sealed
+            // until the Mother falls); -4 not a character; -5 a departure is
+            // already staged this tick (the chart is NOT consumed).
+            SYS_USE_CHART => {
+                let inv_sel = bot.vm.pop();
+                self.use_chart(slot, inv_sel)
+            }
             SYS_USE_CURRENCY => {
                 let currency_sel = bot.vm.pop();
                 let inv_sel = bot.vm.pop();
@@ -588,8 +597,8 @@ impl World {
                 }
                 match dest {
                     Some(dest) => {
-                        if !self.pending_exits.iter().any(|(n, _)| *n == net) {
-                            self.pending_exits.push((net, dest));
+                        if !self.pending_exits.iter().any(|(n, ..)| *n == net) {
+                            self.pending_exits.push((net, dest, None));
                         }
                         0
                     }

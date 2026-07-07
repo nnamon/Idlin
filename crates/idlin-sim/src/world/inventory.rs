@@ -529,6 +529,15 @@ impl World {
         let Some(gear) = ch.inventory.get(inv_idx).and_then(|p| p.item.as_gear()) else {
             return -1; // out of range, or the bag slot is a gem
         };
+        // Charts are CARGO, not gear (#136 T4): they ride the bag and spend
+        // at the Charting Table; wearing one is refused here (manual) and
+        // scored to zero in item_score (autos).
+        if self.content.items[gear.base_idx as usize]
+            .chart_tier
+            .is_some()
+        {
+            return -1;
+        }
         let islot = self.content.items[gear.base_idx as usize].slot;
         // Land on the first FREE loop of the item's slot family (flasks and
         // rings own two), else its primary — single-slot families collapse to
@@ -688,6 +697,13 @@ impl World {
     /// own affixes over its own bases. Bots with opinions can do better.
     /// `pub(crate)` for the conditional-scoring regression test.
     pub(crate) fn item_score(&self, item: &Item) -> i64 {
+        // Charts never score as wearable gear (#136 T4).
+        if self.content.items[item.base_idx as usize]
+            .chart_tier
+            .is_some()
+        {
+            return 0;
+        }
         let def = &self.content.items[item.base_idx as usize];
         // Evaluate conditional affixes against the CANDIDATE's own context so a
         // gated mod is scored only when it would actually fire on this item (#86):

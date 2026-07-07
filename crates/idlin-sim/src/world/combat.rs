@@ -2069,7 +2069,23 @@ impl World {
                 // Loot (personal: owned by the killer): quantity first,
                 // then per-drop rarity — both the killer's stats. Multiple
                 // drops scatter a little so pillars don't stack.
-                for payload in self.roll_kill_drops_juiced(monster_level, attacker_slot, m_rarity) {
+                // Charts drop (#136 T4) from exactly two hands: an ACT BOSS
+                // always pays one (the campaign's finish line hands you the
+                // endgame's key), and charted waters sustain themselves at 4%
+                // a kill. ilvl = the kill's level, so tiers ladder naturally.
+                let chart_due = attacker_is_char
+                    && (act_boss.is_some()
+                        || (self.is_chart_instance && self.rng_loot.next_range(10000) < 400));
+                let chart_drop = if chart_due {
+                    self.roll_chart(monster_level)
+                } else {
+                    None
+                };
+                for payload in chart_drop.into_iter().chain(self.roll_kill_drops_juiced(
+                    monster_level,
+                    attacker_slot,
+                    m_rarity,
+                )) {
                     let dx = self.rng_loot.next_range(120) as i32 - 60;
                     let dy = self.rng_loot.next_range(120) as i32 - 60;
                     let pos = FxV2::new(
