@@ -666,6 +666,13 @@ impl World {
                     has_strike |= fold_and_collect(&mut sheet, &g, &ctx, &mut target_grants);
                 }
             }
+            // A unique's FIXED mods (#136 T5) fold exactly like rolled
+            // affixes — same chokepoint, same conditional machinery.
+            if let Some(u) = item.unique_idx {
+                for g in &self.content.uniques[u as usize].mods {
+                    has_strike |= fold_and_collect(&mut sheet, g, &ctx, &mut target_grants);
+                }
+            }
             if i == GearSlot::Weapon.idx() {
                 weapon = Some(item);
             } else {

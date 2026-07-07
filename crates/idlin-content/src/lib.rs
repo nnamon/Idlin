@@ -95,6 +95,8 @@ pub enum ContentError {
     BadMap { zone: String, msg: String },
     #[error("monster `{monster}`: {msg}")]
     BadMonster { monster: String, msg: String },
+    #[error("unique `{unique}`: {msg}")]
+    BadUnique { unique: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
     #[error("the committed id registry `ids.ron` is malformed: {msg}")]
@@ -191,6 +193,27 @@ pub struct MonsterSkillDef {
     pub level: u32,
     #[serde(default)]
     pub supports: Vec<MonsterGemRef>,
+}
+
+/// A SIGNATURE UNIQUE (#136 T5 / #6): a named item with a FIXED mod set on
+/// an existing base, bound to the boss that pays it. Uniques never roll —
+/// their identity IS the mods; the same `Grant` shape as monster passives
+/// and tree nodes, folded at the same gear chokepoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UniqueDef {
+    pub id: String,
+    pub name: String,
+    /// The ItemDef id this unique is built on (validated at load).
+    pub base: String,
+    /// One line of voice for the tooltip.
+    #[serde(default)]
+    pub lore: String,
+    /// The fixed mods — every one folds like a gear affix grant.
+    pub mods: Vec<Grant>,
+    /// The monster def that pays this unique (validated at load)…
+    pub drop_from: String,
+    /// …at this chance per character kill, in basis points.
+    pub drop_bp: u32,
 }
 
 /// A monster archetype. `model` picks the client-side visual; `brain` picks
@@ -1313,6 +1336,7 @@ pub struct ContentDb {
     pub monsters: Vec<MonsterDef>,
     /// Sorted by id.
     pub zones: Vec<ZoneDef>,
+    pub uniques: Vec<UniqueDef>,
     /// Sorted by id.
     pub brains: Vec<BrainDef>,
     /// Sorted by id.
@@ -1891,6 +1915,9 @@ impl ContentDb {
             } else if rel_str.starts_with("tilesets/") {
                 db.tilesets
                     .push(ron::from_str::<TilesetDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("uniques/") {
+                db.uniques
+                    .push(ron::from_str::<UniqueDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("gems/") {
                 db.gems
                     .push(ron::from_str::<GemDef>(&text).map_err(parse_err)?);
@@ -1970,6 +1997,7 @@ impl ContentDb {
             }
         }
         db.affixes.sort_by(|a, b| a.id.cmp(&b.id));
+        db.uniques.sort_by(|a, b| a.id.cmp(&b.id));
         for w in db.affixes.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
@@ -2098,6 +2126,52 @@ impl ContentDb {
                     path: "gems/".into(),
                     id: w[0].id.clone(),
                 });
+            }
+        }
+        // Uniques (#136 T5): the base and the paying boss must exist; every
+        // fixed mod obeys the same grant rules as affixes/passives/buffs.
+        for u in &db.uniques {
+            if !db.items.iter().any(|i| i.id == u.base) {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("base `{}` does not exist", u.base),
+                });
+            }
+            if !db.monsters.iter().any(|m| m.id == u.drop_from) {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("drop_from `{}` does not exist", u.drop_from),
+                });
+            }
+            if u.drop_bp == 0 || u.drop_bp > 10000 {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("drop_bp {} out of (0, 10000]", u.drop_bp),
+                });
+            }
+            if u.mods.is_empty() {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: "a unique with no mods is a normal item".into(),
+                });
+            }
+            for g in &u.mods {
+                if is_conditional_attribute(g.stat, &g.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("unique `{}`", u.id),
+                    });
+                }
+                if let Some(bp) = invalid_condition_threshold(&g.condition) {
+                    return Err(ContentError::BadConditionThreshold {
+                        at: format!("unique `{}`", u.id),
+                        bp,
+                    });
+                }
+                if unsupported_target_grant(g.stat, g.layer, &g.condition) {
+                    return Err(ContentError::UnsupportedTargetGrant {
+                        at: format!("unique `{}`", u.id),
+                    });
+                }
             }
         }
         // A gem buff/debuff grant feeds the same conditional-grant fold as
@@ -3771,6 +3845,71 @@ mod tests {
         affix_pools: [],
         passives: [GRANT],
     )"#;
+
+    #[test]
+    fn malformed_uniques_are_rejected() {
+        // #136 T5: a unique's base and paying boss must exist, the chance
+        // must be a real chance, and an empty mod list is a normal item
+        // wearing a name. Mutation: drop any of the four guards → its probe
+        // loads clean.
+        const ITEM_PROBE: &str =
+            r#"ItemDef(id: "probe_blade", name: "Probe Blade", slot: weapon, w: 1, h: 2)"#;
+        const MON_PROBE: &str = r#"MonsterDef(
+            id: "probe_boss", public: false, name: "Probe Boss",
+            model: "x", brain: "mobbrain", hostile: true, level: 1,
+            life: 50, damage: 5, speed_cps: 100, radius_cu: 80, range_cu: 200,
+            use_ticks: 16, aggro_radius_cu: 1000, xp: 10, projectile: false,
+            affix_pools: [],
+        )"#;
+        let unique = |base: &str, from: &str, bp: u32, mods: &str| {
+            format!(
+                r#"UniqueDef(id: "probe_u", name: "Probe", base: "{base}", mods: [{mods}], drop_from: "{from}", drop_bp: {bp})"#
+            )
+        };
+        let ok_mod = "(stat: life, layer: added, value: 5)";
+        let cases = [
+            (unique("nope", "probe_boss", 500, ok_mod), "base `nope`"),
+            (
+                unique("probe_blade", "nope", 500, ok_mod),
+                "drop_from `nope`",
+            ),
+            (unique("probe_blade", "probe_boss", 0, ok_mod), "drop_bp 0"),
+            (unique("probe_blade", "probe_boss", 500, ""), "no mods"),
+        ];
+        for (probe, why) in cases {
+            let tc = TempContent::new(
+                "unique_probe",
+                &[
+                    ("brains/mobbrain.bot", "fn main() {}"),
+                    ("items/probe_blade.ron", ITEM_PROBE),
+                    ("monsters/probe_boss.ron", MON_PROBE),
+                    ("uniques/probe_u.ron", probe.as_str()),
+                ],
+            );
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::BadUnique { unique, .. }) => {
+                    assert_eq!(unique, "probe_u", "case: {why}");
+                }
+                other => panic!("expected BadUnique for {why}, got {other:?}"),
+            }
+        }
+        // And the happy probe loads.
+        let tc = TempContent::new(
+            "unique_probe_ok",
+            &[
+                ("brains/mobbrain.bot", "fn main() {}"),
+                ("items/probe_blade.ron", ITEM_PROBE),
+                ("monsters/probe_boss.ron", MON_PROBE),
+                (
+                    "uniques/probe_u.ron",
+                    unique("probe_blade", "probe_boss", 500, ok_mod).as_str(),
+                ),
+            ],
+        );
+        let db = ContentDb::load(&tc.0).expect("a well-formed unique loads");
+        assert_eq!(db.uniques.len(), 1);
+        assert_eq!(db.uniques[0].name, "Probe");
+    }
 
     #[test]
     fn malformed_act_metadata_is_rejected() {

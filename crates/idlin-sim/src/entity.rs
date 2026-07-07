@@ -266,6 +266,11 @@ pub struct Item {
     /// flask_charges; kills refill while equipped).
     #[serde(default)]
     pub charges: u32,
+    /// A SIGNATURE UNIQUE (#136 T5): index into ContentDb::uniques. The
+    /// def's fixed mods fold at the gear chokepoint; `affixes` stays empty.
+    /// Serialized (snapshot v17) and hashed — identity is state.
+    #[serde(default)]
+    pub unique_idx: Option<u32>,
 }
 
 /// What occupies a bag cell: gear, or — since #54 PR2b — a 1×1 gem. Gems
@@ -576,6 +581,7 @@ mod tests {
             ],
             name: "Test".into(),
             charges: 0,
+            unique_idx: None,
         };
         let bytes = postcard::to_allocvec(&item).expect("serialize");
         let back: Item = postcard::from_bytes(&bytes).expect("deserialize");

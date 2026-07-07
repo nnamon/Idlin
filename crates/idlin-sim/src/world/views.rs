@@ -256,6 +256,21 @@ impl World {
                     }
                 }
             }
+            // Unique fixed mods (#136 T5) surface under the item's name too.
+            if let Some(u) = it.unique_idx {
+                for g in &self.content.uniques[u as usize].mods {
+                    if g.condition
+                        .is_none_or(|c| !c.is_strike_time() && c.holds(&ctx))
+                    {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            name.clone(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
         }
         for &node_idx in &ch.allocated {
             if let Some(node) = self.content.tree.get(node_idx as usize) {
@@ -608,6 +623,7 @@ impl World {
             // kill); the rolled tier feeds equip requirements and bot-visible
             // ReadItemMods. Both steer future behavior, so both are hashed.
             h.write_u32(item.charges);
+            h.write_u32(item.unique_idx.map_or(u32::MAX, |u| u + 1));
             h.write_u64(item.affixes.len() as u64);
             for ra in &item.affixes {
                 h.write_u32(ra.affix_idx);

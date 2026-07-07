@@ -10,6 +10,14 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T5 (signature uniques): content_hash-ONLY (the four
+/// UniqueDef files) — empirically isolated by the critic at the pre-review
+/// pin: deleting the four .ron files reverted the digest to exactly the T4
+/// pin. The code changes are inert in THIS replay: the tidewarden kill's
+/// extra signature roll only shifts loot that has despawned by the hashed
+/// tick (and rng state is not hashed), and no item with a unique_idx exists
+/// here — the widening and the drop hook are pinned by their own unit
+/// tests, not by this digest. (Prior: 0xD1BB — T4.)
 /// Re-pinned for #136 T4 (charts): content_hash + a fingerprint widening.
 /// Content: the Salt-Stained Chart base, the chart affix pool (of_plenty /
 /// of_shoals), the Charted Shallows map zone, and Saltmere's chart_table
@@ -126,7 +134,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0xD1BB_529F_850E_50F1;
+const GOLDEN_HASH: u64 = 0x2536_42B8_E37D_ECC3;
 
 #[test]
 fn golden_replay() {

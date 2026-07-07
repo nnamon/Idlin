@@ -723,6 +723,15 @@ impl World {
                 crate::world::progression::apply_conditional(&mut sheet, &g, &ctx);
             }
         }
+        // A signature unique's FIXED mods score like rolled affixes (#136
+        // T5 review): without this, a unique's empty affix list made it
+        // score as a bare base — bots equipped any magic item over it and
+        // the feature was dead content for its only wearers.
+        if let Some(u) = item.unique_idx {
+            for g in &self.content.uniques[u as usize].mods {
+                crate::world::progression::apply_conditional(&mut sheet, g, &ctx);
+            }
+        }
         if def.slot == GearSlot::Flask {
             // Bigger heals win; charges are state, not quality.
             return def.flask_heal;

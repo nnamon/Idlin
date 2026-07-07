@@ -2081,11 +2081,29 @@ impl World {
                 } else {
                     None
                 };
-                for payload in chart_drop.into_iter().chain(self.roll_kill_drops_juiced(
-                    monster_level,
-                    attacker_slot,
-                    m_rarity,
-                )) {
+                // Signature uniques (#136 T5): each boss may pay their
+                // named item — a fixed-identity mint, chance from the def.
+                // Deterministic order: uniques are id-sorted at load, and
+                // every candidate consumes exactly one roll. Rolls are
+                // independent BY DESIGN: a boss with two signatures can pay
+                // both on one kill (~0.8% for the Mother) — a jackpot, not
+                // a bug.
+                let mut unique_drops: Vec<LootPayload> = Vec::new();
+                if attacker_is_char {
+                    let monster_id = &self.content.monsters[def_idx as usize].id;
+                    for ui in 0..self.content.uniques.len() {
+                        if self.content.uniques[ui].drop_from == *monster_id
+                            && self.rng_loot.next_range(10000) < self.content.uniques[ui].drop_bp
+                        {
+                            unique_drops.push(self.mint_unique(ui as u32, monster_level));
+                        }
+                    }
+                }
+                for payload in chart_drop
+                    .into_iter()
+                    .chain(unique_drops)
+                    .chain(self.roll_kill_drops_juiced(monster_level, attacker_slot, m_rarity))
+                {
                     let dx = self.rng_loot.next_range(120) as i32 - 60;
                     let dy = self.rng_loot.next_range(120) as i32 - 60;
                     let pos = FxV2::new(
@@ -2597,6 +2615,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         let c = e.combat.as_mut().unwrap();
@@ -2689,6 +2708,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -2773,6 +2793,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -2833,6 +2854,7 @@ mod tests {
                 affixes: vec![ra],
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         };
 
@@ -2916,6 +2938,7 @@ mod tests {
             affixes: vec![],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         let str_ring = Item {
             base_idx: coral,
@@ -2928,6 +2951,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         // phys damage with `weapon` equipped, optionally with a +100 STR ring.
         let phys = |world: &mut World, weapon: u32, with_str: bool| -> i64 {
@@ -3002,6 +3026,7 @@ mod tests {
             },
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         assert!(
             world.item_score(&item(cleaver, true)) > world.item_score(&item(cleaver, false)),
@@ -3068,6 +3093,7 @@ mod tests {
                     affixes,
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             }
             world.refresh_derived_stats(slot);
@@ -3143,6 +3169,7 @@ mod tests {
                 }],
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         world.refresh_derived_stats(slot);
@@ -3239,6 +3266,7 @@ mod tests {
                 }],
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         world.refresh_derived_stats(slot);
@@ -3385,6 +3413,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             }
             world.refresh_derived_stats(aslot);
@@ -4615,6 +4644,7 @@ mod tests {
                 }],
                 name: "Probe".into(),
                 charges,
+                unique_idx: None,
             };
             world
                 .zone
@@ -4740,6 +4770,7 @@ mod tests {
                         ],
                         name: "Probe".into(),
                         charges: 0,
+                        unique_idx: None,
                     });
                     ch.allocated.push(str_node); // tree source
                 }
@@ -4828,6 +4859,7 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             e.combat.as_mut().unwrap().mana = 100;
         };
@@ -5327,6 +5359,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             }
             world.refresh_derived_stats(aslot);
@@ -6045,6 +6078,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         let bow = base("driftwood_bow"); // two_handed
         let buckler = base("driftwood_buckler"); // offhand
@@ -6144,6 +6178,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         let plain = |id: &str| Item {
             base_idx: base(id),
@@ -6152,6 +6187,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         // Push a bag item and return its index (robust to any starter bag).
         let stash = |world: &mut World, item: Item| -> i32 {
@@ -6283,6 +6319,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6348,6 +6385,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6427,6 +6465,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6514,6 +6553,7 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -6831,6 +6871,7 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 5,
                 y: 0,
@@ -6892,6 +6933,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         };
         wear_cleaver(&mut world);
@@ -7005,6 +7047,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -7096,6 +7139,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         let recs = world.equipment_records(slot, crate::entity::GEAR_SLOTS);

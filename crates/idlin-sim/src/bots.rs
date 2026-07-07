@@ -1040,6 +1040,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();

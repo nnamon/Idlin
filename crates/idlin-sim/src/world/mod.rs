@@ -819,6 +819,18 @@ impl World {
         content: &ContentDb,
         item: &crate::entity::Item,
     ) -> Option<String> {
+        // A unique_idx must index content.uniques (#136 T5) — the same
+        // fail-closed defense rolled affixes get. content_hash gating makes
+        // an out-of-range index near-impossible (any content change refuses
+        // the snapshot), but a fold panic is not an acceptable failure mode.
+        if let Some(u) = item.unique_idx
+            && u as usize >= content.uniques.len()
+        {
+            return Some(format!(
+                "unique_idx {u} out of range ({} uniques)",
+                content.uniques.len()
+            ));
+        }
         item.affixes.iter().find_map(|ra| {
             content
                 .check_rolled_affix(ra.affix_idx, ra.values.len(), ra.tier)
@@ -2628,6 +2640,184 @@ mod area_level_tests {
     }
 
     #[test]
+    fn a_signature_unique_folds_its_fixed_mods() {
+        // #136 T5: wearing Tideclaw moves the sheet exactly like gear affixes
+        // — cold on the swing, faster swings — through the SAME chokepoint.
+        // Mutation: drop the unique fold in progression.rs → both deltas
+        // vanish and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x517E, &content, "saltmere");
+        let slot = join_one(&mut w, "Bearer");
+        let cold_before = w.effective_offense(slot).unwrap().damage[crate::entity::DMG_COLD];
+        let ui = content
+            .uniques
+            .iter()
+            .position(|u| u.id == "tideclaw")
+            .unwrap() as u32;
+        let tideclaw = match w.mint_unique(ui, 8) {
+            crate::entity::LootPayload::Gear(item) => item,
+            other => panic!("a unique mints as gear: {other:?}"),
+        };
+        assert_eq!(tideclaw.name, "Tideclaw");
+        assert_eq!(tideclaw.rarity, Rarity::Unique);
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(tideclaw);
+        }
+        w.refresh_derived_stats(slot);
+        let cold_after = w.effective_offense(slot).unwrap().damage[crate::entity::DMG_COLD];
+        assert!(
+            cold_after >= cold_before + 8,
+            "the claw's cold folds ({cold_after} vs {cold_before})"
+        );
+        // And the sheet surfaces every fixed mod under the unique's name —
+        // the inspect panel's data path (#87 stat_sources).
+        let net = w.zone.get(slot).unwrap().net_id;
+        let sheet = w.character_sheet(net).unwrap();
+        let claw_mods: Vec<&str> = sheet
+            .stat_sources
+            .iter()
+            .filter(|(_, src, ..)| src.starts_with("Tideclaw"))
+            .map(|(stat, ..)| stat.as_str())
+            .collect();
+        assert!(
+            claw_mods.contains(&"attack_speed") && claw_mods.contains(&"chill_chance"),
+            "the claw's mods surface by name; got {claw_mods:?}"
+        );
+    }
+
+    #[test]
+    fn a_boss_pays_their_signature_when_the_roll_hits() {
+        // #136 T5: the drop hook, end to end, with the chance forced certain
+        // (drop_bp -> 10000 on the loaded db — a content probe, not a code
+        // fork). Mutation: drop the unique arm in handle_kill → no unique in
+        // the loot and this fails.
+        let mut content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        for u in &mut content.uniques {
+            if u.id == "tideclaw" {
+                u.drop_bp = 10000;
+            }
+        }
+        let mut w = World::new(0xD809, &content);
+        let slot = join_one(&mut w, "Slayer");
+        let anet = w.zone.get(slot).unwrap().net_id;
+        let warden = content.monster_idx("tidewarden").unwrap() as u32;
+        w.spawn_monster_rolled(
+            warden,
+            0,
+            FxV2::new(Fx::from_int(20), Fx::from_int(20)),
+            Rarity::Unique,
+            vec![],
+            "The Tidewarden".into(),
+        );
+        let mslot = w
+            .zone
+            .iter()
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| m.def_idx == warden && e.alive())
+            })
+            .map(|(s, _)| s)
+            .unwrap();
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 100_000_000;
+        let spec = combat::StrikeSpec {
+            attacker_slot: Some(slot),
+            attacker_net: anet,
+            attacker_name: "Slayer".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: true,
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        let now = w.tick;
+        w.strike(spec, mslot, now, &mut ev, &mut dead, &mut loot);
+        assert!(
+            loot.iter().any(|(_, payload, ..)| matches!(
+                payload,
+                crate::entity::LootPayload::Gear(item)
+                    if item.unique_idx.is_some() && item.name == "Tideclaw"
+            )),
+            "the warden must pay Tideclaw at 100%"
+        );
+    }
+
+    #[test]
+    fn a_unique_outscores_its_bare_base() {
+        // #136 T5 review (B2): item_score must SEE a unique's fixed mods —
+        // without the fold, a unique scored as its bare base and equip_best
+        // replaced signatures with any magic item (dead content for bots).
+        // Mutation: drop the unique arm in item_score → equal scores, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let w = World::new_for_zone(0x5C03, &content, "saltmere");
+        let ui = content
+            .uniques
+            .iter()
+            .position(|u| u.id == "tideclaw")
+            .unwrap() as u32;
+        let claw = match w.mint_unique(ui, 8) {
+            crate::entity::LootPayload::Gear(item) => item,
+            _ => unreachable!(),
+        };
+        let mut bare = claw.clone();
+        bare.unique_idx = None;
+        bare.rarity = Rarity::Normal;
+        assert!(
+            w.item_score(&claw) > w.item_score(&bare),
+            "the claw's mods must count ({} vs {})",
+            w.item_score(&claw),
+            w.item_score(&bare)
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_unique_identity() {
+        // #136 T5: two otherwise-identical worn items differing only in
+        // unique_idx must hash apart — identity is state. Mutation: drop the
+        // unique_idx write in views.rs → identical digests.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xF1D0, &content, "saltmere");
+        let slot = join_one(&mut w, "Twin");
+        let ui = content
+            .uniques
+            .iter()
+            .position(|u| u.id == "tideclaw")
+            .unwrap() as u32;
+        let item = match w.mint_unique(ui, 8) {
+            crate::entity::LootPayload::Gear(item) => item,
+            _ => unreachable!(),
+        };
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(item);
+        }
+        let h1 = w.state_hash();
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .equipment[idlin_content::GearSlot::Weapon.idx()]
+        .as_mut()
+        .unwrap()
+        .unique_idx = None;
+        assert_ne!(h1, w.state_hash(), "unique identity must move the digest");
+    }
+
+    #[test]
     fn use_chart_gates_consumes_and_stages_the_voyage() {
         // #136 T4: the full syscall contract at Saltmere's real table —
         // -3 mid-campaign, -2 away from the table, -1 for a non-chart,
@@ -2674,6 +2864,7 @@ mod area_level_tests {
                     ],
                     name: "Test Chart".into(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -2761,6 +2952,7 @@ mod area_level_tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -2844,6 +3036,7 @@ mod area_level_tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         assert_eq!(w.item_score(&chart), 0, "autos skip cargo");
         {

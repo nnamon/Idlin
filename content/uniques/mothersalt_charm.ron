@@ -1,0 +1,16 @@
+// The Mother's first signature (#136 T5): a knot of salt that was once a
+// voice. Everything she is — storm, frost, endurance — hung at the throat.
+UniqueDef(
+    id: "mothersalt_charm",
+    name: "Mothersalt Charm",
+    base: "tidal_amulet",
+    lore: "Every tide is hers, coming back.",
+    mods: [
+        (stat: resist_cold, layer: added, value: 2000),
+        (stat: resist_lightning, layer: added, value: 2000),
+        (stat: energy_shield, layer: added, value: 25),
+        (stat: mana_regen, layer: increased, value: 3000),
+    ],
+    drop_from: "mother_of_the_drowned",
+    drop_bp: 900,
+)

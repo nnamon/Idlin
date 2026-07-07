@@ -1,0 +1,16 @@
+// Brinelord Karesh's signature (#136 T5): the overseer's shield-arm.
+// A wall that blocks, keeps you standing, and slowly crusts you whole.
+UniqueDef(
+    id: "pankeepers_wall",
+    name: "Pankeeper's Wall",
+    base: "driftwood_buckler",
+    lore: "Everything here keeps.",
+    mods: [
+        (stat: armour, layer: added, value: 60),
+        (stat: life, layer: added, value: 35),
+        (stat: poise, layer: increased, value: 3000),
+        (stat: life_regen, layer: added, value: 3),
+    ],
+    drop_from: "brinelord_karesh",
+    drop_bp: 1000,
+)

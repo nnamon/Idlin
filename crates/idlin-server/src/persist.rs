@@ -82,7 +82,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v16 (#136 charts): `CharacterBundle` gained `chart: Option<ChartTicket>` and `World`
 /// gained `loot_quantity_bp` / `chart_table` / `is_chart_instance` — all serialized; a v15
 /// snapshot would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 16;
+/// v17 (#136 uniques): `Item` gained `unique_idx: Option<u32>` — serialized; a v16 snapshot
+/// would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 17;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -340,6 +342,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         });
         let dir = temp_dir("bad-pending");
         save_managed(&world, &[b], &dir).expect("save");
@@ -482,7 +485,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 16);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 17);
     }
 
     #[test]

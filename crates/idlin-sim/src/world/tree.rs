@@ -296,6 +296,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         world.refresh_derived_stats(slot);
