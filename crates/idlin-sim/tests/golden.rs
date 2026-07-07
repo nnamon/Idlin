@@ -10,6 +10,13 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T2 (boss quality): the Tidewarden's def gains a PHASE
+/// KIT — three below-half-life passives (2x crit chance, +50% crit multi,
+/// +60% phys), chosen because the per-strike effective-offense path folds
+/// exactly the offensive subset (cast/attack speed would have been dead
+/// content — the pin test caught the first draft). content_hash moves AND
+/// the golden fight's course changes below 50%. The trio agrees.
+/// (Prior: 0x3722 — T1.)
 /// Re-pinned for #136 T1 (the campaign spine), two intentional moves:
 /// (1) content_hash — the Tidewarden's .ron gains `act_boss: Some(1)`; and
 /// (2) a FINGERPRINT widening — every exit's `requires_act` (the story seal)
@@ -102,7 +109,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x3722_6540_F13F_5E9C;
+const GOLDEN_HASH: u64 = 0x3A38_5ECC_3EB8_9A1A;
 
 #[test]
 fn golden_replay() {

@@ -4147,7 +4147,32 @@
         "model": "tidewarden",
         "name": "The Tidewarden",
         "num": 33554437,
-        "passives": [],
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "added",
+            "stat": "crit_multi",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 6000
+          }
+        ],
         "projectile": false,
         "radius_cu": 70,
         "range_cu": 200,

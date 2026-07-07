@@ -38,6 +38,17 @@ MonsterDef(
         "You crawled OUT? Crawl back.",
         "Every wreck on this shore is mine.",
     ],
+    // Phase kit (#136 T2): below half life the storm RISES. Strike-time
+    // conditions fold per-strike through the effective-offense path (#109/
+    // #125) for BOTH his spells and his swing, so the turn is real and
+    // visible: storms crit twice as often and half again as hard, and the
+    // colossus's fists land +60% (9 -> 14 phys). (Chosen to fold: only the
+    // offensive subset re-derives per strike — cast/attack speed would not.)
+    passives: [
+        (stat: crit_chance, layer: increased, value: 10000, condition: Some(below_life_pct(5000))),
+        (stat: crit_multi, layer: added, value: 5000, condition: Some(below_life_pct(5000))),
+        (stat: damage_phys, layer: increased, value: 6000, condition: Some(below_life_pct(5000))),
+    ],
     skills: [
         (gem: "arc", level: 3),
         (gem: "frost_nova", level: 3),

@@ -237,6 +237,19 @@ export class EntityVisual {
     if (isMonster && (rarity === 1 || rarity === 2)) {
       this.addOutline(inst.root, RARITY_COLORS_NUM[rarity]);
     }
+    // Uniques read as BOSSES (#136 T2): 1.6x presence via a WRAPPER group —
+    // the animation mixer stomps armature-node scales every frame (the same
+    // trap the asset pipeline hit), so scaling inst.root silently reverts;
+    // a parent the mixer never owns holds the scale. Stats are untouched;
+    // this is presentation, like the bar and the nameplate tint.
+    if (isMonster && rarity === 3) {
+      const podium = new THREE.Group();
+      podium.scale.multiplyScalar(1.6);
+      inst.root.removeFromParent();
+      podium.add(inst.root);
+      this.group.add(podium);
+      this.height *= 1.6;
+    }
   }
 
   /** Classic toon outline: back-face hulls pushed out along normals,

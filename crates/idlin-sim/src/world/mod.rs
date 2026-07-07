@@ -2482,6 +2482,49 @@ mod area_level_tests {
     }
 
     #[test]
+    fn the_tidewardens_storm_rises_below_half_life() {
+        // #136 T2: the boss PHASE is real, not lore — below 50% life the
+        // Tidewarden's kit (below_life_pct passives) folds in: double crit
+        // chance, +50% crit multi, +60% phys on his fists, through the same
+        // per-strike machinery as player gear. Mutation: strip the passives
+        // from tidewarden.ron (or break monster strike conditions) → wounded
+        // == healthy and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xB055, &content);
+        let warden = content.monster_idx("tidewarden").unwrap() as u32;
+        w.spawn_monster_rolled(
+            warden,
+            0,
+            FxV2::new(Fx::from_int(10), Fx::from_int(10)),
+            Rarity::Unique,
+            vec![],
+            "The Tidewarden".into(),
+        );
+        let slot = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some())
+            .map(|(s, _)| s)
+            .unwrap();
+        let offense = |w: &World, s: usize| {
+            let o = w.effective_offense(s).unwrap();
+            (o.damage[crate::entity::DMG_PHYS], o.crit_inc, o.crit_multi)
+        };
+        let (phys_hale, crit_hale, multi_hale) = offense(&w, slot);
+        {
+            let c = w.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            c.life = c.life_max * 4 / 10; // 40%: the storm rises
+        }
+        let (phys_low, crit_low, multi_low) = offense(&w, slot);
+        assert!(
+            phys_low > phys_hale,
+            "the colossus swings harder wounded ({phys_low} vs {phys_hale})"
+        );
+        assert_eq!(crit_low, crit_hale * 2, "storms crit twice as often");
+        assert_eq!(multi_low, multi_hale + 5000, "and half again as hard");
+    }
+
+    #[test]
     fn state_hash_fingerprints_exit_seals() {
         // #136: two worlds identical but for an exit's requires_act admit
         // different futures (one departs, one gets -3) — the seal must hash.

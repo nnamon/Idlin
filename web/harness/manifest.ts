@@ -163,6 +163,14 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 60_000,
   },
   {
+    // Boss quality (#136 T2): the scaled Tidewarden, its bar, and the gold
+    // first-sighted splash — the name appears in BOTH the bar and the splash.
+    name: "full-boss",
+    kind: "full",
+    expect: ["The Tidewarden"],
+    minBytes: 60_000,
+  },
+  {
     // Whole game view at extremes: low life, full ES, heavy reservation — the
     // "Reserved: 612" line proves the reserved band/readout renders.
     name: "full-bloodied",

@@ -904,6 +904,48 @@ const itemTooltip: Fixture = {
   },
 };
 
+/**
+ * Boss quality (#136 T2): the Tidewarden at 1.6x unique scale, the top-center
+ * boss bar, AND the first-sighted splash — visible deterministically because
+ * fixture.tsx pins `performance.now` to a constant IN THE PAGE before any
+ * message is applied, so the splash's 4s window can never age out in a shot.
+ * Eyeball: the colossus reads as a boss next to the idler; the gold name
+ * splash sits center-high; the bar tracks 70%.
+ */
+const fullBoss: Fixture = {
+  kind: "full",
+  label: "Boss quality (#136 T2): Tidewarden scale + boss bar + first-sighted splash",
+  status: LIVE_STATUS,
+  seed: 0x1d71c0de,
+  frames: 40,
+  camera: [31, 9, 36, 32.5, 1.6, 22.5],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Withered Shore",
+      entities: [
+        character({
+          id: 1,
+          name: "Brakka",
+          model: "idler",
+          level: 12,
+          weapon: "cleaver",
+          ...simXY(30, 22),
+        }),
+        monster({
+          id: 2,
+          name: "The Tidewarden",
+          model: "tidewarden",
+          level: 8,
+          life_pct: 70,
+          rarity: 3,
+          ...simXY(34, 23),
+        }),
+      ],
+    }),
+    directorCue(1, "the final exam"),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
@@ -917,6 +959,7 @@ export const FIXTURES: Record<string, Fixture> = {
   "skill-overflow": skillOverflow,
   globes,
   "full-shore": fullShore,
+  "full-boss": fullBoss,
   "full-bloodied": fullBloodied,
   "full-fresh": fullFresh,
   "idler-view": idlerView,

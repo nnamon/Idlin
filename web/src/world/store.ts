@@ -133,6 +133,13 @@ export class WorldStore {
   /** Bumps on every ZoneSnapshot: a snapshot is a FULL state reset, and
    *  the renderer must drop per-entity visuals (net ids are per-world). */
   snapshotGen = 0;
+  /** Boss first-sighted beat (#136 T2): set when a unique monster first
+   *  reaches the replicated set. With the fog wire filter (#129) that is
+   *  exactly the moment a resident first SEES it — the splash is earned.
+   *  Cleared only by the next sighting; the overlay ages it out itself. */
+  bossSighted: { name: string; at: number } | null = null;
+  private seenBosses = new Set<number>();
+  private lastWorldKey = "";
   ticker: TickerItem[] = [];
   pendingHits: ActiveHit[] = [];
   pendingProjectiles: ActiveProjectile[] = [];
@@ -171,6 +178,13 @@ export class WorldStore {
         this.tick = d.tick;
         this.renderTick = d.tick - PLAYOUT_DELAY_TICKS;
         this.snapshotGen++;
+        // A different world = different net-id space: forget sighted bosses
+        // (same-world resyncs keep them so a lag resync can't re-splash).
+        if (this.zone && this.zone.worldKey !== this.lastWorldKey) {
+          this.seenBosses.clear();
+          this.bossSighted = null;
+        }
+        this.lastWorldKey = this.zone?.worldKey ?? "";
         this.entities.clear();
         const now = performance.now();
         for (const e of d.entities) this.upsert(e, now);
@@ -432,6 +446,10 @@ export class WorldStore {
       existing.samples.push({ tick: this.tick, x, y });
       if (existing.samples.length > 10) existing.samples.shift();
     } else {
+      if (e.kind === "Monster" && e.rarity === 3 && !e.dead && !this.seenBosses.has(e.id)) {
+        this.seenBosses.add(e.id);
+        this.bossSighted = { name: e.name, at: performance.now() };
+      }
       this.entities.set(e.id, {
         state: e,
         prevX: x,

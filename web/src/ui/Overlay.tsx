@@ -255,6 +255,12 @@ export function Overlay({
 
   return (
     <ItemHoverContext.Provider value={setHover}>
+      {/* boss first-sighted splash (#136 T2): a named beat, center-high,
+          for 4s of wall time. No CSS animation — the capture harness needs
+          byte-stable pixels, so visibility is a pure timestamp check. */}
+      {store.bossSighted && performance.now() - store.bossSighted.at < 4000 && (
+        <div className="boss-sighted">{store.bossSighted.name}</div>
+      )}
       {/* top-center: boss life bars */}
       {bosses.length > 0 && (
         <div className="hud-boss">
