@@ -78,6 +78,9 @@ pub struct CharacterSheetView {
     pub es_max: i64,
     pub block: i64,
     pub kills: u64,
+    /// Campaign progress (#136 T7): bit N-1 = act N complete. The client's
+    /// act tracker reads this; the chart panel unlocks on bit 0.
+    pub story_acts: u32,
     pub damage: [i64; crate::entity::DMG_COUNT],
     pub accuracy: i64,
     pub evasion: i64,
@@ -323,6 +326,7 @@ impl World {
             es_max: c.es_max,
             block: c.block,
             kills: ch.kills,
+            story_acts: ch.story_acts,
             damage: c.damage,
             accuracy: c.accuracy,
             evasion: c.evasion,

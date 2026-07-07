@@ -138,6 +138,10 @@ export class WorldStore {
    *  exactly the moment a resident first SEES it — the splash is earned.
    *  Cleared only by the next sighting; the overlay ages it out itself. */
   bossSighted: { name: string; at: number } | null = null;
+  /** Zone title card (#136 T7): set when the view lands in a different
+   *  world — a director cut, a follow switch, or the first load. The
+   *  overlay shows the zone's name center-high for a few seconds. */
+  zoneSighted: { name: string; at: number } | null = null;
   private seenBosses = new Set<number>();
   private lastWorldKey = "";
   ticker: TickerItem[] = [];
@@ -183,6 +187,13 @@ export class WorldStore {
         if (this.zone && this.zone.worldKey !== this.lastWorldKey) {
           this.seenBosses.clear();
           this.bossSighted = null;
+          // The title card marks a CUT — world to different world. The
+          // initial ""→world transition is not a cut (the review found it
+          // stamping a permanent card into every HUD fixture): a fresh
+          // viewer gets the zone name from the top-left chip instead.
+          if (this.lastWorldKey !== "") {
+            this.zoneSighted = { name: this.zone.name, at: performance.now() };
+          }
         }
         this.lastWorldKey = this.zone?.worldKey ?? "";
         this.entities.clear();

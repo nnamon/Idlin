@@ -255,6 +255,11 @@ export function Overlay({
 
   return (
     <ItemHoverContext.Provider value={setHover}>
+      {/* zone title card (#136 T7): where you are, on every cut. Same
+          clock discipline as the boss splash (no CSS animation). */}
+      {store.zoneSighted && performance.now() - store.zoneSighted.at < 3000 && (
+        <div className="zone-title">{store.zoneSighted.name}</div>
+      )}
       {/* boss first-sighted splash (#136 T2): a named beat, center-high,
           for 4s of wall time. No CSS animation — the capture harness needs
           byte-stable pixels, so visibility is a pure timestamp check. */}
@@ -314,6 +319,10 @@ export function Overlay({
             </span>
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
+              {/* the campaign chip (#136 T7): act state at a glance — and
+                  once the Mother falls, the chart count doubles as the
+                  endgame's ticket stub. */}
+              {sheet && <ActChip sheet={sheet} />}
             </div>
             <LifeBar pct={focused.state.life_pct} dead={focused.state.dead} />
             <div style={{ fontSize: 12.5, color: "#ab9d7a" }}>
@@ -541,6 +550,26 @@ function SlotBox({
       )}
     </div>
   );
+}
+
+/** The campaign chip (#136 T7): act state at a glance — and once the
+ *  Mother falls, the chart count doubles as the endgame's ticket stub. */
+function ActChip({ sheet }: { sheet: CharacterSheet }) {
+  const done = (sheet.story_acts & 1) !== 0;
+  if (!done) return <span className="act-chip">act 1</span>;
+  const n = chartCount(sheet);
+  return (
+    <span className="act-chip done">
+      act 1 done · {n} chart{n === 1 ? "" : "s"}
+    </span>
+  );
+}
+
+// Charts count by the base's stable tagged num (RFC #54) — names are
+// display, nums are identity. (salt_stained_chart, seq 13 in ids.ron.)
+const ITEM_SALT_STAINED_CHART = 16777229;
+function chartCount(sheet: CharacterSheet): number {
+  return sheet.inventory.filter((r) => r.base_num === ITEM_SALT_STAINED_CHART).length;
 }
 
 /** The bag: a dark 12×5 vault; items are art spanning their footprint. */

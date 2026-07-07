@@ -171,6 +171,14 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 60_000,
   },
   {
+    // Campaign UI (#136 T7): the zone title card + the act-done chip with
+    // the chart count ("act 1 done · 1 chart") + the named chart in the bag.
+    name: "full-campaign",
+    kind: "full",
+    expect: ["The Charted Shallows", "act 1 done"],
+    minBytes: 60_000,
+  },
+  {
     // Whole game view at extremes: low life, full ES, heavy reservation — the
     // "Reserved: 612" line proves the reserved band/readout renders.
     name: "full-bloodied",

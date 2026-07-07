@@ -600,6 +600,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         mana_reserved: 0,
         block_bp: clamp_i32(v.block),
         kills: v.kills.min(u32::MAX as u64) as u32,
+        story_acts: v.story_acts,
         dmg_phys: clamp_i32(v.damage[0]),
         dmg_fire: clamp_i32(v.damage[1]),
         dmg_cold: clamp_i32(v.damage[2]),

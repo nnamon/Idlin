@@ -93,6 +93,7 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
     mana_reserved: 0,
     block_bp: 0,
     kills: 0,
+    story_acts: 0,
     dmg_phys: 0,
     dmg_fire: 0,
     dmg_cold: 0,

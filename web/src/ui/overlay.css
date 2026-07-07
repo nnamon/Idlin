@@ -768,3 +768,34 @@
   pointer-events: none;
   text-transform: uppercase;
 }
+
+/* Zone title card (#136 T7): where you are, on every cut. Static styling
+   (byte-stable captures); the age-out is a JS timestamp check. */
+.zone-title {
+  position: absolute;
+  top: 16%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 26px;
+  letter-spacing: 0.22em;
+  color: #d8d2c4;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+/* The campaign chip (#136 T7): act state on the inspect panel. */
+.act-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 11px;
+  border: 1px solid #6b5a33;
+  border-radius: 3px;
+  color: #d9b25f;
+}
+.act-chip.done {
+  border-color: #3f6b4a;
+  color: #7fd693;
+}

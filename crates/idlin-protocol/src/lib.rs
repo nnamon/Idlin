@@ -23,7 +23,7 @@ use ts_rs::TS;
 //     tiles (unexplored glyphs blanked to ' ', props/exits/gates filtered by
 //     what the world's residents have explored).
 // 41: GameEvent gains ActCompleted (#136 campaign spine).
-pub const PROTO_VERSION: u32 = 41;
+pub const PROTO_VERSION: u32 = 42;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -560,6 +560,9 @@ pub struct CharacterSheet {
     /// Basis points chance to block (0 without a shield).
     pub block_bp: i32,
     pub kills: u32,
+    /// Campaign progress (#136 T7): bit N-1 = act N complete (bit 0 = Act 1 —
+    /// the chart endgame's key). The act tracker and chart panel read this.
+    pub story_acts: u32,
     pub dmg_phys: i32,
     pub dmg_fire: i32,
     pub dmg_cold: i32,
@@ -864,6 +867,7 @@ mod tests {
                 mana_reserved: 40,
                 block_bp: 0,
                 kills: 0,
+                story_acts: 1,
                 dmg_phys: 0,
                 dmg_fire: 0,
                 dmg_cold: 0,
@@ -972,6 +976,7 @@ mod tests {
         assert_eq!(sheet.skills[0].xp, 120, "gem xp survives the wire");
         assert_eq!(sheet.skills[0].xp_next, 400);
         assert_eq!(sheet.skills[0].supports[0].name, "Added Lightning");
+        assert_eq!(sheet.story_acts, 1, "campaign progress survives the wire");
         assert_eq!(sheet.life_reserved, 25, "reserved life survives the wire");
         assert_eq!(sheet.mana_reserved, 40, "reserved mana survives the wire");
         assert_eq!(

@@ -946,6 +946,79 @@ const fullBoss: Fixture = {
   ],
 };
 
+/**
+ * Campaign UI (#136 T7): the zone title card (fires on the fixture's own
+ * snapshot cut — frozen clock keeps it up), the act-done chip with the
+ * chart count on the focus panel, and a Salt-Stained Chart in the bag.
+ * Eyeball: "THE CHARTED SHALLOWS" center-high; the green "act 1 done ·
+ * 1 chart" chip beside the level line.
+ */
+const fullCampaign: Fixture = {
+  kind: "full",
+  label: "Campaign UI (#136 T7): zone title card + act chip + chart in bag",
+  status: LIVE_STATUS,
+  seed: 0x7c1d5,
+  frames: 40,
+  camera: [25, 9, 30, 26.5, 1.6, 16.5],
+  messages: [
+    // The title card marks a CUT — so the fixture cuts: town first, then
+    // the voyage (the initial ""→world load deliberately never splashes).
+    zoneSnapshot({
+      zone_name: "Saltmere",
+      world_key: "saltmere",
+      entities: [],
+    }),
+    zoneSnapshot({
+      zone_name: "The Charted Shallows",
+      world_key: "charted_shallows#Brakka@41",
+      entities: [
+        character({
+          id: 1,
+          name: "Brakka",
+          model: "idler",
+          level: 16,
+          weapon: "cleaver",
+          ...simXY(24, 18),
+        }),
+        monster({
+          id: 2,
+          name: "Deep Chanter",
+          model: "husk",
+          level: 13,
+          life_pct: 100,
+          rarity: 1,
+          ...simXY(28, 15),
+        }),
+      ],
+    }),
+    {
+      type: "CharacterSheet",
+      data: {
+        sheet: sheet({
+          id: 1,
+          name: "Brakka",
+          level: 16,
+          story_acts: 1,
+          inventory: [
+            {
+              name: "Seething Salt-Stained Chart of Bounty",
+              rarity: 1,
+              x: 0,
+              y: 0,
+              w: 2,
+              h: 2,
+              base_num: 16777229,
+              item_level: 13,
+              mods: [],
+            },
+          ],
+        }),
+      },
+    } as S2C,
+    directorCue(1, "the charted waters"),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
@@ -960,6 +1033,7 @@ export const FIXTURES: Record<string, Fixture> = {
   globes,
   "full-shore": fullShore,
   "full-boss": fullBoss,
+  "full-campaign": fullCampaign,
   "full-bloodied": fullBloodied,
   "full-fresh": fullFresh,
   "idler-view": idlerView,
