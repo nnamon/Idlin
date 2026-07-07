@@ -10,7 +10,7 @@ ZoneDef(
     spawn_y_u: 16,
     spawn_radius_u: 2,
     camp_radius_u: 3,
-    kind: story,
+    kind: map,  // not booted live — a proving ground (map zones are instanced on demand, #136 T4)
     tileset: Some("town"),
     packs: [
         // Behind the north gate: bots must cross the wall line to grind.

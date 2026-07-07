@@ -143,6 +143,62 @@ fn ferry_departures(
     }
 }
 
+/// Derive the boot world set from CONTENT (#136 T3): every authored zone
+/// boots by kind — shared town/story zones as one world each, solo story
+/// zones as one instance per built-in idler, and `map` zones not at all
+/// (they are chart-instanced on demand, #136 T4). Shipping a new zone never
+/// needs a server change again: the Saltworks and the Hollow shipped
+/// unbootable once, and route_departure silently bounced travelers home.
+pub fn boot_worlds(
+    content: &ContentDb,
+    seed: u64,
+    joins: &[idlin_sim::JoinRequest],
+) -> Vec<ManagedWorld> {
+    let twist = |name: &str| -> u64 {
+        let mut h = idlin_content::FNV1A_OFFSET;
+        for b in name.bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+        }
+        h
+    };
+    let mut worlds = Vec::new();
+    for def in &content.zones {
+        match def.kind {
+            idlin_content::ZoneKind::Map => continue,
+            idlin_content::ZoneKind::Town | idlin_content::ZoneKind::Story
+                if def.max_players == 0 =>
+            {
+                worlds.push(ManagedWorld {
+                    key: def.id.clone(),
+                    zone_id: def.id.clone(),
+                    world: World::new_for_zone(seed ^ twist(&def.id), content, &def.id),
+                    tiles: resolve_tile_map(content, &def.id),
+                    max_players: def.max_players,
+                    pending: TickInputs::default(),
+                });
+            }
+            _ => {
+                for join in joins {
+                    let key = format!("{}#{}", def.id, join.name);
+                    worlds.push(ManagedWorld {
+                        key: key.clone(),
+                        zone_id: def.id.clone(),
+                        world: World::new_for_zone(seed ^ twist(&key), content, &def.id),
+                        tiles: resolve_tile_map(content, &def.id),
+                        max_players: def.max_players,
+                        pending: TickInputs {
+                            joins: vec![join.clone()],
+                            arrivals: Vec::new(),
+                        },
+                    });
+                }
+            }
+        }
+    }
+    worlds
+}
+
 /// Resolve a zone's authored map into wire form: tileset + variant
 /// applied server-side, so snapshots and recordings are self-contained.
 pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMapState>> {
@@ -589,6 +645,56 @@ mod tests {
             arrivals: Vec::new(),
         });
         w
+    }
+
+    #[test]
+    fn boot_worlds_runs_every_live_zone() {
+        // #136 T3: THE test that was missing when the Saltworks and the
+        // Hollow shipped unbootable — every non-map authored zone must be
+        // live at boot, solo zones per idler, map zones absent (they are
+        // chart-instanced, T4). Mutation: drop a kind arm (or hardcode the
+        // world list again) → the matching assert fails.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let joins = vec![
+            idlin_sim::JoinRequest {
+                name: "Kargan".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            },
+            idlin_sim::JoinRequest {
+                name: "Veles".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            },
+        ];
+        let worlds = boot_worlds(&content, 7, &joins);
+        let keys: Vec<&str> = worlds.iter().map(|w| w.key.as_str()).collect();
+        // Shared zones: one world each, keyed by id.
+        for shared in ["saltmere", "coast", "saltworks", "hollow"] {
+            assert!(keys.contains(&shared), "{shared} must boot; got {keys:?}");
+        }
+        // Solo story zones: one instance per built-in idler.
+        assert!(keys.contains(&"withered_shore#Kargan"));
+        assert!(keys.contains(&"withered_shore#Veles"));
+        // Map zones never boot — the proving ground stays off the live set.
+        assert!(
+            !keys.iter().any(|k| k.contains("test_range")),
+            "map zones are chart-instanced, not booted; got {keys:?}"
+        );
+        // Every travel destination in the act resolves to a booted world, so
+        // route_departure can never bounce a campaign traveler home.
+        for def in &content.zones {
+            for exit in &def.exits {
+                let dest = &exit.dest;
+                let reachable = worlds.iter().any(|w| w.zone_id == *dest);
+                let is_map = content
+                    .zone(dest)
+                    .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Map));
+                assert!(
+                    reachable || is_map,
+                    "exit {}->{dest} leads nowhere live",
+                    def.id
+                );
+            }
+        }
     }
 
     fn managed(key: &str, zone_id: &str, world: World, max_players: u32) -> ManagedWorld {

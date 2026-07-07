@@ -136,48 +136,10 @@ async fn main() -> anyhow::Result<()> {
             pending: builtin_joins()?,
         }]
     } else {
-        let mut worlds = vec![
-            runner::ManagedWorld {
-                key: "saltmere".into(),
-                zone_id: "saltmere".into(),
-                world: World::new_for_zone(seed, &content, "saltmere"),
-                tiles: runner::resolve_tile_map(&content, "saltmere"),
-                max_players: content.zone("saltmere").map_or(0, |z| z.max_players),
-                pending: TickInputs::default(),
-            },
-            // The shared grinding ground past town: one Drowned Coast
-            // for everyone, like the town itself.
-            runner::ManagedWorld {
-                key: "coast".into(),
-                zone_id: "coast".into(),
-                world: World::new_for_zone(seed ^ 0xC0A57, &content, "coast"),
-                tiles: runner::resolve_tile_map(&content, "coast"),
-                max_players: content.zone("coast").map_or(0, |z| z.max_players),
-                pending: TickInputs::default(),
-            },
-        ];
+        // The world set derives from CONTENT via runner::boot_worlds (#136
+        // T3) — shipping a new zone never needs a server change again.
         let joins = builtin_joins()?;
-        for join in joins.joins {
-            let key = format!("withered_shore#{}", join.name);
-            // Per-instance seed: every idler gets their own deterministic
-            // shore.
-            let mut h = idlin_content::FNV1A_OFFSET;
-            for b in join.name.bytes() {
-                h ^= b as u64;
-                h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
-            }
-            worlds.push(runner::ManagedWorld {
-                key,
-                zone_id: "withered_shore".into(),
-                world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
-                tiles: runner::resolve_tile_map(&content, "withered_shore"),
-                max_players: content.zone("withered_shore").map_or(0, |z| z.max_players),
-                pending: TickInputs {
-                    joins: vec![join],
-                    arrivals: Vec::new(),
-                },
-            });
-        }
+        let mut worlds = runner::boot_worlds(&content, seed, &joins.joins);
         // RESUME: swap in snapshots where they exist (content-hash
         // gated), carry mid-ferry arrivals, and only join a builtin
         // idler if they exist NOWHERE (state, pendings, or another

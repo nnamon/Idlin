@@ -1,4 +1,4 @@
-// The Drowned Coast: the first MAP-kind zone — a wide strand on TWO
+// The Drowned Coast: a wide strand on TWO
 // height levels (lower beach, upper terrace; ramps through the crag
 // line link them). Same shore tileset as the tutorial, at the colder
 // "drowned" hour. Unlike the hand-choreographed shore, packs here roll
@@ -7,7 +7,7 @@
 ZoneDef(
     id: "coast",
     name: "The Drowned Coast",
-    kind: map,
+    kind: story,
     // Area level 4: idlers arrive off the shore around 4-5. Normal
     // packs fight at 4, magic at 5, rare at 6 — the defs' authored
     // baselines scale up (+12% life / +10% damage per level).
