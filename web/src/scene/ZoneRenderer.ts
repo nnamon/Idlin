@@ -139,6 +139,8 @@ export class ZoneRenderer {
   /** Snapshot generation the visuals were built against. */
   private builtSnapshotGen = -1;
   private builtWorldKey: string | null = null;
+  /// Last terrain (re)build time — reveal-driven rebuilds are debounced (#129).
+  private lastTerrainBuildAt = -Infinity;
   private onResize = () => this.resize();
   private occlusionRay = new THREE.Raycaster();
   private occlusionDir = new THREE.Vector3();
@@ -545,8 +547,27 @@ export class ZoneRenderer {
       t = this.timer.getElapsed();
     }
 
-    if (this.store.zone && this.assets && zoneKey(this.store.zone) !== this.builtZoneKey) {
-      this.buildZone();
+    if (this.store.zone && this.assets) {
+      const key = zoneKey(this.store.zone);
+      if (key !== this.builtZoneKey) {
+        // Fog reveals (#129) mutate the tile rows every tick while an idler
+        // walks, and the rows are folded into zoneKey — rebuilding terrain per
+        // tick would jank. Same zone in the SAME WORLD rebuilds at most every
+        // 2.5 s; the fog's soft sight edge hides the brief void at the
+        // frontier. A real zone change — different name/dims, or a director
+        // cut to ANOTHER INSTANCE of the same zone (whose explored set, and
+        // so whose masked rows, differ) — rebuilds at once.
+        const base = key.split("|").slice(0, 2).join("|");
+        const builtBase = (this.builtZoneKey ?? "").split("|").slice(0, 2).join("|");
+        const revealDrift =
+          this.builtZoneKey !== null &&
+          base === builtBase &&
+          (this.store.zone.worldKey ?? "") === (this.builtWorldKey ?? "");
+        if (!revealDrift || now - this.lastTerrainBuildAt > 2500) {
+          this.buildZone();
+          this.lastTerrainBuildAt = now;
+        }
+      }
     }
     // A snapshot from a DIFFERENT world drops all per-entity visuals:
     // identical authored instances share terrain, but their net ids name

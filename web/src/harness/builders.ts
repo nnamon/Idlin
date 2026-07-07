@@ -193,6 +193,10 @@ export function zoneDelta(
       projectiles: [],
       skills: [],
       uses: [],
+      revealed: [],
+      revealed_props: [],
+      revealed_exits: [],
+      revealed_gates: [],
       ...over,
     },
   };

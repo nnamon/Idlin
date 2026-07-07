@@ -40,6 +40,10 @@ pub struct TickFrame {
     pub gates: Vec<GateView>,
     pub views: Vec<EntityView>,
     pub events: Vec<SimEvent>,
+    /// Fog of war (#129): the residents' union explored bitset (row-major,
+    /// bit = y*w + x over the zone's cells) — replication masks tiles/props/
+    /// exits/gates against it and streams newly explored cells as reveals.
+    pub explored: Vec<u64>,
 }
 
 /// Every world's frame for one server tick — the FULL simulation output.
@@ -300,6 +304,7 @@ pub fn spawn_tick_loop(
                         zone_level: mw.world.zone_level(),
                         zone_width: zw,
                         zone_height: zh,
+                        explored: mw.world.union_explored(),
                         tiles: mw.tiles.clone(),
                         exits: mw
                             .world

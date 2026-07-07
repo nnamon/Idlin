@@ -273,6 +273,25 @@ export class WorldStore {
             at: now,
           });
         }
+        // Fog of war (#129): un-mask the map as the residents discover it —
+        // the snapshot shipped unexplored cells blanked to ' '; reveals carry
+        // the true glyphs, plus props/exits/gates on the newly explored ground.
+        if (this.zone) {
+          const tiles = this.zone.tiles;
+          if (tiles) {
+            for (const c of d.revealed ?? []) {
+              const row = tiles.rows[c.y];
+              if (row !== undefined && c.x >= 0 && c.x < row.length) {
+                tiles.rows[c.y] = row.slice(0, c.x) + c.glyph + row.slice(c.x + 1);
+              }
+            }
+            for (const p of d.revealed_props ?? []) tiles.props.push(p);
+          }
+          for (const e of d.revealed_exits ?? []) {
+            this.zone.exits.push({ x: e.x / FX_SCALE, y: e.y / FX_SCALE, open: e.open });
+          }
+          for (const g of d.revealed_gates ?? []) this.zone.gates.push({ ...g });
+        }
         this.version++;
         break;
       }

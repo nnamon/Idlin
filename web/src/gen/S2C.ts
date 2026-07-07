@@ -9,6 +9,8 @@ import type { GameEvent } from "./GameEvent";
 import type { GateView } from "./GateView";
 import type { HitFx } from "./HitFx";
 import type { ProjectileFx } from "./ProjectileFx";
+import type { PropState } from "./PropState";
+import type { RevealedCell } from "./RevealedCell";
 import type { Role } from "./Role";
 import type { SkillFx } from "./SkillFx";
 import type { TileMapState } from "./TileMapState";
@@ -55,4 +57,20 @@ gates: Array<GateView>, entities: Array<EntityState>, } } | { "type": "ZoneDelta
  * Windups that began this tick (the client animates from here;
  * the strike arrives `contact_ticks` later).
  */
-uses: Array<UseFx>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
+uses: Array<UseFx>, 
+/**
+ * Fog of war (#129): tile cells the residents newly explored this
+ * tick, carrying their TRUE glyphs — the snapshot masked them, this
+ * is how the map arrives as it is discovered. Empty on generated
+ * zones (no tile map) and on ticks with no new exploration.
+ */
+revealed: Array<RevealedCell>, 
+/**
+ * Authored props whose cell was newly explored this tick.
+ */
+revealed_props: Array<PropState>, 
+/**
+ * Exits/gates whose position was newly explored this tick — the
+ * snapshot withholds unexplored ones, so the client APPENDS these.
+ */
+revealed_exits: Array<ExitView>, revealed_gates: Array<GateView>, } } | { "type": "Events", "data": { events: Array<GameEvent>, } } | { "type": "DirectorCue", "data": { focus: number, reason: string, hold_ticks: number, } } | { "type": "FocusQueue", "data": { entries: Array<FocusQueueEntry>, } } | { "type": "CharacterSheet", "data": { sheet: CharacterSheet, } } | { "type": "Error", "data": { code: number, msg: string, } };
