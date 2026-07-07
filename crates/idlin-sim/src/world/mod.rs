@@ -35,6 +35,14 @@ pub const TICK_HZ: u32 = 10;
 pub const RESPAWN_TICKS: u64 = 50;
 /// Ground loot lifetime.
 pub const LOOT_DESPAWN_TICKS: u64 = 600;
+/// Fog-of-war sight radius in CELLS (#129): the disc a living character
+/// reveals around itself each tick — the deterministic record of what it has
+/// discovered (`CharacterState.explored`), and the wire filter's unit of
+/// knowledge. THE single owner: the client's fog renderer imports this via
+/// the generated constants (export_constants), so sim and view can't drift.
+/// Sized to the follow camera's whole screen (see web FogOfWar.ts derivation)
+/// — the fog exists to stop route precomputation, not to shrink the view.
+pub const FOG_SIGHT_CELLS: i32 = 28;
 /// How close a character must be to grab loot.
 pub const PICKUP_RANGE: Fx = Fx::from_raw(0x2_8000); // 2.5 u
 /// Ticks out of combat before regeneration kicks in.
@@ -907,10 +915,59 @@ impl World {
         self.attacks(&mut events);
         self.effects_tick(&mut events);
         self.pickups(&mut events);
+        self.explore();
         self.regen();
         self.respawns(&mut events);
         self.run_zone_brain(&mut events);
         events
+    }
+
+    /// Fog of war (#129): stamp every LIVING character's sight disc into its
+    /// `explored` bitset — the deterministic record of what it has discovered
+    /// in this zone. ONE pass, after every position mutation of the tick
+    /// (movement, separation, knockback, obstacle pushout), so no mutation
+    /// site can be missed; runs unconditionally (~2.5k bit-ORs per character
+    /// per tick — cheaper than tracking a last-stamped cell, and joins and
+    /// arrivals get their first disc the same tick they land). Self-healing
+    /// sizing: a bitset whose length doesn't match this zone (a fresh join,
+    /// or a stale bundle that slipped past the arrival reset) is re-allocated
+    /// here, so the chokepoint also enforces the reset-on-zone-entry rule.
+    fn explore(&mut self) {
+        let w = self.zone.width.floor().max(0) as i64;
+        let h = self.zone.height.floor().max(0) as i64;
+        let words = ((w * h + 63) / 64) as usize;
+        if words == 0 {
+            return;
+        }
+        const R: i64 = FOG_SIGHT_CELLS as i64;
+        for slot in 0..self.zone.slot_count() {
+            let Some(e) = self.zone.get(slot) else {
+                continue;
+            };
+            if e.character.is_none() || !e.alive() {
+                continue;
+            }
+            let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+            let Some(ch) = self.zone.get_mut(slot).and_then(|e| e.character.as_mut()) else {
+                continue;
+            };
+            if ch.explored.len() != words {
+                ch.explored = vec![0; words];
+            }
+            // OR-in the disc, clipped to the zone (integer distance check —
+            // deterministic, no floats).
+            let (y0, y1) = ((cy - R).max(0), (cy + R).min(h - 1));
+            let (x0, x1) = ((cx - R).max(0), (cx + R).min(w - 1));
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    let (dx, dy) = (x - cx, y - cy);
+                    if dx * dx + dy * dy <= R * R {
+                        let bit = (y * w + x) as usize;
+                        ch.explored[bit / 64] |= 1 << (bit % 64);
+                    }
+                }
+            }
+        }
     }
 
     fn alloc_net(&mut self) -> u32 {
@@ -1070,6 +1127,8 @@ impl World {
                     build_plan: Vec::new(),
                     currency: vec![0; self.content.currency.len()],
                     sockets: std::collections::BTreeMap::new(),
+                    // Sized + stamped by this tick's explore() pass (#129).
+                    explored: Vec::new(),
                 }),
                 monster: None,
                 loot: None,
@@ -1104,6 +1163,12 @@ impl World {
             });
             let mut character = bundle.character.clone();
             character.respawn_at = None;
+            // Fog of war (#129): a NEW zone starts undiscovered — the bundle's
+            // bitset is the OLD zone's knowledge, and a same-sized destination
+            // would otherwise inherit it wholesale (explore()'s size check
+            // can't catch that case). The first explore() this tick re-sizes
+            // and stamps the arrival's spawn disc.
+            character.explored = Vec::new();
             if character.currency.len() < self.content.currency.len() {
                 character.currency.resize(self.content.currency.len(), 0);
             }
@@ -2141,5 +2206,157 @@ mod area_level_tests {
                 );
             }
         }
+    }
+
+    /// Join one halt-bot character and return its slot.
+    fn join_one(w: &mut World, name: &str) -> usize {
+        w.tick(&TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: name.into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            }],
+        });
+        (0..w.zone.slot_count())
+            .find(|&s| {
+                w.zone
+                    .get(s)
+                    .is_some_and(|e| e.character.as_ref().is_some_and(|c| c.name == name))
+            })
+            .expect("joined character present")
+    }
+
+    fn explored_bit(w: &World, slot: usize, x: i64, y: i64) -> bool {
+        let zw = w.zone.width.floor() as i64;
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        let bit = (y * zw + x) as usize;
+        ch.explored[bit / 64] & (1 << (bit % 64)) != 0
+    }
+
+    #[test]
+    fn explored_stamps_a_sight_disc_moves_with_the_character_and_survives_death() {
+        // #129: the explore() pass stamps a FOG_SIGHT_CELLS disc around a living
+        // character every tick, into a bitset sized to the zone; the stamp
+        // follows position changes, and knowledge SURVIVES death. Mutations:
+        // drop the explore() call from tick() → the spawn-cell assert fails;
+        // stamp only at join → the moved-corner assert fails; clear explored on
+        // death/respawn → the survives-death assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF06, &content);
+        let slot = join_one(&mut w, "Scout");
+        let (zw, zh) = (w.zone.width.floor() as i64, w.zone.height.floor() as i64);
+        let e = w.zone.get(slot).unwrap();
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        assert!(explored_bit(&w, slot, cx, cy), "the spawn cell is explored");
+        // The farthest corner sits beyond any r=28 disc on the 60×40 shore
+        // (worst case: a center spawn is 36 cells from it).
+        let fx = if cx < zw / 2 { zw - 1 } else { 0 };
+        let fy = if cy < zh / 2 { zh - 1 } else { 0 };
+        assert!(
+            !explored_bit(&w, slot, fx, fy),
+            "the far corner starts unexplored"
+        );
+        // Teleport to the far corner; the next tick's pass stamps it.
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(fx as i16), Fx::from_int(fy as i16));
+        w.tick(&TickInputs::default());
+        assert!(
+            explored_bit(&w, slot, fx, fy),
+            "the stamp follows the character's position"
+        );
+        // Death is not amnesia: kill, wait out the respawn, knowledge remains.
+        w.zone.get_mut(slot).unwrap().combat.as_mut().unwrap().life = 0;
+        for _ in 0..(RESPAWN_TICKS + 2) {
+            w.tick(&TickInputs::default());
+        }
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| {
+                w.zone
+                    .get(s)
+                    .is_some_and(|e| e.character.as_ref().is_some_and(|c| c.name == "Scout"))
+            })
+            .expect("respawned character present");
+        assert!(
+            explored_bit(&w, slot, fx, fy),
+            "explored knowledge survives death and respawn"
+        );
+    }
+
+    #[test]
+    fn explored_resets_on_zone_transfer() {
+        // #129: an ARRIVING character starts the new zone undiscovered — the
+        // bundle's bitset is the OLD zone's knowledge and must not carry over
+        // (a same-sized destination would inherit it wholesale). Mutation: drop
+        // the reset in the arrival admit → the far corner reads explored.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF07, &content);
+        let (zw, zh) = (w.zone.width.floor() as i64, w.zone.height.floor() as i64);
+        let words = ((zw * zh + 63) / 64) as usize;
+        let bundle = CharacterBundle {
+            character: crate::entity::CharacterState {
+                name: "Traveler".into(),
+                level: 3,
+                xp: 0,
+                respawn_at: None,
+                kills: 0,
+                items: 0,
+                inventory: Vec::new(),
+                equipment: Default::default(),
+                allocated: Vec::new(),
+                build_plan: Vec::new(),
+                currency: Vec::new(),
+                sockets: std::collections::BTreeMap::new(),
+                // The old zone's knowledge: everything explored, same size as
+                // the destination — the case the size check alone can't catch.
+                explored: vec![u64::MAX; words],
+            },
+            persist: Vec::new(),
+            program: idlin_botc::assemble("halt\n").unwrap(),
+            params: Vec::new(),
+            bot_version: 1,
+        };
+        w.tick(&TickInputs {
+            joins: Vec::new(),
+            arrivals: vec![bundle],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| {
+                w.zone
+                    .get(s)
+                    .is_some_and(|e| e.character.as_ref().is_some_and(|c| c.name == "Traveler"))
+            })
+            .expect("arrived character present");
+        let e = w.zone.get(slot).unwrap();
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let fx = if cx < zw / 2 { zw - 1 } else { 0 };
+        let fy = if cy < zh / 2 { zh - 1 } else { 0 };
+        assert!(
+            explored_bit(&w, slot, cx, cy),
+            "the arrival's spawn disc is stamped in the new zone"
+        );
+        assert!(
+            !explored_bit(&w, slot, fx, fy),
+            "the old zone's knowledge did NOT carry over"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_explored() {
+        // #129: `explored` drives the wire visibility filter, so it is replayed
+        // state and must be hashed BY CONTENT. Mutation: drop the explored fold
+        // from state_hash (or hash only the length) → the flipped far bit
+        // leaves the digest unchanged and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF08, &content);
+        let slot = join_one(&mut w, "Hasher");
+        let h1 = w.state_hash();
+        let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+        let last = ch.explored.len() - 1;
+        ch.explored[last] ^= 1 << 63; // a far, unstamped bit
+        assert_ne!(
+            h1,
+            w.state_hash(),
+            "flipping one explored bit must change the state hash"
+        );
     }
 }

@@ -798,6 +798,13 @@ impl World {
                         h.write_i64(sup.xp);
                     }
                 }
+                // Fog of war (#129): the explored bitset is replayed state (it
+                // drives the wire's visibility filter), hashed by CONTENT so
+                // two same-length bitsets with different discoveries differ.
+                h.write_u64(ch.explored.len() as u64);
+                for &word in &ch.explored {
+                    h.write_u64(word);
+                }
             }
             h.write_u64(e.last_say_tick);
             h.write_u64(e.effects.len() as u64);

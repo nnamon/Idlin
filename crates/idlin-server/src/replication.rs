@@ -156,9 +156,16 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 }
                 let ws = worlds.get_mut(&frame.world_key).expect("just inserted");
 
+                // Fog of war (#129): entities outside the residents' current
+                // sight never reach the wire. Filtering CURRENT before the
+                // diff makes enter/leave-sight ride the existing spawned/
+                // removed machinery, and the snapshot below shares the same
+                // filtered map — one chokepoint for both. (Routing still sees
+                // every character: characters always pass the filter.)
+                let sight = SightFilter::from_views(&frame.views);
                 let mut current: HashMap<u32, EntityState> =
                     HashMap::with_capacity(frame.views.len());
-                for v in &frame.views {
+                for v in frame.views.iter().filter(|v| sight.keeps(v)) {
                     current.insert(v.id, to_state(v));
                     if v.kind == KIND_CHARACTER {
                         routing
@@ -168,16 +175,29 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 }
 
                 let (spawned, moved, updated, removed) = diff(&ws.prev, &current);
+                // Positioned FX gate on sight; a hit ships when either party is
+                // on the wire (a visible victim struck from the dark still
+                // flinches — the attacker id resolves to nothing client-side).
+                let mut hits = collect_hits(&frame.events);
+                hits.retain(|h| {
+                    current.contains_key(&h.attacker) || current.contains_key(&h.target)
+                });
+                let mut projectiles = collect_projectiles(&frame.events);
+                projectiles.retain(|p| sight.sees_raw(p.x, p.y));
+                let mut skills = collect_skills(&frame.events);
+                skills.retain(|s| sight.sees_raw(s.x, s.y));
+                let mut uses = collect_uses(&frame.events);
+                uses.retain(|u| sight.sees_raw(u.x, u.y));
                 let delta = serialize(&S2C::ZoneDelta {
                     tick: frame.tick,
                     spawned,
                     moved,
                     updated,
                     removed,
-                    hits: collect_hits(&frame.events),
-                    projectiles: collect_projectiles(&frame.events),
-                    skills: collect_skills(&frame.events),
-                    uses: collect_uses(&frame.events),
+                    hits,
+                    projectiles,
+                    skills,
+                    uses,
                 });
                 let events: Vec<GameEvent> =
                     frame.events.iter().filter_map(to_game_event).collect();
@@ -355,6 +375,49 @@ fn open_recorder(world_key: &str) -> Option<std::fs::File> {
             warn!("recorder for {world_key}: {e}");
             None
         }
+    }
+}
+
+/// Fog of war (#129 Layer B): the wire carries only what this world's LIVING
+/// characters can currently SEE — a `FOG_SIGHT_CELLS` disc around each (the
+/// union of residents: on a per-idler grind instance that is exactly the
+/// watched idler's own sight; in the shared town it is the residents'
+/// collective knowledge). Entities outside every disc are WITHHELD — the
+/// prev-diff then emits natural spawned/removed as they enter and leave sight
+/// — and positioned FX outside are dropped, so network analysis of a per-idler
+/// stream finds nothing the idler hasn't seen. Characters themselves always
+/// ship: they are the reveal sources (dead ones too — a corpse awaiting
+/// respawn is the viewer's own story — but dead characters do NOT project
+/// sight, matching the sim's explore() and the client fog).
+struct SightFilter {
+    /// Living characters' cells (sim units).
+    sources: Vec<(i64, i64)>,
+}
+
+impl SightFilter {
+    fn from_views(views: &[idlin_sim::EntityView]) -> SightFilter {
+        SightFilter {
+            sources: views
+                .iter()
+                .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
+                .map(|v| ((v.x_raw >> 16) as i64, (v.y_raw >> 16) as i64))
+                .collect(),
+        }
+    }
+
+    /// Is a Q16.16 raw position within any living character's sight disc?
+    fn sees_raw(&self, x_raw: i32, y_raw: i32) -> bool {
+        const R: i64 = idlin_sim::FOG_SIGHT_CELLS as i64;
+        let (x, y) = ((x_raw >> 16) as i64, (y_raw >> 16) as i64);
+        self.sources.iter().any(|&(cx, cy)| {
+            let (dx, dy) = (x - cx, y - cy);
+            dx * dx + dy * dy <= R * R
+        })
+    }
+
+    /// Does this entity go on the wire?
+    fn keeps(&self, v: &idlin_sim::EntityView) -> bool {
+        v.kind == KIND_CHARACTER || self.sees_raw(v.x_raw, v.y_raw)
     }
 }
 
@@ -785,6 +848,99 @@ mod tests {
 
     fn keyed(states: Vec<EntityState>) -> HashMap<u32, EntityState> {
         states.into_iter().map(|s| (s.id, s)).collect()
+    }
+
+    /// An `EntityView` at a sim-cell position (Q16.16 raw = cell << 16).
+    fn view(id: u32, kind: u8, x: i64, y: i64, dead: bool) -> idlin_sim::EntityView {
+        idlin_sim::EntityView {
+            id,
+            kind,
+            x_raw: (x as i32) << 16,
+            y_raw: (y as i32) << 16,
+            life_pct: if dead { 0 } else { 100 },
+            es_pct: -1,
+            level: 1,
+            name: format!("v{id}"),
+            model: "idler".into(),
+            weapon: String::new(),
+            weapon_rarity: 0,
+            gear: vec![],
+            gear_rarity: vec![],
+            rarity: 0,
+            dead,
+            kills: 0,
+            items: 0,
+            ailments: 0,
+        }
+    }
+
+    #[test]
+    fn sight_filter_gates_by_living_characters_sight() {
+        // #129 Layer B: the wire carries characters unconditionally, and
+        // monsters/loot ONLY within a living character's FOG_SIGHT_CELLS disc.
+        // A dead character ships but projects NO sight. Mutations: drop the
+        // `!v.dead` source gate → the far monster near the corpse leaks; keep
+        // entities regardless of sight → both far entities leak.
+        const R: i64 = idlin_sim::FOG_SIGHT_CELLS as i64; // 28
+        let views = vec![
+            view(1, idlin_sim::KIND_CHARACTER, 30, 30, false), // living scout
+            view(2, idlin_sim::KIND_CHARACTER, 150, 30, true), // distant corpse
+            view(3, idlin_sim::KIND_MONSTER, 30 + R - 1, 30, false), // in sight
+            view(4, idlin_sim::KIND_MONSTER, 30 + R + 2, 30, false), // beyond sight
+            view(5, idlin_sim::KIND_MONSTER, 150 + 2, 30, false), // near ONLY the corpse
+            view(6, 3, 150, 32, false),                        // loot near only the corpse
+        ];
+        let sight = SightFilter::from_views(&views);
+        let kept: Vec<u32> = views
+            .iter()
+            .filter(|v| sight.keeps(v))
+            .map(|v| v.id)
+            .collect();
+        assert_eq!(
+            kept,
+            [1, 2, 3],
+            "characters always ship; only the in-sight monster joins them"
+        );
+        // Positioned-FX gating uses the same discs.
+        assert!(sight.sees_raw(30 << 16, (30 + R as i32 - 1) << 16));
+        assert!(
+            !sight.sees_raw((150 + 2) << 16, 30 << 16),
+            "no sight around a corpse"
+        );
+    }
+
+    #[test]
+    fn leaving_sight_rides_the_diff_as_removed() {
+        // #129: filtering CURRENT before the diff makes an entity that walks out
+        // of sight emit a natural `removed` (and re-entering emits `spawned`) —
+        // no bespoke enter/leave machinery to drift. Mutation: filter only the
+        // snapshot (not current) → no removed here.
+        let scout = |mx: i64| -> HashMap<u32, EntityState> {
+            let views = vec![
+                view(1, idlin_sim::KIND_CHARACTER, 30, 30, false),
+                view(2, idlin_sim::KIND_MONSTER, mx, 30, false),
+            ];
+            let sight = SightFilter::from_views(&views);
+            views
+                .iter()
+                .filter(|v| sight.keeps(v))
+                .map(|v| (v.id, to_state(v)))
+                .collect()
+        };
+        let near = scout(40); // within 28 of the scout
+        let far = scout(90); // beyond
+        let (_, _, _, removed) = diff(&near, &far);
+        assert_eq!(
+            removed,
+            [2],
+            "walking out of sight removes the monster from the wire"
+        );
+        let (spawned, _, _, _) = diff(&far, &near);
+        assert_eq!(
+            spawned.iter().map(|s| s.id).collect::<Vec<_>>(),
+            [2],
+            "walking back in re-spawns it"
+        );
     }
 
     #[test]

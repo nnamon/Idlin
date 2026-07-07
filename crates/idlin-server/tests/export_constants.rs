@@ -6,7 +6,7 @@
 //! This lives in idlin-server because it's the only crate that depends on
 //! both idlin-sim (the constants' home) and the web tree's layout.
 
-use idlin_sim::{FX_SCALE, RARITY_COLORS, RARITY_NAMES, TICK_HZ};
+use idlin_sim::{FOG_SIGHT_CELLS, FX_SCALE, RARITY_COLORS, RARITY_NAMES, TICK_HZ};
 
 #[test]
 fn export_constants_ts() {
@@ -34,7 +34,10 @@ fn export_constants_ts() {
          export const RARITY_NAMES = [{names}] as const;\n\
          export const RARITY_COLORS = [{colors}] as const;\n\
          // Numeric forms for the three.js scene (0xrrggbb).\n\
-         export const RARITY_COLORS_NUM = RARITY_COLORS.map((c) => parseInt(c.slice(1), 16));\n"
+         export const RARITY_COLORS_NUM = RARITY_COLORS.map((c) => parseInt(c.slice(1), 16));\n\
+         // Fog-of-war sight radius in cells (#129) — the sim stamps `explored` with\n\
+         // this disc; the client fog renderer draws the same one, so they can't drift.\n\
+         export const FOG_SIGHT_CELLS = {FOG_SIGHT_CELLS};\n"
     );
 
     std::fs::write("../../web/src/gen/constants.ts", body).expect("write constants.ts");
