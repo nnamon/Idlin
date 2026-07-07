@@ -16,7 +16,7 @@ MonsterDef(
     range_cu: 230,
     mana: 130,
     skills: [
-        (gem: "frost_nova", level: 4),
+        (gem: "frost_nova", level: 3),
         (gem: "arc", level: 3),
     ],
     use_ticks: 16,

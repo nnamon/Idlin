@@ -1,0 +1,19 @@
+// The road's second blade (#136 T6): what the Saltworks' dead still
+// carry. The melee ladder's middle rung — the stock grinder trades up
+// from the tutorial cleaver here.
+ItemDef(
+    id: "salt_worn_axe",
+    public: true,
+    name: "Salt-Worn Axe",
+    model: "cleaver",
+    slot: weapon,
+    weapon_class: Some(melee),
+    w: 2,
+    h: 3,
+    damage_phys: 26,
+    range_cu: 230,
+    use_ticks: 9,
+    projectile: false,
+    weight: 55,
+    affix_pools: ["weapon"],
+)

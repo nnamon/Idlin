@@ -755,6 +755,93 @@ mod tests {
         w
     }
 
+    /// THE 1.0 PROMISE (#136 T6): a stock grinder, joined fresh at level 1
+    /// in Saltmere, plays the whole game by itself — walks the road (coast,
+    /// the Saltworks past Karesh, down the Hollow), breaks the Mother,
+    /// completes Act 1, carries her chart home to the table, and SAILS: a
+    /// chart instance exists with the grinder aboard. A mini host loop
+    /// (tick + chart-aware ferry) stands in for the server. Mutation: break
+    /// routing, the act hook, UseChart, or the ferry mint → a milestone
+    /// never lights and this fails with the furthest milestone named.
+    #[test]
+    fn the_stock_grinder_walks_the_salt_road() {
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let mut worlds = boot_worlds(&content, 0x05A1_70AD, &[]);
+        let saltmere = worlds.iter().position(|w| w.key == "saltmere").unwrap();
+        worlds[saltmere].pending.joins.push(idlin_sim::JoinRequest {
+            name: "Pathfinder".into(),
+            program: idlin_botc::template_grinder().unwrap(),
+        });
+        let mut milestones = [false; 6]; // coast, works, hollow, act, town+act, voyage
+        let names = [
+            "reach the coast",
+            "reach the saltworks",
+            "reach the hollow",
+            "complete act 1",
+            "return to town with the act done",
+            "sail a charted voyage",
+        ];
+        'run: for host_tick in 0..140_000u64 {
+            let mut departures = Vec::new();
+            for (i, mw) in worlds.iter_mut().enumerate() {
+                let inputs = std::mem::take(&mut mw.pending);
+                let events = mw.world.tick(&inputs);
+                for ev in &events {
+                    if let SimEvent::ActCompleted { name, act: 1, .. } = ev
+                        && name == "Pathfinder"
+                    {
+                        milestones[3] = true;
+                    }
+                }
+                departures.extend(
+                    mw.world
+                        .take_departures()
+                        .into_iter()
+                        .map(|(b, dest)| (i, b, dest)),
+                );
+            }
+            // A ticketed departure IS the town milestone: standing at the
+            // table, act done, chart spent (zone sampling every 200 ticks
+            // can miss the transit — the road home is 6 cells long).
+            for (_, b, _) in &departures {
+                if b.character.name == "Pathfinder" && b.chart.is_some() {
+                    milestones[4] = true;
+                }
+            }
+            ferry_departures_with_charts(&mut worlds, departures, &content, 0x05A1_70AD, host_tick);
+            if host_tick % 200 == 0 {
+                for mw in &worlds {
+                    let here = mw
+                        .world
+                        .views()
+                        .iter()
+                        .any(|v| v.kind == 1 && v.name == "Pathfinder");
+                    if !here {
+                        continue;
+                    }
+                    match mw.zone_id.as_str() {
+                        "coast" => milestones[0] = true,
+                        "saltworks" => milestones[1] = true,
+                        "hollow" => milestones[2] = true,
+                        "saltmere" if milestones[3] => milestones[4] = true,
+                        "charted_shallows" => {
+                            milestones[5] = true;
+                            break 'run;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        let furthest = milestones.iter().filter(|m| **m).count();
+        assert!(
+            milestones.iter().all(|m| *m),
+            "the road ends early: {} of 6 — stuck before `{}`",
+            furthest,
+            names[furthest]
+        );
+    }
+
     #[test]
     fn a_chart_departure_mints_a_voyage_and_it_retires_when_empty() {
         // #136 T4: a ticketed departure opens a fresh instance of the map

@@ -44,6 +44,7 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("say", idlin_vm::SYS_SAY, 1),
     ("read_exits", idlin_vm::SYS_READ_EXITS, 2),
     ("use_exit", idlin_vm::SYS_USE_EXIT, 0),
+    ("use_chart", idlin_vm::SYS_USE_CHART, 1),
     ("use_flask", idlin_vm::SYS_USE_FLASK, 0),
     ("skill_info", idlin_vm::SYS_SKILL_INFO, 2),
     ("read_item_mods", idlin_vm::SYS_READ_ITEM_MODS, 3),

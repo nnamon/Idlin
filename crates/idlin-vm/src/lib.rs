@@ -179,8 +179,12 @@ pub mod abi {
     pub const SS_MANA_MAX: u16 = 56;
     pub const SS_ES: u16 = 60;
     pub const SS_ZONE: u16 = 64;
+    /// The zone's Charting Table cell in Q16.16, or -1/-1 when the zone has
+    /// none (#136 T6) — how a brain finds where charts are spent.
+    pub const SS_TABLE_X: u16 = 68;
+    pub const SS_TABLE_Y: u16 = 72;
     /// Total `SelfStatus` block size (bytes) — the buffer a bot must reserve.
-    pub const SELF_STATUS_SIZE: u16 = 68;
+    pub const SELF_STATUS_SIZE: u16 = 76;
 }
 
 /// Instruction set. Stack machine, RPN: operands are pushed, opcodes pop them.
@@ -751,7 +755,7 @@ mod tests {
         assert_eq!(CHAR_RECORD_SIZE, 40);
         assert_eq!(EXIT_RECORD_SIZE, 16);
         assert_eq!(EVENT_RECORD_SIZE, 16);
-        // SelfStatus: sequential 4-byte words, 17 fields, 68-byte block.
+        // SelfStatus: sequential 4-byte words, 19 fields, 76-byte block.
         let offsets = [
             SS_X,
             SS_Y,
@@ -770,6 +774,8 @@ mod tests {
             SS_MANA_MAX,
             SS_ES,
             SS_ZONE,
+            SS_TABLE_X,
+            SS_TABLE_Y,
         ];
         for (i, off) in offsets.iter().enumerate() {
             assert_eq!(*off, (i as u16) * 4, "SelfStatus field {i} offset");

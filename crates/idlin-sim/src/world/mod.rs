@@ -912,6 +912,17 @@ impl World {
 
     /// The stable tagged num a read should emit for `cat`'s def at `idx`
     /// (the bot↔engine id, #54). -1 if unmapped — bots treat negative as unknown.
+    /// A zone's stable tagged num by id, or -1 (#136 T6: ReadExits dest).
+    pub(crate) fn zone_num_by_id(&self, id: &str) -> i32 {
+        self.content
+            .zones
+            .binary_search_by(|z| z.id.as_str().cmp(id))
+            .ok()
+            .map_or(-1, |zi| {
+                self.content_num(idlin_content::ids::Category::Zone, zi)
+            })
+    }
+
     pub(crate) fn content_num(&self, cat: idlin_content::ids::Category, idx: usize) -> i32 {
         self.content.content_num(cat, idx).unwrap_or(-1)
     }
@@ -3133,16 +3144,33 @@ mod area_level_tests {
             1,
             "act 1 belongs to the breaker"
         );
-        // The act boss ALWAYS pays a chart (#136 T4): the campaign's finish
-        // line hands you the endgame's key. Mutation: drop the act-boss arm
-        // of the chart drop in handle_kill → this fails.
+        // The act boss ALWAYS pays a chart, INTO THE KILLER'S BAG (#136
+        // T4+T6): the campaign's key reward is unmissable — a ground drop
+        // once despawned while her killer respawned across the zone.
+        // Mutation: drop the act-boss arm or the hand-delivery → fails.
         assert!(
-            loot.iter().any(|(_, payload, ..)| matches!(
+            w.zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .inventory
+                .iter()
+                .any(|p| matches!(
+                    &p.item,
+                    crate::entity::BagItem::Gear(item)
+                        if self_content_chart(&content, item.base_idx)
+                )),
+            "the Mother's chart lands in the killer's bag"
+        );
+        assert!(
+            !loot.iter().any(|(_, payload, ..)| matches!(
                 payload,
                 crate::entity::LootPayload::Gear(item)
                     if self_content_chart(&content, item.base_idx)
             )),
-            "the Mother's fall must drop a chart"
+            "no duplicate chart on the ground"
         );
     }
 

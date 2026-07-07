@@ -2,6 +2,11 @@
 // strand — SHE is what it fed. Act 1 ends where the water is oldest:
 // storm, frost, and rot in one body, and a second, desperate phase when
 // the sea itself starts losing.
+//
+// TUNING (#136 T6): an ENDURANCE fight the stock grinder wins on flask
+// discipline around level 14-16 — her damage is all-elemental and the
+// stock build has no resists, so gem levels stay low and casts slow;
+// the LIFE pool and the phase kits carry the drama, not one-shots.
 MonsterDef(
     id: "mother_of_the_drowned",
     public: true,
@@ -14,9 +19,9 @@ MonsterDef(
     // Charting Table (the endgame, T4).
     act_boss: Some(1),
     level: 12,
-    life: 2800,
-    damage: 24,
-    damage_cold: 8,
+    life: 2000,
+    damage: 20,
+    damage_cold: 6,
     speed_cps: 200,
     radius_cu: 100,
     range_cu: 220,
@@ -32,13 +37,13 @@ MonsterDef(
         (stat: damage_cold, layer: increased, value: 5000, condition: Some(below_life_pct(2500))),
     ],
     skills: [
-        (gem: "arc", level: 5),
-        (gem: "frost_nova", level: 5),
-        (gem: "plague_cloud", level: 3),
-        (gem: "war_cry", level: 3),
+        (gem: "arc", level: 3),
+        (gem: "frost_nova", level: 3),
+        (gem: "plague_cloud", level: 2),
+        (gem: "war_cry", level: 2),
     ],
-    use_ticks: 14,
-    aggro_radius_cu: 1800,
+    use_ticks: 16,
+    aggro_radius_cu: 1300,
     armour: 110,
     resist_cold: 5000,
     resist_lightning: 5000,

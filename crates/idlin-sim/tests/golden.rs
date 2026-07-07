@@ -10,6 +10,13 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T6 (the stock brain runs the whole game): the shore
+/// REPLAY ITSELF changes — the grinder template gained the campaign brain
+/// (routing, bag discipline, upkeep cadence), so its tutorial decisions
+/// differ tick-by-tick; plus content moves (two new melee bases, the
+/// hollow's sightline-chain map rework, the Mother's endurance retune).
+/// The trio + the salt-road test pin the new behavior end to end.
+/// (Prior: 0x2536 — T5.)
 /// Re-pinned for #136 T5 (signature uniques): content_hash-ONLY (the four
 /// UniqueDef files) — empirically isolated by the critic at the pre-review
 /// pin: deleting the four .ron files reverted the digest to exactly the T4
@@ -134,7 +141,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x2536_42B8_E37D_ECC3;
+const GOLDEN_HASH: u64 = 0xB833_78BC_0738_9286;
 
 #[test]
 fn golden_replay() {

@@ -30,4 +30,6 @@ const SS_MANA = 52;
 const SS_MANA_MAX = 56;
 const SS_ES = 60;
 const SS_ZONE = 64;
-const SELF_STATUS_SIZE = 68;
+const SS_TABLE_X = 68;
+const SS_TABLE_Y = 72;
+const SELF_STATUS_SIZE = 76;

@@ -297,6 +297,13 @@ impl World {
                     out.wrapping_add(abi::SS_ZONE),
                     self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
                 );
+                // The Charting Table (#136 T6): where charts spend, in world
+                // coords (Q16.16 cell centers), or -1/-1 in table-less zones.
+                let (tx, ty) = self.chart_table.map_or((-1, -1), |(x, y)| {
+                    (Fx::from_int(x as i16).raw(), Fx::from_int(y as i16).raw())
+                });
+                bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_X), tx);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_Y), ty);
                 0
             }
             SYS_READ_ENTITIES => {
@@ -545,10 +552,11 @@ impl World {
                 0
             }
             SYS_READ_EXITS => {
-                // The zone's exits as 16-byte records: (x raw, y raw,
-                // open, reserved). Returns how many were written — the
-                // bot navigates to and takes them itself; nothing ever
-                // forces a transfer.
+                // The zone's exits as 16-byte records: (x raw, y raw, open,
+                // dest zone num). Returns how many were written — the bot
+                // navigates to and takes them itself; nothing ever forces a
+                // transfer. The dest num (#136 T6) lets a brain ROUTE (match
+                // it against the generated ZONE_* consts); -1 = unknown.
                 let out = bot.vm.pop() as u16;
                 let max = bot.vm.pop().clamp(0, 16) as usize;
                 let n = self.zone.exits.len().min(max);
@@ -557,7 +565,8 @@ impl World {
                     bot.vm.store_i32(base, exit.pos.x.raw());
                     bot.vm.store_i32(base.wrapping_add(4), exit.pos.y.raw());
                     bot.vm.store_i32(base.wrapping_add(8), exit.open as i32);
-                    bot.vm.store_i32(base.wrapping_add(12), 0);
+                    let dest = self.zone_num_by_id(&exit.dest);
+                    bot.vm.store_i32(base.wrapping_add(12), dest);
                 }
                 n as i32
             }

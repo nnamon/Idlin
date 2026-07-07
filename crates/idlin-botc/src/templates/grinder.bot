@@ -7,6 +7,14 @@
 // targeting mode, budgeting mana, falling back to the basic
 // attack. Wander when nothing is around.
 //
+// THE SALT ROAD (#136 T6): this brain plays the whole game. Before
+// Act 1 is done it pushes DEEPER when leveled for the next zone
+// (coast at once, saltworks at 7, the Hollow at 10) and breaks the
+// Mother. After (SelfStatus flags bit 1) it lives the endgame loop:
+// home to Saltmere, spend a chart at the Charting Table, farm the
+// voyage for ~8 minutes, sail home, repeat — and when it runs dry
+// of charts, it returns to the Hollow: the Mother always pays one.
+//
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
 
@@ -46,6 +54,8 @@ var stuck_x;               // unstick: position memory + window counter
 var stuck_y;
 var stuck_t;
 var unstick;               // ticks left of forced wandering
+var voyage_t;              // ticks spent in the current chart instance
+var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
 
 // Fire one skill slot at the target, honoring its declared targeting
 // mode (ReadSkills record +28 = target_mode; ready checked by the
@@ -103,8 +113,28 @@ fn upkeep_gear() {
             // is the optimizing author's job, RFC P4.)
             var ok = 1;
             if (s == 0) {
+                // The MELEE LADDER (#136 T6): the known melee bases, ranked
+                // by base damage — a higher rung always wins; on the same
+                // rung, item level breaks the tie below. The whitelist IS
+                // the class gate (reads don't carry weapon class; a wand or
+                // bow would silence the build's skills, #52).
                 ok = 0;
-                if (num == ITEM_RUSTED_CLEAVER) { ok = 1; }
+                var rank = 0;
+                if (num == ITEM_RUSTED_CLEAVER) { ok = 1; rank = 1; }
+                if (num == ITEM_SALT_WORN_AXE) { ok = 1; rank = 2; }
+                if (num == ITEM_WRECKWOOD_MAUL) { ok = 1; rank = 3; }
+                if (ok == 1) {
+                    var wnum = mem[EQ + 4];
+                    var wrank = 0;
+                    if (wnum == ITEM_RUSTED_CLEAVER) { wrank = 1; }
+                    if (wnum == ITEM_SALT_WORN_AXE) { wrank = 2; }
+                    if (wnum == ITEM_WRECKWOOD_MAUL) { wrank = 3; }
+                    if (rank < wrank) { ok = 0; }
+                    if (rank > wrank) {
+                        if (equip(i) == 0) { return; }
+                        ok = 0;
+                    }
+                }
             }
             if (ok == 1) {
                 var er = EQ + s * EQUIPMENT_RECORD_SIZE;
@@ -118,6 +148,98 @@ fn upkeep_gear() {
     }
 }
 
+// BAG DISCIPLINE (#136 T6): a hoarder's bag is a full bag, and a full
+// bag DROPS NOTHING NEW — the Mother's chart bounced off one once. When
+// the bag runs hot, shed the first NORMAL-rarity gear (never gems, never
+// charts): normals are either worn already or losers by definition.
+fn shed_trash() {
+    var n = read_inventory(INV, 60);
+    // The bag fills by CELLS, not count — a dozen bows brick it long
+    // before 60 records, pickups fail silently, and the Mother's chart
+    // bounces. Policy: anything upkeep_gear did NOT wear is a loser by
+    // definition — keep charts and ONE copy of each build gem, shed the
+    // rest (one per pass; drops shift the bag). Twelve items is lean.
+    if (n < 12) { return 0; }
+    var seen_hs = 0;
+    var seen_cl = 0;
+    var seen_hb = 0;
+    var seen_qk = 0;
+    var i = 0;
+    while (i < n) {
+        var rec = INV + i * INVENTORY_RECORD_SIZE;
+        var num = mem[rec];
+        var keep = 0;
+        if (num == ITEM_SALT_STAINED_CHART) { keep = 1; }
+        if (num == GEM_HEAVY_SWING && seen_hs == 0) { keep = 1; seen_hs = 1; }
+        if (num == GEM_CLEAVE && seen_cl == 0) { keep = 1; seen_cl = 1; }
+        if (num == GEM_HEAVIER_BLOWS && seen_hb == 0) { keep = 1; seen_hb = 1; }
+        if (num == GEM_QUICKENING && seen_qk == 0) { keep = 1; seen_qk = 1; }
+        if (keep == 0) {
+            drop_item(i);
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The bag index of a chart, or -1.
+fn find_chart() {
+    var n = read_inventory(INV, 60);
+    var i = 0;
+    while (i < n) {
+        if (mem[INV + i * INVENTORY_RECORD_SIZE] == ITEM_SALT_STAINED_CHART) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Where the road leads next, as a ZONE_* num — or 0 to stay and grind.
+// Level gates keep us from walking into water over our head; the act
+// bit pivots the whole brain from campaign to endgame.
+fn route_dest() {
+    var act1 = mem[SELF + SS_FLAGS] & 2;
+    var lvl = mem[SELF + SS_LEVEL];
+    var zid = mem[SELF + SS_ZONE];
+    if (act1 == 0) {
+        // The campaign: press on when strong enough. (The shore's own
+        // brain paces the tutorial; when the bluff gate finally opens,
+        // the road up to Saltmere is ours to take.)
+        if (zid == ZONE_WITHERED_SHORE) { return ZONE_SALTMERE; }
+        if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
+        if (zid == ZONE_COAST) {
+            if (lvl >= 7) { return ZONE_SALTWORKS; }
+            return 0;
+        }
+        if (zid == ZONE_SALTWORKS) {
+            if (lvl >= 10) { return ZONE_HOLLOW; }
+            return 0;
+        }
+        return 0;
+    }
+    // The endgame. A voyage lasts ~8 minutes, then home to re-chart.
+    if (zid == ZONE_CHARTED_SHALLOWS) {
+        if (voyage_t > 5000) { return ZONE_SALTMERE; }
+        return 0;
+    }
+    // Holding a chart, the road leads HOME to the table; dry, it leads
+    // back DOWN to the Hollow — the Mother always pays another.
+    if (find_chart() >= 0) {
+        if (zid == ZONE_SALTMERE) { return 0; }  // the table logic in main
+        if (zid == ZONE_HOLLOW) { return ZONE_SALTWORKS; }
+        if (zid == ZONE_SALTWORKS) { return ZONE_COAST; }
+        if (zid == ZONE_COAST) { return ZONE_SALTMERE; }
+        return 0;
+    }
+    if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
+    if (zid == ZONE_COAST) { return ZONE_SALTWORKS; }
+    if (zid == ZONE_SALTWORKS) { return ZONE_HOLLOW; }
+    if (zid == ZONE_HOLLOW) { return 0; }
+    return 0;
+}
+
 fn main() {
     self_status(SELF);
     if (mem[SELF + SS_FLAGS] & 1) { return; }        // dead: wait for respawn
@@ -129,7 +251,9 @@ fn main() {
         last_zone = zid;
         bored = 0;
         leaving = 0;
+        voyage_t = 0;
     }
+    if (zid == ZONE_CHARTED_SHALLOWS) { voyage_t = voyage_t + 1; }
 
     // A word when the shore concedes a level (speech.ron line 2).
     var lvl = mem[SELF + SS_LEVEL];
@@ -163,7 +287,18 @@ fn main() {
     // supports — a bow gem (power_shot) or a spell is never in the plan, so it's
     // never socketed (the weapon-compat skip #52 wanted). Passives self-allocate
     // per the declared build.
-    upkeep_gear();
+    // BUDGET DISCIPLINE (#136 T6): upkeep — a 12-slot gear read, a full
+    // bag scan, and seven socket probes — is the tick's biggest spender,
+    // and gear doesn't change mid-swing. It all fires on ONE tick in ten
+    // (shed + gear + sockets together), then rests nine; the campaign
+    // brain (route/table/exits) bought its budget here.
+    if (upkeep_in <= 0) {
+        upkeep_in = 10;
+        shed_trash();
+        upkeep_gear();
+    }
+    upkeep_in = upkeep_in - 1;
+    if (upkeep_in == 9) {
     // First Spark (NODE_START) is a socket allocated from level 1; the deep
     // limb sockets (WAR/AEGIS) unlock post-shore. The shore brain pays a melee
     // char EITHER heavy_swing or cleave, so try both into the start socket —
@@ -176,25 +311,63 @@ fn main() {
     socket_into(NODE_SOCKET_WAR, GEM_HEAVY_SWING);
     socket_into(NODE_SOCKET_WAR, GEM_CLEAVE);
     socket_into(NODE_SOCKET_AEGIS, GEM_HEAVIER_BLOWS);
+    }
 
-    // Find an open exit, but don't rush it: grind zones keep feeding us.
-    // Departures are earned by BOREDOM — ~12s with nothing in sight to
-    // fight commits us to leaving (the latch survives brief contacts on
-    // the way out; a zone transfer resets it).
+    // THE TABLE (#136 T6): in town, after the act, holding a chart —
+    // walk to the Charting Table and sail. UseChart refuses harmlessly
+    // (-2) until we're in reach; keep walking until it takes.
+    if (zid == ZONE_SALTMERE) {
+        if ((mem[SELF + SS_FLAGS] & 2) != 0) {
+            var chart = find_chart();
+            if (chart >= 0) {
+                var tbx = mem[SELF + SS_TABLE_X];
+                if (tbx >= 0) {
+                    if (use_chart(chart) == 0) { return; }
+                    move_to(tbx, mem[SELF + SS_TABLE_Y]);
+                    return;
+                }
+            }
+        }
+    }
+
+    // Find the exit the ROAD wants (#136 T6). A routed destination IS the
+    // commitment: the level gates in route_dest decide when a zone is done
+    // (boredom can't — grind zones respawn and would feed us forever).
     var open_ex = 0;
     var ex = 0;
     var ey = 0;
-    var nxits = read_exits(EXITS, 4);
-    var e = 0;
-    while (e < nxits) {
-        var er = EXITS + e * EXIT_RECORD_SIZE;
-        if (mem[er + 8] == 1) {
-            open_ex = 1;
-            ex = mem[er];
-            ey = mem[er + 4];
-            e = nxits;
+    var want = route_dest();
+    if (want != 0) {
+        leaving = 1;
+        var nxits = read_exits(EXITS, 4);
+        var e = 0;
+        while (e < nxits) {
+            var er = EXITS + e * EXIT_RECORD_SIZE;
+            if (mem[er + 8] == 1 && mem[er + 12] == want) {
+                open_ex = 1;
+                ex = mem[er];
+                ey = mem[er + 4];
+                e = nxits;
+            }
+            e = e + 1;
         }
-        e = e + 1;
+    }
+    // Off the road (a zone the route doesn't know), BOREDOM stays the
+    // escape valve: ~12s with nothing to fight commits us to the first
+    // open exit — no zone may strand a stock bot.
+    if (want == 0 && leaving == 1) {
+        var nx2 = read_exits(EXITS, 4);
+        var e2 = 0;
+        while (e2 < nx2) {
+            var er2 = EXITS + e2 * EXIT_RECORD_SIZE;
+            if (mem[er2 + 8] == 1) {
+                open_ex = 1;
+                ex = mem[er2];
+                ey = mem[er2 + 4];
+                e2 = nx2;
+            }
+            e2 = e2 + 1;
+        }
     }
 
     // Fight the nearest enemy we can SEE. The query returns enemies
@@ -228,7 +401,10 @@ fn main() {
         unstick = unstick - 1;
         target = -1;
     }
-    if (target >= 0) {
+    var intent = 0;
+    if (target >= 0) { intent = 1; }
+    if (open_ex == 1 && leaving == 1 && unstick <= 0) { intent = 1; }
+    if (intent == 1) {
         stuck_t = stuck_t + 1;
         if (stuck_t >= 30) {
             var sdx = mem[SELF] - stuck_x;
@@ -236,14 +412,19 @@ fn main() {
             var sdy = mem[SELF + SS_Y] - stuck_y;
             if (sdy < 0) { sdy = 0 - sdy; }
             if (sdx < 0x8000 && sdy < 0x8000) {
-                // Within attack reach we WANT to stand still (we're
-                // swinging); beyond it, parked means pinned.
-                var reach = mem[SELF + SS_ATTACK_RANGE] + 0x18000;
-                var tdx = tx - mem[SELF];
-                if (tdx < 0) { tdx = 0 - tdx; }
-                var tdy = ty - mem[SELF + SS_Y];
-                if (tdy < 0) { tdy = 0 - tdy; }
-                if (tdx > reach || tdy > reach) {
+                // Within attack reach of a TARGET we WANT to stand still
+                // (we're swinging); beyond it — or parked on the way to an
+                // exit — parked means pinned.
+                var pinned = 1;
+                if (target >= 0) {
+                    var reach = mem[SELF + SS_ATTACK_RANGE] + 0x18000;
+                    var tdx = tx - mem[SELF];
+                    if (tdx < 0) { tdx = 0 - tdx; }
+                    var tdy = ty - mem[SELF + SS_Y];
+                    if (tdy < 0) { tdy = 0 - tdy; }
+                    if (tdx <= reach && tdy <= reach) { pinned = 0; }
+                }
+                if (pinned == 1) {
                     unstick = 40;
                     wander_left = 0; // pick a fresh stroll target now
                     target = -1;
@@ -254,7 +435,7 @@ fn main() {
             stuck_t = 0;
         }
     }
-    if (target < 0) { stuck_t = 0; }
+    if (intent == 0) { stuck_t = 0; }
 
     // Only VISIBLE enemies hold our interest; mobs behind walls don't
     // stop the boredom clock (wandering will reveal them, or not).
@@ -321,6 +502,13 @@ fn main() {
     if (wander_left <= 0) {
         wander_x = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_W];
         wander_y = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_H];
+        // The Hollow DESCENDS (#136 T6): its whole point is the basin at
+        // the far end — the zone doc says so, and a brain may know its
+        // map. Strolls bias deep so the Mother (and anything she paid us
+        // that fell shy of the bag) is found, not stumbled on.
+        if (mem[SELF + SS_ZONE] == ZONE_HOLLOW) {
+            wander_y = (random() & 0x7FFFFFFF) % (mem[SELF + SS_MAP_H] / 3);
+        }
         wander_left = 50 + ((random() & 0x7FFFFFFF) % 70);
     }
     wander_left = wander_left - 1;

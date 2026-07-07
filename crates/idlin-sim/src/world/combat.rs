@@ -2076,11 +2076,57 @@ impl World {
                 let chart_due = attacker_is_char
                     && (act_boss.is_some()
                         || (self.is_chart_instance && self.rng_loot.next_range(10000) < 400));
-                let chart_drop = if chart_due {
+                let mut chart_drop = if chart_due {
                     self.roll_chart(monster_level)
                 } else {
                     None
                 };
+                // An ACT BOSS's chart goes straight to the killer's BAG
+                // (ground only on overflow): it is the campaign's key
+                // reward, and a ground drop is missable — the first
+                // salt-road run watched the Mother's chart despawn while
+                // her killer respawned at the mouth (#136 T6).
+                if act_boss.is_some()
+                    && let Some(crate::entity::LootPayload::Gear(item)) = chart_drop.take()
+                    && let Some(a_slot) = attacker_slot
+                {
+                    // Overflow falls to the ground but LASTS an hour — the
+                    // key reward outwaits a corpse run, never a despawn race.
+                    let (w, h) = {
+                        let d = &self.content.items[item.base_idx as usize];
+                        (d.w, d.h)
+                    };
+                    let spot = self
+                        .zone
+                        .get(a_slot)
+                        .and_then(|e| e.character.as_ref())
+                        .and_then(|ch| self.first_fit(ch, w, h));
+                    match spot {
+                        Some((x, y)) => {
+                            if let Some(me) = self.zone.get_mut(a_slot) {
+                                me.character.as_mut().unwrap().inventory.push(
+                                    crate::entity::PlacedItem {
+                                        item: crate::entity::BagItem::Gear(item),
+                                        x,
+                                        y,
+                                    },
+                                );
+                            }
+                        }
+                        None => {
+                            let (pos, net) = {
+                                let e = self.zone.get(a_slot).unwrap();
+                                (e.pos, e.net_id)
+                            };
+                            self.spawn_loot_lasting(
+                                pos,
+                                crate::entity::LootPayload::Gear(item),
+                                net,
+                                36_000,
+                            );
+                        }
+                    }
+                }
                 // Signature uniques (#136 T5): each boss may pay their
                 // named item — a fixed-identity mint, chance from the def.
                 // Deterministic order: uniques are id-sorted at load, and

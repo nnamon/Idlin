@@ -98,7 +98,7 @@ impl World {
 
     /// Put a shed gear item back in the bag (first-fit) or drop it at the
     /// character's feet when the grid is full.
-    fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
+    pub(super) fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
         let spot = {
             let Some(e) = self.zone.get(slot) else { return };
             let Some(ch) = e.character.as_ref() else {
