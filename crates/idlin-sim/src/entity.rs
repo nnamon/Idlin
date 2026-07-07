@@ -395,6 +395,13 @@ pub struct CharacterState {
     /// zone entry (a new zone starts undiscovered). Hashed + serialized.
     #[serde(default)]
     pub explored: Vec<u64>,
+    /// Campaign progress (#136): bit N-1 set = act N complete. Set by killing
+    /// the act boss; read by story-sealed exits and by bots via SelfStatus
+    /// (SS_FLAGS bit1 = act 1). Travels with the bundle — progress survives
+    /// zone transfers. Hashed + serialized. (The charts gate, #136 T4, reads
+    /// it next.)
+    #[serde(default)]
+    pub story_acts: u32,
 }
 
 /// Total passive points earned by a level: 2 per level-up, with every

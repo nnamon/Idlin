@@ -2026,6 +2026,10 @@ impl World {
                 def.name.clone(),
                 def.xp * xp_mult * level_bp.max(2500) / 10000,
             );
+            // Story beat (#136): an act boss falls (an authored unique — the
+            // loader enforces that). Copied out here — the def borrow ends
+            // before the killer is mutated below.
+            let act_boss = def.act_boss;
             dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
             // Scripted spawns (spawn_monster/spawn_elite) belong to no
             // pack — the sentinel index has no bookkeeping to update.
@@ -2045,6 +2049,23 @@ impl World {
                     def_idx,
                     level: monster_level,
                 });
+                // Act completion (#136): the KILLER's campaign advances (each
+                // idler runs their own story — instances are per-idler). Only
+                // the first kill fires the beat; a re-kill is just a kill.
+                if let (Some(a_slot), Some(act)) = (attacker_slot, act_boss)
+                    && (1..=32).contains(&act)
+                    && let Some(ch) = self.zone.get_mut(a_slot).and_then(|e| e.character.as_mut())
+                {
+                    let bit = 1u32 << (act - 1);
+                    if ch.story_acts & bit == 0 {
+                        ch.story_acts |= bit;
+                        events.push(SimEvent::ActCompleted {
+                            id: attacker_net,
+                            name: attacker_name.to_string(),
+                            act,
+                        });
+                    }
+                }
                 // Loot (personal: owned by the killer): quantity first,
                 // then per-drop rarity — both the killer's stats. Multiple
                 // drops scatter a little so pillars don't stack.
@@ -5160,6 +5181,91 @@ mod tests {
             plain * 15000 / 10000,
             "shock raises the hit by its magnitude"
         );
+    }
+
+    #[test]
+    fn an_act_boss_kill_completes_the_act_exactly_once() {
+        // #136 campaign spine: killing a monster whose def carries
+        // `act_boss: Some(1)` sets bit 0 of the KILLER's story_acts and emits
+        // ActCompleted — once. A second boss kill and any non-boss kill are
+        // just kills. Mutations: drop the story hook in handle_kill → the
+        // flag/event asserts fail; drop the first-kill guard → two events.
+        use crate::entity::DMG_PHYS;
+        let mut content = content();
+        let husk = content.monster_idx("tide_husk").unwrap();
+        content.monsters[husk].unique = true;
+        content.monsters[husk].act_boss = Some(1);
+        let mut world = World::new(7_77, &content);
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "A".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            }],
+        });
+        let aslot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let anet = world.zone.get(aslot).unwrap().net_id;
+        let kill = |world: &mut World, mslot: usize| -> Vec<SimEvent> {
+            let mut s = typed_spec(aslot, anet, DMG_PHYS, 100_000_000);
+            s.is_dot = true; // no rng: the kill is certain and deterministic
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            let now = world.tick;
+            world.strike(s, mslot, now, &mut ev, &mut dead, &mut loot);
+            ev
+        };
+        let find = |world: &World, id: &str, skip: usize| -> Option<usize> {
+            world
+                .zone
+                .iter()
+                .filter(|(_, e)| {
+                    e.alive()
+                        && e.monster
+                            .as_ref()
+                            .is_some_and(|m| content.monsters[m.def_idx as usize].id == id)
+                })
+                .map(|(s, _)| s)
+                .nth(skip)
+        };
+        // A NON-boss kill first: no story movement.
+        let shambler = find(&world, "drowned_shambler", 0).expect("a shambler spawned");
+        let ev = kill(&mut world, shambler);
+        let story = |world: &World| {
+            world
+                .zone
+                .get(aslot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .story_acts
+        };
+        assert_eq!(story(&world), 0, "a trash kill moves no story");
+        assert!(
+            !ev.iter()
+                .any(|e| matches!(e, SimEvent::ActCompleted { .. })),
+            "no act event for trash"
+        );
+        // The boss falls: bit set + ONE event.
+        let boss = find(&world, "tide_husk", 0).expect("a husk spawned");
+        let ev = kill(&mut world, boss);
+        assert_eq!(story(&world), 1, "act 1 bit set on the killer");
+        let acts: Vec<_> = ev
+            .iter()
+            .filter(|e| matches!(e, SimEvent::ActCompleted { act: 1, .. }))
+            .collect();
+        assert_eq!(acts.len(), 1, "exactly one ActCompleted");
+        // A second boss kill: no re-completion.
+        if let Some(boss2) = find(&world, "tide_husk", 0) {
+            let ev = kill(&mut world, boss2);
+            assert_eq!(story(&world), 1);
+            assert!(
+                !ev.iter()
+                    .any(|e| matches!(e, SimEvent::ActCompleted { .. })),
+                "re-kills are just kills"
+            );
+        }
     }
 
     #[test]

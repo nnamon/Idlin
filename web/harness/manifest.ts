@@ -158,7 +158,8 @@ export const FIXTURES: FixtureMeta[] = [
     // AND that the full-page PNG is non-blank (scene rendered).
     name: "full-shore",
     kind: "full",
-    expect: ["Brakka", "Heavy Swing"],
+    expect: [
+      "has completed Act 1","Brakka", "Heavy Swing"],
     minBytes: 60_000,
   },
   {

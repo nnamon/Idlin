@@ -228,7 +228,8 @@ impl<'a> Visibility<'a> {
             | GameEvent::TreeRespecced { .. }
             | GameEvent::GearShed { .. }
             | GameEvent::BuildRejected { .. }
-            | GameEvent::GemLevelUp { .. } => true,
+            | GameEvent::GemLevelUp { .. }
+            | GameEvent::ActCompleted { .. } => true,
         }
     }
 
@@ -430,6 +431,7 @@ fn is_announcement(ev: &GameEvent) -> bool {
         GameEvent::CharacterDeparted { .. }
             | GameEvent::CharacterJoined { .. }
             | GameEvent::Narration { .. }
+            | GameEvent::ActCompleted { .. }
     )
 }
 
@@ -925,6 +927,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             y1: *y1,
             open: *open,
         },
+        SimEvent::ActCompleted { id, name, act } => GameEvent::ActCompleted {
+            id: *id,
+            name: name.clone(),
+            act: *act,
+        },
         SimEvent::ExitChanged { x, y, open } => GameEvent::ExitChanged {
             x: *x,
             y: *y,
@@ -1190,6 +1197,36 @@ mod tests {
         assert!(
             !vis(&explored).gate_explored(2, 1, 3, 1),
             "a fully dark rect does not"
+        );
+    }
+
+    #[test]
+    fn act_completed_reaches_the_wire_and_the_featured_splice() {
+        // #136: the campaign's biggest beat must map to the wire, pass the
+        // visibility gate (non-positional), and splice onto the featured feed
+        // as an announcement. Mutations: drop the to_game_event arm → None
+        // here; drop the announcement arm → the splice assert fails.
+        let ev = SimEvent::ActCompleted {
+            id: 7,
+            name: "Vex".into(),
+            act: 1,
+        };
+        let wire = to_game_event(&ev).expect("ActCompleted maps to the wire");
+        match &wire {
+            GameEvent::ActCompleted {
+                id: 7,
+                name,
+                act: 1,
+            } => assert_eq!(name, "Vex"),
+            other => panic!("wrong mapping: {other:?}"),
+        }
+        assert!(
+            vis(&[]).event_visible(&wire),
+            "non-positional: visible even with nothing explored"
+        );
+        assert!(
+            is_announcement(&wire),
+            "an act completion is broadcast-worthy cross-world"
         );
     }
 

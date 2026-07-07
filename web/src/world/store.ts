@@ -456,6 +456,10 @@ export class WorldStore {
       case "CharacterDied":
         push(`☠ ${ev.data.name} was slain by ${ev.data.killer}`, "#ff6a6a");
         break;
+      case "ActCompleted":
+        // The campaign's biggest beat (#136) — gold, like a unique drop.
+        push(`★ ${ev.data.name} has completed Act ${ev.data.act}!`, "#ff9a3c");
+        break;
       case "CharacterRespawned": {
         const name = this.entities.get(ev.data.id)?.state.name ?? "someone";
         push(`✚ ${name} returns to the fight`, "#7bff9a");

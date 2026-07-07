@@ -3898,6 +3898,7 @@
     "monster": [
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -3941,6 +3942,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -3978,6 +3980,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4015,6 +4018,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4058,6 +4062,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4116,6 +4121,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": 1,
         "affix_pools": [
           "monster"
         ],
@@ -4173,6 +4179,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],

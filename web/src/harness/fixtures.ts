@@ -596,6 +596,8 @@ const fullShore: Fixture = {
           { type: "GemSocketed", data: { id: FOCUS_ID, owner: NAME, gem: "Cleave" } },
           { type: "CurrencyUsed", data: { id: FOCUS_ID, owner: NAME, currency: "Alchemy Obol", item: "Kelp-Woven Vest" } },
           { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Tide Husk", level: 40 } },
+          // The campaign's biggest beat (#136) — the gold act-completion line.
+          { type: "ActCompleted", data: { id: FOCUS_ID, name: NAME, act: 1 } },
         ],
       },
     },

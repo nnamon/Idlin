@@ -379,12 +379,16 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     }
 
     let mut departed = None;
+    let mut act_beat = false;
     let empty = TickInputs::default();
     // Generous budget: the grinder hunts every effigy in view first, then
     // must sit out the ~12s boredom latch before it commits to the exit,
     // then walk the whole strand back to the bluff gate.
     for _ in 0..3000 {
         let events = shore.tick(&empty);
+        act_beat |= events.iter().any(
+            |ev| matches!(ev, SimEvent::ActCompleted { name, act: 1, .. } if name == "Pilgrim"),
+        );
         let dep = shore.take_departures();
         if !dep.is_empty() {
             assert!(events.iter().any(|ev| matches!(
@@ -397,11 +401,20 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
         }
     }
     let mut departed = departed.expect("the pilgrim must break the Tidewarden and leave");
+    assert!(act_beat, "the ActCompleted beat fired on the shore (#136)");
     let (bundle, dest) = departed.pop().unwrap();
     assert_eq!(dest, "saltmere");
     assert!(
         bundle.character.kills >= 1,
         "the killer carries their tally"
+    );
+    // The campaign spine (#136): breaking the Tidewarden completed act 1 —
+    // the story bit rides the bundle across the ferry. Mutation: drop the act
+    // hook in handle_kill (or the tidewarden's act_boss) → this fails.
+    assert_eq!(
+        bundle.character.story_acts & 1,
+        1,
+        "the Tidewarden's fall completes act 1"
     );
     let kills_at_departure = bundle.character.kills;
 

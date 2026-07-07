@@ -168,7 +168,7 @@ pub mod abi {
     pub const SS_XP: u16 = 20;
     pub const SS_MAP_W: u16 = 24;
     pub const SS_MAP_H: u16 = 28;
-    pub const SS_FLAGS: u16 = 32; // bit0 = dead
+    pub const SS_FLAGS: u16 = 32; // bit0 = dead; bit1 = act 1 complete (#136)
     pub const SS_ANCHOR_X: u16 = 36;
     pub const SS_ANCHOR_Y: u16 = 40;
     pub const SS_AGGRO_RADIUS: u16 = 44;

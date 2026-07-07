@@ -116,6 +116,8 @@ pub struct ExitState {
     /// Destination zone id (the host ferries the bundle).
     pub dest: String,
     pub open: bool,
+    /// Story seal (#136): 0 = none; N = requires act N complete to take.
+    pub requires_act: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

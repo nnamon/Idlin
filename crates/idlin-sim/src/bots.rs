@@ -235,6 +235,9 @@ impl World {
                     .map(|c| c.xp.clamp(0, i32::MAX as i64) as i32)
                     .unwrap_or(0);
                 let dead = !e.alive();
+                // SS_FLAGS bit1 (#136): act 1 complete — exposed so brains can
+                // pivot on campaign progress (the stock brain adopts it in T6).
+                let act1 = e.character.as_ref().is_some_and(|c| c.story_acts & 1 != 0);
                 // Characters anchor to the zone spawn point; monsters to home.
                 let anchor = e
                     .monster
@@ -272,8 +275,10 @@ impl World {
                     .store_i32(out.wrapping_add(abi::SS_MAP_W), self.zone.width.raw());
                 bot.vm
                     .store_i32(out.wrapping_add(abi::SS_MAP_H), self.zone.height.raw());
-                bot.vm
-                    .store_i32(out.wrapping_add(abi::SS_FLAGS), dead as i32);
+                bot.vm.store_i32(
+                    out.wrapping_add(abi::SS_FLAGS),
+                    dead as i32 | ((act1 as i32) << 1),
+                );
                 bot.vm
                     .store_i32(out.wrapping_add(abi::SS_ANCHOR_X), anchor.x.raw());
                 bot.vm
@@ -547,6 +552,7 @@ impl World {
                 }
                 n as i32
             }
+            // 0 staged; -1 none in reach; -2 closed; -3 story-sealed (#136).
             SYS_USE_EXIT => {
                 // Take the exit underfoot. 0 = staged (departs this tick),
                 // −1 no exit in reach, −2 the exit in reach is closed.
@@ -558,11 +564,20 @@ impl World {
                 }
                 let net = e.net_id;
                 let pos = e.pos;
+                let story_acts = e.character.as_ref().map(|c| c.story_acts).unwrap_or(0);
                 let reach = crate::fixed::Fx::from_raw(EXIT_REACH_RAW);
                 let mut found_closed = false;
+                let mut found_sealed = false;
                 let mut dest: Option<String> = None;
                 for exit in &self.zone.exits {
                     if pos.dist(exit.pos) > reach {
+                        continue;
+                    }
+                    // Story seal (#136): an exit can require a completed act.
+                    // Sealed reads distinctly from closed — the bot can tell
+                    // "come back stronger" (-3) apart from "not open yet" (-2).
+                    if exit.requires_act > 0 && story_acts & (1 << (exit.requires_act - 1)) == 0 {
+                        found_sealed = true;
                         continue;
                     }
                     if exit.open {
@@ -578,6 +593,7 @@ impl World {
                         }
                         0
                     }
+                    None if found_sealed => -3,
                     None if found_closed => -2,
                     None => -1,
                 }
@@ -912,6 +928,65 @@ mod tests {
     use crate::World;
     use idlin_content::ContentDb;
     use std::path::Path;
+
+    /// #136: SS_FLAGS packs bit0 = dead and bit1 = act-1-complete — asserted
+    /// through the REAL syscall handler with a DEAD entity. (run_bots skips
+    /// dead bots, so the per-tick path can never observe bit0 on yourself; the
+    /// handler below is still the ABI's single owner and must stay correct.)
+    /// Mutations: shift `dead` off bit0 → the dead read isn't 1; shift act1
+    /// off bit1 → the storied read isn't 2; the combined read pins 3.
+    #[test]
+    fn self_status_flags_pack_dead_bit0_and_act_bit1() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut world = World::new(14, &content);
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Flagged".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            }],
+            arrivals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
+        let mut bot = world.bots.take(bot_idx).unwrap();
+        let read_flags = |world: &mut World, bot: &mut Bot| -> i32 {
+            bot.vm.push(0xF000);
+            let r = world.syscall(slot, bot, SYS_SELF_STATUS, 1, &mut Vec::new());
+            assert_eq!(r, 0, "SelfStatus succeeds");
+            bot.vm.load_i32(0xF000 + abi::SS_FLAGS)
+        };
+        assert_eq!(read_flags(&mut world, &mut bot), 0, "alive, no acts");
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        assert_eq!(read_flags(&mut world, &mut bot), 2, "act 1 on bit 1");
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .life = 0;
+        assert_eq!(read_flags(&mut world, &mut bot), 3, "dead + act 1 = 3");
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 0;
+        assert_eq!(read_flags(&mut world, &mut bot), 1, "dead alone = bit 0");
+        world.bots.put_back(bot_idx, bot);
+    }
 
     /// #54 PR3: drive SYS_READ_EQUIPMENT through the VM and confirm the records
     /// land at the `EQUIPMENT_RECORD_SIZE` (16-byte) stride the bot-guide

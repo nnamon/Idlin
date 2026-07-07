@@ -93,6 +93,8 @@ pub enum ContentError {
     UnsupportedTargetGrant { at: String },
     #[error("tile map for `{zone}`: {msg}")]
     BadMap { zone: String, msg: String },
+    #[error("monster `{monster}`: {msg}")]
+    BadMonster { monster: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
     #[error("the committed id registry `ids.ron` is malformed: {msg}")]
@@ -276,6 +278,12 @@ pub struct MonsterDef {
     /// attribute grants work exactly as they do for characters.
     #[serde(default)]
     pub passives: Vec<Grant>,
+    /// Killing this monster completes the given ACT for the killer (#136):
+    /// sets the character's story bit and emits ActCompleted. Requires
+    /// `unique: true` — act bosses ARE authored uniques (one boss identity,
+    /// not two): they already spawn at Unique rarity with the boss bar.
+    #[serde(default)]
+    pub act_boss: Option<u32>,
 }
 
 fn default_radius_cu() -> i32 {
@@ -1021,6 +1029,10 @@ pub struct ExitDef {
     /// Usable from boot? Closed exits open via the zone brain's set_exit.
     #[serde(default)]
     pub open: bool,
+    /// Story seal (#136): 0 = none; N = only characters who have completed
+    /// act N may take this exit (UseExit returns -3 otherwise).
+    #[serde(default)]
+    pub requires_act: u32,
 }
 
 /// A brain-togglable barrier: a rect of cells that block movement while
@@ -2113,6 +2125,25 @@ impl ContentDb {
                     });
                 }
             }
+            // Act bosses (#136): the act must fit the u32 story bitmask, and
+            // an act boss must BE an authored unique (the one boss identity —
+            // Unique rarity + the boss bar). Both are authoring mistakes that
+            // would ship silently; refuse them at load.
+            if let Some(act) = m.act_boss {
+                if !(1..=32).contains(&act) {
+                    return Err(ContentError::BadMonster {
+                        monster: m.id.clone(),
+                        msg: format!("act_boss {act} out of range (1..=32)"),
+                    });
+                }
+                if !m.unique {
+                    return Err(ContentError::BadMonster {
+                        monster: m.id.clone(),
+                        msg: "act_boss requires unique: true (act bosses are authored uniques)"
+                            .into(),
+                    });
+                }
+            }
         }
         // Tree-node grants are condition-capable too (#86), so the same rule
         // applies — a conditional attribute on a node would game requirements.
@@ -2318,6 +2349,18 @@ impl ContentDb {
                     return Err(ContentError::BadMap {
                         zone: zone.id.clone(),
                         msg: format!("exit leads to unknown zone `{}`", exit.dest),
+                    });
+                }
+                // Story seals (#136): acts live in a u32 bitmask — an act
+                // outside 1..=32 would shift-overflow (panic) or silently
+                // never unlock. Fail at load, like every other dead-content trap.
+                if exit.requires_act > 32 {
+                    return Err(ContentError::BadMap {
+                        zone: zone.id.clone(),
+                        msg: format!(
+                            "exit requires_act {} out of range (1..=32, or 0 for none)",
+                            exit.requires_act
+                        ),
                     });
                 }
             }
@@ -3707,6 +3750,60 @@ mod tests {
         affix_pools: [],
         passives: [GRANT],
     )"#;
+
+    #[test]
+    fn malformed_act_metadata_is_rejected() {
+        // #136: acts live in a u32 bitmask — out-of-range values would shift-
+        // overflow (requires_act) or never unlock (act_boss); an act boss that
+        // isn't an authored unique would grant story without the boss identity.
+        // Mutation: drop any of the three loader guards → its probe loads.
+        let zone = TILE_ZONE_OK.replace(
+            "packs: [],",
+            "packs: [], exits: [(x_u: 1, y_u: 1, dest: \"den\", open: true, requires_act: 33)],",
+        );
+        let tc = TempContent::new(
+            "act_seal_range",
+            &[
+                ("tilesets/cave.ron", TILESET_OK),
+                ("areas/den/zone.ron", zone.as_str()),
+                ("areas/den/map.txt", "###\n#.#\n###\n"),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadMap { zone, msg }) => {
+                assert_eq!(zone, "den");
+                assert!(msg.contains("requires_act"), "{msg}");
+            }
+            other => panic!("expected BadMap for requires_act 33, got {other:?}"),
+        }
+
+        let monster = |unique: bool, act: u32| {
+            MONSTER_WITH_PASSIVE.replace(
+                "passives: [GRANT],",
+                &format!("passives: [], unique: {unique}, act_boss: Some({act}),"),
+            )
+        };
+        for (unique, act, why) in [
+            (true, 0, "act 0 out of range"),
+            (true, 33, "act 33 out of range"),
+            (false, 1, "act boss must be unique"),
+        ] {
+            let body = monster(unique, act);
+            let tc = TempContent::new(
+                &format!("act_boss_{act}_{unique}"),
+                &[
+                    ("brains/mobbrain.bot", "fn main() {}"),
+                    ("monsters/mob.ron", body.as_str()),
+                ],
+            );
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::BadMonster { monster, .. }) => {
+                    assert_eq!(monster, "mob", "{why}");
+                }
+                other => panic!("{why}: expected BadMonster, got {other:?}"),
+            }
+        }
+    }
 
     #[test]
     fn a_conditional_attribute_monster_passive_is_rejected() {

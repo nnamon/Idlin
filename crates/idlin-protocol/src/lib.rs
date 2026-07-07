@@ -22,7 +22,8 @@ use ts_rs::TS;
 //     `revealed_gates`, and the new RevealedCell type. Snapshots ship MASKED
 //     tiles (unexplored glyphs blanked to ' ', props/exits/gates filtered by
 //     what the world's residents have explored).
-pub const PROTO_VERSION: u32 = 40;
+// 41: GameEvent gains ActCompleted (#136 campaign spine).
+pub const PROTO_VERSION: u32 = 41;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -188,6 +189,12 @@ pub enum GameEvent {
     CharacterJoined {
         id: u32,
         name: String,
+    },
+    /// A character completed an ACT (#136) — the campaign's biggest beat.
+    ActCompleted {
+        id: u32,
+        name: String,
+        act: u32,
     },
     /// A tutorial gate lifted or shut (cell rect).
     GateChanged {
@@ -810,6 +817,32 @@ mod tests {
                 assert!(revealed_exits[0].open, "the revealed exit survives");
             }
             other => panic!("expected ZoneDelta, got {other:?}"),
+        }
+
+        // The campaign beat (#136) survives the wire with its tag + fields.
+        let beat = S2C::Events {
+            events: vec![GameEvent::ActCompleted {
+                id: 7,
+                name: "Vex".into(),
+                act: 1,
+            }],
+        };
+        let json = serde_json::to_string(&beat).unwrap();
+        assert!(
+            json.contains("\"ActCompleted\""),
+            "tagged variant name: {json}"
+        );
+        let back: S2C = serde_json::from_str(&json).unwrap();
+        match back {
+            S2C::Events { events } => match &events[0] {
+                GameEvent::ActCompleted {
+                    id: 7,
+                    name,
+                    act: 1,
+                } => assert_eq!(name, "Vex"),
+                other => panic!("wrong event back: {other:?}"),
+            },
+            other => panic!("wrong message back: {other:?}"),
         }
 
         // The per-skill readout (#19) survives the wire — notably `width_cu`,

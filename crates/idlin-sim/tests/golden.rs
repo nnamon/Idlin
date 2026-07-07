@@ -10,6 +10,15 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T1 (the campaign spine), two intentional moves:
+/// (1) content_hash — the Tidewarden's .ron gains `act_boss: Some(1)`; and
+/// (2) a FINGERPRINT widening — every exit's `requires_act` (the story seal)
+/// now folds into state_hash, adding a u32 per exit even at the default 0.
+/// The replay DOES acquire new state — the grinder completes act 1 (story
+/// bit + an ActCompleted beat) before departing — but the FINAL digest moves
+/// only via the two contributions above: the storied character has departed
+/// by the hashed tick and events are transient, never hashed. The trio agrees.
+/// (Prior: 0x4E18 — #109 B2b.)
 /// Re-pinned for #109 B2b (target-dependent strike conditions): the new
 /// `Condition::TargetHasAilment` + the per-element "vs-ailed" weapon suffixes
 /// (`of_scorch`/`of_jolt`/`of_rime`, MORE damage vs ignited/shocked/chilled) shift
@@ -93,7 +102,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x4E18_9903_724D_83C7;
+const GOLDEN_HASH: u64 = 0x3722_6540_F13F_5E9C;
 
 #[test]
 fn golden_replay() {

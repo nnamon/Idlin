@@ -76,7 +76,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v14 (#129 fog of war): `CharacterState` gained `explored: Vec<u64>` (the per-character
 /// discovered-cells bitset that drives the wire visibility filter) — a serialized character
 /// field; a v13 snapshot's `CharacterState` would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 14;
+/// v15 (#136 campaign spine): `CharacterState` gained `story_acts: u32` (campaign progress)
+/// and `ExitState` gained `requires_act: u32` (story-sealed exits) — both serialized; a v14
+/// snapshot would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 15;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -240,6 +243,7 @@ mod tests {
                 currency: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 explored: Vec::new(),
+                story_acts: 0,
             },
             program: idlin_botc::assemble("halt\n").unwrap(),
             persist: Vec::new(),
@@ -350,12 +354,33 @@ mod tests {
     }
 
     #[test]
+    fn nonzero_story_progress_survives_the_pending_bundle() {
+        // #136: campaign state must roundtrip — every other fixture uses
+        // zeros, so a `#[serde(skip)]` on story_acts would pass them all.
+        // (The live-world half — ExitState.requires_act + an in-zone
+        // character's story — is covered in-crate in idlin-sim, where the
+        // zone is reachable.) Mutation: skip story_acts → this fails.
+        let content = ContentDb::empty();
+        let world = World::new(0x51A7, &content);
+        let mut pilgrim = bundle("Pilgrim");
+        pilgrim.character.story_acts = 0b101; // acts 1 + 3
+        let dir = temp_dir("story_roundtrip");
+        save_managed(&world, &[pilgrim], &dir).expect("save");
+        let (_, pendings) = load_managed(&content, &dir).expect("load");
+        assert_eq!(
+            pendings[0].character.story_acts, 0b101,
+            "story_acts roundtrips through the snapshot file"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn snapshot_format_version_is_pinned() {
         // Deliberate checkpoint (like GOLDEN_HASH / PROTO_VERSION): any serialized-layout
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 14);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 15);
     }
 
     #[test]

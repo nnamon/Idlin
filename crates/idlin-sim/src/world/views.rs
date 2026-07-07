@@ -805,6 +805,8 @@ impl World {
                 for &word in &ch.explored {
                     h.write_u64(word);
                 }
+                // Campaign progress (#136): gates exits/charts — future state.
+                h.write_u32(ch.story_acts);
             }
             h.write_u64(e.last_say_tick);
             h.write_u64(e.effects.len() as u64);
@@ -968,6 +970,8 @@ impl World {
             h.write_i32(ex.pos.x.raw());
             h.write_i32(ex.pos.y.raw());
             h.write_u8(ex.open as u8);
+            // The story seal (#136) gates who may depart — future state.
+            h.write_u32(ex.requires_act);
         }
         for g in &self.zone.gates {
             h.write_u8(g.open as u8);

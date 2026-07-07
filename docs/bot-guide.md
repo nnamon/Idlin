@@ -285,7 +285,7 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 23 | `UseSkillDir` | slot, dx, dy (raw Q16.16 vector) | direction-aimed skills (cones, lines, projectile volleys): sweep where you point. Same return codes as UseSkill. |
 | 26 | `Say` | line_idx | speak a speech-bubble line: monsters use their def's `lines:`, characters the global `content/speech.ron` set (index wraps — bots can NEVER inject arbitrary text). 0 ok; −1 no lines for you; −2 rate-limited (characters 10s, monsters 5s). |
 | 27 | `ReadExits` | out_addr, max | the zone's exits as 16-byte records: (x raw, y raw, open, reserved). Returns the count written. Exits are PLACES — walk to one and take it yourself. |
-| 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed. There are NO forced transfers — leaving is always the bot's own call. |
+| 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed; −3 the exit is story-sealed (complete the required act first — check SelfStatus flags bit 1). There are NO forced transfers — leaving is always the bot's own call. |
 | 24 | `ReadCurrency` | out_addr, max (≤16) | a positional count array: obol stacks as u32 words in registry order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. The slot's matching id is the `CURRENCY_*` const at the same position — read the count here, spend by num below. |
 | 25 | `UseCurrency` | currency_num, inv_idx | spend one obol on the bag item at inv_idx. `currency_num` is the currency's stable tagged num (#54) — pass a `CURRENCY_*` const, not an array position. 0 ok; −1 unknown/non-currency num / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 | 30 | `SkillInfo` | slot, out_addr | the static geometry of the skill in `slot` (same 1-based slot space as ReadSkills) → a 3-word record at out_addr: `shape (0 target / 1 nova / 2 cone / 3 line / 4 point-AoE / 5 projectile), radius (Q16.16), skill_kind (0 attack / 1 spell)`. Returns 0, or −1 for an empty/invalid slot. You only need this to position AoE — `target_mode` rides in ReadSkills. |
@@ -345,7 +345,7 @@ can never hit your own faction.
 | +8 / +12 | life, life_max |
 | +16 / +20 | level, xp |
 | +24 / +28 | map_w, map_h (Q16.16) |
-| +32 | flags (bit 0 = dead) |
+| +32 | flags (bit 0 = dead; bit 1 = act 1 complete — your campaign progress) |
 | +36 / +40 | anchor x, y (monsters: home; characters: zone spawn) |
 | +44 | aggro radius (Q16.16; 0 for characters) |
 | +48 | attack range (Q16.16) |

@@ -121,6 +121,13 @@ pub enum SimEvent {
         y: i32,
         open: bool,
     },
+    /// A character completed an ACT (#136): they killed its act boss. The
+    /// broadcast's biggest story beat.
+    ActCompleted {
+        id: u32,
+        name: String,
+        act: u32,
+    },
     LevelUp {
         id: u32,
         name: String,
@@ -695,6 +702,7 @@ impl World {
                         ),
                         dest: exit.dest.clone(),
                         open: exit.open,
+                        requires_act: exit.requires_act,
                     });
                 }
                 // Authored zones: collision IS the map. Tileset presence
@@ -1148,6 +1156,7 @@ impl World {
                     sockets: std::collections::BTreeMap::new(),
                     // Sized + stamped by this tick's explore() pass (#129).
                     explored: Vec::new(),
+                    story_acts: 0,
                 }),
                 monster: None,
                 loot: None,
@@ -2328,6 +2337,7 @@ mod area_level_tests {
                 // The old zone's knowledge: everything explored, same size as
                 // the destination — the case the size check alone can't catch.
                 explored: vec![u64::MAX; words],
+                story_acts: 0,
             },
             persist: Vec::new(),
             program: idlin_botc::assemble("halt\n").unwrap(),
@@ -2357,6 +2367,231 @@ mod area_level_tests {
             !explored_bit(&w, slot, fx, fy),
             "the old zone's knowledge did NOT carry over"
         );
+    }
+
+    #[test]
+    fn a_story_sealed_exit_refuses_until_the_act_is_complete() {
+        // #136: an exit with `requires_act: 1` returns -3 (stays put) for a
+        // fresh character and works normally once story_acts bit 0 is set —
+        // through the REAL UseExit syscall path. Mutations: drop the seal
+        // check in bots.rs → the fresh character departs on the first tick;
+        // read the wrong bit → the post-completion tick strands them.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x5EA1, &content);
+        // A bot that takes any exit underfoot, every tick.
+        let slot = {
+            w.tick(&TickInputs {
+                arrivals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "Walker".into(),
+                    program: idlin_botc::assemble(
+                        "loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n",
+                    )
+                    .unwrap(),
+                }],
+            });
+            (0..w.zone.slot_count())
+                .find(|&s| {
+                    w.zone
+                        .get(s)
+                        .is_some_and(|e| e.character.as_ref().is_some_and(|c| c.name == "Walker"))
+                })
+                .expect("walker joined")
+        };
+        // A sealed, open exit right underfoot.
+        let pos = w.zone.get(slot).unwrap().pos;
+        w.zone.exits.push(crate::zone::ExitState {
+            pos,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 1,
+        });
+        w.tick(&TickInputs::default());
+        assert!(
+            w.take_departures().is_empty(),
+            "the seal held: no departure without act 1"
+        );
+        assert!(
+            w.zone.get(slot).is_some_and(|e| e.character.is_some()),
+            "the walker is still here"
+        );
+        // The ABI itself: the walker parked UseExit's last result at 0xF200 —
+        // a SEALED exit reads -3, distinctly from -2 closed / -1 none.
+        let bot_idx = w.zone.get(slot).unwrap().bot.expect("walker has a bot");
+        assert_eq!(
+            w.bots.get_mut(bot_idx).unwrap().vm.load_i32(0xF200),
+            -3,
+            "a story-sealed exit returns -3 on the wire ABI"
+        );
+        // Complete the act; the same exit now works.
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        w.tick(&TickInputs::default());
+        let departed = w.take_departures();
+        assert_eq!(departed.len(), 1, "the seal lifted with the act");
+        assert_eq!(departed[0].0.character.name, "Walker");
+        assert_eq!(
+            departed[0].0.character.story_acts, 1,
+            "progress travels in the bundle"
+        );
+    }
+
+    #[test]
+    fn an_open_unsealed_exit_wins_over_a_sealed_neighbor() {
+        // #136: with BOTH a sealed exit and an open unsealed one in reach, the
+        // bot departs — success outranks -3 (the loop keeps scanning past a
+        // sealed exit instead of bailing). Mutation: break on the sealed exit
+        // (or fold sealed into closed) → no departure here.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x5EA2, &content);
+        w.tick(&TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Walker".into(),
+                program: idlin_botc::assemble("loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n")
+                    .unwrap(),
+            }],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| w.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let pos = w.zone.get(slot).unwrap().pos;
+        w.zone.exits.push(crate::zone::ExitState {
+            pos,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 1, // sealed for a fresh character
+        });
+        w.zone.exits.push(crate::zone::ExitState {
+            pos,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 0, // free
+        });
+        w.tick(&TickInputs::default());
+        assert_eq!(
+            w.take_departures().len(),
+            1,
+            "the free exit wins over its sealed neighbor"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_exit_seals() {
+        // #136: two worlds identical but for an exit's requires_act admit
+        // different futures (one departs, one gets -3) — the seal must hash.
+        // Mutation: drop the requires_act fold in views.rs → identical digests.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0A, &content);
+        w.zone.exits.push(crate::zone::ExitState {
+            pos: w.zone.spawn,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 1,
+        });
+        let h1 = w.state_hash();
+        w.zone.exits.last_mut().unwrap().requires_act = 2;
+        assert_ne!(h1, w.state_hash(), "the seal must move the digest");
+    }
+
+    #[test]
+    fn self_status_flags_carry_act_completion_on_bit_1() {
+        // #136: SS_FLAGS bit1 = act 1 complete, bit0 = dead — through the REAL
+        // SelfStatus syscall. Mutation: shift act1 to bit 2 (or drop it) → the
+        // post-completion read isn't 2; corrupt bit0 → the alive read fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0B, &content);
+        // SelfStatus(out=0xF000) every tick; flags land at 0xF000 + 32.
+        w.tick(&TickInputs {
+            arrivals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Flagbearer".into(),
+                program: idlin_botc::assemble(
+                    "loop:\npush 0xF000\nsys 1 1\npush 0xF200\nstore\njmp loop\n",
+                )
+                .unwrap(),
+            }],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| w.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let bot_idx = w.zone.get(slot).unwrap().bot.unwrap();
+        let flags = |w: &mut World, idx: u32| -> i32 {
+            w.bots.get_mut(idx).unwrap().vm.load_i32(0xF000 + 32)
+        };
+        assert_eq!(flags(&mut w, bot_idx), 0, "alive, no acts: flags 0");
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        w.tick(&TickInputs::default());
+        assert_eq!(
+            flags(&mut w, bot_idx),
+            2,
+            "act 1 complete + alive: exactly bit 1"
+        );
+    }
+
+    #[test]
+    fn story_and_sealed_exits_survive_world_serde() {
+        // #136: the WORLD snapshot must carry a character's story_acts and an
+        // exit's requires_act — a `#[serde(skip)]` on either would resume a
+        // wiped campaign or an unsealed exit. Mutation: skip either field →
+        // the corresponding assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x51A8, &content);
+        let slot = join_one(&mut w, "Pilgrim");
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 0b101;
+        w.zone.exits.push(crate::zone::ExitState {
+            pos: w.zone.spawn,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 2,
+        });
+        let bytes = postcard::to_allocvec(&w).expect("world serializes");
+        let mut back: World = postcard::from_bytes(&bytes).expect("world resumes");
+        back.attach_content(&content).expect("content re-attaches");
+        let ch = (0..back.zone.slot_count())
+            .find_map(|s| back.zone.get(s).and_then(|e| e.character.as_ref()))
+            .expect("character restored");
+        assert_eq!(ch.story_acts, 0b101, "story_acts survives the snapshot");
+        assert_eq!(
+            back.zone.exits.last().unwrap().requires_act,
+            2,
+            "the sealed exit survives the snapshot"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_story_acts() {
+        // #136: campaign progress gates future behavior (exits/charts), so it
+        // must be hashed. Mutation: drop the story_acts fold → identical hash.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF09, &content);
+        let slot = join_one(&mut w, "Storied");
+        let h1 = w.state_hash();
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        assert_ne!(h1, w.state_hash(), "story_acts must move the digest");
     }
 
     #[test]

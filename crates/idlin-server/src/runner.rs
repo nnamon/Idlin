@@ -618,6 +618,7 @@ mod tests {
                 currency: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 explored: Vec::new(),
+                story_acts: 0,
             },
             program: idlin_botc::assemble("halt\n").unwrap(),
             persist: Vec::new(),
