@@ -9,7 +9,7 @@ MonsterDef(
     hostile: true,
     level: 10,
     life: 430,
-    damage: 27,
+    damage: 22,
     speed_cps: 175,
     radius_cu: 95,
     range_cu: 210,

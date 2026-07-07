@@ -9,15 +9,16 @@ MonsterDef(
     hostile: true,
     level: 11,
     life: 240,
-    damage: 12,
+    damage: 11,
     damage_cold: 4,
     speed_cps: 225,
     radius_cu: 60,
     range_cu: 230,
     mana: 130,
+    // Frost ONLY (#136 T8): the Mother owns the lightning; a choir that
+    // cast both out-gunned the no-resist stock build two levels early.
     skills: [
-        (gem: "frost_nova", level: 3),
-        (gem: "arc", level: 3),
+        (gem: "frost_nova", level: 2),
     ],
     use_ticks: 16,
     aggro_radius_cu: 1600,

@@ -4273,7 +4273,7 @@
         "aggro_radius_cu": 1600,
         "armour": 30,
         "brain": "hostile_melee",
-        "damage": 12,
+        "damage": 11,
         "damage_chaos": 0,
         "damage_cold": 4,
         "damage_fire": 0,
@@ -4299,12 +4299,7 @@
         "skills": [
           {
             "gem": "frost_nova",
-            "level": 3,
-            "supports": []
-          },
-          {
-            "gem": "arc",
-            "level": 3,
+            "level": 2,
             "supports": []
           }
         ],
@@ -4322,7 +4317,7 @@
         "aggro_radius_cu": 1200,
         "armour": 130,
         "brain": "hostile_melee",
-        "damage": 27,
+        "damage": 22,
         "damage_chaos": 0,
         "damage_cold": 0,
         "damage_fire": 0,

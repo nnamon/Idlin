@@ -10,6 +10,13 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T8 (the balance pass): the Hollow's tune moved
+/// content_hash (chanters sing frost only at L2; colossi three-hit instead
+/// of two-shot) AND the grinder template raised its Hollow gate to level
+/// 12 — the golden replay's bots carry the new brain, so their shore
+/// decisions shift tick-by-tick. The three-seed salt-road band pins the
+/// live pacing (sail ≤90k, deaths ≤40; actuals ~30k, ~10).
+/// (Prior: 0xB833 — T6.)
 /// Re-pinned for #136 T6 (the stock brain runs the whole game): the shore
 /// REPLAY ITSELF changes — the grinder template gained the campaign brain
 /// (routing, bag discipline, upkeep cadence), so its tutorial decisions
@@ -141,7 +148,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0xB833_78BC_0738_9286;
+const GOLDEN_HASH: u64 = 0x01F3_4D9D_064E_BCDF;
 
 #[test]
 fn golden_replay() {

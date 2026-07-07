@@ -756,23 +756,27 @@ mod tests {
         w
     }
 
-    /// THE 1.0 PROMISE (#136 T6): a stock grinder, joined fresh at level 1
-    /// in Saltmere, plays the whole game by itself — walks the road (coast,
-    /// the Saltworks past Karesh, down the Hollow), breaks the Mother,
-    /// completes Act 1, carries her chart home to the table, and SAILS: a
-    /// chart instance exists with the grinder aboard. A mini host loop
-    /// (tick + chart-aware ferry) stands in for the server. Mutation: break
-    /// routing, the act hook, UseChart, or the ferry mint → a milestone
-    /// never lights and this fails with the furthest milestone named.
-    #[test]
-    fn the_stock_grinder_walks_the_salt_road() {
+    /// THE 1.0 PROMISE (#136 T6) + THE BALANCE BAND (#136 T8): a stock
+    /// grinder, joined fresh at level 1 in Saltmere, plays the whole game by
+    /// itself — walks the road (coast, the Saltworks past Karesh, down the
+    /// Hollow), breaks the Mother, completes Act 1, carries her chart home
+    /// to the table, and SAILS. A mini host loop (tick + chart-aware ferry)
+    /// stands in for the server. Across SEEDS, the run must also stay
+    /// inside the band: done within the tick budget, without death-spam —
+    /// a content change that turns a zone into a meat grinder or a wall
+    /// fails here, not in front of the operator. Mutation: break routing,
+    /// the act hook, UseChart, the ferry mint, or overtune any fight → a
+    /// milestone never lights (or the band breaks) and this fails named.
+    fn walk_the_salt_road(seed: u64) -> (u64, u32) {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
-        let mut worlds = boot_worlds(&content, 0x05A1_70AD, &[]);
-        let saltmere = worlds.iter().position(|w| w.key == "saltmere").unwrap();
-        worlds[saltmere].pending.joins.push(idlin_sim::JoinRequest {
+        // The WHOLE game: the join lands on the shore, so the real tutorial
+        // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
+        // Saltmere before the campaign begins — exactly a fresh idler's life.
+        let joins = vec![idlin_sim::JoinRequest {
             name: "Pathfinder".into(),
             program: idlin_botc::template_grinder().unwrap(),
-        });
+        }];
+        let mut worlds = boot_worlds(&content, seed, &joins);
         let mut milestones = [false; 6]; // coast, works, hollow, act, town+act, voyage
         let names = [
             "reach the coast",
@@ -782,6 +786,8 @@ mod tests {
             "return to town with the act done",
             "sail a charted voyage",
         ];
+        let mut deaths = 0u32;
+        let mut sailed_at = 0u64;
         'run: for host_tick in 0..140_000u64 {
             let mut departures = Vec::new();
             for (i, mw) in worlds.iter_mut().enumerate() {
@@ -792,6 +798,11 @@ mod tests {
                         && name == "Pathfinder"
                     {
                         milestones[3] = true;
+                    }
+                    if let SimEvent::CharacterDied { name, .. } = ev
+                        && name == "Pathfinder"
+                    {
+                        deaths += 1;
                     }
                 }
                 departures.extend(
@@ -809,7 +820,7 @@ mod tests {
                     milestones[4] = true;
                 }
             }
-            ferry_departures_with_charts(&mut worlds, departures, &content, 0x05A1_70AD, host_tick);
+            ferry_departures_with_charts(&mut worlds, departures, &content, seed, host_tick);
             if host_tick % 200 == 0 {
                 for mw in &worlds {
                     let here = mw
@@ -827,6 +838,7 @@ mod tests {
                         "saltmere" if milestones[3] => milestones[4] = true,
                         "charted_shallows" => {
                             milestones[5] = true;
+                            sailed_at = host_tick;
                             break 'run;
                         }
                         _ => {}
@@ -837,10 +849,33 @@ mod tests {
         let furthest = milestones.iter().filter(|m| **m).count();
         assert!(
             milestones.iter().all(|m| *m),
-            "the road ends early: {} of 6 — stuck before `{}`",
+            "seed {seed:#x}: the road ends early: {} of 6 — stuck before `{}`",
             furthest,
             names[furthest]
         );
+        (sailed_at, deaths)
+    }
+
+    #[test]
+    fn the_stock_grinder_walks_the_salt_road() {
+        // Three seeds (#136 T8): the promise must hold for EVERY fresh
+        // idler, not one lucky roll. Bands (generous — regression trips,
+        // not tuning drift): sail within 90k ticks vs measured 9.8k-27.2k,
+        // and at most 40 deaths vs measured 1-4 — death-SPAM is the smell
+        // this catches, not death itself: dying is idle life. The band's
+        // first catch: 72 deaths in the pre-tune Hollow on one seed. A
+        // subtle 2x pacing drift passes by design; walls and grinders trip.
+        for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5] {
+            let (sailed_at, deaths) = walk_the_salt_road(seed);
+            assert!(
+                sailed_at <= 90_000,
+                "seed {seed:#x}: sailed at {sailed_at} — the road has a wall"
+            );
+            assert!(
+                deaths <= 40,
+                "seed {seed:#x}: {deaths} deaths — a zone is a meat grinder"
+            );
+        }
     }
 
     #[test]

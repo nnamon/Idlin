@@ -214,7 +214,10 @@ fn route_dest() {
             return 0;
         }
         if (zid == ZONE_SALTWORKS) {
-            if (lvl >= 10) { return ZONE_HOLLOW; }
+            // 12, not 10: the Hollow at 10 was a meat grinder (the T8 band
+            // counted 71 deaths on one seed) — two more Saltworks levels
+            // turn it into a fight.
+            if (lvl >= 12) { return ZONE_HOLLOW; }
             return 0;
         }
         return 0;
