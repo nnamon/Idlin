@@ -1,0 +1,29 @@
+// Hollow trash, the voice: drowned choristers keeping the Mother's tide
+// singing — frost to hold you, arc to finish you.
+MonsterDef(
+    id: "deep_chanter",
+    public: true,
+    name: "Deep Chanter",
+    model: "husk",
+    brain: "hostile_melee",
+    hostile: true,
+    level: 11,
+    life: 240,
+    damage: 12,
+    damage_cold: 4,
+    speed_cps: 225,
+    radius_cu: 60,
+    range_cu: 230,
+    mana: 130,
+    skills: [
+        (gem: "frost_nova", level: 4),
+        (gem: "arc", level: 3),
+    ],
+    use_ticks: 16,
+    aggro_radius_cu: 1600,
+    armour: 30,
+    resist_cold: 4500,
+    resist_lightning: 3000,
+    xp: 290,
+    projectile: false,
+)

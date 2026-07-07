@@ -10,6 +10,14 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #136 T3 (the Act 1 zones): content_hash-ONLY — two new
+/// authored zones (the Saltworks, the Tidewarden's Hollow: maps, brains,
+/// packs), six new monster defs incl. the two act bosses, the coast's road
+/// north, and the shore Tidewarden losing act_boss (he is the tutorial exam
+/// again; the Mother in the Hollow ends Act 1). The golden's 2000-tick shore
+/// replay never enters the new zones and the shore's own behavior is
+/// unchanged — only the folded content_hash moves. The trio agrees.
+/// (Prior: 0x3A38 — T2.)
 /// Re-pinned for #136 T2 (boss quality): the Tidewarden's def gains a PHASE
 /// KIT — three below-half-life passives (2x crit chance, +50% crit multi,
 /// +60% phys), chosen because the per-strike effective-offense path folds
@@ -109,7 +117,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x3A38_5ECC_3EB8_9A1A;
+const GOLDEN_HASH: u64 = 0x67A5_5825_74A4_A0CE;
 
 #[test]
 fn golden_replay() {

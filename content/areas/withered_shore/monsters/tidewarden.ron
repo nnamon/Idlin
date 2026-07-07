@@ -9,10 +9,6 @@ MonsterDef(
     brain: "hostile_melee",
     hostile: true,
     unique: true,
-    // #136: TODAY'S campaign ends here — breaking the Tidewarden completes
-    // Act 1 and unseals the story. When the full Act 1 lands (#136 T3), the
-    // finale moves to the Hollow's boss and this becomes the tutorial exam.
-    act_boss: Some(1),
     level: 8,
     // The final exam must be PASSABLE at the tutorial's natural level
     // (4-5): the strand is one-shot, so a pupil who can't break him has

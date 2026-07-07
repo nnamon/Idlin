@@ -1,0 +1,43 @@
+// Brinelord Karesh: the mid-act wall. Once the works' overseer; the salt
+// kept the frame and the temper. A brute commander — his war cry rallies
+// the wights, and wounded he starts LAUNCHING people into the pans.
+MonsterDef(
+    id: "brinelord_karesh",
+    public: true,
+    name: "Brinelord Karesh",
+    model: "stalker",
+    brain: "hostile_melee",
+    hostile: true,
+    unique: true,
+    level: 9,
+    life: 950,
+    damage: 22,
+    speed_cps: 215,
+    radius_cu: 80,
+    range_cu: 210,
+    mana: 80,
+    // Phase (#136 T3): below 40% the overseer loses his temper — harder
+    // fists and every hit SHOVES (knockback is in the per-strike offensive
+    // fold, so the turn is real: the arena starts throwing you around).
+    passives: [
+        (stat: damage_phys, layer: increased, value: 5000, condition: Some(below_life_pct(4000))),
+        (stat: knockback, layer: added, value: 90, condition: Some(below_life_pct(4000))),
+        (stat: stagger, layer: increased, value: 6000, condition: Some(below_life_pct(4000))),
+    ],
+    skills: [
+        (gem: "heavy_swing", level: 4),
+        (gem: "cleave", level: 3),
+        (gem: "war_cry", level: 2),
+    ],
+    use_ticks: 14,
+    aggro_radius_cu: 1700,
+    armour: 95,
+    resist_cold: 3000,
+    xp: 700,
+    projectile: false,
+    lines: [
+        "The pans want STIRRING.",
+        "You'll keep. Everything here keeps.",
+        "Salt takes the soft parts first.",
+    ],
+)

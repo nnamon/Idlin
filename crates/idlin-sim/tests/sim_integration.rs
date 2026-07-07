@@ -107,6 +107,50 @@ fn bots_grind_the_shore() {
 }
 
 #[test]
+fn the_act_1_zones_stand_up() {
+    // #136 T3: both new zones boot from shipped content — packs spawn, the
+    // bosses rise at Unique rarity with their authored names, and the exit
+    // chain runs shore->saltmere->coast->saltworks->hollow and back.
+    // Mutation: break a pack anchor, an exit dest, or a boss def -> fails.
+    let content = content();
+    let empty = TickInputs::default();
+
+    let mut works = World::new_for_zone(0x5A17, &content, "saltworks");
+    works.tick(&empty);
+    let views = works.views();
+    let mobs = views.iter().filter(|v| v.kind == 2).count();
+    assert!(mobs >= 15, "the pans are worked; got {mobs}");
+    let karesh: Vec<_> = views.iter().filter(|v| v.rarity == 3 && !v.dead).collect();
+    assert_eq!(karesh.len(), 1, "one Brinelord holds the court");
+    assert_eq!(karesh[0].name, "Brinelord Karesh");
+
+    let mut hollow = World::new_for_zone(0x5A18, &content, "hollow");
+    hollow.tick(&empty);
+    let views = hollow.views();
+    let mobs = views.iter().filter(|v| v.kind == 2).count();
+    assert!(mobs >= 12, "the throat is sung; got {mobs}");
+    let mother: Vec<_> = views.iter().filter(|v| v.rarity == 3 && !v.dead).collect();
+    assert_eq!(mother.len(), 1, "one Mother in the basin");
+    assert_eq!(mother[0].name, "Mother of the Drowned");
+
+    // The chain: every authored exit leads where the campaign says.
+    let chain = [
+        ("withered_shore", vec!["saltmere"]),
+        ("saltmere", vec!["coast"]),
+        ("coast", vec!["saltmere", "saltworks"]),
+        ("saltworks", vec!["coast", "hollow"]),
+        ("hollow", vec!["saltworks"]),
+    ];
+    for (zone, dests) in chain {
+        let def = content.zone(zone).expect(zone);
+        let got: Vec<&str> = def.exits.iter().map(|e| e.dest.as_str()).collect();
+        for d in dests {
+            assert!(got.contains(&d), "{zone} must reach {d}; has {got:?}");
+        }
+    }
+}
+
+#[test]
 fn full_determinism_with_bots() {
     let content = content();
     let mut a = World::new(7777, &content);
@@ -386,9 +430,9 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     // then walk the whole strand back to the bluff gate.
     for _ in 0..3000 {
         let events = shore.tick(&empty);
-        act_beat |= events.iter().any(
-            |ev| matches!(ev, SimEvent::ActCompleted { name, act: 1, .. } if name == "Pilgrim"),
-        );
+        act_beat |= events
+            .iter()
+            .any(|ev| matches!(ev, SimEvent::ActCompleted { .. }));
         let dep = shore.take_departures();
         if !dep.is_empty() {
             assert!(events.iter().any(|ev| matches!(
@@ -401,20 +445,24 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
         }
     }
     let mut departed = departed.expect("the pilgrim must break the Tidewarden and leave");
-    assert!(act_beat, "the ActCompleted beat fired on the shore (#136)");
+    // #136 T3: the shore's Tidewarden is the TUTORIAL exam, not the act boss —
+    // Act 1 now ends at the Mother in the Hollow. Mutation: put act_boss back
+    // on the tutorial warden → a beat fires here and this fails.
+    assert!(
+        !act_beat,
+        "the tutorial exam must NOT complete an act (the Mother does, in the Hollow)"
+    );
     let (bundle, dest) = departed.pop().unwrap();
     assert_eq!(dest, "saltmere");
     assert!(
         bundle.character.kills >= 1,
         "the killer carries their tally"
     );
-    // The campaign spine (#136): breaking the Tidewarden completed act 1 —
-    // the story bit rides the bundle across the ferry. Mutation: drop the act
-    // hook in handle_kill (or the tidewarden's act_boss) → this fails.
+    // #136 T3: no act completes on the shore — the pilgrim climbs to
+    // Saltmere still mid-campaign; the Hollow's Mother holds the flag.
     assert_eq!(
-        bundle.character.story_acts & 1,
-        1,
-        "the Tidewarden's fall completes act 1"
+        bundle.character.story_acts, 0,
+        "the tutorial leaves the campaign unfinished"
     );
     let kills_at_departure = bundle.character.kills;
 

@@ -1,0 +1,39 @@
+// Act 1's end: the Tidewarden's Hollow — the drowned throat under the
+// bluffs where the water is oldest. A winding descent past the Mother's
+// choir opens into the basin where she waits. Breaking her completes
+// Act 1 and unseals the Charting Table in Saltmere.
+ZoneDef(
+    id: "hollow",
+    name: "The Tidewarden's Hollow",
+    kind: story,
+    level: 10,
+    tileset: Some("shore"),
+    tileset_variant: Some("drowned"),
+    spawn_x_u: 23,
+    spawn_y_u: 55,
+    spawn_radius_u: 2,
+    camp_radius_u: 5,
+    brain: Some("hollow"),
+    lines: [
+        (id: "enter", text: "The Hollow. The tide goes in here and does not come out."),
+        (id: "basin", text: "The water ahead is standing up."),
+    ],
+    packs: [
+        // The throat, descending: her choir first, then the fists.
+        SpawnPack(monster: "deep_chanter",     count: 3, x_u: 23, y_u: 47, radius_u: 3, respawn_ticks: 550, magic_bp: 2200, rare_bp: 800),
+        SpawnPack(monster: "drowned_colossus", count: 2, x_u: 20, y_u: 40, radius_u: 3, respawn_ticks: 550, magic_bp: 2200, rare_bp: 800),
+        SpawnPack(monster: "deep_chanter",     count: 3, x_u: 26, y_u: 33, radius_u: 3, respawn_ticks: 550, magic_bp: 2200, rare_bp: 800),
+        SpawnPack(monster: "drowned_colossus", count: 2, x_u: 21, y_u: 26, radius_u: 3, respawn_ticks: 550, magic_bp: 2500, rare_bp: 1000),
+        // The basin: the choir's last stand ringing the Mother.
+        SpawnPack(monster: "deep_chanter",     count: 2, x_u: 15, y_u: 12, radius_u: 3, respawn_ticks: 1200, magic_bp: 3000, rare_bp: 1200),
+        SpawnPack(monster: "deep_chanter",     count: 2, x_u: 31, y_u: 12, radius_u: 3, respawn_ticks: 1200, magic_bp: 3000, rare_bp: 1200),
+        // The Mother of the Drowned: the act boss. Unique by def; the long
+        // respawn keeps the finale live for every idler who reaches her.
+        SpawnPack(monster: "mother_of_the_drowned", count: 1, x_u: 23, y_u: 10, radius_u: 0, respawn_ticks: 3000),
+    ],
+    exits: [
+        // Back up to the Saltworks. The only way out is the way in — or a
+        // chart, once the table unseals (T4).
+        (x_u: 23, y_u: 58, dest: "saltworks", open: true),
+    ],
+)

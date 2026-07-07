@@ -3946,6 +3946,220 @@
         "affix_pools": [
           "monster"
         ],
+        "aggro_radius_cu": 1300,
+        "armour": 70,
+        "brain": "hostile_melee",
+        "damage": 17,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "brine_wight",
+        "level": 8,
+        "life": 170,
+        "lines": [],
+        "mana": 0,
+        "model": "wight",
+        "name": "Brine Wight",
+        "num": 33554439,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 75,
+        "range_cu": 200,
+        "resist_chaos": 0,
+        "resist_cold": 2000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [],
+        "speed_cps": 200,
+        "unique": false,
+        "use_ticks": 15,
+        "xp": 175
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1700,
+        "armour": 95,
+        "brain": "hostile_melee",
+        "damage": 22,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "brinelord_karesh",
+        "level": 9,
+        "life": 950,
+        "lines": [
+          "The pans want STIRRING.",
+          "You'll keep. Everything here keeps.",
+          "Salt takes the soft parts first."
+        ],
+        "mana": 80,
+        "model": "stalker",
+        "name": "Brinelord Karesh",
+        "num": 33554440,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "added",
+            "stat": "knockback",
+            "value": 90
+          },
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "increased",
+            "stat": "stagger",
+            "value": 6000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 80,
+        "range_cu": 210,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "heavy_swing",
+            "level": 4,
+            "supports": []
+          },
+          {
+            "gem": "cleave",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 2,
+            "supports": []
+          }
+        ],
+        "speed_cps": 215,
+        "unique": true,
+        "use_ticks": 14,
+        "xp": 700
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1600,
+        "armour": 30,
+        "brain": "hostile_melee",
+        "damage": 12,
+        "damage_chaos": 0,
+        "damage_cold": 4,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "deep_chanter",
+        "level": 11,
+        "life": 240,
+        "lines": [],
+        "mana": 130,
+        "model": "husk",
+        "name": "Deep Chanter",
+        "num": 33554441,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 60,
+        "range_cu": 230,
+        "resist_chaos": 0,
+        "resist_cold": 4500,
+        "resist_fire": 0,
+        "resist_lightning": 3000,
+        "skills": [
+          {
+            "gem": "frost_nova",
+            "level": 4,
+            "supports": []
+          },
+          {
+            "gem": "arc",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 225,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 290
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1200,
+        "armour": 130,
+        "brain": "hostile_melee",
+        "damage": 27,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "drowned_colossus",
+        "level": 10,
+        "life": 430,
+        "lines": [],
+        "mana": 40,
+        "model": "shambler",
+        "name": "Drowned Colossus",
+        "num": 33554442,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 95,
+        "range_cu": 210,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "heavy_swing",
+            "level": 4,
+            "supports": []
+          }
+        ],
+        "speed_cps": 175,
+        "unique": false,
+        "use_ticks": 17,
+        "xp": 330
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
         "aggro_radius_cu": 1400,
         "armour": 20,
         "brain": "hostile_melee",
@@ -4015,6 +4229,146 @@
         "unique": false,
         "use_ticks": 8,
         "xp": 8
+      },
+      {
+        "accuracy": 0,
+        "act_boss": 1,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1800,
+        "armour": 110,
+        "brain": "hostile_melee",
+        "damage": 24,
+        "damage_chaos": 0,
+        "damage_cold": 8,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "mother_of_the_drowned",
+        "level": 12,
+        "life": 2800,
+        "lines": [
+          "Every tide is MINE coming back.",
+          "The Warden was a finger. I am the HAND.",
+          "Drown slowly. I want to keep you."
+        ],
+        "mana": 220,
+        "model": "mother",
+        "name": "Mother of the Drowned",
+        "num": 33554443,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "added",
+            "stat": "crit_multi",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_cold",
+            "value": 5000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 100,
+        "range_cu": 220,
+        "resist_chaos": 3000,
+        "resist_cold": 5000,
+        "resist_fire": 0,
+        "resist_lightning": 5000,
+        "skills": [
+          {
+            "gem": "arc",
+            "level": 5,
+            "supports": []
+          },
+          {
+            "gem": "frost_nova",
+            "level": 5,
+            "supports": []
+          },
+          {
+            "gem": "plague_cloud",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 200,
+        "unique": true,
+        "use_ticks": 14,
+        "xp": 2400
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1500,
+        "armour": 20,
+        "brain": "hostile_melee",
+        "damage": 8,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "pan_haunt",
+        "level": 7,
+        "life": 110,
+        "lines": [],
+        "mana": 60,
+        "model": "husk",
+        "name": "Pan Haunt",
+        "num": 33554444,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 60,
+        "range_cu": 220,
+        "resist_chaos": 0,
+        "resist_cold": 0,
+        "resist_fire": 3500,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "ember_bolt",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 230,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 150
       },
       {
         "accuracy": 0,
@@ -4121,7 +4475,7 @@
       },
       {
         "accuracy": 0,
-        "act_boss": 1,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -5617,7 +5971,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "7e761fe7a3c9f245",
+  "fingerprint": "1059667bd8ee0c76",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23,
   "stats": [

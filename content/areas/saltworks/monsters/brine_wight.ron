@@ -1,0 +1,22 @@
+// Saltworks trash, the melee half: salt-bleached dead crusted hard —
+// slow, armored, and heavy-handed. The pans preserve what they kill.
+MonsterDef(
+    id: "brine_wight",
+    public: true,
+    name: "Brine Wight",
+    model: "wight",
+    brain: "hostile_melee",
+    hostile: true,
+    level: 8,
+    life: 170,
+    damage: 17,
+    speed_cps: 200,
+    radius_cu: 75,
+    range_cu: 200,
+    use_ticks: 15,
+    aggro_radius_cu: 1300,
+    armour: 70,
+    resist_cold: 2000,
+    xp: 175,
+    projectile: false,
+)

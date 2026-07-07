@@ -1,0 +1,53 @@
+// The Mother of the Drowned: what the tide serves. The Tidewarden fed the
+// strand — SHE is what it fed. Act 1 ends where the water is oldest:
+// storm, frost, and rot in one body, and a second, desperate phase when
+// the sea itself starts losing.
+MonsterDef(
+    id: "mother_of_the_drowned",
+    public: true,
+    name: "Mother of the Drowned",
+    model: "mother",
+    brain: "hostile_melee",
+    hostile: true,
+    unique: true,
+    // #136: THE act boss. Breaking her completes Act 1 and unseals the
+    // Charting Table (the endgame, T4).
+    act_boss: Some(1),
+    level: 12,
+    life: 2800,
+    damage: 24,
+    damage_cold: 8,
+    speed_cps: 200,
+    radius_cu: 100,
+    range_cu: 220,
+    mana: 220,
+    // Two phases (#136 T3), both in the per-strike offensive fold:
+    // below half her storms SEEK (crit chance doubles, crits hit half
+    // again as hard); below a quarter the drowning grip closes — raw
+    // hits half again harder on top.
+    passives: [
+        (stat: crit_chance, layer: increased, value: 10000, condition: Some(below_life_pct(5000))),
+        (stat: crit_multi, layer: added, value: 5000, condition: Some(below_life_pct(5000))),
+        (stat: damage_phys, layer: increased, value: 5000, condition: Some(below_life_pct(2500))),
+        (stat: damage_cold, layer: increased, value: 5000, condition: Some(below_life_pct(2500))),
+    ],
+    skills: [
+        (gem: "arc", level: 5),
+        (gem: "frost_nova", level: 5),
+        (gem: "plague_cloud", level: 3),
+        (gem: "war_cry", level: 3),
+    ],
+    use_ticks: 14,
+    aggro_radius_cu: 1800,
+    armour: 110,
+    resist_cold: 5000,
+    resist_lightning: 5000,
+    resist_chaos: 3000,
+    xp: 2400,
+    projectile: false,
+    lines: [
+        "Every tide is MINE coming back.",
+        "The Warden was a finger. I am the HAND.",
+        "Drown slowly. I want to keep you.",
+    ],
+)

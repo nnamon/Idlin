@@ -2482,6 +2482,80 @@ mod area_level_tests {
     }
 
     #[test]
+    fn the_mothers_fall_completes_act_1_with_real_content() {
+        // #136 T3: the ACTUAL act boss — spawned from her shipped def — sets
+        // the killer's act bit through the real kill path. Mutation: strip
+        // act_boss from mother_of_the_drowned.ron (or point it at another
+        // monster) → this fails. (Once-only/trash rules are pinned in
+        // combat.rs with a synthetic boss; this pins the CONTENT.)
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xAC71, &content);
+        let slot = join_one(&mut w, "Breaker");
+        let anet = w.zone.get(slot).unwrap().net_id;
+        let mother = content.monster_idx("mother_of_the_drowned").unwrap() as u32;
+        w.spawn_monster_rolled(
+            mother,
+            0,
+            FxV2::new(Fx::from_int(20), Fx::from_int(20)),
+            Rarity::Unique,
+            vec![],
+            "Mother of the Drowned".into(),
+        );
+        let mslot = w
+            .zone
+            .iter()
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| m.def_idx == mother && e.alive())
+            })
+            .map(|(s, _)| s)
+            .unwrap();
+        // A deterministic, certain kill through the real strike path (a DoT
+        // spec rolls no accuracy/crit/variance RNG).
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 100_000_000;
+        let spec = combat::StrikeSpec {
+            attacker_slot: Some(slot),
+            attacker_net: anet,
+            attacker_name: "Breaker".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: true,
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        let now = w.tick;
+        w.strike(spec, mslot, now, &mut ev, &mut dead, &mut loot);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, SimEvent::ActCompleted { act: 1, .. })),
+            "the Mother's fall fires the act beat"
+        );
+        assert_eq!(
+            w.zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .story_acts,
+            1,
+            "act 1 belongs to the breaker"
+        );
+    }
+
+    #[test]
     fn the_tidewardens_storm_rises_below_half_life() {
         // #136 T2: the boss PHASE is real, not lore — below 50% life the
         // Tidewarden's kit (below_life_pct passives) folds in: double crit
