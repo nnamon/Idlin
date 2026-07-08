@@ -210,7 +210,7 @@ export const FIXTURES: FixtureMeta[] = [
     // broken stream / wrong render leaves the empty state and fails these.
     name: "idler-manage",
     kind: "manage",
-    expect: ["Brakka", "manage", "Event stream", "Bone Stalker"],
+    expect: ["Brakka", "manage", "Event stream", "Bone Stalker", "FELLS", "settles the voyage"],
   },
   {
     // Individual view for an idler not in any world (#79): a clean "not in the

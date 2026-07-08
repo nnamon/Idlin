@@ -675,6 +675,15 @@ impl World {
         // Which zone this world runs (bots read it via SelfStatus), its level, and
         // the zone's authored speech — all serialized World state.
         h.write_u32(self.zone_idx);
+        // Voyage marks steer the tally event (#148 A7) — replayed state.
+        h.write_u64(self.voyage_marks.len() as u64);
+        for (net, (k, d, i, t)) in &self.voyage_marks {
+            h.write_u32(*net);
+            h.write_u64(*k);
+            h.write_u64(*d);
+            h.write_u64(*i);
+            h.write_u64(*t);
+        }
         h.write_u32(self.zone_level);
         h.write_u64(self.zone_lines.len() as u64);
         for line in &self.zone_lines {

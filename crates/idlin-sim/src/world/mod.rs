@@ -175,6 +175,10 @@ pub enum SimEvent {
         killer_id: u32,
         killer: String,
         monster: String,
+        /// The victim's rank (#148 A7): the director cuts to boss kills;
+        /// same live-rarity source the entity record uses (the A2.5 lesson:
+        /// loot-state rarity is 0 for everything alive).
+        rarity: Rarity,
         /// Index into ContentDb::monsters. The zone brain does NOT see this
         /// directly — `run_zone_brain` translates it to the monster's stable
         /// tagged num (#54) before the kill event reaches the script.
@@ -335,6 +339,17 @@ pub enum SimEvent {
         name: String,
         dest: String,
     },
+    /// The voyage scoreboard (#148 A7): what a sailor did in a chart
+    /// instance, tallied at departure (either exit: walked out or the
+    /// clock rang). The broadcast cuts to it; the UI cards it.
+    VoyageTally {
+        id: u32,
+        name: String,
+        kills: u64,
+        deaths: u64,
+        items: u64,
+        ticks: u64,
+    },
 }
 
 /// Flat renderable view of an entity, exported to the server each tick.
@@ -409,6 +424,11 @@ pub struct World {
     /// current ferries every character home to Lanternfall.
     #[serde(default)]
     pub(crate) voyage_ends_at: u64,
+    /// Voyage tallies (#148 A7): per-sailor (kills, deaths, items, tick)
+    /// marks at ARRIVAL into a chart instance; the departure delta is the
+    /// scoreboard. BTreeMap for hash order; empty outside chart worlds.
+    #[serde(default)]
+    pub(crate) voyage_marks: std::collections::BTreeMap<u32, (u64, u64, u64, u64)>,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -823,6 +843,7 @@ impl World {
             is_chart_instance: false,
             monster_fury_bp: 0,
             voyage_ends_at: 0,
+            voyage_marks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1076,6 +1097,7 @@ impl World {
                 self.bots.remove(bi);
             }
             self.zone.remove(slot);
+            self.voyage_marks.remove(&net);
             events.push(SimEvent::Narration {
                 target: 0,
                 text: format!("{name} is recalled — the brain is switched off."),
@@ -1236,6 +1258,22 @@ impl World {
                 },
                 dest.clone(),
             ));
+            // The voyage scoreboard (#148 A7): departing a chart instance
+            // settles the tally against the arrival marks — either exit
+            // path (walked out, or the clock staged the same departure).
+            if self.is_chart_instance
+                && let Some((k0, d0, i0, t0)) = self.voyage_marks.remove(&net)
+            {
+                let ch = &self.pending_departures.last().unwrap().0.character;
+                events.push(SimEvent::VoyageTally {
+                    id: net,
+                    name: name.clone(),
+                    kills: ch.kills.saturating_sub(k0),
+                    deaths: ch.deaths.saturating_sub(d0),
+                    items: ch.items.saturating_sub(i0),
+                    ticks: self.tick.saturating_sub(t0),
+                });
+            }
             events.push(SimEvent::CharacterDeparted {
                 id: net,
                 name,
@@ -1407,6 +1445,19 @@ impl World {
             }
             let name = character.name.clone();
             let level = character.level;
+            // Voyage tally marks (#148 A7): stamp what the sailor arrives
+            // with; the departure delta is the scoreboard.
+            if self.is_chart_instance {
+                self.voyage_marks.insert(
+                    net_id,
+                    (
+                        character.kills,
+                        character.deaths,
+                        character.items,
+                        self.tick,
+                    ),
+                );
+            }
             let pos = self.spawn_pos();
             let slot = self.zone.insert(Entity {
                 net_id,
@@ -3665,6 +3716,117 @@ mod area_level_tests {
         assert!(
             furied > base,
             "fury must lift the SAME hit ({furied} vs {base})"
+        );
+    }
+
+    #[test]
+    fn the_voyage_tally_settles_on_departure() {
+        // #148 A7: the scoreboard is the DELTA between arrival marks and
+        // departure state — kills earned inside the voyage count, the
+        // career total doesn't leak in. Mutation: drop the arrival stamp
+        // or the departure emit → no tally / wrong kills, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_chart_instance(
+            0xA7,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 30,
+                boss: false,
+            },
+        );
+        let slot = join_one(&mut w, "Talleyrand");
+        {
+            // A career behind them: 100 kills BEFORE the voyage.
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.kills = 100;
+        }
+        // This test drives the DEPARTURE/delta half through a manual stamp
+        // (join_one lands via joins); the ARRIVAL stamp — the production
+        // path — is pinned by the arrivals-path test below.
+        let net = w.zone.get(slot).unwrap().net_id;
+        w.voyage_marks.insert(net, (100, 0, 0, w.tick));
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.kills = 102;
+        }
+        let empty = TickInputs::default();
+        let mut tally = None;
+        for _ in 0..60 {
+            for ev in w.tick(&empty) {
+                if let SimEvent::VoyageTally { kills, name, .. } = ev {
+                    tally = Some((name, kills));
+                }
+            }
+            let _ = w.take_departures();
+        }
+        let (name, kills) = tally.expect("the clock departure settles a tally");
+        assert_eq!(name, "Talleyrand");
+        assert_eq!(kills, 2, "only the voyage's kills count");
+    }
+
+    #[test]
+    fn a_real_arrival_stamps_the_voyage_marks() {
+        // #148 A7 review (B2): the ARRIVAL stamp is the only wiring between
+        // the tally and real gameplay (transfers land via arrivals) — the
+        // critic proved it was untested by reverting it under a green
+        // suite. Mutation: drop the stamp block in apply_joins → no mark,
+        // no tally, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut source = World::new(0xA7B, &content);
+        let slot = join_one(&mut source, "Ferried");
+        {
+            let ch = source
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.kills = 50;
+        }
+        let net = source.zone.get(slot).unwrap().net_id;
+        source
+            .pending_exits
+            .push((net, "charted_shallows".into(), None));
+        let mut ev = Vec::new();
+        source.process_exits(&mut ev);
+        let (bundle, _dest) = source.take_departures().pop().expect("departed");
+
+        let mut voyage = World::new_chart_instance(
+            0xA7C,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let inputs = TickInputs {
+            joins: Vec::new(),
+            arrivals: vec![bundle],
+            removals: Vec::new(),
+        };
+        voyage.tick(&inputs);
+        let vnet = voyage
+            .views()
+            .iter()
+            .find(|v| v.kind == 1)
+            .map(|v| v.id)
+            .unwrap();
+        let mark = voyage.voyage_marks.get(&vnet).copied();
+        assert_eq!(
+            mark.map(|(k, ..)| k),
+            Some(50),
+            "the arrival stamps the career kills as the voyage baseline"
         );
     }
 

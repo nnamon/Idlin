@@ -10,6 +10,11 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #148 A7 (the broadcast): another fingerprint widening —
+/// World hashes voyage_marks (the tally's arrival stamps; empty outside
+/// chart instances) and SimEvent::MonsterKilled carries rarity (events
+/// aren't hashed, but the enum serializes into journals). No content or
+/// behavior moved. (Prior: 0xFF33 — A6.)
 /// Re-pinned for #148 A6 (the bot economy): a fingerprint widening only —
 /// CharacterState grew a hashed lifetime-deaths counter (the leaderboard's
 /// honesty column). No content or behavior moved; the shore replay is
@@ -195,7 +200,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0xFF33_2616_0325_FFD4;
+const GOLDEN_HASH: u64 = 0x81B8_1FAA_8365_18D4;
 
 #[test]
 fn golden_replay() {

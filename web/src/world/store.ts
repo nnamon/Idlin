@@ -519,7 +519,27 @@ export class WorldStore {
         push(`★ ${ev.data.name} reached level ${ev.data.level}`, "#ffd75a");
         break;
       case "MonsterKilled":
-        push(`${ev.data.killer} slays a ${ev.data.monster}`, "#8a8aa0");
+        // Boss falls get the gold treatment (#148 A7) — trash stays grey.
+        if (ev.data.rarity >= 3) {
+          push(`☠ ${ev.data.killer} FELLS ${ev.data.monster}!`, "#ff9a3c");
+        } else {
+          push(`${ev.data.killer} slays a ${ev.data.monster}`, "#8a8aa0");
+        }
+        break;
+      case "VoyageTally": {
+        // The voyage scoreboard (#148 A7): what the sail was worth.
+        const d = ev.data;
+        const mins = Math.floor(Number(d.ticks) / 600);
+        const secs = Math.floor((Number(d.ticks) % 600) / 10);
+        push(
+          `⚓ ${d.name} settles the voyage — ${d.kills} kills, ${d.deaths} deaths, ` +
+            `${d.items} items in ${mins}:${String(secs).padStart(2, "0")}`,
+          "#6ad8ff",
+        );
+        break;
+      }
+      case "CharacterRemoved":
+        push(`⏻ ${ev.data.name} is recalled — the brain is switched off`, "#8a8aa0");
         break;
       case "LootDropped":
         if (ev.data.rarity >= 1) {

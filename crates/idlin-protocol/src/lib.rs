@@ -24,7 +24,8 @@ use ts_rs::TS;
 //     what the world's residents have explored).
 // 41: GameEvent gains ActCompleted (#136 campaign spine).
 /// v43 (#148 A6): `GameEvent` gained `CharacterRemoved` (the kill switch on the wire).
-pub const PROTO_VERSION: u32 = 43;
+/// v44 (#148 A7): `MonsterKilled` gained `rarity`; `GameEvent` gained `VoyageTally`.
+pub const PROTO_VERSION: u32 = 44;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -222,6 +223,15 @@ pub enum GameEvent {
         id: u32,
         name: String,
     },
+    /// The voyage scoreboard (#148 A7).
+    VoyageTally {
+        id: u32,
+        name: String,
+        kills: u64,
+        deaths: u64,
+        items: u64,
+        ticks: u64,
+    },
     CharacterRespawned {
         id: u32,
     },
@@ -235,6 +245,8 @@ pub enum GameEvent {
         killer: String,
         monster: String,
         level: u32,
+        /// The victim's rank (#148 A7): 3 = unique — the boss-kill tier.
+        rarity: u8,
     },
     LootDropped {
         owner_id: u32,

@@ -588,14 +588,16 @@ const fullShore: Fixture = {
       type: "Events",
       data: {
         events: [
-          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Bone Stalker", level: 40 } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Bone Stalker", level: 40 , rarity: 0 } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "The Riptide Sovereign", level: 21, rarity: 3 } },
+          { type: "VoyageTally", data: { id: FOCUS_ID, name: NAME, kills: 34n, deaths: 1n, items: 12n, ticks: 4000n } },
           { type: "LootDropped", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
           { type: "ItemPickedUp", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
-          { type: "MonsterKilled", data: { killer_id: 3, killer: "Mirra", monster: "Drowned Shambler", level: 39 } },
+          { type: "MonsterKilled", data: { killer_id: 3, killer: "Mirra", monster: "Drowned Shambler", level: 39 , rarity: 0 } },
           { type: "LevelUp", data: { id: 4, name: "Veles", level: 41 } },
           { type: "GemSocketed", data: { id: FOCUS_ID, owner: NAME, gem: "Cleave" } },
           { type: "CurrencyUsed", data: { id: FOCUS_ID, owner: NAME, currency: "Alchemy Obol", item: "Kelp-Woven Vest" } },
-          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Tide Husk", level: 40 } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Tide Husk", level: 40 , rarity: 0 } },
           // The campaign's biggest beat (#136) — the gold act-completion line.
           { type: "ActCompleted", data: { id: FOCUS_ID, name: NAME, act: 1 } },
         ],

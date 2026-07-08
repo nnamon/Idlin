@@ -92,7 +92,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// snapshot would mis-decode. Refuse it.
 /// v21 (#148 A6): `CharacterState` gained `deaths: u64` — serialized; a v20 snapshot
 /// would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 21;
+/// v22 (#148 A7): `World` gained `voyage_marks` (the tally's arrival stamps) and
+/// `SimEvent::MonsterKilled` gained `rarity` — serialized; a v21 snapshot would mis-decode.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 22;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -504,7 +506,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 21);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 22);
     }
 
     #[test]

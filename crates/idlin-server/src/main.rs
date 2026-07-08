@@ -43,6 +43,8 @@ struct AppState {
     admin: mpsc::UnboundedSender<runner::AdminCommand>,
     /// Shared secret for the mutating admin routes; None = routes disabled.
     admin_token: Option<Arc<str>>,
+    /// The kill-cam ring (#148 A7), fed by replication.
+    killcams: Arc<std::sync::RwLock<std::collections::VecDeque<replication::KillCam>>>,
     /// Pre-serialized passive tree for the map page.
     tree_json: Arc<str>,
     /// Pre-serialized deploy identity for `/version` (fixed at boot).
@@ -293,6 +295,7 @@ async fn main() -> anyhow::Result<()> {
         inspect: inspect_tx,
         admin: admin_tx,
         admin_token: std::env::var("IDLIN_ADMIN_TOKEN").ok().map(Arc::from),
+        killcams: handles.killcams.clone(),
         tree_json,
         version_json,
     };
@@ -307,6 +310,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/deploy", axum::routing::post(deploy_handler))
         .route("/api/kill", axum::routing::post(kill_handler))
         .route("/api/leaderboard", get(leaderboard_handler))
+        .route("/api/killcams", get(killcams_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
         // SPA shell for the client's OWN routes (the individual idler view +
@@ -499,6 +503,21 @@ async fn kill_handler(
             "sim gone".into(),
         )),
     }
+}
+
+/// The last 50 boss falls (#148 A7), newest last. With IDLIN_RECORD on,
+/// each carries the world journal's line at the kill — the web replay
+/// (`?replay=/recordings/<world_key>.jsonl&at=<line>`) jumps straight to it.
+async fn killcams_handler(State(state): State<AppState>) -> axum::Json<Vec<replication::KillCam>> {
+    axum::Json(
+        state
+            .killcams
+            .read()
+            .expect("killcams lock")
+            .iter()
+            .cloned()
+            .collect(),
+    )
 }
 
 async fn leaderboard_handler(

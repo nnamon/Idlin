@@ -47,6 +47,25 @@ pub struct Routing {
     pub by_character: HashMap<String, String>,
 }
 
+/// A camera-worthy moment (#148 A7): a boss fell. `line` is the world
+/// journal's LINE COUNT at that instant — with IDLIN_RECORD on, the web
+/// replay (`?replay=/recordings/<file>.jsonl&at=<line>`) fast-forwards
+/// straight to it: a kill-cam on the deterministic replay affordance.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KillCam {
+    pub world_key: String,
+    pub killer: String,
+    pub monster: String,
+    pub level: u32,
+    /// The recording FILENAME stem (#148 A7 review B1): the raw world key
+    /// is sanitized on disk ("#"/"@" → "_"), so the payload carries the
+    /// exact name — `/?replay=/recordings/<recording>.jsonl&at=<line>`.
+    pub recording: String,
+    /// Journal lines written for this world when the kill landed (0 when
+    /// recording is off — the moment still lists, it just can't deep-link).
+    pub line: u64,
+}
+
 pub struct ReplicationHandles {
     /// The featured (director-driven) virtual feed — the default broadcast.
     pub featured: FeedHandle,
@@ -54,6 +73,8 @@ pub struct ReplicationHandles {
     pub feeds: Arc<RwLock<HashMap<String, FeedHandle>>>,
     /// Live routing table (featured key + character locations).
     pub routing: watch::Receiver<Routing>,
+    /// The kill-cam ring (#148 A7) — GET /api/killcams serves it.
+    pub killcams: Arc<std::sync::RwLock<std::collections::VecDeque<KillCam>>>,
 }
 
 /// Per-world replication state (diff continuity, snapshot, recorder).
@@ -66,6 +87,8 @@ struct WorldState {
     snap_tx: watch::Sender<Frame>,
     tx: broadcast::Sender<Frame>,
     recorder: Option<std::fs::File>,
+    /// Journal lines written so far (#148 A7): the kill-cam's seek anchor.
+    journal_lines: u64,
 }
 
 /// Fog of war (#129/#134): THE single owner of wire visibility for one world
@@ -230,7 +253,8 @@ impl<'a> Visibility<'a> {
             | GameEvent::BuildRejected { .. }
             | GameEvent::GemLevelUp { .. }
             | GameEvent::ActCompleted { .. }
-            | GameEvent::CharacterRemoved { .. } => true,
+            | GameEvent::CharacterRemoved { .. }
+            | GameEvent::VoyageTally { .. } => true,
         }
     }
 
@@ -449,6 +473,9 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
     };
     let feeds_task = feeds.clone();
     let record = std::env::var("IDLIN_RECORD").is_ok();
+    let killcams: Arc<std::sync::RwLock<std::collections::VecDeque<KillCam>>> =
+        Arc::new(std::sync::RwLock::new(std::collections::VecDeque::new()));
+    let killcams_task = killcams.clone();
 
     tokio::spawn(async move {
         let mut worlds: HashMap<String, WorldState> = HashMap::new();
@@ -505,6 +532,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                             snap_tx,
                             tx,
                             recorder,
+                            journal_lines: 0,
                         },
                     );
                     info!("world feed online: {}", frame.world_key);
@@ -521,10 +549,38 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 if let Some(f) = ws.recorder.as_mut() {
                     if out.first_frame {
                         let _ = writeln!(f, "{}", out.snapshot);
+                        ws.journal_lines += 1;
                     }
                     let _ = writeln!(f, "{}", out.delta);
+                    ws.journal_lines += 1;
                     if let Some(ev) = &out.events_msg {
                         let _ = writeln!(f, "{ev}");
+                        ws.journal_lines += 1;
+                    }
+                }
+                // Kill-cams (#148 A7): a boss kill marks the journal line so
+                // the replay page can jump straight to the fight's end.
+                for ev in &frame.events {
+                    if let idlin_sim::SimEvent::MonsterKilled {
+                        killer,
+                        monster,
+                        level,
+                        rarity: idlin_sim::Rarity::Unique,
+                        ..
+                    } = ev
+                    {
+                        let mut cams = killcams_task.write().expect("killcams lock");
+                        cams.push_back(KillCam {
+                            world_key: frame.world_key.clone(),
+                            recording: recording_stem(&frame.world_key),
+                            killer: killer.clone(),
+                            monster: monster.clone(),
+                            level: *level,
+                            line: ws.journal_lines.saturating_sub(60),
+                        });
+                        if cams.len() > 50 {
+                            cams.pop_front();
+                        }
                     }
                 }
 
@@ -642,6 +698,7 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
     });
 
     ReplicationHandles {
+        killcams,
         featured: featured_handle,
         feeds,
         routing: routing_rx,
@@ -649,16 +706,23 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
 }
 
 /// Open a JSONL journal for one world's wire stream.
+/// A world key as its recording filename stem (#148 A7): the ONE sanitizer
+/// both the recorder and the kill-cam payload use — the deep-link must be
+/// mechanically constructible from the API response.
+pub fn recording_stem(world_key: &str) -> String {
+    world_key
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
 fn open_recorder(world_key: &str) -> Option<std::fs::File> {
     let dir = std::path::Path::new("data/recordings");
     if let Err(e) = std::fs::create_dir_all(dir) {
         warn!("recordings dir: {e}");
         return None;
     }
-    let name: String = world_key
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
+    let name = recording_stem(world_key);
     match std::fs::File::create(dir.join(format!("{name}.jsonl"))) {
         Ok(f) => {
             info!("recording {world_key} → data/recordings/{name}.jsonl");
@@ -918,6 +982,21 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             id: *net_id,
             name: name.clone(),
         },
+        SimEvent::VoyageTally {
+            id,
+            name,
+            kills,
+            deaths,
+            items,
+            ticks,
+        } => GameEvent::VoyageTally {
+            id: *id,
+            name: name.clone(),
+            kills: *kills,
+            deaths: *deaths,
+            items: *items,
+            ticks: *ticks,
+        },
         SimEvent::CharacterRespawned { id } => GameEvent::CharacterRespawned { id: *id },
         SimEvent::GateChanged {
             x0,
@@ -948,6 +1027,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             level: *level,
         },
         SimEvent::MonsterKilled {
+            rarity,
             killer_id,
             killer,
             monster,
@@ -956,6 +1036,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
         } => GameEvent::MonsterKilled {
             killer_id: *killer_id,
             killer: killer.clone(),
+            rarity: *rarity as u8,
             monster: monster.clone(),
             level: *level,
         },

@@ -2062,6 +2062,7 @@ impl World {
                     killer_id: attacker_net,
                     killer: attacker_name.to_string(),
                     monster: monster_name,
+                    rarity: m_rarity,
                     def_idx,
                     level: monster_level,
                 });

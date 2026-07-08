@@ -52,6 +52,13 @@ const REFRESH_TICKS: u64 = 50;
 // Event scoring: (score, hold_ticks) per event class. Higher score wins the
 // tick and interrupts a weaker hold. Presentation tuning, not game balance —
 // which is why it lives here and not in content/.
+// Campaign beats (#148 A7) outrank everything: the broadcast is the
+// story of the road, and the road's chapters are acts, bosses, sails,
+// and settled voyages.
+const SCORE_ACT: (u32, u32) = (95, 120);
+const SCORE_BOSS_KILL: (u32, u32) = (90, 100);
+const SCORE_TALLY: (u32, u32) = (85, 90);
+const SCORE_SAIL: (u32, u32) = (82, 80);
 const SCORE_DEATH: (u32, u32) = (80, 60);
 const SCORE_JOIN: (u32, u32) = (75, 60);
 const SCORE_RARE_DROP: (u32, u32) = (70, 60);
@@ -103,6 +110,30 @@ impl Director {
         for w in worlds {
             for ev in w.events {
                 let scored = match ev {
+                    SimEvent::ActCompleted { id, act, .. } => Some((
+                        *id,
+                        SCORE_ACT.0,
+                        if *act == 1 {
+                            "act 1 falls"
+                        } else {
+                            "act 2 falls"
+                        },
+                        SCORE_ACT.1,
+                    )),
+                    SimEvent::MonsterKilled {
+                        killer_id, rarity, ..
+                    } if *rarity == idlin_sim::Rarity::Unique => Some((
+                        *killer_id,
+                        SCORE_BOSS_KILL.0,
+                        "the boss falls",
+                        SCORE_BOSS_KILL.1,
+                    )),
+                    SimEvent::VoyageTally { id, .. } => {
+                        Some((*id, SCORE_TALLY.0, "the voyage tally", SCORE_TALLY.1))
+                    }
+                    SimEvent::CharacterDeparted { id, dest, .. } if dest == "charted_shallows" => {
+                        Some((*id, SCORE_SAIL.0, "sets sail", SCORE_SAIL.1))
+                    }
                     SimEvent::CharacterDied { id, .. } => {
                         Some((*id, SCORE_DEATH.0, "death", SCORE_DEATH.1))
                     }
@@ -238,8 +269,20 @@ mod tests {
         }
     }
 
+    fn boss_kill(killer_id: u32) -> SimEvent {
+        SimEvent::MonsterKilled {
+            rarity: idlin_sim::Rarity::Unique,
+            killer_id,
+            killer: format!("c{killer_id}"),
+            monster: "The Riptide Sovereign".into(),
+            def_idx: 0,
+            level: 21,
+        }
+    }
+
     fn kill(killer_id: u32) -> SimEvent {
         SimEvent::MonsterKilled {
+            rarity: idlin_sim::Rarity::Normal,
             killer_id,
             killer: format!("c{killer_id}"),
             monster: "shambler".into(),
@@ -250,6 +293,31 @@ mod tests {
 
     fn chars(ids: &[u32]) -> Vec<(u32, String)> {
         ids.iter().map(|i| (*i, format!("c{i}"))).collect()
+    }
+
+    #[test]
+    fn a_boss_fall_outranks_a_death() {
+        // #148 A7: the campaign beat wins the tick — the broadcast cuts to
+        // the boss kill even when someone dies elsewhere the same tick.
+        // Mutation: drop the Unique arm from the scorer → the death wins.
+        let mut d = Director::new();
+        let (a_ev, b_ev) = (vec![death(1)], vec![boss_kill(2)]);
+        let (a_ch, b_ch) = (chars(&[1]), chars(&[2]));
+        let worlds = [
+            WorldView {
+                key: "shore#A",
+                events: &a_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "shore#B",
+                events: &b_ev,
+                characters: &b_ch,
+            },
+        ];
+        let cue = d.update(1, &worlds).expect("a cue");
+        assert_eq!(cue.world_key, "shore#B", "the boss fall holds the camera");
+        assert_eq!(cue.reason, "the boss falls");
     }
 
     #[test]
