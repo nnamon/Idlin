@@ -486,6 +486,7 @@ dependencies = [
  "idlin-protocol",
  "idlin-sim",
  "postcard",
+ "serde",
  "serde_json",
  "tokio",
  "tower",
