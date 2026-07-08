@@ -1111,7 +1111,7 @@ mod tests {
     }
 
     /// #148 A2: the promise holds for EVERY ARCHETYPE, not just the sword.
-    /// One seed each (melee has three above): the caster and the ranger
+    /// One seed each (melee has four above): the caster and the ranger
     /// must ALSO walk the whole road — tutorial, campaign, Mother, sail —
     /// inside the same bands. Mutation: break either build plan, ladder,
     /// or the ranged hold badly enough and the road ends early.

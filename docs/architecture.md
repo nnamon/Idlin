@@ -12,8 +12,8 @@ crates/
 ├── idlin-vm        the bot VM: stack machine, 64 KiB wrapping memory,
 │                   instruction budgets, ILBC versioned bytecode. Zero
 │                   game knowledge; the security boundary.
-├── idlin-botc      bot toolchain: assembler (a C-like compiler is
-│                   planned) + built-in player templates.
+├── idlin-botc      bot toolchain: assembler + the C-like `.bot` compiler
+│                   (stock brains and zone scripts are `.bot` source).
 ├── idlin-content   content schemas + RON/asm loader + validation +
 │                   content hash. The stat vocabulary (Stat/Layer/Grant)
 │                   lives here so content can speak it.
