@@ -2360,6 +2360,28 @@
               }
             ],
             "weight": 45
+          },
+          {
+            "ilvl": 10,
+            "name": "of Gales",
+            "rolls": [
+              {
+                "max": 90,
+                "min": 51
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Tempest",
+            "rolls": [
+              {
+                "max": 140,
+                "min": 91
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 90
@@ -2449,6 +2471,28 @@
               }
             ],
             "weight": 15
+          },
+          {
+            "ilvl": 10,
+            "name": "Lucent",
+            "rolls": [
+              {
+                "max": 55,
+                "min": 33
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "Prismatic",
+            "rolls": [
+              {
+                "max": 85,
+                "min": 56
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 70
@@ -3598,6 +3642,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 8,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3636,6 +3681,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3662,6 +3708,44 @@
       },
       {
         "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 15,
+        "block_bp": 0,
+        "chart_tier": null,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 45,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "chanters_shroud",
+        "model": "",
+        "name": "Chanter's Shroud",
+        "num": 16777236,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 6,
+        "req_str": 0,
+        "slot": "chest",
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 55
+      },
+      {
+        "affix_pools": [
           "weapon"
         ],
         "armour": 0,
@@ -3672,6 +3756,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 12,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3710,6 +3795,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3747,6 +3833,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3783,6 +3870,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 10,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3819,6 +3907,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3846,6 +3935,44 @@
       {
         "affix_pools": [
           "armour",
+          "arcana"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "chart_tier": null,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 25,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "drowned_lantern",
+        "model": "",
+        "name": "Drowned Lantern",
+        "num": 16777237,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 5,
+        "req_str": 0,
+        "slot": "offhand",
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 1,
+        "weapon_class": null,
+        "weight": 50
+      },
+      {
+        "affix_pools": [
+          "armour",
           "arcana",
           "find"
         ],
@@ -3857,6 +3984,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3894,6 +4022,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 30,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3930,6 +4059,7 @@
         "damage_fire": 0,
         "damage_lightning": 14,
         "damage_phys": 16,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3966,6 +4096,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 14,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4002,6 +4133,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4038,6 +4170,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 26,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4074,6 +4207,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 18,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4110,6 +4244,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 12,
         "flask_cost": 4,
@@ -4146,6 +4281,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 12,
         "flask_cost": 4,
@@ -4184,6 +4320,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4211,6 +4348,45 @@
       {
         "affix_pools": [
           "armour",
+          "arcana",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "chart_tier": null,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 30,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "tideglass_circlet",
+        "model": "",
+        "name": "Tideglass Circlet",
+        "num": 16777238,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 4,
+        "req_str": 0,
+        "slot": "helm",
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 60
+      },
+      {
+        "affix_pools": [
+          "armour",
           "stride",
           "find"
         ],
@@ -4222,6 +4398,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 40,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4258,6 +4435,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 28,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4294,6 +4472,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 40,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -4656,7 +4835,7 @@
           "monster"
         ],
         "aggro_radius_cu": 1300,
-        "armour": 110,
+        "armour": 70,
         "brain": "hostile_melee",
         "damage": 20,
         "damage_chaos": 0,
@@ -6390,7 +6569,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "5cc7b55c06d787c0",
+  "fingerprint": "441c47c6f46118ea",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23,
   "stats": [

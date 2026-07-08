@@ -347,7 +347,17 @@ impl World {
                         continue;
                     }
                     let life_pct = e.combat.as_ref().map(|c| c.life_pct() as i32).unwrap_or(0);
-                    let rarity = e.loot.as_ref().map(|l| l.rarity as i32).unwrap_or(0);
+                    // The record's rarity word covers BOTH ladders (#148
+                    // A2.5 review): a live monster's rank (normal 0 …
+                    // unique 3) or a loot pile's tier — the old loot-only
+                    // read left every live enemy at 0, which silently
+                    // killed the templates' boss exemption.
+                    let rarity = e
+                        .monster
+                        .as_ref()
+                        .map(|m| m.rarity as i32)
+                        .or_else(|| e.loot.as_ref().map(|l| l.rarity as i32))
+                        .unwrap_or(0);
                     found.push((
                         d2,
                         e.net_id,

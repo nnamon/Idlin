@@ -81,6 +81,82 @@ impl SimGrid {
         self.idx(cx, cy).is_some_and(|i| self.los[i])
     }
 
+    /// Deterministic A* over the walk grid (#148 A2.5): 4-connected,
+    /// unit costs, Manhattan heuristic, FIXED tie-breaking (lowest f, then
+    /// lowest index) — same inputs, same path, forever. Returns the cell
+    /// path START-EXCLUSIVE as centers, or None when unreachable. Bounded
+    /// by the grid size; maps are ≤ ~6k cells.
+    pub fn find_path(
+        &self,
+        from: FxV2,
+        to: FxV2,
+        extra_blocked: impl Fn(i64, i64) -> bool,
+    ) -> Option<Vec<FxV2>> {
+        let cell = |p: FxV2| {
+            (
+                (p.x.raw() as i64).div_euclid(65536),
+                (p.y.raw() as i64).div_euclid(65536),
+            )
+        };
+        let (sx, sy) = cell(from);
+        let (tx, ty) = cell(to);
+        let start = self.idx(sx, sy)?;
+        let goal = self.idx(tx, ty)?;
+        if !self.walk[goal] {
+            return None;
+        }
+        let w = self.width as i64;
+        let n = self.walk.len();
+        let mut g = vec![u32::MAX; n];
+        let mut prev = vec![usize::MAX; n];
+        let mut open = std::collections::BinaryHeap::new();
+        let h = |i: usize| {
+            let (cx, cy) = ((i as i64) % w, (i as i64) / w);
+            ((cx - tx).abs() + (cy - ty).abs()) as u32
+        };
+        g[start] = 0;
+        // Reverse-ordered (min-heap): (f, index) — index ties keep it fixed.
+        open.push(std::cmp::Reverse((h(start), start)));
+        while let Some(std::cmp::Reverse((_, i))) = open.pop() {
+            if i == goal {
+                let mut path = Vec::new();
+                let mut c = goal;
+                while c != start {
+                    let (cx, cy) = ((c as i64) % w, (c as i64) / w);
+                    path.push(FxV2::new(
+                        Fx::from_raw((cx * 65536 + 32768) as i32),
+                        Fx::from_raw((cy * 65536 + 32768) as i32),
+                    ));
+                    c = prev[c];
+                }
+                path.reverse();
+                return Some(path);
+            }
+            let (cx, cy) = ((i as i64) % w, (i as i64) / w);
+            for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let Some(j) = self.idx(cx + dx, cy + dy) else {
+                    continue;
+                };
+                if !self.walk[j] {
+                    continue;
+                }
+                // Gates (and any other dynamic block) veto cells the static
+                // grid allows — the review's soft-pin: A* once planned
+                // straight through a shut lesson gate.
+                if extra_blocked(cx + dx, cy + dy) {
+                    continue;
+                }
+                let ng = g[i].saturating_add(1);
+                if ng < g[j] {
+                    g[j] = ng;
+                    prev[j] = i;
+                    open.push(std::cmp::Reverse((ng + h(j), j)));
+                }
+            }
+        }
+        None
+    }
+
     /// In-bounds AND standable — what spawn scatter needs.
     pub fn walkable_pos(&self, pos: FxV2) -> bool {
         self.idx(
@@ -256,5 +332,63 @@ impl Zone {
             .iter()
             .enumerate()
             .filter_map(|(i, s)| s.as_ref().map(|e| (i, e)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grid(rows: &[&str]) -> SimGrid {
+        let height = rows.len() as i32;
+        let width = rows[0].len() as i32;
+        let mut walk = Vec::new();
+        for r in rows {
+            for c in r.chars() {
+                walk.push(c == '.');
+            }
+        }
+        SimGrid {
+            width,
+            height,
+            los: walk.iter().map(|w| !w).collect(),
+            walk,
+        }
+    }
+
+    fn at(x: i64, y: i64) -> FxV2 {
+        FxV2::new(
+            Fx::from_raw((x * 65536 + 32768) as i32),
+            Fx::from_raw((y * 65536 + 32768) as i32),
+        )
+    }
+
+    #[test]
+    fn astar_routes_around_walls_deterministically() {
+        // #148 A2.5: a wall with one gap — the path must thread it, and two
+        // identical calls must agree cell-for-cell (fixed tie-breaking).
+        // Mutation: drop the tie-break index from the heap key → flaky order.
+        let g = grid(&["....", ".##.", ".#..", "...."]);
+        let p1 = g.find_path(at(1, 0), at(2, 2), |_, _| false).unwrap();
+        let p2 = g.find_path(at(1, 0), at(2, 2), |_, _| false).unwrap();
+        assert_eq!(p1, p2, "same inputs, same path");
+        assert!(!p1.is_empty());
+        // The unreachable case: boxed in on all sides.
+        let sealed = grid(&["...", ".#.", "..."]);
+        assert!(
+            sealed.find_path(at(0, 0), at(1, 1), |_, _| false).is_none(),
+            "a walled goal has no path"
+        );
+    }
+
+    #[test]
+    fn astar_respects_the_dynamic_veto() {
+        // #148 A2.5 review (B2): shut gates veto cells the static grid
+        // allows. Mutation: drop the extra_blocked check → the path runs
+        // straight through the "gate" column.
+        let g = grid(&["....", "....", "...."]);
+        let gate_col = |cx: i64, _cy: i64| cx == 2;
+        let p = g.find_path(at(0, 1), at(3, 1), gate_col);
+        assert!(p.is_none(), "the veto seals the only corridor");
     }
 }

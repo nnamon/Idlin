@@ -228,6 +228,12 @@ pub struct Intents {
     pub move_to: Option<FxV2>,
     pub attack: Option<AttackIntent>,
     pub pickup: Option<u32>,
+    /// Waypoints toward move_to when the straight line is blocked (#148
+    /// A2.5): cell centers from a deterministic A* over the walk grid,
+    /// walked back-to-front. Recomputed when the target changes or the
+    /// next hop stops being reachable; empty = walk straight.
+    #[serde(default)]
+    pub path: Vec<FxV2>,
 }
 
 /// Speech-bubble rate limit (ticks between says).

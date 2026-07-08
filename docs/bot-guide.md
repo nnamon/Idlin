@@ -250,7 +250,7 @@ address you supply and return a count/status.
 | 6 | `MoveTo` | x, y (Q16.16) | 0 |
 | 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **<0** a defined failure (slot / cooldown / busy / mana / range / LoS / mode / target / weapon — see the skill error-code table below) |
 | 8 | `PickUp` | loot_id | 0 |
-| 12 | `EquipBest` | — | number of swaps made |
+| 12 | `EquipBest` | — | number of swaps made. Covers ARMOUR + ACCESSORIES only — the weapon slot is never touched (a weapon is the build's identity; wield manually). Scoring weighs life, defenses (incl. ES), attributes, and resists. |
 | 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; the table is packed i32 stable tagged node nums, translated to tree nodes at deploy) |
 | 15 | `Random` | — | a value from your private RNG stream |
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |

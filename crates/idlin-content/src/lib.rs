@@ -200,6 +200,7 @@ pub struct MonsterSkillDef {
 /// their identity IS the mods; the same `Grant` shape as monster passives
 /// and tree nodes, folded at the same gear chokepoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UniqueDef {
     pub id: String,
     pub name: String,
@@ -219,6 +220,7 @@ pub struct UniqueDef {
 /// A monster archetype. `model` picks the client-side visual; `brain` picks
 /// the bot program that drives it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MonsterDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -387,6 +389,7 @@ impl GearSlot {
 
 /// An item base type. Rolled affixes provide everything beyond these bases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ItemDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -471,11 +474,14 @@ pub struct ItemDef {
     #[serde(default)]
     pub affix_pools: Vec<String>,
     /// Armor: base mitigation/avoidance (armour attenuates physical damage;
-    /// evasion makes hits miss).
+    /// evasion makes hits miss; energy shield is a hit-absorbing pool that
+    /// recharges out of combat — the caster's armour class, #148 A2.5).
     #[serde(default)]
     pub armour: i64,
     #[serde(default)]
     pub evasion: i64,
+    #[serde(default)]
+    pub energy_shield: i64,
     /// Relative drop weight.
     #[serde(default = "default_weight")]
     pub weight: u32,
@@ -572,6 +578,7 @@ pub enum CurrencyOp {
 
 /// A currency item: stored as a plain count, spent on gear in the bag.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CurrencyDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -609,6 +616,7 @@ pub struct NamingDef {
 /// from the highest tier the item level allows. One effect = a plain mod; many
 /// effects = a HYBRID (#86), one roll granting several stats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AffixDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -889,6 +897,7 @@ fn default_max_targets() -> u32 {
 /// grants applied to the skill socketed in its tree cluster). Gems gain XP
 /// from kills; levels scale their numbers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GemDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -1257,6 +1266,7 @@ pub struct PropsDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ZoneDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -3700,7 +3710,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(-1)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3721,7 +3731,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(9223372036854775807)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3845,6 +3855,28 @@ mod tests {
         affix_pools: [],
         passives: [GRANT],
     )"#;
+
+    #[test]
+    fn unknown_content_fields_are_rejected_not_swallowed() {
+        // #148 A2.5: the authored surfaces are STRICT — a typo'd or unknown
+        // field fails at parse instead of vanishing (the review's origin
+        // story: hand-authored `energy_shield:` fields were silently eaten
+        // for a whole content pass before the field existed). Mutation:
+        // drop deny_unknown_fields from ItemDef → this probe loads clean.
+        let tc = TempContent::new(
+            "strict_probe",
+            &[(
+                "items/probe.ron",
+                r#"ItemDef(id: "p", name: "P", slot: weapon, w: 1, h: 1, energy_shielf: 30)"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::Parse { path, .. }) => {
+                assert!(path.contains("probe"), "{path}");
+            }
+            other => panic!("expected a parse rejection, got {other:?}"),
+        }
+    }
 
     #[test]
     fn malformed_uniques_are_rejected() {

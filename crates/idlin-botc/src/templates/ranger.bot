@@ -58,12 +58,11 @@ var stuck_t;
 var unstick;               // ticks left of forced wandering
 var voyage_t;              // ticks spent in the current chart instance
 var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
-var wallshot;              // consecutive failed attacks on a held target
 var shed_cd;               // ticks to ignore ground loot after shedding
-var last_tgt;              // gap audit: the target we held last tick…
-var last_tgt_life;         // …and its life then
-var gap_fail;              // ticks the gap has paid nothing
+var last_xp;               // XP-drought: earnings mark real progress
+var drought;               // ticks fighting without earning
 var close_in;              // ticks of forced gap-closing
+var strafed;               // the drought already bought one strafe
 
 // Fire one skill slot at the target, honoring its declared targeting
 // mode (ReadSkills record +28 = target_mode; ready checked by the
@@ -105,13 +104,19 @@ fn upkeep_gear() {
                                                 // item_slot returns those, so the
                                                 // records must be written or
                                                 // `EQ + s*16` reads stale.
+    // ARMOUR + ACCESSORIES: the engine scorer's business (#148 A2.5) —
+    // item_score weighs life, armour, ES, evasion, attributes AND RESISTS;
+    // the old rarity-first rule wore whatever dropped, and casting bosses
+    // farmed the ranged archetypes for it. equip_best never touches the
+    // weapon (engine contract) — the ladder below stays ours.
+    equip_best();
     var n = read_inventory(INV, 60);
     var i = 0;
     while (i < n) {
         var rec = INV + i * INVENTORY_RECORD_SIZE;
         var num = mem[rec];
         var s = item_slot(num);                 // -1 unless this is gear
-        if (s >= 0) {
+        if (s == 0) {
             // The WEAPON slot is build-critical: a wand or bow would silence our
             // melee skills at the weapon gate (the gear face of #52). Reads don't
             // carry weapon class, so we wield only our known melee base; armor
@@ -142,21 +147,6 @@ fn upkeep_gear() {
                         if (equip(i) == 0) { return; }
                         ok = 0;
                     }
-                }
-            }
-            if (ok == 1) {
-                var er = EQ + s * EQUIPMENT_RECORD_SIZE;
-                // Empty slot wins outright; else RARITY first, item level
-                // as the tiebreak (#148 A1): the old ilvl-only rule let
-                // plain bases evict affixed gear — the whole 1.0 campaign
-                // sailed at zero resist on every seed because a magic
-                // "of Warding" helm at ilvl 5 lost to a bare ilvl-6 one.
-                var up = 0;
-                if (mem[er + 4] < 0) { up = 1; }
-                if (mem[rec + 4] > mem[er + 8]) { up = 1; }
-                if (mem[rec + 4] == mem[er + 8] && mem[rec + 8] > mem[er + 12]) { up = 1; }
-                if (up == 1) {
-                    if (equip(i) == 0) { return; }   // equipped; the bag shifted
                 }
             }
         }
@@ -407,7 +397,7 @@ fn main() {
     var target = -1;
     var tx = 0;
     var ty = 0;
-    var tlife = 0;
+    var trarity = 0;
     var k = 0;
     while (k < nen) {
         var cand = ENTS + k * ENTITY_RECORD_SIZE;
@@ -415,7 +405,7 @@ fn main() {
             target = mem[cand];
             tx = mem[cand + 8];
             ty = mem[cand + 12];
-            tlife = mem[cand + 16];
+            trarity = mem[cand + 20];
             k = nen;
         }
         k = k + 1;
@@ -510,37 +500,37 @@ fn main() {
                 i = i + 1;
             }
         }
-        var landed = used;
         if (used != 0) {
-            landed = use_skill(0, target, 0, 0);
+            use_skill(0, target, 0, 0);
         }
-        // WALL-SHOT ESCAPE (#148 A2): "in reach" is not "can hit" — a
-        // ranged weapon spans walls the attack can't (the caster stood
-        // casting at a gate for two game-hours; the unstick's in-reach
-        // exemption never fired). If nothing lands for ~2s on a held
-        // target, the geometry is lying: drop it and wander hard.
-        if (landed == 0) { wallshot = 0; }
-        if (landed != 0) { wallshot = wallshot + 1; }
-        if (wallshot > 20) {
-            wallshot = 0;
-            unstick = 40;
-            wander_left = 0;
+        // XP-DROUGHT (#148 A2.5): the ONE robust futility signal. Chip-and-
+        // regen targets yo-yo their life; two milling rares alternate as
+        // "nearest" and reset every per-target audit (a coast pair held a
+        // caster on one cell for 60k ticks). Earnings can't be gamed:
+        // fifteen seconds fighting without XP = this fight pays nothing.
+        // First drought buys a STRAFE (corner-clips break sideways); a
+        // second in a row abandons the spot entirely.
+        var xp_now = mem[SELF + SS_XP];
+        if (xp_now > last_xp) {
+            drought = 0;
+            strafed = 0;
         }
-        // GAP AUDIT (#148 A2): a thin sight-line can pass a corner the
-        // fat projectile clips — we fire, nothing lands, the elite regens
-        // (the witch standoff: 78% forever, two cells apart). The SAME
-        // target held ~4s without losing life means the gap is not
-        // paying: close to arm's length like a melee brain until it is.
-        if (target == last_tgt && tlife >= last_tgt_life) {
-            gap_fail = gap_fail + 1;
-        }
-        if (target != last_tgt) { gap_fail = 0; }
-        if (tlife < last_tgt_life) { gap_fail = 0; }
-        last_tgt = target;
-        last_tgt_life = tlife;
-        if (gap_fail > 40) {
-            gap_fail = 0;
-            close_in = 60;
+        last_xp = xp_now;
+        // BOSSES ARE EXEMPT: a unique pays all its XP at the end — a long
+        // boss fight IS a drought until the kill (the detector once walked
+        // the grinder out of Karesh's court mid-fight).
+        if (trarity < 3) { drought = drought + 1; }
+        if (trarity >= 3) { drought = 0; }
+        if (drought > 150) {
+            drought = 0;
+            if (strafed == 0) {
+                strafed = 1;
+                close_in = 60;
+            }
+            if (strafed == 1 && close_in <= 0) {
+                strafed = 0;
+                unstick = 80;
+            }
         }
         if (close_in > 0) { close_in = close_in - 1; }
         // RANGED HOLD (#148 A2): the weapon's whole point is the gap.
@@ -564,7 +554,10 @@ fn main() {
         if (hdx < 0) { hdx = 0 - hdx; }
         var hdy = ty - mem[SELF + SS_Y];
         if (hdy < 0) { hdy = 0 - hdy; }
-        var hold = (mem[SELF + SS_ATTACK_RANGE] * 7) / 10;
+        // NINE tenths, not seven (#148 A2.5): at 70% a bow held INSIDE
+        // the Mother's arc envelope and traded a 500-life pool against her
+        // 2000 — the weapon's whole identity is out-ranging the answer.
+        var hold = (mem[SELF + SS_ATTACK_RANGE] * 9) / 10;
         if (hdx > hold || hdy > hold) {
             move_to(tx, ty);
         }
@@ -602,6 +595,13 @@ fn main() {
         var yn = mem[SELF + SS_Y] / 65536;
         wander_y = (random() & 0x7FFFFFFF) % (yn + 1);
         if ((random() & 3) == 0) {
+            wander_y = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_H];
+        }
+        // ESCAPES NEED FREEDOM: while unsticking, the progress bias is the
+        // enemy — at the top of a map every "north-of-here" target IS the
+        // corner we're pinned in (the slide walked a pupil into the coast's
+        // top corner and the bias held it there).
+        if (unstick > 0) {
             wander_y = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_H];
         }
         wander_left = 50 + ((random() & 0x7FFFFFFF) % 70);

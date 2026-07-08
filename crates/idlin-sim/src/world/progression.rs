@@ -163,6 +163,8 @@ struct DeriveBase {
     accuracy: i64,
     evasion: i64,
     armour: i64,
+    /// Base energy shield from worn gear (#148 A2.5) — folds like armour.
+    es: i64,
     resists: [i64; RES_COUNT],
     use_ticks: u32,
     speed: Fx,
@@ -237,7 +239,7 @@ fn derive_from_sheet(
     CharDerived {
         life_max: sheet.value(Stat::Life, base.life).max(1),
         mana_max: sheet.value(Stat::Mana, base.mana).max(0),
-        es_max: sheet.value(Stat::EnergyShield, 0),
+        es_max: sheet.value(Stat::EnergyShield, base.es),
         life_regen: sheet.value(Stat::LifeRegen, 0),
         mana_regen: sheet.value(Stat::ManaRegen, 0),
         leech_life: sheet.value(Stat::LeechLife, 0),
@@ -316,6 +318,7 @@ fn monster_scaled_base(
         damage,
         accuracy,
         evasion: def.evasion,
+        es: 0,
         armour: def.armour,
         resists: [
             def.resist_fire,
@@ -656,6 +659,7 @@ impl World {
         let mut weapon: Option<&Item> = None;
         let mut armour_base = 0i64;
         let mut evasion_base = base_evasion(level);
+        let mut es_base = 0i64;
         let mut block_base = 0i64;
         for (i, slot_item) in ch.equipment.iter().enumerate() {
             let Some(item) = slot_item else { continue };
@@ -678,6 +682,7 @@ impl World {
             } else {
                 armour_base += def.armour;
                 evasion_base += def.evasion;
+                es_base += def.energy_shield;
                 block_base += def.block_bp;
             }
         }
@@ -715,6 +720,7 @@ impl World {
             accuracy: base_accuracy(level),
             evasion: evasion_base,
             armour: armour_base,
+            es: es_base,
             resists: [0; RES_COUNT],
             use_ticks: use_base,
             speed: speed_from_cps(BASE_SPEED_CPS),

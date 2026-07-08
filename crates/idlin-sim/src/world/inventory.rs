@@ -362,6 +362,16 @@ impl World {
 
         let mut changes = 0;
         for gear_idx in 0..GEAR_SLOTS {
+            // The WEAPON is the build's identity (#148 A2.5): a wand on a
+            // maul build silences every skill, and no scalar score can know
+            // that. EquipBest owns armour + accessories; bots wield
+            // manually (the stock brains keep ranked ladders). This is what
+            // finally let the templates delegate armour to the SCORER — and
+            // the scorer is what values the resists that stop casting
+            // bosses from farming the ranged archetypes.
+            if gear_idx == GearSlot::Weapon.idx() {
+                continue;
+            }
             let Some(e) = self.zone.get(slot) else { break };
             let ch = e.character.as_ref().unwrap();
             // A two-handed weapon claims the offhand: never fill that slot while
@@ -748,6 +758,9 @@ impl World {
             sheet.value(Stat::Armour, def.armour) * 100
                 + sheet.value(Stat::Block, def.block_bp) / 3
                 + sheet.value(Stat::Evasion, def.evasion) * 100
+                // ES is the caster's life (#148 A2.5) — it was never scored,
+                // so ES gear lost to bare armour on every auto decision.
+                + sheet.value(Stat::EnergyShield, def.energy_shield) * 150
                 + sheet.value(Stat::Life, 0) * 200
                 + sheet.value(Stat::Mana, 0) * 50
                 // Attributes feed real derived stats (STR→life/melee, DEX→acc/eva,

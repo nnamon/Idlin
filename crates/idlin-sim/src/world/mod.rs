@@ -1438,15 +1438,104 @@ impl World {
                 continue;
             }
 
-            let delta = target - pos;
+            // PATHFOLLOW (#148 A2.5): when the straight line to the intent
+            // is LoS-blocked by terrain, walk a deterministic A* path
+            // instead (computed once, cached on the intent, re-planned when
+            // the target moves a cell or a hop goes stale). The straight
+            // walk remains the common case — open-ground behavior (and its
+            // replays) is untouched.
+            let step_target = {
+                let e = self.zone.get(slot).unwrap();
+                let blocked = self
+                    .zone
+                    .grid
+                    .as_ref()
+                    .is_some_and(|_| self.los_blocked(pos, target));
+                if !blocked {
+                    if !e.intents.path.is_empty()
+                        && let Some(me) = self.zone.get_mut(slot)
+                    {
+                        me.intents.path.clear();
+                    }
+                    target
+                } else {
+                    // Follow (or build) the waypoint path. Shut gates veto
+                    // cells at PLAN time, and a hop that a gate has since
+                    // shut on is STALE — re-plan (the documented contract;
+                    // the review found the first draft soft-pinning on a
+                    // closed lesson gate its plan walked through).
+                    let gate_blocked = |cx: i64, cy: i64| {
+                        self.zone.gates.iter().any(|g| !g.open && g.covers(cx, cy))
+                    };
+                    let hop_stale = e.intents.path.first().is_some_and(|w| {
+                        let (cx, cy) = (
+                            (w.x.raw() as i64).div_euclid(65536),
+                            (w.y.raw() as i64).div_euclid(65536),
+                        );
+                        gate_blocked(cx, cy)
+                    });
+                    let mut next = e.intents.path.first().copied();
+                    let goal_moved = e
+                        .intents
+                        .path
+                        .last()
+                        .is_some_and(|w| w.dist(target) > Fx::from_int(1));
+                    if next.is_none() || goal_moved || hop_stale {
+                        let path = self
+                            .zone
+                            .grid
+                            .as_ref()
+                            .and_then(|g| g.find_path(pos, target, gate_blocked))
+                            .unwrap_or_default();
+                        next = path.first().copied();
+                        if let Some(me) = self.zone.get_mut(slot) {
+                            me.intents.path = path;
+                        }
+                    }
+                    match next {
+                        Some(w) => {
+                            if pos.dist(w) <= speed
+                                && let Some(me) = self.zone.get_mut(slot)
+                            {
+                                me.intents.path.remove(0);
+                            }
+                            w
+                        }
+                        None => target, // unreachable: fall back to straight
+                    }
+                }
+            };
+            let delta = step_target - pos;
+            let dist_step = pos.dist(step_target);
             let dist = pos.dist(target);
-            let new_pos = if dist <= speed {
-                target
+            let new_pos = if dist_step <= speed {
+                step_target
             } else {
-                let factor = speed / dist;
+                let factor = speed / dist_step;
                 FxV2::new(pos.x + delta.x * factor, pos.y + delta.y * factor)
             };
             let new_pos = self.zone.clamp_pos(new_pos);
+            // WALL SLIDE (#148 A2.5): a blocked diagonal keeps its free
+            // axis instead of stalling — the classic steering slide, at the
+            // ONE movement chokepoint. Before this, a bot walking at a wall
+            // parked forever against it (the terrace pins, the court-wall
+            // pins — a whole class of template escape hacks fought this);
+            // now it slides along the wall to the gap. Deterministic: the
+            // axis order is fixed (x first), the checks are grid reads.
+            let new_pos = match &self.zone.grid {
+                Some(grid) if !grid.walkable_pos(new_pos) => {
+                    let x_only = self.zone.clamp_pos(FxV2::new(new_pos.x, pos.y));
+                    let y_only = self.zone.clamp_pos(FxV2::new(pos.x, new_pos.y));
+                    if grid.walkable_pos(x_only) {
+                        x_only
+                    } else if grid.walkable_pos(y_only) {
+                        y_only
+                    } else {
+                        pos
+                    }
+                }
+                _ => new_pos,
+            };
             if let Some(me) = self.zone.get_mut(slot) {
                 me.pos = new_pos;
                 if dist <= speed {
@@ -2648,6 +2737,38 @@ mod area_level_tests {
             1,
             "the free exit wins over its sealed neighbor"
         );
+    }
+
+    #[test]
+    fn base_energy_shield_folds_from_worn_gear() {
+        // #148 A2.5: the first ES bases — a worn 30-ES circlet gives exactly
+        // es_max 30 to a no-INT character (attribute conversion multiplies
+        // ON TOP). Mutation: drop the es_base accumulation or the
+        // sheet.value(EnergyShield, base.es) seed → es_max 0.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xE5F0, &content, "saltmere");
+        let slot = join_one(&mut w, "Warded");
+        let circlet = content
+            .items
+            .iter()
+            .position(|i| i.id == "tideglass_circlet")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.level = 5;
+            ch.equipment[idlin_content::GearSlot::Helm.idx()] = Some(crate::entity::Item {
+                base_idx: circlet,
+                rarity: Rarity::Normal,
+                item_level: 5,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            });
+        }
+        w.refresh_derived_stats(slot);
+        let es = w.zone.get(slot).unwrap().combat.as_ref().unwrap().es_max;
+        assert!(es >= 30, "a 30-ES base must fold into es_max; got {es}");
     }
 
     #[test]

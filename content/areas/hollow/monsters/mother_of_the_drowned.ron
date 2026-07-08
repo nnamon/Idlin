@@ -44,7 +44,11 @@ MonsterDef(
     ],
     use_ticks: 16,
     aggro_radius_cu: 1300,
-    armour: 110,
+    // 70, not 110 (#148 A2.5): armour attenuates SMALL hits hardest — at
+    // 110 the bow archetype's fast light arrows lost most of their damage
+    // while the maul barely noticed, the same class-tax her resists once
+    // were. Every lane pays something; no lane pays everything.
+    armour: 70,
     // 25%, not 50% (#148 A2): her old walls hard-countered two of the
     // caster's three lanes while melee never felt them (armour is the
     // phys lane and stands unchanged) — the finale grades every

@@ -10,6 +10,15 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #148 A2.5 (the defense economy + real navigation): the
+/// ENGINE moved — move intents now WALL-SLIDE and, when terrain blocks the
+/// straight line, follow a deterministic A* path (fixed tie-breaking, cached
+/// on the intent, serialized) — so every replay's movement differs wherever
+/// geometry used to pin. Content moved too: the first ES bases, deeper
+/// defensive tiers, strict (deny_unknown_fields) content loading. The
+/// templates simplified (the escape-hack layers the engine now obsoletes
+/// came out; the XP-drought futility detector with its boss exemption went
+/// in). (Prior: 0x09C4 — A2.)
 /// Re-pinned for #148 A2 (three archetypes): content moved (the shore's
 /// lesson brain keys on the DECLARED archetype and opens midway on the
 /// witch's kill when the socket beat already landed; the witch and the
@@ -164,7 +173,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x09C4_366A_5FCA_ED82;
+const GOLDEN_HASH: u64 = 0x0B8C_E00D_3B06_2808;
 
 #[test]
 fn golden_replay() {
