@@ -696,3 +696,16 @@ Hard-won disciplines the stock templates carry — steal them:
 - **Hold at nine tenths.** A ranged weapon's whole identity is range: at
   70% of reach a bow trades inside a caster boss's envelope; at 90% the
   answer can't reach back.
+
+## Sound (#148 A8)
+
+The broadcast talks: a synthesized WebAudio layer (zero assets — every
+cue is oscillators and envelopes) voices the story beats the director
+cuts to — kills (rate-limited), boss falls, act fanfares, deaths,
+level-ups, sails, voyage tallies, rare drops, and recalls. **Muted by
+default**; the speaker button (bottom-right) is the opt-in, and its
+click doubles as the browser's audio-unlock gesture. Volume persists
+per-browser. Sound is presentation-only — it never touches the sim,
+and the deterministic capture harness asserts the event→cue mapping
+through the engine's log (headless Chromium plays nothing; ears verify
+the rest).

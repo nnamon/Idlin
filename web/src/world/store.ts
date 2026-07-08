@@ -145,6 +145,9 @@ export class WorldStore {
   private seenBosses = new Set<number>();
   private lastWorldKey = "";
   ticker: TickerItem[] = [];
+  /** Event tap (#148 A8): the sound director listens here. Presentation
+   *  only — the store never depends on the callback. */
+  onEvent?: (ev: GameEvent) => void;
   pendingHits: ActiveHit[] = [];
   pendingProjectiles: ActiveProjectile[] = [];
   pendingSkills: ActiveSkill[] = [];
@@ -321,7 +324,10 @@ export class WorldStore {
         break;
       }
       case "Events": {
-        for (const ev of msg.data.events) this.narrate(ev);
+        for (const ev of msg.data.events) {
+          this.narrate(ev);
+          this.onEvent?.(ev);
+        }
         this.version++;
         break;
       }

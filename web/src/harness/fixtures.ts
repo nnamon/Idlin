@@ -25,6 +25,8 @@ import {
 export type Fixture =
   | {
       kind: "overlay";
+      /** Render the speaker button (#148 A8). */
+      sound?: boolean;
       label: string;
       /** Link status the stub client reports (drives the plaque). */
       status: NetStatus;
@@ -746,6 +748,22 @@ const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservatio
 // (bold), not a dim neighbour; and an overkilled pool (sim sends negative life)
 // must read 0 on the orb, never a negative number.
 const EDGE_ID = 9;
+// The speaker button (#148 A8): the one UI surface sound adds — shot in
+// its muted default (the fresh-engine state every viewer starts in).
+const soundToggle: Fixture = {
+  kind: "overlay",
+  sound: true,
+  label: "Sound: the speaker button renders muted by default",
+  status: LIVE_STATUS,
+  messages: [
+    zoneSnapshot({
+      entities: [
+        character({ id: EDGE_ID, name: "Solo", level: 30, model: "ranger", life_pct: 80, kills: 12, items: 2 }),
+      ],
+    }),
+  ],
+};
+
 const hudEdge: Fixture = {
   kind: "overlay",
   label: "Edge: a lone idler + an overkilled (negative) life pool that clamps to 0",
@@ -1024,6 +1042,7 @@ const fullCampaign: Fixture = {
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
+  "sound-toggle": soundToggle,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,

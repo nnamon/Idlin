@@ -11,6 +11,7 @@ import type { GearSlotView } from "../gen/GearSlotView";
 import type { SkillStat } from "../gen/SkillStat";
 import type { NetClient, NetStatus } from "../net/client";
 import type { WorldStore } from "../world/store";
+import type { SoundEngine } from "../audio/engine";
 import { resolveFocusId } from "../world/focus";
 import { TICK_HZ, RARITY_COLORS } from "../gen/constants";
 import { ContentDocs, formatContribution, loadContentDocs } from "../world/contentDocs";
@@ -138,6 +139,7 @@ export function Overlay({
   client,
   store,
   idler = null,
+  audio = null,
 }: {
   client: NetClient;
   store: WorldStore;
@@ -145,7 +147,10 @@ export function Overlay({
    *  director broadcast. Pins focus + inspect to this idler and drops the
    *  director chrome (rotation carousel, cue reason). */
   idler?: string | null;
+  /** The sound engine (#148 A8); null in fixtures that don't care. */
+  audio?: SoundEngine | null;
 }) {
+  const [, setAudioTick] = useState(0);
   const [status, setStatus] = useState<NetStatus | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [, setVersion] = useState(0);
@@ -255,6 +260,32 @@ export function Overlay({
 
   return (
     <ItemHoverContext.Provider value={setHover}>
+      {/* Sound (#148 A8): synthesized, muted by default — the click is
+          the WebAudio unlock gesture. */}
+      {audio && (
+        <button
+          className="sound-toggle"
+          title={audio.muted ? "sound: off" : "sound: on"}
+          style={{
+            position: "fixed",
+            right: 10,
+            bottom: 10,
+            zIndex: 30,
+            background: "rgba(10,14,22,0.7)",
+            color: audio.muted ? "#5a6478" : "#ffd27a",
+            border: "1px solid #2a3348",
+            borderRadius: 6,
+            padding: "4px 8px",
+            cursor: "pointer",
+          }}
+          onClick={() => {
+            audio.toggle();
+            setAudioTick((n) => n + 1);
+          }}
+        >
+          {audio.muted ? "🔇" : "🔊"}
+        </button>
+      )}
       {/* zone title card (#136 T7): where you are, on every cut. Same
           clock discipline as the boss splash (no CSS animation). */}
       {store.zoneSighted && performance.now() - store.zoneSighted.at < 3000 && (

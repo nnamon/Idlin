@@ -78,6 +78,11 @@ export const FIXTURES: FixtureMeta[] = [
     expect: ["Solo", "Life: 0/1180"],
   },
   {
+    name: "sound-toggle",
+    kind: "overlay",
+    expect: ["🔇", "IDLIN"],
+  },
+  {
     // PoE-style item tooltip (#87). The needles assert the EXACT formatted mod
     // strings, not just substrings — so basis-point scaling (3800 → 38%) and the
     // value(min-max) range rendering are non-vacuously proven: drop the ÷100 in
