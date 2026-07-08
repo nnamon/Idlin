@@ -555,14 +555,18 @@ function SlotBox({
 /** The campaign chip (#136 T7): act state at a glance — and once the
  *  Mother falls, the chart count doubles as the endgame's ticket stub. */
 function ActChip({ sheet }: { sheet: CharacterSheet }) {
-  const done = (sheet.story_acts & 1) !== 0;
-  if (!done) return <span className="act-chip">act 1</span>;
-  const n = chartCount(sheet);
-  return (
-    <span className="act-chip done">
-      act 1 done · {n} chart{n === 1 ? "" : "s"}
-    </span>
-  );
+  // Two acts now (#148 A3): show where the road stands; the chart count
+  // appears once the campaign is done (charts wait for the last act).
+  if ((sheet.story_acts & 2) !== 0) {
+    const n = chartCount(sheet);
+    return (
+      <span className="act-chip done">
+        campaign done · {n} chart{n === 1 ? "" : "s"}
+      </span>
+    );
+  }
+  if ((sheet.story_acts & 1) !== 0) return <span className="act-chip">act 2</span>;
+  return <span className="act-chip">act 1</span>;
 }
 
 // Charts count by the base's stable tagged num (RFC #54) — names are

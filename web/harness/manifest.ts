@@ -175,7 +175,7 @@ export const FIXTURES: FixtureMeta[] = [
     // the chart count ("act 1 done · 1 chart") + the named chart in the bag.
     name: "full-campaign",
     kind: "full",
-    expect: ["The Charted Shallows", "act 1 done"],
+    expect: ["The Charted Shallows", "campaign done"],
     minBytes: 60_000,
   },
   {

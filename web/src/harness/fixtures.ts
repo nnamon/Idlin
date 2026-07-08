@@ -998,7 +998,7 @@ const fullCampaign: Fixture = {
           id: 1,
           name: "Brakka",
           level: 16,
-          story_acts: 1,
+          story_acts: 3,
           inventory: [
             {
               name: "Seething Salt-Stained Chart of Bounty",

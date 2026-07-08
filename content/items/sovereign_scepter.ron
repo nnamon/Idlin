@@ -1,0 +1,19 @@
+// A piece of the crown, still humming. The deep ladder's top wand. (#148 A3)
+ItemDef(
+    id: "sovereign_scepter",
+    public: true,
+    name: "Sovereign Scepter",
+    model: "wand",
+    slot: weapon,
+    weapon_class: Some(wand),
+
+    w: 1,
+    h: 3,
+    damage_phys: 34,
+    damage_lightning: 12,
+    range_cu: 950,
+    use_ticks: 8,
+    projectile: true,
+    weight: 30,
+    affix_pools: ["weapon"],
+)

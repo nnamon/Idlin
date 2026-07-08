@@ -1,0 +1,30 @@
+// Act 2, step three (#148 A3): the Pressure Court — the drowned
+// magistrate's hall, where the deep still holds session. Bailiff Morr
+// keeps the chamber past the gallery; the way down runs behind his bench.
+ZoneDef(
+    id: "pressure_court",
+    name: "The Pressure Court",
+    kind: story,
+    level: 17,
+    tileset: Some("town"),
+    spawn_x_u: 21,
+    spawn_y_u: 50,
+    spawn_radius_u: 2,
+    camp_radius_u: 5,
+    lines: [
+        (id: "enter", text: "The Court. Session never adjourned; the dead still file motions."),
+    ],
+    packs: [
+        SpawnPack(monster: "pressure_wight", count: 4, x_u: 21, y_u: 40, radius_u: 3, respawn_ticks: 600, magic_bp: 2600, rare_bp: 950),
+        SpawnPack(monster: "lantern_wisp",   count: 3, x_u: 14, y_u: 32, radius_u: 3, respawn_ticks: 600, magic_bp: 2600, rare_bp: 950),
+        SpawnPack(monster: "pressure_wight", count: 4, x_u: 28, y_u: 24, radius_u: 3, respawn_ticks: 600, magic_bp: 2800, rare_bp: 1050),
+        SpawnPack(monster: "pressure_wight", count: 3, x_u: 21, y_u: 16, radius_u: 3, respawn_ticks: 600, magic_bp: 2800, rare_bp: 1050),
+        // The chamber: the Bailiff and his session.
+        SpawnPack(monster: "pressure_wight", count: 2, x_u: 15, y_u: 7, radius_u: 2, respawn_ticks: 1500),
+        SpawnPack(monster: "bailiff_morr",   count: 1, x_u: 21, y_u: 6, radius_u: 0, respawn_ticks: 3000),
+    ],
+    exits: [
+        (x_u: 21, y_u: 51, dest: "kelp_forest", open: true),
+        (x_u: 21, y_u: 2, dest: "the_undertow", open: true),
+    ],
+)

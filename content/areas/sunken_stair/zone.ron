@@ -1,0 +1,32 @@
+// Act 2 opens DOWN (#148 A3): the Mother's basin drains into the Sunken
+// Stair — a switchback descent below the waterline. The way in is
+// STORY-SEALED: the stair answers only to those who broke her (the
+// requires_act machinery, live at last).
+ZoneDef(
+    id: "sunken_stair",
+    name: "The Sunken Stair",
+    kind: story,
+    level: 13,
+    tileset: Some("shore"),
+    tileset_variant: Some("abyss"),
+    spawn_x_u: 20,
+    spawn_y_u: 52,
+    spawn_radius_u: 2,
+    camp_radius_u: 4,
+    lines: [
+        (id: "enter", text: "The Stair. The sea above you now. It presses like a verdict."),
+    ],
+    packs: [
+        SpawnPack(monster: "pilgrim_husk", count: 4, x_u: 20, y_u: 44, radius_u: 3, respawn_ticks: 700, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "lantern_wisp", count: 3, x_u: 19, y_u: 35, radius_u: 3, respawn_ticks: 700, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "pilgrim_husk", count: 4, x_u: 20, y_u: 26, radius_u: 3, respawn_ticks: 700, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "lantern_wisp", count: 3, x_u: 20, y_u: 17, radius_u: 3, respawn_ticks: 700, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "pilgrim_husk", count: 4, x_u: 20, y_u: 8, radius_u: 3, respawn_ticks: 700, magic_bp: 2800, rare_bp: 1000),
+    ],
+    exits: [
+        // Back up into the Hollow's basin.
+        (x_u: 20, y_u: 53, dest: "hollow", open: true),
+        // Down to the air-bell.
+        (x_u: 20, y_u: 1, dest: "lanternfall", open: true),
+    ],
+)

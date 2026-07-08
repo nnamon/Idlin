@@ -180,13 +180,27 @@ fn the_act_1_zones_stand_up() {
     assert_eq!(mother.len(), 1, "one Mother in the basin");
     assert_eq!(mother[0].name, "Mother of the Drowned");
 
-    // The chain: every authored exit leads where the campaign says.
+    // Act 2 (#148 A3): the Undertow stands up the same way.
+    let mut deep = World::new_for_zone(0x5A19, &content, "the_undertow");
+    deep.tick(&empty);
+    let views = deep.views();
+    let sovereign: Vec<_> = views.iter().filter(|v| v.rarity == 3 && !v.dead).collect();
+    assert_eq!(sovereign.len(), 1, "one Sovereign in the basin");
+    assert_eq!(sovereign[0].name, "The Riptide Sovereign");
+
+    // The chain: every authored exit leads where the campaign says —
+    // both acts, and the sealed stair rides the hollow's exit list.
     let chain = [
         ("withered_shore", vec!["saltmere"]),
         ("saltmere", vec!["coast"]),
         ("coast", vec!["saltmere", "saltworks"]),
         ("saltworks", vec!["coast", "hollow"]),
-        ("hollow", vec!["saltworks"]),
+        ("hollow", vec!["saltworks", "sunken_stair"]),
+        ("sunken_stair", vec!["hollow", "lanternfall"]),
+        ("lanternfall", vec!["sunken_stair", "kelp_forest"]),
+        ("kelp_forest", vec!["lanternfall", "pressure_court"]),
+        ("pressure_court", vec!["kelp_forest", "the_undertow"]),
+        ("the_undertow", vec!["pressure_court"]),
     ];
     for (zone, dests) in chain {
         let def = content.zone(zone).expect(zone);
@@ -195,6 +209,42 @@ fn the_act_1_zones_stand_up() {
             assert!(got.contains(&d), "{zone} must reach {d}; has {got:?}");
         }
     }
+    // The stair is STORY-SEALED (#148 A3): the way down demands Act 1 —
+    // asserted at RUNTIME on the real exit, not just the content field. A
+    // walker bot standing on the stair reads -3 mid-campaign and departs
+    // the moment the bit is granted. Mutation: drop requires_act from the
+    // hollow's exit (or the seal check in use_exit) → the -3 read fails.
+    let mut hollow = World::new_for_zone(0x5EA1, &content, "hollow");
+    let walker = idlin_botc::assemble("loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n").unwrap();
+    hollow.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Sealed".into(),
+            program: walker,
+        }],
+        arrivals: Vec::new(),
+    });
+    let net = hollow
+        .views()
+        .iter()
+        .find(|v| v.kind == 1)
+        .map(|v| v.id)
+        .unwrap();
+    let stair_pos = content
+        .zone("hollow")
+        .unwrap()
+        .exits
+        .iter()
+        .find(|e| e.dest == "sunken_stair")
+        .map(|e| (e.x_u, e.y_u))
+        .unwrap();
+    assert_eq!(stair_pos, (14, 4), "the stair sits where authored");
+    hollow.test_teleport(net, stair_pos.0 as i16, stair_pos.1 as i16);
+    hollow.tick(&empty);
+    assert_eq!(
+        hollow.test_vm_word(net, 0xF200),
+        Some(-3),
+        "mid-campaign, the stair refuses with the story-seal code"
+    );
 }
 
 #[test]

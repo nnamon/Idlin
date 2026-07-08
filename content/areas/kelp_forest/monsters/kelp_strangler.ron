@@ -1,0 +1,10 @@
+// Forest trash: the kelp that learned hands.
+MonsterDef(
+    id: "kelp_strangler", public: true, name: "Kelp Strangler",
+    model: "shambler", brain: "hostile_melee", hostile: true,
+    level: 15, life: 420, damage: 26, speed_cps: 190,
+    radius_cu: 85, range_cu: 210,
+    skills: [(gem: "heavy_swing", level: 5)],
+    mana: 40, use_ticks: 16, aggro_radius_cu: 1300,
+    armour: 90, resist_cold: 3500, xp: 480, projectile: false,
+)

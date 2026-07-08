@@ -1,0 +1,31 @@
+// Act 2's end (#148 A3): the Undertow — the current itself, coiled in a
+// basin at the bottom of everything. The Riptide Sovereign holds it.
+// Breaking him completes Act 2.
+ZoneDef(
+    id: "the_undertow",
+    name: "The Undertow",
+    kind: story,
+    level: 19,
+    tileset: Some("shore"),
+    tileset_variant: Some("abyss"),
+    spawn_x_u: 23,
+    spawn_y_u: 54,
+    spawn_radius_u: 2,
+    camp_radius_u: 5,
+    lines: [
+        (id: "enter", text: "The Undertow. Every drowned thing ends up here. So did you."),
+        (id: "basin", text: "The current stands. It has been waiting to meet you."),
+    ],
+    brain: Some("the_undertow"),
+    packs: [
+        SpawnPack(monster: "choir_remnant", count: 3, x_u: 23, y_u: 44, radius_u: 3, respawn_ticks: 800, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "kelp_strangler", count: 3, x_u: 22, y_u: 34, radius_u: 3, respawn_ticks: 800, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "choir_remnant", count: 3, x_u: 24, y_u: 27, radius_u: 3, respawn_ticks: 800, magic_bp: 3000, rare_bp: 1100),
+        SpawnPack(monster: "choir_remnant", count: 1, x_u: 14, y_u: 14, radius_u: 2, respawn_ticks: 1500, magic_bp: 3000, rare_bp: 1200),
+        SpawnPack(monster: "choir_remnant", count: 1, x_u: 32, y_u: 14, radius_u: 2, respawn_ticks: 1500, magic_bp: 3000, rare_bp: 1200),
+        SpawnPack(monster: "riptide_sovereign", count: 1, x_u: 23, y_u: 8, radius_u: 0, respawn_ticks: 3000),
+    ],
+    exits: [
+        (x_u: 23, y_u: 56, dest: "pressure_court", open: true),
+    ],
+)

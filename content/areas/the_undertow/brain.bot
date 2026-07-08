@@ -1,0 +1,31 @@
+// Area brain: the Undertow — Act 2's last room, in the Hollow's idiom.
+
+include "zone_lib.bot";
+
+const L_ENTER = line "enter";
+const L_BASIN = line "basin";
+
+const F_ENTERED = 1;
+const F_BASIN = 2;
+
+// The basin opens where the spiral ends (rows above y=25).
+const BASIN_Y = 25;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_ENTERED) == 1) {
+            narrate(L_ENTER, net);
+        }
+        var y_u = mem[r + QC_Y] / 65536;
+        if (y_u < BASIN_Y) {
+            if (zl_once(net, F_BASIN) == 1) {
+                narrate(L_BASIN, net);
+            }
+        }
+        i = i + 1;
+    }
+}

@@ -1,0 +1,19 @@
+// A depth-gauge that learned to argue. Act 2's wand rung. (#148 A3)
+ItemDef(
+    id: "pressure_wand",
+    public: true,
+    name: "Pressure Wand",
+    model: "wand",
+    slot: weapon,
+    weapon_class: Some(wand),
+
+    w: 1,
+    h: 3,
+    damage_phys: 24,
+    damage_lightning: 12,
+    range_cu: 900,
+    use_ticks: 9,
+    projectile: true,
+    weight: 55,
+    affix_pools: ["weapon"],
+)

@@ -1,0 +1,19 @@
+// A ship's anchor the current gave back. The deep ladder's top. (#148 A3)
+ItemDef(
+    id: "undertow_anchor",
+    public: true,
+    name: "Undertow Anchor",
+    model: "cleaver",
+    slot: weapon,
+    weapon_class: Some(melee),
+    two_handed: true,
+    w: 2,
+    h: 4,
+    damage_phys: 80,
+
+    range_cu: 240,
+    use_ticks: 12,
+    projectile: false,
+    weight: 30,
+    affix_pools: ["weapon"],
+)

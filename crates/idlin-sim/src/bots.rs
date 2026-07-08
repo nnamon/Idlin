@@ -238,6 +238,8 @@ impl World {
                 // SS_FLAGS bit1 (#136): act 1 complete — exposed so brains can
                 // pivot on campaign progress (the stock brain adopts it in T6).
                 let act1 = e.character.as_ref().is_some_and(|c| c.story_acts & 1 != 0);
+                // Act 2 (#148 A3): the same generic ladder — flags bit N = act N.
+                let act2 = e.character.as_ref().is_some_and(|c| c.story_acts & 2 != 0);
                 // Characters anchor to the zone spawn point; monsters to home.
                 let anchor = e
                     .monster
@@ -277,7 +279,7 @@ impl World {
                     .store_i32(out.wrapping_add(abi::SS_MAP_H), self.zone.height.raw());
                 bot.vm.store_i32(
                     out.wrapping_add(abi::SS_FLAGS),
-                    dead as i32 | ((act1 as i32) << 1),
+                    dead as i32 | ((act1 as i32) << 1) | ((act2 as i32) << 2),
                 );
                 bot.vm
                     .store_i32(out.wrapping_add(abi::SS_ANCHOR_X), anchor.x.raw());

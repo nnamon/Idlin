@@ -1,0 +1,10 @@
+// Stair caster: a lantern that outlived its bearer, casting by grudge.
+MonsterDef(
+    id: "lantern_wisp", public: true, name: "Lantern Wisp",
+    model: "wight", brain: "hostile_melee", hostile: true,
+    level: 14, life: 240, damage: 10, speed_cps: 235,
+    radius_cu: 55, range_cu: 230, mana: 140,
+    skills: [(gem: "ember_bolt", level: 4)],
+    use_ticks: 16, aggro_radius_cu: 1500, armour: 20,
+    resist_fire: 3500, xp: 400, projectile: false,
+)

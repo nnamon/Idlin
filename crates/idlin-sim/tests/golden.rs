@@ -10,6 +10,12 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #148 A3 (Act 2, the Undertow): content moved wholesale —
+/// five zones, eight monsters, six weapon rungs, the abyss palette, the
+/// hollow's SEALED stair exit — and the templates learned the second act
+/// (routes, the campaign-outranks-charts table gate, flags bit 2 via the
+/// SS writer). The tri-archetype bands now walk BOTH acts before the
+/// first sail. (Prior: 0x0B8C — A2.5.)
 /// Re-pinned for #148 A2.5 (the defense economy + real navigation): the
 /// ENGINE moved — move intents now WALL-SLIDE and, when terrain blocks the
 /// straight line, follow a deterministic A* path (fixed tie-breaking, cached
@@ -173,7 +179,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x0B8C_E00D_3B06_2808;
+const GOLDEN_HASH: u64 = 0x2551_CEBB_DCB9_48F0;
 
 #[test]
 fn golden_replay() {

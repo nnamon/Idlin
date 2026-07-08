@@ -346,7 +346,7 @@ can never hit your own faction.
 | +8 / +12 | life, life_max |
 | +16 / +20 | level, xp |
 | +24 / +28 | map_w, map_h (Q16.16) |
-| +32 | flags (bit 0 = dead; bit 1 = act 1 complete — your campaign progress) |
+| +32 | flags (bit 0 = dead; bit N = act N complete — bit 1 is Act 1, bit 2 is Act 2: your campaign progress) |
 | +36 / +40 | anchor x, y (monsters: home; characters: zone spawn) |
 | +44 | aggro radius (Q16.16; 0 for characters) |
 | +48 | attack range (Q16.16) |

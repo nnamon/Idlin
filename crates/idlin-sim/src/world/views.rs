@@ -452,6 +452,14 @@ impl World {
     }
 
     /// TEST HARNESS ONLY: teleport an entity (whole units).
+    /// TEST SEAM (#148 A3): read one word of a character's bot VM memory —
+    /// how integration tests observe a syscall's stored return code.
+    pub fn test_vm_word(&mut self, net_id: u32, addr: u16) -> Option<i32> {
+        let slot = self.zone.slot_of(net_id)?;
+        let idx = self.zone.get(slot)?.bot?;
+        Some(self.bots.get_mut(idx)?.vm.load_i32(addr))
+    }
+
     pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {
         if let Some(slot) = self.zone.slot_of(net_id)
             && let Some(e) = self.zone.get_mut(slot)

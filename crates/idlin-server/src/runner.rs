@@ -777,27 +777,33 @@ mod tests {
             program,
         }];
         let mut worlds = boot_worlds(&content, seed, &joins);
-        let mut milestones = [false; 6]; // coast, works, hollow, act, town+act, voyage
+        let mut milestones = [false; 8];
         let names = [
             "reach the coast",
             "reach the saltworks",
             "reach the hollow",
             "complete act 1",
-            "return to town with the act done",
+            "descend to Lanternfall",
+            "complete act 2",
+            "spend a chart at a table",
             "sail a charted voyage",
         ];
         let mut deaths = 0u32;
         let mut sailed_at = 0u64;
-        'run: for host_tick in 0..140_000u64 {
+        'run: for host_tick in 0..280_000u64 {
             let mut departures = Vec::new();
             for (i, mw) in worlds.iter_mut().enumerate() {
                 let inputs = std::mem::take(&mut mw.pending);
                 let events = mw.world.tick(&inputs);
                 for ev in &events {
-                    if let SimEvent::ActCompleted { name, act: 1, .. } = ev
+                    if let SimEvent::ActCompleted { name, act, .. } = ev
                         && name == "Pathfinder"
                     {
-                        milestones[3] = true;
+                        match act {
+                            1 => milestones[3] = true,
+                            2 => milestones[5] = true,
+                            _ => {}
+                        }
                     }
                     if let SimEvent::CharacterDied { name, .. } = ev
                         && name == "Pathfinder"
@@ -815,12 +821,39 @@ mod tests {
             // A ticketed departure IS the town milestone: standing at the
             // table, act done, chart spent (zone sampling every 200 ticks
             // can miss the transit — the road home is 6 cells long).
-            for (_, b, _) in &departures {
+            for (_, b, dest) in &departures {
                 if b.character.name == "Pathfinder" && b.chart.is_some() {
+                    milestones[6] = true;
+                }
+                // Town transits outrun the 200-tick zone sampling (the T6
+                // lesson, again): a departure BOUND for the town proves the
+                // descent as well as standing in it would.
+                if b.character.name == "Pathfinder" && dest == "lanternfall" {
                     milestones[4] = true;
                 }
             }
             ferry_departures_with_charts(&mut worlds, departures, &content, seed, host_tick);
+            if host_tick % 20_000 == 1 {
+                for mw in &worlds {
+                    for v in mw.world.views() {
+                        if v.kind == 1 {
+                            let bag: Vec<String> = mw
+                                .world
+                                .character_sheet(v.id)
+                                .map(|sh| sh.inventory.iter().map(|r| r.0.name.clone()).collect())
+                                .unwrap_or_default();
+                            println!(
+                                "P t={host_tick} z={} lvl={} x={} y={} charts={}",
+                                mw.zone_id,
+                                v.level,
+                                v.x_raw / 65536,
+                                v.y_raw / 65536,
+                                bag.iter().filter(|n| n.contains("Chart")).count()
+                            );
+                        }
+                    }
+                }
+            }
             if host_tick % 200 == 0 {
                 for mw in &worlds {
                     let here = mw
@@ -835,9 +868,9 @@ mod tests {
                         "coast" => milestones[0] = true,
                         "saltworks" => milestones[1] = true,
                         "hollow" => milestones[2] = true,
-                        "saltmere" if milestones[3] => milestones[4] = true,
+                        "lanternfall" => milestones[4] = true,
                         "charted_shallows" => {
-                            milestones[5] = true;
+                            milestones[7] = true;
                             sailed_at = host_tick;
                             break 'run;
                         }
@@ -849,7 +882,7 @@ mod tests {
         let furthest = milestones.iter().filter(|m| **m).count();
         assert!(
             milestones.iter().all(|m| *m),
-            "seed {seed:#x}: the road ends early: {} of 6 — stuck before `{}`",
+            "seed {seed:#x}: the road ends early: {} of 8 — stuck before `{}`",
             furthest,
             names[furthest]
         );
@@ -869,8 +902,10 @@ mod tests {
         for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5, 0x0CA5_7E12] {
             let (sailed_at, deaths) =
                 walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
+            // The road DOUBLED in A3 (two acts before the first sail):
+            // measured 103k on seed 1; 180k = the wall line.
             assert!(
-                sailed_at <= 90_000,
+                sailed_at <= 180_000,
                 "seed {seed:#x}: sailed at {sailed_at} — the road has a wall"
             );
             // Post-wall-slide actuals: {8, 8, 63, …} — one rough-luck seed
@@ -897,7 +932,7 @@ mod tests {
         // future work (#148, with the defense-valuation thread).
         let (sailed_at, deaths) =
             walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
-        assert!(sailed_at <= 135_000, "the caster hit a wall at {sailed_at}");
+        assert!(sailed_at <= 260_000, "the caster hit a wall at {sailed_at}");
         // KNOWN DEBT (#148): the wand build has no defense economy — INT
         // buys mana/ES but almost no ES gear exists, so the caster trades
         // corpses for progress (measured 135 on this seed; melee sits at
@@ -925,8 +960,8 @@ mod tests {
         // archetype's completability is guarded while the fight is tuned.
         let (sailed_at, deaths) =
             walk_the_salt_road(0x0BB0_77A2, idlin_botc::template_ranger().unwrap());
-        assert!(sailed_at <= 135_000, "the ranger hit a wall at {sailed_at}");
-        assert!(deaths <= 160, "{deaths} ranger deaths — a grinder for bows");
+        assert!(sailed_at <= 260_000, "the ranger hit a wall at {sailed_at}");
+        assert!(deaths <= 240, "{deaths} ranger deaths — a grinder for bows");
     }
 
     #[test]
@@ -1023,7 +1058,17 @@ mod tests {
         let worlds = boot_worlds(&content, 7, &joins);
         let keys: Vec<&str> = worlds.iter().map(|w| w.key.as_str()).collect();
         // Shared zones: one world each, keyed by id.
-        for shared in ["saltmere", "coast", "saltworks", "hollow"] {
+        for shared in [
+            "saltmere",
+            "coast",
+            "saltworks",
+            "hollow",
+            "sunken_stair",
+            "lanternfall",
+            "kelp_forest",
+            "pressure_court",
+            "the_undertow",
+        ] {
             assert!(keys.contains(&shared), "{shared} must boot; got {keys:?}");
         }
         // Solo story zones: one instance per built-in idler.

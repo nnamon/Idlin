@@ -1,0 +1,11 @@
+// Undertow trash: what is left of the Mother's choir, still singing.
+MonsterDef(
+    id: "choir_remnant", public: true, name: "Choir Remnant",
+    model: "husk", brain: "hostile_melee", hostile: true,
+    level: 19, life: 460, damage: 18, damage_cold: 8,
+    speed_cps: 225, radius_cu: 60, range_cu: 240, mana: 200,
+    skills: [(gem: "frost_nova", level: 4)],
+    use_ticks: 16, aggro_radius_cu: 1500, armour: 50,
+    resist_cold: 5000, resist_lightning: 3000,
+    xp: 780, projectile: false,
+)

@@ -40,5 +40,8 @@ ZoneDef(
         // Back up to the Saltworks. The only way out is the way in — or a
         // chart, once the table unseals (T4).
         (x_u: 23, y_u: 58, dest: "saltworks", open: true),
+        // DOWN (#148 A3): the basin drains into the Sunken Stair — and the
+        // way answers only to those who broke her (the story seal, live).
+        (x_u: 14, y_u: 4, dest: "sunken_stair", open: true, requires_act: 1),
     ],
 )
