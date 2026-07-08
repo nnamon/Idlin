@@ -382,6 +382,9 @@ pub struct CharacterState {
     /// Set while dead; tick at which the character respawns.
     pub respawn_at: Option<u64>,
     pub kills: u64,
+    /// Lifetime deaths (#148 A6) — the leaderboard's honesty column.
+    #[serde(default)]
+    pub deaths: u64,
     /// Lifetime pickups (display stat); the bag is `inventory`.
     pub items: u64,
     /// Grid-placed bag contents.

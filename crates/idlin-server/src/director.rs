@@ -75,6 +75,7 @@ pub struct Director {
 }
 
 impl Director {
+    #[allow(clippy::new_without_default)] // a stateful loop object, not a value type
     pub fn new() -> Director {
         Director {
             focus_name: None,

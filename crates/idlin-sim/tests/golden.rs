@@ -10,6 +10,10 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #148 A6 (the bot economy): a fingerprint widening only —
+/// CharacterState grew a hashed lifetime-deaths counter (the leaderboard's
+/// honesty column). No content or behavior moved; the shore replay is
+/// byte-identical up to the wider digest. (Prior: 0x8F2A — A5.)
 /// Re-pinned for #148 A5 (vendors + stash): content_hash (vendor/stash
 /// cells on both towns) + the templates grew the sell loop (program bytes
 /// ride the world fingerprint) + CharacterState serializes a stash. The
@@ -191,7 +195,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x8F2A_C2F9_E6D1_4BF4;
+const GOLDEN_HASH: u64 = 0xFF33_2616_0325_FFD4;
 
 #[test]
 fn golden_replay() {
@@ -201,6 +205,7 @@ fn golden_replay() {
 
     let joins = TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Golden".into(),

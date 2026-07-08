@@ -90,7 +90,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// gained `monster_fury_bp`/`voyage_ends_at` — serialized; a v18 snapshot would mis-decode.
 /// v20 (#148 A5): `CharacterState` gained `stash: Vec<BagItem>` — serialized; a v19
 /// snapshot would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 20;
+/// v21 (#148 A6): `CharacterState` gained `deaths: u64` — serialized; a v20 snapshot
+/// would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 21;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -276,6 +278,7 @@ mod tests {
                 xp: 0,
                 respawn_at: None,
                 kills: 0,
+                deaths: 0,
                 items: 0,
                 inventory: Vec::new(),
                 equipment: Default::default(),
@@ -501,7 +504,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 20);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 21);
     }
 
     #[test]

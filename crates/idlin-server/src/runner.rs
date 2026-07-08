@@ -22,6 +22,32 @@ use tracing::{info, warn};
 /// lookup (net ids are per-world); None = the featured world.
 pub type InspectRequest = (Option<String>, u32, oneshot::Sender<Option<CharacterSheet>>);
 
+/// Admin-surface commands (#148 A6), answered by the tick thread at tick
+/// boundaries — the sim stays single-threaded and deterministic; HTTP only
+/// stages inputs.
+pub enum AdminCommand {
+    /// Deploy a compiled brain: the character joins the shore (the tutorial
+    /// gates everyone the same). The reply is Ok(()) or a refusal string.
+    Deploy {
+        name: String,
+        program: Vec<u8>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// The kill switch: remove the named character wherever it is.
+    Kill {
+        name: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// The per-brain scoreboard, aggregated across every live world.
+    Leaderboard {
+        reply: oneshot::Sender<Vec<idlin_sim::LeaderRow>>,
+    },
+}
+
+/// Deployed-brain headroom (#148 A6): builtins + deploys share the worlds;
+/// the cap keeps a griefing script from flooding the shore.
+pub const MAX_CHARACTERS: usize = 24;
+
 /// One world's completed tick, with zone identity so any feed can emit a
 /// full snapshot at any moment (late joiners, subscription switches).
 pub struct TickFrame {
@@ -255,6 +281,7 @@ pub fn boot_worlds(
                         pending: TickInputs {
                             joins: vec![join.clone()],
                             arrivals: Vec::new(),
+                            removals: Vec::new(),
                         },
                     });
                 }
@@ -324,6 +351,7 @@ pub fn spawn_tick_loop(
     mut worlds: Vec<ManagedWorld>,
     frames: UnboundedSender<TickBatch>,
     mut inspect_rx: UnboundedReceiver<InspectRequest>,
+    mut admin_rx: UnboundedReceiver<AdminCommand>,
     server_tick: Arc<AtomicU64>,
     snapshot_base: Option<std::path::PathBuf>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
@@ -518,6 +546,101 @@ pub fn spawn_tick_loop(
                     );
                 }
 
+                // Admin surface (#148 A6): deploy / kill / leaderboard,
+                // staged as ordinary tick inputs — HTTP never touches a
+                // world directly.
+                while let Ok(cmd) = admin_rx.try_recv() {
+                    match cmd {
+                        AdminCommand::Deploy {
+                            name,
+                            program,
+                            reply,
+                        } => {
+                            let taken = |mw: &ManagedWorld| {
+                                mw.world
+                                    .leaderboard_rows()
+                                    .iter()
+                                    .any(|r| r.name == name)
+                                    || mw.pending.joins.iter().any(|j| j.name == name)
+                                    || mw.pending.arrivals.iter().any(|b| b.character.name == name)
+                            };
+                            let population: usize = worlds
+                                .iter()
+                                .map(|mw| {
+                                    mw.world.leaderboard_rows().len()
+                                        + mw.pending.joins.len()
+                                        + mw.pending.arrivals.len()
+                                })
+                                .sum();
+                            let res = if worlds.iter().any(taken) {
+                                Err(format!("the name {name} is taken"))
+                            } else if population >= MAX_CHARACTERS {
+                                Err(format!(
+                                    "the worlds are full ({population}/{MAX_CHARACTERS}) — recall a brain first"
+                                ))
+                            } else {
+                                // Every idler gets their OWN tutorial shore —
+                                // the boot model (withered_shore#Kargan…),
+                                // never a seat in a builtin's max_players:1
+                                // instance (the review's B2: find() dumped
+                                // every deploy into Kargan's).
+                                let key = format!("withered_shore#{name}");
+                                let mut h = idlin_content::FNV1A_OFFSET;
+                                for b in key.bytes() {
+                                    h ^= b as u64;
+                                    h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+                                }
+                                let mut mw = ManagedWorld {
+                                    key: key.clone(),
+                                    zone_id: "withered_shore".into(),
+                                    world: World::new_for_zone(
+                                        seed ^ h,
+                                        &content,
+                                        "withered_shore",
+                                    ),
+                                    tiles: resolve_tile_map(&content, "withered_shore"),
+                                    max_players: 1,
+                                    pending: TickInputs::default(),
+                                };
+                                mw.pending.joins.push(idlin_sim::JoinRequest {
+                                    name,
+                                    program,
+                                });
+                                worlds.push(mw);
+                                Ok(())
+                            };
+                            let _ = reply.send(res);
+                        }
+                        AdminCommand::Kill { name, reply } => {
+                            let holder = worlds.iter_mut().find(|mw| {
+                                mw.world.leaderboard_rows().iter().any(|r| r.name == name)
+                            });
+                            let res = match holder {
+                                Some(mw) => {
+                                    mw.pending.removals.push(name);
+                                    Ok(())
+                                }
+                                None => Err(format!("no character named {name}")),
+                            };
+                            let _ = reply.send(res);
+                        }
+                        AdminCommand::Leaderboard { reply } => {
+                            let mut rows: Vec<idlin_sim::LeaderRow> = worlds
+                                .iter()
+                                .flat_map(|mw| mw.world.leaderboard_rows())
+                                .collect();
+                            rows.sort_by(|a, b| {
+                                (b.story_acts.count_ones(), b.level, b.kills).cmp(&(
+                                    a.story_acts.count_ones(),
+                                    a.level,
+                                    a.kills,
+                                ))
+                            });
+                            let _ = reply.send(rows);
+                        }
+                    }
+                }
+
                 // Fixed cadence with drop-behind: if a tick overruns we don't
                 // repay the debt all at once.
                 std::thread::sleep(tick_interval.saturating_sub(started.elapsed()));
@@ -691,69 +814,36 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// The headless harness (#148 A6): run ANY brain through the WHOLE game —
+/// shore tutorial, both acts, the table, one charted sail — under the same
+/// mini host loop the band tests use. `cargo run -p idlin-server --bin
+/// harness -- --brain my.bot` is the published form; the band tests assert
+/// over the same report.
+pub mod salt_road {
     use super::*;
-    use idlin_sim::JoinRequest;
-    use idlin_sim::entity::CharacterState;
+    use idlin_content::ContentDb;
 
-    /// Corrupt/negative gem XP must not reach the wire as a negative width —
-    /// `skill_to_proto` clamps skill AND support xp/xp_next to 0. Drop the
-    /// `.max(0)` calls and this fails.
-    #[test]
-    fn skill_to_proto_clamps_negative_xp_to_zero() {
-        let view = SkillStatView {
-            name: "Corrupt".into(),
-            level: 3,
-            xp: -50,
-            xp_next: -10,
-            is_spell: false,
-            shape: "target",
-            damage: [0; 5],
-            dps: 0,
-            crit_chance_bp: 0,
-            crit_multi_bp: 15000,
-            use_ticks: 10,
-            cooldown_ticks: 0,
-            mana_cost: 0,
-            life_cost: 0,
-            range_cu: 0,
-            radius_cu: 0,
-            width_cu: 0,
-            projectiles: 0,
-            pierce: 0,
-            dot_per_sec: 0,
-            dot_duration_ticks: 0,
-            buff_duration_ticks: 0,
-            debuff_duration_ticks: 0,
-            supports: vec![("Sup".into(), 2, -30, -5)],
-        };
-        let out = skill_to_proto(view);
-        assert_eq!(out.xp, 0, "negative skill xp clamps to 0");
-        assert_eq!(out.xp_next, 0, "negative skill xp_next clamps to 0");
-        assert_eq!(out.supports[0].xp, 0, "negative support xp clamps to 0");
-        assert_eq!(
-            out.supports[0].xp_next, 0,
-            "negative support xp_next clamps to 0"
-        );
+    /// What a full run reports: every campaign milestone by name, plus the
+    /// band's three meters.
+    #[derive(Debug, serde::Serialize)]
+    pub struct SaltRoadReport {
+        pub milestones: Vec<(String, bool)>,
+        pub sailed_at: u64,
+        pub deaths: u32,
+        pub sales: u32,
     }
 
-    /// A world holding `n` characters (joined halt-bots), so `has_room` sees a
-    /// real `views()` population. Empty content keeps it cheap and deterministic.
-    fn world_with_chars(n: usize, content: &ContentDb) -> World {
-        let mut w = World::new(0xF0, content);
-        let prog = idlin_botc::assemble("halt\n").unwrap();
-        let joins = (0..n)
-            .map(|i| JoinRequest {
-                name: format!("c{i}"),
-                program: prog.clone(),
-            })
-            .collect();
-        w.tick(&TickInputs {
-            joins,
-            arrivals: Vec::new(),
-        });
-        w
+    impl SaltRoadReport {
+        pub fn completed(&self) -> bool {
+            self.milestones.iter().all(|(_, m)| *m)
+        }
+        /// The first unlit milestone's name (the wall), if any.
+        pub fn stuck_before(&self) -> Option<&str> {
+            self.milestones
+                .iter()
+                .find(|(_, m)| !m)
+                .map(|(n, _)| n.as_str())
+        }
     }
 
     /// THE 1.0 PROMISE (#136 T6) + THE BALANCE BAND (#136 T8): a stock
@@ -767,7 +857,7 @@ mod tests {
     /// fails here, not in front of the operator. Mutation: break routing,
     /// the act hook, UseChart, the ferry mint, or overtune any fight → a
     /// milestone never lights (or the band breaks) and this fails named.
-    fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> (u64, u32, u32) {
+    pub fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> SaltRoadReport {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
         // The WHOLE game: the join lands on the shore, so the real tutorial
         // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
@@ -888,14 +978,95 @@ mod tests {
                 }
             }
         }
-        let furthest = milestones.iter().filter(|m| **m).count();
+        SaltRoadReport {
+            milestones: names
+                .iter()
+                .zip(milestones.iter())
+                .map(|(n, m)| (n.to_string(), *m))
+                .collect(),
+            sailed_at,
+            deaths,
+            sales,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::salt_road::{SaltRoadReport, walk_the_salt_road};
+
+    /// Band-side assertion: the road must COMPLETE — the report names the
+    /// wall when it doesn't.
+    fn assert_complete(seed: u64, r: &SaltRoadReport) {
         assert!(
-            milestones.iter().all(|m| *m),
-            "seed {seed:#x}: the road ends early: {} of 8 — stuck before `{}`",
-            furthest,
-            names[furthest]
+            r.completed(),
+            "seed {seed:#x}: the road ends early — stuck before `{}`",
+            r.stuck_before().unwrap()
         );
-        (sailed_at, deaths, sales)
+    }
+
+    use super::*;
+    use idlin_sim::JoinRequest;
+    use idlin_sim::entity::CharacterState;
+
+    /// Corrupt/negative gem XP must not reach the wire as a negative width —
+    /// `skill_to_proto` clamps skill AND support xp/xp_next to 0. Drop the
+    /// `.max(0)` calls and this fails.
+    #[test]
+    fn skill_to_proto_clamps_negative_xp_to_zero() {
+        let view = SkillStatView {
+            name: "Corrupt".into(),
+            level: 3,
+            xp: -50,
+            xp_next: -10,
+            is_spell: false,
+            shape: "target",
+            damage: [0; 5],
+            dps: 0,
+            crit_chance_bp: 0,
+            crit_multi_bp: 15000,
+            use_ticks: 10,
+            cooldown_ticks: 0,
+            mana_cost: 0,
+            life_cost: 0,
+            range_cu: 0,
+            radius_cu: 0,
+            width_cu: 0,
+            projectiles: 0,
+            pierce: 0,
+            dot_per_sec: 0,
+            dot_duration_ticks: 0,
+            buff_duration_ticks: 0,
+            debuff_duration_ticks: 0,
+            supports: vec![("Sup".into(), 2, -30, -5)],
+        };
+        let out = skill_to_proto(view);
+        assert_eq!(out.xp, 0, "negative skill xp clamps to 0");
+        assert_eq!(out.xp_next, 0, "negative skill xp_next clamps to 0");
+        assert_eq!(out.supports[0].xp, 0, "negative support xp clamps to 0");
+        assert_eq!(
+            out.supports[0].xp_next, 0,
+            "negative support xp_next clamps to 0"
+        );
+    }
+
+    /// A world holding `n` characters (joined halt-bots), so `has_room` sees a
+    /// real `views()` population. Empty content keeps it cheap and deterministic.
+    fn world_with_chars(n: usize, content: &ContentDb) -> World {
+        let mut w = World::new(0xF0, content);
+        let prog = idlin_botc::assemble("halt\n").unwrap();
+        let joins = (0..n)
+            .map(|i| JoinRequest {
+                name: format!("c{i}"),
+                program: prog.clone(),
+            })
+            .collect();
+        w.tick(&TickInputs {
+            joins,
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+        });
+        w
     }
 
     #[test]
@@ -909,8 +1080,9 @@ mod tests {
         // subtle 2x pacing drift passes by design; walls and grinders trip.
         // The fourth seed is 1.0's tutorial-deadlock finder — kept forever.
         for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5, 0x0CA5_7E12] {
-            let (sailed_at, deaths, sales) =
-                walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
+            let r = walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
+            assert_complete(seed, &r);
+            let (sailed_at, deaths, sales) = (r.sailed_at, r.deaths, r.sales);
             // #148 A5 (review B2, take two): the vendor-specific economy
             // proof lives in THE MELEE BAND ONLY — its four seeds all
             // arrive at the table holding act-road junk; the ranged pair
@@ -950,8 +1122,9 @@ mod tests {
         // engine changes. The band sits just under the 140k loop budget:
         // COMPLETION is the bar on the nastiest seed; pace-tightening is
         // future work (#148, with the defense-valuation thread).
-        let (sailed_at, deaths, _sales) =
-            walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
+        let r = walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
+        assert_complete(0x0CA5_7E12, &r);
+        let (sailed_at, deaths) = (r.sailed_at, r.deaths);
         assert!(sailed_at <= 260_000, "the caster hit a wall at {sailed_at}");
         // KNOWN DEBT (#148): the wand build has no defense economy — INT
         // buys mana/ES but almost no ES gear exists, so the caster trades
@@ -978,8 +1151,9 @@ mod tests {
         // half the recent configurations and is parked as the thread's
         // repro; this band pins a measured-sailing seed (122k/145) so the
         // archetype's completability is guarded while the fight is tuned.
-        let (sailed_at, deaths, _sales) =
-            walk_the_salt_road(0x0BB0_77A2, idlin_botc::template_ranger().unwrap());
+        let r = walk_the_salt_road(0x0BB0_77A2, idlin_botc::template_ranger().unwrap());
+        assert_complete(0x0BB0_77A2, &r);
+        let (sailed_at, deaths) = (r.sailed_at, r.deaths);
         assert!(sailed_at <= 260_000, "the ranger hit a wall at {sailed_at}");
         assert!(deaths <= 240, "{deaths} ranger deaths — a grinder for bows");
     }
@@ -1142,6 +1316,7 @@ mod tests {
                 xp: 0,
                 respawn_at: None,
                 kills: 0,
+                deaths: 0,
                 items: 0,
                 inventory: Vec::new(),
                 equipment: Default::default(),

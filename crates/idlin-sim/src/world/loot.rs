@@ -1019,6 +1019,7 @@ mod find_tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         w.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Finder".into(),
                 program,

@@ -626,3 +626,73 @@ The whole world is bit-exact reproducible. For bot authors this means:
   same history, same numbers. There is no wall clock; count ticks instead.
 - Query results are sorted deterministically (distance, then id).
 - All math is integer/fixed-point. There are no floats anywhere.
+
+## Deploying your brain (#148 A6)
+
+The server takes live deployments — your `.bot` source, compiled with the
+same prelude the stock brains get (every generated content num and ABI
+const already in scope):
+
+```sh
+curl -X POST http://<server>/api/deploy \
+  -H 'content-type: application/json' \
+  -d '{"token": "<IDLIN_ADMIN_TOKEN>", "name": "MyBrain", "source": "<your .bot source>"}'
+```
+
+Your character joins **the shore** — the tutorial gates every brain the
+same way the stock three were gated. Names are 1-24 chars of
+`[A-Za-z0-9_-]` and must be unique; the worlds cap at 24 characters.
+Compile errors come back verbatim. The mutating routes demand
+`IDLIN_ADMIN_TOKEN` (unset = disabled, fail closed).
+
+**The kill switch** recalls a runaway brain — the entity despawns, the
+brain stops, nothing transfers:
+
+```sh
+curl -X POST http://<server>/api/kill \
+  -d '{"token": "<IDLIN_ADMIN_TOKEN>", "name": "MyBrain"}'
+```
+
+**The leaderboard** (`GET /api/leaderboard`, public) ranks every live
+character by campaign progress, then level, then kills — with lifetime
+deaths as the honesty column and `program_hash` identifying the brain
+across its characters.
+
+### The headless harness
+
+Before deploying, run the WHOLE game locally — the same loop the repo's
+band tests use:
+
+```sh
+cargo run -p idlin-server --bin harness -- --brain my.bot --seed 0xC0FFEE
+```
+
+The JSON report lists every campaign milestone by name plus ticks-to-sail,
+deaths, and vendor sales; exit 1 = the road didn't complete (the report
+names the wall). Runs are deterministic per (seed, brain): a red run
+replays bit-identically, so a `debug()` in your brain lands on the same
+tick every time.
+
+## Lessons from the stock brains (1.0/2.0 field notes)
+
+Hard-won disciplines the stock templates carry — steal them:
+
+- **Budget cadence.** 5,000 instructions per tick sounds like plenty; a
+  60-record bag scan inside a pack fight isn't. The stock brains run gear
+  and socket upkeep on ONE tick in ten and rest the other nine.
+- **Route trichotomy.** A route decision is one of: a destination num
+  (travel), `-1` (stay — you're where you should be), or `0` (unknown —
+  let the boredom valve decide). Collapsing stay into unknown made brains
+  bounce out of boss rooms mid-fight.
+- **The XP-drought futility detector.** Life bars lie (chip + regen
+  yo-yo); XP only rises. Fifteen seconds of combat without earning any =
+  walk away — with a UNIQUE-rarity exemption, because bosses pay all
+  their XP at the end.
+- **Bag discipline, then the vendor.** In the field, shed what upkeep
+  didn't wear (keep charts and one copy of each build gem). In town, the
+  same junk is OBOLS — sell it before you spend the chart, and only on
+  the tick right after upkeep ran, so a freshly returned winner is worn,
+  never sold.
+- **Hold at nine tenths.** A ranged weapon's whole identity is range: at
+  70% of reach a bow trades inside a caster boss's envelope; at 90% the
+  answer can't reach back.

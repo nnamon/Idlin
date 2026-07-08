@@ -243,6 +243,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![JoinRequest {
                 name: "Regretful".into(),
                 program: halt,

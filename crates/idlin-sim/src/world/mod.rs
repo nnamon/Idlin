@@ -17,7 +17,7 @@ mod tree;
 mod views;
 mod zone_brain;
 
-pub use views::{CharacterSheetView, SkillStatView};
+pub use views::{CharacterSheetView, LeaderRow, SkillStatView};
 
 use crate::bots::{Bot, BotArena, program_hash};
 use crate::entity::{CharacterState, CombatStats, Entity, MonsterState, Rarity};
@@ -64,6 +64,11 @@ pub struct TickInputs {
     /// cross-world traffic is plain I/O, like joins always were.
     #[serde(default)]
     pub arrivals: Vec<CharacterBundle>,
+    /// KILL SWITCH (#148 A6): character names to remove this tick — the
+    /// entity despawns, its bot stops, nothing transfers. The operator's
+    /// answer to a runaway deployed brain.
+    #[serde(default)]
+    pub removals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +131,11 @@ pub enum SimEvent {
     JoinRejected {
         name: String,
         reason: String,
+    },
+    /// KILL SWITCH (#148 A6): a deployed brain was recalled by the operator.
+    CharacterRemoved {
+        net_id: u32,
+        name: String,
     },
     CharacterDied {
         id: u32,
@@ -1049,6 +1059,34 @@ impl World {
     /// takes the strand back — every character is staged home to
     /// Lanternfall as an ordinary departure (loot in the bag comes along;
     /// the ferry lands them; the empty voyage retires).
+    /// KILL SWITCH (#148 A6): remove named characters — despawn the
+    /// entity, drop its bot, narrate the removal. Idempotent on unknown
+    /// names (the host may race a transfer; the miss is harmless).
+    fn process_removals(&mut self, removals: &[String], events: &mut Vec<SimEvent>) {
+        for name in removals {
+            let Some((slot, net, bot_idx)) = self
+                .zone
+                .iter()
+                .find(|(_, e)| e.character.as_ref().is_some_and(|c| &c.name == name))
+                .map(|(s, e)| (s, e.net_id, e.bot))
+            else {
+                continue;
+            };
+            if let Some(bi) = bot_idx {
+                self.bots.remove(bi);
+            }
+            self.zone.remove(slot);
+            events.push(SimEvent::Narration {
+                target: 0,
+                text: format!("{name} is recalled — the brain is switched off."),
+            });
+            events.push(SimEvent::CharacterRemoved {
+                net_id: net,
+                name: name.clone(),
+            });
+        }
+    }
+
     fn voyage_clock(&mut self, events: &mut Vec<SimEvent>) {
         if self.voyage_ends_at == 0 || self.tick < self.voyage_ends_at {
             return;
@@ -1077,6 +1115,7 @@ impl World {
         self.clear_transient_intents();
         self.apply_joins(inputs, &mut events);
         self.run_bots(&mut events);
+        self.process_removals(&inputs.removals, &mut events);
         self.voyage_clock(&mut events);
         self.process_exits(&mut events);
         self.movement();
@@ -1311,6 +1350,7 @@ impl World {
                     xp: 0,
                     respawn_at: None,
                     kills: 0,
+                    deaths: 0,
                     items: 0,
                     inventory: Vec::new(),
                     equipment: Default::default(),
@@ -2595,6 +2635,7 @@ mod pack_rarity_tests {
         w.tick(&TickInputs {
             joins: Vec::new(),
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         (w, pack_idx)
     }
@@ -2702,6 +2743,7 @@ mod area_level_tests {
     fn join_one(w: &mut World, name: &str) -> usize {
         w.tick(&TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: name.into(),
                 program: idlin_botc::assemble("halt\n").unwrap(),
@@ -2789,6 +2831,7 @@ mod area_level_tests {
                 xp: 0,
                 respawn_at: None,
                 kills: 0,
+                deaths: 0,
                 items: 0,
                 inventory: Vec::new(),
                 equipment: Default::default(),
@@ -2811,6 +2854,7 @@ mod area_level_tests {
         w.tick(&TickInputs {
             joins: Vec::new(),
             arrivals: vec![bundle],
+            removals: Vec::new(),
         });
         let slot = (0..w.zone.slot_count())
             .find(|&s| {
@@ -2846,6 +2890,7 @@ mod area_level_tests {
         let slot = {
             w.tick(&TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Walker".into(),
                     program: idlin_botc::assemble(
@@ -2915,6 +2960,7 @@ mod area_level_tests {
         let mut w = World::new(0x5EA2, &content);
         w.tick(&TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Walker".into(),
                 program: idlin_botc::assemble("loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n")
@@ -3153,6 +3199,87 @@ mod area_level_tests {
         .unwrap()
         .unique_idx = None;
         assert_ne!(h1, w.state_hash(), "unique identity must move the digest");
+    }
+
+    #[test]
+    fn a_combat_death_counts_on_the_ledger() {
+        // #148 A6 review (B1): the leaderboard's honesty column must be
+        // mutation-proof — kill a character through the REAL strike path
+        // and read deaths back. Mutation: revert the handle-kill
+        // `ch.deaths += 1` → this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xDEAD, &content);
+        let slot = join_one(&mut w, "Ledger");
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 1_000_000;
+        let spec = combat::StrikeSpec {
+            attacker_slot: None,
+            attacker_net: 0,
+            attacker_name: "The Test".into(),
+            attacker_is_char: false,
+            is_spell: false,
+            is_dot: true, // skip accuracy/crit rng — a guaranteed lethal hit
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let (mut ev, mut dd, mut ll) = (Vec::new(), Vec::new(), Vec::new());
+        let now = w.tick;
+        w.strike(spec, slot, now, &mut ev, &mut dd, &mut ll);
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.deaths, 1, "the combat death must be counted");
+    }
+
+    #[test]
+    fn a_life_cost_death_counts_on_the_ledger() {
+        // The OTHER death site (#148 A6 review B1): a skill's life cost
+        // can self-kill through pay_life_cost. Mutation: revert its
+        // `ch.deaths += 1` → this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xDEAE, &content);
+        let slot = join_one(&mut w, "Spent");
+        let life = w.zone.get(slot).unwrap().combat.as_ref().unwrap().life;
+        let mut ev = Vec::new();
+        let now = w.tick;
+        w.pay_life_cost(slot, life + 1, now, &mut ev);
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.deaths, 1, "the life-cost death must be counted");
+    }
+
+    #[test]
+    fn the_kill_switch_removes_a_character_cleanly() {
+        // #148 A6: a removal despawns the entity + its bot and announces
+        // it; unknown names are harmless. Mutation: drop process_removals
+        // from tick → the character survives and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xA6, &content);
+        let _ = join_one(&mut w, "Runaway");
+        let inputs = TickInputs {
+            joins: Vec::new(),
+            arrivals: Vec::new(),
+            removals: vec!["Runaway".into(), "Nobody".into()],
+        };
+        let events = w.tick(&inputs);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SimEvent::CharacterRemoved { name, .. } if name == "Runaway")),
+            "the removal announces itself"
+        );
+        assert!(
+            !w.views().iter().any(|v| v.kind == 1),
+            "the character is gone"
+        );
+        // The next tick is business as usual — no dangling bot panics.
+        w.tick(&TickInputs::default());
     }
 
     #[test]
@@ -3825,6 +3952,7 @@ mod area_level_tests {
         // SelfStatus(out=0xF000) every tick; flags land at 0xF000 + 32.
         w.tick(&TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Flagbearer".into(),
                 program: idlin_botc::assemble(

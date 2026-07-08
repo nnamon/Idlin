@@ -229,7 +229,8 @@ impl<'a> Visibility<'a> {
             | GameEvent::GearShed { .. }
             | GameEvent::BuildRejected { .. }
             | GameEvent::GemLevelUp { .. }
-            | GameEvent::ActCompleted { .. } => true,
+            | GameEvent::ActCompleted { .. }
+            | GameEvent::CharacterRemoved { .. } => true,
         }
     }
 
@@ -912,6 +913,10 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             id: *id,
             name: name.clone(),
             killer: killer.clone(),
+        },
+        SimEvent::CharacterRemoved { net_id, name } => GameEvent::CharacterRemoved {
+            id: *net_id,
+            name: name.clone(),
         },
         SimEvent::CharacterRespawned { id } => GameEvent::CharacterRespawned { id: *id },
         SimEvent::GateChanged {

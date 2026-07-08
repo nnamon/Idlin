@@ -22,6 +22,7 @@ fn join_inputs() -> TickInputs {
     TickInputs {
         joins,
         arrivals: Vec::new(),
+        removals: Vec::new(),
     }
 }
 
@@ -48,6 +49,7 @@ fn bots_grind_the_shore() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     // 6000 ticks = 10 minutes of game time.
     for _ in 0..6000 {
@@ -122,6 +124,7 @@ fn the_grinder_prefers_affixed_gear_over_plain() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     let net = w
         .views()
@@ -222,6 +225,7 @@ fn the_act_1_zones_stand_up() {
             program: walker,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     let net = hollow
         .views()
@@ -307,6 +311,7 @@ fn same_faction_spawn_stack_drifts_apart() {
     let halt = idlin_botc::assemble("halt\n").unwrap();
     let joins = TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: ["A", "B", "C", "D"]
             .into_iter()
             .map(|name| JoinRequest {
@@ -389,6 +394,7 @@ fn disconnected_builds_are_rejected_at_declaration() {
         .unwrap();
     let joins = TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Bad".into(),
@@ -431,6 +437,7 @@ fn the_shore_brain_choreographs_the_opening() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     for _ in 0..1200 {
         events.extend(world.tick(&TickInputs::default()));
@@ -497,6 +504,7 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     town.tick(&TickInputs::default());
 
@@ -567,6 +575,7 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     let events = town.tick(&TickInputs {
         joins: Vec::new(),
         arrivals: vec![bundle],
+        removals: Vec::new(),
     });
     assert!(
         events
@@ -627,6 +636,7 @@ fn run_tutorial(content: &ContentDb, seed: u64) {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
 
     let mut min_life = 100u8;

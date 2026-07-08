@@ -19,6 +19,13 @@ pub const GEN_ABI: &str = include_str!("../../../content/lib/gen_abi.bot");
 
 /// The default grind-forever brain: fight the nearest enemy, pick up own
 /// loot, keep gear/passives/gems current, wander when the area is clear.
+/// Compile a PLAYER-DEPLOYED brain (#148 A6): the same prelude the stock
+/// templates get — every generated content num and ABI const in scope —
+/// so a deployed `.bot` writes against the documented vocabulary.
+pub fn compile_deployed(source: &str) -> Result<Vec<u8>, CompileError> {
+    crate::lang::compile(&format!("{GEN_IDS}\n{GEN_ABI}\n{source}"))
+}
+
 pub fn template_grinder() -> Result<Vec<u8>, CompileError> {
     crate::lang::compile(&format!("{GEN_IDS}\n{GEN_ABI}\n{TEMPLATE_GRINDER}"))
 }

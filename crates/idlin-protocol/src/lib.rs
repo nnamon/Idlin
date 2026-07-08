@@ -23,7 +23,8 @@ use ts_rs::TS;
 //     tiles (unexplored glyphs blanked to ' ', props/exits/gates filtered by
 //     what the world's residents have explored).
 // 41: GameEvent gains ActCompleted (#136 campaign spine).
-pub const PROTO_VERSION: u32 = 42;
+/// v43 (#148 A6): `GameEvent` gained `CharacterRemoved` (the kill switch on the wire).
+pub const PROTO_VERSION: u32 = 43;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -215,6 +216,11 @@ pub enum GameEvent {
         id: u32,
         name: String,
         killer: String,
+    },
+    /// KILL SWITCH (#148 A6): a deployed brain was recalled by the operator.
+    CharacterRemoved {
+        id: u32,
+        name: String,
     },
     CharacterRespawned {
         id: u32,

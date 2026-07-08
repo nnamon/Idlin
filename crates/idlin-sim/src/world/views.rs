@@ -64,6 +64,18 @@ pub struct SkillStatView {
 
 /// Inspection snapshot of one character (the server maps this onto the
 /// protocol's CharacterSheet for the focus panel).
+/// A per-character leaderboard row (#148 A6).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LeaderRow {
+    pub name: String,
+    pub level: u32,
+    pub kills: u64,
+    pub deaths: u64,
+    pub story_acts: u32,
+    pub zone: String,
+    pub program_hash: u64,
+}
+
 pub struct CharacterSheetView {
     pub id: u32,
     pub name: String,
@@ -460,6 +472,33 @@ impl World {
         Some(self.bots.get_mut(idx)?.vm.load_i32(addr))
     }
 
+    /// One leaderboard row per character in THIS world (#148 A6): the
+    /// per-brain economy scoreboard's raw material. program_hash identifies
+    /// the BRAIN (same source = same hash) across its characters.
+    pub fn leaderboard_rows(&self) -> Vec<LeaderRow> {
+        let zone = self.content.zones[self.zone_idx as usize].id.clone();
+        self.zone
+            .iter()
+            .filter_map(|(_, e)| {
+                let ch = e.character.as_ref()?;
+                let program_hash = e
+                    .bot
+                    .and_then(|bi| self.bots.get(bi))
+                    .map(|b| b.program_hash)
+                    .unwrap_or(0);
+                Some(LeaderRow {
+                    name: ch.name.clone(),
+                    level: ch.level,
+                    kills: ch.kills,
+                    deaths: ch.deaths,
+                    story_acts: ch.story_acts,
+                    zone: zone.clone(),
+                    program_hash,
+                })
+            })
+            .collect()
+    }
+
     pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {
         if let Some(slot) = self.zone.slot_of(net_id)
             && let Some(e) = self.zone.get_mut(slot)
@@ -818,6 +857,7 @@ impl World {
                 h.write_i64(ch.xp);
                 h.write_u64(ch.respawn_at.unwrap_or(0));
                 h.write_u64(ch.kills);
+                h.write_u64(ch.deaths);
                 h.write_u64(ch.items);
                 h.write_u64(ch.inventory.len() as u64);
                 for placed in &ch.inventory {

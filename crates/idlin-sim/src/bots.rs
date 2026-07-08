@@ -128,6 +128,11 @@ impl BotArena {
         Some(bot)
     }
 
+    /// Immutable peek (#148 A6): the leaderboard reads program_hash.
+    pub fn get(&self, idx: u32) -> Option<&Bot> {
+        self.slots.get(idx as usize)?.as_ref()
+    }
+
     pub fn take(&mut self, idx: u32) -> Option<Bot> {
         self.slots.get_mut(idx as usize)?.take()
     }
@@ -1035,6 +1040,7 @@ mod tests {
                 program: idlin_botc::assemble("halt\n").unwrap(),
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -1094,6 +1100,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -1172,6 +1179,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -1254,6 +1262,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))

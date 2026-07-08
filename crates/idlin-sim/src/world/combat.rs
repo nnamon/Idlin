@@ -343,7 +343,13 @@ impl World {
     /// effects cleared, `CharacterDied` emitted — because no strike ran the death
     /// path. Monsters can't carry a life cost (rejected at content load), so the
     /// monster corpse/pack bookkeeping is intentionally not duplicated here.
-    fn pay_life_cost(&mut self, slot: usize, life_cost: i64, now: u64, events: &mut Vec<SimEvent>) {
+    pub(super) fn pay_life_cost(
+        &mut self,
+        slot: usize,
+        life_cost: i64,
+        now: u64,
+        events: &mut Vec<SimEvent>,
+    ) {
         let Some(me) = self.zone.get_mut(slot) else {
             return;
         };
@@ -354,6 +360,7 @@ impl World {
             let died = match me.character.as_mut() {
                 Some(ch) if ch.respawn_at.is_none() => {
                     ch.respawn_at = Some(now + RESPAWN_TICKS);
+                    ch.deaths += 1;
                     Some((me.net_id, ch.name.clone()))
                 }
                 _ => None,
@@ -2190,6 +2197,7 @@ impl World {
             }
         } else if let Some(ch) = &mut t.character {
             ch.respawn_at = Some(now + RESPAWN_TICKS);
+            ch.deaths += 1;
             let (id, name) = (t.net_id, ch.name.clone());
             t.intents = Default::default();
             t.effects.clear();
@@ -2481,6 +2489,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Crusher".into(),
                 program: halt,
@@ -2626,6 +2635,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -2717,6 +2727,7 @@ mod tests {
         .expect("compiles");
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Seer".into(),
                 program,
@@ -2813,6 +2824,7 @@ mod tests {
         .expect("compiles");
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Jeweler".into(),
                 program,
@@ -2881,6 +2893,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Resumer".into(),
                 program: halt,
@@ -2961,6 +2974,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Brawler".into(),
                 program: halt,
@@ -3106,6 +3120,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Savage".into(),
                 program: halt,
@@ -3186,6 +3201,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Hunter".into(),
                 program: halt,
@@ -3283,6 +3299,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Doomed".into(),
                 program: halt,
@@ -3424,6 +3441,7 @@ mod tests {
             let halt = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Hitter".into(),
                     program: halt,
@@ -3529,6 +3547,7 @@ mod tests {
             let halt = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Target".into(),
                     program: halt,
@@ -3715,6 +3734,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -3776,6 +3796,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Talker".into(),
                 program,
@@ -3880,6 +3901,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Bait".into(),
                 program,
@@ -3956,6 +3978,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![
                 crate::JoinRequest {
                     name: "Caster".into(),
@@ -4050,6 +4073,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4312,6 +4336,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4370,6 +4395,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4543,6 +4569,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4636,6 +4663,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4680,6 +4708,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4741,6 +4770,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program,
@@ -4794,6 +4824,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4883,6 +4914,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -4995,6 +5027,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -5091,6 +5124,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program,
@@ -5195,6 +5229,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program,
@@ -5301,6 +5336,7 @@ mod tests {
         let mut world = World::new(7_77, &content);
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program: idlin_botc::assemble("halt\n").unwrap(),
@@ -5839,6 +5875,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Caster".into(),
                     program,
@@ -5971,6 +6008,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -6040,6 +6078,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Swapper".into(),
                 program,
@@ -6116,6 +6155,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Archer".into(),
                 program,
@@ -6206,6 +6246,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Jeweler".into(),
                 program,
@@ -6354,6 +6395,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Collector".into(),
                 program,
@@ -6420,6 +6462,7 @@ mod tests {
         let program = idlin_botc::template_grinder().expect("template assembles");
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Grinder".into(),
                 program,
@@ -6494,6 +6537,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Appraiser".into(),
                 program,
@@ -6570,6 +6614,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Packer".into(),
                 program,
@@ -6720,6 +6765,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![
                 crate::JoinRequest {
                     name: "Sacrifice".into(),
@@ -6823,6 +6869,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6869,6 +6916,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6963,6 +7011,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7087,6 +7136,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7169,6 +7219,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7235,6 +7286,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7337,6 +7389,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7569,6 +7622,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: name.into(),
                 program: halt,
