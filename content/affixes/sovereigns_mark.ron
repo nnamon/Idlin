@@ -1,0 +1,13 @@
+// Chart prefix (#148 A4): the deep rule — a TIER BOSS waits at the far
+// end. Only the deepest charts carry the mark.
+AffixDef(
+    id: "sovereigns_mark",
+    public: true,
+    name: "Sovereign-Marked",
+    kind: prefix,
+    weight: 40,
+    effects: [(stat: sovereigns_mark, layer: added)],
+    tiers: [
+        (ilvl: 16, name: "Sovereign-Marked", weight: 100, rolls: [(min: 1, max: 1)]),
+    ],
+)

@@ -86,7 +86,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// would mis-decode. Refuse it.
 /// v18 (#148 A2.5): `Intents` gained `path: Vec<FxV2>` (cached A* waypoints) and `ItemDef`
 /// gained `energy_shield` — serialized; a v17 snapshot would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 18;
+/// v19 (#148 A4): `ChartTicket` gained the rule fields (`fury_bp`/`clock`/`boss`) and `World`
+/// gained `monster_fury_bp`/`voyage_ends_at` — serialized; a v18 snapshot would mis-decode.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 19;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -408,6 +410,9 @@ mod tests {
                 tier: 2,
                 rarity_bp: 0,
                 quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
             },
         );
         let base = std::env::temp_dir().join(format!("idlin-voyage-scan-{}", std::process::id()));
@@ -443,6 +448,9 @@ mod tests {
             tier: 4,
             rarity_bp: 2100,
             quantity_bp: 900,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
         });
         let dir = temp_dir("chart-ticket");
         save_managed(&world, &[b], &dir).unwrap();
@@ -455,6 +463,9 @@ mod tests {
                 tier: 4,
                 rarity_bp: 2100,
                 quantity_bp: 900,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
             })
         );
         std::fs::remove_dir_all(&dir).ok();
@@ -487,7 +498,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 18);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 19);
     }
 
     #[test]

@@ -26,7 +26,10 @@
     ],
     "chart": [
       25165879,
-      25165880
+      25165880,
+      25165881,
+      25165882,
+      25165883
     ],
     "find": [
       25165859,
@@ -1903,6 +1906,45 @@
         "weight": 80
       },
       {
+        "description": "+# Voyage Clock",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "voyage_clock"
+          }
+        ],
+        "id": "of_the_deluge",
+        "kind": "suffix",
+        "name": "of the Deluge",
+        "num": 25165881,
+        "tiers": [
+          {
+            "ilvl": 6,
+            "name": "of the Deluge",
+            "rolls": [
+              {
+                "max": 9000,
+                "min": 7000
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Drowning Bell",
+            "rolls": [
+              {
+                "max": 6999,
+                "min": 5000
+              }
+            ],
+            "weight": 40
+          }
+        ],
+        "weight": 60
+      },
+      {
         "description": "+#% Cold Resistance",
         "effects": [
           {
@@ -2493,6 +2535,73 @@
               }
             ],
             "weight": 8
+          }
+        ],
+        "weight": 70
+      },
+      {
+        "description": "+# Sovereign's Mark",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "sovereigns_mark"
+          }
+        ],
+        "id": "sovereigns_mark",
+        "kind": "prefix",
+        "name": "Sovereign-Marked",
+        "num": 25165882,
+        "tiers": [
+          {
+            "ilvl": 16,
+            "name": "Sovereign-Marked",
+            "rolls": [
+              {
+                "max": 1,
+                "min": 1
+              }
+            ],
+            "weight": 100
+          }
+        ],
+        "weight": 40
+      },
+      {
+        "description": "+#% Monster Fury",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "monster_fury"
+          }
+        ],
+        "id": "stormtossed",
+        "kind": "prefix",
+        "name": "Stormtossed",
+        "num": 25165883,
+        "tiers": [
+          {
+            "ilvl": 4,
+            "name": "Stormtossed",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 12,
+            "name": "Tempest-Torn",
+            "rolls": [
+              {
+                "max": 4000,
+                "min": 2501
+              }
+            ],
+            "weight": 40
           }
         ],
         "weight": 70
@@ -5672,6 +5781,80 @@
         "affix_pools": [
           "monster"
         ],
+        "aggro_radius_cu": 1400,
+        "armour": 90,
+        "brain": "hostile_melee",
+        "damage": 30,
+        "damage_chaos": 0,
+        "damage_cold": 10,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "the_unwritten",
+        "level": 20,
+        "life": 3400,
+        "lines": [
+          "No map holds me. Yours will not either.",
+          "You sailed PAST the edge. Bold."
+        ],
+        "mana": 260,
+        "model": "mother",
+        "name": "The Unwritten",
+        "num": 33554453,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_cold",
+            "value": 6000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 100,
+        "range_cu": 230,
+        "resist_chaos": 0,
+        "resist_cold": 2500,
+        "resist_fire": 0,
+        "resist_lightning": 2500,
+        "skills": [
+          {
+            "gem": "frost_nova",
+            "level": 4,
+            "supports": []
+          },
+          {
+            "gem": "arc",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 210,
+        "unique": true,
+        "use_ticks": 15,
+        "xp": 6000
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
         "aggro_radius_cu": 1300,
         "armour": 80,
         "brain": "hostile_melee",
@@ -7223,7 +7406,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "420b5fea2630043b",
+  "fingerprint": "5725bc9ac95fa1c0",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23,
   "stats": [
@@ -7466,6 +7649,24 @@
       "desc": "Scales how long your ailments last (Ignite spreads a fixed total, so shorter burns faster).",
       "key": "ailment_duration",
       "name": "Ailment Duration"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Chart rule: monsters in the voyage deal this much more damage (basis points).",
+      "key": "monster_fury",
+      "name": "Monster Fury"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Chart rule: the voyage ends after this many ticks — beat the clock.",
+      "key": "voyage_clock",
+      "name": "Voyage Clock"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Chart rule: the voyage's far end holds a tier boss.",
+      "key": "sovereigns_mark",
+      "name": "Sovereign's Mark"
     }
   ]
 }

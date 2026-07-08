@@ -1631,6 +1631,15 @@ impl World {
         dead_monsters: &mut DeadList,
         loot_spawns: &mut LootList,
     ) {
+        // CHART RULE (#148 A4): Monster Fury scales EVERY monster-dealt hit
+        // at the one place all of them pass — spells, attacks, and dots
+        // alike (the first draft folded it into the derive tail, which
+        // spells never read: the tier boss's own kit was fury-blind).
+        if !spec.attacker_is_char && self.monster_fury_bp > 0 {
+            for d in spec.damage.iter_mut() {
+                *d = *d * (10000 + self.monster_fury_bp) / 10000;
+            }
+        }
         let Some(t) = self.zone.get(target_slot) else {
             return;
         };

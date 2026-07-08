@@ -3,5 +3,5 @@
 // everything else — better voyages are made, not found.
 AffixPool(
     id: "chart",
-    affixes: ["of_shoals", "of_plenty"],
+    affixes: ["of_shoals", "of_plenty", "stormtossed", "of_the_deluge", "sovereigns_mark"],
 )

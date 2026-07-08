@@ -985,6 +985,9 @@ mod tests {
             tier: 2,
             rarity_bp: 1000,
             quantity_bp: 500,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
         });
         ferry_departures_with_charts(
             &mut worlds,
@@ -1017,6 +1020,9 @@ mod tests {
             tier: 1,
             rarity_bp: 0,
             quantity_bp: 0,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
         });
         let before = worlds.len();
         ferry_departures_with_charts(

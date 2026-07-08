@@ -90,9 +90,18 @@ pub enum Stat {
     /// Attacker: basis points scaling the duration of ailments you inflict (Ignite
     /// spreads a fixed total over the duration, so a shorter duration burns faster).
     AilmentDuration,
+    /// CHART RULE (#148 A4): basis points of extra monster damage inside the
+    /// voyage this chart opens. Read only by the Charting Table; inert worn.
+    MonsterFury,
+    /// CHART RULE (#148 A4): the voyage's time limit in ticks — the current
+    /// takes the strand back and ferries everyone home when it expires.
+    VoyageClock,
+    /// CHART RULE (#148 A4): nonzero = the voyage's far end holds a TIER
+    /// BOSS. Rolls only on deep charts.
+    SovereignsMark,
 }
 
-pub const STAT_COUNT: usize = 40;
+pub const STAT_COUNT: usize = 43;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -136,6 +145,9 @@ impl Stat {
         Stat::ShockMax,
         Stat::ChillMax,
         Stat::AilmentDuration,
+        Stat::MonsterFury,
+        Stat::VoyageClock,
+        Stat::SovereignsMark,
     ];
 
     pub fn idx(self) -> usize {
@@ -383,6 +395,24 @@ impl Stat {
                 "Maximum Chill Effect",
                 "Raises the cap on the action slow your Chill inflicts.",
                 AddedUnit::BasisPoints,
+            ),
+            Stat::MonsterFury => (
+                "monster_fury",
+                "Monster Fury",
+                "Chart rule: monsters in the voyage deal this much more damage (basis points).",
+                AddedUnit::Factor,
+            ),
+            Stat::VoyageClock => (
+                "voyage_clock",
+                "Voyage Clock",
+                "Chart rule: the voyage ends after this many ticks — beat the clock.",
+                AddedUnit::Flat,
+            ),
+            Stat::SovereignsMark => (
+                "sovereigns_mark",
+                "Sovereign's Mark",
+                "Chart rule: the voyage's far end holds a tier boss.",
+                AddedUnit::Flat,
             ),
             Stat::AilmentDuration => (
                 "ailment_duration",

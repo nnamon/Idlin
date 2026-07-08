@@ -101,6 +101,16 @@ pub struct ChartTicket {
     pub rarity_bp: i64,
     /// Folded into every kill's drop quantity in the instance.
     pub quantity_bp: i64,
+    /// RULE (#148 A4): basis points of extra monster damage in the voyage.
+    #[serde(default)]
+    pub fury_bp: i64,
+    /// RULE: the voyage's clock in ticks (0 = none) — expiry ferries
+    /// everyone home; what you carried out, you keep.
+    #[serde(default)]
+    pub clock: i64,
+    /// RULE: the far end holds a TIER BOSS (the Unwritten).
+    #[serde(default)]
+    pub boss: bool,
 }
 
 /// Things that happened during a tick that the outside world may care about
@@ -376,6 +386,14 @@ pub struct World {
     /// loop sustains itself), and the host retires the world when it empties.
     #[serde(default)]
     pub(crate) is_chart_instance: bool,
+    /// CHART RULE (#148 A4): extra monster damage in this voyage (bp).
+    /// Hashed + serialized — it steers every fight here.
+    #[serde(default)]
+    pub(crate) monster_fury_bp: i64,
+    /// CHART RULE: the tick this voyage ends (0 = no clock). At expiry the
+    /// current ferries every character home to Lanternfall.
+    #[serde(default)]
+    pub(crate) voyage_ends_at: u64,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -786,6 +804,8 @@ impl World {
             loot_quantity_bp: 0,
             chart_table: content.zone(zone_id).and_then(|z| z.chart_table),
             is_chart_instance: false,
+            monster_fury_bp: 0,
+            voyage_ends_at: 0,
         }
     }
 
@@ -979,6 +999,26 @@ impl World {
             pack.def.magic_bp += ticket.rarity_bp.max(0) as u32;
             pack.def.rare_bp += (ticket.rarity_bp.max(0) / 3) as u32;
         }
+        // THE RULES (#148 A4) — applied at the one instance chokepoint.
+        w.monster_fury_bp = ticket.fury_bp.clamp(0, 10000);
+        if ticket.clock > 0 {
+            w.voyage_ends_at = ticket.clock as u64; // relative to tick 0
+        }
+        if ticket.boss
+            && let Some(bi) = w.content.monster_idx("the_unwritten")
+        {
+            // The far end, the strand's north. Uniques keep their AUTHORED
+            // level (20) regardless of tier — the fury/juice dials carry
+            // the tier's difficulty, not the boss's level.
+            w.spawn_monster_rolled(
+                bi as u32,
+                0,
+                FxV2::new(Fx::from_int(24), Fx::from_int(6)),
+                Rarity::Unique,
+                vec![],
+                "The Unwritten".into(),
+            );
+        }
         w
     }
 
@@ -998,12 +1038,39 @@ impl World {
     }
 
     /// Advance the world by exactly one tick.
+    /// CHART RULE (#148 A4): when the voyage clock expires, the current
+    /// takes the strand back — every character is staged home to
+    /// Lanternfall as an ordinary departure (loot in the bag comes along;
+    /// the ferry lands them; the empty voyage retires).
+    fn voyage_clock(&mut self, events: &mut Vec<SimEvent>) {
+        if self.voyage_ends_at == 0 || self.tick < self.voyage_ends_at {
+            return;
+        }
+        self.voyage_ends_at = 0; // fire once
+        let nets: Vec<u32> = self
+            .zone
+            .iter()
+            .filter(|(_, e)| e.character.is_some())
+            .map(|(_, e)| e.net_id)
+            .collect();
+        for net in nets {
+            if !self.pending_exits.iter().any(|(n, ..)| *n == net) {
+                self.pending_exits.push((net, "lanternfall".into(), None));
+            }
+            events.push(SimEvent::Narration {
+                target: net,
+                text: "The clock runs out. The current takes the strand back.".into(),
+            });
+        }
+    }
+
     pub fn tick(&mut self, inputs: &TickInputs) -> Vec<SimEvent> {
         self.tick += 1;
         let mut events = Vec::new();
         self.clear_transient_intents();
         self.apply_joins(inputs, &mut events);
         self.run_bots(&mut events);
+        self.voyage_clock(&mut events);
         self.process_exits(&mut events);
         self.movement();
         self.separation();
@@ -1357,12 +1424,19 @@ impl World {
         // Juice from the chart's OWN rolled affixes (quantity/rarity stats).
         let mut quantity_bp = 0i64;
         let mut rarity_bp = 0i64;
+        let mut fury_bp = 0i64;
+        let mut clock = 0i64;
+        let mut boss = false;
         for ra in &item.affixes {
             let a = &self.content.affixes[ra.affix_idx as usize];
             for g in a.grants(&ra.values) {
                 match g.stat {
                     crate::stats::Stat::ItemQuantity => quantity_bp += g.value,
                     crate::stats::Stat::ItemRarity => rarity_bp += g.value,
+                    // THE RULES (#148 A4): risk crafted with the same obols.
+                    crate::stats::Stat::MonsterFury => fury_bp += g.value,
+                    crate::stats::Stat::VoyageClock => clock = g.value,
+                    crate::stats::Stat::SovereignsMark => boss = g.value > 0,
                     _ => {}
                 }
             }
@@ -1384,6 +1458,9 @@ impl World {
                 tier: tier.clamp(1, 16),
                 rarity_bp,
                 quantity_bp,
+                fury_bp,
+                clock,
+                boss,
             }),
         ));
         if let Some(me) = self.zone.get_mut(slot)
@@ -3122,6 +3199,131 @@ mod area_level_tests {
     }
 
     #[test]
+    fn chart_rules_ride_the_ticket_and_shape_the_voyage() {
+        // #148 A4: the three RULES — fury folds into every monster's damage,
+        // the clock arms the expiry, the mark spawns the Unwritten at the
+        // far end at Unique rarity. Mutation: drop any application in
+        // new_chart_instance (or the fury fold in the monster derive) →
+        // its assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let plain = World::new_chart_instance(
+            0x41,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 4,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let mut ruled = World::new_chart_instance(
+            0x41,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 4,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 3000,
+                clock: 6000,
+                boss: true,
+            },
+        );
+        assert_eq!(ruled.voyage_ends_at, 6000, "the clock arms");
+        assert_eq!(ruled.monster_fury_bp, 3000, "the fury dial sets");
+        let empty = TickInputs::default();
+        ruled.tick(&empty);
+        let vs = ruled.views();
+        let boss: Vec<_> = vs
+            .iter()
+            .filter(|v| v.rarity == 3 && v.name == "The Unwritten")
+            .collect();
+        assert_eq!(boss.len(), 1, "the mark spawns the tier boss");
+        // Fury scales at the STRIKE chokepoint (spells included — the boss's
+        // own kit was fury-blind when the fold lived in the derive tail):
+        // the SAME synthetic hit from a monster lands harder in the ruled
+        // voyage. Mutation: drop the strike() fold → equal damage, fails.
+        let mut plain = plain;
+        plain.tick(&empty);
+        let hit_for = |w: &mut World| {
+            let victim = join_one(w, "Struck");
+            let mslot = w
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.is_some() && e.alive())
+                .map(|(s, _)| s)
+                .unwrap();
+            let before = w.zone.get(victim).unwrap().combat.as_ref().unwrap().life;
+            let mut damage = [0i64; crate::entity::DMG_COUNT];
+            damage[crate::entity::DMG_PHYS] = 40;
+            let spec = combat::StrikeSpec {
+                attacker_slot: Some(mslot),
+                attacker_net: w.zone.get(mslot).unwrap().net_id,
+                attacker_name: "Wight".into(),
+                attacker_is_char: false,
+                is_spell: true,
+                is_dot: true, // dots skip accuracy/crit rng: a pure fury delta
+                accuracy: 0,
+                damage,
+                crit_bp: 0,
+                crit_multi: 10000,
+                projectile: false,
+                dot: None,
+                debuff: None,
+                stagger: 0,
+                knockback_cu: 0,
+                ailment_chance: 0,
+                inherent_ailment_kind: None,
+            };
+            let (mut ev, mut dd, mut ll) = (Vec::new(), Vec::new(), Vec::new());
+            let now = w.tick;
+            w.strike(spec, victim, now, &mut ev, &mut dd, &mut ll);
+            before - w.zone.get(victim).unwrap().combat.as_ref().unwrap().life
+        };
+        let base = hit_for(&mut plain);
+        let furied = hit_for(&mut ruled);
+        assert!(
+            furied > base,
+            "fury must lift the SAME hit ({furied} vs {base})"
+        );
+    }
+
+    #[test]
+    fn the_voyage_clock_ferries_everyone_home() {
+        // #148 A4: at expiry every character departs to Lanternfall as an
+        // ordinary bundle — nothing carried is lost. Mutation: drop the
+        // voyage_clock call from tick → no departure, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_chart_instance(
+            0x42,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 20,
+                boss: false,
+            },
+        );
+        let _ = join_one(&mut w, "Timed");
+        let empty = TickInputs::default();
+        let mut departed = Vec::new();
+        for _ in 0..40 {
+            w.tick(&empty);
+            departed.extend(w.take_departures());
+        }
+        assert_eq!(departed.len(), 1, "the clock ferries the sailor out");
+        let (bundle, dest) = &departed[0];
+        assert_eq!(dest, "lanternfall");
+        assert_eq!(bundle.character.name, "Timed");
+    }
+
+    #[test]
     fn a_chart_instance_lifts_level_and_juice() {
         // #136 T4: the ticket becomes a world — area level 12 + tier, pack
         // rarity juiced, drop quantity juiced, and the instance marked
@@ -3137,6 +3339,9 @@ mod area_level_tests {
                 tier: 3,
                 rarity_bp: 2100,
                 quantity_bp: 1500,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
             },
         );
         assert_eq!(w.zone_level(), 15);
