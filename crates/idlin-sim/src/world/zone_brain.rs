@@ -129,10 +129,15 @@ impl World {
                     // build plan's limb sockets/keystones: 0 melee, 1 bow,
                     // 2 wand, -1 undeclared/unclear.
                     let arch = {
+                        // build_plan holds TREE INDICES (translated at
+                        // declare, #54); match by each index's raw num via
+                        // tree_refs ONLY. The old `n == num` fallback let
+                        // an index collide with a NUM — a Deadeye whose
+                        // dex-limb landed at index 25 read as MELEE, and
+                        // the shore paid it a cleave (#148 A2).
                         let has = |num: u16| {
                             ch.build_plan.iter().any(|&n| {
                                 self.content.tree_refs.get(n as usize).copied() == Some(num)
-                                    || n == num as u32
                             })
                         };
                         if ch.build_plan.is_empty() {

@@ -45,8 +45,12 @@ MonsterDef(
     use_ticks: 16,
     aggro_radius_cu: 1300,
     armour: 110,
-    resist_cold: 5000,
-    resist_lightning: 5000,
+    // 25%, not 50% (#148 A2): her old walls hard-countered two of the
+    // caster's three lanes while melee never felt them (armour is the
+    // phys lane and stands unchanged) — the finale grades every
+    // archetype on the same curve. Flavor keeps a real edge.
+    resist_cold: 2500,
+    resist_lightning: 2500,
     resist_chaos: 3000,
     xp: 2400,
     projectile: false,

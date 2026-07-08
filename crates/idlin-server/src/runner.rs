@@ -767,14 +767,14 @@ mod tests {
     /// fails here, not in front of the operator. Mutation: break routing,
     /// the act hook, UseChart, the ferry mint, or overtune any fight → a
     /// milestone never lights (or the band breaks) and this fails named.
-    fn walk_the_salt_road(seed: u64) -> (u64, u32) {
+    fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> (u64, u32) {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
         // The WHOLE game: the join lands on the shore, so the real tutorial
         // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
         // Saltmere before the campaign begins — exactly a fresh idler's life.
         let joins = vec![idlin_sim::JoinRequest {
             name: "Pathfinder".into(),
-            program: idlin_botc::template_grinder().unwrap(),
+            program,
         }];
         let mut worlds = boot_worlds(&content, seed, &joins);
         let mut milestones = [false; 6]; // coast, works, hollow, act, town+act, voyage
@@ -865,8 +865,10 @@ mod tests {
         // this catches, not death itself: dying is idle life. The band's
         // first catch: 72 deaths in the pre-tune Hollow on one seed. A
         // subtle 2x pacing drift passes by design; walls and grinders trip.
-        for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5] {
-            let (sailed_at, deaths) = walk_the_salt_road(seed);
+        // The fourth seed is 1.0's tutorial-deadlock finder — kept forever.
+        for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5, 0x0CA5_7E12] {
+            let (sailed_at, deaths) =
+                walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
             assert!(
                 sailed_at <= 90_000,
                 "seed {seed:#x}: sailed at {sailed_at} — the road has a wall"
@@ -876,6 +878,44 @@ mod tests {
                 "seed {seed:#x}: {deaths} deaths — a zone is a meat grinder"
             );
         }
+    }
+
+    /// #148 A2: the promise holds for EVERY ARCHETYPE, not just the sword.
+    /// One seed each (melee has three above): the caster and the ranger
+    /// must ALSO walk the whole road — tutorial, campaign, Mother, sail —
+    /// inside the same bands. Mutation: break either build plan, ladder,
+    /// or the ranged hold badly enough and the road ends early.
+    #[test]
+    fn the_caster_walks_the_salt_road() {
+        // The wand is the road's slowest walker (mana-bound clears; this
+        // seed is the 1.0-deadlock one) — measured 103.8k on the fixed
+        // road, so the band sits at 120k: walls trip, archetype pace
+        // doesn't.
+        let (sailed_at, deaths) =
+            walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
+        assert!(sailed_at <= 120_000, "the caster hit a wall at {sailed_at}");
+        // KNOWN DEBT (#148): the wand build has no defense economy — INT
+        // buys mana/ES but almost no ES gear exists, so the caster trades
+        // corpses for progress (measured 135 on this seed; melee sits at
+        // 1-8). The band holds the line at 160 until the ES itemization
+        // arc lands; tightening it to melee's numbers WITHOUT that
+        // content would just be a wall.
+        assert!(
+            deaths <= 160,
+            "{deaths} caster deaths — a grinder for wands"
+        );
+    }
+
+    #[test]
+    fn the_ranger_walks_the_salt_road() {
+        // Measured ~20-50k sails; 120k = the wall line. Deaths measured 48
+        // — the bow shares the wand's defense-economy debt (no ES/evasion
+        // gear pipeline yet; see the caster band's note): 80 holds the
+        // line until that content arc lands.
+        let (sailed_at, deaths) =
+            walk_the_salt_road(0x0BB0_77A1, idlin_botc::template_ranger().unwrap());
+        assert!(sailed_at <= 120_000, "the ranger hit a wall at {sailed_at}");
+        assert!(deaths <= 80, "{deaths} ranger deaths — a grinder for bows");
     }
 
     #[test]

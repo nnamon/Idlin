@@ -56,6 +56,8 @@ var stuck_t;
 var unstick;               // ticks left of forced wandering
 var voyage_t;              // ticks spent in the current chart instance
 var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
+var wallshot;              // consecutive failed attacks on a held target
+var shed_cd;               // ticks to ignore ground loot after shedding
 
 // Fire one skill slot at the target, honoring its declared targeting
 // mode (ReadSkills record +28 = target_mode; ready checked by the
@@ -162,12 +164,14 @@ fn upkeep_gear() {
 // charts): normals are either worn already or losers by definition.
 fn shed_trash() {
     var n = read_inventory(INV, 60);
-    // The bag fills by CELLS, not count — a dozen bows brick it long
-    // before 60 records, pickups fail silently, and the Mother's chart
-    // bounces. Policy: anything upkeep_gear did NOT wear is a loser by
-    // definition — keep charts and ONE copy of each build gem, shed the
-    // rest (one per pass; drops shift the bag). Twelve items is lean.
-    if (n < 12) { return 0; }
+    // The bag fills by CELLS, not count — a dozen 6-cell weapons brick
+    // it long before 60 records, pickups fail silently, and the Mother's
+    // chart bounces (it did AGAIN at 12: the caster hoarded three melee
+    // weapons it can never wield). Policy: anything upkeep_gear did NOT
+    // wear is a loser by definition — keep charts and ONE copy of each
+    // build gem, shed the rest (one per pass; drops shift the bag).
+    // Eight records keeps a 2x2 hole under any mix.
+    if (n < 8) { return 0; }
     var seen_hs = 0;
     var seen_cl = 0;
     var seen_hb = 0;
@@ -184,6 +188,7 @@ fn shed_trash() {
         if (num == GEM_QUICKENING && seen_qk == 0) { keep = 1; seen_qk = 1; }
         if (keep == 0) {
             drop_item(i);
+            shed_cd = 50;
             return 0;
         }
         i = i + 1;
@@ -204,9 +209,12 @@ fn find_chart() {
     return -1;
 }
 
-// Where the road leads next, as a ZONE_* num — or 0 to stay and grind.
-// Level gates keep us from walking into water over our head; the act
-// bit pivots the whole brain from campaign to endgame.
+// Where the road leads next: a ZONE_* num to travel, -1 to STAY (this
+// zone is the road's business — level-grinding, or the boss lives here;
+// the boredom valve must NOT bounce us out: a ranged brain clears the
+// Hollow's sparse throat from afar, runs 12 clean seconds, and used to
+// ping-pong out of the Mother's own zone forever), or 0 for a zone the
+// road doesn't know (the valve applies — no zone may strand us).
 fn route_dest() {
     var act1 = mem[SELF + SS_FLAGS] & 2;
     var lvl = mem[SELF + SS_LEVEL];
@@ -219,35 +227,38 @@ fn route_dest() {
         if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
         if (zid == ZONE_COAST) {
             if (lvl >= 7) { return ZONE_SALTWORKS; }
-            return 0;
+            return -1;
         }
         if (zid == ZONE_SALTWORKS) {
             // 12, not 10: the Hollow at 10 was a meat grinder (the T8 band
             // counted 71 deaths on one seed) — two more Saltworks levels
             // turn it into a fight.
             if (lvl >= 12) { return ZONE_HOLLOW; }
-            return 0;
+            return -1;
         }
+        // The Hollow is the road's business pre-act (the Mother lives
+        // here); any OTHER zone is off-road — the boredom valve applies.
+        if (zid == ZONE_HOLLOW) { return -1; }
         return 0;
     }
     // The endgame. A voyage lasts ~8 minutes, then home to re-chart.
     if (zid == ZONE_CHARTED_SHALLOWS) {
         if (voyage_t > 5000) { return ZONE_SALTMERE; }
-        return 0;
+        return -1;
     }
     // Holding a chart, the road leads HOME to the table; dry, it leads
     // back DOWN to the Hollow — the Mother always pays another.
     if (find_chart() >= 0) {
-        if (zid == ZONE_SALTMERE) { return 0; }  // the table logic in main
+        if (zid == ZONE_SALTMERE) { return -1; }  // the table logic in main
         if (zid == ZONE_HOLLOW) { return ZONE_SALTWORKS; }
         if (zid == ZONE_SALTWORKS) { return ZONE_COAST; }
         if (zid == ZONE_COAST) { return ZONE_SALTMERE; }
-        return 0;
+        return -1;
     }
     if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
     if (zid == ZONE_COAST) { return ZONE_SALTWORKS; }
     if (zid == ZONE_SALTWORKS) { return ZONE_HOLLOW; }
-    if (zid == ZONE_HOLLOW) { return 0; }
+    if (zid == ZONE_HOLLOW) { return -1; }
     return 0;
 }
 
@@ -285,7 +296,10 @@ fn main() {
     var loot_x = 0;
     var loot_y = 0;
     var have_loot = 0;
-    if (read_entities(ENTS, 4, F_LOOT) > 0) {
+    // Shed loot is OUR loot — the F_LOOT query hands discards right back
+    // (a 34-record bag proved the cycle). Look away while the tide takes.
+    if (shed_cd > 0) { shed_cd = shed_cd - 1; }
+    if (shed_cd <= 0 && read_entities(ENTS, 4, F_LOOT) > 0) {
         if (pick_up(mem[ENTS]) != 0) {
             have_loot = 1;
             loot_x = mem[ENTS + 8];
@@ -348,7 +362,7 @@ fn main() {
     var ex = 0;
     var ey = 0;
     var want = route_dest();
-    if (want != 0) {
+    if (want > 0) {
         leaving = 1;
         var nxits = read_exits(EXITS, 4);
         var e = 0;
@@ -464,7 +478,11 @@ fn main() {
             if (adx < 0) { adx = 0 - adx; }
             var ady = ty - mem[SELF + SS_Y];
             if (ady < 0) { ady = 0 - ady; }
-            if (adx > 0x60000 || ady > 0x60000) {
+            // Only a bodily BLOCKER (enemies body-block; ~1.8u) stops a
+            // departing bot — the old 6u radius let a dense court chain
+            // approach-fights forever at the gate (#148 A2: a level-19
+            // ranger farmed a thousand kills eight rows from the exit).
+            if (adx > 0x1CCCC || ady > 0x1CCCC) {
                 if (use_exit() == 0) { return; }
                 move_to(ex, ey);
                 return;
@@ -487,8 +505,21 @@ fn main() {
                 i = i + 1;
             }
         }
+        var landed = used;
         if (used != 0) {
-            use_skill(0, target, 0, 0);
+            landed = use_skill(0, target, 0, 0);
+        }
+        // WALL-SHOT ESCAPE (#148 A2): "in reach" is not "can hit" — a
+        // ranged weapon spans walls the attack can't (the caster stood
+        // casting at a gate for two game-hours; the unstick's in-reach
+        // exemption never fired). If nothing lands for ~2s on a held
+        // target, the geometry is lying: drop it and wander hard.
+        if (landed == 0) { wallshot = 0; }
+        if (landed != 0) { wallshot = wallshot + 1; }
+        if (wallshot > 20) {
+            wallshot = 0;
+            unstick = 40;
+            wander_left = 0;
         }
         move_to(tx, ty);
         return;
@@ -512,13 +543,20 @@ fn main() {
     }
     if (wander_left <= 0) {
         wander_x = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_W];
-        wander_y = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_H];
-        // The Hollow DESCENDS (#136 T6): its whole point is the basin at
-        // the far end — the zone doc says so, and a brain may know its
-        // map. Strolls bias deep so the Mother (and anything she paid us
-        // that fell shy of the bag) is found, not stumbled on.
-        if (mem[SELF + SS_ZONE] == ZONE_HOLLOW) {
-            wander_y = (random() & 0x7FFFFFFF) % (mem[SELF + SS_MAP_H] / 3);
+        // THE ROAD RUNS NORTH (#148 A2): every zone in this game enters
+        // from the south and keeps its goal at the top of the map — the
+        // authoring convention since the shore. Three strolls in four aim
+        // at-or-north of where we stand (progress is the default, so
+        // choreography waiting down-strand — the witch, the basin — gets
+        // met even when nothing chases us there); the fourth sweeps
+        // anywhere, so terrace pockets behind us are re-found. Replaces
+        // the Hollow-only deep bias (this seed-hunted a 1.0 tutorial
+        // deadlock: a pupil parked at y=60 forever, one row shy of the
+        // witch's y<60 spawn trigger).
+        var yn = mem[SELF + SS_Y] / 65536;
+        wander_y = (random() & 0x7FFFFFFF) % (yn + 1);
+        if ((random() & 3) == 0) {
+            wander_y = (random() & 0x7FFFFFFF) % mem[SELF + SS_MAP_H];
         }
         wander_left = 50 + ((random() & 0x7FFFFFFF) % 70);
     }

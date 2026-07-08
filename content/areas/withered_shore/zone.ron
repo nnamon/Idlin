@@ -51,9 +51,13 @@ ZoneDef(
     // (spawn_elite).
     packs: [
         // Beat 1: the staked first kill (pays weapon + life flask).
-        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 17, y_u: 110, radius_u: 0, respawn_ticks: 9000000),
+        // The XP FLOOR (#148 A2): the two southernmost shamblers respawn — a
+        // pupil who falls behind the curve (fragile-early archetypes die into
+        // a spiral on a one-shot shore) can always re-earn on the south
+        // beach; a healthy pupil is long past before the tide returns them.
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 17, y_u: 110, radius_u: 0, respawn_ticks: 2400),
         // Beat 2: the second single (pays the suited skill gem).
-        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 16, y_u: 102, radius_u: 0, respawn_ticks: 9000000),
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 16, y_u: 102, radius_u: 0, respawn_ticks: 2400),
         // Beat 3: the flask gauntlet — weak, many, relentless.
         SpawnPack(monster: "grasping_drowned", count: 6, x_u: 16, y_u: 92,  radius_u: 2, respawn_ticks: 9000000),
         // Beat 4: the open strand.
