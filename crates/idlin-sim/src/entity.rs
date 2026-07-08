@@ -236,6 +236,9 @@ pub struct Intents {
     pub path: Vec<FxV2>,
 }
 
+/// The stash chest's capacity (#148 A5) — flat records, no grid.
+pub const STASH_CAP: usize = 40;
+
 /// Speech-bubble rate limit (ticks between says).
 pub const SAY_COOLDOWN_CHAR: u64 = 100;
 pub const SAY_COOLDOWN_MONSTER: u64 = 50;
@@ -395,6 +398,11 @@ pub struct CharacterState {
     /// Obol counts, indexed like ContentDb::currency (resized on demand).
     #[serde(default)]
     pub currency: Vec<u64>,
+    /// The persistent chest (#148 A5): items parked at a town stash. Flat
+    /// (no grid — the bag's tetris is the scarcity; the chest just holds),
+    /// capped at STASH_CAP by the syscall. Rides bundles + snapshots.
+    #[serde(default)]
+    pub stash: Vec<BagItem>,
     /// Gems socketed into allocated tree socket nodes (keyed by node index;
     /// BTreeMap for deterministic iteration).
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,

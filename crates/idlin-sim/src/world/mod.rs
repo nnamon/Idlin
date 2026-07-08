@@ -382,6 +382,11 @@ pub struct World {
     /// The Charting Table's cell, from the ZoneDef (#136 T4). None = no table.
     #[serde(default)]
     pub(crate) chart_table: Option<(i32, i32)>,
+    /// The town's vendor + stash cells (#148 A5), from the ZoneDef.
+    #[serde(default)]
+    pub(crate) vendor: Option<(i32, i32)>,
+    #[serde(default)]
+    pub(crate) stash_cell: Option<(i32, i32)>,
     /// True in a chart instance (#136 T4): charts keep dropping here (the
     /// loop sustains itself), and the host retires the world when it empties.
     #[serde(default)]
@@ -803,6 +808,8 @@ impl World {
             zone_level: content.zone(zone_id).map_or(1, |z| z.level),
             loot_quantity_bp: 0,
             chart_table: content.zone(zone_id).and_then(|z| z.chart_table),
+            vendor: content.zone(zone_id).and_then(|z| z.vendor),
+            stash_cell: content.zone(zone_id).and_then(|z| z.stash),
             is_chart_instance: false,
             monster_fury_bp: 0,
             voyage_ends_at: 0,
@@ -1310,6 +1317,7 @@ impl World {
                     allocated: Vec::new(),
                     build_plan: Vec::new(),
                     currency: vec![0; self.content.currency.len()],
+                    stash: Vec::new(),
                     sockets: std::collections::BTreeMap::new(),
                     // Sized + stamped by this tick's explore() pass (#129).
                     explored: Vec::new(),
@@ -1388,6 +1396,126 @@ impl World {
     /// the act's end (ilvl 13 = tier+1, 14 = tier+2…); the ticket's juice
     /// comes from the chart's rolled quantity/rarity affix values, so the
     /// obols craft BETTER VOYAGES with the machinery they already have.
+    /// Sell a bag item at the town vendor (#148 A5). Pays ONE obol keyed to
+    /// what the item was — normal→transmute, magic→alter, rare→alchemy,
+    /// unique→regal; gems and charts sell as transmutes. Returns the paid
+    /// obol's NUM (positive), or -1 bad selection / -2 not at a vendor /
+    /// -4 no character.
+    pub(crate) fn sell(&mut self, slot: usize, inv_sel: i32, events: &mut Vec<SimEvent>) -> i32 {
+        const VENDOR_REACH: i64 = 3; // cells, the table's reach
+        let Some(e) = self.zone.get(slot) else {
+            return -4;
+        };
+        let Some(ch) = e.character.as_ref() else {
+            return -4;
+        };
+        let Some((vx, vy)) = self.vendor else {
+            return -2;
+        };
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let (dx, dy) = (cx - vx as i64, cy - vy as i64);
+        if dx * dx + dy * dy > VENDOR_REACH * VENDOR_REACH {
+            return -2;
+        }
+        let idx = inv_sel as usize;
+        if inv_sel < 0 || idx >= ch.inventory.len() {
+            return -1;
+        }
+        let net = e.net_id;
+        let obol_id = match &ch.inventory[idx].item {
+            crate::entity::BagItem::Gear(it) => match it.rarity {
+                Rarity::Normal => "transmute_obol",
+                Rarity::Magic => "alter_obol",
+                Rarity::Rare => "alchemy_obol",
+                Rarity::Unique => "regal_obol",
+            },
+            crate::entity::BagItem::Gem(_) => "transmute_obol",
+        };
+        let Some(cidx) = self.content.currency.iter().position(|c| c.id == obol_id) else {
+            return -1; // the obol vocabulary is loader-guaranteed; belt+braces
+        };
+        let name = match &self
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory[idx]
+            .item
+        {
+            crate::entity::BagItem::Gear(it) => it.name.clone(),
+            crate::entity::BagItem::Gem(g) => self.content.gems[g.gem_idx as usize].name.clone(),
+        };
+        let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+        ch.inventory.remove(idx);
+        ch.currency[cidx] += 1;
+        events.push(SimEvent::Narration {
+            target: net,
+            text: format!("Sold {name} — one {}.", self.content.currency[cidx].name),
+        });
+        self.content_num(idlin_content::ids::Category::Currency, cidx)
+    }
+
+    /// Move an item between bag and stash at the town chest (#148 A5).
+    /// op 0 = deposit inventory[sel]; op 1 = withdraw stash[sel] (first-fit
+    /// back into the bag). Returns 1, or -1 bad selection / -2 not at the
+    /// stash / -3 no room / -4 no character.
+    pub(crate) fn stash_op(&mut self, slot: usize, op: i32, sel: i32) -> i32 {
+        const STASH_REACH: i64 = 3;
+        let Some(e) = self.zone.get(slot) else {
+            return -4;
+        };
+        if e.character.is_none() {
+            return -4;
+        }
+        let Some((sx, sy)) = self.stash_cell else {
+            return -2;
+        };
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let (dx, dy) = (cx - sx as i64, cy - sy as i64);
+        if dx * dx + dy * dy > STASH_REACH * STASH_REACH {
+            return -2;
+        }
+        let idx = sel as usize;
+        match op {
+            0 => {
+                let ch = self.zone.get(slot).unwrap().character.as_ref().unwrap();
+                if sel < 0 || idx >= ch.inventory.len() {
+                    return -1;
+                }
+                if ch.stash.len() >= crate::entity::STASH_CAP {
+                    return -3;
+                }
+                let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+                let placed = ch.inventory.remove(idx);
+                ch.stash.push(placed.item);
+                1
+            }
+            1 => {
+                let ch = self.zone.get(slot).unwrap().character.as_ref().unwrap();
+                if sel < 0 || idx >= ch.stash.len() {
+                    return -1;
+                }
+                let (w, h) = match &ch.stash[idx] {
+                    crate::entity::BagItem::Gear(it) => {
+                        let def = &self.content.items[it.base_idx as usize];
+                        (def.w, def.h)
+                    }
+                    crate::entity::BagItem::Gem(_) => (1, 1),
+                };
+                let Some((x, y)) = self.first_fit(ch, w, h) else {
+                    return -3;
+                };
+                let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+                let item = ch.stash.remove(idx);
+                ch.inventory.push(crate::entity::PlacedItem { item, x, y });
+                1
+            }
+            _ => -1,
+        }
+    }
+
     pub(crate) fn use_chart(&mut self, slot: usize, inv_sel: i32) -> i32 {
         const TABLE_REACH: i64 = 3; // cells
         let Some(e) = self.zone.get(slot) else {
@@ -2667,6 +2795,7 @@ mod area_level_tests {
                 allocated: Vec::new(),
                 build_plan: Vec::new(),
                 currency: Vec::new(),
+                stash: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 // The old zone's knowledge: everything explored, same size as
                 // the destination — the case the size check alone can't catch.
@@ -3024,6 +3153,127 @@ mod area_level_tests {
         .unwrap()
         .unique_idx = None;
         assert_ne!(h1, w.state_hash(), "unique identity must move the digest");
+    }
+
+    #[test]
+    fn the_vendor_pays_the_right_obol_and_guards_its_reach() {
+        // #148 A5: sell contract — rarity keys the obol; reach and bad
+        // selections refuse without consuming. Mutation: drop the reach
+        // check → the far-away sell succeeds; drop the rarity match → the
+        // wrong obol pays.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xA5, &content, "saltmere");
+        let slot = join_one(&mut w, "Seller");
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: cleaver,
+                    rarity: Rarity::Rare,
+                    item_level: 5,
+                    affixes: Vec::new(),
+                    name: "Doomcleaver".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let mut ev = Vec::new();
+        // Far from the vendor: refused, nothing consumed.
+        assert_eq!(w.sell(slot, 0, &mut ev), -2, "reach guards the vendor");
+        let n_before = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(n_before, 1, "refusal consumes nothing");
+        // At the vendor: a RARE pays exactly one alchemy obol.
+        let (vx, vy) = w.vendor.unwrap();
+        w.test_teleport(w.zone.get(slot).unwrap().net_id, vx as i16, vy as i16);
+        let paid = w.sell(slot, 0, &mut ev);
+        let alch = content
+            .currency
+            .iter()
+            .position(|c| c.id == "alchemy_obol")
+            .unwrap();
+        assert_eq!(
+            paid,
+            w.content_num(idlin_content::ids::Category::Currency, alch),
+            "a rare pays alchemy"
+        );
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.inventory.len(), 0, "the item is gone");
+        assert_eq!(ch.currency[alch], 1, "the obol landed");
+        // Bad selection on the emptied bag.
+        assert_eq!(w.sell(slot, 0, &mut ev), -1);
+        assert_eq!(w.sell(slot, -7, &mut ev), -1);
+    }
+
+    #[test]
+    fn the_stash_roundtrips_an_affixed_item_intact() {
+        // #148 A5: deposit → withdraw returns the SAME item — affixes,
+        // rarity, name. Mutation: drop the stash push or the withdraw
+        // remove → the roundtrip loses the item.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xA5A, &content, "saltmere");
+        let slot = join_one(&mut w, "Keeper");
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: cleaver,
+                    rarity: Rarity::Magic,
+                    item_level: 7,
+                    affixes: vec![crate::entity::RolledAffix {
+                        affix_idx: 0,
+                        tier: 0,
+                        values: vec![7],
+                    }],
+                    name: "Keepsake".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let (sx, sy) = w.stash_cell.unwrap();
+        w.test_teleport(w.zone.get(slot).unwrap().net_id, sx as i16, sy as i16);
+        assert_eq!(w.stash_op(slot, 0, 0), 1, "deposit lands");
+        {
+            let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+            assert_eq!(ch.inventory.len(), 0);
+            assert_eq!(ch.stash.len(), 1);
+        }
+        assert_eq!(w.stash_op(slot, 1, 0), 1, "withdraw lands");
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.stash.len(), 0);
+        let crate::entity::BagItem::Gear(it) = &ch.inventory[0].item else {
+            panic!("gear came back");
+        };
+        assert_eq!(it.name, "Keepsake");
+        assert_eq!(it.rarity, Rarity::Magic);
+        assert_eq!(it.affixes.len(), 1, "the affix survived the chest");
+        assert_eq!(it.affixes[0].values, vec![7]);
+        // Bad ops refuse cleanly.
+        assert_eq!(w.stash_op(slot, 2, 0), -1, "unknown op");
+        assert_eq!(w.stash_op(slot, 1, 5), -1, "empty chest withdraw");
     }
 
     #[test]
@@ -3658,6 +3908,39 @@ mod area_level_tests {
             .unwrap()
             .story_acts = 1;
         assert_ne!(h1, w.state_hash(), "story_acts must move the digest");
+    }
+
+    #[test]
+    fn state_hash_fingerprints_stash() {
+        // #148 A5 review (B1): the chest steers bots (ReadStash → withdraw
+        // branches), so it is replayed state and must be hashed. Mutation:
+        // drop the stash fold from state_hash → this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0A, &content);
+        let slot = join_one(&mut w, "Chested");
+        let h1 = w.state_hash();
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .stash
+            .push(crate::entity::BagItem::Gear(crate::entity::Item {
+                base_idx: cleaver,
+                rarity: Rarity::Normal,
+                item_level: 1,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            }));
+        assert_ne!(h1, w.state_hash(), "stash must move the digest");
     }
 
     #[test]

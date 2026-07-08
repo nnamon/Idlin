@@ -767,7 +767,7 @@ mod tests {
     /// fails here, not in front of the operator. Mutation: break routing,
     /// the act hook, UseChart, the ferry mint, or overtune any fight → a
     /// milestone never lights (or the band breaks) and this fails named.
-    fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> (u64, u32) {
+    fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> (u64, u32, u32) {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
         // The WHOLE game: the join lands on the shore, so the real tutorial
         // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
@@ -778,6 +778,7 @@ mod tests {
         }];
         let mut worlds = boot_worlds(&content, seed, &joins);
         let mut milestones = [false; 8];
+        let mut sales = 0u32;
         let names = [
             "reach the coast",
             "reach the saltworks",
@@ -809,6 +810,14 @@ mod tests {
                         && name == "Pathfinder"
                     {
                         deaths += 1;
+                    }
+                    // #148 A5 (review B2): the economy proof must be VENDOR-
+                    // specific — kills also pay obols, so a currency-sum
+                    // assert was vacuous. Only sell() narrates "Sold ".
+                    if let SimEvent::Narration { text, .. } = ev
+                        && text.starts_with("Sold ")
+                    {
+                        sales += 1;
                     }
                 }
                 departures.extend(
@@ -886,7 +895,7 @@ mod tests {
             furthest,
             names[furthest]
         );
-        (sailed_at, deaths)
+        (sailed_at, deaths, sales)
     }
 
     #[test]
@@ -900,8 +909,19 @@ mod tests {
         // subtle 2x pacing drift passes by design; walls and grinders trip.
         // The fourth seed is 1.0's tutorial-deadlock finder — kept forever.
         for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5, 0x0CA5_7E12] {
-            let (sailed_at, deaths) =
+            let (sailed_at, deaths, sales) =
                 walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
+            // #148 A5 (review B2, take two): the vendor-specific economy
+            // proof lives in THE MELEE BAND ONLY — its four seeds all
+            // arrive at the table holding act-road junk; the ranged pair
+            // sometimes field-shed to a clean bag (the caster did, and a
+            // currency-sum assert was vacuous — kills pay obols too). The
+            // sell CONTRACT itself is unit-pinned. Mutation: remove the
+            // templates' sell adoption → no "Sold " narration, this trips.
+            assert!(
+                sales > 0,
+                "seed {seed:#x}: the sailor should have SOLD junk before sailing"
+            );
             // The road DOUBLED in A3 (two acts before the first sail):
             // measured 103k on seed 1; 180k = the wall line.
             assert!(
@@ -930,7 +950,7 @@ mod tests {
         // engine changes. The band sits just under the 140k loop budget:
         // COMPLETION is the bar on the nastiest seed; pace-tightening is
         // future work (#148, with the defense-valuation thread).
-        let (sailed_at, deaths) =
+        let (sailed_at, deaths, _sales) =
             walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
         assert!(sailed_at <= 260_000, "the caster hit a wall at {sailed_at}");
         // KNOWN DEBT (#148): the wand build has no defense economy — INT
@@ -958,7 +978,7 @@ mod tests {
         // half the recent configurations and is parked as the thread's
         // repro; this band pins a measured-sailing seed (122k/145) so the
         // archetype's completability is guarded while the fight is tuned.
-        let (sailed_at, deaths) =
+        let (sailed_at, deaths, _sales) =
             walk_the_salt_road(0x0BB0_77A2, idlin_botc::template_ranger().unwrap());
         assert!(sailed_at <= 260_000, "the ranger hit a wall at {sailed_at}");
         assert!(deaths <= 240, "{deaths} ranger deaths — a grinder for bows");
@@ -1128,6 +1148,7 @@ mod tests {
                 allocated: Vec::new(),
                 build_plan: Vec::new(),
                 currency: Vec::new(),
+                stash: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 explored: Vec::new(),
                 story_acts: 0,

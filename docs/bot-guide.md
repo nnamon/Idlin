@@ -296,6 +296,9 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 35 | `Unequip` | gear_slot | bare a gear slot — move the worn item back to the bag, leaving the slot empty (the deliberate counterpart to `Equip`'s swap). `gear_slot` is the 0–11 index `ReadEquipment` reports. 0 ok; −1 if the index is out of range, the slot is already empty, or **the bag is full**. Like manual `Equip`, and unlike `EquipBest`'s auto-swap (which drops to juggle), `Unequip` REFUSES rather than ever dropping the item. |
 | 36 | `ReadAilments` | net_id | the active ailments on the entity with `net_id` (your own from `SelfStatus`, an enemy's from `ReadEntities`) as a **bitmask**: `1 Ignite` (fire DoT), `2 Shock` (takes more damage), `4 Chill` (slowed). Returns 0 if the entity is unknown or unafflicted. Inflict ailments by hitting with the matching element while you have that element's chance (`ignite_chance` / `shock_chance` / `chill_chance`) (or on a crit, unless your gear says crits cannot cause ailments); the magnitude scales with the hit. |
 | 37 | UseChart | `inv_idx` | Spend a chart from the bag at Saltmere's Charting Table and sail: opens a charted instance at area level 12 + tier (tier = base + ilvl over 12), juiced by the chart's rolled quantity/rarity affixes. Returns 0 sailing, -1 bad index / not a chart, -2 not at a table, -3 Act 1 incomplete, -4 not a character, -5 a departure is already staged this tick. The chart is consumed ONLY on success; tiers cap at 16. |
+| 38 | Sell | `inv_idx` | Sell a bag item at the town VENDOR cell (SelfStatus +76/+80; reach 3 cells). Pays ONE obol keyed to what the item was: normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and charts sell as transmutes. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
+| 39 | Stash | `op, sel` | Move an item between bag and chest at the town STASH cell (+84/+88; reach 3). op 0 deposits `inventory[sel]` (chest cap 40, flat — no grid); op 1 withdraws `stash[sel]` first-fit into the bag. The chest is yours forever — it rides transfers and snapshots. Returns 1, or -1 bad selection, -2 not at the stash, -3 no room, -4 not a character. |
+| 40 | ReadStash | `max, out` | Read the chest like ReadInventory (same 20-byte record); x/y are −1 (a chest has no grid). Returns the record count, or -4. |
 
 ### Skill-use return codes
 
@@ -338,7 +341,7 @@ can never hit your own faction.
 
 ### Struct layouts
 
-**SelfStatus** (19 words, 76 bytes):
+**SelfStatus** (23 words, 92 bytes):
 
 | Offset | Field |
 |---|---|
@@ -355,6 +358,8 @@ can never hit your own faction.
 | +64 | zone num (the zone's stable tagged content id — an OPAQUE handle: zones are private, so there are no `ZONE_*` consts to compare against. Watch it for CHANGES — when it differs from the value you saw last tick you've transferred maps — and branch your strategy on that, not on a hardcoded value) |
 | +68 | the zone's Charting Table x (Q16.16), or −1 when the zone has none |
 | +72 | the zone's Charting Table y (Q16.16), or −1 — walk here and `UseChart` (37) once Act 1 is complete |
+| +76 / +80 | the town VENDOR cell x/y (Q16.16), or −1 — walk here and `Sell` (38) |
+| +84 / +88 | the town STASH cell x/y (Q16.16), or −1 — walk here and `Stash` (39) / `ReadStash` (40) |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**

@@ -15,6 +15,9 @@ ZoneDef(
     // The Charting Table (#136 T4): where charts become voyages, once the
     // Mother falls. On the plaza, by the south road.
     chart_table: Some((26, 46)),
+    // The town works (#148 A5): sell at the vendor, keep at the chest.
+    vendor: Some((22, 46)),
+    stash: Some((30, 46)),
     brain: Some("saltmere"),
     lines: [
         (id: "welcome",  text: "Saltmere. Fires that stay lit. Faces that stay alive."),

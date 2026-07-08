@@ -88,7 +88,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// gained `energy_shield` — serialized; a v17 snapshot would mis-decode. Refuse it.
 /// v19 (#148 A4): `ChartTicket` gained the rule fields (`fury_bp`/`clock`/`boss`) and `World`
 /// gained `monster_fury_bp`/`voyage_ends_at` — serialized; a v18 snapshot would mis-decode.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 19;
+/// v20 (#148 A5): `CharacterState` gained `stash: Vec<BagItem>` — serialized; a v19
+/// snapshot would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 20;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -280,6 +282,7 @@ mod tests {
                 allocated: Vec::new(),
                 build_plan: Vec::new(),
                 currency: Vec::new(),
+                stash: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 explored: Vec::new(),
                 story_acts: 0,
@@ -498,7 +501,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 19);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 20);
     }
 
     #[test]

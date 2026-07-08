@@ -117,6 +117,21 @@ pub const SYS_UNEQUIP: i32 = 35;
 /// read self/target ailment state (and is the read #109's vs-ailing condition uses).
 pub const SYS_READ_AILMENTS: i32 = 36;
 pub const SYS_USE_CHART: i32 = 37;
+/// Sell a bag item at the town vendor (#148 A5): pops inv_sel; pays an obol
+/// by what the item was (normal→transmute, magic→alter, rare→alchemy,
+/// unique→regal, gems/charts→transmute). Returns the obol's NUM, or
+/// -1 bad selection / -2 not at a vendor / -4 no character.
+pub const SYS_SELL: i32 = 38;
+/// Move an item between bag and stash at the town stash chest (#148 A5):
+/// pops op (0 = deposit inv_sel, 1 = withdraw stash_sel), then sel.
+/// Returns 1, or -1 bad selection / -2 not at the stash / -3 no room
+/// (bag on withdraw, stash cap on deposit) / -4 no character.
+pub const SYS_STASH: i32 = 39;
+/// Read the stash like ReadInventory (#148 A5): pops max, out; writes
+/// INVENTORY_RECORD_SIZE records (x/y are -1 — a stash has no grid).
+/// Readable from ANYWHERE, like ReadInventory (only Stash needs the
+/// chest's cell). Returns the record count, or -4 no character.
+pub const SYS_READ_STASH: i32 = 40;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -160,7 +175,7 @@ pub mod abi {
     /// brain drains from its inbox.
     pub const EVENT_RECORD_SIZE: u16 = 16;
 
-    /// `SelfStatus` field byte-offsets into the out buffer (17 words). The order
+    /// `SelfStatus` field byte-offsets into the out buffer (23 words). The order
     /// is the host's write order in `bots.rs`; bots read each field at its offset.
     pub const SS_X: u16 = 0;
     pub const SS_Y: u16 = 4;
@@ -183,8 +198,16 @@ pub mod abi {
     /// none (#136 T6) — how a brain finds where charts are spent.
     pub const SS_TABLE_X: u16 = 68;
     pub const SS_TABLE_Y: u16 = 72;
+    /// The zone's VENDOR cell (#148 A5) — where items become obols; -1/-1
+    /// when the zone has none. Towns keep one.
+    pub const SS_VENDOR_X: u16 = 76;
+    pub const SS_VENDOR_Y: u16 = 80;
+    /// The zone's STASH cell (#148 A5) — the character's persistent chest;
+    /// -1/-1 when the zone has none.
+    pub const SS_STASH_X: u16 = 84;
+    pub const SS_STASH_Y: u16 = 88;
     /// Total `SelfStatus` block size (bytes) — the buffer a bot must reserve.
-    pub const SELF_STATUS_SIZE: u16 = 76;
+    pub const SELF_STATUS_SIZE: u16 = 92;
 }
 
 /// Instruction set. Stack machine, RPN: operands are pushed, opcodes pop them.
@@ -776,6 +799,10 @@ mod tests {
             SS_ZONE,
             SS_TABLE_X,
             SS_TABLE_Y,
+            SS_VENDOR_X,
+            SS_VENDOR_Y,
+            SS_STASH_X,
+            SS_STASH_Y,
         ];
         for (i, off) in offsets.iter().enumerate() {
             assert_eq!(*off, (i as u16) * 4, "SelfStatus field {i} offset");

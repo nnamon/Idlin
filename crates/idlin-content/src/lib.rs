@@ -1302,6 +1302,13 @@ pub struct ZoneDef {
     /// game for 1.0 — Saltmere's. None everywhere else.
     #[serde(default)]
     pub chart_table: Option<(i32, i32)>,
+    /// The town's VENDOR cell (#148 A5) — where a character sells items
+    /// for obols. Loader-validated walkable + reachable, like the table.
+    #[serde(default)]
+    pub vendor: Option<(i32, i32)>,
+    /// The town's STASH cell (#148 A5) — the persistent chest.
+    #[serde(default)]
+    pub stash: Option<(i32, i32)>,
     /// The zone's BRAIN: a bot program (content/brains) that runs once per
     /// tick with zone-scoped syscalls — scripted encounters, narration,
     /// drops. The dungeon master is a bot too.
@@ -1834,6 +1841,26 @@ impl ContentDb {
                 if !walkable_at(tx, ty) || !reachable(tx, ty) {
                     return Err(bad(format!(
                         "chart_table {tx}x{ty} must be walkable and reachable from spawn"
+                    )));
+                }
+            }
+            if let Some((tx, ty)) = zone.vendor {
+                if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
+                    return Err(bad(format!("vendor {tx}x{ty} is off the map")));
+                }
+                if !walkable_at(tx, ty) || !reachable(tx, ty) {
+                    return Err(bad(format!(
+                        "vendor {tx}x{ty} must be walkable and reachable from spawn"
+                    )));
+                }
+            }
+            if let Some((tx, ty)) = zone.stash {
+                if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
+                    return Err(bad(format!("stash {tx}x{ty} is off the map")));
+                }
+                if !walkable_at(tx, ty) || !reachable(tx, ty) {
+                    return Err(bad(format!(
+                        "stash {tx}x{ty} must be walkable and reachable from spawn"
                     )));
                 }
             }

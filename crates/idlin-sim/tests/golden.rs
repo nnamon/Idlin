@@ -10,6 +10,13 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for #148 A5 (vendors + stash): content_hash (vendor/stash
+/// cells on both towns) + the templates grew the sell loop (program bytes
+/// ride the world fingerprint) + CharacterState serializes a stash. The
+/// shore replay's BEHAVIOR is unchanged — no vendor exists there.
+/// (Re-pinned once more in-review: the critic proved the stash was
+/// MISSING from state_hash — the fold's addition moves the digest.)
+/// (Prior: 0x908B — A4.)
 /// Re-pinned for #148 A4 (rule charts): content_hash (three rule affixes,
 /// the chart pool, the Unwritten + its signature) + a fingerprint widening
 /// (World serializes/hashes monster_fury_bp and voyage_ends_at). The shore
@@ -184,7 +191,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x908B_F8C9_AD0B_09A7;
+const GOLDEN_HASH: u64 = 0x8F2A_C2F9_E6D1_4BF4;
 
 #[test]
 fn golden_replay() {

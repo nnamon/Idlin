@@ -45,9 +45,10 @@ use idlin_vm::{
     SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
     SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_AILMENTS,
     SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY,
-    SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO,
-    SYS_SOCKET_GEM, SYS_UNEQUIP, SYS_USE_CHART, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK,
-    SYS_USE_SKILL, SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
+    SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_READ_STASH, SYS_SAY, SYS_SELF_STATUS, SYS_SELL,
+    SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_STASH, SYS_UNEQUIP, SYS_USE_CHART,
+    SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
@@ -306,6 +307,16 @@ impl World {
                 });
                 bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_X), tx);
                 bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_Y), ty);
+                let cellq = |c: Option<(i32, i32)>| match c {
+                    Some((x, y)) => (x * 65536 + 32768, y * 65536 + 32768),
+                    None => (-1, -1),
+                };
+                let (vx, vy) = cellq(self.vendor);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_VENDOR_X), vx);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_VENDOR_Y), vy);
+                let (sx2, sy2) = cellq(self.stash_cell);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_STASH_X), sx2);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_STASH_Y), sy2);
                 0
             }
             SYS_READ_ENTITIES => {
@@ -501,6 +512,55 @@ impl World {
             SYS_USE_CHART => {
                 let inv_sel = bot.vm.pop();
                 self.use_chart(slot, inv_sel)
+            }
+            SYS_SELL => {
+                let inv_sel = bot.vm.pop();
+                self.sell(slot, inv_sel, events)
+            }
+            SYS_STASH => {
+                let sel = bot.vm.pop();
+                let op = bot.vm.pop();
+                self.stash_op(slot, op, sel)
+            }
+            SYS_READ_STASH => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_INVENTORY_RESULTS as i32) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -4;
+                };
+                let Some(ch) = &e.character else { return -4 };
+                // Same record as ReadInventory; x/y are -1 (no grid).
+                let records: Vec<[i32; 5]> = ch
+                    .stash
+                    .iter()
+                    .take(max)
+                    .map(|item| match item {
+                        crate::entity::BagItem::Gear(it) => [
+                            self.content_num(
+                                idlin_content::ids::Category::Item,
+                                it.base_idx as usize,
+                            ),
+                            it.rarity as i32,
+                            it.item_level as i32,
+                            -1,
+                            -1,
+                        ],
+                        crate::entity::BagItem::Gem(g) => [
+                            self.content_num(idlin_content::ids::Category::Gem, g.gem_idx as usize),
+                            crate::entity::Rarity::Normal as i32,
+                            g.level as i32,
+                            -1,
+                            -1,
+                        ],
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * INVENTORY_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
             }
             SYS_USE_CURRENCY => {
                 let currency_sel = bot.vm.pop();

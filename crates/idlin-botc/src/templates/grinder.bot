@@ -382,6 +382,35 @@ fn main() {
         if ((mem[SELF + SS_FLAGS] & 4) != 0) {
             var chart = find_chart();
             if (chart >= 0) {
+                // JUNK BECOMES OBOLS first (#148 A5): everything upkeep
+                // left loose is a loser by definition — charts and build
+                // gems excepted (the shed rule, monetized). One sale per
+                // tick at the vendor, then the table.
+                var vx = mem[SELF + SS_VENDOR_X];
+                if (vx >= 0) {
+                    var sn = read_inventory(INV, 60);
+                    var si = 0;
+                    var junk = -1;
+                    while (si < sn) {
+                        var srec = INV + si * INVENTORY_RECORD_SIZE;
+                        var snum = mem[srec];
+                        if (snum != ITEM_SALT_STAINED_CHART) {
+                            if (item_slot(snum) >= 0) { junk = si; }
+                        }
+                        si = si + 1;
+                    }
+                    if (junk >= 0) {
+                        // Sell only on the tick upkeep just ran (== 9):
+                        // equip_best has always seen a fresh drop before
+                        // the vendor can — a returned WINNER is worn, not
+                        // sold.
+                        if (upkeep_in == 9) {
+                            if (sell(junk) > 0) { return; }
+                        }
+                        move_to(vx, mem[SELF + SS_VENDOR_Y]);
+                        return;
+                    }
+                }
                 var tbx = mem[SELF + SS_TABLE_X];
                 if (tbx >= 0) {
                     if (use_chart(chart) == 0) { return; }

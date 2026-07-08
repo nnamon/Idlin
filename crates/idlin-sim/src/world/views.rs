@@ -861,6 +861,23 @@ impl World {
                 for count in &ch.currency {
                     h.write_u64(*count);
                 }
+                // The chest is replay-relevant (#148 A5 review): ReadStash
+                // steers bots, so a corrupted stash MUST diverge the hash.
+                h.write_u64(ch.stash.len() as u64);
+                for si in &ch.stash {
+                    match si {
+                        crate::entity::BagItem::Gear(it) => {
+                            h.write_u8(0);
+                            fold_item(&mut h, it);
+                        }
+                        crate::entity::BagItem::Gem(g) => {
+                            h.write_u8(1);
+                            h.write_u32(g.gem_idx);
+                            h.write_u32(g.level);
+                            h.write_i64(g.xp);
+                        }
+                    }
+                }
                 for (node, sg) in &ch.sockets {
                     h.write_u32(*node);
                     h.write_u32(sg.gem.gem_idx);

@@ -11,6 +11,8 @@ ZoneDef(
     spawn_radius_u: 3,
     camp_radius_u: 60,
     chart_table: Some((24, 15)),
+    vendor: Some((16, 15)),
+    stash: Some((28, 18)),
     brain: Some("lanternfall"),
     lines: [
         (id: "welcome", text: "Lanternfall. Air that stays air. Breathe while it's cheap."),
