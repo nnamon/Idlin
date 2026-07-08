@@ -40,6 +40,25 @@ the sport. Monster behavior is bot code too, shipped as content.
   enemies body-block.
 - **The broadcast view**: Three.js spectator client with snapshot/delta
   replication, an auto-director camera, event ticker, and idler leaderboard.
+- **Act 1 — the Salt Road**: a five-zone campaign (the tutorial shore,
+  Saltmere town, the Drowned Coast, the Saltworks under Brinelord Karesh,
+  and the Tidewarden's Hollow) ending at the Mother of the Drowned. Act
+  bosses run phase kits through the same per-strike stat machinery as
+  player gear, and each can pay a **signature unique** — a named item with
+  a fixed mod set.
+- **The chart endgame**: breaking the Mother unseals Saltmere's Charting
+  Table. Charts drop as items, roll affixes like any gear (quantity and
+  rarity juice), and open private leveled instances of charted waters —
+  deeper charts drop in deeper waters.
+- **The stock brain plays the whole game**: the default grinder template
+  routes the campaign by zone ids, gears itself off the ground, manages
+  its bag, breaks every boss, and pivots to chart farming — a fresh
+  level-1 idler reaches the endgame unaided. Three seeded full-game runs
+  gate every commit (sail the first voyage within bounds, without
+  death-spam).
+- **Fog of war**: per-idler views reveal only what that character has
+  seen — the wire itself is filtered, so route precomputation from
+  network captures is off the table.
 
 ## Run it
 
