@@ -403,6 +403,54 @@ impl World {
         )
     }
 
+    /// TEST SEAM (#148 A1): wear a PLAIN ilvl-6 helm and bag a MAGIC ilvl-5
+    /// one (an of_warding roll) — the fixture for the template's
+    /// rarity-first upgrade rule.
+    pub fn test_wear_and_bag_helms(&mut self, net_id: u32, helm_idx: u32, affix_idx: u32) {
+        let Some(slot) = self.zone.slot_of(net_id) else {
+            return;
+        };
+        let Some(ch) = self.zone.get_mut(slot).and_then(|e| e.character.as_mut()) else {
+            return;
+        };
+        // Past the base's req_level so the swap is legal for the template.
+        ch.level = ch.level.max(5);
+        ch.equipment[idlin_content::GearSlot::Helm.idx()] = Some(crate::entity::Item {
+            base_idx: helm_idx,
+            rarity: crate::entity::Rarity::Normal,
+            item_level: 6,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+            unique_idx: None,
+        });
+        ch.inventory.push(crate::entity::PlacedItem {
+            item: crate::entity::BagItem::Gear(crate::entity::Item {
+                base_idx: helm_idx,
+                rarity: crate::entity::Rarity::Magic,
+                item_level: 5,
+                affixes: vec![crate::entity::RolledAffix {
+                    affix_idx,
+                    values: vec![1100],
+                    tier: 0,
+                }],
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            }),
+            x: 6,
+            y: 0,
+        });
+    }
+
+    /// TEST SEAM (#148 A1): the worn helm's (rarity, item_level), if any.
+    pub fn test_worn_helm(&self, net_id: u32) -> Option<(u8, u32)> {
+        let e = self.zone.get_net(net_id)?;
+        e.character.as_ref()?.equipment[idlin_content::GearSlot::Helm.idx()]
+            .as_ref()
+            .map(|it| (it.rarity as u8, it.item_level))
+    }
+
     /// TEST HARNESS ONLY: teleport an entity (whole units).
     pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {
         if let Some(slot) = self.zone.slot_of(net_id)

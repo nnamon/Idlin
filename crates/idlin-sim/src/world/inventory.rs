@@ -757,10 +757,17 @@ impl World {
                     + sheet.value(Stat::Dexterity, 0)
                     + sheet.value(Stat::Intelligence, 0))
                     * 80
-                + sheet.value(Stat::ResistFire, 0) / 10
-                + sheet.value(Stat::ResistCold, 0) / 10
-                + sheet.value(Stat::ResistLightning, 0) / 10
-                + sheet.value(Stat::ResistChaos, 0) / 10
+                // Resists at 1% ≈ 2.5 flat life (#148 A1): the old /10 weight
+                // made a 20% roll worth 200 vs 7000 for a mid life roll.
+                // FORWARD-LOOKING: no shipped bot calls equip_best today (the
+                // stock template's own rarity-first rule is the live fix for
+                // the zero-resist 1.0 runs) — this corrects the heuristic for
+                // the consumers A2's archetypes will bring.
+                // 100bp (1%) * 5 = 500 = 2.5 life-equivalents.
+                + sheet.value(Stat::ResistFire, 0) * 5
+                + sheet.value(Stat::ResistCold, 0) * 5
+                + sheet.value(Stat::ResistLightning, 0) * 5
+                + sheet.value(Stat::ResistChaos, 0) * 5
                 + (sheet.value(Stat::MoveSpeed, 10000) - 10000)
         }
     }

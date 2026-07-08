@@ -10,5 +10,7 @@ AffixDef(
         (ilvl: 1, name: "of the Depths", weight: 100, rolls: [(min: 500, max: 900)]),
         (ilvl: 3, name: "of the Abyss", weight: 45, rolls: [(min: 901, max: 1500)]),
         (ilvl: 6, name: "of the Drowned King", weight: 15, rolls: [(min: 1501, max: 2400)]),
+        (ilvl: 10, name: "of the Icebound", weight: 20, rolls: [(min: 2401, max: 3000)]),
+        (ilvl: 14, name: "of the Glacier", weight: 8, rolls: [(min: 3100, max: 3800)]),
     ],
 )

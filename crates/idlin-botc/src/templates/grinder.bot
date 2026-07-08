@@ -138,8 +138,16 @@ fn upkeep_gear() {
             }
             if (ok == 1) {
                 var er = EQ + s * EQUIPMENT_RECORD_SIZE;
-                // Empty slot (worn base_num -1), or a higher item level, wins.
-                if (mem[er + 4] < 0 || mem[rec + 8] > mem[er + 12]) {
+                // Empty slot wins outright; else RARITY first, item level
+                // as the tiebreak (#148 A1): the old ilvl-only rule let
+                // plain bases evict affixed gear — the whole 1.0 campaign
+                // sailed at zero resist on every seed because a magic
+                // "of Warding" helm at ilvl 5 lost to a bare ilvl-6 one.
+                var up = 0;
+                if (mem[er + 4] < 0) { up = 1; }
+                if (mem[rec + 4] > mem[er + 8]) { up = 1; }
+                if (mem[rec + 4] == mem[er + 8] && mem[rec + 8] > mem[er + 12]) { up = 1; }
+                if (up == 1) {
                     if (equip(i) == 0) { return; }   // equipped; the bag shifted
                 }
             }

@@ -1681,6 +1681,17 @@
               }
             ],
             "weight": 45
+          },
+          {
+            "ilvl": 10,
+            "name": "of Absolution",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2300
+              }
+            ],
+            "weight": 20
           }
         ],
         "weight": 70
@@ -1865,6 +1876,28 @@
               }
             ],
             "weight": 15
+          },
+          {
+            "ilvl": 10,
+            "name": "of the Stormwall",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2401
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Earthed",
+            "rolls": [
+              {
+                "max": 3800,
+                "min": 3100
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 80
@@ -1915,6 +1948,28 @@
               }
             ],
             "weight": 15
+          },
+          {
+            "ilvl": 10,
+            "name": "of the Icebound",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2401
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Glacier",
+            "rolls": [
+              {
+                "max": 3800,
+                "min": 3100
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 80
@@ -2205,6 +2260,28 @@
               }
             ],
             "weight": 45
+          },
+          {
+            "ilvl": 10,
+            "name": "of the Hearthstone",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2300
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Unburnt",
+            "rolls": [
+              {
+                "max": 3800,
+                "min": 3100
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 80

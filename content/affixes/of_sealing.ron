@@ -9,5 +9,6 @@ AffixDef(
     tiers: [
         (ilvl: 1, name: "of Sealing", weight: 100, rolls: [(min: 500, max: 1200)]),   // 5-12%
         (ilvl: 4, name: "of Purity", weight: 45, rolls: [(min: 1300, max: 2200)]),
+        (ilvl: 10, name: "of Absolution", weight: 20, rolls: [(min: 2300, max: 3000)]),
     ],
 )

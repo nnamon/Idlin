@@ -107,6 +107,53 @@ fn bots_grind_the_shore() {
 }
 
 #[test]
+fn the_grinder_prefers_affixed_gear_over_plain() {
+    // #148 A1: the stock template upgrades by RARITY first, item level as
+    // the tiebreak — the old ilvl-only rule let plain bases evict affixed
+    // gear, and every 1.0 seed sailed at zero resist. A worn plain ilvl-6
+    // helm must lose to a bagged magic ilvl-5 helm. Mutation: revert the
+    // rule to ilvl-only → the magic helm stays in the bag and this fails.
+    let content = content();
+    let mut w = World::new_for_zone(0xA1F1, &content, "test_range");
+    let program = idlin_botc::template_grinder().expect("template assembles");
+    w.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Chooser".into(),
+            program,
+        }],
+        arrivals: Vec::new(),
+    });
+    let net = w
+        .views()
+        .iter()
+        .find(|v| v.kind == 1)
+        .map(|v| v.id)
+        .unwrap();
+    let helm = content
+        .items
+        .iter()
+        .position(|i| i.id == "brine_helm")
+        .unwrap() as u32;
+    let warding = content
+        .affixes
+        .iter()
+        .position(|a| a.id == "of_warding")
+        .unwrap() as u32;
+    w.test_wear_and_bag_helms(net, helm, warding);
+    // Give the template a few upkeep cadences.
+    let empty = TickInputs::default();
+    for _ in 0..40 {
+        w.tick(&empty);
+    }
+    let worn = w.test_worn_helm(net).expect("a helm is worn");
+    assert_eq!(
+        worn,
+        (1, 5),
+        "the magic ilvl-5 helm must displace the plain ilvl-6 one; got rarity/ilvl {worn:?}"
+    );
+}
+
+#[test]
 fn the_act_1_zones_stand_up() {
     // #136 T3: both new zones boot from shipped content — packs spawn, the
     // bosses rise at Unique rarity with their authored names, and the exit
