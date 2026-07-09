@@ -482,6 +482,10 @@ pub struct ItemDef {
     pub evasion: i64,
     #[serde(default)]
     pub energy_shield: i64,
+    /// IMPLICIT increased spell damage (bp) — the wand ladder's reason to
+    /// exist for the archetype that ignores weapon damage (quality pass).
+    #[serde(default)]
+    pub spell_damage_bp: i64,
     /// Relative drop weight.
     #[serde(default = "default_weight")]
     pub weight: u32,

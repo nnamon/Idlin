@@ -347,9 +347,18 @@ impl World {
                         && self.zone.camp_radius.raw() > 0
                         && self.zone.get(slot).is_some_and(|q| q.monster.is_some())
                         && e.pos.dist(self.zone.spawn) < self.zone.camp_radius;
+                    // Respawn grace: a freshly respawned entity is not a
+                    // target until the shield lapses or they throw a hit.
+                    let graced = e
+                        .combat
+                        .as_ref()
+                        .is_some_and(|c| c.grace_until > self.tick_count());
                     let visible = match filter {
                         FILTER_ENEMIES => {
-                            my_faction.is_enemy_of(e.faction()) && e.alive() && !sanctified
+                            my_faction.is_enemy_of(e.faction())
+                                && e.alive()
+                                && !sanctified
+                                && !graced
                         }
                         FILTER_CHARACTERS => e.character.is_some() && e.alive(),
                         FILTER_LOOT => e.loot.as_ref().is_some_and(|l| l.owner == my_net),

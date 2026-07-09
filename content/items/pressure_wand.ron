@@ -14,6 +14,9 @@ ItemDef(
     range_cu: 900,
     use_ticks: 9,
     projectile: true,
+    // The caster's gear curve (quality pass): spells ignore weapon damage,
+    // so the wand speaks through its IMPLICIT instead.
+    spell_damage_bp: 10000,
     weight: 55,
     affix_pools: ["weapon"],
 )

@@ -59,6 +59,8 @@ var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
 var shed_cd;               // ticks to ignore ground loot after shedding
 var last_xp;               // XP-drought: earnings mark real progress
 var drought;               // ticks fighting without earning
+var was_dead;              // the dead-bit's edge detector
+var shy;                   // post-respawn: don't re-engage the killers
 
 // Fire one skill slot at the target, honoring its declared targeting
 // mode (ReadSkills record +28 = target_mode; ready checked by the
@@ -297,7 +299,19 @@ fn route_dest() {
 
 fn main() {
     self_status(SELF);
-    if (mem[SELF + SS_FLAGS] & 1) { return; }        // dead: wait for respawn
+    if (mem[SELF + SS_FLAGS] & 1) { was_dead = 1; return; }        // dead: wait for respawn
+    // DEATH-SHYNESS (post-playtest quality pass): the first thing a
+    // respawner used to do was charge its own killers — the pack that
+    // chased it to the spawn is still there, and the loop was 700+
+    // deaths on surveyed seeds. For ~15s after a respawn the brain
+    // will not ENGAGE (loot, travel, and wandering proceed; the
+    // killers leash home meanwhile; the engine's respawn grace keeps
+    // them from re-locking us first).
+    if (was_dead == 1) {
+        was_dead = 0;
+        shy = 150;
+    }
+    if (shy > 0) { shy = shy - 1; }
 
     // Crossed into a new zone: fresh intent. Grind what it feeds us;
     // departures must be EARNED by boredom again.
@@ -467,6 +481,9 @@ fn main() {
     // arena wall taught us this). Sight ≈ path on tile maps; an enemy
     // without line_of_sight is not our fight yet.
     var nen = read_entities(ENTS, 8, F_ENEMY);
+    // Death-shy: no engagement while the timer runs (the world's other
+    // verbs — loot, travel, wander — all still fire below).
+    if (shy > 0) { nen = 0; }
     var target = -1;
     var tx = 0;
     var ty = 0;

@@ -99,9 +99,13 @@ pub enum Stat {
     /// CHART RULE (#148 A4): nonzero = the voyage's far end holds a TIER
     /// BOSS. Rolls only on deep charts.
     SovereignsMark,
+    /// Basis points of increased SPELL damage (quality pass): the caster's
+    /// gear curve. Spells never read weapon damage — a wand's implicit
+    /// spell-damage grant is how the wand ladder finally feeds the kit.
+    SpellDamage,
 }
 
-pub const STAT_COUNT: usize = 43;
+pub const STAT_COUNT: usize = 44;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -148,6 +152,7 @@ impl Stat {
         Stat::MonsterFury,
         Stat::VoyageClock,
         Stat::SovereignsMark,
+        Stat::SpellDamage,
     ];
 
     pub fn idx(self) -> usize {
@@ -407,6 +412,12 @@ impl Stat {
                 "Voyage Clock",
                 "Chart rule: the voyage ends after this many ticks — beat the clock.",
                 AddedUnit::Flat,
+            ),
+            Stat::SpellDamage => (
+                "spell_damage",
+                "Spell Damage",
+                "Increased spell damage (basis points) — wand implicits and caster gear.",
+                AddedUnit::Factor,
             ),
             Stat::SovereignsMark => (
                 "sovereigns_mark",

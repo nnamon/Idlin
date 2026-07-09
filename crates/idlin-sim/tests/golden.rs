@@ -10,6 +10,15 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for the QUALITY PASS (post-playtest): story zones are
+/// PRIVATE instances (towns stay shared); respawn grace exists (a
+/// respawner is untargetable ~5s or until they strike — spawn camping
+/// died); the INT tree grants ES; wands carry increased-spell-damage
+/// IMPLICITS (spells never read weapon damage — the caster's ladder fed
+/// it nothing, measured 200-600 deaths per Act 2 run); the Undertow's
+/// throat widened + its trash went native; act-2 respawns retuned for
+/// private zones; choir remnants stopped blanket-resisting the caster's
+/// kit. The caster seed survey went 2/5 completing -> 5/5.
 /// Re-pinned for #148 A7 (the broadcast): another fingerprint widening —
 /// World hashes voyage_marks (the tally's arrival stamps; empty outside
 /// chart instances) and SimEvent::MonsterKilled carries rarity (events
@@ -200,7 +209,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x81B8_1FAA_8365_18D4;
+const GOLDEN_HASH: u64 = 0xB129_9B97_B03B_1F45;
 
 #[test]
 fn golden_replay() {

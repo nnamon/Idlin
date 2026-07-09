@@ -61,6 +61,9 @@ var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
 var shed_cd;               // ticks to ignore ground loot after shedding
 var last_xp;               // XP-drought: earnings mark real progress
 var drought;               // ticks fighting without earning
+var was_dead;              // the dead-bit's edge detector
+var shy;                   // post-respawn: don't re-engage the killers
+var withdrawing;           // hit-and-run: breaking off until life recovers
 var close_in;              // ticks of forced gap-closing
 var strafed;               // the drought already bought one strafe
 
@@ -305,7 +308,19 @@ fn route_dest() {
 
 fn main() {
     self_status(SELF);
-    if (mem[SELF + SS_FLAGS] & 1) { return; }        // dead: wait for respawn
+    if (mem[SELF + SS_FLAGS] & 1) { was_dead = 1; return; }        // dead: wait for respawn
+    // DEATH-SHYNESS (post-playtest quality pass): the first thing a
+    // respawner used to do was charge its own killers — the pack that
+    // chased it to the spawn is still there, and the loop was 700+
+    // deaths on surveyed seeds. For ~15s after a respawn the brain
+    // will not ENGAGE (loot, travel, and wandering proceed; the
+    // killers leash home meanwhile; the engine's respawn grace keeps
+    // them from re-locking us first).
+    if (was_dead == 1) {
+        was_dead = 0;
+        shy = 150;
+    }
+    if (shy > 0) { shy = shy - 1; }
 
     // Crossed into a new zone: fresh intent. Grind what it feeds us;
     // departures must be EARNED by boredom again.
@@ -330,6 +345,29 @@ fn main() {
     if (mem[SELF + SS_LIFE] * 5 < mem[SELF + SS_LIFE_MAX] * 2) {
         use_flask();
     }
+    // WITHDRAW (post-playtest quality pass): the wand's identity is
+    // hit-and-run, not stand-and-die — below 30% life the caster BREAKS
+    // OFF (drops the target, retreats toward the zone spawn) and only
+    // re-engages above 70%. The grinder tanks, the bow out-ranges; this
+    // was the caster's missing survival verb — it death-looped through
+    // Act 2 casting into packs it could not out-trade.
+    if (withdrawing == 1) {
+        // Re-engage at HALF, not 70 — the first cut retreated toward the
+        // zone spawn until nearly full, which walked the caster backward
+        // across whole zones (it oscillated at the Undertow's mouth for
+        // 100k ticks and never met the Sovereign). A break-off is a
+        // breath, not a pilgrimage.
+        if (mem[SELF + SS_LIFE] * 10 >= mem[SELF + SS_LIFE_MAX] * 5) {
+            withdrawing = 0;
+        }
+    }
+    if (mem[SELF + SS_LIFE] * 10 < mem[SELF + SS_LIFE_MAX] * 3) {
+        withdrawing = 1;
+    }
+    // (The withdraw MOVE lives in the fight section, where the enemy's
+    // position is known — kiting means away from THEM, not toward a fixed
+    // point through their arms. The first cut ran for the zone spawn and
+    // died commuting.)
 
     // Loot: claim what's underfoot now; remember what's distant. If
     // nothing needs fighting we WALK to it — drops despawn, and some
@@ -480,6 +518,9 @@ fn main() {
     // arena wall taught us this). Sight ≈ path on tile maps; an enemy
     // without line_of_sight is not our fight yet.
     var nen = read_entities(ENTS, 8, F_ENEMY);
+    // Death-shy: no engagement while the timer runs (the world's other
+    // verbs — loot, travel, wander — all still fire below).
+    if (shy > 0) { nen = 0; }
     var target = -1;
     var tx = 0;
     var ty = 0;
@@ -634,6 +675,19 @@ fn main() {
             // SIDEWAYS at range — walking into the arms of what out-trades
             // us was 123 hollow deaths on one run.
             move_to(tx + (mem[SELF + SS_Y] - ty), ty + (mem[SELF] - tx));
+            return;
+        }
+        // WITHDRAW = KITE (post-playtest quality pass): below the break
+        // threshold the caster keeps CASTING but backpedals — mirror the
+        // vector to the target, so the pathfinding engine walks it away
+        // from the fight while the wand keeps talking. The wand's whole
+        // identity is hit-and-run; standing still was 200-500 deaths per
+        // Act 2 run on the surveyed seeds.
+        if (withdrawing == 1) {
+            move_to(
+                mem[SELF] + (mem[SELF] - tx),
+                mem[SELF + SS_Y] + (mem[SELF + SS_Y] - ty)
+            );
             return;
         }
         var hdx = tx - mem[SELF];

@@ -614,6 +614,10 @@ impl World {
             None
         };
         let char_damage = eff.as_ref().map_or(c.damage, |o| o.damage);
+        let spell_bp = eff
+            .as_ref()
+            .map_or(c.spell_damage_bp, |o| o.spell_damage_bp)
+            .max(0);
         let (accuracy, weapon_range) = eff
             .as_ref()
             .map_or((c.accuracy, c.range), |o| (o.accuracy, o.range));
@@ -654,6 +658,12 @@ impl World {
                 char_damage[i] * gem_def.coeff_bp / 10000
             };
             damage[i] = (weapon_part + added[i] + mods.added[i]).max(0);
+            // The caster's gear curve (quality pass): spells scale by the
+            // sheet's increased-spell-damage factor — the wand implicit's
+            // whole reason to exist. Attacks already scale via char_damage.
+            if is_spell {
+                damage[i] = damage[i] * spell_bp / 10000;
+            }
             damage[i] = damage[i] * mods.more_bp[i] / 10000;
         }
 
@@ -1638,6 +1648,24 @@ impl World {
         dead_monsters: &mut DeadList,
         loot_spawns: &mut LootList,
     ) {
+        // RESPAWN GRACE (post-playtest): a graced target can't be hit —
+        // spawn camping is not a fight — and a graced ATTACKER breaks
+        // their own shield by throwing this strike (acting = fair game).
+        if let Some(aslot) = spec.attacker_slot
+            && let Some(a) = self.zone.get_mut(aslot)
+            && let Some(c) = a.combat.as_mut()
+            && c.grace_until > now
+        {
+            c.grace_until = 0;
+        }
+        if self
+            .zone
+            .get(target_slot)
+            .and_then(|t| t.combat.as_ref())
+            .is_some_and(|c| c.grace_until > now)
+        {
+            return;
+        }
         // CHART RULE (#148 A4): Monster Fury scales EVERY monster-dealt hit
         // at the one place all of them pass — spells, attacks, and dots
         // alike (the first draft folded it into the derive tail, which

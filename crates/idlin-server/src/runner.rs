@@ -144,10 +144,13 @@ fn route_departure(worlds: &[ManagedWorld], source: usize, dest: &str) -> usize 
         .unwrap_or(source)
 }
 
-/// A chart instance is done when nothing lives there and nothing is bound
-/// for it (#136 T4). Never true for booted worlds — only voyages retire.
-fn chart_instance_emptied(mw: &ManagedWorld) -> bool {
-    mw.world.is_chart_instance()
+/// A MINTED instance (chart voyage or private story instance — any world
+/// whose key differs from its zone id) is done when nothing lives there
+/// and nothing is bound for it. Shared boot worlds (towns) never retire.
+/// A retired story instance re-mints DETERMINISTICALLY from its stable
+/// key if the owner walks back in.
+fn minted_instance_emptied(mw: &ManagedWorld) -> bool {
+    (mw.world.is_chart_instance() || mw.key != mw.zone_id)
         && mw.pending.arrivals.is_empty()
         && mw.pending.joins.is_empty()
         && mw.world.views().iter().all(|v| v.kind != 1)
@@ -206,7 +209,7 @@ fn ferry_departures_with_charts(
         mw.pending.arrivals.push(bundle);
         worlds.push(mw);
     }
-    ferry_departures(worlds, plain);
+    ferry_departures(worlds, plain, content, seed);
 }
 
 /// Land each of this tick's departures into exactly one world's arrivals.
@@ -214,10 +217,51 @@ fn ferry_departures_with_charts(
 /// the source world when the destination is unknown or full — so a transfer
 /// can never drop a character ("lost at sea", #63).
 fn ferry_departures(
-    worlds: &mut [ManagedWorld],
+    worlds: &mut Vec<ManagedWorld>,
     departures: Vec<(usize, CharacterBundle, String)>,
+    content: &ContentDb,
+    seed: u64,
 ) {
     for (source, bundle, dest) in departures {
+        // STORY ZONES ARE PRIVATE (post-playtest rework): every character
+        // walks their OWN campaign — "each idler runs their own story" was
+        // already true of the STATE (acts, seals, boss payouts are all
+        // per-character); the SPACE finally agrees. The instance key is
+        // stable ("saltworks#Kargan"), so a retired instance re-mints
+        // deterministically if its owner returns. Towns stay shared —
+        // they're where idlers are supposed to meet.
+        let is_story = content
+            .zone(&dest)
+            .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Story));
+        if is_story {
+            let key = format!("{dest}#{}", bundle.character.name);
+            let target = match worlds.iter().position(|mw| mw.key == key) {
+                Some(i) => i,
+                None => {
+                    let mut h = idlin_content::FNV1A_OFFSET;
+                    for b in key.bytes() {
+                        h ^= b as u64;
+                        h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+                    }
+                    info!("opening private story instance {key}");
+                    worlds.push(ManagedWorld {
+                        key: key.clone(),
+                        zone_id: dest.clone(),
+                        world: World::new_for_zone(seed ^ h, content, &dest),
+                        tiles: resolve_tile_map(content, &dest),
+                        max_players: 1,
+                        pending: TickInputs::default(),
+                    });
+                    worlds.len() - 1
+                }
+            };
+            info!(
+                "ferrying {} to {}",
+                bundle.character.name, worlds[target].key
+            );
+            worlds[target].pending.arrivals.push(bundle);
+            continue;
+        }
         let target = route_departure(worlds, source, &dest);
         if target == source {
             warn!(
@@ -257,9 +301,10 @@ pub fn boot_worlds(
     for def in &content.zones {
         match def.kind {
             idlin_content::ZoneKind::Map => continue,
-            idlin_content::ZoneKind::Town | idlin_content::ZoneKind::Story
-                if def.max_players == 0 =>
-            {
+            // Shared-story worlds are GONE (post-playtest rework): story
+            // zones mint privately on arrival; only towns boot shared.
+            idlin_content::ZoneKind::Story if def.max_players == 0 => continue,
+            idlin_content::ZoneKind::Town if def.max_players == 0 => {
                 worlds.push(ManagedWorld {
                     key: def.id.clone(),
                     zone_id: def.id.clone(),
@@ -372,14 +417,14 @@ pub fn spawn_tick_loop(
                 let stopping = shutdown.load(Ordering::Relaxed);
                 host_tick += 1;
 
-                // Retire emptied chart instances (#136 T4) — at the TOP of
+                // Retire emptied MINTED instances (voyages + private story worlds) —
                 // the tick so no frame index from the previous loop survives
                 // the removal. A voyage ends when its idler leaves or dies
                 // out; the strand folds back into the sea.
                 worlds.retain(|mw| {
-                    let retire = chart_instance_emptied(mw);
+                    let retire = minted_instance_emptied(mw);
                     if retire {
-                        info!("chart instance {} emptied; retired", mw.key);
+                        info!("minted instance {} emptied; retired", mw.key);
                         // The voyage's snapshot goes with it — a retired
                         // instance must never resume as a ghost.
                         if let Some(base) = &snapshot_base {
@@ -896,10 +941,22 @@ pub mod salt_road {
                             _ => {}
                         }
                     }
-                    if let SimEvent::CharacterDied { name, .. } = ev
+                    if let SimEvent::CharacterDied { name, killer, .. } = ev
                         && name == "Pathfinder"
                     {
                         deaths += 1;
+                        if std::env::var("SALT_DEATHLOG").is_ok() {
+                            let pos = mw
+                                .world
+                                .views()
+                                .iter()
+                                .find(|v| v.kind == 1)
+                                .map(|v| (v.x_raw / 65536, v.y_raw / 65536, v.level));
+                            eprintln!(
+                                "DEATH t={host_tick} z={} by={killer} at={pos:?}",
+                                mw.zone_id
+                            );
+                        }
                     }
                     // #148 A5 (review B2): the economy proof must be VENDOR-
                     // specific — kills also pay obols, so a currency-sum
@@ -932,6 +989,23 @@ pub mod salt_road {
                 }
             }
             ferry_departures_with_charts(&mut worlds, departures, &content, seed, host_tick);
+            if host_tick % 20_000 == 0 {
+                for mw in &worlds {
+                    for v in mw.world.views() {
+                        if v.kind == 1 {
+                            eprintln!(
+                                "W t={host_tick} k={} lvl={} x={} y={} life={} dead={}",
+                                mw.key,
+                                v.level,
+                                v.x_raw / 65536,
+                                v.y_raw / 65536,
+                                v.life_pct,
+                                v.dead
+                            );
+                        }
+                    }
+                }
+            }
             if host_tick % 20_000 == 1 {
                 for mw in &worlds {
                     for v in mw.world.views() {
@@ -1119,6 +1193,27 @@ mod tests {
     /// inside the same bands. Mutation: break either build plan, ladder,
     /// or the ranged hold badly enough and the road ends early.
     #[test]
+    #[ignore = "a 5-run balance survey (~7 min) — the tuning tool, not the gate; run with --ignored"]
+    fn survey_caster_seeds() {
+        for seed in [
+            0x0CA5_7E12u64,
+            0x0CA5_7E13,
+            0x0CA5_7E14,
+            0x7AB1_E77E,
+            0x0BB0_77A1,
+        ] {
+            let r = walk_the_salt_road(seed, idlin_botc::template_caster().unwrap());
+            eprintln!(
+                "CSEED {seed:#x}: complete={} sailed={} deaths={} stuck={:?}",
+                r.completed(),
+                r.sailed_at,
+                r.deaths,
+                r.stuck_before()
+            );
+        }
+    }
+
+    #[test]
     fn the_caster_walks_the_salt_road() {
         // RETROSPECTIVE re-band (#148): the debt-era lines were set before
         // the scorer economy landed — measured 69.4k/128 on the nastiest
@@ -1199,16 +1294,16 @@ mod tests {
         assert_eq!(mw.world.zone_level(), 14, "12 + tier 2");
         assert_eq!(mw.pending.arrivals.len(), 1, "the sailor is aboard");
         // Not yet retired: the arrival is pending.
-        assert!(!chart_instance_emptied(&worlds[1]));
+        assert!(!minted_instance_emptied(&worlds[1]));
         // Land the arrival, then walk them home: the instance empties.
         let inputs = std::mem::take(&mut worlds[1].pending);
         worlds[1].world.tick(&inputs);
         assert!(
-            !chart_instance_emptied(&worlds[1]),
+            !minted_instance_emptied(&worlds[1]),
             "occupied voyages persist"
         );
         // A booted world is never "emptied", even with zero characters.
-        assert!(!chart_instance_emptied(&worlds[0]));
+        assert!(!minted_instance_emptied(&worlds[0]));
         // A ticket for a NON-map zone refunds home instead of minting.
         let mut b2 = bundle("Confused");
         b2.chart = Some(idlin_sim::ChartTicket {
@@ -1239,6 +1334,53 @@ mod tests {
     }
 
     #[test]
+    fn story_departures_mint_private_instances() {
+        // The post-playtest rework's core promise: two characters bound for
+        // the same story zone get SEPARATE worlds, keyed by name; the same
+        // character re-entering after a retire gets a DETERMINISTIC
+        // re-mint (stable key → same seed → same world). Mutation: drop
+        // the story-mint branch in ferry_departures → both land in one
+        // shared world and the key asserts fail.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let mut worlds = vec![managed(
+            "saltmere",
+            "saltmere",
+            World::new_for_zone(1, &content, "saltmere"),
+            0,
+        )];
+        ferry_departures(
+            &mut worlds,
+            vec![
+                (0, bundle("Ana"), "coast".to_string()),
+                (0, bundle("Bo"), "coast".to_string()),
+            ],
+            &content,
+            0x5EED,
+        );
+        let keys: Vec<&str> = worlds.iter().map(|w| w.key.as_str()).collect();
+        assert!(keys.contains(&"coast#Ana"), "got {keys:?}");
+        assert!(keys.contains(&"coast#Bo"), "got {keys:?}");
+        let ana = worlds.iter().position(|w| w.key == "coast#Ana").unwrap();
+        assert_eq!(worlds[ana].pending.arrivals.len(), 1);
+        assert_eq!(worlds[ana].pending.arrivals[0].character.name, "Ana");
+        let h1 = worlds[ana].world.state_hash();
+        // Retire and re-mint: the fresh instance replays identically.
+        worlds.remove(ana);
+        ferry_departures(
+            &mut worlds,
+            vec![(0, bundle("Ana"), "coast".to_string())],
+            &content,
+            0x5EED,
+        );
+        let ana2 = worlds.iter().position(|w| w.key == "coast#Ana").unwrap();
+        assert_eq!(
+            worlds[ana2].world.state_hash(),
+            h1,
+            "a re-minted instance is deterministic from its stable key"
+        );
+    }
+
+    #[test]
     fn boot_worlds_runs_every_live_zone() {
         // #136 T3: THE test that was missing when the Saltworks and the
         // Hollow shipped unbootable — every non-map authored zone must be
@@ -1258,21 +1400,27 @@ mod tests {
         ];
         let worlds = boot_worlds(&content, 7, &joins);
         let keys: Vec<&str> = worlds.iter().map(|w| w.key.as_str()).collect();
-        // Shared zones: one world each, keyed by id.
-        for shared in [
-            "saltmere",
+        // Towns boot shared, keyed by id — the only shared spaces left
+        // (post-playtest rework: story zones are PRIVATE, minted on
+        // arrival, so they must NOT boot).
+        for town in ["saltmere", "lanternfall"] {
+            assert!(keys.contains(&town), "{town} must boot; got {keys:?}");
+        }
+        for story in [
             "coast",
             "saltworks",
             "hollow",
             "sunken_stair",
-            "lanternfall",
             "kelp_forest",
             "pressure_court",
             "the_undertow",
         ] {
-            assert!(keys.contains(&shared), "{shared} must boot; got {keys:?}");
+            assert!(
+                !keys.contains(&story),
+                "{story} must NOT boot shared — story zones mint privately; got {keys:?}"
+            );
         }
-        // Solo story zones: one instance per built-in idler.
+        // Solo story zones that receive JOINS: one instance per built-in.
         assert!(keys.contains(&"withered_shore#Kargan"));
         assert!(keys.contains(&"withered_shore#Veles"));
         // Map zones never boot — the proving ground stays off the live set.
@@ -1280,18 +1428,23 @@ mod tests {
             !keys.iter().any(|k| k.contains("test_range")),
             "map zones are chart-instanced, not booted; got {keys:?}"
         );
-        // Every travel destination in the act resolves to a booted world, so
-        // route_departure can never bounce a campaign traveler home.
+        // Every travel destination resolves SOMEWHERE: a booted world
+        // (towns), or a kind the ferry mints on demand (story = private
+        // instances, map = chart voyages). An exit into a zone of no kind
+        // would bounce travelers home forever.
         for def in &content.zones {
             for exit in &def.exits {
                 let dest = &exit.dest;
-                let reachable = worlds.iter().any(|w| w.zone_id == *dest);
-                let is_map = content
-                    .zone(dest)
-                    .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Map));
+                let booted = worlds.iter().any(|w| w.zone_id == *dest);
+                let minted = content.zone(dest).is_some_and(|z| {
+                    matches!(
+                        z.kind,
+                        idlin_content::ZoneKind::Map | idlin_content::ZoneKind::Story
+                    )
+                });
                 assert!(
-                    reachable || is_map,
-                    "exit {}->{dest} leads nowhere live",
+                    booted || minted,
+                    "exit {}->{dest} leads nowhere live or mintable",
                     def.id
                 );
             }
@@ -1405,7 +1558,7 @@ mod tests {
             (0, bundle("Lost"), "atlantis".to_string()),
             (0, bundle("Crowded"), "withered_shore".to_string()),
         ];
-        ferry_departures(&mut worlds, departures);
+        ferry_departures(&mut worlds, departures, &content, 0x5EED);
         assert_eq!(
             worlds[0].pending.arrivals.len(),
             2,
@@ -1429,17 +1582,19 @@ mod tests {
     fn ferry_delivers_to_a_matching_roomy_world() {
         let content = ContentDb::empty();
         let mut worlds = vec![
-            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
             managed(
                 "shore#A",
                 "withered_shore",
                 world_with_chars(0, &content),
                 0,
             ),
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
         ];
         ferry_departures(
             &mut worlds,
-            vec![(0, bundle("Traveler"), "withered_shore".to_string())],
+            vec![(0, bundle("Traveler"), "saltmere".to_string())],
+            &content,
+            0x5EED,
         );
         assert_eq!(
             worlds[1].pending.arrivals.len(),
@@ -1466,7 +1621,7 @@ mod tests {
             (0, bundle("First"), "withered_shore".to_string()),
             (0, bundle("Second"), "withered_shore".to_string()),
         ];
-        ferry_departures(&mut worlds, departures);
+        ferry_departures(&mut worlds, departures, &content, 0x5EED);
         // The cap-1 instance admits exactly one; counting queued arrivals stops
         // the second from seeing the same free slot and overfilling it.
         assert_eq!(
@@ -1503,7 +1658,7 @@ mod tests {
             // shore#A's own occupant, destination unknown → bounces home.
             (1, bundle("Owner"), "atlantis".to_string()),
         ];
-        ferry_departures(&mut worlds, departures);
+        ferry_departures(&mut worlds, departures, &content, 0x5EED);
         let total: usize = worlds.iter().map(|w| w.pending.arrivals.len()).sum();
         assert_eq!(
             total, 2,

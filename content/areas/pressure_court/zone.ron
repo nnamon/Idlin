@@ -15,10 +15,10 @@ ZoneDef(
         (id: "enter", text: "The Court. Session never adjourned; the dead still file motions."),
     ],
     packs: [
-        SpawnPack(monster: "pressure_wight", count: 4, x_u: 21, y_u: 40, radius_u: 3, respawn_ticks: 600, magic_bp: 2600, rare_bp: 950),
-        SpawnPack(monster: "lantern_wisp",   count: 3, x_u: 14, y_u: 32, radius_u: 3, respawn_ticks: 600, magic_bp: 2600, rare_bp: 950),
-        SpawnPack(monster: "pressure_wight", count: 4, x_u: 28, y_u: 24, radius_u: 3, respawn_ticks: 600, magic_bp: 2800, rare_bp: 1050),
-        SpawnPack(monster: "pressure_wight", count: 3, x_u: 21, y_u: 16, radius_u: 3, respawn_ticks: 600, magic_bp: 2800, rare_bp: 1050),
+        SpawnPack(monster: "pressure_wight", count: 4, x_u: 21, y_u: 40, radius_u: 3, respawn_ticks: 900, magic_bp: 2600, rare_bp: 950),
+        SpawnPack(monster: "lantern_wisp",   count: 3, x_u: 14, y_u: 32, radius_u: 3, respawn_ticks: 900, magic_bp: 2600, rare_bp: 950),
+        SpawnPack(monster: "pressure_wight", count: 4, x_u: 28, y_u: 24, radius_u: 3, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1050),
+        SpawnPack(monster: "pressure_wight", count: 3, x_u: 21, y_u: 16, radius_u: 3, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1050),
         // The chamber: the Bailiff and his session.
         SpawnPack(monster: "pressure_wight", count: 2, x_u: 15, y_u: 7, radius_u: 2, respawn_ticks: 1500),
         SpawnPack(monster: "bailiff_morr",   count: 1, x_u: 21, y_u: 6, radius_u: 0, respawn_ticks: 3000),

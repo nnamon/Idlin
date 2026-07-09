@@ -68,6 +68,14 @@ pub struct CombatStats {
     pub mana_max: i64,
     /// Depletes before life; recharges after a delay untouched.
     pub es: i64,
+    /// RESPAWN GRACE (post-playtest quality pass): until this tick the
+    /// entity is invisible to hostile target scans and unhittable — the
+    /// answer to spawn-camping (A* chasers linger where they killed; a
+    /// respawner walked straight back into their arms, 700+ deaths per
+    /// run on surveyed seeds). Acting breaks it early: the first strike
+    /// the graced entity throws clears the shield.
+    #[serde(default)]
+    pub grace_until: u64,
     pub es_max: i64,
     /// Tick at which ES may begin recharging (pushed on any damage taken).
     pub es_recharge_at: u64,
@@ -85,6 +93,10 @@ pub struct CombatStats {
     pub crit_multi: i64,
     /// Factor on spell cast time (10000 = unchanged; higher = faster).
     pub cast_speed: i64,
+    /// Increased spell damage factor (10000 = unchanged) — wand implicits
+    /// and caster gear (quality pass).
+    #[serde(default = "default_spell_bp")]
+    pub spell_damage_bp: i64,
     /// Per-type attack damage: phys, fire, cold, lightning, chaos.
     pub damage: [i64; DMG_COUNT],
     pub accuracy: i64,
@@ -234,6 +246,10 @@ pub struct Intents {
     /// next hop stops being reachable; empty = walk straight.
     #[serde(default)]
     pub path: Vec<FxV2>,
+}
+
+fn default_spell_bp() -> i64 {
+    10000
 }
 
 /// The stash chest's capacity (#148 A5) — flat records, no grid.

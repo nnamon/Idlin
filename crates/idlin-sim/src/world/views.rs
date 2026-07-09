@@ -499,6 +499,12 @@ impl World {
             .collect()
     }
 
+    /// TEST SEAM (quality pass): corrupt the zone index — the resume
+    /// gate's fail-closed path needs a malformed world to probe.
+    pub fn test_set_zone_index(&mut self, idx: u32) {
+        self.zone_idx = idx;
+    }
+
     pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {
         if let Some(slot) = self.zone.slot_of(net_id)
             && let Some(e) = self.zone.get_mut(slot)
@@ -811,12 +817,14 @@ impl World {
                 h.write_i64(c.mana);
                 h.write_i64(c.mana_max);
                 h.write_i64(c.es);
+                h.write_u64(c.grace_until);
                 h.write_i64(c.es_max);
                 h.write_u64(c.es_recharge_at);
                 h.write_i64(c.block);
                 h.write_i64(c.crit_inc);
                 h.write_i64(c.crit_multi);
                 h.write_i64(c.cast_speed);
+                h.write_i64(c.spell_damage_bp);
                 h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
                 h.write_u64(c.last_kill_tick);

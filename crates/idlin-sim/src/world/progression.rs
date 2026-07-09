@@ -111,6 +111,9 @@ struct CharDerived {
     crit_inc: i64,
     crit_multi: i64,
     cast_speed: i64,
+    /// Increased spell damage as a factor (10000 = unchanged) — the wand
+    /// implicit's road into spell hits (quality pass).
+    spell_damage_bp: i64,
     damage: [i64; DMG_COUNT],
     accuracy: i64,
     evasion: i64,
@@ -143,6 +146,7 @@ struct CharDerived {
 /// so the full `CharDerived` stays private to the derive.
 pub(super) struct EffectiveOffense {
     pub damage: [i64; DMG_COUNT],
+    pub spell_damage_bp: i64,
     pub crit_inc: i64,
     pub crit_multi: i64,
     pub accuracy: i64,
@@ -248,6 +252,7 @@ fn derive_from_sheet(
         crit_inc: sheet.value(Stat::CritChance, 10000).max(0),
         crit_multi: (15000 + sheet.value(Stat::CritMulti, 0)).max(10000),
         cast_speed: sheet.value(Stat::CastSpeed, 10000).max(1000),
+        spell_damage_bp: sheet.value(Stat::SpellDamage, 10000).max(0),
         damage,
         accuracy: sheet.value(Stat::Accuracy, base.accuracy),
         evasion: sheet.value(Stat::Evasion, base.evasion),
@@ -559,6 +564,7 @@ impl World {
             c.crit_inc = d.crit_inc;
             c.crit_multi = d.crit_multi;
             c.cast_speed = d.cast_speed;
+            c.spell_damage_bp = d.spell_damage_bp;
             c.damage = d.damage;
             c.accuracy = d.accuracy;
             c.evasion = d.evasion;
@@ -679,6 +685,19 @@ impl World {
             }
             if i == GearSlot::Weapon.idx() {
                 weapon = Some(item);
+                // The wand's IMPLICIT (quality pass): spells never read
+                // weapon damage, so the caster's ladder feeds the sheet
+                // here instead — an increased-spell-damage grant baked
+                // into the base, exactly like an affix would fold.
+                if def.spell_damage_bp > 0 {
+                    let g = Grant {
+                        stat: Stat::SpellDamage,
+                        layer: crate::stats::Layer::Increased,
+                        value: def.spell_damage_bp,
+                        condition: None,
+                    };
+                    has_strike |= fold_and_collect(&mut sheet, &g, &ctx, &mut target_grants);
+                }
             } else {
                 armour_base += def.armour;
                 evasion_base += def.evasion;
@@ -766,6 +785,7 @@ impl World {
             c.crit_inc = d.crit_inc;
             c.crit_multi = d.crit_multi;
             c.cast_speed = d.cast_speed;
+            c.spell_damage_bp = d.spell_damage_bp;
             c.damage = d.damage;
             c.accuracy = d.accuracy;
             c.evasion = d.evasion;
@@ -811,6 +831,7 @@ impl World {
         };
         Some(EffectiveOffense {
             damage: d.damage,
+            spell_damage_bp: d.spell_damage_bp,
             crit_inc: d.crit_inc,
             crit_multi: d.crit_multi,
             accuracy: d.accuracy,

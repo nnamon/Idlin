@@ -187,11 +187,17 @@ async fn main() -> anyhow::Result<()> {
             let Some((world, pendings)) = persist::load_managed(&content, &dir) else {
                 continue;
             };
-            if !world.is_chart_instance() {
+            // Resume ANY minted instance: chart voyages AND private story
+            // worlds (codex round 1 caught the gap — a restart silently
+            // dropped a mid-campaign character; "lost at sea" is the exact
+            // loss class the ferry was built to prevent). The predicate is
+            // extracted + unit-pinned; it fails CLOSED on malformed
+            // zone_idx (codex round 2: the old index expression panicked).
+            let Some(zone_id) = persist::resume_acceptable(&content, &key, &world) else {
+                warn!("scanned snapshot {key}: not a resumable instance; skipped");
                 continue;
-            }
-            let zone_id = content.zones[world.zone_index() as usize].id.clone();
-            info!("resuming voyage {key} at tick {}", world.tick_count());
+            };
+            info!("resuming instance {key} at tick {}", world.tick_count());
             for v in world.views() {
                 if v.kind == 1 {
                     resident.push(v.name);

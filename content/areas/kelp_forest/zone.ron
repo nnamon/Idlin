@@ -11,13 +11,18 @@ ZoneDef(
     spawn_y_u: 56,
     spawn_radius_u: 3,
     camp_radius_u: 6,
+    // Respawns retuned 500 -> 900 (private-instance rework): the fast
+    // timers were tuned for SHARED story zones where idlers competed for
+    // spawns. Zones are private now — a fast respawn just means the squishy
+    // archetypes re-fight everything they cleared (the surveyed caster died
+    // 200-600 times per run to exactly this).
     packs: [
-        SpawnPack(monster: "kelp_strangler", count: 4, x_u: 14, y_u: 48, radius_u: 4, respawn_ticks: 500, magic_bp: 2500, rare_bp: 900),
-        SpawnPack(monster: "reef_chanter",   count: 3, x_u: 30, y_u: 40, radius_u: 4, respawn_ticks: 500, magic_bp: 2500, rare_bp: 900),
-        SpawnPack(monster: "kelp_strangler", count: 4, x_u: 16, y_u: 32, radius_u: 4, respawn_ticks: 500, magic_bp: 2500, rare_bp: 900),
-        SpawnPack(monster: "reef_chanter",   count: 3, x_u: 34, y_u: 24, radius_u: 4, respawn_ticks: 500, magic_bp: 2800, rare_bp: 1000),
-        SpawnPack(monster: "kelp_strangler", count: 5, x_u: 20, y_u: 14, radius_u: 4, respawn_ticks: 500, magic_bp: 2800, rare_bp: 1000),
-        SpawnPack(monster: "reef_chanter",   count: 3, x_u: 36, y_u: 8,  radius_u: 4, respawn_ticks: 500, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "kelp_strangler", count: 4, x_u: 14, y_u: 48, radius_u: 4, respawn_ticks: 900, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "reef_chanter",   count: 3, x_u: 30, y_u: 40, radius_u: 4, respawn_ticks: 900, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "kelp_strangler", count: 4, x_u: 16, y_u: 32, radius_u: 4, respawn_ticks: 900, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "reef_chanter",   count: 3, x_u: 34, y_u: 24, radius_u: 4, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "kelp_strangler", count: 5, x_u: 20, y_u: 14, radius_u: 4, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "reef_chanter",   count: 3, x_u: 36, y_u: 8,  radius_u: 4, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1000),
     ],
     exits: [
         (x_u: 24, y_u: 55, dest: "lanternfall", open: true),

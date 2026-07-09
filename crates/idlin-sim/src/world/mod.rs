@@ -502,6 +502,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         mana: def.mana,
         mana_max: def.mana,
         es: 0,
+        grace_until: 0,
         es_max: 0,
         es_recharge_at: 0,
         life_regen: 0,
@@ -512,6 +513,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         crit_inc: 10000,
         crit_multi: 15000,
         cast_speed: 10000,
+        spell_damage_bp: 10000,
         damage: [
             def.damage,
             def.damage_fire,
@@ -591,6 +593,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         mana: base_mana(level),
         mana_max: base_mana(level),
         es: 0,
+        grace_until: 0,
         es_max: 0,
         es_recharge_at: 0,
         life_regen: 0,
@@ -601,6 +604,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         crit_inc: 10000,
         crit_multi: 15000,
         cast_speed: 10000,
+        spell_damage_bp: 10000,
         damage: [base_unarmed_damage(level), 0, 0, 0, 0],
         accuracy: base_accuracy(level),
         evasion: base_evasion(level),
@@ -2066,6 +2070,9 @@ impl World {
                 c.mana = c.mana_max;
                 c.es = c.es_max;
                 c.busy_until = 0;
+                // Five seconds of respawn grace (or until the first strike
+                // they throw) — spawn camping is not a fight.
+                c.grace_until = self.tick + 50;
                 events.push(SimEvent::CharacterRespawned { id });
             }
         }
@@ -3309,6 +3316,78 @@ mod area_level_tests {
         w.pay_life_cost(slot, life + 1, now, &mut ev);
         let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
         assert_eq!(ch.deaths, 1, "the life-cost death must be counted");
+    }
+
+    #[test]
+    fn a_wand_implicit_scales_spell_damage() {
+        // Quality pass: spells never read weapon damage, so the wand ladder
+        // fed the caster NOTHING until the implicit existed. A worn wand
+        // with spell_damage_bp must lift a resolved spell hit by exactly
+        // its factor. Mutation: drop the is_spell scaling in resolve_skill
+        // (or the implicit fold in the derive) → equal damage, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x57E1, &content);
+        let slot = join_one(&mut w, "Wanded");
+        let nova = content
+            .gems
+            .iter()
+            .position(|g| g.id == "frost_nova")
+            .unwrap() as u32;
+        let wand = content
+            .items
+            .iter()
+            .position(|i| i.id == "sovereign_scepter")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.level = 10;
+            ch.allocated = vec![0];
+            ch.sockets.insert(
+                0,
+                crate::entity::SocketedGem {
+                    gem: crate::entity::GemInstance {
+                        gem_idx: nova,
+                        level: 5,
+                        xp: 0,
+                    },
+                    supports: Vec::new(),
+                    cooldown_left: 0,
+                },
+            );
+        }
+        w.refresh_derived_stats(slot);
+        let bare = w
+            .resolve_skill(slot, 0)
+            .expect("nova resolves")
+            .spec_template
+            .damage;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(crate::entity::Item {
+                base_idx: wand,
+                rarity: Rarity::Normal,
+                item_level: 10,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            });
+        }
+        w.refresh_derived_stats(slot);
+        let armed = w
+            .resolve_skill(slot, 0)
+            .expect("nova resolves")
+            .spec_template
+            .damage;
+        let (b, a) = (
+            bare[crate::entity::DMG_COLD],
+            armed[crate::entity::DMG_COLD],
+        );
+        assert_eq!(
+            a,
+            b * 23000 / 10000,
+            "the scepter's +130% implicit must scale the nova ({b} -> {a})"
+        );
     }
 
     #[test]

@@ -94,7 +94,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// would mis-decode. Refuse it.
 /// v22 (#148 A7): `World` gained `voyage_marks` (the tally's arrival stamps) and
 /// `SimEvent::MonsterKilled` gained `rarity` — serialized; a v21 snapshot would mis-decode.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 22;
+/// v23 (quality pass): `CombatStats` gained `grace_until` (respawn grace) — serialized;
+/// a v22 snapshot would mis-decode. Refuse it.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 23;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -111,6 +113,27 @@ pub fn save_world_key(dir: &Path, key: &str) {
 
 /// Every (key, dir) under the snapshot base — booted worlds resume by
 /// derived dir; anything else (chart voyages) resumes from this scan.
+///
+/// May a SCANNED (non-booted) snapshot resume? Returns its zone id when
+/// yes. Accepts chart voyages and PRIVATE STORY instances (the key must be
+/// "<zone>#<owner>" and the zone Story-kind); refuses towns/maps/unknowns
+/// and — fail CLOSED, never panic (codex round 2) — any snapshot whose
+/// zone_idx points outside the loaded content.
+pub fn resume_acceptable(
+    content: &idlin_content::ContentDb,
+    key: &str,
+    world: &idlin_sim::World,
+) -> Option<String> {
+    let zone_id = content.zones.get(world.zone_index() as usize)?.id.clone();
+    if world.is_chart_instance() {
+        return Some(zone_id);
+    }
+    let is_story_instance = key.starts_with(&format!("{zone_id}#"))
+        && content
+            .zone(&zone_id)
+            .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Story));
+    is_story_instance.then_some(zone_id)
+}
 pub fn scan_world_keys(base: &Path) -> Vec<(String, PathBuf)> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(base) else {
@@ -298,6 +321,58 @@ mod tests {
             bot_version: 1,
             chart: None,
         }
+    }
+
+    #[test]
+    fn the_resume_gate_accepts_exactly_the_minted_kinds() {
+        // Codex rounds 1+2 (quality pass): the scanned-snapshot gate must
+        // accept chart voyages AND private story instances, refuse shared
+        // kinds, and fail CLOSED (no panic) on a malformed zone_idx.
+        // Mutation: revert the gate to chart-only → the story case fails;
+        // reintroduce the direct index → the malformed case panics.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let story = World::new_for_zone(1, &content, "coast");
+        assert_eq!(
+            resume_acceptable(&content, "coast#Ana", &story).as_deref(),
+            Some("coast"),
+            "a private story instance resumes"
+        );
+        assert_eq!(
+            resume_acceptable(&content, "coast", &story),
+            None,
+            "a bare story key (no owner) is not a minted instance"
+        );
+        let town = World::new_for_zone(1, &content, "saltmere");
+        assert_eq!(
+            resume_acceptable(&content, "saltmere#Ana", &town),
+            None,
+            "towns are shared — never scan-resumed"
+        );
+        let voyage = World::new_chart_instance(
+            1,
+            &content,
+            "charted_shallows",
+            idlin_sim::ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        assert_eq!(
+            resume_acceptable(&content, "charted_shallows#Ana@42", &voyage).as_deref(),
+            Some("charted_shallows"),
+            "a voyage resumes"
+        );
+        let mut broken = World::new_for_zone(1, &content, "coast");
+        broken.test_set_zone_index(9999);
+        assert_eq!(
+            resume_acceptable(&content, "coast#Ana", &broken),
+            None,
+            "a malformed zone_idx fails closed, not loudly"
+        );
     }
 
     #[test]
@@ -506,7 +581,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 22);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 23);
     }
 
     #[test]

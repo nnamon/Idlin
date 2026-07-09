@@ -140,13 +140,25 @@ TreeDef(
                 links: ["wd5"], grants: []),
 
         // ================= INTELLIGENCE trunk (north) =================
+        // The INT road is the ES road (post-playtest quality pass): the
+        // caster's defense identity is the ward, and until these grants
+        // existed its ES gear could never scale — the wand archetype
+        // death-looped through Act 2 on a ~100-point shield.
         NodeDef(public: true, id: "int1", num: 70, name: "Intelligence", pos: (0, -5), kind: travel,
-                grants: [(stat: intelligence, layer: added, value: 10)]),
+                grants: [
+                    (stat: intelligence, layer: added, value: 10),
+                    (stat: energy_shield, layer: added, value: 15),
+                ]),
         NodeDef(public: true, id: "int2", num: 71, name: "Intelligence", pos: (0, -10), kind: travel, links: ["int1"],
-                grants: [(stat: intelligence, layer: added, value: 10)]),
+                grants: [
+                    (stat: intelligence, layer: added, value: 10),
+                    (stat: energy_shield, layer: increased, value: 1500),
+                ]),
         NodeDef(public: true, id: "int3", num: 72, name: "Insight", pos: (0, -15), kind: notable, links: ["int2"],
                 grants: [
                     (stat: intelligence, layer: added, value: 20),
+                    (stat: energy_shield, layer: added, value: 25),
+                    (stat: energy_shield, layer: increased, value: 1500),
                     (stat: resist_fire, layer: added, value: 500),
                     (stat: resist_cold, layer: added, value: 500),
                     (stat: resist_lightning, layer: added, value: 500),
