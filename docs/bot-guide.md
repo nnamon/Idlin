@@ -299,6 +299,7 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 38 | Sell | `inv_idx` | Sell a bag item at the town VENDOR cell (SelfStatus +76/+80; reach 3 cells). Pays ONE obol keyed to what the item was: normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and charts sell as transmutes. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
 | 39 | Stash | `op, sel` | Move an item between bag and chest at the town STASH cell (+84/+88; reach 3). op 0 deposits `inventory[sel]` (chest cap 40, flat — no grid); op 1 withdraws `stash[sel]` first-fit into the bag. The chest is yours forever — it rides transfers and snapshots. Returns 1, or -1 bad selection, -2 not at the stash, -3 no room, -4 not a character. |
 | 40 | ReadStash | `max, out` | Read the chest like ReadInventory (same 20-byte record); x/y are −1 (a chest has no grid). Returns the record count, or -4. |
+| 109 | QueryMonsters | `max, out` | ZONE BRAINS ONLY. Live monsters as MONSTER_RECORD_SIZE (24B) records: net id, def NUM, life_pct, x, y (Q16.16), rarity. The boss-director syscall: watch a boss's live life and stage add waves / beat lines at thresholds. Buffers: allocate at 0xE800+ — the var allocator owns 0xC000 up, and zone_lib holds 0xD000/0xE000/0xE400. |
 
 ### Skill-use return codes
 

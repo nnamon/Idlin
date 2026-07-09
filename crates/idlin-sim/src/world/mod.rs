@@ -3414,6 +3414,85 @@ mod area_level_tests {
     }
 
     #[test]
+    fn query_monsters_contract_records_caps_and_refusals() {
+        // #162 review: the syscall's own contract, not just its use in the
+        // Sovereign's stage direction. A probe brain calls it three ways:
+        //   0xE800: max 16 → count + first record's fields
+        //   0xE980: max 2  → the cap holds
+        //   0xE9C0: max -5 → clamps to 0, writes nothing, returns 0
+        // Mutation: swap the MON_X/MON_Y writes, drop the clamp, or break
+        // record layout → the field asserts fail.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x9E57, &content, "saltworks");
+        let probe = idlin_botc::compile_deployed(
+            "fn main() {\n\
+             mem[0xEA00] = query_monsters(0xE800, 16);\n\
+             mem[0xEA04] = query_monsters(0xE980, 2);\n\
+             mem[0xEA08] = query_monsters(0xE9C0, 0 - 5);\n\
+             }\n",
+        )
+        .unwrap();
+        w.test_install_zone_brain(probe);
+        w.tick(&TickInputs::default());
+        let n = w.test_zone_brain_word(0xEA00).unwrap();
+        assert!(n > 0 && n <= 16, "live monsters reported: {n}");
+        let capped = w.test_zone_brain_word(0xEA04).unwrap();
+        assert_eq!(capped, 2, "the max cap holds");
+        assert_eq!(
+            w.test_zone_brain_word(0xEA08).unwrap(),
+            0,
+            "negative max clamps to zero"
+        );
+        // First record: a real monster num, sane life, in-bounds position.
+        let num = w.test_zone_brain_word(0xE800 + 4).unwrap();
+        assert!(
+            w.content_idx(num).is_some(),
+            "record num resolves in the registry: {num}"
+        );
+        let life = w.test_zone_brain_word(0xE800 + 8).unwrap();
+        assert!((1..=100).contains(&life), "life_pct sane: {life}");
+        let x = w.test_zone_brain_word(0xE800 + 12).unwrap();
+        let y = w.test_zone_brain_word(0xE800 + 16).unwrap();
+        assert!(x > 0 && y > 0, "position is Q16.16 in-bounds ({x},{y})");
+        let rarity = w.test_zone_brain_word(0xE800 + 20).unwrap();
+        assert!((0..=3).contains(&rarity), "rarity in the ladder: {rarity}");
+        // ENTITY bots must NOT get this syscall (zone-brain only): the
+        // dispatch in bots.rs has no arm for 109 → unknown syscall.
+        let mut w2 = World::new(0x9E58, &content);
+        let bot = idlin_botc::compile_deployed(
+            "fn main() {\n mem[0xEA00] = query_monsters(0xE800, 16);\n }\n",
+        );
+        // The builtin exists language-wide; the ENTITY dispatch refuses it.
+        let program = bot.unwrap();
+        let slot = {
+            let ev = w2.tick(&TickInputs {
+                joins: vec![JoinRequest {
+                    name: "Probe".into(),
+                    program,
+                }],
+                arrivals: Vec::new(),
+                removals: Vec::new(),
+            });
+            let _ = ev;
+            0
+        };
+        let _ = slot;
+        w2.tick(&TickInputs::default());
+        let refused = w2
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .and_then(|(_, e)| e.bot)
+            .and_then(|bi| w2.bots.get(bi))
+            .map(|b| b.vm.load_i32(0xEA00));
+        assert_eq!(
+            refused,
+            Some(-1),
+            "an entity bot's query_monsters must refuse (-1), not see the zone"
+        );
+    }
+
+    #[test]
     fn the_kill_switch_removes_a_character_cleanly() {
         // #148 A6: a removal despawns the entity + its bot and announces
         // it; unknown names are harmless. Mutation: drop process_removals

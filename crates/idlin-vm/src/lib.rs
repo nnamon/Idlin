@@ -141,6 +141,13 @@ pub const SYS_SPAWN_MONSTER: i32 = 104;
 pub const SYS_SET_EXIT: i32 = 106;
 pub const SYS_SET_GATE: i32 = 107;
 pub const SYS_SPAWN_ELITE: i32 = 108;
+/// Zone brains read the MONSTERS on their stage (#162 boss mechanics):
+/// pops max, out; writes MONSTER_RECORD_SIZE records (net id, def NUM,
+/// life_pct, x, y, rarity) for live monsters, nearest-spawn order not
+/// guaranteed — deterministic zone-slot order. Returns the count. The
+/// syscall that turns a zone brain into a BOSS DIRECTOR: add waves and
+/// beat lines keyed to the boss's live life.
+pub const SYS_QUERY_MONSTERS: i32 = 109;
 
 /// VM-ABI: the binary memory CONTRACTS bots read out of VM memory (#50). The
 /// SINGLE OWNER of every record stride + `SelfStatus` offset — the Rust host
@@ -169,6 +176,16 @@ pub mod abi {
     /// `QueryCharacters` record stride (10 words, zone-brain): the per-character
     /// block a brain reads. (Was duplicated as `QC_STRIDE`/`CHAR_RECORD_WORDS`.)
     pub const CHAR_RECORD_SIZE: u16 = 40;
+
+    /// `QueryMonsters` record layout (#162): net id, def num, life_pct,
+    /// x (Q16.16), y (Q16.16), rarity.
+    pub const MON_NET: u16 = 0;
+    pub const MON_NUM: u16 = 4;
+    pub const MON_LIFE: u16 = 8;
+    pub const MON_X: u16 = 12;
+    pub const MON_Y: u16 = 16;
+    pub const MON_RARITY: u16 = 20;
+    pub const MONSTER_RECORD_SIZE: u16 = 24;
     /// `ReadExits` record stride (4 words): x, y, open, reserved.
     pub const EXIT_RECORD_SIZE: u16 = 16;
     /// `PollEvents` record stride (4 words, zone-brain): the per-event block a
@@ -752,6 +769,10 @@ mod tests {
         assert_eq!(SYS_UNEQUIP, 35);
         assert_eq!(SYS_READ_AILMENTS, 36);
         assert_eq!(SYS_USE_CHART, 37);
+        assert_eq!(SYS_SELL, 38);
+        assert_eq!(SYS_STASH, 39);
+        assert_eq!(SYS_READ_STASH, 40);
+        assert_eq!(SYS_QUERY_MONSTERS, 109);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);
@@ -776,6 +797,7 @@ mod tests {
         assert_eq!(ITEM_MODS_RECORD_SIZE, 16);
         assert_eq!(EQUIPMENT_RECORD_SIZE, 16);
         assert_eq!(CHAR_RECORD_SIZE, 40);
+        assert_eq!(MONSTER_RECORD_SIZE, 24);
         assert_eq!(EXIT_RECORD_SIZE, 16);
         assert_eq!(EVENT_RECORD_SIZE, 16);
         // SelfStatus: sequential 4-byte words, 19 fields, 76-byte block.

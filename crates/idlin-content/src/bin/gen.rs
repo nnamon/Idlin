@@ -80,6 +80,17 @@ fn gen_abi_bot() -> String {
     let _ = writeln!(s, "const SS_ZONE = {};", abi::SS_ZONE);
     let _ = writeln!(s, "const SS_TABLE_X = {};", abi::SS_TABLE_X);
     let _ = writeln!(s, "const SS_TABLE_Y = {};", abi::SS_TABLE_Y);
+    let _ = writeln!(s, "const MON_NET = {};", abi::MON_NET);
+    let _ = writeln!(s, "const MON_NUM = {};", abi::MON_NUM);
+    let _ = writeln!(s, "const MON_LIFE = {};", abi::MON_LIFE);
+    let _ = writeln!(s, "const MON_X = {};", abi::MON_X);
+    let _ = writeln!(s, "const MON_Y = {};", abi::MON_Y);
+    let _ = writeln!(s, "const MON_RARITY = {};", abi::MON_RARITY);
+    let _ = writeln!(
+        s,
+        "const MONSTER_RECORD_SIZE = {};",
+        abi::MONSTER_RECORD_SIZE
+    );
     let _ = writeln!(s, "const SS_VENDOR_X = {};", abi::SS_VENDOR_X);
     let _ = writeln!(s, "const SS_VENDOR_Y = {};", abi::SS_VENDOR_Y);
     let _ = writeln!(s, "const SS_STASH_X = {};", abi::SS_STASH_X);

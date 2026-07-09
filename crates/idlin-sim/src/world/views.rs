@@ -466,6 +466,25 @@ impl World {
     /// TEST HARNESS ONLY: teleport an entity (whole units).
     /// TEST SEAM (#148 A3): read one word of a character's bot VM memory —
     /// how integration tests observe a syscall's stored return code.
+    /// TEST SEAM (#162): install a zone brain program — how syscall
+    /// contract tests drive the zone-brain dispatch directly.
+    pub fn test_install_zone_brain(&mut self, program: Vec<u8>) {
+        let vm = idlin_vm::Vm::new(&program).expect("probe brain assembles");
+        self.zone_brain = Some(crate::bots::Bot {
+            vm,
+            rng: crate::rng::Pcg32::stream(self.seed, crate::rng::Domain::Bot, u64::MAX),
+            params: Vec::new(),
+            program: program.clone(),
+            program_hash: crate::bots::program_hash(&program),
+            version: 0,
+        });
+    }
+
+    /// TEST SEAM: read one word of the ZONE BRAIN's VM memory.
+    pub fn test_zone_brain_word(&mut self, addr: u16) -> Option<i32> {
+        Some(self.zone_brain.as_mut()?.vm.load_i32(addr))
+    }
+
     pub fn test_vm_word(&mut self, net_id: u32, addr: u16) -> Option<i32> {
         let slot = self.zone.slot_of(net_id)?;
         let idx = self.zone.get(slot)?.bot?;
@@ -503,6 +522,16 @@ impl World {
     /// gate's fail-closed path needs a malformed world to probe.
     pub fn test_set_zone_index(&mut self, idx: u32) {
         self.zone_idx = idx;
+    }
+
+    /// TEST SEAM (#162): set an entity's life to a percent of max — how
+    /// boss-phase tests reach a threshold without simulating the fight.
+    pub fn test_set_life_pct(&mut self, net_id: u32, pct: i64) {
+        if let Some(slot) = self.zone.slot_of(net_id)
+            && let Some(c) = self.zone.get_mut(slot).and_then(|e| e.combat.as_mut())
+        {
+            c.life = c.life_max * pct / 100;
+        }
     }
 
     pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {

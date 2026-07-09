@@ -183,6 +183,36 @@ fn the_act_1_zones_stand_up() {
     assert_eq!(mother.len(), 1, "one Mother in the basin");
     assert_eq!(mother[0].name, "Mother of the Drowned");
 
+    // The Sovereign's stage direction (#162 boss mechanics): drop him
+    // below half and the zone brain narrates the rise + spawns the wave.
+    // Mutation: drop the query_monsters phase block from the brain (or
+    // break the syscall) → no adds, this fails.
+    let mut stage = World::new_for_zone(0x50FA, &content, "the_undertow");
+    stage.tick(&empty);
+    let before = stage
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    let boss = stage
+        .views()
+        .iter()
+        .find(|v| v.name == "The Riptide Sovereign")
+        .map(|v| v.id)
+        .expect("the Sovereign stands");
+    stage.test_set_life_pct(boss, 40);
+    stage.tick(&empty);
+    stage.tick(&empty);
+    let after = stage
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        after >= before + 2,
+        "the rise must add its wave ({before} -> {after})"
+    );
+
     // Act 2 (#148 A3): the Undertow stands up the same way.
     let mut deep = World::new_for_zone(0x5A19, &content, "the_undertow");
     deep.tick(&empty);

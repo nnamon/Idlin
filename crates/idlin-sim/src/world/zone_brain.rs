@@ -24,8 +24,8 @@ pub const EV_PICKUP: i32 = 6; // a = rarity
 // Syscall numbers come from idlin_vm — the single ABI owner. Zone-scoped
 // syscalls (100+) get -1 for entity bots; debug/random are shared.
 use idlin_vm::{
-    SYS_DEBUG, SYS_DROP_LOOT, SYS_NARRATE, SYS_POLL_EVENTS, SYS_QUERY_CHARACTERS, SYS_RANDOM,
-    SYS_SET_EXIT, SYS_SET_GATE, SYS_SPAWN_ELITE, SYS_SPAWN_MONSTER,
+    SYS_DEBUG, SYS_DROP_LOOT, SYS_NARRATE, SYS_POLL_EVENTS, SYS_QUERY_CHARACTERS,
+    SYS_QUERY_MONSTERS, SYS_RANDOM, SYS_SET_EXIT, SYS_SET_GATE, SYS_SPAWN_ELITE, SYS_SPAWN_MONSTER,
 };
 
 /// QueryCharacters record (10 words): net, kills, level, x, y, weapon_class,
@@ -109,6 +109,39 @@ impl World {
                 0
             }
             SYS_RANDOM => bot.rng.next_u32() as i32,
+            SYS_QUERY_MONSTERS => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, 16) as usize;
+                let mut n = 0u16;
+                for (_, e) in self.zone.iter() {
+                    if n as usize >= max {
+                        break;
+                    }
+                    let Some(m) = &e.monster else { continue };
+                    if !e.alive() {
+                        continue;
+                    }
+                    let life = e.combat.as_ref().map(|c| c.life_pct() as i32).unwrap_or(0);
+                    let num =
+                        self.content_num(idlin_content::ids::Category::Monster, m.def_idx as usize);
+                    let base = out.wrapping_add(n * idlin_vm::abi::MONSTER_RECORD_SIZE);
+                    bot.vm.store_i32(base, e.net_id as i32);
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_NUM), num);
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_LIFE), life);
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_X), e.pos.x.raw());
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_Y), e.pos.y.raw());
+                    bot.vm.store_i32(
+                        base.wrapping_add(idlin_vm::abi::MON_RARITY),
+                        m.rarity as i32,
+                    );
+                    n += 1;
+                }
+                n as i32
+            }
             SYS_QUERY_CHARACTERS => {
                 let out = bot.vm.pop() as u16;
                 let max = bot.vm.pop().clamp(0, 16) as usize;

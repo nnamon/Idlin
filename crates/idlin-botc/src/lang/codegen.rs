@@ -60,6 +60,7 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     // character transfer: bots take exits themselves (use_exit); brains
     // only gate whether an exit is open.
     ("query_characters", idlin_vm::SYS_QUERY_CHARACTERS, 2),
+    ("query_monsters", idlin_vm::SYS_QUERY_MONSTERS, 2),
     ("poll_events", idlin_vm::SYS_POLL_EVENTS, 2),
     ("narrate", idlin_vm::SYS_NARRATE, 2),
     ("drop_loot", idlin_vm::SYS_DROP_LOOT, 5),
