@@ -1122,7 +1122,7 @@ mod tests {
     fn the_caster_walks_the_salt_road() {
         // RETROSPECTIVE re-band (#148): the debt-era lines were set before
         // the scorer economy landed — measured 69.4k/128 on the nastiest
-        // seed (the 1.0-deadlock canary). 150k/200 gives ~2x headroom.
+        // seed (the 1.0-deadlock canary): 2.2x on time, 1.6x on deaths.
         // The caster's 128 deaths remain the balance OUTLIER (melee runs
         // 9-24, the bow 10-50): the wand corpse-trades where the bow
         // out-ranges — a tuning thread, not a wall.
@@ -1157,11 +1157,6 @@ mod tests {
             assert!(sailed_at <= 80_000, "the ranger hit a wall at {sailed_at}");
             assert!(deaths <= 110, "{deaths} ranger deaths — a grinder for bows");
         }
-        let _ = (0,);
-        let (sailed_at, deaths) = (0u64, 0u32);
-        let _ = (sailed_at, deaths);
-        assert!(sailed_at <= 260_000, "the ranger hit a wall at {sailed_at}");
-        assert!(deaths <= 240, "{deaths} ranger deaths — a grinder for bows");
     }
 
     #[test]
