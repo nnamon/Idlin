@@ -293,6 +293,59 @@ const inspectPanel: Fixture = {
  * braziers, fog, post-processing, and two animated rigged models — the whole
  * `ZoneRenderer` path under a seeded clock + RNG.
  */
+// The zone-dressing fixture (codex round 2: no other fixture carries
+// authored TILES, so the crate-variety and ambient-scatter branches
+// rendered NOWHERE in the harness — the mutation-proof was partial).
+// One small authored map exercises every dressing branch: crates,
+// bare grass (tuft scatter), bare cobble (rubble scatter), an authored
+// tuft, walls (soot edges), and an elevated terrace.
+const sceneDressing: Fixture = {
+  kind: "scene",
+  label: "Dressing: authored tiles — crates, scatter, soot, terrace",
+  seed: 0xd0e55,
+  frames: 30,
+  camera: [8, 10, 18, 8, 0.5, 6],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Dressing Yard",
+      world_key: "dressing_yard",
+      width: 16 * 65536,
+      height: 12 * 65536,
+      tiles: {
+        width: 16,
+        height: 12,
+        rows: [
+          "################",
+          "#,,,,,,::::::::#",
+          "#,,g,,,::::c:::#",
+          "#,,,,,,::::::::#",
+          "#,,,,,,::c:::::#",
+          "#,,,,,,::::::::#",
+          "#,,,,,,,:::::::#",
+          "#,,,,,,,:::c:::#",
+          "#,,,,,,,:::::::#",
+          "#,,,,,,,,::::::#",
+          "#,,,,,,,,~~~~,,#",
+          "################",
+        ],
+        legend: [
+          { glyph: "#", ground: "#3a3a46", ground_id: "cobble", prop: "wall", walkable: false, elevation: 0 },
+          { glyph: ",", ground: "#2c3b2a", ground_id: "grass", prop: null, walkable: true, elevation: 0 },
+          { glyph: ":", ground: "#3f3d49", ground_id: "cobble", prop: null, walkable: true, elevation: 0 },
+          { glyph: "c", ground: "#3f3d49", ground_id: "cobble", prop: "crate", walkable: false, elevation: 0 },
+          { glyph: "g", ground: "#2c3b2a", ground_id: "grass", prop: "tuft", walkable: false, elevation: 0 },
+          { glyph: "~", ground: "#16344f", ground_id: "water", prop: null, walkable: false, elevation: 0 },
+        ],
+        props: [],
+        features: [],
+      },
+      entities: [
+        character({ id: 1, name: "Dresser", level: 5, model: "ranger", life_pct: 100, kills: 0, items: 0 }),
+      ],
+    }),
+  ],
+};
+
 const sceneShore: Fixture = {
   kind: "scene",
   label: "Scene: a grinder and a stalker on the Withered Shore at night, close 3/4 view",
@@ -1042,6 +1095,7 @@ const fullCampaign: Fixture = {
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
+  "scene-dressing": sceneDressing,
   "sound-toggle": soundToggle,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,

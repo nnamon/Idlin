@@ -303,7 +303,13 @@ export class Terrain {
       } else {
         tmp.copy(inland).lerp(sand, beach).lerp(rock, high).lerp(wet, wetness);
       }
-      const grain = 0.92 + 0.16 * vnoise(x * 1.7, z * 1.7, this.seed ^ 99);
+      // Two octaves (zone-dressing pass): the fine grain alone read as a
+      // FLAT field from broadcast distance — the low octave lays 4-6u
+      // light/dark patches so floors look walked-on instead of painted.
+      const grain =
+        0.92 +
+        0.16 * vnoise(x * 1.7, z * 1.7, this.seed ^ 99) +
+        0.1 * (vnoise(x * 0.22, z * 0.22, this.seed ^ 7919) - 0.5);
       colors[i * 3] = tmp.r * grain;
       colors[i * 3 + 1] = tmp.g * grain;
       colors[i * 3 + 2] = tmp.b * grain;
@@ -460,7 +466,15 @@ export class Terrain {
             this.brazierSpots.push([cx, cz]);
             break;
           case "crate":
-            put("crate_town", cx, cz, 1, r * Math.PI);
+            // Variety by cell hash — the same crate everywhere was the
+            // broadcast audit's "one prop to rule them all".
+            put(
+              ["crate_town", "crate", "barrel"][Math.floor(r * 3) % 3],
+              cx,
+              cz,
+              1,
+              r * Math.PI,
+            );
             break;
           case "wagon":
             put("wagon", cx, cz, 1, r * Math.PI * 2);
@@ -506,6 +520,39 @@ export class Terrain {
         }
       }
     }
+    // Ambient scatter (zone-dressing pass): bare walkable no-prop cells
+    // get a deterministic sprinkle — grass tufts on soft ground, small
+    // rubble on worked floors — so wide shots stop reading as empty boxes.
+    // Cosmetic only: nothing here registers collision; ground_id is the
+    // SEMANTIC kind ("grass"/"sand"/"cobble"...), never the palette hex
+    // (codex caught the first draft comparing colors).
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const vis = this.byGlyph.get(rows[y][x]);
+        if (!vis?.walkable || vis.prop) continue;
+        const r = hash2(x * 3 + 1, y * 3 + 2, this.seed ^ 13);
+        if (r > 0.07) continue;
+        const soft = vis.ground_id === "grass" || vis.ground_id === "sand";
+        if (soft) {
+          put(
+            ["grass_1", "grass_2"][Math.floor(r * 100) % 2],
+            x + 0.5,
+            y + 0.5,
+            0.5 + r * 3,
+            r * 89,
+          );
+        } else {
+          put(
+            ["rock_1", "rock_2", "rock_3"][Math.floor(r * 100) % 3],
+            x + 0.5,
+            y + 0.5,
+            0.12 + r * 0.8,
+            r * 89,
+          );
+        }
+      }
+    }
+
     // Set pieces (props.ron): whole buildings on their footprints.
     for (const pr of tiles.props) {
       const obj = assets.instantiateProp(pr.model);

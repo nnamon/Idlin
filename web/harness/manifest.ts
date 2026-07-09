@@ -78,6 +78,10 @@ export const FIXTURES: FixtureMeta[] = [
     expect: ["Solo", "Life: 0/1180"],
   },
   {
+    name: "scene-dressing",
+    kind: "scene",
+  },
+  {
     name: "sound-toggle",
     kind: "overlay",
     expect: ["🔇", "IDLIN"],
