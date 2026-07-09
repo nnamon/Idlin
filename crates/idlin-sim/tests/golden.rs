@@ -10,6 +10,11 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for the census sweeps (quality pass): content-only — the
+/// Pressure Court's bench grid thinned + staggered (the melee+ranger
+/// death census put 113 of 197 deaths in its kill pockets), its wisp
+/// pack 3→2, the wisp's bolt L4→L3. Ranger court deaths halved
+/// (82→43); every band green.
 /// Re-pinned for the QUALITY PASS (post-playtest): story zones are
 /// PRIVATE instances (towns stay shared); respawn grace exists (a
 /// respawner is untargetable ~5s or until they strike — spawn camping
@@ -209,7 +214,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// determinism trio still agrees.
 /// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
 /// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0xB129_9B97_B03B_1F45;
+const GOLDEN_HASH: u64 = 0xB122_9171_51F7_7282;
 
 #[test]
 fn golden_replay() {

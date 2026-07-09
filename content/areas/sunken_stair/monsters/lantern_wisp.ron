@@ -4,7 +4,10 @@ MonsterDef(
     model: "wight", brain: "hostile_melee", hostile: true,
     level: 14, life: 240, damage: 10, speed_cps: 235,
     radius_cu: 55, range_cu: 230, mana: 140,
-    skills: [(gem: "ember_bolt", level: 4)],
+    // Bolt L3, not L4 (death census: the wisp was the melee sweep's top
+    // killer at 19 of 57 and drove the stair's ranger deaths — an entry-
+    // zone caster shouldn't hit act-boss-adjacent numbers).
+    skills: [(gem: "ember_bolt", level: 3)],
     use_ticks: 16, aggro_radius_cu: 1500, armour: 20,
     resist_fire: 3500, xp: 400, projectile: false,
 )
