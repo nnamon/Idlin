@@ -25,7 +25,8 @@ use ts_rs::TS;
 // 41: GameEvent gains ActCompleted (#136 campaign spine).
 /// v43 (#148 A6): `GameEvent` gained `CharacterRemoved` (the kill switch on the wire).
 /// v44 (#148 A7): `MonsterKilled` gained `rarity`; `GameEvent` gained `VoyageTally`.
-pub const PROTO_VERSION: u32 = 44;
+/// v45 (quality pass): `EntityState` gained `hostile` (the readability ember's gate).
+pub const PROTO_VERSION: u32 = 45;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -59,6 +60,9 @@ pub struct EntityState {
     pub name: String,
     /// Visual key: character class or monster model or "loot".
     pub model: String,
+    /// Faction hostility (broadcast readability, PROTO 45): the client
+    /// embers HOSTILE monsters only — villager NPCs must not glow.
+    pub hostile: bool,
     /// 0 normal, 1 magic, 2 rare, 3 unique (loot drops AND monsters —
     /// elite monsters tint their nameplates; uniques get boss bars).
     pub rarity: u8,

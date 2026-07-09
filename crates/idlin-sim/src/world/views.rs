@@ -631,6 +631,10 @@ impl World {
                 EntityView {
                     id: e.net_id,
                     kind: e.kind_code() as u8,
+                    hostile: e
+                        .monster
+                        .as_ref()
+                        .is_some_and(|m| self.content.monsters[m.def_idx as usize].hostile),
                     x_raw: e.pos.x.raw(),
                     y_raw: e.pos.y.raw(),
                     life_pct: combat.map(|c| c.life_pct()).unwrap_or(0),

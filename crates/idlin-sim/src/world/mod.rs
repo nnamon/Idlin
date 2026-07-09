@@ -358,6 +358,9 @@ pub struct EntityView {
     pub id: u32,
     /// 1 = character, 2 = monster, 3 = loot.
     pub kind: u8,
+    /// Faction hostility (broadcast readability): the client embers
+    /// HOSTILE monsters only — a villager NPC must not glow.
+    pub hostile: bool,
     pub x_raw: i32,
     pub y_raw: i32,
     pub life_pct: u8,
@@ -3263,6 +3266,26 @@ mod area_level_tests {
         .unwrap()
         .unique_idx = None;
         assert_ne!(h1, w.state_hash(), "unique identity must move the digest");
+    }
+
+    #[test]
+    fn hostility_reaches_the_view_faithfully() {
+        // PROTO 45 (codex round 2): the ember gates on the wire's hostile
+        // flag — a villager must arrive false, a shambler true. Mutation:
+        // hardcode EntityView.hostile (either way) → one side fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x4057, &content, "saltmere");
+        w.tick(&TickInputs::default());
+        let vs = w.views();
+        let villager = vs
+            .iter()
+            .find(|v| v.kind == 2 && v.name.contains("Survivor"))
+            .expect("saltmere has villagers");
+        assert!(!villager.hostile, "a villager NPC must not read hostile");
+        let mut shore = World::new_for_zone(0x4058, &content, "withered_shore");
+        shore.tick(&TickInputs::default());
+        let hostile = shore.views().iter().any(|v| v.kind == 2 && v.hostile);
+        assert!(hostile, "the shore's monsters read hostile");
     }
 
     #[test]

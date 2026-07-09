@@ -185,12 +185,21 @@ export class AssetLibrary {
    * (material, tint) so a whole pack of shamblers costs three materials,
    * not three per shambler.
    */
-  tintedMaterial(src: THREE.Material, tint: string): THREE.Material {
-    const cacheKey = `${src.uuid}:${tint}`;
+  tintedMaterial(src: THREE.Material, tint: string, hostileGlow = false): THREE.Material {
+    const cacheKey = `${src.uuid}:${tint}:${hostileGlow ? "h" : ""}`;
     let mat = this.tinted.get(cacheKey);
     if (!mat) {
       mat = src.clone();
-      (mat as THREE.MeshStandardMaterial).color?.multiply(new THREE.Color(tint));
+      const std = mat as THREE.MeshStandardMaterial;
+      std.color?.multiply(new THREE.Color(tint));
+      // Monster readability (broadcast audit): night zones + dark tints
+      // made trash mobs illegible clumps from the director's altitude. A
+      // faint warm ember in the skin lifts every hostile off the ground
+      // without nameplate spam — subtle enough to keep the night.
+      if (hostileGlow && std.emissive) {
+        std.emissive = new THREE.Color(0x3a1410);
+        std.emissiveIntensity = 0.5;
+      }
       this.tinted.set(cacheKey, mat);
     }
     return mat;

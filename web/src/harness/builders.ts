@@ -20,6 +20,7 @@ type Require<T, K extends keyof T> = Partial<T> & Pick<T, K>;
 export function character(over: Require<EntityState, "id" | "name">): EntityState {
   return {
     kind: "Character",
+    hostile: false,
     x: 0,
     y: 0,
     life_pct: 100,
@@ -42,7 +43,7 @@ export function character(over: Require<EntityState, "id" | "name">): EntityStat
 /** A monster entity (for scene fixtures). `model` must be a manifest monster
  *  key (shambler/husk/stalker/tidewarden/idler). */
 export function monster(over: Require<EntityState, "id" | "name" | "model">): EntityState {
-  return character({ ...over, kind: "Monster" });
+  return character({ hostile: true, ...over, kind: "Monster" });
 }
 
 /** One equipment slot. `dimmed` greys a two-handed weapon mirrored into the

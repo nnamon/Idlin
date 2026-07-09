@@ -548,6 +548,18 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 // every delta and event line — replayable verbatim.
                 if let Some(f) = ws.recorder.as_mut() {
                     if out.first_frame {
+                        // The journal's first line is a VERSION HEADER
+                        // (codex on PROTO 45): a stale recording replayed
+                        // against a newer client must refuse loudly, not
+                        // silently mis-render fields it never carried —
+                        // the same fail-closed rule every other format
+                        // already follows.
+                        let _ = writeln!(
+                            f,
+                            "{{\"type\":\"RecordingHeader\",\"data\":{{\"proto_version\":{}}}}}",
+                            idlin_protocol::PROTO_VERSION
+                        );
+                        ws.journal_lines += 1;
                         let _ = writeln!(f, "{}", out.snapshot);
                         ws.journal_lines += 1;
                     }
@@ -946,6 +958,7 @@ fn empty_snapshot(zone_name: &str, width: i32, height: i32) -> String {
 fn to_state(v: &EntityView) -> EntityState {
     EntityState {
         id: v.id,
+        hostile: v.hostile,
         kind: match v.kind {
             KIND_CHARACTER => EntityKind::Character,
             KIND_MONSTER => EntityKind::Monster,
@@ -1170,6 +1183,7 @@ mod tests {
         EntityState {
             id,
             kind: EntityKind::Character,
+            hostile: false,
             x,
             y: 0,
             life_pct,
@@ -1198,6 +1212,7 @@ mod tests {
         idlin_sim::EntityView {
             id,
             kind,
+            hostile: kind == 2,
             x_raw: (x as i32) << 16,
             y_raw: (y as i32) << 16,
             life_pct: if dead { 0 } else { 100 },

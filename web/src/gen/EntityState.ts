@@ -23,6 +23,11 @@ name: string,
  */
 model: string, 
 /**
+ * Faction hostility (broadcast readability, PROTO 45): the client
+ * embers HOSTILE monsters only — villager NPCs must not glow.
+ */
+hostile: boolean, 
+/**
  * 0 normal, 1 magic, 2 rare, 3 unique (loot drops AND monsters —
  * elite monsters tint their nameplates; uniques get boss bars).
  */

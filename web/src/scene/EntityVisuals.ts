@@ -154,7 +154,12 @@ export class EntityVisual {
     if (state.kind === "Loot") {
       this.buildLoot(state.model, state.rarity);
     } else {
-      this.buildModel(state.model, state.kind === "Monster", state.rarity);
+      this.buildModel(
+        state.model,
+        state.kind === "Monster",
+        state.rarity,
+        state.hostile,
+      );
       this.buildBars();
       if (state.kind === "Character") this.buildLabel(state.name);
       // Elite monsters announce themselves: rarity-tinted nameplates,
@@ -167,7 +172,13 @@ export class EntityVisual {
     }
   }
 
-  private buildModel(model: string, isMonster: boolean, rarity = 0): void {
+  private hostileEmber = false;
+
+  private buildModel(model: string, isMonster: boolean, rarity = 0, hostile = false): void {
+    // Codex round 2: conflating "hostile" with "is monster" stole the
+    // villagers' per-id body variation (they took the character seed
+    // path). Kind drives seeding/clips/scale; hostility drives the ember.
+    this.hostileEmber = isMonster && hostile;
     // Cosmetic body variant: stable per character name; per entity id for
     // monsters so packs come out mixed. Pure client-side — not replicated.
     const def = this.assets.modelDef(model);
@@ -192,9 +203,14 @@ export class EntityVisual {
 
     inst.root.traverse((o) => {
       if (o instanceof THREE.Bone) this.boneByName.set(o.name, o);
-      // Fixed monster tint applies to the body skin too (shared cache).
-      if (inst.def.tint && o instanceof THREE.Mesh && !Array.isArray(o.material)) {
-        o.material = this.assets.tintedMaterial(o.material, inst.def.tint);
+      // Fixed monster tint applies to the body skin too (shared cache);
+      // hostiles also carry the readability ember (broadcast audit).
+      if (o instanceof THREE.Mesh && !Array.isArray(o.material)) {
+        if (inst.def.tint) {
+          o.material = this.assets.tintedMaterial(o.material, inst.def.tint, this.hostileEmber);
+        } else if (this.hostileEmber) {
+          o.material = this.assets.tintedMaterial(o.material, "#ffffff", true);
+        }
       }
     });
 
@@ -391,7 +407,13 @@ export class EntityVisual {
         mesh.castShadow = true;
         if (!Array.isArray(mesh.material)) {
           if (this.def.tint) {
-            mesh.material = this.assets.tintedMaterial(mesh.material, this.def.tint);
+            // Monster paper-doll parts carry the readability ember too
+            // (codex: the first cut embered the body but not defaultParts).
+            mesh.material = this.assets.tintedMaterial(
+              mesh.material,
+              this.def.tint,
+              this.hostileEmber,
+            );
           } else if (tintByName) {
             const mat = mesh.material.clone() as THREE.MeshStandardMaterial;
             mat.color?.lerp(nameColor(this.myName), 0.55);
