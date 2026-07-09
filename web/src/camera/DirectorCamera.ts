@@ -51,6 +51,16 @@ export class DirectorCamera {
 
   follow(target: THREE.Vector3, dt: number, zoom = 1): void {
     const desired = target.clone().addScaledVector(FOLLOW_OFFSET, zoom);
+    // HARD CUT past the swoop threshold (the calm-director rework): a
+    // refocus across half the map used to GLIDE there — seconds of
+    // stomach-turning pan. Real broadcasts cut; only small refocuses
+    // (the same fight, a nearby pack) deserve smoothing.
+    if (this.camera.position.distanceTo(desired) > 24) {
+      this.camera.position.copy(desired);
+      this.lookTarget.copy(target.clone().setY(1));
+      this.camera.lookAt(this.lookTarget);
+      return;
+    }
     const k = 1 - Math.exp(-dt * 2.2);
     this.camera.position.lerp(desired, k);
     this.lookTarget.lerp(target.clone().setY(1), 1 - Math.exp(-dt * 3.5));

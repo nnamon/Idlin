@@ -42,8 +42,10 @@ pub struct QueueEntry {
 
 /// How long a character stays ineligible after being featured.
 const FOCUS_COOLDOWN_TICKS: u64 = 200;
-/// Default idle rotation hold.
-const IDLE_HOLD_TICKS: u32 = 80;
+/// Default idle rotation dwell (30s at 10Hz): long enough to watch a
+/// character DO something — fight a pack, clear a room — before the
+/// rotation moves on. The 8s original read as channel-surfing.
+const IDLE_HOLD_TICKS: u32 = 300;
 /// Re-broadcast the current cue this often even when focus is unchanged —
 /// cues aren't in the snapshot, so without this a viewer who connects
 /// after the last cut idles in overview forever.
@@ -52,20 +54,41 @@ const REFRESH_TICKS: u64 = 50;
 // Event scoring: (score, hold_ticks) per event class. Higher score wins the
 // tick and interrupts a weaker hold. Presentation tuning, not game balance —
 // which is why it lives here and not in content/.
-// Campaign beats (#148 A7) outrank everything: the broadcast is the
-// story of the road, and the road's chapters are acts, bosses, sails,
-// and settled voyages.
-const SCORE_ACT: (u32, u32) = (95, 120);
-const SCORE_BOSS_KILL: (u32, u32) = (90, 100);
-const SCORE_TALLY: (u32, u32) = (85, 90);
-const SCORE_SAIL: (u32, u32) = (82, 80);
-const SCORE_DEATH: (u32, u32) = (80, 60);
-const SCORE_JOIN: (u32, u32) = (75, 60);
-const SCORE_RARE_DROP: (u32, u32) = (70, 60);
-const SCORE_LEVEL_UP: (u32, u32) = (60, 50);
-const SCORE_KILL: (u32, u32) = (30, 40);
-/// Minimum rarity (as u8) for a drop to be camera-worthy.
-const RARE_DROP_MIN_RARITY: u8 = 2;
+// THE CALM DIRECTOR (post-playtest rework): the first cut of this system
+// scored EVERY event and cut on the winner — four parallel tutorials made
+// the broadcast a strobe of cross-world jumps every few seconds.
+// Unwatchable. The rework runs on three rules a human editor would use:
+//
+//   1. A SHOT IS A COMMITMENT. Nothing below the STORY tier may interrupt
+//      before MIN_SHOT_TICKS; the default dwell is long enough to watch a
+//      character actually do something (fight a pack, clear a room).
+//   2. THE CAMERA FOLLOWS STORY, NOT NOISE. Trash kills and routine
+//      level-ups are TICKER material — they never move the camera. Cuts
+//      are earned by chapters: acts, boss falls, tallies, sails, deaths,
+//      a new deploy walking on, a unique hitting the ground.
+//   3. CROSS-WORLD CUTS COST EXTRA. A jump to another instance is a full
+//      scene change (new zone, camera snap) — it must be worth more than
+//      a refocus inside the world the viewer is already reading.
+//
+// Scores: (score, hold_ticks). STORY_TIER may interrupt a live shot;
+// everything else waits for the shot to end.
+const SCORE_ACT: (u32, u32) = (95, 200);
+const SCORE_BOSS_KILL: (u32, u32) = (90, 180);
+const SCORE_TALLY: (u32, u32) = (85, 120);
+const SCORE_SAIL: (u32, u32) = (82, 120);
+const SCORE_DEATH: (u32, u32) = (80, 100);
+const SCORE_JOIN: (u32, u32) = (75, 100);
+const SCORE_UNIQUE_DROP: (u32, u32) = (70, 100);
+/// Only cues at or above this score may cut INTO a live shot.
+const STORY_TIER: u32 = 80;
+/// The floor under every shot (10s at 10Hz): below-story cues queue
+/// behind it, they don't shorten it.
+const MIN_SHOT_TICKS: u64 = 100;
+/// A cue from ANOTHER world pays this toll — refocusing inside the
+/// current world is cheap, a full scene change is not.
+const CROSS_WORLD_PENALTY: u32 = 8;
+/// Uniques only (3): magic/rare drops ride the ticker.
+const RARE_DROP_MIN_RARITY: u8 = 3;
 
 pub struct Director {
     /// The focused character by NAME — the only identity stable across
@@ -74,6 +97,10 @@ pub struct Director {
     /// The world the broadcast currently mirrors.
     pub current_world: Option<String>,
     hold_until: u64,
+    /// When the current shot began — the MIN_SHOT_TICKS floor's anchor.
+    shot_started: u64,
+    /// The live cue's reason, for mid-shot re-broadcasts.
+    current_reason: String,
     current_score: u32,
     cooldowns: HashMap<String, u64>,
     rotation_idx: usize,
@@ -88,6 +115,8 @@ impl Director {
             focus_name: None,
             current_world: None,
             hold_until: 0,
+            shot_started: 0,
+            current_reason: String::new(),
             current_score: 0,
             cooldowns: HashMap::new(),
             rotation_idx: 0,
@@ -137,17 +166,16 @@ impl Director {
                     SimEvent::CharacterDied { id, .. } => {
                         Some((*id, SCORE_DEATH.0, "death", SCORE_DEATH.1))
                     }
-                    SimEvent::LevelUp { id, .. } => {
-                        Some((*id, SCORE_LEVEL_UP.0, "level-up", SCORE_LEVEL_UP.1))
-                    }
+                    // Trash kills and routine level-ups are TICKER material —
+                    // they never move the camera (the calm-director rework).
                     SimEvent::LootDropped {
                         owner_id, rarity, ..
-                    } if (*rarity as u8) >= RARE_DROP_MIN_RARITY => {
-                        Some((*owner_id, SCORE_RARE_DROP.0, "rare drop", SCORE_RARE_DROP.1))
-                    }
-                    SimEvent::MonsterKilled { killer_id, .. } => {
-                        Some((*killer_id, SCORE_KILL.0, "kill", SCORE_KILL.1))
-                    }
+                    } if (*rarity as u8) >= RARE_DROP_MIN_RARITY => Some((
+                        *owner_id,
+                        SCORE_UNIQUE_DROP.0,
+                        "a unique drops",
+                        SCORE_UNIQUE_DROP.1,
+                    )),
                     SimEvent::CharacterJoined { id, .. } => {
                         Some((*id, SCORE_JOIN.0, "new challenger", SCORE_JOIN.1))
                     }
@@ -162,17 +190,33 @@ impl Director {
                 if self.cooldowns.get(name).copied().unwrap_or(0) > tick {
                     continue;
                 }
-                if best.as_ref().is_none_or(|(_, _, _, s, _, _)| score > *s) {
-                    best = Some((w.key.to_string(), id, name.clone(), score, reason, hold));
+                // A full scene change must be worth more than a refocus
+                // inside the world the viewer is already reading.
+                let effective = if self.current_world.as_deref() == Some(w.key) {
+                    score
+                } else {
+                    score.saturating_sub(CROSS_WORLD_PENALTY)
+                };
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, _, _, s, _, _)| effective > *s)
+                {
+                    best = Some((w.key.to_string(), id, name.clone(), effective, reason, hold));
                 }
             }
         }
 
-        // A new event interrupts when it outranks the current hold.
+        // A SHOT IS A COMMITMENT (the calm-director rework): a live shot
+        // runs its hold; only STORY-tier beats may cut in, and even they
+        // respect the minimum shot length. Everything else waits its turn.
         if let Some((world, id, name, score, reason, hold)) = best {
-            let interrupts = tick >= self.hold_until || score > self.current_score;
+            let shot_age = tick.saturating_sub(self.shot_started);
+            let shot_over = tick >= self.hold_until;
+            let story_cut =
+                score >= STORY_TIER && score > self.current_score && shot_age >= MIN_SHOT_TICKS;
+            let interrupts = shot_over || story_cut;
             if interrupts && self.focus_name.as_ref() != Some(&name) {
-                self.set_focus(&name, &world, score, tick, hold as u64);
+                self.set_focus(&name, &world, score, tick, hold as u64, reason);
                 return Some(Cue {
                     world_key: world,
                     focus: id,
@@ -185,6 +229,25 @@ impl Director {
         // The full roster, every world, deterministic order.
         let roster = roster(worlds);
 
+        // MID-SHOT REFRESH (the calm-director rework): cues aren't in the
+        // snapshot, so a viewer who connects mid-hold must still lock on —
+        // and calm 30s shots made "wait for the next cut" too long. The
+        // re-broadcast repeats the CURRENT cue; the shot clock keeps
+        // running (this is not a cut).
+        if tick < self.hold_until
+            && tick.saturating_sub(self.last_emit) >= REFRESH_TICKS
+            && let Some(name) = self.focus_name.clone()
+            && let Some((world, id, _)) = roster.iter().find(|(_, _, n)| n == &name).cloned()
+        {
+            self.last_emit = tick;
+            return Some(Cue {
+                world_key: world,
+                focus: id,
+                reason: self.current_reason.clone(),
+                hold_ticks: self.hold_until.saturating_sub(tick) as u32,
+            });
+        }
+
         // Idle rotation across all characters everywhere. Even an unchanged
         // focus is re-broadcast periodically — cues aren't in the snapshot,
         // and a viewer who joins after the last cut must still lock on.
@@ -193,7 +256,7 @@ impl Director {
             let (world, id, name) = roster[self.rotation_idx].clone();
             let refresh_due = tick.saturating_sub(self.last_emit) >= REFRESH_TICKS;
             if self.focus_name.as_ref() != Some(&name) || refresh_due {
-                self.set_focus(&name, &world, 0, tick, IDLE_HOLD_TICKS as u64);
+                self.set_focus(&name, &world, 0, tick, IDLE_HOLD_TICKS as u64, "roaming");
                 return Some(Cue {
                     world_key: world,
                     focus: id,
@@ -225,11 +288,21 @@ impl Director {
             .collect()
     }
 
-    fn set_focus(&mut self, name: &str, world: &str, score: u32, tick: u64, hold: u64) {
+    fn set_focus(
+        &mut self,
+        name: &str,
+        world: &str,
+        score: u32,
+        tick: u64,
+        hold: u64,
+        reason: &str,
+    ) {
+        self.current_reason = reason.to_string();
         self.focus_name = Some(name.to_string());
         self.current_world = Some(world.to_string());
         self.current_score = score;
         self.hold_until = tick + hold;
+        self.shot_started = tick;
         self.last_emit = tick;
         self.cooldowns
             .insert(name.to_string(), tick + FOCUS_COOLDOWN_TICKS);
@@ -293,6 +366,73 @@ mod tests {
 
     fn chars(ids: &[u32]) -> Vec<(u32, String)> {
         ids.iter().map(|i| (*i, format!("c{i}"))).collect()
+    }
+
+    #[test]
+    fn a_shot_is_a_commitment_below_the_story_tier() {
+        // The calm-director rework: a fresh shot holds against sub-story
+        // noise — a death elsewhere (80, story-tier) CAN cut after the
+        // floor, but a join (75) cannot cut a live shot at all. Mutation:
+        // drop the STORY_TIER/MIN_SHOT_TICKS gates → the join cuts, fails.
+        let mut d = Director::new();
+        let (a_ev, no_ev) = (vec![death(1)], Vec::new());
+        let (a_ch, b_ch) = (chars(&[1]), chars(&[2]));
+        let worlds1 = [
+            WorldView {
+                key: "a",
+                events: &a_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "b",
+                events: &no_ev,
+                characters: &b_ch,
+            },
+        ];
+        let cue = d.update(1, &worlds1).expect("the death takes the shot");
+        assert_eq!(cue.world_key, "a");
+        // Tick 5: a JOIN elsewhere (below the story tier) must NOT cut.
+        let b_ev = vec![SimEvent::CharacterJoined {
+            id: 2,
+            name: "c2".into(),
+        }];
+        let worlds2 = [
+            WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "b",
+                events: &b_ev,
+                characters: &b_ch,
+            },
+        ];
+        let cut = d.update(5, &worlds2);
+        assert!(
+            cut.is_none() || cut.as_ref().unwrap().world_key == "a",
+            "a join must not cut a live shot: {:?}",
+            cut.map(|c| c.world_key)
+        );
+        // And even a STORY-tier boss fall respects the shot floor.
+        let b_boss = vec![boss_kill(2)];
+        let worlds3 = [
+            WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "b",
+                events: &b_boss,
+                characters: &b_ch,
+            },
+        ];
+        let early = d.update(20, &worlds3);
+        assert!(
+            early.is_none() || early.as_ref().unwrap().world_key == "a",
+            "even a boss fall waits for the {MIN_SHOT_TICKS}-tick floor"
+        );
     }
 
     #[test]
