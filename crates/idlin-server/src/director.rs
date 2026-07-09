@@ -84,6 +84,11 @@ const STORY_TIER: u32 = 80;
 /// The floor under every shot (10s at 10Hz): below-story cues queue
 /// behind it, they don't shorten it.
 const MIN_SHOT_TICKS: u64 = 100;
+/// The ABSOLUTE floor between any two cuts, any tier (the broadcast
+/// audit measured 1-second back-to-back pairs when a story beat landed
+/// right at a rotation boundary — two full scene changes in the time it
+/// takes to blink). Even the story waits three seconds.
+const MIN_CUT_GAP_TICKS: u64 = 30;
 /// A cue from ANOTHER world pays this toll — refocusing inside the
 /// current world is cheap, a full scene change is not.
 const CROSS_WORLD_PENALTY: u32 = 8;
@@ -101,6 +106,11 @@ pub struct Director {
     shot_started: u64,
     /// The live cue's reason, for mid-shot re-broadcasts.
     current_reason: String,
+    /// A story beat the gap/floor blocked, held for its moment (codex:
+    /// the first cut DROPPED an act-fall landing one tick after a
+    /// rotation cut — the biggest beat in the game, silently missed).
+    /// (world, id, name, score, reason, hold, expires_at).
+    pending: Option<(String, u32, String, u32, String, u32, u64)>,
     current_score: u32,
     cooldowns: HashMap<String, u64>,
     rotation_idx: usize,
@@ -117,6 +127,7 @@ impl Director {
             hold_until: 0,
             shot_started: 0,
             current_reason: String::new(),
+            pending: None,
             current_score: 0,
             cooldowns: HashMap::new(),
             rotation_idx: 0,
@@ -135,7 +146,7 @@ impl Director {
         };
 
         // The strongest scoreable event this tick, across every world.
-        let mut best: Option<(String, u32, String, u32, &'static str, u32)> = None;
+        let mut best: Option<(String, u32, String, u32, String, u32)> = None;
         for w in worlds {
             for ev in w.events {
                 let scored = match ev {
@@ -201,9 +212,29 @@ impl Director {
                     .as_ref()
                     .is_none_or(|(_, _, _, s, _, _)| effective > *s)
                 {
-                    best = Some((w.key.to_string(), id, name.clone(), effective, reason, hold));
+                    best = Some((
+                        w.key.to_string(),
+                        id,
+                        name.clone(),
+                        effective,
+                        reason.to_string(),
+                        hold,
+                    ));
                 }
             }
+        }
+
+        // A blocked story beat waits for its moment; a stale one (10s) is
+        // no longer news. It competes as if fresh.
+        if let Some((_, _, _, _, _, _, expires)) = &self.pending
+            && *expires <= tick
+        {
+            self.pending = None;
+        }
+        if let Some((pw, pid, pname, pscore, preason, phold, _)) = self.pending.clone()
+            && best.as_ref().is_none_or(|(_, _, _, s, _, _)| pscore > *s)
+        {
+            best = Some((pw, pid, pname, pscore, preason, phold));
         }
 
         // A SHOT IS A COMMITMENT (the calm-director rework): a live shot
@@ -214,9 +245,33 @@ impl Director {
             let shot_over = tick >= self.hold_until;
             let story_cut =
                 score >= STORY_TIER && score > self.current_score && shot_age >= MIN_SHOT_TICKS;
-            let interrupts = shot_over || story_cut;
+            // No cut of ANY kind lands within the absolute gap — the 1s
+            // back-to-back pairs the audit measured were a rotation cut
+            // chased by a story cut. (A fresh director with no shot yet is
+            // exempt: the FIRST cut can't be "too soon after" anything.)
+            let gap_ok = self.focus_name.is_none() || shot_age >= MIN_CUT_GAP_TICKS;
+            let interrupts = (shot_over || story_cut) && gap_ok;
+            if !interrupts && score >= STORY_TIER {
+                // Blocked by the gap/floor: hold the beat for its moment.
+                if self
+                    .pending
+                    .as_ref()
+                    .is_none_or(|(_, _, _, ps, _, _, _)| score > *ps)
+                {
+                    self.pending = Some((
+                        world.clone(),
+                        id,
+                        name.clone(),
+                        score,
+                        reason.clone(),
+                        hold,
+                        tick + 100,
+                    ));
+                }
+            }
             if interrupts && self.focus_name.as_ref() != Some(&name) {
-                self.set_focus(&name, &world, score, tick, hold as u64, reason);
+                self.pending = None;
+                self.set_focus(&name, &world, score, tick, hold as u64, &reason);
                 return Some(Cue {
                     world_key: world,
                     focus: id,
@@ -251,7 +306,11 @@ impl Director {
         // Idle rotation across all characters everywhere. Even an unchanged
         // focus is re-broadcast periodically — cues aren't in the snapshot,
         // and a viewer who joins after the last cut must still lock on.
-        if tick >= self.hold_until && !roster.is_empty() {
+        if tick >= self.hold_until
+            && (self.focus_name.is_none()
+                || tick.saturating_sub(self.shot_started) >= MIN_CUT_GAP_TICKS)
+            && !roster.is_empty()
+        {
             self.rotation_idx = (self.rotation_idx + 1) % roster.len();
             let (world, id, name) = roster[self.rotation_idx].clone();
             let refresh_due = tick.saturating_sub(self.last_emit) >= REFRESH_TICKS;
@@ -433,6 +492,108 @@ mod tests {
             early.is_none() || early.as_ref().unwrap().world_key == "a",
             "even a boss fall waits for the {MIN_SHOT_TICKS}-tick floor"
         );
+    }
+
+    #[test]
+    fn no_two_cuts_land_within_the_absolute_gap() {
+        // The audit's 1s back-to-back pairs: a rotation cut chased by a
+        // story cut. Even story-tier beats respect MIN_CUT_GAP_TICKS.
+        // Mutation: drop the gap check from `interrupts` → the boss cut
+        // lands at tick 2 and this fails.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let (a_ch, b_ch) = (chars(&[1]), chars(&[2]));
+        let worlds1 = [WorldView {
+            key: "a",
+            events: &no_ev,
+            characters: &a_ch,
+        }];
+        d.update(1, &worlds1).expect("rotation takes the shot");
+        let b_ev = vec![boss_kill(2)];
+        let worlds2 = [
+            WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            },
+            WorldView {
+                key: "b",
+                events: &b_ev,
+                characters: &b_ch,
+            },
+        ];
+        let early = d.update(2, &worlds2);
+        assert!(
+            early.is_none() || early.as_ref().unwrap().world_key == "a",
+            "a boss cut one tick after a rotation cut is the strobe again"
+        );
+    }
+
+    #[test]
+    fn a_blocked_story_beat_is_delayed_not_dropped() {
+        // Codex on the min-gap: the first cut DROPPED a story beat that
+        // landed inside the gap — the act-fall could silently miss the
+        // camera. The pending buffer holds it for its moment. Mutation:
+        // remove the pending stash → no cue ever fires for the boss and
+        // this fails.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let (a_ch, b_ch) = (chars(&[1]), chars(&[2]));
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            }],
+        )
+        .expect("rotation takes the shot");
+        // The boss falls INSIDE the gap: no cut now...
+        let b_ev = vec![boss_kill(2)];
+        let blocked = d.update(
+            2,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &b_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        assert!(
+            blocked.is_none() || blocked.as_ref().unwrap().world_key == "a",
+            "the gap holds"
+        );
+        // ...but once the shot floor opens, the HELD beat fires without
+        // the event recurring.
+        let mut fired = false;
+        for t in 3..140 {
+            let quiet = [
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &no_ev,
+                    characters: &b_ch,
+                },
+            ];
+            if let Some(c) = d.update(t, &quiet)
+                && c.world_key == "b"
+            {
+                assert_eq!(c.reason, "the boss falls");
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "the held story beat must fire, not vanish");
     }
 
     #[test]
