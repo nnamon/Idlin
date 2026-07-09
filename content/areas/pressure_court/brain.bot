@@ -1,0 +1,48 @@
+// Area brain: the Pressure Court — the Bailiff's stage director (#162
+// boss theatre). One beat: when Morr staggers below half, he calls the
+// session to ORDER and the gallery answers — two wights file in from
+// the benches. A mid-boss earns one twist, not an act finale's two.
+
+include "zone_lib.bot";
+
+const L_ENTER = line "enter";
+const L_ORDER = line "order";
+
+const F_ENTERED = 1;
+
+const MON_BAILIFF = monster "bailiff_morr";
+const MON_WIGHT = monster "pressure_wight";
+
+// 0xE800+: clear of the var allocator (0xC000 up) and zone_lib's regions.
+const MONS = 0xE800;
+
+var phase;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_ENTERED) == 1) {
+            narrate(L_ENTER, net);
+        }
+        i = i + 1;
+    }
+
+    var nm = query_monsters(MONS, 16);
+    var k = 0;
+    while (k < nm) {
+        var m = MONS + k * MONSTER_RECORD_SIZE;
+        if (mem[m + MON_NUM] == MON_BAILIFF) {
+            var life = mem[m + MON_LIFE];
+            if (phase < 1 && life <= 50 && life > 0) {
+                phase = 1;
+                narrate(L_ORDER, 0);
+                spawn_monster(MON_WIGHT, 15 * 65536, 9 * 65536);
+                spawn_monster(MON_WIGHT, 28 * 65536, 9 * 65536);
+            }
+        }
+        k = k + 1;
+    }
+}

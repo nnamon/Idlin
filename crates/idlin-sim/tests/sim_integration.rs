@@ -212,6 +212,87 @@ fn the_act_1_zones_stand_up() {
         after >= before + 2,
         "the rise must add its wave ({before} -> {after})"
     );
+    // The 25% break too (codex on Q7: an unpinned phase is a deletable
+    // phase — the same gap existed in this committed Q6 pin).
+    stage.test_set_life_pct(boss, 20);
+    stage.tick(&empty);
+    stage.tick(&empty);
+    let broke = stage
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        broke >= after + 3,
+        "the break brings the drowned ({after} -> {broke})"
+    );
+
+    // The Mother's and the Bailiff's directors (#162, same pattern —
+    // mutation: drop either brain's phase block → its assert fails).
+    let mut hollow = World::new_for_zone(0x50FB, &content, "hollow");
+    hollow.tick(&empty);
+    let before = hollow
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    let mother = hollow
+        .views()
+        .iter()
+        .find(|v| v.name == "Mother of the Drowned")
+        .map(|v| v.id)
+        .expect("the Mother stands");
+    hollow.test_set_life_pct(mother, 40);
+    hollow.tick(&empty);
+    hollow.tick(&empty);
+    let after = hollow
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        after >= before + 2,
+        "the chorus answers ({before} -> {after})"
+    );
+    // The 25% verse too (codex: an unpinned phase is a deletable phase).
+    hollow.test_set_life_pct(mother, 20);
+    hollow.tick(&empty);
+    hollow.tick(&empty);
+    let last = hollow
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        last >= after + 2,
+        "the last verse rises ({after} -> {last})"
+    );
+
+    let mut court = World::new_for_zone(0x50FC, &content, "pressure_court");
+    court.tick(&empty);
+    let before = court
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    let bailiff = court
+        .views()
+        .iter()
+        .find(|v| v.name == "Bailiff Morr")
+        .map(|v| v.id)
+        .expect("the Bailiff holds session");
+    court.test_set_life_pct(bailiff, 40);
+    court.tick(&empty);
+    court.tick(&empty);
+    let after = court
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        after >= before + 2,
+        "the session files in ({before} -> {after})"
+    );
 
     // Act 2 (#148 A3): the Undertow stands up the same way.
     let mut deep = World::new_for_zone(0x5A19, &content, "the_undertow");
