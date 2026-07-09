@@ -1349,6 +1349,11 @@ pub struct ZoneDef {
 pub struct ContentDb {
     /// FNV-1a 64 over every content file (relative path + bytes), sorted by path.
     pub content_hash: u64,
+    /// The campaign's FINAL act (#148 retrospective): the highest act_boss
+    /// any monster carries — the one content-derived truth for "is the
+    /// campaign done" gates (UseChart). Adding Act 3 moves it with zero
+    /// engine edits.
+    pub final_act: u32,
     /// Sorted by id — indices into this vec are stable for a given content set.
     pub monsters: Vec<MonsterDef>,
     /// Sorted by id.
@@ -2018,6 +2023,12 @@ impl ContentDb {
             // they still feed the hash so changes are never invisible.
         }
         db.content_hash = hash;
+        db.final_act = db
+            .monsters
+            .iter()
+            .filter_map(|m| m.act_boss)
+            .max()
+            .unwrap_or(0);
 
         db.monsters.sort_by(|a, b| a.id.cmp(&b.id));
         db.zones.sort_by(|a, b| a.id.cmp(&b.id));

@@ -1094,17 +1094,20 @@ mod tests {
                 sales > 0,
                 "seed {seed:#x}: the sailor should have SOLD junk before sailing"
             );
-            // The road DOUBLED in A3 (two acts before the first sail):
-            // measured 103k on seed 1; 180k = the wall line.
+            // RETROSPECTIVE re-band (#148): the A3-era 180k line was set
+            // against a pre-scorer 103k run; the economy arcs quietly
+            // quintupled the pace — measured 19-26k across all four seeds.
+            // 60k = ~2.5x headroom; drift past it means the road slowed
+            // for a reason someone should name.
             assert!(
-                sailed_at <= 180_000,
+                sailed_at <= 60_000,
                 "seed {seed:#x}: sailed at {sailed_at} — the road has a wall"
             );
-            // Post-wall-slide actuals: {8, 8, 63, …} — one rough-luck seed
-            // sails at 63; 80 still trips true grinders (the pre-tune
-            // Hollow measured 72+ and the pre-tune caster 151).
+            // Measured 9-24 deaths across the four seeds post-economy;
+            // 60 = ~2.5x headroom, still far below the meat-grinder
+            // signatures the band exists to catch (72+, 151).
             assert!(
-                deaths <= 80,
+                deaths <= 60,
                 "seed {seed:#x}: {deaths} deaths — a zone is a meat grinder"
             );
         }
@@ -1117,23 +1120,18 @@ mod tests {
     /// or the ranged hold badly enough and the road ends early.
     #[test]
     fn the_caster_walks_the_salt_road() {
-        // The wand is the road's slowest walker (mana-bound clears; this
-        // seed is the 1.0-deadlock one) — measured 93-131k across the A2.5
-        // engine changes. The band sits just under the 140k loop budget:
-        // COMPLETION is the bar on the nastiest seed; pace-tightening is
-        // future work (#148, with the defense-valuation thread).
+        // RETROSPECTIVE re-band (#148): the debt-era lines were set before
+        // the scorer economy landed — measured 69.4k/128 on the nastiest
+        // seed (the 1.0-deadlock canary). 150k/200 gives ~2x headroom.
+        // The caster's 128 deaths remain the balance OUTLIER (melee runs
+        // 9-24, the bow 10-50): the wand corpse-trades where the bow
+        // out-ranges — a tuning thread, not a wall.
         let r = walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
         assert_complete(0x0CA5_7E12, &r);
         let (sailed_at, deaths) = (r.sailed_at, r.deaths);
-        assert!(sailed_at <= 260_000, "the caster hit a wall at {sailed_at}");
-        // KNOWN DEBT (#148): the wand build has no defense economy — INT
-        // buys mana/ES but almost no ES gear exists, so the caster trades
-        // corpses for progress (measured 135 on this seed; melee sits at
-        // 1-8). The band holds the line at 160 until the ES itemization
-        // arc lands; tightening it to melee's numbers WITHOUT that
-        // content would just be a wall.
+        assert!(sailed_at <= 150_000, "the caster hit a wall at {sailed_at}");
         assert!(
-            deaths <= 160,
+            deaths <= 200,
             "{deaths} caster deaths — a grinder for wands"
         );
     }
@@ -1146,14 +1144,22 @@ mod tests {
         // gear: rarity-first wears whatever drops). 160 = the same debt
         // band as the caster; both tighten when brains learn to value
         // defense (the remaining A2.5 thread, noted in #148).
-        // KNOWN THREAD (#148): the bow's kill pressure vs the Mother's
-        // sustain is marginal — seed 0x0BB0_77A1 WALLS at her on roughly
-        // half the recent configurations and is parked as the thread's
-        // repro; this band pins a measured-sailing seed (122k/145) so the
-        // archetype's completability is guarded while the fight is tuned.
-        let r = walk_the_salt_road(0x0BB0_77A2, idlin_botc::template_ranger().unwrap());
-        assert_complete(0x0BB0_77A2, &r);
-        let (sailed_at, deaths) = (r.sailed_at, r.deaths);
+        // THREAD CLOSED (#148 retrospective): seed 0x0BB0_77A1 used to WALL
+        // at the bow-vs-Mother fight and was parked as a known repro. The
+        // A5 scorer economy + the A2.5 nine-tenths hold healed it as a
+        // side effect — measured complete at 22.8k/10 deaths — so BOTH
+        // seeds are banded again. If either regresses, the fight thread
+        // reopens.
+        for seed in [0x0BB0_77A1u64, 0x0BB0_77A2] {
+            let r = walk_the_salt_road(seed, idlin_botc::template_ranger().unwrap());
+            assert_complete(seed, &r);
+            let (sailed_at, deaths) = (r.sailed_at, r.deaths);
+            assert!(sailed_at <= 80_000, "the ranger hit a wall at {sailed_at}");
+            assert!(deaths <= 110, "{deaths} ranger deaths — a grinder for bows");
+        }
+        let _ = (0,);
+        let (sailed_at, deaths) = (0u64, 0u32);
+        let _ = (sailed_at, deaths);
         assert!(sailed_at <= 260_000, "the ranger hit a wall at {sailed_at}");
         assert!(deaths <= 240, "{deaths} ranger deaths — a grinder for bows");
     }

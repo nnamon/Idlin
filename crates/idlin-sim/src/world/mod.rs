@@ -1615,8 +1615,14 @@ impl World {
         let Some(ch) = e.character.as_ref() else {
             return -4;
         };
-        if ch.story_acts & 1 == 0 {
-            return -3; // the sea is sealed until the Mother falls
+        // The WHOLE campaign gates the sea (#148 retrospective): the brains
+        // already waited for the final act (the table-gate discipline), but
+        // the ENGINE still accepted act-1-only sailors — a player brain
+        // could skip Act 2 entirely. The bound is content-derived: adding
+        // Act 3 moves it with zero engine edits.
+        let final_act = self.content.final_act.max(1);
+        if ch.story_acts & (1u32 << (final_act - 1)) == 0 {
+            return -3; // the sea is sealed until the campaign falls
         }
         let Some((tx, ty)) = self.chart_table else {
             return -2; // no table in this zone
@@ -3519,6 +3525,9 @@ mod area_level_tests {
             - 1;
         // Mid-campaign: the sea is sealed.
         assert_eq!(w.use_chart(slot, inv_idx), -3);
+        // Act 1 alone no longer buys the sea (#148 retro): the gate is the
+        // content-derived FINAL act. Mutation: revert use_chart to the
+        // `story_acts & 1` check → this -3 becomes a sail and fails.
         w.zone
             .get_mut(slot)
             .unwrap()
@@ -3526,6 +3535,14 @@ mod area_level_tests {
             .as_mut()
             .unwrap()
             .story_acts = 1;
+        assert_eq!(w.use_chart(slot, inv_idx), -3);
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
         // Away from the table (the spawn is out of reach of (26,46)).
         assert_eq!(w.use_chart(slot, inv_idx), -2);
         let table = w.chart_table.expect("saltmere has the table");
@@ -3580,7 +3597,7 @@ mod area_level_tests {
             .unwrap() as u32;
         {
             let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
-            ch.story_acts = 1;
+            ch.story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
             ch.inventory.push(crate::entity::PlacedItem {
                 item: crate::entity::BagItem::Gear(crate::entity::Item {
                     base_idx: chart_base,
@@ -4196,7 +4213,7 @@ mod area_level_tests {
             .character
             .as_mut()
             .unwrap()
-            .story_acts = 1;
+            .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
         assert_ne!(h1, w.state_hash(), "story_acts must move the digest");
     }
 

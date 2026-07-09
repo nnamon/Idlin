@@ -576,7 +576,10 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                             killer: killer.clone(),
                             monster: monster.clone(),
                             level: *level,
-                            line: ws.journal_lines.saturating_sub(60),
+                            // ~450 lines ≈ 15-20s of 10Hz journal (2-3 lines/frame):
+                            // a kill-cam needs the FIGHT, not just the corpse
+                            // (the first cut, 60, replayed ~2 seconds).
+                            line: ws.journal_lines.saturating_sub(450),
                         });
                         if cams.len() > 50 {
                             cams.pop_front();
