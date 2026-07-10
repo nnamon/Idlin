@@ -573,7 +573,14 @@ fn main() {
             // approach-fights forever at the gate (#148 A2: a level-19
             // ranger farmed a thousand kills eight rows from the exit).
             if (adx > 0x1CCCC || ady > 0x1CCCC) {
-                if (use_exit() == 0) { return; }
+                // The wanted-door guard applies here too (#162 Mirra).
+                var fxd = mem[SELF] - ex;
+                if (fxd < 0) { fxd = 0 - fxd; }
+                var fyd = mem[SELF + SS_Y] - ey;
+                if (fyd < 0) { fyd = 0 - fyd; }
+                if (fxd < 65536 && fyd < 65536) {
+                    if (use_exit() == 0) { return; }
+                }
                 move_to(ex, ey);
                 return;
             }
@@ -671,7 +678,18 @@ fn main() {
         return;
     }
     if (open_ex == 1 && leaving == 1) {
-        if (use_exit() == 0) { return; }
+        // Only the WANTED door (#162 Mirra): use_exit() consumes whatever
+        // exit is UNDERFOOT — the Pressure Court's respawn sits beside its
+        // south exit, so a dying bot heading NORTH kept eating the south
+        // door and commuting backward (the 191-death loop). Fire only
+        // within a cell of the exit the route chose.
+        var exd = mem[SELF] - ex;
+        if (exd < 0) { exd = 0 - exd; }
+        var eyd = mem[SELF + SS_Y] - ey;
+        if (eyd < 0) { eyd = 0 - eyd; }
+        if (exd < 65536 && eyd < 65536) {
+            if (use_exit() == 0) { return; }
+        }
         move_to(ex, ey);
         return;
     }

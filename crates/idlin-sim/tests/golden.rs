@@ -10,6 +10,10 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for the wanted-door guard (quality pass, live find): the
+/// templates' opportunistic use_exit() ate whatever door was underfoot —
+/// the Pressure Court respawn sits beside its SOUTH exit, so a dying bot
+/// heading north kept commuting backward. Template bytes only.
 /// Re-pinned for the endgame cycle (quality pass, live find): the three
 /// templates' voyage-return route now names SALTMERE — the town the
 /// voyage exit actually reaches. Template bytes only.
@@ -28,7 +32,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// lives under content/lib and is hashed like all content). The engine
 /// syscall itself hashes nothing; the shore replay has no zone brain
 /// wave logic.
-const GOLDEN_HASH: u64 = 0xD946_383F_E854_79F6;
+const GOLDEN_HASH: u64 = 0x2626_FA03_8BB7_4E96;
 
 #[test]
 fn golden_replay() {

@@ -915,12 +915,116 @@ pub mod salt_road {
     /// tested and shipped broken — the route pointed home to a town the
     /// voyage's exit never reaches).
     pub fn walk_the_salt_road_to(seed: u64, program: Vec<u8>, sail_target: u32) -> SaltRoadReport {
+        walk_the_salt_road_as(seed, program, sail_target, "Pathfinder")
+    }
+
+    /// The same road under a specific NAME (#162 live-stall repro): live
+    /// worlds seed by `seed ^ fnv(zone#name)`, so reproducing a live
+    /// character's exact deterministic chain requires their name — Mirra
+    /// stalled identically across two live runs and this is how the
+    /// harness replays HER world, not Pathfinder's.
+    /// The CROWD rig (#162 Mirra): the live server's exact boot — same
+    /// seed, same names, same join order — run for `ticks`, reporting
+    /// (name, level, acts, kills, deaths, zone) per character. The solo
+    /// harness couldn't reproduce a stall that only happens with shared
+    /// towns; this is the repro that can.
+    pub fn walk_the_road_with_crowd(
+        seed: u64,
+        names: &[&str],
+        program: Vec<u8>,
+        ticks: u64,
+    ) -> Vec<(String, u32, u32, u64, u64, String)> {
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let joins: Vec<idlin_sim::JoinRequest> = names
+            .iter()
+            .map(|n| idlin_sim::JoinRequest {
+                name: (*n).into(),
+                program: program.clone(),
+            })
+            .collect();
+        let mut worlds = boot_worlds(&content, seed, &joins);
+        for host_tick in 0..ticks {
+            let mut departures = Vec::new();
+            for (i, mw) in worlds.iter_mut().enumerate() {
+                let inputs = std::mem::take(&mut mw.pending);
+                let _ = mw.world.tick(&inputs);
+                departures.extend(
+                    mw.world
+                        .take_departures()
+                        .into_iter()
+                        .map(|(b, dest)| (i, b, dest)),
+                );
+            }
+            ferry_departures_with_charts(&mut worlds, departures, &content, seed, host_tick);
+            if host_tick % 512 == 0 {
+                worlds.retain(|mw| !minted_instance_emptied(mw));
+            }
+            // CROWD_PROBE=<name>: that character's gear + position, sampled.
+            if host_tick
+                % if std::env::var("CROWD_TRACE").is_ok() {
+                    500
+                } else {
+                    10_000
+                }
+                == 0
+                && let Ok(probe) = std::env::var("CROWD_PROBE")
+            {
+                for mw in &worlds {
+                    if let Some(sheet) = mw
+                        .world
+                        .views()
+                        .iter()
+                        .find(|v| v.kind == 1 && v.name == probe)
+                        .and_then(|v| mw.world.character_sheet(v.id))
+                    {
+                        let gear: Vec<String> = sheet
+                            .equipment
+                            .iter()
+                            .filter_map(|(_, item, _)| item.as_ref().map(|i| i.name.clone()))
+                            .collect();
+                        let pos = mw
+                            .world
+                            .views()
+                            .iter()
+                            .find(|v| v.kind == 1 && v.name == probe)
+                            .map(|v| (v.x_raw / 65536, v.y_raw / 65536));
+                        eprintln!(
+                            "PROBE t={host_tick} z={} lvl={} pos={pos:?} gear={gear:?}",
+                            mw.zone_id, sheet.level
+                        );
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for mw in &worlds {
+            for row in mw.world.leaderboard_rows() {
+                out.push((
+                    row.name,
+                    row.level,
+                    row.story_acts,
+                    row.kills,
+                    row.deaths,
+                    mw.zone_id.clone(),
+                ));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    pub fn walk_the_salt_road_as(
+        seed: u64,
+        program: Vec<u8>,
+        sail_target: u32,
+        subject: &str,
+    ) -> SaltRoadReport {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
         // The WHOLE game: the join lands on the shore, so the real tutorial
         // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
         // Saltmere before the campaign begins — exactly a fresh idler's life.
         let joins = vec![idlin_sim::JoinRequest {
-            name: "Pathfinder".into(),
+            name: subject.into(),
             program,
         }];
         let mut worlds = boot_worlds(&content, seed, &joins);
@@ -946,7 +1050,7 @@ pub mod salt_road {
                 let events = mw.world.tick(&inputs);
                 for ev in &events {
                     if let SimEvent::ActCompleted { name, act, .. } = ev
-                        && name == "Pathfinder"
+                        && name == subject
                     {
                         match act {
                             1 => milestones[3] = true,
@@ -955,7 +1059,7 @@ pub mod salt_road {
                         }
                     }
                     if let SimEvent::CharacterDied { name, killer, .. } = ev
-                        && name == "Pathfinder"
+                        && name == subject
                     {
                         deaths += 1;
                         if std::env::var("SALT_DEATHLOG").is_ok() {
@@ -991,14 +1095,14 @@ pub mod salt_road {
             // table, act done, chart spent (zone sampling every 200 ticks
             // can miss the transit — the road home is 6 cells long).
             for (_, b, dest) in &departures {
-                if b.character.name == "Pathfinder" && b.chart.is_some() {
+                if b.character.name == subject && b.chart.is_some() {
                     milestones[6] = true;
                     sails += 1;
                 }
                 // Town transits outrun the 200-tick zone sampling (the T6
                 // lesson, again): a departure BOUND for the town proves the
                 // descent as well as standing in it would.
-                if b.character.name == "Pathfinder" && dest == "lanternfall" {
+                if b.character.name == subject && dest == "lanternfall" {
                     milestones[4] = true;
                 }
             }
@@ -1050,7 +1154,7 @@ pub mod salt_road {
                         .world
                         .views()
                         .iter()
-                        .any(|v| v.kind == 1 && v.name == "Pathfinder");
+                        .any(|v| v.kind == 1 && v.name == subject);
                     if !here {
                         continue;
                     }
@@ -1228,6 +1332,51 @@ mod tests {
                 r.stuck_before()
             );
         }
+    }
+
+    #[test]
+    fn the_crowd_all_complete_the_campaign() {
+        // The multi-character regression the suite never had (#162 Mirra):
+        // the LIVE boot — same seed, same builtin names, shared towns.
+        // Mirra's roll deterministically hit the wrong-door commute loop
+        // (die in the court → respawn beside the south exit → the
+        // opportunistic use_exit() ate the door BEHIND her → 191 deaths,
+        // act 2 never done) while her solo chain was clean — only a crowd
+        // run catches interleaving-dependent stalls. Mutation: drop the
+        // wanted-door guard from the templates → Mirra stalls, this fails.
+        let rows = salt_road::walk_the_road_with_crowd(
+            0xC0FFEE,
+            &["Kargan", "Veles", "Mirra"],
+            idlin_botc::template_grinder().unwrap(),
+            120_000,
+        );
+        assert_eq!(rows.len(), 3, "nobody may be lost");
+        for (name, lvl, acts, kills, deaths, zone) in rows {
+            eprintln!("CROWD {name:8} lv{lvl} acts={acts} k={kills} d={deaths} zone={zone}");
+            assert_eq!(
+                acts, 3,
+                "{name} must complete BOTH acts in the crowd (got acts={acts}, zone={zone})"
+            );
+            assert!(deaths <= 150, "{name}: {deaths} deaths — a stall signature");
+        }
+    }
+
+    #[test]
+    #[ignore = "the live-stall repro rig — run with --ignored while diagnosing"]
+    fn repro_mirra() {
+        let r = salt_road::walk_the_salt_road_as(
+            0xC0FFEE,
+            idlin_botc::template_grinder().unwrap(),
+            2,
+            "Mirra",
+        );
+        eprintln!(
+            "MIRRA complete={} voyages={} deaths={} stuck={:?}",
+            r.completed(),
+            r.voyages,
+            r.deaths,
+            r.stuck_before()
+        );
     }
 
     #[test]
