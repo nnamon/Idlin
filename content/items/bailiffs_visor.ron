@@ -1,0 +1,17 @@
+// The court's iron face. The deep helm rung.
+//
+// (Quality pass: the itemization audit found ONE base per
+// armour/accessory slot — a level-23 endgame character wore tutorial
+// gloves; weapons had ladders, armour never did).
+ItemDef(
+    id: "bailiffs_visor",
+    public: true,
+    name: "Bailiff's Visor",
+    slot: helm,
+    req_level: 13,
+    w: 2,
+    h: 2,
+    armour: 70,
+    affix_pools: ["armour", "arcana"],
+    weight: 45,
+)
