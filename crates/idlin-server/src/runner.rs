@@ -872,6 +872,9 @@ pub mod salt_road {
     /// band's three meters.
     #[derive(Debug, serde::Serialize)]
     pub struct SaltRoadReport {
+        /// Ticketed voyages minted — 1 = reached the endgame; 2+ = the
+        /// CYCLE closes (return, re-chart, sail again).
+        pub voyages: u32,
         pub milestones: Vec<(String, bool)>,
         pub sailed_at: u64,
         pub deaths: u32,
@@ -903,6 +906,15 @@ pub mod salt_road {
     /// the act hook, UseChart, the ferry mint, or overtune any fight → a
     /// milestone never lights (or the band breaks) and this fails named.
     pub fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> SaltRoadReport {
+        walk_the_salt_road_to(seed, program, 1)
+    }
+
+    /// The same road, run until `sail_target` VOYAGES have minted — the
+    /// endgame CYCLE test's core (#162 live find: the band ended at the
+    /// first sail, so "sail, return, re-chart, sail again" was never
+    /// tested and shipped broken — the route pointed home to a town the
+    /// voyage's exit never reaches).
+    pub fn walk_the_salt_road_to(seed: u64, program: Vec<u8>, sail_target: u32) -> SaltRoadReport {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
         // The WHOLE game: the join lands on the shore, so the real tutorial
         // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
@@ -914,6 +926,7 @@ pub mod salt_road {
         let mut worlds = boot_worlds(&content, seed, &joins);
         let mut milestones = [false; 8];
         let mut sales = 0u32;
+        let mut sails = 0u32;
         let names = [
             "reach the coast",
             "reach the saltworks",
@@ -980,6 +993,7 @@ pub mod salt_road {
             for (_, b, dest) in &departures {
                 if b.character.name == "Pathfinder" && b.chart.is_some() {
                     milestones[6] = true;
+                    sails += 1;
                 }
                 // Town transits outrun the 200-tick zone sampling (the T6
                 // lesson, again): a departure BOUND for the town proves the
@@ -1027,6 +1041,9 @@ pub mod salt_road {
                     }
                 }
             }
+            if sails >= sail_target && milestones[7] {
+                break 'run;
+            }
             if host_tick % 200 == 0 {
                 for mw in &worlds {
                     let here = mw
@@ -1042,10 +1059,9 @@ pub mod salt_road {
                         "saltworks" => milestones[1] = true,
                         "hollow" => milestones[2] = true,
                         "lanternfall" => milestones[4] = true,
-                        "charted_shallows" => {
+                        "charted_shallows" if !milestones[7] => {
                             milestones[7] = true;
                             sailed_at = host_tick;
-                            break 'run;
                         }
                         _ => {}
                     }
@@ -1053,6 +1069,7 @@ pub mod salt_road {
             }
         }
         SaltRoadReport {
+            voyages: sails,
             milestones: names
                 .iter()
                 .zip(milestones.iter())
@@ -1211,6 +1228,26 @@ mod tests {
                 r.stuck_before()
             );
         }
+    }
+
+    #[test]
+    fn the_endgame_cycle_closes() {
+        // #162 live find: two sailors farmed ONE tier-1 voyage for two
+        // hours because the return route named a town the voyage's exit
+        // never reaches — and no test ran past the first sail. This one
+        // does: the grinder must sail, come HOME, spend another chart,
+        // and sail AGAIN. Mutation: re-break the voyage-return route (or
+        // the exit dest) → one sail forever, this fails.
+        let r = salt_road::walk_the_salt_road_to(
+            0x05A1_70AD,
+            idlin_botc::template_grinder().unwrap(),
+            2,
+        );
+        assert!(
+            r.voyages >= 2,
+            "the cycle must close: sail, return, re-chart, sail again (got {})",
+            r.voyages
+        );
     }
 
     #[test]

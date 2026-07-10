@@ -270,7 +270,11 @@ fn route_dest() {
     // leads to the Sovereign — the deepest act boss pays the deepest
     // charts.
     if (zid == ZONE_CHARTED_SHALLOWS) {
-        if (voyage_t > 5000) { return ZONE_LANTERNFALL; }
+        // HOME IS WHERE THE EXIT GOES (#162 live find): the route said
+        // Lanternfall but the voyage's only exit lands in SALTMERE — want
+        // never matched an exit and two sailors farmed one tier-1 voyage
+        // for two hours. Saltmere keeps a table; the cycle closes there.
+        if (voyage_t > 5000) { return ZONE_SALTMERE; }
         return -1;
     }
     if (find_chart() >= 0) {

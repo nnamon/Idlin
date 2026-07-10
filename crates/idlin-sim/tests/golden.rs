@@ -10,6 +10,9 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
+/// Re-pinned for the endgame cycle (quality pass, live find): the three
+/// templates' voyage-return route now names SALTMERE — the town the
+/// voyage exit actually reaches. Template bytes only.
 /// Re-pinned for the itemization ladder (quality pass): content-only —
 /// eight deep armour/accessory bases (the audit found ONE base per
 /// slot; a level-23 character wore tutorial gloves). New bases enter
@@ -25,7 +28,7 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// lives under content/lib and is hashed like all content). The engine
 /// syscall itself hashes nothing; the shore replay has no zone brain
 /// wave logic.
-const GOLDEN_HASH: u64 = 0x2397_057C_ED6D_D826;
+const GOLDEN_HASH: u64 = 0xD946_383F_E854_79F6;
 
 #[test]
 fn golden_replay() {
