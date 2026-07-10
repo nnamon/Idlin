@@ -1,20 +1,20 @@
-// The endgame in your bag (#136 T4): a salt-stained chart of waters no
-// living sailor drew. Used at Saltmere's Charting Table (after the Mother
-// falls), it opens a charted instance — the tier rises with the drop's
-// item level, and the obols craft the voyage like any other item: rolled
+// The endgame in your bag (#136 T4): a salt-stained map of waters no
+// living runner drew. Used at Saltmere's Opening Table (after the Mother
+// falls), it opens a mapped instance — the tier rises with the drop's
+// item level, and the obols craft the map like any other item: rolled
 // quantity pays in loot, rolled rarity in juiced packs.
 ItemDef(
     id: "salt_stained_chart",
     public: true,
-    name: "Salt-Stained Chart",
-    // Nominal slot only — charts are CARGO: the equip path refuses any
-    // chart_tier item (manual equip -1, auto score 0), so this never wears.
+    name: "Salt-Stained Map",
+    // Nominal slot only — maps are CARGO: the equip path refuses any
+    // map_tier item (manual equip -1, auto score 0), so this never wears.
     slot: flask,
     w: 2,
     h: 2,
-    // Never in the common droppool — charts drop ONLY via the dedicated
-    // roll (act-boss kills + inside charted instances).
+    // Never in the common droppool — maps drop ONLY via the dedicated
+    // roll (act-boss kills + inside mapped instances).
     weight: 0,
-    chart_tier: Some(1),
+    map_tier: Some(1),
     affix_pools: ["chart"],
 )

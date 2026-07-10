@@ -470,7 +470,7 @@ test("resolveFocusId pins to the named idler with no director-cue fallback (#79)
 
 test("the sound director maps the broadcast's beats to cues (#148 A8)", async ({ browser }) => {
   // The events fixture carries a trash kill, a boss fall (rarity 3), and a
-  // voyage tally — the REAL director mapping runs in the harness page and
+  // map tally — the REAL director mapping runs in the harness page and
   // logs cues (no audible output headless; the engine logs regardless).
   // Mutation: drop the rarity branch in SoundDirector → no "boss-fall".
   const { ctx, page } = await loadFixture(browser, "idler-manage");

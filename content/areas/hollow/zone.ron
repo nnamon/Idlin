@@ -1,7 +1,7 @@
 // Act 1's end: the Tidewarden's Hollow — the drowned throat under the
 // bluffs where the water is oldest. A winding descent past the Mother's
 // choir opens into the basin where she waits. Breaking her completes
-// Act 1 and unseals the Charting Table in Saltmere.
+// Act 1 and unseals the Map Table in Saltmere.
 //
 // AUTHORING RULE (#136 T6): bots have no pathfinding — the chase chain
 // (fight a pack, sight the next) is what pulls them through a zone, so
@@ -40,7 +40,7 @@ ZoneDef(
     ],
     exits: [
         // Back up to the Saltworks. The only way out is the way in — or a
-        // chart, once the table unseals (T4).
+        // map, once the table unseals (T4).
         (x_u: 23, y_u: 58, dest: "saltworks", open: true),
         // DOWN (#148 A3): the basin drains into the Sunken Stair — and the
         // way answers only to those who broke her (the story seal, live).

@@ -90,14 +90,14 @@ pub enum Stat {
     /// Attacker: basis points scaling the duration of ailments you inflict (Ignite
     /// spreads a fixed total over the duration, so a shorter duration burns faster).
     AilmentDuration,
-    /// CHART RULE (#148 A4): basis points of extra monster damage inside the
-    /// voyage this chart opens. Read only by the Charting Table; inert worn.
+    /// MAP RULE (#148 A4): basis points of extra monster damage inside the
+    /// map run this item opens. Read only by the Map Table; inert worn.
     MonsterFury,
-    /// CHART RULE (#148 A4): the voyage's time limit in ticks — the current
+    /// MAP RULE (#148 A4): the map's time limit in ticks — the clock
     /// takes the strand back and ferries everyone home when it expires.
-    VoyageClock,
-    /// CHART RULE (#148 A4): nonzero = the voyage's far end holds a TIER
-    /// BOSS. Rolls only on deep charts.
+    MapClock,
+    /// MAP RULE (#148 A4): nonzero = the map's far end holds a TIER
+    /// BOSS. Rolls only on deep maps.
     SovereignsMark,
     /// Basis points of increased SPELL damage (quality pass): the caster's
     /// gear curve. Spells never read weapon damage — a wand's implicit
@@ -150,7 +150,7 @@ impl Stat {
         Stat::ChillMax,
         Stat::AilmentDuration,
         Stat::MonsterFury,
-        Stat::VoyageClock,
+        Stat::MapClock,
         Stat::SovereignsMark,
         Stat::SpellDamage,
     ];
@@ -404,13 +404,13 @@ impl Stat {
             Stat::MonsterFury => (
                 "monster_fury",
                 "Monster Fury",
-                "Chart rule: monsters in the voyage deal this much more damage (basis points).",
+                "Map rule: monsters in the map deal this much more damage (basis points).",
                 AddedUnit::Factor,
             ),
-            Stat::VoyageClock => (
-                "voyage_clock",
-                "Voyage Clock",
-                "Chart rule: the voyage ends after this many ticks — beat the clock.",
+            Stat::MapClock => (
+                "map_clock",
+                "Map Clock",
+                "Map rule: the map closes after this many ticks — beat the clock.",
                 AddedUnit::Flat,
             ),
             Stat::SpellDamage => (
@@ -422,7 +422,7 @@ impl Stat {
             Stat::SovereignsMark => (
                 "sovereigns_mark",
                 "Sovereign's Mark",
-                "Chart rule: the voyage's far end holds a tier boss.",
+                "Map rule: the map’s far end holds a tier boss.",
                 AddedUnit::Flat,
             ),
             Stat::AilmentDuration => (

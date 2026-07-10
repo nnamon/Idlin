@@ -1,4 +1,4 @@
-// Chart suffix (#148 A4): a RULE — the voyage has a clock. The current
+// Map suffix (#148 A4): a RULE — the map has a clock. The current
 // takes the strand back when it runs out; whatever you carried out, you
 // keep. Shorter clocks roll deeper.
 AffixDef(
@@ -7,7 +7,7 @@ AffixDef(
     name: "of the Deluge",
     kind: suffix,
     weight: 60,
-    effects: [(stat: voyage_clock, layer: added)],
+    effects: [(stat: map_clock, layer: added)],
     tiers: [
         (ilvl: 6, name: "of the Deluge", weight: 100, rolls: [(min: 7000, max: 9000)]),
         (ilvl: 14, name: "of the Drowning Bell", weight: 40, rolls: [(min: 5000, max: 6999)]),

@@ -33,14 +33,19 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// syscall itself hashes nothing; the shore replay has no zone brain
 /// wave logic.
 /// Re-pinned for #178 (the eternal voyage): the HASH DOMAIN grew — the
-/// chart rules (voyage_ends_at, monster_fury_bp, loot_quantity_bp,
-/// is_chart_instance) AND the per-pack rarity juice (pack.def.magic_bp /
+/// chart rules (map_ends_at, monster_fury_bp, loot_quantity_bp,
+/// is_map_instance) AND the per-pack rarity juice (pack.def.magic_bp /
 /// rare_bp — chart mints MUTATE these and respawns read them) now fold
 /// into state_hash, so every world digest moves. The shore replay's
 /// BEHAVIOR is bit-identical (chart fields zero/false there, pack defs at
 /// authored values; the default voyage clock arms only in
-/// new_chart_instance) — only the fingerprint changed.
-const GOLDEN_HASH: u64 = 0xE8B3_4ADD_98D6_9896;
+/// new_map_instance) — only the fingerprint changed.
+/// Re-pinned for #180 (sailing → mapping, operator directive): content-only
+/// — the map item's display name, the map_clock/map_tier/map_table serde
+/// names in RON, the vocabulary sweep over content-file COMMENTS (every
+/// byte under content/ is hashed), and the regenerated content-docs all
+/// move content_hash. No sim rule changed; the vocabulary did.
+const GOLDEN_HASH: u64 = 0xC527_08F2_0FC3_B236;
 
 #[test]
 fn golden_replay() {

@@ -36,9 +36,9 @@ export class SoundDirector {
         this.engine.play("level-up");
         break;
       case "CharacterDeparted":
-        if (ev.data.dest === "charted_shallows") this.engine.play("sail");
+        if (ev.data.dest === "charted_shallows") this.engine.play("map_open");
         break;
-      case "VoyageTally":
+      case "MapTally":
         this.engine.play("tally");
         break;
       case "LootDropped":

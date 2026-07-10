@@ -12,9 +12,9 @@ ZoneDef(
     spawn_radius_u: 3,
     camp_radius_u: 90,      // the whole town is sanctuary
     tileset: Some("town"),
-    // The Charting Table (#136 T4): where charts become voyages, once the
+    // The Map Table (#136 T4): where maps become runs, once the
     // Mother falls. On the plaza, by the south road.
-    chart_table: Some((26, 46)),
+    map_table: Some((26, 46)),
     // The town works (#148 A5): sell at the vendor, keep at the chest.
     vendor: Some((22, 46)),
     stash: Some((30, 46)),
@@ -22,7 +22,7 @@ ZoneDef(
     lines: [
         (id: "welcome",  text: "Saltmere. Fires that stay lit. Faces that stay alive."),
         (id: "announce", text: "Another wretch crests the bluff. The camp counts one more."),
-        (id: "table", text: "The Charting Table. Salt-stained maps of water no living sailor drew."),
+        (id: "table", text: "The Map Table. Salt-stained maps of places no living hand drew."),
     ],
     packs: [
         // Townsfolk: non-hostile bots with errands and opinions.

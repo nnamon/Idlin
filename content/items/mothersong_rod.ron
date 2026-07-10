@@ -1,5 +1,5 @@
 // The caster ladder's top rung (#148 A2): driftwood that remembers her
-// voice. Act 1's end expects it; charted waters demand it.
+// voice. Act 1's end expects it; mapped waters demand it.
 ItemDef(
     id: "mothersong_rod",
     public: true,

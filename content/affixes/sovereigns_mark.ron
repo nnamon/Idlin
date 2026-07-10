@@ -1,5 +1,5 @@
-// Chart prefix (#148 A4): the deep rule — a TIER BOSS waits at the far
-// end. Only the deepest charts carry the mark.
+// Map prefix (#148 A4): the deep rule — a TIER BOSS waits at the far
+// end. Only the deepest maps carry the mark.
 AffixDef(
     id: "sovereigns_mark",
     public: true,

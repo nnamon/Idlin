@@ -1,6 +1,6 @@
 // The road's last blade (#136 T6): a ship's rib, salt-hardened past
 // iron. The melee ladder's top rung for Act 1 — the Hollow and the
-// charted waters expect it.
+// mapped waters expect it.
 ItemDef(
     id: "wreckwood_maul",
     public: true,

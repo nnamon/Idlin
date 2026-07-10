@@ -170,12 +170,12 @@ async fn main() -> anyhow::Result<()> {
                 resident.push(b.character.name.clone());
             }
         }
-        // Chart voyages (#136 T4): resume any snapshot whose key no booted
-        // world claims — the idler mid-voyage survives the restart. Runs
-        // AFTER the booted-resume loop so a voyage is never double-loaded;
+        // Map maps (#136 T4): resume any snapshot whose key no booted
+        // world claims — the idler mid-map survives the restart. Runs
+        // AFTER the booted-resume loop so a map run is never double-loaded;
         // its characters count as residents like anyone else's. The
         // content-hash gate inside load_managed refuses stale content, and
-        // only worlds that self-identify as chart instances are accepted.
+        // only worlds that self-identify as map instances are accepted.
         let booted: Vec<PathBuf> = worlds
             .iter()
             .map(|mw| persist::world_dir(&snapshot_dir, &mw.key))
@@ -187,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
             let Some((world, pendings)) = persist::load_managed(&content, &dir) else {
                 continue;
             };
-            // Resume ANY minted instance: chart voyages AND private story
+            // Resume ANY minted instance: map runs AND private story
             // worlds (codex round 1 caught the gap — a restart silently
             // dropped a mid-campaign character; "lost at sea" is the exact
             // loss class the ferry was built to prevent). The predicate is

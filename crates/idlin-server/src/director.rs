@@ -64,7 +64,7 @@ const REFRESH_TICKS: u64 = 50;
 //      character actually do something (fight a pack, clear a room).
 //   2. THE CAMERA FOLLOWS STORY, NOT NOISE. Trash kills and routine
 //      level-ups are TICKER material — they never move the camera. Cuts
-//      are earned by chapters: acts, boss falls, tallies, sails, deaths,
+//      are earned by chapters: acts, boss falls, tallies, map opens, deaths,
 //      a new deploy walking on, a unique hitting the ground.
 //   3. CROSS-WORLD CUTS COST EXTRA. A jump to another instance is a full
 //      scene change (new zone, camera snap) — it must be worth more than
@@ -74,14 +74,14 @@ const REFRESH_TICKS: u64 = 50;
 // everything else waits for the shot to end.
 const SCORE_ACT: (u32, u32) = (95, 200);
 const SCORE_BOSS_KILL: (u32, u32) = (90, 180);
-// Voyage chapters are BY NATURE scene changes — their subject departs the
+// Map chapters are BY NATURE scene changes — their subject departs the
 // emitting world as they fire, so they always pay CROSS_WORLD_PENALTY and
 // must clear STORY_TIER after the toll (89-8=81, 88-8=80). At the original
 // 85/82 they scored above the tier on paper but could never interrupt in
-// practice: the 12-minute endgame audit (#176) watched three voyages
+// practice: the 12-minute endgame audit (#176) watched three map runs
 // complete with zero cuts.
-const SCORE_TALLY: (u32, u32) = (89, 120);
-const SCORE_SAIL: (u32, u32) = (88, 120);
+const SCORE_MAP_TALLY: (u32, u32) = (89, 120);
+const SCORE_MAP_OPEN: (u32, u32) = (88, 120);
 const SCORE_DEATH: (u32, u32) = (80, 100);
 const SCORE_JOIN: (u32, u32) = (75, 100);
 const SCORE_UNIQUE_DROP: (u32, u32) = (70, 100);
@@ -158,7 +158,7 @@ impl Director {
     pub fn update(&mut self, tick: u64, worlds: &[WorldView<'_>]) -> Option<Cue> {
         // The full roster, every world, deterministic order. Beats resolve
         // their subject here BY NAME — the emitting world is the wrong
-        // anchor for tally/sail beats, whose subject has already departed
+        // anchor for tally/map-open beats, whose subject has already departed
         // it (process_exits removes the character before it emits).
         let roster = roster(worlds);
         let locate = |name: &str| -> Option<(String, u32)> {
@@ -195,13 +195,13 @@ impl Director {
                             SCORE_BOSS_KILL.1,
                         ))
                     }
-                    SimEvent::VoyageTally { name, .. } => {
-                        Some((name, SCORE_TALLY.0, "the voyage tally", SCORE_TALLY.1))
+                    SimEvent::MapTally { name, .. } => {
+                        Some((name, SCORE_MAP_TALLY.0, "the map tally", SCORE_MAP_TALLY.1))
                     }
                     SimEvent::CharacterDeparted { name, dest, .. }
                         if dest == "charted_shallows" =>
                     {
-                        Some((name, SCORE_SAIL.0, "sets sail", SCORE_SAIL.1))
+                        Some((name, SCORE_MAP_OPEN.0, "opens a map", SCORE_MAP_OPEN.1))
                     }
                     SimEvent::CharacterDied { name, .. } => {
                         Some((name, SCORE_DEATH.0, "death", SCORE_DEATH.1))
@@ -229,7 +229,7 @@ impl Director {
                 // The cooldown throttles RE-FEATURING a character, not the
                 // current shot getting more interesting: the focused
                 // subject's own beats bypass it (codex on #176 — a focused
-                // sailor's tally was cooldown-dead for the first 20s of
+                // runner's tally was cooldown-dead for the first 20s of
                 // every 30s rotation shot).
                 let is_focus = self.focus_name.as_deref() == Some(name.as_str());
                 if !is_focus && self.cooldowns.get(name).copied().unwrap_or(0) > tick {
@@ -237,7 +237,7 @@ impl Director {
                 }
                 // A full scene change must be worth more than a refocus
                 // inside the world the viewer is already reading. The toll
-                // is judged against where the subject IS (a sailor in a
+                // is judged against where the subject IS (a runner in a
                 // 1-tick ferry transit is in no roster: the shot will land
                 // in their arrival world, so it pays too).
                 let same_world = locate(name)
@@ -300,7 +300,7 @@ impl Director {
             // exempt: the FIRST cut can't be "too soon after" anything.)
             let gap_ok = self.focus_name.is_none() || shot_age >= MIN_CUT_GAP_TICKS;
             // Where the subject is NOW — a beat may outlive the world that
-            // emitted it (the tally arrives as its sailor departs).
+            // emitted it (the tally arrives as its runner departs).
             let located = locate(&name);
             let interrupts = (shot_over || story_cut) && gap_ok && located.is_some();
             if !interrupts && score >= STORY_TIER {
@@ -319,7 +319,7 @@ impl Director {
             // it's the current shot getting more interesting. It re-cues in
             // place through the same chokepoint: score/reason/hold update,
             // and set_focus repoints current_world when the subject ferried
-            // (a focused sailor's tally lands in Saltmere; the feed must
+            // (a focused runner's tally lands in Saltmere; the feed must
             // follow — codex on #176).
             if interrupts {
                 let (world, id) = located.expect("interrupts requires a located subject");
@@ -678,18 +678,18 @@ mod tests {
 
     #[test]
     fn a_tally_beat_survives_the_ferry_transit() {
-        // #176: process_exits removes the sailor BEFORE it emits the tally,
+        // #176: process_exits removes the runner BEFORE it emits the tally,
         // so the beat's subject is in NO world's roster on the emit tick —
         // the old (emitting world, net id) anchor dropped every tally ever
         // fired. Beats resolve by NAME at fire time: the beat pends through
-        // the 1-tick transit and cuts to wherever the sailor lands.
+        // the 1-tick transit and cuts to wherever the runner lands.
         // Mutations: restore the emitting-world name lookup → the beat is
-        // dropped on emit and tick 2 cues "roaming"; restore SCORE_TALLY=85
+        // dropped on emit and tick 2 cues "roaming"; restore SCORE_MAP_TALLY=85
         // → 85-8=77 misses STORY_TIER and never pends. Both fail here.
         let mut d = Director::new();
         let no_ev: Vec<SimEvent> = Vec::new();
         let empty: Vec<(u32, String)> = Vec::new();
-        let tally_ev = vec![SimEvent::VoyageTally {
+        let tally_ev = vec![SimEvent::MapTally {
             id: 7,
             name: "Kargan".into(),
             kills: 120,
@@ -697,7 +697,7 @@ mod tests {
             items: 30,
             ticks: 9000,
         }];
-        // Emit tick: the chart instance he just left, him in transit.
+        // Emit tick: the map instance he just left, him in transit.
         let cue = d.update(
             1,
             &[
@@ -733,21 +733,21 @@ mod tests {
                 ],
             )
             .expect("the held tally fires on arrival");
-        assert_eq!(cue.reason, "the voyage tally");
+        assert_eq!(cue.reason, "the map tally");
         assert_eq!(cue.world_key, "saltmere");
         assert_eq!(cue.focus, 3, "the cue carries the ARRIVAL net id");
     }
 
     #[test]
-    fn a_sail_beat_lands_on_the_new_chart_instance() {
-        // #176's twin: the sail departure is emitted by the town the sailor
-        // is LEAVING. The cut must land in the chart instance they arrive
+    fn a_map_open_beat_lands_on_the_new_map_instance() {
+        // #176's twin: the map-open departure is emitted by the town the runner
+        // is LEAVING. The cut must land in the map instance they arrive
         // in. Mutations as the tally test (emitting-world lookup / the
-        // SCORE_SAIL=82 revert, 82-8=74 < STORY_TIER) both fail here.
+        // SCORE_MAP_OPEN=82 revert, 82-8=74 < STORY_TIER) both fail here.
         let mut d = Director::new();
         let no_ev: Vec<SimEvent> = Vec::new();
         let empty: Vec<(u32, String)> = Vec::new();
-        let sail_ev = vec![SimEvent::CharacterDeparted {
+        let open_ev = vec![SimEvent::CharacterDeparted {
             id: 7,
             name: "Veles".into(),
             dest: "charted_shallows".into(),
@@ -756,12 +756,12 @@ mod tests {
             1,
             &[WorldView {
                 key: "saltmere",
-                events: &sail_ev,
+                events: &open_ev,
                 characters: &empty,
             }],
         );
         assert!(cue.is_none(), "no cue may target a subject in transit");
-        let chart_ch = vec![(4u32, "Veles".to_string())];
+        let map_ch = vec![(4u32, "Veles".to_string())];
         let cue = d
             .update(
                 2,
@@ -774,44 +774,44 @@ mod tests {
                     WorldView {
                         key: "charted_shallows#Veles@99999",
                         events: &no_ev,
-                        characters: &chart_ch,
+                        characters: &map_ch,
                     },
                 ],
             )
-            .expect("the held sail fires on arrival");
-        assert_eq!(cue.reason, "sets sail");
+            .expect("the held map-open fires on arrival");
+        assert_eq!(cue.reason, "opens a map");
         assert_eq!(cue.world_key, "charted_shallows#Veles@99999");
         assert_eq!(cue.focus, 4, "the cue carries the ARRIVAL net id");
     }
 
     #[test]
-    fn a_focused_sailors_tally_upgrades_the_shot_in_place() {
+    fn a_focused_runners_tally_upgrades_the_shot_in_place() {
         // Codex on #176: the focused subject's own beats were doubly dead —
         // the per-name cooldown (armed by the rotation cut that focused
         // them) ate the event, and the same-name guard suppressed the cue.
-        // In a 4-sailor endgame that's a quarter of all tallies. The beat
+        // In a 4-runner endgame that's a quarter of all tallies. The beat
         // must re-cue IN PLACE: new reason, and the world repointed to
-        // where the sailor landed. Mutations: restore the same-name guard
+        // where the runner landed. Mutations: restore the same-name guard
         // OR the cooldown filter without the focus bypass → the tick-151
         // cue is the "roaming" refresh, and the reason assert fails.
         let mut d = Director::new();
         let no_ev: Vec<SimEvent> = Vec::new();
         let empty: Vec<(u32, String)> = Vec::new();
-        let chart_ch = vec![(7u32, "Kargan".to_string())];
-        // Rotation focuses Kargan in his chart instance (cooldown armed).
+        let map_ch = vec![(7u32, "Kargan".to_string())];
+        // Rotation focuses Kargan in his map instance (cooldown armed).
         let cue = d
             .update(
                 1,
                 &[WorldView {
                     key: "charted_shallows#Kargan@71810",
                     events: &no_ev,
-                    characters: &chart_ch,
+                    characters: &map_ch,
                 }],
             )
             .expect("rotation takes the shot");
         assert_eq!(cue.reason, "roaming");
-        // Mid-shot, mid-cooldown: the voyage ends. Emit tick = transit.
-        let tally_ev = vec![SimEvent::VoyageTally {
+        // Mid-shot, mid-cooldown: the map run ends. Emit tick = transit.
+        let tally_ev = vec![SimEvent::MapTally {
             id: 7,
             name: "Kargan".into(),
             kills: 120,
@@ -846,8 +846,8 @@ mod tests {
                     characters: &salt_ch,
                 }],
             )
-            .expect("the focused sailor's tally still cues");
-        assert_eq!(cue.reason, "the voyage tally");
+            .expect("the focused runner's tally still cues");
+        assert_eq!(cue.reason, "the map tally");
         assert_eq!(cue.world_key, "saltmere");
         assert_eq!(cue.focus, 3);
         assert_eq!(

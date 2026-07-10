@@ -91,7 +91,7 @@ pub struct CharacterSheetView {
     pub block: i64,
     pub kills: u64,
     /// Campaign progress (#136 T7): bit N-1 = act N complete. The client's
-    /// act tracker reads this; the chart panel unlocks on bit 0.
+    /// act tracker reads this; the map panel unlocks on bit 0.
     pub story_acts: u32,
     pub damage: [i64; crate::entity::DMG_COUNT],
     pub accuracy: i64,
@@ -714,23 +714,23 @@ impl World {
         // Which zone this world runs (bots read it via SelfStatus), its level, and
         // the zone's authored speech — all serialized World state.
         h.write_u32(self.zone_idx);
-        // Voyage marks steer the tally event (#148 A7) — replayed state.
-        h.write_u64(self.voyage_marks.len() as u64);
-        for (net, (k, d, i, t)) in &self.voyage_marks {
+        // Map marks steer the tally event (#148 A7) — replayed state.
+        h.write_u64(self.map_marks.len() as u64);
+        for (net, (k, d, i, t)) in &self.map_marks {
             h.write_u32(*net);
             h.write_u64(*k);
             h.write_u64(*d);
             h.write_u64(*i);
             h.write_u64(*t);
         }
-        // The chart rules (#148 A4; folded by #178): replay-relevant by this
-        // hash's own bar. Two worlds differing only in the voyage clock
+        // The map rules (#148 A4; folded by #178): replay-relevant by this
+        // hash's own bar. Two worlds differing only in the map clock
         // ferry everyone home at different ticks; fury and quantity steer
         // every strike and drop roll; the instance bit steers retirement.
-        h.write_u64(self.voyage_ends_at);
+        h.write_u64(self.map_ends_at);
         h.write_u64(self.monster_fury_bp as u64);
         h.write_u64(self.loot_quantity_bp as u64);
-        h.write_u32(self.is_chart_instance as u32);
+        h.write_u32(self.is_map_instance as u32);
         h.write_u32(self.zone_level);
         h.write_u64(self.zone_lines.len() as u64);
         for line in &self.zone_lines {
@@ -996,7 +996,7 @@ impl World {
                 for &word in &ch.explored {
                     h.write_u64(word);
                 }
-                // Campaign progress (#136): gates exits/charts — future state.
+                // Campaign progress (#136): gates exits/maps — future state.
                 h.write_u32(ch.story_acts);
             }
             h.write_u64(e.last_say_tick);
@@ -1099,8 +1099,8 @@ impl World {
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
             h.write_u32(pack.respawn_timer);
-            // The chart's rarity juice MUTATES these per-pack (#148 A4 at
-            // new_chart_instance) and respawn rolls read them — mutated
+            // The map's rarity juice MUTATES these per-pack (#148 A4 at
+            // new_map_instance) and respawn rolls read them — mutated
             // def state is world state, not content (#178, codex).
             h.write_u32(pack.def.magic_bp);
             h.write_u32(pack.def.rare_bp);

@@ -1,5 +1,5 @@
-// The TIER BOSS (#148 A4): the Unwritten — the thing the old charts
-// refused to draw. Spawns only in Sovereign-Marked voyages, at the far
+// The TIER BOSS (#148 A4): the Unwritten — the thing the old maps
+// refused to draw. Spawns only in Sovereign-Marked maps, at the far
 // end, at its AUTHORED level (uniques never area-scale) — the ticket's
 // fury and juice dials carry the tier's difficulty. Endurance-ratio tuned.
 MonsterDef(
@@ -36,6 +36,6 @@ MonsterDef(
     projectile: false,
     lines: [
         "No map holds me. Yours will not either.",
-        "You sailed PAST the edge. Bold.",
+        "You walked PAST the edge of the drawn world. Bold.",
     ],
 )

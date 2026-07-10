@@ -647,7 +647,7 @@ const fullShore: Fixture = {
         events: [
           { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Bone Stalker", level: 40 , rarity: 0 } },
           { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "The Riptide Sovereign", level: 21, rarity: 3 } },
-          { type: "VoyageTally", data: { id: FOCUS_ID, name: NAME, kills: 34n, deaths: 1n, items: 12n, ticks: 4000n } },
+          { type: "MapTally", data: { id: FOCUS_ID, name: NAME, kills: 34n, deaths: 1n, items: 12n, ticks: 4000n } },
           { type: "LootDropped", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
           { type: "ItemPickedUp", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
           { type: "MonsterKilled", data: { killer_id: 3, killer: "Mirra", monster: "Drowned Shambler", level: 39 , rarity: 0 } },
@@ -1042,20 +1042,20 @@ const fullBoss: Fixture = {
 /**
  * Campaign UI (#136 T7): the zone title card (fires on the fixture's own
  * snapshot cut — frozen clock keeps it up), the act-done chip with the
- * chart count on the focus panel, and a Salt-Stained Chart in the bag.
+ * map count on the focus panel, and a Salt-Stained Map in the bag.
  * Eyeball: "THE CHARTED SHALLOWS" center-high; the green "act 1 done ·
- * 1 chart" chip beside the level line.
+ * 1 map" chip beside the level line.
  */
 const fullCampaign: Fixture = {
   kind: "full",
-  label: "Campaign UI (#136 T7): zone title card + act chip + chart in bag",
+  label: "Campaign UI (#136 T7): zone title card + act chip + map in bag",
   status: LIVE_STATUS,
   seed: 0x7c1d5,
   frames: 40,
   camera: [25, 9, 30, 26.5, 1.6, 16.5],
   messages: [
     // The title card marks a CUT — so the fixture cuts: town first, then
-    // the voyage (the initial ""→world load deliberately never splashes).
+    // the map run (the initial ""→world load deliberately never splashes).
     zoneSnapshot({
       zone_name: "Saltmere",
       world_key: "saltmere",
@@ -1094,7 +1094,7 @@ const fullCampaign: Fixture = {
           story_acts: 3,
           inventory: [
             {
-              name: "Seething Salt-Stained Chart of Bounty",
+              name: "Seething Salt-Stained Map of Bounty",
               rarity: 1,
               x: 0,
               y: 0,
@@ -1108,7 +1108,7 @@ const fullCampaign: Fixture = {
         }),
       },
     } as S2C,
-    directorCue(1, "the charted waters"),
+    directorCue(1, "the mapped waters"),
   ],
 };
 

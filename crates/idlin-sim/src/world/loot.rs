@@ -99,7 +99,7 @@ impl World {
             .and_then(|e| e.combat.as_ref())
             .map(|c| (c.item_quantity.max(0), c.item_rarity.max(0)))
             .unwrap_or((10000, 10000));
-        // Chart juice (#136 T4): the instance's rolled quantity bonus.
+        // Map juice (#136 T4): the instance's rolled quantity bonus.
         quantity += self.loot_quantity_bp;
         match monster_rarity {
             Rarity::Magic => {
@@ -169,16 +169,16 @@ impl World {
         })
     }
 
-    /// Roll a CHART (#136 T4): the endgame's own drop, never in the common
+    /// Roll a MAP (#136 T4): the endgame's own drop, never in the common
     /// pool (its base has weight 0). Always Magic — 1-2 affixes off the
-    /// chart pool (quantity/rarity juice) — at the kill's item level, so
-    /// deeper waters chart deeper waters.
-    pub(super) fn roll_chart(&mut self, item_level: u32) -> Option<LootPayload> {
+    /// map pool (quantity/rarity juice) — at the kill's item level, so
+    /// deeper waters map deeper waters.
+    pub(super) fn roll_map(&mut self, item_level: u32) -> Option<LootPayload> {
         let base_idx = self
             .content
             .items
             .iter()
-            .position(|d| d.chart_tier.is_some())? as u32;
+            .position(|d| d.map_tier.is_some())? as u32;
         let mut item = Item {
             base_idx,
             rarity: Rarity::Magic,

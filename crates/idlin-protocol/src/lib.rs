@@ -26,7 +26,8 @@ use ts_rs::TS;
 /// v43 (#148 A6): `GameEvent` gained `CharacterRemoved` (the kill switch on the wire).
 /// v44 (#148 A7): `MonsterKilled` gained `rarity`; `GameEvent` gained `VoyageTally`.
 /// v45 (quality pass): `EntityState` gained `hostile` (the readability ember's gate).
-pub const PROTO_VERSION: u32 = 45;
+/// v46 (#180, operator directive): `VoyageTally` renamed `MapTally` on the wire.
+pub const PROTO_VERSION: u32 = 46;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -227,8 +228,8 @@ pub enum GameEvent {
         id: u32,
         name: String,
     },
-    /// The voyage scoreboard (#148 A7).
-    VoyageTally {
+    /// The map scoreboard (#148 A7).
+    MapTally {
         id: u32,
         name: String,
         kills: u64,
@@ -583,7 +584,7 @@ pub struct CharacterSheet {
     pub block_bp: i32,
     pub kills: u32,
     /// Campaign progress (#136 T7): bit N-1 = act N complete (bit 0 = Act 1 —
-    /// the chart endgame's key). The act tracker and chart panel read this.
+    /// the map endgame's key). The act tracker and map panel read this.
     pub story_acts: u32,
     pub dmg_phys: i32,
     pub dmg_fire: i32,
@@ -865,6 +866,37 @@ mod tests {
                     name,
                     act: 1,
                 } => assert_eq!(name, "Vex"),
+                other => panic!("wrong event back: {other:?}"),
+            },
+            other => panic!("wrong message back: {other:?}"),
+        }
+
+        // The map scoreboard survives the wire under its v46 tag (#180 —
+        // the variant was RENAMED from VoyageTally; JSON is name-based, so
+        // the tag itself is contract). Mutation: revert the rename → the
+        // tag assert fails before any client sees a mistagged event.
+        let tally = S2C::Events {
+            events: vec![GameEvent::MapTally {
+                id: 7,
+                name: "Kargan".into(),
+                kills: 120,
+                deaths: 1,
+                items: 30,
+                ticks: 9000,
+            }],
+        };
+        let json = serde_json::to_string(&tally).unwrap();
+        assert!(json.contains("\"MapTally\""), "tagged variant name: {json}");
+        let back: S2C = serde_json::from_str(&json).unwrap();
+        match back {
+            S2C::Events { events } => match &events[0] {
+                GameEvent::MapTally {
+                    id: 7,
+                    name,
+                    kills: 120,
+                    ticks: 9000,
+                    ..
+                } => assert_eq!(name, "Kargan"),
                 other => panic!("wrong event back: {other:?}"),
             },
             other => panic!("wrong message back: {other:?}"),

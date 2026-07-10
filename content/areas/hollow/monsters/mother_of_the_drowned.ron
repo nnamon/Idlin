@@ -16,7 +16,7 @@ MonsterDef(
     hostile: true,
     unique: true,
     // #136: THE act boss. Breaking her completes Act 1 and unseals the
-    // Charting Table (the endgame, T4).
+    // Map Table (the endgame, T4).
     act_boss: Some(1),
     level: 12,
     life: 2000,

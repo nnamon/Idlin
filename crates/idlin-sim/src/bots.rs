@@ -43,11 +43,11 @@ use idlin_vm::abi;
 // the compiler's BUILTINS table.
 use idlin_vm::{
     SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
-    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_AILMENTS,
-    SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY,
-    SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_READ_STASH, SYS_SAY, SYS_SELF_STATUS, SYS_SELL,
-    SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_STASH, SYS_UNEQUIP, SYS_USE_CHART,
-    SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_OPEN_MAP, SYS_PICK_UP, SYS_RANDOM,
+    SYS_READ_AILMENTS, SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS,
+    SYS_READ_INVENTORY, SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_READ_STASH, SYS_SAY,
+    SYS_SELF_STATUS, SYS_SELL, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_STASH,
+    SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
     SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
@@ -305,9 +305,9 @@ impl World {
                     out.wrapping_add(abi::SS_ZONE),
                     self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
                 );
-                // The Charting Table (#136 T6): where charts spend, in world
+                // The Opening Table (#136 T6): where maps spend, in world
                 // coords (Q16.16 cell centers), or -1/-1 in table-less zones.
-                let (tx, ty) = self.chart_table.map_or((-1, -1), |(x, y)| {
+                let (tx, ty) = self.map_table.map_or((-1, -1), |(x, y)| {
                     (Fx::from_int(x as i16).raw(), Fx::from_int(y as i16).raw())
                 });
                 bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_X), tx);
@@ -518,14 +518,14 @@ impl World {
                 }
                 n as i32
             }
-            // UseChart (#136 T4): consume a chart from the bag at the Charting
-            // Table and sail. 0 = departing this tick; -1 bad index / not a
-            // chart; -2 not at a table; -3 Act 1 incomplete (the sea is sealed
+            // OpenMap (#136 T4): consume a map from the bag at the Map
+            // Table and open. 0 = departing this tick; -1 bad index / not a
+            // map; -2 not at a table; -3 campaign incomplete (the sea is sealed
             // until the Mother falls); -4 not a character; -5 a departure is
-            // already staged this tick (the chart is NOT consumed).
-            SYS_USE_CHART => {
+            // already staged this tick (the map is NOT consumed).
+            SYS_OPEN_MAP => {
                 let inv_sel = bot.vm.pop();
-                self.use_chart(slot, inv_sel)
+                self.open_map(slot, inv_sel)
             }
             SYS_SELL => {
                 let inv_sel = bot.vm.pop();

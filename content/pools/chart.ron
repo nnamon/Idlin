@@ -1,6 +1,6 @@
-// The chart pool (#136 T4): what the sea writes on its maps. Quantity pays
+// The map pool (#136 T4): what the sea writes on its maps. Quantity pays
 // in drops; rarity pays in juiced packs. Crafted with the same obols as
-// everything else — better voyages are made, not found.
+// everything else — better maps are made, not found.
 AffixPool(
     id: "chart",
     affixes: ["of_shoals", "of_plenty", "stormtossed", "of_the_deluge", "sovereigns_mark"],

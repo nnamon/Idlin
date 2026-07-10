@@ -389,7 +389,7 @@ export function Overlay({
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
               level {focused.state.level} {focused.state.model}
               {/* the campaign chip (#136 T7): act state at a glance — and
-                  once the Mother falls, the chart count doubles as the
+                  once the Mother falls, the map count doubles as the
                   endgame's ticket stub. */}
               {sheet && <ActChip sheet={sheet} />}
             </div>
@@ -623,7 +623,7 @@ function SlotBox({
 }
 
 /** The campaign chip (#136 T7): act state at a glance — and once the
- *  Mother falls, the chart count doubles as the endgame's ticket stub. */
+ *  Mother falls, the map count doubles as the endgame's ticket stub. */
 /** Recent boss falls (#162 kill-cams): each row deep-links into the
  *  deterministic replay journal at the fight, not the corpse. Polled
  *  gently; fixtures inject rows directly (no fetch in the harness). */
@@ -671,13 +671,13 @@ export type KillCamRow = {
 };
 
 function ActChip({ sheet }: { sheet: CharacterSheet }) {
-  // Two acts now (#148 A3): show where the road stands; the chart count
-  // appears once the campaign is done (charts wait for the last act).
+  // Two acts now (#148 A3): show where the road stands; the map count
+  // appears once the campaign is done (maps wait for the last act).
   if ((sheet.story_acts & 2) !== 0) {
-    const n = chartCount(sheet);
+    const n = mapCount(sheet);
     return (
       <span className="act-chip done">
-        campaign done · {n} chart{n === 1 ? "" : "s"}
+        campaign done · {n} map{n === 1 ? "" : "s"}
       </span>
     );
   }
@@ -685,10 +685,10 @@ function ActChip({ sheet }: { sheet: CharacterSheet }) {
   return <span className="act-chip">act 1</span>;
 }
 
-// Charts count by the base's stable tagged num (RFC #54) — names are
+// Maps count by the base's stable tagged num (RFC #54) — names are
 // display, nums are identity. (salt_stained_chart, seq 13 in ids.ron.)
 const ITEM_SALT_STAINED_CHART = 16777229;
-function chartCount(sheet: CharacterSheet): number {
+function mapCount(sheet: CharacterSheet): number {
   return sheet.inventory.filter((r) => r.base_num === ITEM_SALT_STAINED_CHART).length;
 }
 

@@ -53,15 +53,15 @@ pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
 pub const CORPSE_TICKS: u64 = 300;
 /// Untouched ticks before energy shield begins recharging.
 pub const ES_RECHARGE_DELAY_TICKS: u64 = 40;
-/// The clock a chart mints with when no VoyageClock affix rolled one (#178):
-/// EVERY voyage ends. 10 minutes at 10Hz — comfortably past the stock
+/// The clock a map mints with when no MapClock affix rolled one (#178):
+/// EVERY map ends. 10 minutes at 10Hz — comfortably past the stock
 /// brains' self-return (~5000 ticks), so it only catches broken, stale, or
 /// idle brains that would otherwise farm a private instance forever.
-pub const DEFAULT_VOYAGE_TICKS: u64 = 6000;
-/// `voyage_ends_at` after the clock rang (#178): distinct from 0 ("never
+pub const DEFAULT_MAP_TICKS: u64 = 6000;
+/// `map_ends_at` after the clock rang (#178): distinct from 0 ("never
 /// armed") so resume migration re-arms only genuine pre-#178 clockless
-/// charts, never a world whose voyage already ended.
-pub const VOYAGE_CLOCK_FIRED: u64 = u64::MAX;
+/// maps, never a world whose map already ended.
+pub const MAP_CLOCK_FIRED: u64 = u64::MAX;
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
 /// through here — never by mutating state directly.
@@ -97,28 +97,28 @@ pub struct CharacterBundle {
     pub persist: Vec<u8>,
     pub params: Vec<u8>,
     pub bot_version: u32,
-    /// Charts (#136 T4): set when this departure was a UseChart — the host
-    /// creates a fresh chart instance from it instead of routing to a booted
+    /// Maps (#136 T4): set when this departure was an OpenMap — the host
+    /// creates a fresh map instance from it instead of routing to a booted
     /// world. Consumed by the ferry; never survives into the next departure.
     #[serde(default)]
-    pub chart: Option<ChartTicket>,
+    pub map: Option<MapTicket>,
 }
 
-/// A consumed chart, as instance parameters (#136 T4): the tier drives the
-/// instance's area level; the juice bps (from the chart's rolled affixes)
+/// A consumed map, as instance parameters (#136 T4): the tier drives the
+/// instance's area level; the juice bps (from the map's rolled affixes)
 /// drive spawn rarity and drop quantity inside. Deterministic: rolled once
 /// on the item, carried whole.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChartTicket {
+pub struct MapTicket {
     pub tier: u32,
     /// Added to every pack's magic_bp/rare_bp in the instance.
     pub rarity_bp: i64,
     /// Folded into every kill's drop quantity in the instance.
     pub quantity_bp: i64,
-    /// RULE (#148 A4): basis points of extra monster damage in the voyage.
+    /// RULE (#148 A4): basis points of extra monster damage in the map.
     #[serde(default)]
     pub fury_bp: i64,
-    /// RULE: the voyage's clock in ticks (0 = none) — expiry ferries
+    /// RULE: the map's clock in ticks (0 = none) — expiry ferries
     /// everyone home; what you carried out, you keep.
     #[serde(default)]
     pub clock: i64,
@@ -348,10 +348,10 @@ pub enum SimEvent {
         name: String,
         dest: String,
     },
-    /// The voyage scoreboard (#148 A7): what a sailor did in a chart
+    /// The map scoreboard (#148 A7): what a runner did in a map
     /// instance, tallied at departure (either exit: walked out or the
     /// clock rang). The broadcast cuts to it; the UI cards it.
-    VoyageTally {
+    MapTally {
         id: u32,
         name: String,
         kills: u64,
@@ -411,36 +411,36 @@ pub struct World {
     /// max(def level, area level); magic +1, rare +2; uniques authored.
     #[serde(default = "default_zone_level")]
     pub(crate) zone_level: u32,
-    /// Chart juice (#136 T4): extra drop quantity in this world (bp; 0 =
-    /// none). Set at chart-instance creation; folded into every kill's
+    /// Map juice (#136 T4): extra drop quantity in this world (bp; 0 =
+    /// none). Set at map-instance creation; folded into every kill's
     /// drop roll. Serialized + hashed — it steers future loot.
     #[serde(default)]
     pub(crate) loot_quantity_bp: i64,
-    /// The Charting Table's cell, from the ZoneDef (#136 T4). None = no table.
+    /// The Map Table's cell, from the ZoneDef (#136 T4). None = no table.
     #[serde(default)]
-    pub(crate) chart_table: Option<(i32, i32)>,
+    pub(crate) map_table: Option<(i32, i32)>,
     /// The town's vendor + stash cells (#148 A5), from the ZoneDef.
     #[serde(default)]
     pub(crate) vendor: Option<(i32, i32)>,
     #[serde(default)]
     pub(crate) stash_cell: Option<(i32, i32)>,
-    /// True in a chart instance (#136 T4): charts keep dropping here (the
+    /// True in a map instance (#136 T4): maps keep dropping here (the
     /// loop sustains itself), and the host retires the world when it empties.
     #[serde(default)]
-    pub(crate) is_chart_instance: bool,
-    /// CHART RULE (#148 A4): extra monster damage in this voyage (bp).
+    pub(crate) is_map_instance: bool,
+    /// MAP RULE (#148 A4): extra monster damage in this map (bp).
     /// Hashed + serialized — it steers every fight here.
     #[serde(default)]
     pub(crate) monster_fury_bp: i64,
-    /// CHART RULE: the tick this voyage ends (0 = no clock). At expiry the
+    /// MAP RULE: the tick this map ends (0 = no clock). At expiry the
     /// current ferries every character home to Lanternfall.
     #[serde(default)]
-    pub(crate) voyage_ends_at: u64,
-    /// Voyage tallies (#148 A7): per-sailor (kills, deaths, items, tick)
-    /// marks at ARRIVAL into a chart instance; the departure delta is the
-    /// scoreboard. BTreeMap for hash order; empty outside chart worlds.
+    pub(crate) map_ends_at: u64,
+    /// Map tallies (#148 A7): per-runner (kills, deaths, items, tick)
+    /// marks at ARRIVAL into a map instance; the departure delta is the
+    /// scoreboard. BTreeMap for hash order; empty outside map worlds.
     #[serde(default)]
-    pub(crate) voyage_marks: std::collections::BTreeMap<u32, (u64, u64, u64, u64)>,
+    pub(crate) map_marks: std::collections::BTreeMap<u32, (u64, u64, u64, u64)>,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -461,7 +461,7 @@ pub struct World {
     /// UseExit calls staged during bot execution; detached in slot-call
     /// order after bots finish (an entity can't vanish mid-arena-walk).
     #[serde(skip)]
-    pub(crate) pending_exits: Vec<(u32, String, Option<ChartTicket>)>,
+    pub(crate) pending_exits: Vec<(u32, String, Option<MapTicket>)>,
     /// Committed uses winding up toward their contact tick.
     #[serde(default)]
     pub(crate) pending_uses: Vec<crate::world::combat::PendingUse>,
@@ -853,13 +853,13 @@ impl World {
             pending_uses: Vec::new(),
             zone_level: content.zone(zone_id).map_or(1, |z| z.level),
             loot_quantity_bp: 0,
-            chart_table: content.zone(zone_id).and_then(|z| z.chart_table),
+            map_table: content.zone(zone_id).and_then(|z| z.map_table),
             vendor: content.zone(zone_id).and_then(|z| z.vendor),
             stash_cell: content.zone(zone_id).and_then(|z| z.stash),
-            is_chart_instance: false,
+            is_map_instance: false,
             monster_fury_bp: 0,
-            voyage_ends_at: 0,
-            voyage_marks: std::collections::BTreeMap::new(),
+            map_ends_at: 0,
+            map_marks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -881,14 +881,14 @@ impl World {
         // an empty lookup index — rebuild it from the restored slots before any
         // get_net/slot_of (inspect, syscalls) runs against this world.
         self.zone.rebuild_net_index();
-        // #178 MIGRATION: a pre-#178 chart snapshot minted clockless
-        // (voyage_ends_at == 0 means NEVER ARMED — a rung clock parks at
-        // VOYAGE_CLOCK_FIRED, and post-#178 mints always arm). Re-arm a
+        // #178 MIGRATION: a pre-#178 map snapshot minted clockless
+        // (map_ends_at == 0 means NEVER ARMED — a rung clock parks at
+        // MAP_CLOCK_FIRED, and post-#178 mints always arm). Re-arm a
         // fresh default from the resume point so the eternal farm cannot
         // survive a restart; deterministic (same snapshot, same tick,
         // same re-arm on every observer).
-        if self.is_chart_instance && self.voyage_ends_at == 0 {
-            self.voyage_ends_at = self.tick + DEFAULT_VOYAGE_TICKS;
+        if self.is_map_instance && self.map_ends_at == 0 {
+            self.map_ends_at = self.tick + DEFAULT_MAP_TICKS;
         }
         if let Some(why) = self.first_malformed_affix() {
             return Err(format!("malformed snapshot: {why}"));
@@ -1032,30 +1032,30 @@ impl World {
         self.zone_level
     }
 
-    /// True for chart instances (#136 T4) — the host retires these when empty.
-    pub fn is_chart_instance(&self) -> bool {
-        self.is_chart_instance
+    /// True for map instances (#136 T4) — the host retires these when empty.
+    pub fn is_map_instance(&self) -> bool {
+        self.is_map_instance
     }
 
     /// This world's zone, as an index into `ContentDb::zones` (#136 T4):
-    /// lets the host recover a resumed voyage's zone id (its key file names
+    /// lets the host recover a resumed map's zone id (its key file names
     /// the world; the zone comes from the state itself).
     pub fn zone_index(&self) -> u32 {
         self.zone_idx
     }
 
-    /// A CHART INSTANCE of a map zone (#136 T4): the ticket's tier sets the
-    /// area level (12 + tier — charts begin where Act 1 ends) and its juice
+    /// A MAP INSTANCE of a map zone (#136 T4): the ticket's tier sets the
+    /// area level (12 + tier — maps begin where Act 1 ends) and its juice
     /// boosts every pack's rarity rolls and the world's drop quantity. Must
     /// run before the first tick — packs spawn then, at the lifted level.
-    pub fn new_chart_instance(
+    pub fn new_map_instance(
         seed: u64,
         content: &ContentDb,
         zone_id: &str,
-        ticket: ChartTicket,
+        ticket: MapTicket,
     ) -> World {
         let mut w = Self::new_for_zone(seed, content, zone_id);
-        w.is_chart_instance = true;
+        w.is_map_instance = true;
         w.zone_level = 12 + ticket.tier;
         w.loot_quantity_bp = ticket.quantity_bp.max(0);
         for pack in &mut w.zone.packs {
@@ -1064,15 +1064,15 @@ impl World {
         }
         // THE RULES (#148 A4) — applied at the one instance chokepoint.
         w.monster_fury_bp = ticket.fury_bp.clamp(0, 10000);
-        // EVERY voyage ends (#178): a clockless chart plus a non-returning
+        // EVERY map ends (#178): a clockless map plus a non-returning
         // brain was an infinite private XP/loot faucet (a stale deploy
         // farmed one tier-1 instance for four hours). The default outlives
-        // any healthy brain's self-return (~5000 ticks); a VoyageClock
+        // any healthy brain's self-return (~5000 ticks); a MapClock
         // affix still sets its own duration.
-        w.voyage_ends_at = if ticket.clock > 0 {
+        w.map_ends_at = if ticket.clock > 0 {
             ticket.clock as u64 // relative to tick 0
         } else {
-            DEFAULT_VOYAGE_TICKS
+            DEFAULT_MAP_TICKS
         };
         if ticket.boss
             && let Some(bi) = w.content.monster_idx("the_unwritten")
@@ -1108,10 +1108,10 @@ impl World {
     }
 
     /// Advance the world by exactly one tick.
-    /// CHART RULE (#148 A4): when the voyage clock expires, the current
+    /// MAP RULE (#148 A4): when the map clock expires, the current
     /// takes the strand back — every character is staged home to
     /// Lanternfall as an ordinary departure (loot in the bag comes along;
-    /// the ferry lands them; the empty voyage retires).
+    /// the ferry lands them; the empty map retires).
     /// KILL SWITCH (#148 A6): remove named characters — despawn the
     /// entity, drop its bot, narrate the removal. Idempotent on unknown
     /// names (the host may race a transfer; the miss is harmless).
@@ -1129,7 +1129,7 @@ impl World {
                 self.bots.remove(bi);
             }
             self.zone.remove(slot);
-            self.voyage_marks.remove(&net);
+            self.map_marks.remove(&net);
             events.push(SimEvent::Narration {
                 target: 0,
                 text: format!("{name} is recalled — the brain is switched off."),
@@ -1141,18 +1141,18 @@ impl World {
         }
     }
 
-    fn voyage_clock(&mut self, events: &mut Vec<SimEvent>) {
-        if self.voyage_ends_at == 0
-            || self.voyage_ends_at == VOYAGE_CLOCK_FIRED
-            || self.tick < self.voyage_ends_at
+    fn map_clock(&mut self, events: &mut Vec<SimEvent>) {
+        if self.map_ends_at == 0
+            || self.map_ends_at == MAP_CLOCK_FIRED
+            || self.tick < self.map_ends_at
         {
             return;
         }
         // Fire once. The sentinel (not 0) keeps "already rang" distinct
         // from "never armed", so the #178 resume migration can re-arm
-        // exactly the pre-#178 clockless charts and nothing else — a
+        // exactly the pre-#178 clockless maps and nothing else — a
         // post-fire world must resume bit-identical, not with a new clock.
-        self.voyage_ends_at = VOYAGE_CLOCK_FIRED;
+        self.map_ends_at = MAP_CLOCK_FIRED;
         let nets: Vec<u32> = self
             .zone
             .iter()
@@ -1165,7 +1165,7 @@ impl World {
             }
             events.push(SimEvent::Narration {
                 target: net,
-                text: "The clock runs out. The current takes the strand back.".into(),
+                text: "The map unravels. The portal takes you home.".into(),
             });
         }
     }
@@ -1177,7 +1177,7 @@ impl World {
         self.apply_joins(inputs, &mut events);
         self.run_bots(&mut events);
         self.process_removals(&inputs.removals, &mut events);
-        self.voyage_clock(&mut events);
+        self.map_clock(&mut events);
         self.process_exits(&mut events);
         self.movement();
         self.separation();
@@ -1271,7 +1271,7 @@ impl World {
     /// exactly one zone. The persist block travels; working VM memory
     /// resets, like a redeploy.
     fn process_exits(&mut self, events: &mut Vec<SimEvent>) {
-        for (net, dest, chart) in std::mem::take(&mut self.pending_exits) {
+        for (net, dest, map) in std::mem::take(&mut self.pending_exits) {
             let Some(slot) = self.zone.slot_of(net) else {
                 continue; // died and was removed in the same tick
             };
@@ -1293,18 +1293,18 @@ impl World {
                     program: b.program,
                     params: b.params,
                     bot_version: b.version,
-                    chart,
+                    map,
                 },
                 dest.clone(),
             ));
-            // The voyage scoreboard (#148 A7): departing a chart instance
+            // The map scoreboard (#148 A7): departing a map instance
             // settles the tally against the arrival marks — either exit
             // path (walked out, or the clock staged the same departure).
-            if self.is_chart_instance
-                && let Some((k0, d0, i0, t0)) = self.voyage_marks.remove(&net)
+            if self.is_map_instance
+                && let Some((k0, d0, i0, t0)) = self.map_marks.remove(&net)
             {
                 let ch = &self.pending_departures.last().unwrap().0.character;
-                events.push(SimEvent::VoyageTally {
+                events.push(SimEvent::MapTally {
                     id: net,
                     name: name.clone(),
                     kills: ch.kills.saturating_sub(k0),
@@ -1484,10 +1484,10 @@ impl World {
             }
             let name = character.name.clone();
             let level = character.level;
-            // Voyage tally marks (#148 A7): stamp what the sailor arrives
+            // Map tally marks (#148 A7): stamp what the runner arrives
             // with; the departure delta is the scoreboard.
-            if self.is_chart_instance {
-                self.voyage_marks.insert(
+            if self.is_map_instance {
+                self.map_marks.insert(
                     net_id,
                     (
                         character.kills,
@@ -1521,14 +1521,9 @@ impl World {
         }
     }
 
-    /// UseChart (#136 T4): validate, consume, and stage the sail. The chart's
-    /// effective tier is its base tier lifted by the roll's item_level over
-    /// the act's end (ilvl 13 = tier+1, 14 = tier+2…); the ticket's juice
-    /// comes from the chart's rolled quantity/rarity affix values, so the
-    /// obols craft BETTER VOYAGES with the machinery they already have.
     /// Sell a bag item at the town vendor (#148 A5). Pays ONE obol keyed to
     /// what the item was — normal→transmute, magic→alter, rare→alchemy,
-    /// unique→regal; gems and charts sell as transmutes. Returns the paid
+    /// unique→regal; gems and maps sell as transmutes. Returns the paid
     /// obol's NUM (positive), or -1 bad selection / -2 not at a vendor /
     /// -4 no character.
     pub(crate) fn sell(&mut self, slot: usize, inv_sel: i32, events: &mut Vec<SimEvent>) -> i32 {
@@ -1646,7 +1641,12 @@ impl World {
         }
     }
 
-    pub(crate) fn use_chart(&mut self, slot: usize, inv_sel: i32) -> i32 {
+    /// OpenMap (#136 T4): validate, consume, and stage the run. The map's
+    /// effective tier is its base tier lifted by the roll's item_level over
+    /// the act's end (ilvl 13 = tier+1, 14 = tier+2…); the ticket's juice
+    /// comes from the map's rolled quantity/rarity affix values, so the
+    /// obols craft BETTER MAPS with the machinery they already have.
+    pub(crate) fn open_map(&mut self, slot: usize, inv_sel: i32) -> i32 {
         const TABLE_REACH: i64 = 3; // cells
         let Some(e) = self.zone.get(slot) else {
             return -4;
@@ -1656,14 +1656,14 @@ impl World {
         };
         // The WHOLE campaign gates the sea (#148 retrospective): the brains
         // already waited for the final act (the table-gate discipline), but
-        // the ENGINE still accepted act-1-only sailors — a player brain
+        // the ENGINE still accepted act-1-only runners — a player brain
         // could skip Act 2 entirely. The bound is content-derived: adding
         // Act 3 moves it with zero engine edits.
         let final_act = self.content.final_act.max(1);
         if ch.story_acts & (1u32 << (final_act - 1)) == 0 {
             return -3; // the sea is sealed until the campaign falls
         }
-        let Some((tx, ty)) = self.chart_table else {
+        let Some((tx, ty)) = self.map_table else {
             return -2; // no table in this zone
         };
         let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
@@ -1677,15 +1677,15 @@ impl World {
             return -1;
         }
         let crate::entity::BagItem::Gear(item) = &ch.inventory[idx].item else {
-            return -1; // gems are not charts
+            return -1; // gems are not maps
         };
         let def = &self.content.items[item.base_idx as usize];
-        let Some(base_tier) = def.chart_tier else {
-            return -1; // not a chart
+        let Some(base_tier) = def.map_tier else {
+            return -1; // not a map
         };
         // Effective tier: base + how far past the act's end this roll dropped.
         let tier = base_tier + item.item_level.saturating_sub(12);
-        // Juice from the chart's OWN rolled affixes (quantity/rarity stats).
+        // Juice from the map's OWN rolled affixes (quantity/rarity stats).
         let mut quantity_bp = 0i64;
         let mut rarity_bp = 0i64;
         let mut fury_bp = 0i64;
@@ -1699,25 +1699,25 @@ impl World {
                     crate::stats::Stat::ItemRarity => rarity_bp += g.value,
                     // THE RULES (#148 A4): risk crafted with the same obols.
                     crate::stats::Stat::MonsterFury => fury_bp += g.value,
-                    crate::stats::Stat::VoyageClock => clock = g.value,
+                    crate::stats::Stat::MapClock => clock = g.value,
                     crate::stats::Stat::SovereignsMark => boss = g.value > 0,
                     _ => {}
                 }
             }
         }
         // A departure is already staged this tick (an exit, or an earlier
-        // chart): refuse WITHOUT consuming — the critic's same-tick trap
-        // (#136 T4 review): consume-before-guard destroyed the chart and
-        // reported success while the bot sailed somewhere else entirely.
+        // map): refuse WITHOUT consuming — the critic's same-tick trap
+        // (#136 T4 review): consume-before-guard destroyed the map and
+        // reported success while the bot departed somewhere else entirely.
         if self.pending_exits.iter().any(|(n, ..)| *n == net) {
             return -5;
         }
-        // Stage the sail, then spend the chart — both or neither.
+        // Stage the depart, then spend the map — both or neither.
         self.pending_exits.push((
             net,
             "charted_shallows".into(),
-            Some(ChartTicket {
-                // Tier capped at 16: the ladder ends where the charts do,
+            Some(MapTicket {
+                // Tier capped at 16: the ladder ends where the maps do,
                 // not where an overflow would.
                 tier: tier.clamp(1, 16),
                 rarity_bp,
@@ -2948,7 +2948,7 @@ mod area_level_tests {
             program: idlin_botc::assemble("halt\n").unwrap(),
             params: Vec::new(),
             bot_version: 1,
-            chart: None,
+            map: None,
         };
         w.tick(&TickInputs {
             joins: Vec::new(),
@@ -3674,21 +3674,21 @@ mod area_level_tests {
     }
 
     #[test]
-    fn use_chart_gates_consumes_and_stages_the_voyage() {
+    fn open_map_gates_consumes_and_stages_the_run() {
         // #136 T4: the full syscall contract at Saltmere's real table —
-        // -3 mid-campaign, -2 away from the table, -1 for a non-chart,
-        // 0 = the chart is consumed and the ticket (tier from ilvl, juice
+        // -3 mid-campaign, -2 away from the table, -1 for a non-map,
+        // 0 = the map is consumed and the ticket (tier from ilvl, juice
         // from the ROLLED affixes) rides pending_exits. Mutations: drop the
         // act gate, the reach check, the consume, or the juice mapping →
         // the matching assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new_for_zone(0xC4A7, &content, "saltmere");
-        let slot = join_one(&mut w, "Sailor");
-        let chart_base = content
+        let slot = join_one(&mut w, "Runner");
+        let map_base = content
             .items
             .iter()
-            .position(|d| d.chart_tier.is_some())
-            .expect("a chart base ships") as u32;
+            .position(|d| d.map_tier.is_some())
+            .expect("a map base ships") as u32;
         let plenty = content
             .affixes
             .iter()
@@ -3703,7 +3703,7 @@ mod area_level_tests {
             let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
             ch.inventory.push(crate::entity::PlacedItem {
                 item: crate::entity::BagItem::Gear(crate::entity::Item {
-                    base_idx: chart_base,
+                    base_idx: map_base,
                     rarity: Rarity::Magic,
                     item_level: 14, // base tier 1 + 2 over the act's end = 3
                     affixes: vec![
@@ -3718,7 +3718,7 @@ mod area_level_tests {
                             tier: 0,
                         },
                     ],
-                    name: "Test Chart".into(),
+                    name: "Test Map".into(),
                     charges: 0,
                     unique_idx: None,
                 }),
@@ -3737,10 +3737,10 @@ mod area_level_tests {
             .len() as i32
             - 1;
         // Mid-campaign: the sea is sealed.
-        assert_eq!(w.use_chart(slot, inv_idx), -3);
+        assert_eq!(w.open_map(slot, inv_idx), -3);
         // Act 1 alone no longer buys the sea (#148 retro): the gate is the
-        // content-derived FINAL act. Mutation: revert use_chart to the
-        // `story_acts & 1` check → this -3 becomes a sail and fails.
+        // content-derived FINAL act. Mutation: revert open_map to the
+        // `story_acts & 1` check → this -3 becomes a depart and fails.
         w.zone
             .get_mut(slot)
             .unwrap()
@@ -3748,7 +3748,7 @@ mod area_level_tests {
             .as_mut()
             .unwrap()
             .story_acts = 1;
-        assert_eq!(w.use_chart(slot, inv_idx), -3);
+        assert_eq!(w.open_map(slot, inv_idx), -3);
         w.zone
             .get_mut(slot)
             .unwrap()
@@ -3757,13 +3757,13 @@ mod area_level_tests {
             .unwrap()
             .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
         // Away from the table (the spawn is out of reach of (26,46)).
-        assert_eq!(w.use_chart(slot, inv_idx), -2);
-        let table = w.chart_table.expect("saltmere has the table");
+        assert_eq!(w.open_map(slot, inv_idx), -2);
+        let table = w.map_table.expect("saltmere has the table");
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
-        // A non-chart index refuses.
-        assert_eq!(w.use_chart(slot, 999), -1);
-        // The voyage.
+        // A non-map index refuses.
+        assert_eq!(w.open_map(slot, 999), -1);
+        // The map.
         let bag_before = w
             .zone
             .get(slot)
@@ -3773,7 +3773,7 @@ mod area_level_tests {
             .unwrap()
             .inventory
             .len();
-        assert_eq!(w.use_chart(slot, inv_idx), 0);
+        assert_eq!(w.open_map(slot, inv_idx), 0);
         let bag_after = w
             .zone
             .get(slot)
@@ -3783,10 +3783,10 @@ mod area_level_tests {
             .unwrap()
             .inventory
             .len();
-        assert_eq!(bag_after, bag_before - 1, "the chart is spent");
-        let (_, dest, ticket) = w.pending_exits.last().expect("the sail is staged");
+        assert_eq!(bag_after, bag_before - 1, "the map is spent");
+        let (_, dest, ticket) = w.pending_exits.last().expect("the depart is staged");
         assert_eq!(dest, "charted_shallows");
-        let t = ticket.expect("a chart sail carries its ticket");
+        let t = ticket.expect("a map depart carries its ticket");
         assert_eq!(t.tier, 3, "tier 1 base + ilvl 14 - 12");
         assert_eq!(t.quantity_bp, 2000, "of_plenty's roll pays quantity");
         assert_eq!(t.rarity_bp, 1800, "of_shoals' roll pays rarity");
@@ -3794,21 +3794,21 @@ mod area_level_tests {
 
     #[test]
     fn a_rolled_deluge_clock_rides_the_ticket() {
-        // #178 (codex): the VoyageClock arm in use_chart was the ONLY
+        // #178 (codex): the MapClock arm in open_map was the ONLY
         // untested juice mapping — mutate it to a no-op and every clock
-        // test still passed (the direct-ticket tests bypass use_chart, and
+        // test still passed (the direct-ticket tests bypass open_map, and
         // the default-clock test never rolls the affix). A real Deluge
-        // chart would have silently sailed on the 6000 default instead of
-        // its rolled duration. Mutation: drop the VoyageClock match arm →
+        // map would have silently departed on the 6000 default instead of
+        // its rolled duration. Mutation: drop the MapClock match arm →
         // the clock assert sees 0, fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new_for_zone(0xDE1, &content, "saltmere");
         let slot = join_one(&mut w, "Belled");
-        let chart_base = content
+        let map_base = content
             .items
             .iter()
-            .position(|d| d.chart_tier.is_some())
-            .expect("a chart base ships") as u32;
+            .position(|d| d.map_tier.is_some())
+            .expect("a map base ships") as u32;
         let deluge = content
             .affixes
             .iter()
@@ -3819,7 +3819,7 @@ mod area_level_tests {
             ch.story_acts = 3; // the WHOLE campaign
             ch.inventory.push(crate::entity::PlacedItem {
                 item: crate::entity::BagItem::Gear(crate::entity::Item {
-                    base_idx: chart_base,
+                    base_idx: map_base,
                     rarity: Rarity::Magic,
                     item_level: 14,
                     affixes: vec![crate::entity::RolledAffix {
@@ -3827,7 +3827,7 @@ mod area_level_tests {
                         values: vec![7500],
                         tier: 0,
                     }],
-                    name: "Deluge Chart".into(),
+                    name: "Deluge Map".into(),
                     charges: 0,
                     unique_idx: None,
                 }),
@@ -3835,7 +3835,7 @@ mod area_level_tests {
                 y: 0,
             });
         }
-        let table = w.chart_table.expect("saltmere has the table");
+        let table = w.map_table.expect("saltmere has the table");
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
         let inv_idx = w
@@ -3848,37 +3848,37 @@ mod area_level_tests {
             .inventory
             .len() as i32
             - 1;
-        assert_eq!(w.use_chart(slot, inv_idx), 0);
-        let (_, _, ticket) = w.pending_exits.last().expect("the sail is staged");
-        let t = ticket.expect("a chart sail carries its ticket");
+        assert_eq!(w.open_map(slot, inv_idx), 0);
+        let (_, _, ticket) = w.pending_exits.last().expect("the depart is staged");
+        let t = ticket.expect("a map depart carries its ticket");
         assert_eq!(t.clock, 7500, "the rolled Deluge duration rides the ticket");
         // And the minted world honors the ROLL, not the default.
-        let minted = World::new_chart_instance(0xDE1, &content, "charted_shallows", t);
-        assert_eq!(minted.voyage_ends_at, 7500, "the roll beats the default");
+        let minted = World::new_map_instance(0xDE1, &content, "charted_shallows", t);
+        assert_eq!(minted.map_ends_at, 7500, "the roll beats the default");
     }
 
     #[test]
-    fn a_staged_departure_never_eats_the_chart() {
+    fn a_staged_departure_never_eats_the_map() {
         // #136 T4 (critic's same-tick trap): with ANY departure already
-        // pending — an exit taken earlier this tick, or a previous chart —
-        // UseChart must refuse (-5) WITHOUT consuming. The original code
-        // consumed first and guarded second: the chart vanished, no voyage,
+        // pending — an exit taken earlier this tick, or a previous map —
+        // OpenMap must refuse (-5) WITHOUT consuming. The original code
+        // consumed first and guarded second: the map vanished, no map,
         // return said success. Mutation: reorder consume before the guard →
         // the bag_after assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new_for_zone(0xEA7, &content, "saltmere");
         let slot = join_one(&mut w, "Hasty");
-        let chart_base = content
+        let map_base = content
             .items
             .iter()
-            .position(|d| d.chart_tier.is_some())
+            .position(|d| d.map_tier.is_some())
             .unwrap() as u32;
         {
             let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
             ch.story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
             ch.inventory.push(crate::entity::PlacedItem {
                 item: crate::entity::BagItem::Gear(crate::entity::Item {
-                    base_idx: chart_base,
+                    base_idx: map_base,
                     rarity: Rarity::Normal,
                     item_level: 13,
                     affixes: Vec::new(),
@@ -3890,7 +3890,7 @@ mod area_level_tests {
                 y: 0,
             });
         }
-        let table = w.chart_table.unwrap();
+        let table = w.map_table.unwrap();
         let net = w.zone.get(slot).unwrap().net_id;
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
@@ -3907,7 +3907,7 @@ mod area_level_tests {
             .len() as i32
             - 1;
         let bag_before = inv_idx + 1;
-        assert_eq!(w.use_chart(slot, inv_idx), -5, "refuse, don't lie");
+        assert_eq!(w.open_map(slot, inv_idx), -5, "refuse, don't lie");
         let bag_after = w
             .zone
             .get(slot)
@@ -3917,23 +3917,23 @@ mod area_level_tests {
             .unwrap()
             .inventory
             .len() as i32;
-        assert_eq!(bag_after, bag_before, "the chart survives the refusal");
+        assert_eq!(bag_after, bag_before, "the map survives the refusal");
         assert_eq!(w.pending_exits.len(), 1, "no second departure was staged");
     }
 
     #[test]
-    fn chart_rules_ride_the_ticket_and_shape_the_voyage() {
+    fn map_rules_ride_the_ticket_and_shape_the_run() {
         // #148 A4: the three RULES — fury folds into every monster's damage,
         // the clock arms the expiry, the mark spawns the Unwritten at the
         // far end at Unique rarity. Mutation: drop any application in
-        // new_chart_instance (or the fury fold in the monster derive) →
+        // new_map_instance (or the fury fold in the monster derive) →
         // its assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let plain = World::new_chart_instance(
+        let plain = World::new_map_instance(
             0x41,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 4,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -3942,11 +3942,11 @@ mod area_level_tests {
                 boss: false,
             },
         );
-        let mut ruled = World::new_chart_instance(
+        let mut ruled = World::new_map_instance(
             0x41,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 4,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -3955,7 +3955,7 @@ mod area_level_tests {
                 boss: true,
             },
         );
-        assert_eq!(ruled.voyage_ends_at, 6000, "the clock arms");
+        assert_eq!(ruled.map_ends_at, 6000, "the clock arms");
         assert_eq!(ruled.monster_fury_bp, 3000, "the fury dial sets");
         let empty = TickInputs::default();
         ruled.tick(&empty);
@@ -3968,7 +3968,7 @@ mod area_level_tests {
         // Fury scales at the STRIKE chokepoint (spells included — the boss's
         // own kit was fury-blind when the fold lived in the derive tail):
         // the SAME synthetic hit from a monster lands harder in the ruled
-        // voyage. Mutation: drop the strike() fold → equal damage, fails.
+        // map. Mutation: drop the strike() fold → equal damage, fails.
         let mut plain = plain;
         plain.tick(&empty);
         let hit_for = |w: &mut World| {
@@ -4015,19 +4015,19 @@ mod area_level_tests {
     }
 
     #[test]
-    fn a_clockless_chart_still_mints_with_the_default_clock() {
-        // #178 (the eternal voyage): a clockless chart plus a non-returning
+    fn a_clockless_map_still_mints_with_the_default_clock() {
+        // #178 (the eternal map): a clockless map plus a non-returning
         // brain was an infinite private XP/loot faucet — a stale deploy
-        // farmed one tier-1 instance for four hours. EVERY chart now mints
-        // with a clock; a rolled VoyageClock still sets its own duration
-        // (pinned by chart_rules_ride_the_ticket_and_shape_the_voyage).
-        // Mutation: revert the default arm → voyage_ends_at is 0, fails.
+        // farmed one tier-1 instance for four hours. EVERY map now mints
+        // with a clock; a rolled MapClock still sets its own duration
+        // (pinned by map_rules_ride_the_ticket_and_shape_the_run).
+        // Mutation: revert the default arm → map_ends_at is 0, fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let w = World::new_chart_instance(
+        let w = World::new_map_instance(
             0x178,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 1,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -4037,23 +4037,23 @@ mod area_level_tests {
             },
         );
         assert_eq!(
-            w.voyage_ends_at, DEFAULT_VOYAGE_TICKS,
+            w.map_ends_at, DEFAULT_MAP_TICKS,
             "a clockless ticket mints with the default clock"
         );
     }
 
     #[test]
     fn the_eternal_farm_ends() {
-        // #178: a sailor who NEVER walks out (broken, stale, or idle brain)
+        // #178: a runner who NEVER walks out (broken, stale, or idle brain)
         // is ferried home when the default clock rings — departure staged,
         // tally settled. Mutation: revert the default arm → no departure
         // ever fires and this fails at the assert.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_chart_instance(
+        let mut w = World::new_map_instance(
             0x178,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 1,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -4064,20 +4064,20 @@ mod area_level_tests {
         );
         let slot = join_one(&mut w, "Fable");
         // The arrival stamp rides the ferry path (pinned by
-        // a_real_arrival_stamps_the_voyage_marks); join_one lands via
+        // a_real_arrival_stamps_the_map_marks); join_one lands via
         // joins, so stamp the mark manually as that test does.
         let net = w.zone.get(slot).unwrap().net_id;
-        w.voyage_marks.insert(net, (0, 0, 0, w.tick));
+        w.map_marks.insert(net, (0, 0, 0, w.tick));
         let empty = TickInputs::default();
         let mut departed = None;
         let mut tallied = false;
-        for _ in 0..=DEFAULT_VOYAGE_TICKS + 2 {
+        for _ in 0..=DEFAULT_MAP_TICKS + 2 {
             for ev in w.tick(&empty) {
                 match ev {
                     SimEvent::CharacterDeparted { name, dest, .. } => {
                         departed = Some((name, dest));
                     }
-                    SimEvent::VoyageTally { .. } => tallied = true,
+                    SimEvent::MapTally { .. } => tallied = true,
                     _ => {}
                 }
             }
@@ -4097,25 +4097,25 @@ mod area_level_tests {
     }
 
     #[test]
-    fn state_hash_fingerprints_the_chart_rules() {
+    fn state_hash_fingerprints_the_map_rules() {
         // #178: by state_hash's own bar (same hash => same future), the
-        // chart rules are replay-relevant — two worlds differing only in
-        // the voyage clock ferry everyone home at different ticks; fury
+        // map rules are replay-relevant — two worlds differing only in
+        // the map clock ferry everyone home at different ticks; fury
         // steers every strike. Mutation: drop the #178 folds → identical
         // hashes, fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new(0xF0B, &content);
         let h1 = w.state_hash();
-        w.voyage_ends_at = 4242;
+        w.map_ends_at = 4242;
         let h2 = w.state_hash();
-        assert_ne!(h1, h2, "the voyage clock must move the digest");
+        assert_ne!(h1, h2, "the map clock must move the digest");
         w.monster_fury_bp = 2500;
         assert_ne!(h2, w.state_hash(), "the fury dial must move the digest");
         // The rarity juice mutates PACK DEFS, not a world scalar (codex on
-        // #178): two same-seed charts differing only in rarity_bp hashed
+        // #178): two same-seed maps differing only in rarity_bp hashed
         // identical while their future respawns rolled different rarities.
         // Mutation: drop the per-pack magic_bp/rare_bp folds → equal, fails.
-        let ticket = |rarity_bp: i64| ChartTicket {
+        let ticket = |rarity_bp: i64| MapTicket {
             tier: 2,
             rarity_bp,
             quantity_bp: 0,
@@ -4123,8 +4123,8 @@ mod area_level_tests {
             clock: 0,
             boss: false,
         };
-        let plain = World::new_chart_instance(0xF0C, &content, "charted_shallows", ticket(0));
-        let juiced = World::new_chart_instance(0xF0C, &content, "charted_shallows", ticket(1500));
+        let plain = World::new_map_instance(0xF0C, &content, "charted_shallows", ticket(0));
+        let juiced = World::new_map_instance(0xF0C, &content, "charted_shallows", ticket(1500));
         assert_ne!(
             plain.state_hash(),
             juiced.state_hash(),
@@ -4134,19 +4134,19 @@ mod area_level_tests {
 
     #[test]
     fn an_old_clockless_snapshot_rearms_on_resume() {
-        // #178 migration (codex): a pre-#178 chart snapshot minted
-        // clockless — resumed, it bypassed new_chart_instance and the
+        // #178 migration (codex): a pre-#178 map snapshot minted
+        // clockless — resumed, it bypassed new_map_instance and the
         // eternal farm survived every restart. attach_content (the one
         // hook every resume passes through) re-arms exactly those; a
         // world whose clock already RANG parks at the sentinel and must
         // resume bit-identical. Mutations: drop the re-arm → the first
         // assert sees 0; re-arm on 0-or-fired → the sentinel assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_chart_instance(
+        let mut w = World::new_map_instance(
             0x0DD,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 1,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -4160,36 +4160,36 @@ mod area_level_tests {
             w.tick(&empty);
         }
         // Simulate the pre-#178 mint: never armed.
-        w.voyage_ends_at = 0;
+        w.map_ends_at = 0;
         w.attach_content(&content).expect("content reattaches");
         assert_eq!(
-            w.voyage_ends_at,
-            w.tick + DEFAULT_VOYAGE_TICKS,
-            "a never-armed chart re-arms from the resume point"
+            w.map_ends_at,
+            w.tick + DEFAULT_MAP_TICKS,
+            "a never-armed map re-arms from the resume point"
         );
         // A RUNG clock stays rung across resume — no rug-pull re-arm.
-        w.voyage_ends_at = w.tick + 1;
+        w.map_ends_at = w.tick + 1;
         w.tick(&empty);
-        assert_eq!(w.voyage_ends_at, VOYAGE_CLOCK_FIRED, "the clock parks");
+        assert_eq!(w.map_ends_at, MAP_CLOCK_FIRED, "the clock parks");
         w.attach_content(&content).expect("content reattaches");
         assert_eq!(
-            w.voyage_ends_at, VOYAGE_CLOCK_FIRED,
+            w.map_ends_at, MAP_CLOCK_FIRED,
             "a fired clock resumes exactly, never re-arms"
         );
     }
 
     #[test]
-    fn the_voyage_tally_settles_on_departure() {
+    fn the_map_tally_settles_on_departure() {
         // #148 A7: the scoreboard is the DELTA between arrival marks and
-        // departure state — kills earned inside the voyage count, the
+        // departure state — kills earned inside the map count, the
         // career total doesn't leak in. Mutation: drop the arrival stamp
         // or the departure emit → no tally / wrong kills, this fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_chart_instance(
+        let mut w = World::new_map_instance(
             0xA7,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 1,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -4200,7 +4200,7 @@ mod area_level_tests {
         );
         let slot = join_one(&mut w, "Talleyrand");
         {
-            // A career behind them: 100 kills BEFORE the voyage.
+            // A career behind them: 100 kills BEFORE the map.
             let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
             ch.kills = 100;
         }
@@ -4208,7 +4208,7 @@ mod area_level_tests {
         // (join_one lands via joins); the ARRIVAL stamp — the production
         // path — is pinned by the arrivals-path test below.
         let net = w.zone.get(slot).unwrap().net_id;
-        w.voyage_marks.insert(net, (100, 0, 0, w.tick));
+        w.map_marks.insert(net, (100, 0, 0, w.tick));
         {
             let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
             ch.kills = 102;
@@ -4217,7 +4217,7 @@ mod area_level_tests {
         let mut tally = None;
         for _ in 0..60 {
             for ev in w.tick(&empty) {
-                if let SimEvent::VoyageTally { kills, name, .. } = ev {
+                if let SimEvent::MapTally { kills, name, .. } = ev {
                     tally = Some((name, kills));
                 }
             }
@@ -4225,11 +4225,11 @@ mod area_level_tests {
         }
         let (name, kills) = tally.expect("the clock departure settles a tally");
         assert_eq!(name, "Talleyrand");
-        assert_eq!(kills, 2, "only the voyage's kills count");
+        assert_eq!(kills, 2, "only the map's kills count");
     }
 
     #[test]
-    fn a_real_arrival_stamps_the_voyage_marks() {
+    fn a_real_arrival_stamps_the_map_marks() {
         // #148 A7 review (B2): the ARRIVAL stamp is the only wiring between
         // the tally and real gameplay (transfers land via arrivals) — the
         // critic proved it was untested by reverting it under a green
@@ -4256,11 +4256,11 @@ mod area_level_tests {
         source.process_exits(&mut ev);
         let (bundle, _dest) = source.take_departures().pop().expect("departed");
 
-        let mut voyage = World::new_chart_instance(
+        let mut map = World::new_map_instance(
             0xA7C,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 1,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -4274,32 +4274,32 @@ mod area_level_tests {
             arrivals: vec![bundle],
             removals: Vec::new(),
         };
-        voyage.tick(&inputs);
-        let vnet = voyage
+        map.tick(&inputs);
+        let vnet = map
             .views()
             .iter()
             .find(|v| v.kind == 1)
             .map(|v| v.id)
             .unwrap();
-        let mark = voyage.voyage_marks.get(&vnet).copied();
+        let mark = map.map_marks.get(&vnet).copied();
         assert_eq!(
             mark.map(|(k, ..)| k),
             Some(50),
-            "the arrival stamps the career kills as the voyage baseline"
+            "the arrival stamps the career kills as the map baseline"
         );
     }
 
     #[test]
-    fn the_voyage_clock_ferries_everyone_home() {
+    fn the_map_clock_ferries_everyone_home() {
         // #148 A4: at expiry every character departs to Lanternfall as an
         // ordinary bundle — nothing carried is lost. Mutation: drop the
-        // voyage_clock call from tick → no departure, this fails.
+        // map_clock call from tick → no departure, this fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_chart_instance(
+        let mut w = World::new_map_instance(
             0x42,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 1,
                 rarity_bp: 0,
                 quantity_bp: 0,
@@ -4315,25 +4315,25 @@ mod area_level_tests {
             w.tick(&empty);
             departed.extend(w.take_departures());
         }
-        assert_eq!(departed.len(), 1, "the clock ferries the sailor out");
+        assert_eq!(departed.len(), 1, "the clock ferries the runner out");
         let (bundle, dest) = &departed[0];
         assert_eq!(dest, "lanternfall");
         assert_eq!(bundle.character.name, "Timed");
     }
 
     #[test]
-    fn a_chart_instance_lifts_level_and_juice() {
+    fn a_map_instance_lifts_level_and_juice() {
         // #136 T4: the ticket becomes a world — area level 12 + tier, pack
         // rarity juiced, drop quantity juiced, and the instance marked
-        // ephemeral. Mutation: drop any application in new_chart_instance →
+        // ephemeral. Mutation: drop any application in new_map_instance →
         // the matching assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let plain = World::new_for_zone(0x11, &content, "charted_shallows");
-        let w = World::new_chart_instance(
+        let w = World::new_map_instance(
             0x11,
             &content,
             "charted_shallows",
-            ChartTicket {
+            MapTicket {
                 tier: 3,
                 rarity_bp: 2100,
                 quantity_bp: 1500,
@@ -4343,7 +4343,7 @@ mod area_level_tests {
             },
         );
         assert_eq!(w.zone_level(), 15);
-        assert!(w.is_chart_instance() && !plain.is_chart_instance());
+        assert!(w.is_map_instance() && !plain.is_map_instance());
         assert_eq!(w.loot_quantity_bp, 1500);
         for (juiced, base) in w.zone.packs.iter().zip(plain.zone.packs.iter()) {
             assert_eq!(juiced.def.magic_bp, base.def.magic_bp + 2100);
@@ -4352,20 +4352,20 @@ mod area_level_tests {
     }
 
     #[test]
-    fn charts_are_cargo_not_gear() {
-        // #136 T4: a chart can never be worn — the manual path refuses and
+    fn maps_are_cargo_not_gear() {
+        // #136 T4: a map can never be worn — the manual path refuses and
         // the auto path scores it below any real item. Mutation: drop either
         // guard in inventory.rs → the matching assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new_for_zone(0xCA60, &content, "saltmere");
         let slot = join_one(&mut w, "Porter");
-        let chart_base = content
+        let map_base = content
             .items
             .iter()
-            .position(|d| d.chart_tier.is_some())
+            .position(|d| d.map_tier.is_some())
             .unwrap() as u32;
-        let chart = crate::entity::Item {
-            base_idx: chart_base,
+        let map = crate::entity::Item {
+            base_idx: map_base,
             rarity: Rarity::Normal,
             item_level: 13,
             affixes: Vec::new(),
@@ -4373,11 +4373,11 @@ mod area_level_tests {
             charges: 0,
             unique_idx: None,
         };
-        assert_eq!(w.item_score(&chart), 0, "autos skip cargo");
+        assert_eq!(w.item_score(&map), 0, "autos skip cargo");
         {
             let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
             ch.inventory.push(crate::entity::PlacedItem {
-                item: crate::entity::BagItem::Gear(chart),
+                item: crate::entity::BagItem::Gear(map),
                 x: 4,
                 y: 0,
             });
@@ -4468,7 +4468,7 @@ mod area_level_tests {
             1,
             "act 1 belongs to the breaker"
         );
-        // The act boss ALWAYS pays a chart, INTO THE KILLER'S BAG (#136
+        // The act boss ALWAYS pays a map, INTO THE KILLER'S BAG (#136
         // T4+T6): the campaign's key reward is unmissable — a ground drop
         // once despawned while her killer respawned across the zone.
         // Mutation: drop the act-boss arm or the hand-delivery → fails.
@@ -4484,22 +4484,22 @@ mod area_level_tests {
                 .any(|p| matches!(
                     &p.item,
                     crate::entity::BagItem::Gear(item)
-                        if self_content_chart(&content, item.base_idx)
+                        if self_content_map(&content, item.base_idx)
                 )),
-            "the Mother's chart lands in the killer's bag"
+            "the Mother's map lands in the killer's bag"
         );
         assert!(
             !loot.iter().any(|(_, payload, ..)| matches!(
                 payload,
                 crate::entity::LootPayload::Gear(item)
-                    if self_content_chart(&content, item.base_idx)
+                    if self_content_map(&content, item.base_idx)
             )),
-            "no duplicate chart on the ground"
+            "no duplicate map on the ground"
         );
     }
 
-    fn self_content_chart(content: &ContentDb, base_idx: u32) -> bool {
-        content.items[base_idx as usize].chart_tier.is_some()
+    fn self_content_map(content: &ContentDb, base_idx: u32) -> bool {
+        content.items[base_idx as usize].map_tier.is_some()
     }
 
     #[test]
@@ -4643,7 +4643,7 @@ mod area_level_tests {
 
     #[test]
     fn state_hash_fingerprints_story_acts() {
-        // #136: campaign progress gates future behavior (exits/charts), so it
+        // #136: campaign progress gates future behavior (exits/maps), so it
         // must be hashed. Mutation: drop the story_acts fold → identical hash.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new(0xF09, &content);

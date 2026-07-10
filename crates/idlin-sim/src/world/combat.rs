@@ -1546,7 +1546,7 @@ impl World {
                     // travel segment to the target, not just the endpoint —
                     // an endpoint check tunnels through small targets when
                     // the per-tick step exceeds the combined radii (fast
-                    // arrows sailed clean through skeletons). Coordinates
+                    // arrows departed clean through skeletons). Coordinates
                     // downshift 8 bits so every product fits i64; ordering
                     // is by first contact ALONG the flight, then net id.
                     const S: i64 = 8;
@@ -1666,7 +1666,7 @@ impl World {
         {
             return;
         }
-        // CHART RULE (#148 A4): Monster Fury scales EVERY monster-dealt hit
+        // MAP RULE (#148 A4): Monster Fury scales EVERY monster-dealt hit
         // at the one place all of them pass — spells, attacks, and dots
         // alike (the first draft folded it into the derive tail, which
         // spells never read: the tier boss's own kit was fury-blind).
@@ -2114,25 +2114,25 @@ impl World {
                 // Loot (personal: owned by the killer): quantity first,
                 // then per-drop rarity — both the killer's stats. Multiple
                 // drops scatter a little so pillars don't stack.
-                // Charts drop (#136 T4) from exactly two hands: an ACT BOSS
+                // Maps drop (#136 T4) from exactly two hands: an ACT BOSS
                 // always pays one (the campaign's finish line hands you the
-                // endgame's key), and charted waters sustain themselves at 4%
+                // endgame's key), and mapped waters sustain themselves at 4%
                 // a kill. ilvl = the kill's level, so tiers ladder naturally.
-                let chart_due = attacker_is_char
+                let map_due = attacker_is_char
                     && (act_boss.is_some()
-                        || (self.is_chart_instance && self.rng_loot.next_range(10000) < 400));
-                let mut chart_drop = if chart_due {
-                    self.roll_chart(monster_level)
+                        || (self.is_map_instance && self.rng_loot.next_range(10000) < 400));
+                let mut map_drop = if map_due {
+                    self.roll_map(monster_level)
                 } else {
                     None
                 };
-                // An ACT BOSS's chart goes straight to the killer's BAG
+                // An ACT BOSS's map goes straight to the killer's BAG
                 // (ground only on overflow): it is the campaign's key
                 // reward, and a ground drop is missable — the first
-                // salt-road run watched the Mother's chart despawn while
+                // salt-road run watched the Mother's map despawn while
                 // her killer respawned at the mouth (#136 T6).
                 if act_boss.is_some()
-                    && let Some(crate::entity::LootPayload::Gear(item)) = chart_drop.take()
+                    && let Some(crate::entity::LootPayload::Gear(item)) = map_drop.take()
                     && let Some(a_slot) = attacker_slot
                 {
                     // Overflow falls to the ground but LASTS an hour — the
@@ -2190,7 +2190,7 @@ impl World {
                         }
                     }
                 }
-                for payload in chart_drop
+                for payload in map_drop
                     .into_iter()
                     .chain(unique_drops)
                     .chain(self.roll_kill_drops_juiced(monster_level, attacker_slot, m_rarity))
@@ -3872,7 +3872,7 @@ mod tests {
     fn fast_projectiles_cannot_tunnel_through_small_targets() {
         // An 8u-per-tick projectile crosses a staked shambler whose
         // combined radii are far smaller than the step. The endpoint-only
-        // check sailed straight through; the swept segment must connect.
+        // check departed straight through; the swept segment must connect.
         let content = content();
         let mut world = World::new(0xA110, &content);
         world.tick(&crate::TickInputs::default()); // packs spawn

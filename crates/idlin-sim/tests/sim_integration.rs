@@ -112,7 +112,7 @@ fn bots_grind_the_shore() {
 fn the_grinder_prefers_affixed_gear_over_plain() {
     // #148 A1: the stock template upgrades by RARITY first, item level as
     // the tiebreak — the old ilvl-only rule let plain bases evict affixed
-    // gear, and every 1.0 seed sailed at zero resist. A worn plain ilvl-6
+    // gear, and every 1.0 seed departed at zero resist. A worn plain ilvl-6
     // helm must lose to a bagged magic ilvl-5 helm. Mutation: revert the
     // rule to ilvl-only → the magic helm stays in the bag and this fails.
     let content = content();

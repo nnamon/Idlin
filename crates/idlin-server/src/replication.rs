@@ -254,7 +254,7 @@ impl<'a> Visibility<'a> {
             | GameEvent::GemLevelUp { .. }
             | GameEvent::ActCompleted { .. }
             | GameEvent::CharacterRemoved { .. }
-            | GameEvent::VoyageTally { .. } => true,
+            | GameEvent::MapTally { .. } => true,
         }
     }
 
@@ -457,11 +457,11 @@ fn is_announcement(ev: &GameEvent) -> bool {
             | GameEvent::CharacterJoined { .. }
             | GameEvent::Narration { .. }
             | GameEvent::ActCompleted { .. }
-            // The voyage scoreboard fires in the chart instance its sailor
+            // The map scoreboard fires in the map instance its runner
             // is LEAVING — a world the camera almost never watches at that
             // exact tick. Without the splice the endgame's signature ticker
             // line never reaches the viewer (#176).
-            | GameEvent::VoyageTally { .. }
+            | GameEvent::MapTally { .. }
     )
 }
 
@@ -1003,14 +1003,14 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             id: *net_id,
             name: name.clone(),
         },
-        SimEvent::VoyageTally {
+        SimEvent::MapTally {
             id,
             name,
             kills,
             deaths,
             items,
             ticks,
-        } => GameEvent::VoyageTally {
+        } => GameEvent::MapTally {
             id: *id,
             name: name.clone(),
             kills: *kills,
@@ -1340,14 +1340,14 @@ mod tests {
     }
 
     #[test]
-    fn a_voyage_tally_reaches_the_wire_and_the_featured_splice() {
-        // #176: the tally fires in the chart instance its sailor is LEAVING
+    fn a_map_tally_reaches_the_wire_and_the_featured_splice() {
+        // #176: the tally fires in the map instance its runner is LEAVING
         // — a world the camera almost never watches at that tick. It must
         // splice onto the featured feed or the endgame's signature ticker
         // line never reaches the viewer. Mutations: drop the to_game_event
         // arm → None here; drop the announcement arm → the splice assert
         // fails.
-        let ev = SimEvent::VoyageTally {
+        let ev = SimEvent::MapTally {
             id: 7,
             name: "Kargan".into(),
             kills: 120,
@@ -1355,9 +1355,9 @@ mod tests {
             items: 30,
             ticks: 9000,
         };
-        let wire = to_game_event(&ev).expect("VoyageTally maps to the wire");
+        let wire = to_game_event(&ev).expect("MapTally maps to the wire");
         match &wire {
-            GameEvent::VoyageTally {
+            GameEvent::MapTally {
                 id: 7,
                 name,
                 kills: 120,
@@ -1371,7 +1371,7 @@ mod tests {
         );
         assert!(
             is_announcement(&wire),
-            "the voyage scoreboard is broadcast-worthy cross-world"
+            "the map scoreboard is broadcast-worthy cross-world"
         );
     }
 

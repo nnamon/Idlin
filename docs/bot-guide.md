@@ -295,8 +295,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 34 | `ItemSlot` | base_num | the gear slot a gear item num belongs to (0 weapon … 5 flask, 7 ring, 9 belt, 10 amulet, 11 gloves), or −1 for a gem / unknown / non-gear num. The one definitional escape hatch (RFC #54 Q2): base reads stay pure, but matching a bag candidate to the worn piece needs `base_num → slot`. It does NOT tell you the weapon CLASS — keep a whitelist of the weapon bases your build can actually wield (a wand/bow would silence a melee skill at the weapon gate). |
 | 35 | `Unequip` | gear_slot | bare a gear slot — move the worn item back to the bag, leaving the slot empty (the deliberate counterpart to `Equip`'s swap). `gear_slot` is the 0–11 index `ReadEquipment` reports. 0 ok; −1 if the index is out of range, the slot is already empty, or **the bag is full**. Like manual `Equip`, and unlike `EquipBest`'s auto-swap (which drops to juggle), `Unequip` REFUSES rather than ever dropping the item. |
 | 36 | `ReadAilments` | net_id | the active ailments on the entity with `net_id` (your own from `SelfStatus`, an enemy's from `ReadEntities`) as a **bitmask**: `1 Ignite` (fire DoT), `2 Shock` (takes more damage), `4 Chill` (slowed). Returns 0 if the entity is unknown or unafflicted. Inflict ailments by hitting with the matching element while you have that element's chance (`ignite_chance` / `shock_chance` / `chill_chance`) (or on a crit, unless your gear says crits cannot cause ailments); the magnitude scales with the hit. |
-| 37 | UseChart | `inv_idx` | Spend a chart from the bag at Saltmere's Charting Table and sail: opens a charted instance at area level 12 + tier (tier = base + ilvl over 12), juiced by the chart's rolled quantity/rarity affixes. Returns 0 sailing, -1 bad index / not a chart, -2 not at a table, -3 campaign incomplete (the gate is the content-derived FINAL act — all acts, not just Act 1), -4 not a character, -5 a departure is already staged this tick. The chart is consumed ONLY on success; tiers cap at 16. |
-| 38 | Sell | `inv_idx` | Sell a bag item at the town VENDOR cell (SelfStatus +76/+80; reach 3 cells). Pays ONE obol keyed to what the item was: normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and charts sell as transmutes. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
+| 37 | OpenMap | `inv_idx` | Spend a map from the bag at the town's Map Table: opens a private map instance at area level 12 + tier (tier = base + ilvl over 12), juiced by the map's rolled quantity/rarity affixes. Returns 0 on open, -1 bad index / not a map, -2 not at a table, -3 campaign incomplete (the gate is the content-derived FINAL act — all acts, not just Act 1), -4 not a character, -5 a departure is already staged this tick. The map is consumed ONLY on success; tiers cap at 16. |
+| 38 | Sell | `inv_idx` | Sell a bag item at the town VENDOR cell (SelfStatus +76/+80; reach 3 cells). Pays ONE obol keyed to what the item was: normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and maps sell as transmutes. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
 | 39 | Stash | `op, sel` | Move an item between bag and chest at the town STASH cell (+84/+88; reach 3). op 0 deposits `inventory[sel]` (chest cap 40, flat — no grid); op 1 withdraws `stash[sel]` first-fit into the bag. The chest is yours forever — it rides transfers and snapshots. Returns 1, or -1 bad selection, -2 not at the stash, -3 no room, -4 not a character. |
 | 40 | ReadStash | `max, out` | Read the chest like ReadInventory (same 20-byte record); x/y are −1 (a chest has no grid). Returns the record count, or -4. |
 | 109 | QueryMonsters | `max, out` | ZONE BRAINS ONLY. Live monsters as MONSTER_RECORD_SIZE (24B) records: net id, def NUM, life_pct, x, y (Q16.16), rarity. The boss-director syscall: watch a boss's live life and stage add waves / beat lines at thresholds. Buffers: allocate at 0xE800+ — the var allocator owns 0xC000 up, and zone_lib holds 0xD000/0xE000/0xE400. |
@@ -357,8 +357,8 @@ can never hit your own faction.
 | +52 / +56 | mana, mana_max |
 | +60 | energy shield |
 | +64 | zone num (the zone's stable tagged content id — an OPAQUE handle: zones are private, so there are no `ZONE_*` consts to compare against. Watch it for CHANGES — when it differs from the value you saw last tick you've transferred maps — and branch your strategy on that, not on a hardcoded value) |
-| +68 | the zone's Charting Table x (Q16.16), or −1 when the zone has none |
-| +72 | the zone's Charting Table y (Q16.16), or −1 — walk here and `UseChart` (37) once Act 1 is complete |
+| +68 | the zone’s Map Table x (Q16.16), or −1 when the zone has none |
+| +72 | the zone’s Map Table y (Q16.16), or −1 — walk here and `OpenMap` (37) once the campaign is complete |
 | +76 / +80 | the town VENDOR cell x/y (Q16.16), or −1 — walk here and `Sell` (38) |
 | +84 / +88 | the town STASH cell x/y (Q16.16), or −1 — walk here and `Stash` (39) / `ReadStash` (40) |
 
@@ -668,7 +668,7 @@ band tests use:
 cargo run -p idlin-server --bin harness -- --brain my.bot --seed 0xC0FFEE
 ```
 
-The JSON report lists every campaign milestone by name plus ticks-to-sail,
+The JSON report lists every campaign milestone by name plus ticks-to-first-map,
 deaths, and vendor sales; exit 1 = the road didn't complete (the report
 names the wall). Runs are deterministic per (seed, brain): a red run
 replays bit-identically, so a `debug()` in your brain lands on the same
@@ -690,8 +690,8 @@ Hard-won disciplines the stock templates carry — steal them:
   walk away — with a UNIQUE-rarity exemption, because bosses pay all
   their XP at the end.
 - **Bag discipline, then the vendor.** In the field, shed what upkeep
-  didn't wear (keep charts and one copy of each build gem). In town, the
-  same junk is OBOLS — sell it before you spend the chart, and only on
+  didn't wear (keep maps and one copy of each build gem). In town, the
+  same junk is OBOLS — sell it before you open the map, and only on
   the tick right after upkeep ran, so a freshly returned winner is worn,
   never sold.
 - **Hold at nine tenths.** A ranged weapon's whole identity is range: at
@@ -703,7 +703,7 @@ Hard-won disciplines the stock templates carry — steal them:
 The broadcast talks: a synthesized WebAudio layer (zero assets — every
 cue is oscillators and envelopes) voices the story beats the director
 cuts to — kills (rate-limited), boss falls, act fanfares, deaths,
-level-ups, sails, voyage tallies, rare drops, and recalls. **Muted by
+level-ups, map opens, map tallies, rare drops, and recalls. **Muted by
 default**; the speaker button (bottom-right) is the opt-in, and its
 click doubles as the browser's audio-unlock gesture. Volume persists
 per-browser. Sound is presentation-only — it never touches the sim,

@@ -15,7 +15,7 @@ export type CueName =
   | "act-complete"
   | "death"
   | "level-up"
-  | "sail"
+  | "map_open"
   | "tally"
   | "rare-drop"
   | "recall";
@@ -82,7 +82,7 @@ export class SoundEngine {
       case "level-up":
         this.blip(t, 330, 660, 0.22, "sine", 0.3);
         break;
-      case "sail":
+      case "map_open":
         this.noise(t, 0.9, 0.2, 400);
         break;
       case "tally":

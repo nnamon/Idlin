@@ -144,25 +144,25 @@ fn route_departure(worlds: &[ManagedWorld], source: usize, dest: &str) -> usize 
         .unwrap_or(source)
 }
 
-/// A MINTED instance (chart voyage or private story instance — any world
+/// A MINTED instance (map instance or private story instance — any world
 /// whose key differs from its zone id) is done when nothing lives there
 /// and nothing is bound for it. Shared boot worlds (towns) never retire.
 /// A retired story instance re-mints DETERMINISTICALLY from its stable
 /// key if the owner walks back in.
 fn minted_instance_emptied(mw: &ManagedWorld) -> bool {
-    (mw.world.is_chart_instance() || mw.key != mw.zone_id)
+    (mw.world.is_map_instance() || mw.key != mw.zone_id)
         && mw.pending.arrivals.is_empty()
         && mw.pending.joins.is_empty()
         && mw.world.views().iter().all(|v| v.kind != 1)
 }
 
-/// The chart-aware ferry (#136 T4): departures carrying a ChartTicket open a
+/// The map-aware ferry (#136 T4): departures carrying a MapTicket open a
 /// FRESH instance of their (map-kind) destination — keyed
 /// "<zone>#<name>@<tick>", seeded from that key, its area level and juice set
 /// by the ticket — and land there. Everything else rides the normal ferry.
 /// Instances retire at the top of a later tick once they empty (never
 /// mid-tick: frame posting indexes into `worlds`).
-fn ferry_departures_with_charts(
+fn ferry_departures_with_maps(
     worlds: &mut Vec<ManagedWorld>,
     departures: Vec<(usize, CharacterBundle, String)>,
     content: &ContentDb,
@@ -171,18 +171,18 @@ fn ferry_departures_with_charts(
 ) {
     let mut plain = Vec::new();
     for (source, mut bundle, dest) in departures {
-        let Some(ticket) = bundle.chart.take() else {
+        let Some(ticket) = bundle.map.take() else {
             plain.push((source, bundle, dest));
             continue;
         };
-        // Only map-kind zones may be chart-instanced; anything else rides
+        // Only map-kind zones may be map-instanced; anything else rides
         // the normal ferry (and bounces home if unknown) — fail safe.
         let is_map = content
             .zone(&dest)
             .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Map));
         if !is_map {
             warn!(
-                "{} chart-sailed for non-map zone {dest}; refunding the trip home",
+                "{} opened a map to non-map zone {dest}; refunding the trip home",
                 bundle.character.name
             );
             plain.push((source, bundle, dest));
@@ -195,13 +195,13 @@ fn ferry_departures_with_charts(
             h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
         }
         info!(
-            "charting {} for {} (tier {})",
+            "opening map {} for {} (tier {})",
             key, bundle.character.name, ticket.tier
         );
         let mut mw = ManagedWorld {
             key: key.clone(),
             zone_id: dest.clone(),
-            world: World::new_chart_instance(seed ^ h, content, &dest, ticket),
+            world: World::new_map_instance(seed ^ h, content, &dest, ticket),
             tiles: resolve_tile_map(content, &dest),
             max_players: 1,
             pending: TickInputs::default(),
@@ -281,7 +281,7 @@ fn ferry_departures(
 /// Derive the boot world set from CONTENT (#136 T3): every authored zone
 /// boots by kind — shared town/story zones as one world each, solo story
 /// zones as one instance per built-in idler, and `map` zones not at all
-/// (they are chart-instanced on demand, #136 T4). Shipping a new zone never
+/// (they are map-instanced on demand, #136 T4). Shipping a new zone never
 /// needs a server change again: the Saltworks and the Hollow shipped
 /// unbootable once, and route_departure silently bounced travelers home.
 pub fn boot_worlds(
@@ -400,7 +400,7 @@ pub fn spawn_tick_loop(
     server_tick: Arc<AtomicU64>,
     snapshot_base: Option<std::path::PathBuf>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
-    // Chart instancing (#136 T4): the ferry mints fresh worlds on demand.
+    // Map instancing (#136 T4): the ferry mints fresh worlds on demand.
     content: ContentDb,
     seed: u64,
 ) {
@@ -409,7 +409,7 @@ pub fn spawn_tick_loop(
         .spawn(move || {
             let tick_interval = Duration::from_millis(1000 / TICK_HZ as u64);
             let mut ticks_since_save = 0u64;
-            // Host tick: only for unique chart-instance keys (worlds each
+            // Host tick: only for unique map-instance keys (worlds each
             // keep their own sim tick).
             let mut host_tick: u64 = 0;
             loop {
@@ -417,15 +417,15 @@ pub fn spawn_tick_loop(
                 let stopping = shutdown.load(Ordering::Relaxed);
                 host_tick += 1;
 
-                // Retire emptied MINTED instances (voyages + private story worlds) —
+                // Retire emptied MINTED instances (maps + private story worlds) —
                 // the tick so no frame index from the previous loop survives
-                // the removal. A voyage ends when its idler leaves or dies
+                // the removal. A map ends when its idler leaves or dies
                 // out; the strand folds back into the sea.
                 worlds.retain(|mw| {
                     let retire = minted_instance_emptied(mw);
                     if retire {
                         info!("minted instance {} emptied; retired", mw.key);
-                        // The voyage's snapshot goes with it — a retired
+                        // The map's snapshot goes with it — a retired
                         // instance must never resume as a ghost.
                         if let Some(base) = &snapshot_base {
                             let dir = crate::persist::world_dir(base, &mw.key);
@@ -464,7 +464,7 @@ pub fn spawn_tick_loop(
                 // Ferry: land each departure into its destination world (or
                 // back to its source when that zone is unknown or full) — a
                 // transfer never loses a character (#63).
-                ferry_departures_with_charts(
+                ferry_departures_with_maps(
                     &mut worlds,
                     all_departures,
                     &content,
@@ -483,7 +483,7 @@ pub fn spawn_tick_loop(
                 {
                     ticks_since_save = 0;
                     for mw in &worlds {
-                        // Chart instances snapshot like any world (#136 T4):
+                        // Map instances snapshot like any world (#136 T4):
                         // a crash must never cost the CHARACTER inside one.
                         // Their dirs carry a plaintext `key` file so the boot
                         // scan can resume them (the dirname is a one-way
@@ -860,7 +860,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
 }
 
 /// The headless harness (#148 A6): run ANY brain through the WHOLE game —
-/// shore tutorial, both acts, the table, one charted sail — under the same
+/// shore tutorial, both acts, the table, one map run — under the same
 /// mini host loop the band tests use. `cargo run -p idlin-server --bin
 /// harness -- --brain my.bot` is the published form; the band tests assert
 /// over the same report.
@@ -872,11 +872,11 @@ pub mod salt_road {
     /// band's three meters.
     #[derive(Debug, serde::Serialize)]
     pub struct SaltRoadReport {
-        /// Ticketed voyages minted — 1 = reached the endgame; 2+ = the
-        /// CYCLE closes (return, re-chart, sail again).
-        pub voyages: u32,
+        /// Ticketed maps opened — 1 = reached the endgame; 2+ = the
+        /// CYCLE closes (return, re-map, depart again).
+        pub maps: u32,
         pub milestones: Vec<(String, bool)>,
-        pub sailed_at: u64,
+        pub mapped_at: u64,
         pub deaths: u32,
         pub sales: u32,
     }
@@ -897,25 +897,25 @@ pub mod salt_road {
     /// THE 1.0 PROMISE (#136 T6) + THE BALANCE BAND (#136 T8): a stock
     /// grinder, joined fresh at level 1 in Saltmere, plays the whole game by
     /// itself — walks the road (coast, the Saltworks past Karesh, down the
-    /// Hollow), breaks the Mother, completes Act 1, carries her chart home
-    /// to the table, and SAILS. A mini host loop (tick + chart-aware ferry)
+    /// Hollow), breaks the Mother, completes Act 1, carries her map home
+    /// to the table, and OPENS A MAP. A mini host loop (tick + map-aware ferry)
     /// stands in for the server. Across SEEDS, the run must also stay
     /// inside the band: done within the tick budget, without death-spam —
     /// a content change that turns a zone into a meat grinder or a wall
     /// fails here, not in front of the operator. Mutation: break routing,
-    /// the act hook, UseChart, the ferry mint, or overtune any fight → a
+    /// the act hook, OpenMap, the ferry mint, or overtune any fight → a
     /// milestone never lights (or the band breaks) and this fails named.
     pub fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> SaltRoadReport {
         walk_the_salt_road_to(seed, program, 1)
     }
 
-    /// The same road, run until `sail_target` VOYAGES have minted — the
+    /// The same road, run until `map_target` MAPS have minted — the
     /// endgame CYCLE test's core (#162 live find: the band ended at the
-    /// first sail, so "sail, return, re-chart, sail again" was never
+    /// first depart, so "depart, return, re-map, depart again" was never
     /// tested and shipped broken — the route pointed home to a town the
-    /// voyage's exit never reaches).
-    pub fn walk_the_salt_road_to(seed: u64, program: Vec<u8>, sail_target: u32) -> SaltRoadReport {
-        walk_the_salt_road_as(seed, program, sail_target, "Pathfinder")
+    /// map's exit never reaches).
+    pub fn walk_the_salt_road_to(seed: u64, program: Vec<u8>, map_target: u32) -> SaltRoadReport {
+        walk_the_salt_road_as(seed, program, map_target, "Pathfinder")
     }
 
     /// The same road under a specific NAME (#162 live-stall repro): live
@@ -955,7 +955,7 @@ pub mod salt_road {
                         .map(|(b, dest)| (i, b, dest)),
                 );
             }
-            ferry_departures_with_charts(&mut worlds, departures, &content, seed, host_tick);
+            ferry_departures_with_maps(&mut worlds, departures, &content, seed, host_tick);
             if host_tick % 512 == 0 {
                 worlds.retain(|mw| !minted_instance_emptied(mw));
             }
@@ -1016,7 +1016,7 @@ pub mod salt_road {
     pub fn walk_the_salt_road_as(
         seed: u64,
         program: Vec<u8>,
-        sail_target: u32,
+        map_target: u32,
         subject: &str,
     ) -> SaltRoadReport {
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
@@ -1030,7 +1030,7 @@ pub mod salt_road {
         let mut worlds = boot_worlds(&content, seed, &joins);
         let mut milestones = [false; 8];
         let mut sales = 0u32;
-        let mut sails = 0u32;
+        let mut opens = 0u32;
         let names = [
             "reach the coast",
             "reach the saltworks",
@@ -1038,11 +1038,11 @@ pub mod salt_road {
             "complete act 1",
             "descend to Lanternfall",
             "complete act 2",
-            "spend a chart at a table",
-            "sail a charted voyage",
+            "open a map at a table",
+            "complete a map run",
         ];
         let mut deaths = 0u32;
-        let mut sailed_at = 0u64;
+        let mut mapped_at = 0u64;
         'run: for host_tick in 0..280_000u64 {
             let mut departures = Vec::new();
             for (i, mw) in worlds.iter_mut().enumerate() {
@@ -1092,12 +1092,12 @@ pub mod salt_road {
                 );
             }
             // A ticketed departure IS the town milestone: standing at the
-            // table, act done, chart spent (zone sampling every 200 ticks
+            // table, act done, map spent (zone sampling every 200 ticks
             // can miss the transit — the road home is 6 cells long).
             for (_, b, dest) in &departures {
-                if b.character.name == subject && b.chart.is_some() {
+                if b.character.name == subject && b.map.is_some() {
                     milestones[6] = true;
-                    sails += 1;
+                    opens += 1;
                 }
                 // Town transits outrun the 200-tick zone sampling (the T6
                 // lesson, again): a departure BOUND for the town proves the
@@ -1106,7 +1106,7 @@ pub mod salt_road {
                     milestones[4] = true;
                 }
             }
-            ferry_departures_with_charts(&mut worlds, departures, &content, seed, host_tick);
+            ferry_departures_with_maps(&mut worlds, departures, &content, seed, host_tick);
             if host_tick % 20_000 == 0 {
                 for mw in &worlds {
                     for v in mw.world.views() {
@@ -1134,18 +1134,18 @@ pub mod salt_road {
                                 .map(|sh| sh.inventory.iter().map(|r| r.0.name.clone()).collect())
                                 .unwrap_or_default();
                             println!(
-                                "P t={host_tick} z={} lvl={} x={} y={} charts={}",
+                                "P t={host_tick} z={} lvl={} x={} y={} maps={}",
                                 mw.zone_id,
                                 v.level,
                                 v.x_raw / 65536,
                                 v.y_raw / 65536,
-                                bag.iter().filter(|n| n.contains("Chart")).count()
+                                bag.iter().filter(|n| n.contains("Map")).count()
                             );
                         }
                     }
                 }
             }
-            if sails >= sail_target && milestones[7] {
+            if opens >= map_target && milestones[7] {
                 break 'run;
             }
             if host_tick % 200 == 0 {
@@ -1165,7 +1165,7 @@ pub mod salt_road {
                         "lanternfall" => milestones[4] = true,
                         "charted_shallows" if !milestones[7] => {
                             milestones[7] = true;
-                            sailed_at = host_tick;
+                            mapped_at = host_tick;
                         }
                         _ => {}
                     }
@@ -1173,13 +1173,13 @@ pub mod salt_road {
             }
         }
         SaltRoadReport {
-            voyages: sails,
+            maps: opens,
             milestones: names
                 .iter()
                 .zip(milestones.iter())
                 .map(|(n, m)| (n.to_string(), *m))
                 .collect(),
-            sailed_at,
+            mapped_at,
             deaths,
             sales,
         }
@@ -1268,7 +1268,7 @@ mod tests {
     fn the_stock_grinder_walks_the_salt_road() {
         // Three seeds (#136 T8): the promise must hold for EVERY fresh
         // idler, not one lucky roll. Bands (generous — regression trips,
-        // not tuning drift): sail within 90k ticks vs measured 9.8k-27.2k,
+        // not tuning drift): depart within 90k ticks vs measured 9.8k-27.2k,
         // and at most 40 deaths vs measured 1-4 — death-SPAM is the smell
         // this catches, not death itself: dying is idle life. The band's
         // first catch: 72 deaths in the pre-tune Hollow on one seed. A
@@ -1277,7 +1277,7 @@ mod tests {
         for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5, 0x0CA5_7E12] {
             let r = walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
             assert_complete(seed, &r);
-            let (sailed_at, deaths, sales) = (r.sailed_at, r.deaths, r.sales);
+            let (mapped_at, deaths, sales) = (r.mapped_at, r.deaths, r.sales);
             // #148 A5 (review B2, take two): the vendor-specific economy
             // proof lives in THE MELEE BAND ONLY — its four seeds all
             // arrive at the table holding act-road junk; the ranged pair
@@ -1287,7 +1287,7 @@ mod tests {
             // templates' sell adoption → no "Sold " narration, this trips.
             assert!(
                 sales > 0,
-                "seed {seed:#x}: the sailor should have SOLD junk before sailing"
+                "seed {seed:#x}: the runner should have SOLD junk before opening the map"
             );
             // RETROSPECTIVE re-band (#148): the A3-era 180k line was set
             // against a pre-scorer 103k run; the economy arcs quietly
@@ -1295,8 +1295,8 @@ mod tests {
             // 60k = ~2.5x headroom; drift past it means the road slowed
             // for a reason someone should name.
             assert!(
-                sailed_at <= 60_000,
-                "seed {seed:#x}: sailed at {sailed_at} — the road has a wall"
+                mapped_at <= 60_000,
+                "seed {seed:#x}: departed at {mapped_at} — the road has a wall"
             );
             // Measured 9-24 deaths across the four seeds post-economy;
             // 60 = ~2.5x headroom, still far below the meat-grinder
@@ -1310,7 +1310,7 @@ mod tests {
 
     /// #148 A2: the promise holds for EVERY ARCHETYPE, not just the sword.
     /// One seed each (melee has four above): the caster and the ranger
-    /// must ALSO walk the whole road — tutorial, campaign, Mother, sail —
+    /// must ALSO walk the whole road — tutorial, campaign, Mother, depart —
     /// inside the same bands. Mutation: break either build plan, ladder,
     /// or the ranged hold badly enough and the road ends early.
     #[test]
@@ -1325,9 +1325,9 @@ mod tests {
         ] {
             let r = walk_the_salt_road(seed, idlin_botc::template_caster().unwrap());
             eprintln!(
-                "CSEED {seed:#x}: complete={} sailed={} deaths={} stuck={:?}",
+                "CSEED {seed:#x}: complete={} departed={} deaths={} stuck={:?}",
                 r.completed(),
-                r.sailed_at,
+                r.mapped_at,
                 r.deaths,
                 r.stuck_before()
             );
@@ -1371,9 +1371,9 @@ mod tests {
             "Mirra",
         );
         eprintln!(
-            "MIRRA complete={} voyages={} deaths={} stuck={:?}",
+            "MIRRA complete={} maps={} deaths={} stuck={:?}",
             r.completed(),
-            r.voyages,
+            r.maps,
             r.deaths,
             r.stuck_before()
         );
@@ -1381,21 +1381,21 @@ mod tests {
 
     #[test]
     fn the_endgame_cycle_closes() {
-        // #162 live find: two sailors farmed ONE tier-1 voyage for two
-        // hours because the return route named a town the voyage's exit
-        // never reaches — and no test ran past the first sail. This one
-        // does: the grinder must sail, come HOME, spend another chart,
-        // and sail AGAIN. Mutation: re-break the voyage-return route (or
-        // the exit dest) → one sail forever, this fails.
+        // #162 live find: two runners farmed ONE tier-1 map for two
+        // hours because the return route named a town the map's exit
+        // never reaches — and no test ran past the first depart. This one
+        // does: the grinder must depart, come HOME, spend another map,
+        // and depart AGAIN. Mutation: re-break the map-return route (or
+        // the exit dest) → one depart forever, this fails.
         let r = salt_road::walk_the_salt_road_to(
             0x05A1_70AD,
             idlin_botc::template_grinder().unwrap(),
             2,
         );
         assert!(
-            r.voyages >= 2,
-            "the cycle must close: sail, return, re-chart, sail again (got {})",
-            r.voyages
+            r.maps >= 2,
+            "the cycle must close: depart, return, re-map, depart again (got {})",
+            r.maps
         );
     }
 
@@ -1409,8 +1409,8 @@ mod tests {
         // out-ranges — a tuning thread, not a wall.
         let r = walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
         assert_complete(0x0CA5_7E12, &r);
-        let (sailed_at, deaths) = (r.sailed_at, r.deaths);
-        assert!(sailed_at <= 150_000, "the caster hit a wall at {sailed_at}");
+        let (mapped_at, deaths) = (r.mapped_at, r.deaths);
+        assert!(mapped_at <= 150_000, "the caster hit a wall at {mapped_at}");
         assert!(
             deaths <= 200,
             "{deaths} caster deaths — a grinder for wands"
@@ -1419,7 +1419,7 @@ mod tests {
 
     #[test]
     fn the_ranger_walks_the_salt_road() {
-        // Measured ~20-50k sails; 120k = the wall line. Deaths measured
+        // Measured ~20-50k departs; 120k = the wall line. Deaths measured
         // 48-130 across configs — the bow shares the wand's defense debt
         // (bases exist since A2.5, but the stock brains don't stat-weigh
         // gear: rarity-first wears whatever drops). 160 = the same debt
@@ -1434,17 +1434,17 @@ mod tests {
         for seed in [0x0BB0_77A1u64, 0x0BB0_77A2] {
             let r = walk_the_salt_road(seed, idlin_botc::template_ranger().unwrap());
             assert_complete(seed, &r);
-            let (sailed_at, deaths) = (r.sailed_at, r.deaths);
-            assert!(sailed_at <= 80_000, "the ranger hit a wall at {sailed_at}");
+            let (mapped_at, deaths) = (r.mapped_at, r.deaths);
+            assert!(mapped_at <= 80_000, "the ranger hit a wall at {mapped_at}");
             assert!(deaths <= 110, "{deaths} ranger deaths — a grinder for bows");
         }
     }
 
     #[test]
-    fn a_chart_departure_mints_a_voyage_and_it_retires_when_empty() {
+    fn a_map_departure_mints_an_instance_and_it_retires_when_empty() {
         // #136 T4: a ticketed departure opens a fresh instance of the map
         // zone (leveled + juiced + ephemeral) holding exactly that bundle;
-        // an unticketed one rides the normal ferry; and the emptied voyage
+        // an unticketed one rides the normal ferry; and the emptied map
         // retires while booted worlds never do. Mutations: drop the ticket
         // branch, the map-kind guard, or the retire predicate → fails.
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
@@ -1456,8 +1456,8 @@ mod tests {
             max_players: 0,
             pending: TickInputs::default(),
         }];
-        let mut b = bundle("Sailor");
-        b.chart = Some(idlin_sim::ChartTicket {
+        let mut b = bundle("Runner");
+        b.map = Some(idlin_sim::MapTicket {
             tier: 2,
             rarity_bp: 1000,
             quantity_bp: 500,
@@ -1465,20 +1465,20 @@ mod tests {
             clock: 0,
             boss: false,
         });
-        ferry_departures_with_charts(
+        ferry_departures_with_maps(
             &mut worlds,
             vec![(0, b, "charted_shallows".to_string())],
             &content,
             99,
             41,
         );
-        assert_eq!(worlds.len(), 2, "the voyage exists");
+        assert_eq!(worlds.len(), 2, "the map exists");
         let mw = &worlds[1];
-        assert_eq!(mw.key, "charted_shallows#Sailor@41");
+        assert_eq!(mw.key, "charted_shallows#Runner@41");
         assert_eq!(mw.zone_id, "charted_shallows");
-        assert!(mw.world.is_chart_instance());
+        assert!(mw.world.is_map_instance());
         assert_eq!(mw.world.zone_level(), 14, "12 + tier 2");
-        assert_eq!(mw.pending.arrivals.len(), 1, "the sailor is aboard");
+        assert_eq!(mw.pending.arrivals.len(), 1, "the runner is aboard");
         // Not yet retired: the arrival is pending.
         assert!(!minted_instance_emptied(&worlds[1]));
         // Land the arrival, then walk them home: the instance empties.
@@ -1486,13 +1486,13 @@ mod tests {
         worlds[1].world.tick(&inputs);
         assert!(
             !minted_instance_emptied(&worlds[1]),
-            "occupied voyages persist"
+            "occupied maps persist"
         );
         // A booted world is never "emptied", even with zero characters.
         assert!(!minted_instance_emptied(&worlds[0]));
         // A ticket for a NON-map zone refunds home instead of minting.
         let mut b2 = bundle("Confused");
-        b2.chart = Some(idlin_sim::ChartTicket {
+        b2.map = Some(idlin_sim::MapTicket {
             tier: 1,
             rarity_bp: 0,
             quantity_bp: 0,
@@ -1501,21 +1501,21 @@ mod tests {
             boss: false,
         });
         let before = worlds.len();
-        ferry_departures_with_charts(
+        ferry_departures_with_maps(
             &mut worlds,
             vec![(0, b2, "saltmere".to_string())],
             &content,
             99,
             42,
         );
-        assert_eq!(worlds.len(), before, "no voyage minted for a story zone");
+        assert_eq!(worlds.len(), before, "no map minted for a story zone");
         assert!(
             worlds[0]
                 .pending
                 .arrivals
                 .iter()
                 .any(|a| a.character.name == "Confused"),
-            "the confused sailor lands home"
+            "the confused runner lands home"
         );
     }
 
@@ -1571,7 +1571,7 @@ mod tests {
         // #136 T3: THE test that was missing when the Saltworks and the
         // Hollow shipped unbootable — every non-map authored zone must be
         // live at boot, solo zones per idler, map zones absent (they are
-        // chart-instanced, T4). Mutation: drop a kind arm (or hardcode the
+        // map-instanced, T4). Mutation: drop a kind arm (or hardcode the
         // world list again) → the matching assert fails.
         let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
         let joins = vec![
@@ -1612,11 +1612,11 @@ mod tests {
         // Map zones never boot — the proving ground stays off the live set.
         assert!(
             !keys.iter().any(|k| k.contains("test_range")),
-            "map zones are chart-instanced, not booted; got {keys:?}"
+            "map zones are map-instanced, not booted; got {keys:?}"
         );
         // Every travel destination resolves SOMEWHERE: a booted world
         // (towns), or a kind the ferry mints on demand (story = private
-        // instances, map = chart voyages). An exit into a zone of no kind
+        // instances, map = map instances). An exit into a zone of no kind
         // would bounce travelers home forever.
         for def in &content.zones {
             for exit in &def.exits {
@@ -1672,7 +1672,7 @@ mod tests {
             persist: Vec::new(),
             params: Vec::new(),
             bot_version: 1,
-            chart: None,
+            map: None,
         }
     }
 

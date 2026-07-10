@@ -1,5 +1,5 @@
-// Chart suffix (#136 T4): the voyage pays — extra drop QUANTITY inside the
-// charted instance (the ticket folds this into every kill's roll there).
+// Map suffix (#136 T4): the map pays — extra drop QUANTITY inside the
+// mapped instance (the ticket folds this into every kill's roll there).
 AffixDef(
     id: "of_plenty",
     public: true,

@@ -80,6 +80,7 @@ export const FIXTURES: FixtureMeta[] = [
   {
     name: "scene-dressing",
     kind: "scene",
+    minBytes: 50_000,
   },
   {
     name: "killcam-panel",
@@ -186,7 +187,7 @@ export const FIXTURES: FixtureMeta[] = [
   },
   {
     // Campaign UI (#136 T7): the zone title card + the act-done chip with
-    // the chart count ("act 1 done · 1 chart") + the named chart in the bag.
+    // the map count ("act 1 done · 1 map") + the named map in the bag.
     name: "full-campaign",
     kind: "full",
     expect: ["The Charted Shallows", "campaign done"],
@@ -224,7 +225,7 @@ export const FIXTURES: FixtureMeta[] = [
     // broken stream / wrong render leaves the empty state and fails these.
     name: "idler-manage",
     kind: "manage",
-    expect: ["Brakka", "manage", "Event stream", "Bone Stalker", "FELLS", "settles the voyage"],
+    expect: ["Brakka", "manage", "Event stream", "Bone Stalker", "FELLS", "completes the map"],
   },
   {
     // Individual view for an idler not in any world (#79): a clean "not in the

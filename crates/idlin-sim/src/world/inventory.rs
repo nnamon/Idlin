@@ -539,11 +539,11 @@ impl World {
         let Some(gear) = ch.inventory.get(inv_idx).and_then(|p| p.item.as_gear()) else {
             return -1; // out of range, or the bag slot is a gem
         };
-        // Charts are CARGO, not gear (#136 T4): they ride the bag and spend
-        // at the Charting Table; wearing one is refused here (manual) and
+        // Maps are CARGO, not gear (#136 T4): they ride the bag and spend
+        // at the Opening Table; wearing one is refused here (manual) and
         // scored to zero in item_score (autos).
         if self.content.items[gear.base_idx as usize]
-            .chart_tier
+            .map_tier
             .is_some()
         {
             return -1;
@@ -707,9 +707,9 @@ impl World {
     /// own affixes over its own bases. Bots with opinions can do better.
     /// `pub(crate)` for the conditional-scoring regression test.
     pub(crate) fn item_score(&self, item: &Item) -> i64 {
-        // Charts never score as wearable gear (#136 T4).
+        // Maps never score as wearable gear (#136 T4).
         if self.content.items[item.base_idx as usize]
-            .chart_tier
+            .map_tier
             .is_some()
         {
             return 0;

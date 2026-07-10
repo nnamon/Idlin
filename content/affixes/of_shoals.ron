@@ -1,4 +1,4 @@
-// Chart prefix (#136 T4): teeming waters — the instance's packs roll magic
+// Map prefix (#136 T4): teeming waters — the instance's packs roll magic
 // and rare far more often (the ticket adds this to every pack's bp).
 AffixDef(
     id: "of_shoals",

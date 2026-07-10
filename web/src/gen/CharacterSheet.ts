@@ -22,7 +22,7 @@ life_reserved: number, mana_reserved: number,
 block_bp: number, kills: number, 
 /**
  * Campaign progress (#136 T7): bit N-1 = act N complete (bit 0 = Act 1 —
- * the chart endgame's key). The act tracker and chart panel read this.
+ * the map endgame's key). The act tracker and map panel read this.
  */
 story_acts: number, dmg_phys: number, dmg_fire: number, dmg_cold: number, dmg_lightning: number, dmg_chaos: number, accuracy: number, evasion: number, armour: number, 
 /**

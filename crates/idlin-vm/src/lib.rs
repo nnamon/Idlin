@@ -116,10 +116,10 @@ pub const SYS_UNEQUIP: i32 = 35;
 /// bit1 Shock, bit2 Chill; 0 if the entity is unknown or unafflicted. Lets a bot
 /// read self/target ailment state (and is the read #109's vs-ailing condition uses).
 pub const SYS_READ_AILMENTS: i32 = 36;
-pub const SYS_USE_CHART: i32 = 37;
+pub const SYS_OPEN_MAP: i32 = 37;
 /// Sell a bag item at the town vendor (#148 A5): pops inv_sel; pays an obol
 /// by what the item was (normal→transmute, magic→alter, rare→alchemy,
-/// unique→regal, gems/charts→transmute). Returns the obol's NUM, or
+/// unique→regal, gems/maps→transmute). Returns the obol's NUM, or
 /// -1 bad selection / -2 not at a vendor / -4 no character.
 pub const SYS_SELL: i32 = 38;
 /// Move an item between bag and stash at the town stash chest (#148 A5):
@@ -211,8 +211,8 @@ pub mod abi {
     pub const SS_MANA_MAX: u16 = 56;
     pub const SS_ES: u16 = 60;
     pub const SS_ZONE: u16 = 64;
-    /// The zone's Charting Table cell in Q16.16, or -1/-1 when the zone has
-    /// none (#136 T6) — how a brain finds where charts are spent.
+    /// The zone's Opening Table cell in Q16.16, or -1/-1 when the zone has
+    /// none (#136 T6) — how a brain finds where maps are spent.
     pub const SS_TABLE_X: u16 = 68;
     pub const SS_TABLE_Y: u16 = 72;
     /// The zone's VENDOR cell (#148 A5) — where items become obols; -1/-1
@@ -768,7 +768,7 @@ mod tests {
         assert_eq!(SYS_ITEM_SLOT, 34);
         assert_eq!(SYS_UNEQUIP, 35);
         assert_eq!(SYS_READ_AILMENTS, 36);
-        assert_eq!(SYS_USE_CHART, 37);
+        assert_eq!(SYS_OPEN_MAP, 37);
         assert_eq!(SYS_SELL, 38);
         assert_eq!(SYS_STASH, 39);
         assert_eq!(SYS_READ_STASH, 40);

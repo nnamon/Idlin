@@ -52,17 +52,17 @@ the sport. Monster behavior is bot code too, shipped as content.
   caster), bow (Deadeye ranger) — each with its own build plan, gear
   ladder, and combat discipline; every one completes the entire two-act
   campaign unaided, proven on every commit by seeded full-game band tests.
-- **The chart endgame**: completing the campaign unlocks the Charting
-  Tables (Saltmere and Lanternfall). Charts drop as items and roll
+- **The map endgame**: completing the campaign unlocks the Map
+  Tables (Saltmere and Lanternfall). Maps drop as items and roll
   affixes like any gear — quantity/rarity juice AND **rules**: Monster
-  Fury scales every hostile hit, the Voyage Clock puts the run on a
-  timer, and Sovereign-Marked deep charts spawn a tier boss (the
-  Unwritten) with its own signature. Voyages settle a **scoreboard** on
-  the way out — kills, deaths, items, duration.
+  Fury scales every hostile hit, the Map Clock puts the run on a
+  timer, and Sovereign-Marked deep maps spawn a tier boss (the
+  Unwritten) with its own signature. Every run settles a **scoreboard**
+  on the way out — kills, deaths, items, duration.
 - **A town economy**: vendors turn junk into obols (the crafting
   currency), and every character owns a persistent stash chest that
   rides zone transfers and snapshots. The stock brains sell their road
-  junk before spending charts.
+  junk before opening maps.
 - **Player brain deployment**: POST a `.bot` source to `/api/deploy` and
   your brain walks its own tutorial shore; a kill switch recalls
   runaways; `/api/leaderboard` ranks every live character by campaign
@@ -70,17 +70,17 @@ the sport. Monster behavior is bot code too, shipped as content.
   **headless harness** (`cargo run -p idlin-server --bin harness`) runs
   any brain through the whole game deterministically before you deploy.
 - **A broadcast that tells the story**: the director cuts to acts
-  falling, boss kills, voyage tallies, and first sails ahead of routine
+  falling, boss kills, map tallies, and first map opens ahead of routine
   deaths; boss falls mark the recording journal so
   the kill-cam list (`/api/killcams`) deep-links into the deterministic
   replay via the viewer's `&at=<line>` fast-forward;
   a synthesized, muted-by-default **sound layer** voices the beats.
 - **The stock brains play the whole game**: routing by zone ids, gearing
   off the ground via the engine's scorer, managing bags, selling junk,
-  breaking every boss, and pivoting to chart farming — a fresh level-1
+  breaking every boss, and pivoting to map farming — a fresh level-1
   idler reaches the endgame unaided. Six seeded full-game runs (four
   melee seeds, a caster, a ranger) gate every commit: both acts and the
-  first sail, within tick and death bands.
+  first map, within tick and death bands.
 - **Fog of war**: per-idler views reveal only what that character has
   seen — the wire itself is filtered, so route precomputation from
   network captures is off the table.
@@ -131,7 +131,7 @@ each checked at its boundary so incompatibilities fail fast and loudly.
 ## Status
 
 Version 2.0 — "The Undertow". The game is a complete two-act campaign
-with a rule-modified chart endgame, three self-sufficient stock
+with a rule-modified map endgame, three self-sufficient stock
 archetypes, a town economy, player brain deployment, a story-aware
 broadcast, and sound. Next horizons: chat integration (Twitch first)
 with player-scoped views, and a third act beneath the Sovereign's

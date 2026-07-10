@@ -14,9 +14,9 @@
 // Act 1 is done it pushes DEEPER when leveled for the next zone
 // (coast at once, saltworks at 7, the Hollow at 10) and breaks the
 // Mother. After (SelfStatus flags bit 1) it lives the endgame loop:
-// home to Saltmere, spend a chart at the Charting Table, farm the
-// voyage for ~8 minutes, sail home, repeat — and when it runs dry
-// of charts, it returns to the Hollow: the Mother always pays one.
+// home to Saltmere, open a map at the Map Table, farm the
+// map for ~8 minutes, walk home, repeat — and when it runs dry
+// of maps, it returns to the Hollow: the Mother always pays one.
 //
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
@@ -56,7 +56,7 @@ var stuck_x;               // unstick: position memory + window counter
 var stuck_y;
 var stuck_t;
 var unstick;               // ticks left of forced wandering
-var voyage_t;              // ticks spent in the current chart instance
+var map_t;              // ticks spent in the current map instance
 var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
 var shed_cd;               // ticks to ignore ground loot after shedding
 var last_xp;               // XP-drought: earnings mark real progress
@@ -162,16 +162,16 @@ fn upkeep_gear() {
 }
 
 // BAG DISCIPLINE (#136 T6): a hoarder's bag is a full bag, and a full
-// bag DROPS NOTHING NEW — the Mother's chart bounced off one once. When
+// bag DROPS NOTHING NEW — the Mother's map bounced off one once. When
 // the bag runs hot, shed the first NORMAL-rarity gear (never gems, never
-// charts): normals are either worn already or losers by definition.
+// maps): normals are either worn already or losers by definition.
 fn shed_trash() {
     var n = read_inventory(INV, 60);
     // The bag fills by CELLS, not count — a dozen 6-cell weapons brick
     // it long before 60 records, pickups fail silently, and the Mother's
-    // chart bounces (it did AGAIN at 12: the caster hoarded three melee
+    // map bounces (it did AGAIN at 12:
     // weapons it can never wield). Policy: anything upkeep_gear did NOT
-    // wear is a loser by definition — keep charts and ONE copy of each
+    // wear is a loser by definition — keep maps and ONE copy of each
     // build gem, shed the rest (one per pass; drops shift the bag).
     // Eight records keeps a 2x2 hole under any mix.
     if (n < 8) { return 0; }
@@ -203,8 +203,8 @@ fn shed_trash() {
     return 0;
 }
 
-// The bag index of a chart, or -1.
-fn find_chart() {
+// The bag index of a map, or -1.
+fn find_map() {
     var n = read_inventory(INV, 60);
     var i = 0;
     while (i < n) {
@@ -269,24 +269,24 @@ fn route_dest() {
         }
         if (zid == ZONE_THE_UNDERTOW) { return -1; }
         if (zid == ZONE_CHARTED_SHALLOWS) {
-            if (voyage_t > 5000) { return ZONE_SALTMERE; }
+            if (map_t > 5000) { return ZONE_SALTMERE; }
             return -1;
         }
         return 0;
     }
-    // The endgame, both acts down. A voyage lasts ~8 minutes, then home
+    // The endgame, both acts down. A map run lasts ~8 minutes, then home
     // to the NEAREST table (Lanternfall keeps one too); dry, the road
     // leads to the Sovereign — the deepest act boss pays the deepest
-    // charts.
+    // maps.
     if (zid == ZONE_CHARTED_SHALLOWS) {
         // HOME IS WHERE THE EXIT GOES (#162 live find): the route said
-        // Lanternfall but the voyage's only exit lands in SALTMERE — want
-        // never matched an exit and two sailors farmed one tier-1 voyage
+        // Lanternfall but the map run's only exit lands in SALTMERE — want
+        // never matched an exit and two brains farmed one tier-1 map run
         // for two hours. Saltmere keeps a table; the cycle closes there.
-        if (voyage_t > 5000) { return ZONE_SALTMERE; }
+        if (map_t > 5000) { return ZONE_SALTMERE; }
         return -1;
     }
-    if (find_chart() >= 0) {
+    if (find_map() >= 0) {
         if (zid == ZONE_LANTERNFALL) { return -1; }  // the table logic in main
         if (zid == ZONE_SALTMERE) { return -1; }
         if (zid == ZONE_THE_UNDERTOW) { return ZONE_PRESSURE_COURT; }
@@ -333,9 +333,9 @@ fn main() {
         last_zone = zid;
         bored = 0;
         leaving = 0;
-        voyage_t = 0;
+        map_t = 0;
     }
-    if (zid == ZONE_CHARTED_SHALLOWS) { voyage_t = voyage_t + 1; }
+    if (zid == ZONE_CHARTED_SHALLOWS) { map_t = map_t + 1; }
 
     // A word when the shore concedes a level (speech.ron line 2).
     var lvl = mem[SELF + SS_LEVEL];
@@ -426,19 +426,19 @@ fn main() {
     socket_into(NODE_SOCKET_ROT, GEM_PLAGUE_CLOUD);
     }
 
-    // THE TABLE (#136 T6): in town, after the act, holding a chart —
-    // walk to the Charting Table and sail. UseChart refuses harmlessly
+    // THE TABLE (#136 T6): in town, after the act, holding a map —
+    // walk to the Map Table and head. OpenMap refuses harmlessly
     // (-2) until we're in reach; keep walking until it takes.
-    // The CAMPAIGN OUTRANKS the charts (#148 A3): a mid-campaign pupil
-    // carrying the Mother's chart once sailed from Lanternfall's table the
+    // The CAMPAIGN OUTRANKS the maps (#148 A3): a mid-campaign pupil
+    // carrying the Mother's map once opened from Lanternfall's table the
     // moment it arrived, abandoning Act 2 — the table waits until no act
     // is pending (flags bit 2 = act 2, the current last; revisit per act).
     if (zid == ZONE_SALTMERE || zid == ZONE_LANTERNFALL) {
         if ((mem[SELF + SS_FLAGS] & 4) != 0) {
-            var chart = find_chart();
-            if (chart >= 0) {
+            var map = find_map();
+            if (map >= 0) {
                 // JUNK BECOMES OBOLS first (#148 A5): everything upkeep
-                // left loose is a loser by definition — charts and build
+                // left loose is a loser by definition — maps and build
                 // gems excepted (the shed rule, monetized). One sale per
                 // tick at the vendor, then the table.
                 var vx = mem[SELF + SS_VENDOR_X];
@@ -468,7 +468,7 @@ fn main() {
                 }
                 var tbx = mem[SELF + SS_TABLE_X];
                 if (tbx >= 0) {
-                    if (use_chart(chart) == 0) { return; }
+                    if (open_map(map) == 0) { return; }
                     move_to(tbx, mem[SELF + SS_TABLE_Y]);
                     return;
                 }

@@ -396,11 +396,11 @@ pub struct ItemDef {
     /// only when true; private (the default) defs get an internal num only.
     #[serde(default)]
     pub public: bool,
-    /// A CHART (#136 T4): using it at the Charting Table opens a chart
+    /// A MAP (#136 T4): using it at the Map Table opens a map
     /// instance. The BASE tier; the effective tier scales with the rolled
-    /// item_level. Charts are bag items — never equippable.
+    /// item_level. Maps are bag items — never equippable.
     #[serde(default)]
-    pub chart_tier: Option<u32>,
+    pub map_tier: Option<u32>,
     pub name: String,
     pub slot: GearSlot,
     /// Requirements: a character must MEET these to equip — and to KEEP —
@@ -1302,10 +1302,10 @@ pub struct ZoneDef {
     pub camp_radius_u: i32,
     #[serde(default)]
     pub kind: ZoneKind,
-    /// The Charting Table's cell (#136 T4): where UseChart works. One per
+    /// The Map Table's cell (#136 T4): where OpenMap works. One per
     /// game for 1.0 — Saltmere's. None everywhere else.
     #[serde(default)]
-    pub chart_table: Option<(i32, i32)>,
+    pub map_table: Option<(i32, i32)>,
     /// The town's VENDOR cell (#148 A5) — where a character sells items
     /// for obols. Loader-validated walkable + reachable, like the table.
     #[serde(default)]
@@ -1355,7 +1355,7 @@ pub struct ContentDb {
     pub content_hash: u64,
     /// The campaign's FINAL act (#148 retrospective): the highest act_boss
     /// any monster carries — the one content-derived truth for "is the
-    /// campaign done" gates (UseChart). Adding Act 3 moves it with zero
+    /// campaign done" gates (OpenMap). Adding Act 3 moves it with zero
     /// engine edits.
     pub final_act: u32,
     /// Sorted by id — indices into this vec are stable for a given content set.
@@ -1841,15 +1841,15 @@ impl ContentDb {
                     )));
                 }
             }
-            // The Charting Table (#136 T4) is the endgame's front door — a
-            // mis-authored cell would silently strand every voyage.
-            if let Some((tx, ty)) = zone.chart_table {
+            // The Map Table (#136 T4) is the endgame's front door — a
+            // mis-authored cell would silently strand every map run.
+            if let Some((tx, ty)) = zone.map_table {
                 if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
-                    return Err(bad(format!("chart_table {tx}x{ty} is off the map")));
+                    return Err(bad(format!("map_table {tx}x{ty} is off the map")));
                 }
                 if !walkable_at(tx, ty) || !reachable(tx, ty) {
                     return Err(bad(format!(
-                        "chart_table {tx}x{ty} must be walkable and reachable from spawn"
+                        "map_table {tx}x{ty} must be walkable and reachable from spawn"
                     )));
                 }
             }
