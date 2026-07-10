@@ -156,6 +156,39 @@ export function Overlay({
   const [, setVersion] = useState(0);
   const [docs, setDocs] = useState<ContentDocs | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [killcams, setKillcams] = useState<KillCamRow[]>(
+    // The harness injects rows (no fetch in fixtures — capture pixels
+    // must not depend on a live server).
+    (window as unknown as { __idlinKillcams?: KillCamRow[] }).__idlinKillcams ?? [],
+  );
+  useEffect(() => {
+    // Kill-cams poll gently (20s) and fail silent — the panel simply
+    // stays empty on servers without recording. Fixtures OWN their rows:
+    // the harness hook disables polling entirely (the first capture run
+    // proved why — the dev proxy reached the live playtest server and
+    // real boss falls overwrote the fixture's rows: pixels must never
+    // depend on live state).
+    if ((window as unknown as { __idlinKillcams?: unknown }).__idlinKillcams) return;
+    let alive = true;
+    const pull = async () => {
+      try {
+        const r = await fetch("/api/killcams");
+        if (!r.ok) return;
+        // Parse FIRST, gate on alive LAST (codex: the old order could
+        // setState after unmount when the await resolved late).
+        const rows = (await r.json()) as KillCamRow[];
+        if (alive) setKillcams(rows);
+      } catch {
+        /* recording off or dev harness — panel stays empty */
+      }
+    };
+    void pull();
+    const h = setInterval(pull, 20000);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, []);
 
   useEffect(() => client.onStatus(setStatus), [client]);
   useEffect(() => {
@@ -368,6 +401,7 @@ export function Overlay({
             {!idler && <FocusCarousel names={rosterNames} current={rosterIdx} />}
           </div>
         )}
+        {!idler && <KillCamPanel rows={killcams} />}
         {sheet && <GearPanel sheet={sheet} icons={store.icons} />}
         {/* bag + obols share one slot, cycling while the idler is on screen;
             hovering the deck (or pinning a face via the [Bag|Obols] chip) holds
@@ -590,6 +624,52 @@ function SlotBox({
 
 /** The campaign chip (#136 T7): act state at a glance — and once the
  *  Mother falls, the chart count doubles as the endgame's ticket stub. */
+/** Recent boss falls (#162 kill-cams): each row deep-links into the
+ *  deterministic replay journal at the fight, not the corpse. Polled
+ *  gently; fixtures inject rows directly (no fetch in the harness). */
+export function KillCamPanel({ rows }: { rows: KillCamRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="panel" style={{ marginBottom: 8 }}>
+      <div className="display" style={{ fontSize: 13, marginBottom: 4 }}>
+        Recent boss falls
+      </div>
+      {rows.slice(-4).reverse().map((r, i) => (
+        <div key={i} style={{ fontSize: 12, color: "#ab9d7a", display: "flex", gap: 6 }}>
+          <span style={{ color: "#ff9a3c" }}>{r.monster}</span>
+          <span>by {r.killer}</span>
+          {r.line > 0 && /^[A-Za-z0-9_]+$/.test(r.recording) && (
+            <a
+              // A NEW TAB — the broadcast keeps streaming (codex: the bare
+              // href swapped the live view into replay mode). The stem is
+              // validated client-side and the query built safely — the
+              // server sanitizes recordings, but the client doesn't trust.
+              href={`/?${new URLSearchParams({
+                replay: `/recordings/${r.recording}.jsonl`,
+                at: String(r.line),
+              })}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#6ad8ff", marginLeft: "auto" }}
+            >
+              watch
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export type KillCamRow = {
+  world_key: string;
+  killer: string;
+  monster: string;
+  level: number;
+  recording: string;
+  line: number;
+};
+
 function ActChip({ sheet }: { sheet: CharacterSheet }) {
   // Two acts now (#148 A3): show where the road stands; the chart count
   // appears once the campaign is done (charts wait for the last act).

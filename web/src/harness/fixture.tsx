@@ -71,6 +71,11 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   // with real icons rather than the cramped name-text fallback.
   store.icons = { icon: (_name, kind) => silhouette(kind) };
   wireAudio(store);
+  // Kill-cam rows (#162): EVERY fixture owns its rows — default empty, so
+  // no fixture can ever poll the live server (codex: non-killcam fixtures
+  // still fetched through the dev proxy and could render live boss falls).
+  (window as unknown as { __idlinKillcams?: unknown }).__idlinKillcams =
+    fixture.killcams ?? [];
   for (const msg of fixture.messages) store.handle(msg);
 
   const client = stubClient(fixture.status);

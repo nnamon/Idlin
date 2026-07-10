@@ -82,6 +82,11 @@ export const FIXTURES: FixtureMeta[] = [
     kind: "scene",
   },
   {
+    name: "killcam-panel",
+    kind: "overlay",
+    expect: ["Recent boss falls", "The Riptide Sovereign", "watch"],
+  },
+  {
     name: "sound-toggle",
     kind: "overlay",
     expect: ["🔇", "IDLIN"],
