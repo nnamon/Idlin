@@ -168,7 +168,7 @@ export const FIXTURES: FixtureMeta[] = [
     name: "full-shore",
     kind: "full",
     expect: [
-      "has completed Act 1","Brakka", "Heavy Swing"],
+      "has completed Act 1", "Brakka", "Heavy Swing", "ACT 1 FALLS"],
     minBytes: 60_000,
   },
   {

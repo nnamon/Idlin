@@ -291,6 +291,11 @@ export function Overlay({
       {store.zoneSighted && performance.now() - store.zoneSighted.at < 3000 && (
         <div className="zone-title">{store.zoneSighted.name}</div>
       )}
+      {/* BEAT BANNER (#162): the road's biggest moments, center-screen
+          for 5s — same timestamp discipline (no CSS animation). */}
+      {store.beat && performance.now() - store.beat.at < 5000 && (
+        <div className="beat-banner">{store.beat.text}</div>
+      )}
       {/* boss first-sighted splash (#136 T2): a named beat, center-high,
           for 4s of wall time. No CSS animation — the capture harness needs
           byte-stable pixels, so visibility is a pure timestamp check. */}

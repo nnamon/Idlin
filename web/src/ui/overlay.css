@@ -799,3 +799,22 @@
   border-color: #3f6b4a;
   color: #7fd693;
 }
+
+/* BEAT BANNER (#162): the road's biggest moments — an act falling, a boss
+   falling — center-screen, bigger than the boss splash, gold. Timestamp
+   visibility only (captures need stable pixels). */
+.beat-banner {
+  position: absolute;
+  top: 38%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 44px;
+  font-weight: bold;
+  letter-spacing: 0.18em;
+  color: #ffd27a;
+  text-shadow:
+    0 0 26px rgba(255, 160, 40, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.95);
+  pointer-events: none;
+}

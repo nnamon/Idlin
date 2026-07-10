@@ -482,3 +482,54 @@ test("the sound director maps the broadcast's beats to cues (#148 A8)", async ({
   expect(log).toContain("tally");
   await ctx.close();
 });
+
+
+test("beat banners are world-scoped (#162 beat presentation)", async ({ browser }) => {
+  // Codex on Q9: replication splices act announcements into every feed —
+  // a FOREIGN actor's act must stay a ticker line (no banner), and a cut
+  // to another world ends the local banner. Mutation: drop the
+  // entities.has gate or the cut-clear in store.ts → these fail.
+  const { ctx, page } = await loadFixture(browser, "full-shore");
+  // The fixture's LOCAL act beat fired (the needle asserts the banner);
+  // now inject a FOREIGN announcement and assert no new banner replaces
+  // a cleared one.
+  const verdict = await page.evaluate(() => {
+    const s = (window as unknown as { __idlinStore?: any }).__idlinStore;
+    if (!s) return "no store handle";
+    s.beat = null;
+    // The COLLIDING id case (codex ran this exploit): net ids restart
+    // per world, so a foreign actor can share a LOCAL entity's id — the
+    // gate must match identity (id AND name), not presence.
+    const localId = [...s.entities.keys()][0];
+    s.handle({
+      type: "Events",
+      data: {
+        events: [
+          { type: "ActCompleted", data: { id: localId, name: "ForeignTwin", act: 2 } },
+        ],
+      },
+    });
+    const foreign = s.beat === null ? "foreign-no-banner" : "FOREIGN BANNERED";
+    // A local beat, then a cut: the banner must clear.
+    s.beat = { text: "ACT 1 FALLS — X", at: performance.now() };
+    s.handle({
+      type: "ZoneSnapshot",
+      data: {
+        tick: 1,
+        zone_name: "Elsewhere Keep",
+        zone_level: 9,
+        world_key: "elsewhere#X",
+        width: 60 << 16,
+        height: 40 << 16,
+        tiles: null,
+        exits: [],
+        gates: [],
+        entities: [],
+      },
+    });
+    const cut = s.beat === null ? "cut-clears" : "BANNER SURVIVED CUT";
+    return `${foreign}/${cut}`;
+  });
+  expect(verdict).toBe("foreign-no-banner/cut-clears");
+  await ctx.close();
+});

@@ -142,6 +142,11 @@ export class WorldStore {
    *  world — a director cut, a follow switch, or the first load. The
    *  overlay shows the zone's name center-high for a few seconds. */
   zoneSighted: { name: string; at: number } | null = null;
+  /** BEAT BANNER (#162 beat presentation): the road's biggest moments —
+   *  an act falling, a boss falling — get a center-screen banner beat,
+   *  not just a ticker line. Same timestamp-visibility discipline as the
+   *  boss splash (no CSS animation; captures need stable pixels). */
+  beat: { text: string; at: number } | null = null;
   private seenBosses = new Set<number>();
   private lastWorldKey = "";
   ticker: TickerItem[] = [];
@@ -190,6 +195,9 @@ export class WorldStore {
         if (this.zone && this.zone.worldKey !== this.lastWorldKey) {
           this.seenBosses.clear();
           this.bossSighted = null;
+          // A cut ends the old world's banner too (codex: an ACT FALLS
+          // from world A displayed over world B's opening seconds).
+          this.beat = null;
           // The title card marks a CUT — world to different world. The
           // initial ""→world transition is not a cut (the review found it
           // stamping a permanent card into every HUD fixture): a fresh
@@ -494,6 +502,18 @@ export class WorldStore {
       case "ActCompleted":
         // The campaign's biggest beat (#136) — gold, like a unique drop.
         push(`★ ${ev.data.name} has completed Act ${ev.data.act}!`, "#ff9a3c");
+        // Banner only for a LOCAL actor (codex: replication splices act
+        // announcements into every feed — another world's act must be a
+        // ticker line here, not a center-screen moment).
+        // Identity, not just presence (codex round 2 ran the exploit:
+        // net ids restart per world, so a colliding foreign id passed a
+        // has() check — the local entity must MATCH the actor's name).
+        if (this.entities.get(ev.data.id)?.state.name === ev.data.name) {
+          this.beat = {
+            text: `ACT ${ev.data.act} FALLS — ${ev.data.name}`,
+            at: performance.now(),
+          };
+        }
         break;
       case "CharacterRespawned": {
         const name = this.entities.get(ev.data.id)?.state.name ?? "someone";
@@ -528,6 +548,12 @@ export class WorldStore {
         // Boss falls get the gold treatment (#148 A7) — trash stays grey.
         if (ev.data.rarity >= 3) {
           push(`☠ ${ev.data.killer} FELLS ${ev.data.monster}!`, "#ff9a3c");
+          if (this.entities.get(ev.data.killer_id)?.state.name === ev.data.killer) {
+            this.beat = {
+              text: `${ev.data.monster} FALLS`,
+              at: performance.now(),
+            };
+          }
         } else {
           push(`${ev.data.killer} slays a ${ev.data.monster}`, "#8a8aa0");
         }

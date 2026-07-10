@@ -56,6 +56,9 @@ function wireAudio(store: WorldStore): void {
   const soundDirector = new SoundDirector(audio);
   store.onEvent = (ev) => soundDirector.onEvent(ev);
   (window as unknown as { __idlinAudio?: SoundEngine }).__idlinAudio = audio;
+  // The store handle too (#162): behavior specs (beat scoping) drive the
+  // real store directly — same probe idiom as the audio log.
+  (window as unknown as { __idlinStore?: WorldStore }).__idlinStore = store;
 }
 
 async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Promise<void> {
