@@ -74,8 +74,14 @@ const REFRESH_TICKS: u64 = 50;
 // everything else waits for the shot to end.
 const SCORE_ACT: (u32, u32) = (95, 200);
 const SCORE_BOSS_KILL: (u32, u32) = (90, 180);
-const SCORE_TALLY: (u32, u32) = (85, 120);
-const SCORE_SAIL: (u32, u32) = (82, 120);
+// Voyage chapters are BY NATURE scene changes — their subject departs the
+// emitting world as they fire, so they always pay CROSS_WORLD_PENALTY and
+// must clear STORY_TIER after the toll (89-8=81, 88-8=80). At the original
+// 85/82 they scored above the tier on paper but could never interrupt in
+// practice: the 12-minute endgame audit (#176) watched three voyages
+// complete with zero cuts.
+const SCORE_TALLY: (u32, u32) = (89, 120);
+const SCORE_SAIL: (u32, u32) = (88, 120);
 const SCORE_DEATH: (u32, u32) = (80, 100);
 const SCORE_JOIN: (u32, u32) = (75, 100);
 const SCORE_UNIQUE_DROP: (u32, u32) = (70, 100);
@@ -112,8 +118,16 @@ pub struct Director {
     /// A story beat the gap/floor blocked, held for its moment (codex:
     /// the first cut DROPPED an act-fall landing one tick after a
     /// rotation cut — the biggest beat in the game, silently missed).
-    /// (world, id, name, score, reason, hold, expires_at).
-    pending: Option<(String, u32, String, u32, String, u32, u64)>,
+    /// Held by NAME only — where the subject IS is resolved at fire
+    /// time, so a beat survives a ferry transit and never fires into a
+    /// world its subject already left.
+    /// (name, score, reason, hold, expires_at).
+    pending: Option<(String, u32, String, u32, u64)>,
+    /// Consecutive updates the PENDING subject was in no roster — one is
+    /// a ferry transit (the beat's normal life), two is gone for good:
+    /// the ghost is dropped so it can neither shadow live beats nor squat
+    /// in the pending slot until expiry (codex round 2 on #176).
+    pending_missing: u32,
     current_score: u32,
     cooldowns: HashMap<String, u64>,
     rotation_idx: usize,
@@ -132,6 +146,7 @@ impl Director {
             current_reason: String::new(),
             missing_streak: 0,
             pending: None,
+            pending_missing: 0,
             current_score: 0,
             cooldowns: HashMap::new(),
             rotation_idx: 0,
@@ -141,21 +156,27 @@ impl Director {
 
     /// Feed every world's tick; returns a cue when the broadcast should cut.
     pub fn update(&mut self, tick: u64, worlds: &[WorldView<'_>]) -> Option<Cue> {
-        let name_of = |key: &str, id: u32| -> Option<&String> {
-            worlds
+        // The full roster, every world, deterministic order. Beats resolve
+        // their subject here BY NAME — the emitting world is the wrong
+        // anchor for tally/sail beats, whose subject has already departed
+        // it (process_exits removes the character before it emits).
+        let roster = roster(worlds);
+        let locate = |name: &str| -> Option<(String, u32)> {
+            roster
                 .iter()
-                .find(|w| w.key == key)
-                .and_then(|w| w.characters.iter().find(|(i, _)| *i == id))
-                .map(|(_, n)| n)
+                .find(|(_, _, n)| n == name)
+                .map(|(w, id, _)| (w.clone(), *id))
         };
 
         // The strongest scoreable event this tick, across every world.
-        let mut best: Option<(String, u32, String, u32, String, u32)> = None;
+        // Every scored event carries its subject's NAME — the only identity
+        // stable across worlds (net ids are per-world).
+        let mut best: Option<(String, u32, String, u32)> = None;
         for w in worlds {
             for ev in w.events {
                 let scored = match ev {
-                    SimEvent::ActCompleted { id, act, .. } => Some((
-                        *id,
+                    SimEvent::ActCompleted { name, act, .. } => Some((
+                        name,
                         SCORE_ACT.0,
                         if *act == 1 {
                             "act 1 falls"
@@ -164,87 +185,111 @@ impl Director {
                         },
                         SCORE_ACT.1,
                     )),
-                    SimEvent::MonsterKilled {
-                        killer_id, rarity, ..
-                    } if *rarity == idlin_sim::Rarity::Unique => Some((
-                        *killer_id,
-                        SCORE_BOSS_KILL.0,
-                        "the boss falls",
-                        SCORE_BOSS_KILL.1,
-                    )),
-                    SimEvent::VoyageTally { id, .. } => {
-                        Some((*id, SCORE_TALLY.0, "the voyage tally", SCORE_TALLY.1))
+                    SimEvent::MonsterKilled { killer, rarity, .. }
+                        if *rarity == idlin_sim::Rarity::Unique =>
+                    {
+                        Some((
+                            killer,
+                            SCORE_BOSS_KILL.0,
+                            "the boss falls",
+                            SCORE_BOSS_KILL.1,
+                        ))
                     }
-                    SimEvent::CharacterDeparted { id, dest, .. } if dest == "charted_shallows" => {
-                        Some((*id, SCORE_SAIL.0, "sets sail", SCORE_SAIL.1))
+                    SimEvent::VoyageTally { name, .. } => {
+                        Some((name, SCORE_TALLY.0, "the voyage tally", SCORE_TALLY.1))
                     }
-                    SimEvent::CharacterDied { id, .. } => {
-                        Some((*id, SCORE_DEATH.0, "death", SCORE_DEATH.1))
+                    SimEvent::CharacterDeparted { name, dest, .. }
+                        if dest == "charted_shallows" =>
+                    {
+                        Some((name, SCORE_SAIL.0, "sets sail", SCORE_SAIL.1))
+                    }
+                    SimEvent::CharacterDied { name, .. } => {
+                        Some((name, SCORE_DEATH.0, "death", SCORE_DEATH.1))
                     }
                     // Trash kills and routine level-ups are TICKER material —
                     // they never move the camera (the calm-director rework).
-                    SimEvent::LootDropped {
-                        owner_id, rarity, ..
-                    } if (*rarity as u8) >= RARE_DROP_MIN_RARITY => Some((
-                        *owner_id,
-                        SCORE_UNIQUE_DROP.0,
-                        "a unique drops",
-                        SCORE_UNIQUE_DROP.1,
-                    )),
-                    SimEvent::CharacterJoined { id, .. } => {
-                        Some((*id, SCORE_JOIN.0, "new challenger", SCORE_JOIN.1))
+                    SimEvent::LootDropped { owner, rarity, .. }
+                        if (*rarity as u8) >= RARE_DROP_MIN_RARITY =>
+                    {
+                        Some((
+                            owner,
+                            SCORE_UNIQUE_DROP.0,
+                            "a unique drops",
+                            SCORE_UNIQUE_DROP.1,
+                        ))
+                    }
+                    SimEvent::CharacterJoined { name, .. } => {
+                        Some((name, SCORE_JOIN.0, "new challenger", SCORE_JOIN.1))
                     }
                     _ => None,
                 };
-                let Some((id, score, reason, hold)) = scored else {
+                let Some((name, score, reason, hold)) = scored else {
                     continue;
                 };
-                let Some(name) = name_of(w.key, id) else {
-                    continue;
-                };
-                if self.cooldowns.get(name).copied().unwrap_or(0) > tick {
+                // The cooldown throttles RE-FEATURING a character, not the
+                // current shot getting more interesting: the focused
+                // subject's own beats bypass it (codex on #176 — a focused
+                // sailor's tally was cooldown-dead for the first 20s of
+                // every 30s rotation shot).
+                let is_focus = self.focus_name.as_deref() == Some(name.as_str());
+                if !is_focus && self.cooldowns.get(name).copied().unwrap_or(0) > tick {
                     continue;
                 }
                 // A full scene change must be worth more than a refocus
-                // inside the world the viewer is already reading.
-                let effective = if self.current_world.as_deref() == Some(w.key) {
+                // inside the world the viewer is already reading. The toll
+                // is judged against where the subject IS (a sailor in a
+                // 1-tick ferry transit is in no roster: the shot will land
+                // in their arrival world, so it pays too).
+                let same_world = locate(name)
+                    .is_some_and(|(w, _)| self.current_world.as_deref() == Some(w.as_str()));
+                let effective = if same_world {
                     score
                 } else {
                     score.saturating_sub(CROSS_WORLD_PENALTY)
                 };
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, _, _, s, _, _)| effective > *s)
-                {
-                    best = Some((
-                        w.key.to_string(),
-                        id,
-                        name.clone(),
-                        effective,
-                        reason.to_string(),
-                        hold,
-                    ));
+                if best.as_ref().is_none_or(|(_, s, _, _)| effective > *s) {
+                    best = Some((name.clone(), effective, reason.to_string(), hold));
                 }
             }
         }
 
         // A blocked story beat waits for its moment; a stale one (10s) is
         // no longer news. It competes as if fresh.
-        if let Some((_, _, _, _, _, _, expires)) = &self.pending
+        if let Some((_, _, _, _, expires)) = &self.pending
             && *expires <= tick
         {
             self.pending = None;
         }
-        if let Some((pw, pid, pname, pscore, preason, phold, _)) = self.pending.clone()
-            && best.as_ref().is_none_or(|(_, _, _, s, _, _)| pscore > *s)
+        // A pending subject absent TWICE running is gone for good (the
+        // same one-batch-transit heuristic the departed-subject rule
+        // uses). Evict the ghost: it can never fire, and it must not hold
+        // the slot against a live story beat waiting to be stored.
+        if let Some((pname, _, _, _, _)) = &self.pending {
+            if locate(pname).is_some() {
+                self.pending_missing = 0;
+            } else {
+                self.pending_missing += 1;
+                if self.pending_missing >= 2 {
+                    self.pending = None;
+                    self.pending_missing = 0;
+                }
+            }
+        }
+        // An UNLOCATABLE pending (subject mid-ferry, or gone for good) sits
+        // out the competition — it can't fire anyway, and letting its score
+        // shadow live beats would drop real story for up to its 10s expiry
+        // (codex on #176: a ghost act-fall starving a live boss kill).
+        if let Some((pname, pscore, preason, phold, _)) = self.pending.clone()
+            && locate(&pname).is_some()
+            && best.as_ref().is_none_or(|(_, s, _, _)| pscore > *s)
         {
-            best = Some((pw, pid, pname, pscore, preason, phold));
+            best = Some((pname, pscore, preason, phold));
         }
 
         // A SHOT IS A COMMITMENT (the calm-director rework): a live shot
         // runs its hold; only STORY-tier beats may cut in, and even they
         // respect the minimum shot length. Everything else waits its turn.
-        if let Some((world, id, name, score, reason, hold)) = best {
+        if let Some((name, score, reason, hold)) = best {
             let shot_age = tick.saturating_sub(self.shot_started);
             let shot_over = tick >= self.hold_until;
             let story_cut =
@@ -254,26 +299,30 @@ impl Director {
             // chased by a story cut. (A fresh director with no shot yet is
             // exempt: the FIRST cut can't be "too soon after" anything.)
             let gap_ok = self.focus_name.is_none() || shot_age >= MIN_CUT_GAP_TICKS;
-            let interrupts = (shot_over || story_cut) && gap_ok;
+            // Where the subject is NOW — a beat may outlive the world that
+            // emitted it (the tally arrives as its sailor departs).
+            let located = locate(&name);
+            let interrupts = (shot_over || story_cut) && gap_ok && located.is_some();
             if !interrupts && score >= STORY_TIER {
-                // Blocked by the gap/floor: hold the beat for its moment.
+                // Blocked by the gap/floor — or the subject is mid-ferry
+                // (in no roster for a tick): hold the beat for its moment.
                 if self
                     .pending
                     .as_ref()
-                    .is_none_or(|(_, _, _, ps, _, _, _)| score > *ps)
+                    .is_none_or(|(_, ps, _, _, _)| score > *ps)
                 {
-                    self.pending = Some((
-                        world.clone(),
-                        id,
-                        name.clone(),
-                        score,
-                        reason.clone(),
-                        hold,
-                        tick + 100,
-                    ));
+                    self.pending = Some((name.clone(), score, reason.clone(), hold, tick + 100));
+                    self.pending_missing = 0;
                 }
             }
-            if interrupts && self.focus_name.as_ref() != Some(&name) {
+            // A beat for the ALREADY-FOCUSED subject is not a scene change —
+            // it's the current shot getting more interesting. It re-cues in
+            // place through the same chokepoint: score/reason/hold update,
+            // and set_focus repoints current_world when the subject ferried
+            // (a focused sailor's tally lands in Saltmere; the feed must
+            // follow — codex on #176).
+            if interrupts {
+                let (world, id) = located.expect("interrupts requires a located subject");
                 self.pending = None;
                 self.set_focus(&name, &world, score, tick, hold as u64, &reason);
                 return Some(Cue {
@@ -285,9 +334,6 @@ impl Director {
             }
         }
 
-        // The full roster, every world, deterministic order.
-        let roster = roster(worlds);
-
         // A DEPARTED SUBJECT ENDS THE SHOT (#162, the entities=0 blip) —
         // but only after TWO consecutive absent updates: a zone transfer
         // leaves the traveler in no world's roster for exactly one batch
@@ -297,8 +343,17 @@ impl Director {
         // = absent twice = the camera moves on, gap-exempt (vacant ground
         // is worse than a quick cut).
         if let Some(name) = &self.focus_name {
-            if roster.iter().any(|(_, _, n)| n == name) {
+            if let Some((world, _, _)) = roster.iter().find(|(_, _, n)| n == name) {
                 self.missing_streak = 0;
+                // THE SHOT FOLLOWS THE SUBJECT: a beat-less zone door mid-
+                // shot moves them to a new world. current_world must track
+                // them every tick — replication targets it on every cue-less
+                // tick, so a stale value points the featured feed at the
+                // world they left (and made it oscillate against refresh
+                // cues, 1 tick right / 49 ticks wrong — codex on #176).
+                if self.current_world.as_deref() != Some(world.as_str()) {
+                    self.current_world = Some(world.clone());
+                }
             } else {
                 self.missing_streak += 1;
                 if self.missing_streak >= 2 {
@@ -622,6 +677,482 @@ mod tests {
     }
 
     #[test]
+    fn a_tally_beat_survives_the_ferry_transit() {
+        // #176: process_exits removes the sailor BEFORE it emits the tally,
+        // so the beat's subject is in NO world's roster on the emit tick —
+        // the old (emitting world, net id) anchor dropped every tally ever
+        // fired. Beats resolve by NAME at fire time: the beat pends through
+        // the 1-tick transit and cuts to wherever the sailor lands.
+        // Mutations: restore the emitting-world name lookup → the beat is
+        // dropped on emit and tick 2 cues "roaming"; restore SCORE_TALLY=85
+        // → 85-8=77 misses STORY_TIER and never pends. Both fail here.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let empty: Vec<(u32, String)> = Vec::new();
+        let tally_ev = vec![SimEvent::VoyageTally {
+            id: 7,
+            name: "Kargan".into(),
+            kills: 120,
+            deaths: 1,
+            items: 30,
+            ticks: 9000,
+        }];
+        // Emit tick: the chart instance he just left, him in transit.
+        let cue = d.update(
+            1,
+            &[
+                WorldView {
+                    key: "charted_shallows#Kargan@71810",
+                    events: &tally_ev,
+                    characters: &empty,
+                },
+                WorldView {
+                    key: "saltmere",
+                    events: &no_ev,
+                    characters: &empty,
+                },
+            ],
+        );
+        assert!(cue.is_none(), "no cue may target a subject in transit");
+        // Arrival tick: he lands in Saltmere under a NEW net id.
+        let salt_ch = vec![(3u32, "Kargan".to_string())];
+        let cue = d
+            .update(
+                2,
+                &[
+                    WorldView {
+                        key: "charted_shallows#Kargan@71810",
+                        events: &no_ev,
+                        characters: &empty,
+                    },
+                    WorldView {
+                        key: "saltmere",
+                        events: &no_ev,
+                        characters: &salt_ch,
+                    },
+                ],
+            )
+            .expect("the held tally fires on arrival");
+        assert_eq!(cue.reason, "the voyage tally");
+        assert_eq!(cue.world_key, "saltmere");
+        assert_eq!(cue.focus, 3, "the cue carries the ARRIVAL net id");
+    }
+
+    #[test]
+    fn a_sail_beat_lands_on_the_new_chart_instance() {
+        // #176's twin: the sail departure is emitted by the town the sailor
+        // is LEAVING. The cut must land in the chart instance they arrive
+        // in. Mutations as the tally test (emitting-world lookup / the
+        // SCORE_SAIL=82 revert, 82-8=74 < STORY_TIER) both fail here.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let empty: Vec<(u32, String)> = Vec::new();
+        let sail_ev = vec![SimEvent::CharacterDeparted {
+            id: 7,
+            name: "Veles".into(),
+            dest: "charted_shallows".into(),
+        }];
+        let cue = d.update(
+            1,
+            &[WorldView {
+                key: "saltmere",
+                events: &sail_ev,
+                characters: &empty,
+            }],
+        );
+        assert!(cue.is_none(), "no cue may target a subject in transit");
+        let chart_ch = vec![(4u32, "Veles".to_string())];
+        let cue = d
+            .update(
+                2,
+                &[
+                    WorldView {
+                        key: "saltmere",
+                        events: &no_ev,
+                        characters: &empty,
+                    },
+                    WorldView {
+                        key: "charted_shallows#Veles@99999",
+                        events: &no_ev,
+                        characters: &chart_ch,
+                    },
+                ],
+            )
+            .expect("the held sail fires on arrival");
+        assert_eq!(cue.reason, "sets sail");
+        assert_eq!(cue.world_key, "charted_shallows#Veles@99999");
+        assert_eq!(cue.focus, 4, "the cue carries the ARRIVAL net id");
+    }
+
+    #[test]
+    fn a_focused_sailors_tally_upgrades_the_shot_in_place() {
+        // Codex on #176: the focused subject's own beats were doubly dead —
+        // the per-name cooldown (armed by the rotation cut that focused
+        // them) ate the event, and the same-name guard suppressed the cue.
+        // In a 4-sailor endgame that's a quarter of all tallies. The beat
+        // must re-cue IN PLACE: new reason, and the world repointed to
+        // where the sailor landed. Mutations: restore the same-name guard
+        // OR the cooldown filter without the focus bypass → the tick-151
+        // cue is the "roaming" refresh, and the reason assert fails.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let empty: Vec<(u32, String)> = Vec::new();
+        let chart_ch = vec![(7u32, "Kargan".to_string())];
+        // Rotation focuses Kargan in his chart instance (cooldown armed).
+        let cue = d
+            .update(
+                1,
+                &[WorldView {
+                    key: "charted_shallows#Kargan@71810",
+                    events: &no_ev,
+                    characters: &chart_ch,
+                }],
+            )
+            .expect("rotation takes the shot");
+        assert_eq!(cue.reason, "roaming");
+        // Mid-shot, mid-cooldown: the voyage ends. Emit tick = transit.
+        let tally_ev = vec![SimEvent::VoyageTally {
+            id: 7,
+            name: "Kargan".into(),
+            kills: 120,
+            deaths: 1,
+            items: 30,
+            ticks: 9000,
+        }];
+        let cue = d.update(
+            150,
+            &[
+                WorldView {
+                    key: "charted_shallows#Kargan@71810",
+                    events: &tally_ev,
+                    characters: &empty,
+                },
+                WorldView {
+                    key: "saltmere",
+                    events: &no_ev,
+                    characters: &empty,
+                },
+            ],
+        );
+        assert!(cue.is_none(), "no cue may target a subject in transit");
+        // Arrival: the shot upgrades in place and follows him to Saltmere.
+        let salt_ch = vec![(3u32, "Kargan".to_string())];
+        let cue = d
+            .update(
+                151,
+                &[WorldView {
+                    key: "saltmere",
+                    events: &no_ev,
+                    characters: &salt_ch,
+                }],
+            )
+            .expect("the focused sailor's tally still cues");
+        assert_eq!(cue.reason, "the voyage tally");
+        assert_eq!(cue.world_key, "saltmere");
+        assert_eq!(cue.focus, 3);
+        assert_eq!(
+            d.current_world.as_deref(),
+            Some("saltmere"),
+            "replication targets current_world on cue-less ticks"
+        );
+    }
+
+    #[test]
+    fn a_ghost_pending_does_not_starve_live_beats() {
+        // Codex on #176: a pending beat whose subject is GONE (killed and
+        // recalled, never to return) used to shadow every weaker live beat
+        // by raw score until its 10s expiry. An unlocatable pending sits
+        // out the competition. Mutation: let the pending compete without
+        // the locate() guard → the ghost act-fall (87) outbids the live
+        // boss kill (82), nothing can fire, and the reason assert sees
+        // the "roaming" refresh instead.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let a_ch = chars(&[1]);
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            }],
+        )
+        .expect("rotation takes the shot");
+        // c2 completes an act inside the shot floor: pends...
+        let b_ch = chars(&[2]);
+        let act_ev = vec![SimEvent::ActCompleted {
+            id: 2,
+            name: "c2".into(),
+            act: 2,
+        }];
+        let blocked = d.update(
+            5,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &act_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        assert!(
+            blocked.is_none() || blocked.as_ref().unwrap().world_key == "a",
+            "the shot floor holds the act beat"
+        );
+        // ...then c2 is gone for good. A LIVE boss falls elsewhere: it must
+        // fire despite the ghost's higher score.
+        let c_ch = chars(&[3]);
+        let boss_ev = vec![boss_kill(3)];
+        let cue = d
+            .update(
+                101,
+                &[
+                    WorldView {
+                        key: "a",
+                        events: &no_ev,
+                        characters: &a_ch,
+                    },
+                    WorldView {
+                        key: "c",
+                        events: &boss_ev,
+                        characters: &c_ch,
+                    },
+                ],
+            )
+            .expect("the live boss kill fires");
+        assert_eq!(cue.reason, "the boss falls");
+        assert_eq!(cue.world_key, "c");
+    }
+
+    #[test]
+    fn a_beatless_ferry_repoints_the_featured_world() {
+        // Codex on #176 (second half of the focused-transfer finding): a
+        // focused subject walking a zone door WITHOUT a beat left
+        // current_world stale — and replication targets current_world on
+        // every cue-less tick, so the featured feed oscillated between the
+        // refresh cue's world and the dead one. The departed-subject scan
+        // repoints it the tick the subject reappears. Mutation: drop the
+        // repoint → current_world stays "a" and this fails.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let a_ch = chars(&[1]);
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            }],
+        )
+        .expect("rotation takes the shot");
+        assert_eq!(d.current_world.as_deref(), Some("a"));
+        // Transit tick: c1 in no roster (the shot holds, streak = 1)...
+        let empty: Vec<(u32, String)> = Vec::new();
+        d.update(
+            2,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &empty,
+            }],
+        );
+        // ...arrival tick: c1 reappears in world b. No beat, no cue due —
+        // but the director's self-model must follow.
+        let b_ch = vec![(9u32, "c1".to_string())];
+        d.update(
+            3,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &empty,
+                },
+                WorldView {
+                    key: "b",
+                    events: &no_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        assert_eq!(
+            d.current_world.as_deref(),
+            Some("b"),
+            "the featured world follows a beat-less ferry"
+        );
+    }
+
+    #[test]
+    fn a_ghost_pending_vacates_the_slot_for_a_blocked_live_beat() {
+        // Codex round 2 on #176: the locate() gate kept a ghost from
+        // COMPETING, but it still SQUATTED in the pending slot — a live
+        // story beat blocked by the shot floor could not be stored behind
+        // the ghost's higher dead score, and was lost by the time the
+        // floor opened. The ghost is evicted after two roster-absent
+        // updates (the one-batch-transit heuristic). Mutation: drop the
+        // eviction → the boss beat at t20 fails the `82 > 87` store check,
+        // the ghost sits out at t101 via locate(), and the reason assert
+        // sees "roaming" instead.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let a_ch = chars(&[1]);
+        let quiet_a = |d: &mut Director, t: u64| {
+            d.update(
+                t,
+                &[WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                }],
+            )
+        };
+        quiet_a(&mut d, 1).expect("rotation takes the shot");
+        // c2 completes an act inside the shot floor: pends at 87...
+        let b_ch = chars(&[2]);
+        let act_ev = vec![SimEvent::ActCompleted {
+            id: 2,
+            name: "c2".into(),
+            act: 2,
+        }];
+        d.update(
+            5,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &act_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        // ...then c2 is recalled: two quiet updates evict the ghost.
+        quiet_a(&mut d, 6);
+        quiet_a(&mut d, 7);
+        // A live boss falls, still inside the shot floor: it must claim
+        // the now-vacant slot despite its lower score...
+        let c_ch = chars(&[3]);
+        let boss_ev = vec![boss_kill(3)];
+        let blocked = d.update(
+            20,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "c",
+                    events: &boss_ev,
+                    characters: &c_ch,
+                },
+            ],
+        );
+        assert!(
+            blocked.is_none() || blocked.as_ref().unwrap().world_key == "a",
+            "the shot floor holds the boss beat"
+        );
+        // ...and fire once the floor opens.
+        let cue = d
+            .update(
+                101,
+                &[
+                    WorldView {
+                        key: "a",
+                        events: &no_ev,
+                        characters: &a_ch,
+                    },
+                    WorldView {
+                        key: "c",
+                        events: &no_ev,
+                        characters: &c_ch,
+                    },
+                ],
+            )
+            .expect("the held boss beat fires once the floor opens");
+        assert_eq!(cue.reason, "the boss falls");
+        assert_eq!(cue.world_key, "c");
+    }
+
+    #[test]
+    fn a_pending_beat_fires_where_the_subject_is_now() {
+        // The latent half of #176: the pending buffer used to store the
+        // (world, id) captured at BLOCK time and fire them stale — a
+        // subject who ferried during the 3-10s block got a cue aimed at
+        // the world they'd left. The fire-time roster lookup must win.
+        // Mutation: store (world, id) in `pending` again → the cue lands
+        // in "b" with net id 2 and both asserts fail.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let a_ch = chars(&[1]);
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            }],
+        )
+        .expect("rotation takes the shot");
+        // c2 completes an act in world b, inside the shot floor: pends.
+        let b_ch = chars(&[2]);
+        let act_ev = vec![SimEvent::ActCompleted {
+            id: 2,
+            name: "c2".into(),
+            act: 2,
+        }];
+        let blocked = d.update(
+            5,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &a_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &act_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        assert!(
+            blocked.is_none() || blocked.as_ref().unwrap().world_key == "a",
+            "the shot floor holds the act beat"
+        );
+        // By the time the floor opens, c2 has ferried to world c under a
+        // new net id. The held beat must follow them there.
+        let c_ch = vec![(9u32, "c2".to_string())];
+        let cue = d
+            .update(
+                101,
+                &[
+                    WorldView {
+                        key: "a",
+                        events: &no_ev,
+                        characters: &a_ch,
+                    },
+                    WorldView {
+                        key: "c",
+                        events: &no_ev,
+                        characters: &c_ch,
+                    },
+                ],
+            )
+            .expect("the held act beat fires once the floor opens");
+        assert_eq!(cue.reason, "act 2 falls");
+        assert_eq!(cue.world_key, "c", "fire-time location, not block-time");
+        assert_eq!(cue.focus, 9, "fire-time net id, not block-time");
+    }
+
+    #[test]
     fn a_departed_subject_ends_the_shot() {
         // #162 (the entities=0 blip): the focus transfers out mid-hold —
         // the camera must re-cue NOW, not dwell on vacant ground. The
@@ -780,9 +1311,12 @@ mod tests {
 
     #[test]
     fn strongest_event_wins_across_worlds() {
+        // Fixture is sim-faithful: a real death event carries the RESIDENT's
+        // name (the sim emits it in the world the character died in), and
+        // names are globally unique across worlds (joins key by name).
         let mut d = Director::new();
-        let (a_ev, b_ev) = (vec![kill(1)], vec![death(1)]);
-        let (a_ch, b_ch) = (chars(&[1]), vec![(1, "other".to_string())]);
+        let (a_ev, b_ev) = (vec![kill(1)], vec![death(2)]);
+        let (a_ch, b_ch) = (chars(&[1]), chars(&[2]));
         let worlds = [
             WorldView {
                 key: "a",

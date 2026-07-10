@@ -457,6 +457,11 @@ fn is_announcement(ev: &GameEvent) -> bool {
             | GameEvent::CharacterJoined { .. }
             | GameEvent::Narration { .. }
             | GameEvent::ActCompleted { .. }
+            // The voyage scoreboard fires in the chart instance its sailor
+            // is LEAVING — a world the camera almost never watches at that
+            // exact tick. Without the splice the endgame's signature ticker
+            // line never reaches the viewer (#176).
+            | GameEvent::VoyageTally { .. }
     )
 }
 
@@ -1331,6 +1336,42 @@ mod tests {
         assert!(
             is_announcement(&wire),
             "an act completion is broadcast-worthy cross-world"
+        );
+    }
+
+    #[test]
+    fn a_voyage_tally_reaches_the_wire_and_the_featured_splice() {
+        // #176: the tally fires in the chart instance its sailor is LEAVING
+        // — a world the camera almost never watches at that tick. It must
+        // splice onto the featured feed or the endgame's signature ticker
+        // line never reaches the viewer. Mutations: drop the to_game_event
+        // arm → None here; drop the announcement arm → the splice assert
+        // fails.
+        let ev = SimEvent::VoyageTally {
+            id: 7,
+            name: "Kargan".into(),
+            kills: 120,
+            deaths: 1,
+            items: 30,
+            ticks: 9000,
+        };
+        let wire = to_game_event(&ev).expect("VoyageTally maps to the wire");
+        match &wire {
+            GameEvent::VoyageTally {
+                id: 7,
+                name,
+                kills: 120,
+                ..
+            } => assert_eq!(name, "Kargan"),
+            other => panic!("wrong mapping: {other:?}"),
+        }
+        assert!(
+            vis(&[]).event_visible(&wire),
+            "non-positional: visible even with nothing explored"
+        );
+        assert!(
+            is_announcement(&wire),
+            "the voyage scoreboard is broadcast-worthy cross-world"
         );
     }
 
