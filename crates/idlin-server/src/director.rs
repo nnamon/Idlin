@@ -106,6 +106,9 @@ pub struct Director {
     shot_started: u64,
     /// The live cue's reason, for mid-shot re-broadcasts.
     current_reason: String,
+    /// Consecutive updates the focused name was in NO roster — one is a
+    /// ferry transit (normal), two is gone (end the shot).
+    missing_streak: u32,
     /// A story beat the gap/floor blocked, held for its moment (codex:
     /// the first cut DROPPED an act-fall landing one tick after a
     /// rotation cut — the biggest beat in the game, silently missed).
@@ -127,6 +130,7 @@ impl Director {
             hold_until: 0,
             shot_started: 0,
             current_reason: String::new(),
+            missing_streak: 0,
             pending: None,
             current_score: 0,
             cooldowns: HashMap::new(),
@@ -283,6 +287,27 @@ impl Director {
 
         // The full roster, every world, deterministic order.
         let roster = roster(worlds);
+
+        // A DEPARTED SUBJECT ENDS THE SHOT (#162, the entities=0 blip) —
+        // but only after TWO consecutive absent updates: a zone transfer
+        // leaves the traveler in no world's roster for exactly one batch
+        // (departed A at tick T, arrives B at T+1), and codex traced the
+        // eager version yanking the camera off every traveler at every
+        // zone door — worse than the blip. Truly gone (killed, recalled)
+        // = absent twice = the camera moves on, gap-exempt (vacant ground
+        // is worse than a quick cut).
+        if let Some(name) = &self.focus_name {
+            if roster.iter().any(|(_, _, n)| n == name) {
+                self.missing_streak = 0;
+            } else {
+                self.missing_streak += 1;
+                if self.missing_streak >= 2 {
+                    self.focus_name = None;
+                    self.hold_until = tick;
+                    self.missing_streak = 0;
+                }
+            }
+        }
 
         // MID-SHOT REFRESH (the calm-director rework): cues aren't in the
         // snapshot, so a viewer who connects mid-hold must still lock on —
@@ -594,6 +619,138 @@ mod tests {
             }
         }
         assert!(fired, "the held story beat must fire, not vanish");
+    }
+
+    #[test]
+    fn a_departed_subject_ends_the_shot() {
+        // #162 (the entities=0 blip): the focus transfers out mid-hold —
+        // the camera must re-cue NOW, not dwell on vacant ground. The
+        // fresh-director exemption lets the recovery cut skip the gap.
+        // Mutation: drop the departed-subject block → no cue until the
+        // 30s hold expires and this fails.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let a_ch = chars(&[1]);
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            }],
+        )
+        .expect("the shot starts");
+        // The subject departs; only world b has anyone now. ONE absent
+        // update is a ferry transit — the shot holds...
+        let b_ch = chars(&[2]);
+        let empty: Vec<(u32, String)> = Vec::new();
+        let views = |t: u64, d: &mut Director| {
+            d.update(
+                t,
+                &[
+                    WorldView {
+                        key: "a",
+                        events: &no_ev,
+                        characters: &empty,
+                    },
+                    WorldView {
+                        key: "b",
+                        events: &no_ev,
+                        characters: &b_ch,
+                    },
+                ],
+            )
+        };
+        let first = views(10, &mut d);
+        assert!(
+            first.is_none() || first.as_ref().unwrap().world_key == "a",
+            "one absent update is a transit, not a departure"
+        );
+        // ...two is gone: the camera moves on.
+        let cue = views(11, &mut d);
+        assert_eq!(
+            cue.map(|c| c.world_key),
+            Some("b".to_string()),
+            "two absent updates end the shot"
+        );
+    }
+
+    #[test]
+    fn a_ferry_transit_does_not_lose_the_camera() {
+        // Codex on Q10: a transfer leaves the traveler rosterless for ONE
+        // batch — the eager cut yanked the camera off every traveler at
+        // every zone door. Present again next update = the shot survives.
+        // Mutation: drop the missing_streak grace → the follow breaks.
+        let mut d = Director::new();
+        let no_ev: Vec<SimEvent> = Vec::new();
+        let a_ch = chars(&[1]);
+        d.update(
+            1,
+            &[WorldView {
+                key: "a",
+                events: &no_ev,
+                characters: &a_ch,
+            }],
+        )
+        .expect("the shot starts");
+        let empty: Vec<(u32, String)> = Vec::new();
+        let b_ch = chars(&[2]);
+        // Transit tick: c1 in no roster.
+        let mid = d.update(
+            5,
+            &[
+                WorldView {
+                    key: "a",
+                    events: &no_ev,
+                    characters: &empty,
+                },
+                WorldView {
+                    key: "b",
+                    events: &no_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        assert!(
+            mid.is_none() || mid.as_ref().unwrap().world_key == "a",
+            "the transit tick must not cut away"
+        );
+        // Arrival tick: c1 lands in world c — the follow survives.
+        let c_ch = chars(&[1]);
+        let _ = d.update(
+            6,
+            &[
+                WorldView {
+                    key: "c",
+                    events: &no_ev,
+                    characters: &c_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &no_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        let q = d.focus_queue(
+            6,
+            &[
+                WorldView {
+                    key: "c",
+                    events: &no_ev,
+                    characters: &c_ch,
+                },
+                WorldView {
+                    key: "b",
+                    events: &no_ev,
+                    characters: &b_ch,
+                },
+            ],
+        );
+        assert!(
+            q.iter().any(|e| e.name == "c1" && e.focused),
+            "the follow survives the ferry"
+        );
     }
 
     #[test]
