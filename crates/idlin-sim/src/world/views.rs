@@ -723,6 +723,14 @@ impl World {
             h.write_u64(*i);
             h.write_u64(*t);
         }
+        // The chart rules (#148 A4; folded by #178): replay-relevant by this
+        // hash's own bar. Two worlds differing only in the voyage clock
+        // ferry everyone home at different ticks; fury and quantity steer
+        // every strike and drop roll; the instance bit steers retirement.
+        h.write_u64(self.voyage_ends_at);
+        h.write_u64(self.monster_fury_bp as u64);
+        h.write_u64(self.loot_quantity_bp as u64);
+        h.write_u32(self.is_chart_instance as u32);
         h.write_u32(self.zone_level);
         h.write_u64(self.zone_lines.len() as u64);
         for line in &self.zone_lines {
@@ -1091,6 +1099,11 @@ impl World {
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
             h.write_u32(pack.respawn_timer);
+            // The chart's rarity juice MUTATES these per-pack (#148 A4 at
+            // new_chart_instance) and respawn rolls read them — mutated
+            // def state is world state, not content (#178, codex).
+            h.write_u32(pack.def.magic_bp);
+            h.write_u32(pack.def.rare_bp);
         }
         for p in &self.zone.projectiles {
             h.write_i32(p.pos.x.raw());

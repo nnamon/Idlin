@@ -53,6 +53,15 @@ pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
 pub const CORPSE_TICKS: u64 = 300;
 /// Untouched ticks before energy shield begins recharging.
 pub const ES_RECHARGE_DELAY_TICKS: u64 = 40;
+/// The clock a chart mints with when no VoyageClock affix rolled one (#178):
+/// EVERY voyage ends. 10 minutes at 10Hz — comfortably past the stock
+/// brains' self-return (~5000 ticks), so it only catches broken, stale, or
+/// idle brains that would otherwise farm a private instance forever.
+pub const DEFAULT_VOYAGE_TICKS: u64 = 6000;
+/// `voyage_ends_at` after the clock rang (#178): distinct from 0 ("never
+/// armed") so resume migration re-arms only genuine pre-#178 clockless
+/// charts, never a world whose voyage already ended.
+pub const VOYAGE_CLOCK_FIRED: u64 = u64::MAX;
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
 /// through here — never by mutating state directly.
@@ -872,6 +881,15 @@ impl World {
         // an empty lookup index — rebuild it from the restored slots before any
         // get_net/slot_of (inspect, syscalls) runs against this world.
         self.zone.rebuild_net_index();
+        // #178 MIGRATION: a pre-#178 chart snapshot minted clockless
+        // (voyage_ends_at == 0 means NEVER ARMED — a rung clock parks at
+        // VOYAGE_CLOCK_FIRED, and post-#178 mints always arm). Re-arm a
+        // fresh default from the resume point so the eternal farm cannot
+        // survive a restart; deterministic (same snapshot, same tick,
+        // same re-arm on every observer).
+        if self.is_chart_instance && self.voyage_ends_at == 0 {
+            self.voyage_ends_at = self.tick + DEFAULT_VOYAGE_TICKS;
+        }
         if let Some(why) = self.first_malformed_affix() {
             return Err(format!("malformed snapshot: {why}"));
         }
@@ -1046,9 +1064,16 @@ impl World {
         }
         // THE RULES (#148 A4) — applied at the one instance chokepoint.
         w.monster_fury_bp = ticket.fury_bp.clamp(0, 10000);
-        if ticket.clock > 0 {
-            w.voyage_ends_at = ticket.clock as u64; // relative to tick 0
-        }
+        // EVERY voyage ends (#178): a clockless chart plus a non-returning
+        // brain was an infinite private XP/loot faucet (a stale deploy
+        // farmed one tier-1 instance for four hours). The default outlives
+        // any healthy brain's self-return (~5000 ticks); a VoyageClock
+        // affix still sets its own duration.
+        w.voyage_ends_at = if ticket.clock > 0 {
+            ticket.clock as u64 // relative to tick 0
+        } else {
+            DEFAULT_VOYAGE_TICKS
+        };
         if ticket.boss
             && let Some(bi) = w.content.monster_idx("the_unwritten")
         {
@@ -1117,10 +1142,17 @@ impl World {
     }
 
     fn voyage_clock(&mut self, events: &mut Vec<SimEvent>) {
-        if self.voyage_ends_at == 0 || self.tick < self.voyage_ends_at {
+        if self.voyage_ends_at == 0
+            || self.voyage_ends_at == VOYAGE_CLOCK_FIRED
+            || self.tick < self.voyage_ends_at
+        {
             return;
         }
-        self.voyage_ends_at = 0; // fire once
+        // Fire once. The sentinel (not 0) keeps "already rang" distinct
+        // from "never armed", so the #178 resume migration can re-arm
+        // exactly the pre-#178 clockless charts and nothing else — a
+        // post-fire world must resume bit-identical, not with a new clock.
+        self.voyage_ends_at = VOYAGE_CLOCK_FIRED;
         let nets: Vec<u32> = self
             .zone
             .iter()
@@ -3761,6 +3793,71 @@ mod area_level_tests {
     }
 
     #[test]
+    fn a_rolled_deluge_clock_rides_the_ticket() {
+        // #178 (codex): the VoyageClock arm in use_chart was the ONLY
+        // untested juice mapping — mutate it to a no-op and every clock
+        // test still passed (the direct-ticket tests bypass use_chart, and
+        // the default-clock test never rolls the affix). A real Deluge
+        // chart would have silently sailed on the 6000 default instead of
+        // its rolled duration. Mutation: drop the VoyageClock match arm →
+        // the clock assert sees 0, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xDE1, &content, "saltmere");
+        let slot = join_one(&mut w, "Belled");
+        let chart_base = content
+            .items
+            .iter()
+            .position(|d| d.chart_tier.is_some())
+            .expect("a chart base ships") as u32;
+        let deluge = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_deluge")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.story_acts = 3; // the WHOLE campaign
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: chart_base,
+                    rarity: Rarity::Magic,
+                    item_level: 14,
+                    affixes: vec![crate::entity::RolledAffix {
+                        affix_idx: deluge,
+                        values: vec![7500],
+                        tier: 0,
+                    }],
+                    name: "Deluge Chart".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let table = w.chart_table.expect("saltmere has the table");
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
+        let inv_idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        assert_eq!(w.use_chart(slot, inv_idx), 0);
+        let (_, _, ticket) = w.pending_exits.last().expect("the sail is staged");
+        let t = ticket.expect("a chart sail carries its ticket");
+        assert_eq!(t.clock, 7500, "the rolled Deluge duration rides the ticket");
+        // And the minted world honors the ROLL, not the default.
+        let minted = World::new_chart_instance(0xDE1, &content, "charted_shallows", t);
+        assert_eq!(minted.voyage_ends_at, 7500, "the roll beats the default");
+    }
+
+    #[test]
     fn a_staged_departure_never_eats_the_chart() {
         // #136 T4 (critic's same-tick trap): with ANY departure already
         // pending — an exit taken earlier this tick, or a previous chart —
@@ -3914,6 +4011,170 @@ mod area_level_tests {
         assert!(
             furied > base,
             "fury must lift the SAME hit ({furied} vs {base})"
+        );
+    }
+
+    #[test]
+    fn a_clockless_chart_still_mints_with_the_default_clock() {
+        // #178 (the eternal voyage): a clockless chart plus a non-returning
+        // brain was an infinite private XP/loot faucet — a stale deploy
+        // farmed one tier-1 instance for four hours. EVERY chart now mints
+        // with a clock; a rolled VoyageClock still sets its own duration
+        // (pinned by chart_rules_ride_the_ticket_and_shape_the_voyage).
+        // Mutation: revert the default arm → voyage_ends_at is 0, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let w = World::new_chart_instance(
+            0x178,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        assert_eq!(
+            w.voyage_ends_at, DEFAULT_VOYAGE_TICKS,
+            "a clockless ticket mints with the default clock"
+        );
+    }
+
+    #[test]
+    fn the_eternal_farm_ends() {
+        // #178: a sailor who NEVER walks out (broken, stale, or idle brain)
+        // is ferried home when the default clock rings — departure staged,
+        // tally settled. Mutation: revert the default arm → no departure
+        // ever fires and this fails at the assert.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_chart_instance(
+            0x178,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let slot = join_one(&mut w, "Fable");
+        // The arrival stamp rides the ferry path (pinned by
+        // a_real_arrival_stamps_the_voyage_marks); join_one lands via
+        // joins, so stamp the mark manually as that test does.
+        let net = w.zone.get(slot).unwrap().net_id;
+        w.voyage_marks.insert(net, (0, 0, 0, w.tick));
+        let empty = TickInputs::default();
+        let mut departed = None;
+        let mut tallied = false;
+        for _ in 0..=DEFAULT_VOYAGE_TICKS + 2 {
+            for ev in w.tick(&empty) {
+                match ev {
+                    SimEvent::CharacterDeparted { name, dest, .. } => {
+                        departed = Some((name, dest));
+                    }
+                    SimEvent::VoyageTally { .. } => tallied = true,
+                    _ => {}
+                }
+            }
+            if departed.is_some() {
+                break;
+            }
+        }
+        let (name, dest) = departed.expect("the default clock ferries the farmer home");
+        assert_eq!(name, "Fable");
+        assert_eq!(dest, "lanternfall", "the current takes the strand back");
+        assert!(tallied, "the forced departure still settles a tally");
+        assert_eq!(
+            w.character_count(),
+            0,
+            "the instance is empty and can retire"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_the_chart_rules() {
+        // #178: by state_hash's own bar (same hash => same future), the
+        // chart rules are replay-relevant — two worlds differing only in
+        // the voyage clock ferry everyone home at different ticks; fury
+        // steers every strike. Mutation: drop the #178 folds → identical
+        // hashes, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0B, &content);
+        let h1 = w.state_hash();
+        w.voyage_ends_at = 4242;
+        let h2 = w.state_hash();
+        assert_ne!(h1, h2, "the voyage clock must move the digest");
+        w.monster_fury_bp = 2500;
+        assert_ne!(h2, w.state_hash(), "the fury dial must move the digest");
+        // The rarity juice mutates PACK DEFS, not a world scalar (codex on
+        // #178): two same-seed charts differing only in rarity_bp hashed
+        // identical while their future respawns rolled different rarities.
+        // Mutation: drop the per-pack magic_bp/rare_bp folds → equal, fails.
+        let ticket = |rarity_bp: i64| ChartTicket {
+            tier: 2,
+            rarity_bp,
+            quantity_bp: 0,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        };
+        let plain = World::new_chart_instance(0xF0C, &content, "charted_shallows", ticket(0));
+        let juiced = World::new_chart_instance(0xF0C, &content, "charted_shallows", ticket(1500));
+        assert_ne!(
+            plain.state_hash(),
+            juiced.state_hash(),
+            "the pack rarity juice must move the digest"
+        );
+    }
+
+    #[test]
+    fn an_old_clockless_snapshot_rearms_on_resume() {
+        // #178 migration (codex): a pre-#178 chart snapshot minted
+        // clockless — resumed, it bypassed new_chart_instance and the
+        // eternal farm survived every restart. attach_content (the one
+        // hook every resume passes through) re-arms exactly those; a
+        // world whose clock already RANG parks at the sentinel and must
+        // resume bit-identical. Mutations: drop the re-arm → the first
+        // assert sees 0; re-arm on 0-or-fired → the sentinel assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_chart_instance(
+            0x0DD,
+            &content,
+            "charted_shallows",
+            ChartTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let empty = TickInputs::default();
+        for _ in 0..100 {
+            w.tick(&empty);
+        }
+        // Simulate the pre-#178 mint: never armed.
+        w.voyage_ends_at = 0;
+        w.attach_content(&content).expect("content reattaches");
+        assert_eq!(
+            w.voyage_ends_at,
+            w.tick + DEFAULT_VOYAGE_TICKS,
+            "a never-armed chart re-arms from the resume point"
+        );
+        // A RUNG clock stays rung across resume — no rug-pull re-arm.
+        w.voyage_ends_at = w.tick + 1;
+        w.tick(&empty);
+        assert_eq!(w.voyage_ends_at, VOYAGE_CLOCK_FIRED, "the clock parks");
+        w.attach_content(&content).expect("content reattaches");
+        assert_eq!(
+            w.voyage_ends_at, VOYAGE_CLOCK_FIRED,
+            "a fired clock resumes exactly, never re-arms"
         );
     }
 
