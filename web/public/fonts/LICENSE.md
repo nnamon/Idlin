@@ -7,8 +7,7 @@ SIL Open Font License, Version 1.1 (OFL-1.1, https://scripts.sil.org/OFL).
 |---|---|---|
 | JetBrainsMono-*.woff2 | JetBrains Mono | © 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) |
 | IdlinDisplay-*.woff2 | Cinzel | © 2012 The Cinzel Project Authors (Natanael Gama; https://github.com/NDISCOVER/Cinzel) |
-| IdlinText-Regular/Bold/Italic.woff2 | Alegreya | © 2011 The Alegreya Project Authors (Juan Pablo del Peral, Huerta Tipográfica; https://github.com/huertatipografica/Alegreya) |
-| IdlinSC-Medium.woff2 | Alegreya SC | © 2011 The Alegreya SC Project Authors (Juan Pablo del Peral, Huerta Tipográfica) |
+| IdlinText-Regular/Italic/SemiBold/Bold.woff2 | Inter | © 2016 The Inter Project Authors (Rasmus Andersson; https://github.com/rsms/inter) |
 
 The IdlinDisplay/IdlinText/IdlinSC filenames are LOCAL ALIASES of the
 unmodified upstream latin woff2 subsets (renamed for the app's font-role

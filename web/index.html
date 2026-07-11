@@ -51,12 +51,18 @@
         font-display: block;
         src: url("/fonts/IdlinDisplay-Bold.woff2") format("woff2");
       }
-      /* Text = Alegreya (a humanist book serif that stays legible small). */
+      /* Text = Inter (a crisp UI sans — the serif was unreadable at HUD sizes). */
       @font-face {
         font-family: "Idlin Text";
         font-weight: 400;
         font-display: block;
         src: url("/fonts/IdlinText-Regular.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 600;
+        font-display: block;
+        src: url("/fonts/IdlinText-SemiBold.woff2") format("woff2");
       }
       @font-face {
         font-family: "Idlin Text";
@@ -71,20 +77,13 @@
         font-display: block;
         src: url("/fonts/IdlinText-Italic.woff2") format("woff2");
       }
-      /* Small caps = Alegreya SC (section headers, engraved labels). */
-      @font-face {
-        font-family: "Idlin SC";
-        font-weight: 500;
-        font-display: block;
-        src: url("/fonts/IdlinSC-Medium.woff2") format("woff2");
-      }
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
         background: #0a0a0f;
-        font-family: "Idlin Text", Georgia, serif;
+        font-family: "Idlin Text", system-ui, sans-serif;
       }
       #scene {
         position: fixed;

@@ -14,8 +14,8 @@
   /* The three voices (#181): titles speak Display, prose speaks Text,
      NUMBERS alone keep the mono (tabular alignment). */
   --font-display: "Idlin Display", "Palatino", serif;
-  --font-sc: "Idlin SC", "Idlin Text", Georgia, serif;
-  --font-text: "Idlin Text", Georgia, serif;
+  --font-sc: "Idlin Text", system-ui, sans-serif;
+  --font-text: "Idlin Text", system-ui, sans-serif;
   --font-num: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
@@ -68,7 +68,7 @@
 .hdr {
   font-family: var(--font-sc);
   font-size: 12px;
-  font-weight: 500; /* the SC face's one true weight — no synthetic bold */
+  font-weight: 600;
   letter-spacing: 2.5px;
   color: #d2ab52;
   text-transform: uppercase;
