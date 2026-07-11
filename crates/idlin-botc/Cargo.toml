@@ -1,8 +1,8 @@
 [package]
 name = "idlin-botc"
-version = "2.0.0"
+version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-idlin-vm = { version = "2.0.0", path = "../idlin-vm" }
+idlin-vm = { version = "0.1.0", path = "../idlin-vm" }
 thiserror.workspace = true

@@ -130,7 +130,7 @@ each checked at its boundary so incompatibilities fail fast and loudly.
 
 ## Status
 
-Version 2.0 — "The Undertow". The game is a complete two-act campaign
+Version 0.1.0 — "The Undertow". The game is a complete two-act campaign
 with a rule-modified map endgame, three self-sufficient stock
 archetypes, a town economy, player brain deployment, a story-aware
 broadcast, and sound. Next horizons: chat integration (Twitch first)
