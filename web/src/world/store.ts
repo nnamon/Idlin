@@ -494,14 +494,14 @@ export class WorldStore {
     };
     switch (ev.type) {
       case "CharacterJoined":
-        push(`⚔ ${ev.data.name} arrives on the shore`, "#9a7bff");
+        push(`✦ ${ev.data.name} arrives on the shore`, "#a99ac8");
         break;
       case "CharacterDied":
-        push(`☠ ${ev.data.name} was slain by ${ev.data.killer}`, "#ff6a6a");
+        push(`☠ ${ev.data.name} was slain by ${ev.data.killer}`, "#d97a6a");
         break;
       case "ActCompleted":
         // The campaign's biggest beat (#136) — gold, like a unique drop.
-        push(`★ ${ev.data.name} has completed Act ${ev.data.act}!`, "#ff9a3c");
+        push(`★ ${ev.data.name} has completed Act ${ev.data.act}!`, "#d8a862");
         // Banner only for a LOCAL actor (codex: replication splices act
         // announcements into every feed — another world's act must be a
         // ticker line here, not a center-screen moment).
@@ -517,7 +517,7 @@ export class WorldStore {
         break;
       case "CharacterRespawned": {
         const name = this.entities.get(ev.data.id)?.state.name ?? "someone";
-        push(`✚ ${name} returns to the fight`, "#7bff9a");
+        push(`✚ ${name} returns to the fight`, "#9ec89a");
         break;
       }
       case "GateChanged": {
@@ -526,7 +526,7 @@ export class WorldStore {
           (g) => g.x0 === d.x0 && g.y0 === d.y0 && g.x1 === d.x1 && g.y1 === d.y1,
         );
         if (gate) gate.open = d.open;
-        push(d.open ? "◈ A gate lifts" : "◈ A gate falls", "#e0b75e");
+        push(d.open ? "◈ A gate lifts" : "◈ A gate falls", "#c9a95a");
         break;
       }
       case "ExitChanged": {
@@ -538,16 +538,16 @@ export class WorldStore {
           (e) => Math.abs(e.x - ex) < 0.01 && Math.abs(e.y - ey) < 0.01,
         );
         if (exit) exit.open = ev.data.open;
-        push(ev.data.open ? "◈ A way forward opens" : "◈ A way forward closes", "#6fe3c1");
+        push(ev.data.open ? "◈ A way forward opens" : "◈ A way forward closes", "#9ab8a8");
         break;
       }
       case "LevelUp":
-        push(`★ ${ev.data.name} reached level ${ev.data.level}`, "#ffd75a");
+        push(`✧ ${ev.data.name} reached level ${ev.data.level}`, "#d8c07a");
         break;
       case "MonsterKilled":
         // Boss falls get the gold treatment (#148 A7) — trash stays grey.
         if (ev.data.rarity >= 3) {
-          push(`☠ ${ev.data.killer} FELLS ${ev.data.monster}!`, "#ff9a3c");
+          push(`☠ ${ev.data.killer} FELLS ${ev.data.monster}!`, "#d0985a");
           if (this.entities.get(ev.data.killer_id)?.state.name === ev.data.killer) {
             this.beat = {
               text: `${ev.data.monster} FALLS`,
@@ -566,12 +566,12 @@ export class WorldStore {
         push(
           `◈ ${d.name} completes the map — ${d.kills} kills, ${d.deaths} deaths, ` +
             `${d.items} items in ${mins}:${String(secs).padStart(2, "0")}`,
-          "#6ad8ff",
+          "#8fb8c8",
         );
         break;
       }
       case "CharacterRemoved":
-        push(`⏻ ${ev.data.name} is recalled — the brain is switched off`, "#8a8aa0");
+        push(`— ${ev.data.name} is recalled, the brain switched off`, "#8a8578");
         break;
       case "LootDropped":
         if (ev.data.rarity >= 1) {
@@ -590,22 +590,22 @@ export class WorldStore {
         }
         break;
       case "PassiveAllocated":
-        push(`◈ ${ev.data.owner} learns ${ev.data.node}`, "#9a7bff");
+        push(`◈ ${ev.data.owner} learns ${ev.data.node}`, "#a48ac0");
         break;
       case "BuildRejected":
-        push(`⚠ ${ev.data.owner}'s build rejected: ${ev.data.reason}`, "#ffb36a");
+        push(`⚠ ${ev.data.owner}'s build rejected: ${ev.data.reason}`, "#d0a06a");
         break;
       case "TreeRespecced":
-        push(`✶ ${ev.data.owner} pays their regret — the tree re-walks`, "#ffd75a");
+        push(`✶ ${ev.data.owner} pays their regret — the tree re-walks`, "#d8c07a");
         break;
       case "GearShed":
-        push(`⚠ ${ev.data.owner} can no longer wield ${ev.data.item}`, "#ffb36a");
+        push(`⚠ ${ev.data.owner} can no longer wield ${ev.data.item}`, "#d0a06a");
         break;
       case "BuildDeclared":
-        push(`◈ ${ev.data.owner} declares a build (${ev.data.nodes} nodes)`, "#9a7bff");
+        push(`◈ ${ev.data.owner} declares a build (${ev.data.nodes} nodes)`, "#a48ac0");
         break;
       case "GemSocketed":
-        push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#5adfdf");
+        push(`◇ ${ev.data.owner} sockets ${ev.data.gem}`, "#8fb8c8");
         break;
       case "Narration":
         push(`✦ ${ev.data.text}`, "#d8c89a");
@@ -614,19 +614,19 @@ export class WorldStore {
         this.speech.set(ev.data.id, { text: ev.data.text, at: performance.now() });
         break;
       case "CharacterDeparted":
-        push(`⇧ ${ev.data.name} leaves for ${ev.data.dest}`, "#9a7bff");
+        push(`⇧ ${ev.data.name} leaves for ${ev.data.dest}`, "#a48ac0");
         break;
       case "CurrencyUsed":
-        push(`✶ ${ev.data.owner}'s ${ev.data.currency} reshapes ${ev.data.item}`, "#ffd75a");
+        push(`✶ ${ev.data.owner}'s ${ev.data.currency} reshapes ${ev.data.item}`, "#d8c07a");
         break;
       case "GemRejected":
         push(
           `⚠ ${ev.data.gem} refuses ${ev.data.owner}'s ${ev.data.skill} (wrong tags)`,
-          "#ffb36a",
+          "#d0a06a",
         );
         break;
       case "GemLevelUp":
-        push(`◆ ${ev.data.owner}'s ${ev.data.gem} is now level ${ev.data.level}`, "#5adfdf");
+        push(`◆ ${ev.data.owner}'s ${ev.data.gem} is now level ${ev.data.level}`, "#8fb8c8");
         break;
       case "ItemEquipped":
         push(

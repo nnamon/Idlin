@@ -35,13 +35,56 @@
         font-display: block;
         src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
       }
+      /* The de-vibecoding pass (#181): a game face for titles and a book
+         face for prose — mono retreats to NUMBERS. All OFL, bundled,
+         font-display:block for byte-stable captures.
+         Display = Cinzel (engraved Trajan-style capitals). */
+      @font-face {
+        font-family: "Idlin Display";
+        font-weight: 600;
+        font-display: block;
+        src: url("/fonts/IdlinDisplay-SemiBold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Display";
+        font-weight: 700;
+        font-display: block;
+        src: url("/fonts/IdlinDisplay-Bold.woff2") format("woff2");
+      }
+      /* Text = Alegreya (a humanist book serif that stays legible small). */
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 400;
+        font-display: block;
+        src: url("/fonts/IdlinText-Regular.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 700;
+        font-display: block;
+        src: url("/fonts/IdlinText-Bold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 400;
+        font-style: italic;
+        font-display: block;
+        src: url("/fonts/IdlinText-Italic.woff2") format("woff2");
+      }
+      /* Small caps = Alegreya SC (section headers, engraved labels). */
+      @font-face {
+        font-family: "Idlin SC";
+        font-weight: 500;
+        font-display: block;
+        src: url("/fonts/IdlinSC-Medium.woff2") format("woff2");
+      }
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
         background: #0a0a0f;
-        font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        font-family: "Idlin Text", Georgia, serif;
       }
       #scene {
         position: fixed;

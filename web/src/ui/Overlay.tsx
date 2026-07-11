@@ -304,8 +304,10 @@ export function Overlay({
             right: 10,
             bottom: 10,
             zIndex: 30,
+            // Native buttons default to Arial — speak the app's voice.
+            fontFamily: "inherit",
             background: "rgba(10,14,22,0.7)",
-            color: audio.muted ? "#5a6478" : "#ffd27a",
+            color: audio.muted ? "#5a6478" : "#d2ab52",
             border: "1px solid #2a3348",
             borderRadius: 6,
             padding: "4px 8px",
@@ -352,28 +354,28 @@ export function Overlay({
       {/* left column: status plaque + the focused idler's stats */}
       <div className="hud-left">
       <div className="panel">
-        <div style={{ fontWeight: 700, color: "#e0b75e", fontSize: 15, letterSpacing: 4 }}>
+        <div className="display" style={{ color: "#e0b75e", fontSize: 15, letterSpacing: 5 }}>
           IDLIN
         </div>
-        <div style={{ fontWeight: 700, color: "#d8cba6", fontSize: 13.5 }}>
+        <div className="display" style={{ fontSize: 13.5, fontWeight: 600, color: "#d8cba6" }}>
           {store.zone?.name ?? "connecting…"}
-          {store.zone && (
-            <span style={{ color: "#ab9d7a", fontWeight: 400 }}> · lv {store.zone.level}</span>
-          )}
-          {store.zone?.worldKey.includes("#") && (
-            <span style={{ color: "#ab9d7a", fontWeight: 400 }}>
-              {" "}· {store.zone.worldKey.split("#")[1]}&rsquo;s
-            </span>
-          )}
         </div>
-        <div style={{ fontSize: 12.5 }}>
-          <span style={{ color: "#ab9d7a" }}>link </span>
-          <span style={{ color: status?.connected ? "#7bff9a" : "#ff6a6a" }}>
-            {status?.connected ? `live · ${status.rttMs ?? "—"} ms` : "disconnected"}
+        {store.zone && (
+          <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
+            area level {store.zone.level}
+            {store.zone.worldKey.includes("#") && (
+              <> · {store.zone.worldKey.split("#")[1]}&rsquo;s instance</>
+            )}
+          </div>
+        )}
+        {/* Telemetry recedes: one quiet line — the raw tick was a debug
+            readout, not a game fact (#181). */}
+        <div style={{ color: "#8d8168", fontSize: 11.5 }}>
+          <span style={{ color: status?.connected ? "#9ec89a" : "#d97a6a" }}>
+            {status?.connected ? "● live" : "● disconnected"}
           </span>
-        </div>
-        <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
-          tick {store.tick} · up {formatUptime(store.tick / TICK_HZ)}
+          {status?.connected && <> · {status.rttMs ?? "—"} ms</>} · up{" "}
+          {formatUptime(store.tick / TICK_HZ)}
         </div>
       </div>
       {sheet && <StatsPanel sheet={sheet} />}
@@ -650,7 +652,7 @@ export function KillCamPanel({ rows }: { rows: KillCamRow[] }) {
               })}`}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "#6ad8ff", marginLeft: "auto" }}
+              style={{ color: "#d2ab52", marginLeft: "auto" }}
             >
               watch
             </a>
@@ -999,7 +1001,7 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
   // Each row hovers to its source breakdown (#87): the stat keys it covers feed
   // the tooltip, which lists the contributing gear/passive/buff. Rows with no
   // backing stat (passives) pass none and stay non-interactive.
-  const stat = (label: string, value: string, statKeys: string[] = []) => {
+  const statNode = (label: string, value: React.ReactNode, statKeys: string[] = []) => {
     const hoverable = statKeys.length > 0;
     const move = (e: React.MouseEvent) =>
       setHover({ kind: "stat", statKeys, label, x: e.clientX, y: e.clientY });
@@ -1017,32 +1019,60 @@ function StatsPanel({ sheet }: { sheet: CharacterSheet }) {
       </div>
     );
   };
+  const stat = (label: string, value: string, statKeys: string[] = []) =>
+    statNode(label, value, statKeys);
+  // The damage-type color language (matches the tooltips): the COLOR names
+  // the element, so the label can just say "Damage" (#181 — no more
+  // "dmg p/f/c/l/ch" inspector shorthand on a game surface).
+  const DMG_COLORS = ["#c9c2b2", "#e88a5a", "#7ab8d8", "#d8c56a", "#b88ad0"];
   const dmg = [sheet.dmg_phys, sheet.dmg_fire, sheet.dmg_cold, sheet.dmg_lightning, sheet.dmg_chaos];
   const resPct = (bp: number) => Math.min(75, Math.round(bp / 100));
-  const res = `${resPct(sheet.resist_fire_bp)}/${resPct(sheet.resist_cold_bp)}/${resPct(sheet.resist_lightning_bp)}/${resPct(sheet.resist_chaos_bp)}%`;
+  const res = [
+    sheet.resist_fire_bp,
+    sheet.resist_cold_bp,
+    sheet.resist_lightning_bp,
+    sheet.resist_chaos_bp,
+  ];
+  const typed = (vals: number[], colors: string[], suffix = "") => (
+    <span>
+      {vals.map((v, i) => (
+        <span key={i}>
+          {i > 0 && <span style={{ color: "#6a6152" }}> · </span>}
+          <span style={{ color: colors[i] }}>
+            {v}
+            {suffix}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
   return (
     <div className="panel" style={{ lineHeight: 1.5 }}>
-      <Header first>Stats</Header>
+      <Header first>Character</Header>
       {/* life + mana now read off the HUD globes; energy shield stays (no orb) */}
-      {sheet.es_max > 0 && stat("energy shield", `${sheet.es} / ${sheet.es_max}`, ["energy_shield"])}
-      {sheet.block_bp > 0 && stat("block", `${Math.round(sheet.block_bp / 100)}%`, ["block"])}
-      {stat("dmg p/f/c/l/ch", dmg.join("/"), [
+      {sheet.es_max > 0 && stat("Energy Shield", `${sheet.es} / ${sheet.es_max}`, ["energy_shield"])}
+      {sheet.block_bp > 0 && stat("Block", `${Math.round(sheet.block_bp / 100)}%`, ["block"])}
+      {statNode("Damage", typed(dmg, DMG_COLORS), [
         "damage_phys",
         "damage_fire",
         "damage_cold",
         "damage_lightning",
         "damage_chaos",
       ])}
-      {stat("accuracy / evasion", `${sheet.accuracy} / ${sheet.evasion}`, ["accuracy", "evasion"])}
-      {stat("armour", `${sheet.armour}`, ["armour"])}
-      {stat("res f/c/l/ch", res, ["resist_fire", "resist_cold", "resist_lightning", "resist_chaos"])}
-      {(sheet.item_rarity_bp > 0 || sheet.item_quantity_bp > 0) &&
-        stat(
-          "find rar/qty",
-          `+${(sheet.item_rarity_bp / 100).toFixed(0)}% / +${(sheet.item_quantity_bp / 100).toFixed(0)}%`,
-          ["item_rarity", "item_quantity"],
-        )}
-      {stat("passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
+      {stat("Accuracy", `${sheet.accuracy}`, ["accuracy"])}
+      {stat("Evasion", `${sheet.evasion}`, ["evasion"])}
+      {stat("Armour", `${sheet.armour}`, ["armour"])}
+      {statNode("Resistances", typed(res.map(resPct), DMG_COLORS.slice(1), "%"), [
+        "resist_fire",
+        "resist_cold",
+        "resist_lightning",
+        "resist_chaos",
+      ])}
+      {sheet.item_rarity_bp > 0 &&
+        stat("Rarity Find", `+${(sheet.item_rarity_bp / 100).toFixed(0)}%`, ["item_rarity"])}
+      {sheet.item_quantity_bp > 0 &&
+        stat("Quantity Find", `+${(sheet.item_quantity_bp / 100).toFixed(0)}%`, ["item_quantity"])}
+      {stat("Passives", `${sheet.passive_allocated} of ${sheet.build_len} (+${sheet.passive_unspent})`)}
       {sheet.skills.length > 0 && (
         <>
           <Header>Skills</Header>
@@ -1080,15 +1110,26 @@ function ObolsPanel({ sheet }: { sheet: CharacterSheet }) {
 }
 
 function LifeBar({ pct, dead }: { pct: number; dead: boolean }) {
-  const color = dead ? "#444" : pct > 50 ? "#44dd66" : pct > 25 ? "#ffd75a" : "#ff5a5a";
+  // Blood, not traffic lights (#181): the ARPG idiom is a red pool that
+  // dims as it drains — hue shifts ember→dark, never green.
+  const color = dead ? "#3a2a26" : pct > 50 ? "#a83232" : pct > 25 ? "#c25a2e" : "#c8503f";
   return (
-    <div style={{ background: "#221111", height: 7, borderRadius: 3, margin: "4px 0" }}>
+    <div
+      style={{
+        background: "#160d0b",
+        height: 7,
+        borderRadius: 2,
+        margin: "4px 0",
+        border: "1px solid #3a2c1a",
+        boxShadow: "inset 0 1px 2px rgba(0,0,0,0.7)",
+      }}
+    >
       <div
         style={{
           width: `${dead ? 0 : pct}%`,
-          background: color,
+          background: `linear-gradient(180deg, ${color}, #571f18)`,
           height: "100%",
-          borderRadius: 3,
+          borderRadius: 2,
           transition: "width 0.3s",
         }}
       />

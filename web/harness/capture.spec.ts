@@ -354,7 +354,7 @@ test("a stats row hovers to its per-source breakdown (#87)", async ({ browser })
 
   // (the stats panel is mounted twice — desktop + a mobile-drawer copy; the
   // first is the visible desktop one)
-  await page.getByText("armour", { exact: true }).first().hover();
+  await page.getByText("Armour", { exact: true }).first().hover();
   // the breakdown tooltip lists each contributing source + its formatted amount
   const tip = page.locator(".item-tooltip", { hasText: "Brinescoured Helm" });
   await expect(tip).toBeVisible();
@@ -429,7 +429,9 @@ test("idler-view: focus is pinned to the requested idler, not the director cue",
   // read Brakka. Mutation: fall focusId back to store.cue?.focus → the panel reads
   // "Veles" and this fails. (This is the non-vacuous proof of name-pinned focus.)
   const { ctx, page } = await loadFixture(browser, "idler-view");
-  await expect(page.locator(".display")).toHaveText("Brakka");
+  // The plaque also speaks the display face now (#181): target the focus
+  // panel's name element, not every .display on screen.
+  await expect(page.locator(".hud-right .display").first()).toHaveText("Brakka");
   await ctx.close();
 });
 
