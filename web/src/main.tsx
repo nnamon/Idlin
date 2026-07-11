@@ -3,8 +3,6 @@ import { NetClient } from "./net/client";
 import type { S2C } from "./gen/S2C";
 import { PROTO_VERSION } from "./gen/proto";
 import { WorldStore } from "./world/store";
-import { SoundEngine } from "./audio/engine";
-import { SoundDirector } from "./audio/director";
 import { ZoneRenderer } from "./scene/ZoneRenderer";
 import { Overlay } from "./ui/Overlay";
 import { ManagePage } from "./ui/ManagePage";
@@ -38,11 +36,6 @@ const replay = params.get("replay");
 
 const wsProto = location.protocol === "https:" ? "wss" : "ws";
 const store = new WorldStore();
-// Sound (#148 A8): synthesized, muted by default, opt-in via the speaker
-// button (the click doubles as the WebAudio unlock gesture).
-const audio = new SoundEngine();
-const soundDirector = new SoundDirector(audio);
-store.onEvent = (ev) => soundDirector.onEvent(ev);
 const client = new NetClient(`${wsProto}://${location.host}/ws`, watch);
 client.onMessage((msg) => store.handle(msg));
 
@@ -95,7 +88,7 @@ if (replay) {
 
 let zr: ZoneRenderer | undefined;
 // Dev/probe handle: headless verification injects FX and reads state here.
-(window as unknown as { __idlin?: object }).__idlin = { store, audio, get zr() { return zr; } };
+(window as unknown as { __idlin?: object }).__idlin = { store, get zr() { return zr; } };
 
 const overlayRoot = createRoot(document.getElementById("overlay")!);
 if (manage && idler) {
@@ -105,5 +98,5 @@ if (manage && idler) {
   zr = new ZoneRenderer(document.getElementById("scene")!, store, {
     follow: watch ?? undefined,
   });
-  overlayRoot.render(<Overlay client={client} store={store} idler={idler} audio={audio} />);
+  overlayRoot.render(<Overlay client={client} store={store} idler={idler} />);
 }

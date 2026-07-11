@@ -96,7 +96,9 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// `SimEvent::MonsterKilled` gained `rarity` — serialized; a v21 snapshot would mis-decode.
 /// v23 (quality pass): `CombatStats` gained `grace_until` (respawn grace) — serialized;
 /// a v22 snapshot would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 23;
+/// v24 (#185 B4): `World` gained `spawn_rarity_bp` (the instance rarity
+/// juice as a property; pack defs are immutable again) — layout change.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 24;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -581,7 +583,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 23);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 24);
     }
 
     #[test]

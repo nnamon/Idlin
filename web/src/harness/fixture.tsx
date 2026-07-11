@@ -10,8 +10,6 @@
 //    and the camera converge to reproducible pixels.
 import { createRoot } from "react-dom/client";
 import { WorldStore } from "../world/store";
-import { SoundEngine } from "../audio/engine";
-import { SoundDirector } from "../audio/director";
 import { Overlay } from "../ui/Overlay";
 import { ItemTooltip } from "../ui/ItemTooltip";
 import { ContentDocs } from "../world/contentDocs";
@@ -51,26 +49,14 @@ function nextTask(): Promise<void> {
  *  and exposes the engine's log — the capture spec asserts cues without
  *  audible output (the context never unlocks headless; the log always
  *  records). */
-function wireAudio(store: WorldStore): void {
-  const audio = new SoundEngine();
-  const soundDirector = new SoundDirector(audio);
-  store.onEvent = (ev) => soundDirector.onEvent(ev);
-  (window as unknown as { __idlinAudio?: SoundEngine }).__idlinAudio = audio;
-  // The store handle too (#162): behavior specs (beat scoping) drive the
-  // real store directly — same probe idiom as the audio log.
-  (window as unknown as { __idlinStore?: WorldStore }).__idlinStore = store;
-}
-
 async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Promise<void> {
   const overlay = document.getElementById("overlay")!;
   const store = new WorldStore();
-  wireAudio(store);
   // The live client paints slot icons (3D model renders + canvas silhouettes);
   // the headless harness has no WebGL/model pipeline, so feed it the
   // deterministic canvas silhouettes alone — enough to verify the doll reads
   // with real icons rather than the cramped name-text fallback.
   store.icons = { icon: (_name, kind) => silhouette(kind) };
-  wireAudio(store);
   // Kill-cam rows (#162): EVERY fixture owns its rows — default empty, so
   // no fixture can ever poll the live server (codex: non-killcam fixtures
   // still fetched through the dev proxy and could render live boss falls).
@@ -81,9 +67,8 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   const client = stubClient(fixture.status);
   // The speaker button (#148 A8): fixtures opt in via `sound: true` — the
   // engine is fresh (muted, 🔇) so the shot is deterministic.
-  const btnAudio = fixture.sound ? new SoundEngine() : null;
   createRoot(overlay).render(
-    <Overlay client={client} store={store} idler={fixture.idler ?? null} audio={btnAudio} />,
+    <Overlay client={client} store={store} idler={fixture.idler ?? null} />,
   );
 
   // Drain the scheduler so the status effect (link plaque) commits, then wait
@@ -102,7 +87,6 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
 async function renderManage(fixture: Extract<Fixture, { kind: "manage" }>): Promise<void> {
   const overlay = document.getElementById("overlay")!;
   const store = new WorldStore();
-  wireAudio(store);
   for (const msg of fixture.messages) store.handle(msg);
   createRoot(overlay).render(<ManagePage store={store} idler={fixture.idler} />);
   for (let i = 0; i < 6; i++) await nextTask();
@@ -128,7 +112,6 @@ async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promis
   Math.random = makeSeededRandom(fixture.seed);
 
   const store = new WorldStore();
-  wireAudio(store);
   for (const msg of fixture.messages) store.handle(msg);
 
   const scene = document.getElementById("scene")!;
@@ -148,7 +131,6 @@ async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promis
 async function renderFull(fixture: Extract<Fixture, { kind: "full" }>): Promise<void> {
   Math.random = makeSeededRandom(fixture.seed);
   const store = new WorldStore();
-  wireAudio(store);
   store.icons = { icon: (_name, kind) => silhouette(kind) };
   for (const msg of fixture.messages) store.handle(msg);
 

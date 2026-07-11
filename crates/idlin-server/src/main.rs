@@ -39,7 +39,7 @@ struct AppState {
     routing: watch::Receiver<replication::Routing>,
     /// Focus-panel inspections, answered by the tick thread.
     inspect: mpsc::UnboundedSender<runner::InspectRequest>,
-    /// Admin surface (#148 A6): deploy / kill / leaderboard.
+    /// Admin surface (#148 A6): deploy.
     admin: mpsc::UnboundedSender<runner::AdminCommand>,
     /// Shared secret for the mutating admin routes; None = routes disabled.
     admin_token: Option<Arc<str>>,
@@ -314,8 +314,6 @@ async fn main() -> anyhow::Result<()> {
         // (routes refuse 503 when it is unset — fail closed, no anonymous
         // deploys); the leaderboard is public read.
         .route("/api/deploy", axum::routing::post(deploy_handler))
-        .route("/api/kill", axum::routing::post(kill_handler))
-        .route("/api/leaderboard", get(leaderboard_handler))
         .route("/api/killcams", get(killcams_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
@@ -415,12 +413,6 @@ struct DeployBody {
     source: String,
 }
 
-#[derive(serde::Deserialize)]
-struct KillBody {
-    token: String,
-    name: String,
-}
-
 /// Gate a mutating admin route (#148 A6): no configured token = disabled
 /// (503), wrong token = 403. Fail closed, never open.
 fn admin_gate(state: &AppState, token: &str) -> Result<(), (axum::http::StatusCode, String)> {
@@ -483,34 +475,6 @@ async fn deploy_handler(
     }
 }
 
-async fn kill_handler(
-    State(state): State<AppState>,
-    axum::Json(body): axum::Json<KillBody>,
-) -> Result<String, (axum::http::StatusCode, String)> {
-    admin_gate(&state, &body.token)?;
-    let (reply, rx) = tokio::sync::oneshot::channel();
-    state
-        .admin
-        .send(runner::AdminCommand::Kill {
-            name: body.name.clone(),
-            reply,
-        })
-        .map_err(|_| {
-            (
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "sim gone".into(),
-            )
-        })?;
-    match rx.await {
-        Ok(Ok(())) => Ok(format!("{} is recalled", body.name)),
-        Ok(Err(e)) => Err((axum::http::StatusCode::NOT_FOUND, e)),
-        Err(_) => Err((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "sim gone".into(),
-        )),
-    }
-}
-
 /// The last 50 boss falls (#148 A7), newest last. With IDLIN_RECORD on,
 /// each carries the world journal's line at the kill — the web replay
 /// (`?replay=/recordings/<world_key>.jsonl&at=<line>`) jumps straight to it.
@@ -524,27 +488,6 @@ async fn killcams_handler(State(state): State<AppState>) -> axum::Json<Vec<repli
             .cloned()
             .collect(),
     )
-}
-
-async fn leaderboard_handler(
-    State(state): State<AppState>,
-) -> Result<axum::Json<Vec<idlin_sim::LeaderRow>>, (axum::http::StatusCode, String)> {
-    let (reply, rx) = tokio::sync::oneshot::channel();
-    state
-        .admin
-        .send(runner::AdminCommand::Leaderboard { reply })
-        .map_err(|_| {
-            (
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "sim gone".into(),
-            )
-        })?;
-    rx.await.map(axum::Json).map_err(|_| {
-        (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "sim gone".into(),
-        )
-    })
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {

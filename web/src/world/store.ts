@@ -150,7 +150,7 @@ export class WorldStore {
   private seenBosses = new Set<number>();
   private lastWorldKey = "";
   ticker: TickerItem[] = [];
-  /** Event tap (#148 A8): the sound director listens here. Presentation
+  /** Event tap: presentation-layer listeners subscribe here. Presentation
    *  only — the store never depends on the callback. */
   onEvent?: (ev: GameEvent) => void;
   pendingHits: ActiveHit[] = [];

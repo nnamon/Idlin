@@ -73,8 +73,7 @@ the sport. Monster behavior is bot code too, shipped as content.
   falling, boss kills, map tallies, and first map opens ahead of routine
   deaths; boss falls mark the recording journal so
   the kill-cam list (`/api/killcams`) deep-links into the deterministic
-  replay via the viewer's `&at=<line>` fast-forward;
-  a synthesized, muted-by-default **sound layer** voices the beats.
+  replay via the viewer's `&at=<line>` fast-forward;.
 - **The stock brains play the whole game**: routing by zone ids, gearing
   off the ground via the engine's scorer, managing bags, selling junk,
   breaking every boss, and pivoting to map farming — a fresh level-1

@@ -25,8 +25,6 @@ import {
 export type Fixture =
   | {
       kind: "overlay";
-      /** Render the speaker button (#148 A8). */
-      sound?: boolean;
       /** Kill-cam rows for the panel (#162). */
       killcams?: unknown[];
       label: string;
@@ -805,20 +803,6 @@ const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservatio
 const EDGE_ID = 9;
 // The speaker button (#148 A8): the one UI surface sound adds — shot in
 // its muted default (the fresh-engine state every viewer starts in).
-const soundToggle: Fixture = {
-  kind: "overlay",
-  sound: true,
-  label: "Sound: the speaker button renders muted by default",
-  status: LIVE_STATUS,
-  messages: [
-    zoneSnapshot({
-      entities: [
-        character({ id: EDGE_ID, name: "Solo", level: 30, model: "ranger", life_pct: 80, kills: 12, items: 2 }),
-      ],
-    }),
-  ],
-};
-
 // The kill-cam panel (#162): injected rows, one with a replay link.
 const killcamPanel: Fixture = {
   kind: "overlay",
@@ -1116,7 +1100,6 @@ export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
   "scene-dressing": sceneDressing,
-  "sound-toggle": soundToggle,
   "killcam-panel": killcamPanel,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,

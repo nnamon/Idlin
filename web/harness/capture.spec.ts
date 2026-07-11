@@ -470,21 +470,6 @@ test("resolveFocusId pins to the named idler with no director-cue fallback (#79)
   expect(resolveFocusId(null, entities, 2)).toBe(2); // unpinned → the director's cue
 });
 
-test("the sound director maps the broadcast's beats to cues (#148 A8)", async ({ browser }) => {
-  // The events fixture carries a trash kill, a boss fall (rarity 3), and a
-  // map tally — the REAL director mapping runs in the harness page and
-  // logs cues (no audible output headless; the engine logs regardless).
-  // Mutation: drop the rarity branch in SoundDirector → no "boss-fall".
-  const { ctx, page } = await loadFixture(browser, "idler-manage");
-  const log = await page.evaluate(
-    () => (window as unknown as { __idlinAudio?: { log: string[] } }).__idlinAudio?.log ?? [],
-  );
-  expect(log).toContain("kill");
-  expect(log).toContain("boss-fall");
-  expect(log).toContain("tally");
-  await ctx.close();
-});
-
 
 test("beat banners are world-scoped (#162 beat presentation)", async ({ browser }) => {
   // Codex on Q9: replication splices act announcements into every feed —

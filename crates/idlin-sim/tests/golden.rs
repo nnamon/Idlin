@@ -33,10 +33,9 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// syscall itself hashes nothing; the shore replay has no zone brain
 /// wave logic.
 /// Re-pinned for #178 (the eternal voyage): the HASH DOMAIN grew — the
-/// chart rules (map_ends_at, monster_fury_bp, loot_quantity_bp,
-/// is_map_instance) AND the per-pack rarity juice (pack.def.magic_bp /
-/// rare_bp — chart mints MUTATE these and respawns read them) now fold
-/// into state_hash, so every world digest moves. The shore replay's
+/// map rules (map_ends_at, monster_fury_bp, loot_quantity_bp,
+/// is_map_instance) AND (AT THE TIME — since reworked by B4 below) the
+/// per-pack rarity juice folds joined state_hash, so every digest moved. The shore replay's
 /// BEHAVIOR is bit-identical (chart fields zero/false there, pack defs at
 /// authored values; the default voyage clock arms only in
 /// new_map_instance) — only the fingerprint changed.
@@ -45,7 +44,11 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// names in RON, the vocabulary sweep over content-file COMMENTS (every
 /// byte under content/ is hashed), and the regenerated content-docs all
 /// move content_hash. No sim rule changed; the vocabulary did.
-const GOLDEN_HASH: u64 = 0xC527_08F2_0FC3_B236;
+/// Re-pinned for #185 B4 (operator ruling): the hash DOMAIN changed shape —
+/// the per-pack def folds (the old rarity-juice patch) left, spawn_rarity_bp
+/// joined. Pack defs are immutable content again; the shore replay's
+/// BEHAVIOR is bit-identical, only the fingerprint moved.
+const GOLDEN_HASH: u64 = 0x2AED_7753_FAF1_AAD6;
 
 #[test]
 fn golden_replay() {

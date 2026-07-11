@@ -33,15 +33,6 @@ pub enum AdminCommand {
         program: Vec<u8>,
         reply: oneshot::Sender<Result<(), String>>,
     },
-    /// The kill switch: remove the named character wherever it is.
-    Kill {
-        name: String,
-        reply: oneshot::Sender<Result<(), String>>,
-    },
-    /// The per-brain scoreboard, aggregated across every live world.
-    Leaderboard {
-        reply: oneshot::Sender<Vec<idlin_sim::LeaderRow>>,
-    },
 }
 
 /// Deployed-brain headroom (#148 A6): builtins + deploys share the worlds;
@@ -603,7 +594,7 @@ pub fn spawn_tick_loop(
                         } => {
                             let taken = |mw: &ManagedWorld| {
                                 mw.world
-                                    .leaderboard_rows()
+                                    .roster_rows()
                                     .iter()
                                     .any(|r| r.name == name)
                                     || mw.pending.joins.iter().any(|j| j.name == name)
@@ -612,7 +603,7 @@ pub fn spawn_tick_loop(
                             let population: usize = worlds
                                 .iter()
                                 .map(|mw| {
-                                    mw.world.leaderboard_rows().len()
+                                    mw.world.roster_rows().len()
                                         + mw.pending.joins.len()
                                         + mw.pending.arrivals.len()
                                 })
@@ -655,33 +646,6 @@ pub fn spawn_tick_loop(
                                 Ok(())
                             };
                             let _ = reply.send(res);
-                        }
-                        AdminCommand::Kill { name, reply } => {
-                            let holder = worlds.iter_mut().find(|mw| {
-                                mw.world.leaderboard_rows().iter().any(|r| r.name == name)
-                            });
-                            let res = match holder {
-                                Some(mw) => {
-                                    mw.pending.removals.push(name);
-                                    Ok(())
-                                }
-                                None => Err(format!("no character named {name}")),
-                            };
-                            let _ = reply.send(res);
-                        }
-                        AdminCommand::Leaderboard { reply } => {
-                            let mut rows: Vec<idlin_sim::LeaderRow> = worlds
-                                .iter()
-                                .flat_map(|mw| mw.world.leaderboard_rows())
-                                .collect();
-                            rows.sort_by(|a, b| {
-                                (b.story_acts.count_ones(), b.level, b.kills).cmp(&(
-                                    a.story_acts.count_ones(),
-                                    a.level,
-                                    a.kills,
-                                ))
-                            });
-                            let _ = reply.send(rows);
                         }
                     }
                 }
@@ -998,7 +962,7 @@ pub mod salt_road {
         }
         let mut out = Vec::new();
         for mw in &worlds {
-            for row in mw.world.leaderboard_rows() {
+            for row in mw.world.roster_rows() {
                 out.push((
                     row.name,
                     row.level,

@@ -17,7 +17,7 @@ mod tree;
 mod views;
 mod zone_brain;
 
-pub use views::{CharacterSheetView, LeaderRow, SkillStatView};
+pub use views::{CharacterSheetView, RosterRow, SkillStatView};
 
 use crate::bots::{Bot, BotArena, program_hash};
 use crate::entity::{CharacterState, CombatStats, Entity, MonsterState, Rarity};
@@ -111,7 +111,9 @@ pub struct CharacterBundle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MapTicket {
     pub tier: u32,
-    /// Added to every pack's magic_bp/rare_bp in the instance.
+    /// The instance's rarity juice (B4): folded into every pack's
+    /// spawn-rarity ROLL at read time (magic += juice, rare += juice/3).
+    /// Pack defs are never mutated.
     pub rarity_bp: i64,
     /// Folded into every kill's drop quantity in the instance.
     pub quantity_bp: i64,
@@ -416,6 +418,11 @@ pub struct World {
     /// drop roll. Serialized + hashed — it steers future loot.
     #[serde(default)]
     pub(crate) loot_quantity_bp: i64,
+    /// MAP RULE (#148 A4; B4 rework): the instance's rolled rarity juice,
+    /// folded into pack-rarity rolls at spawn time. An instance property —
+    /// pack defs are never mutated.
+    #[serde(default)]
+    pub(crate) spawn_rarity_bp: i64,
     /// The Map Table's cell, from the ZoneDef (#136 T4). None = no table.
     #[serde(default)]
     pub(crate) map_table: Option<(i32, i32)>,
@@ -853,6 +860,7 @@ impl World {
             pending_uses: Vec::new(),
             zone_level: content.zone(zone_id).map_or(1, |z| z.level),
             loot_quantity_bp: 0,
+            spawn_rarity_bp: 0,
             map_table: content.zone(zone_id).and_then(|z| z.map_table),
             vendor: content.zone(zone_id).and_then(|z| z.vendor),
             stash_cell: content.zone(zone_id).and_then(|z| z.stash),
@@ -1058,10 +1066,12 @@ impl World {
         w.is_map_instance = true;
         w.zone_level = 12 + ticket.tier;
         w.loot_quantity_bp = ticket.quantity_bp.max(0);
-        for pack in &mut w.zone.packs {
-            pack.def.magic_bp += ticket.rarity_bp.max(0) as u32;
-            pack.def.rare_bp += (ticket.rarity_bp.max(0) / 3) as u32;
-        }
+        // Rarity juice is an INSTANCE PROPERTY read at spawn-roll time —
+        // exactly like the quantity bonus (operator ruling on #185, B4).
+        // The old code mutated pack.def.magic_bp/rare_bp per instance:
+        // per-world vandalism of content definitions, which then needed
+        // its own state-hash patch to stay sound.
+        w.spawn_rarity_bp = ticket.rarity_bp.max(0);
         // THE RULES (#148 A4) — applied at the one instance chokepoint.
         w.monster_fury_bp = ticket.fury_bp.clamp(0, 10000);
         // EVERY map ends (#178): a clockless map plus a non-returning
@@ -2141,7 +2151,10 @@ impl World {
             // on the def and spawn Unique regardless.
             let (magic_bp, rare_bp) = {
                 let d = &self.zone.packs[pack_idx].def;
-                (d.magic_bp, d.rare_bp)
+                // The instance's rarity juice folds at READ time (B4):
+                // defs stay immutable content.
+                let juice = self.spawn_rarity_bp.max(0) as u32;
+                (d.magic_bp + juice, d.rare_bp + juice / 3)
             };
             let roll = self.rng_ai.next_range(10000);
             let pack_rarity = if self.content.monsters[monster_idx as usize].unique {
@@ -4111,10 +4124,10 @@ mod area_level_tests {
         assert_ne!(h1, h2, "the map clock must move the digest");
         w.monster_fury_bp = 2500;
         assert_ne!(h2, w.state_hash(), "the fury dial must move the digest");
-        // The rarity juice mutates PACK DEFS, not a world scalar (codex on
-        // #178): two same-seed maps differing only in rarity_bp hashed
-        // identical while their future respawns rolled different rarities.
-        // Mutation: drop the per-pack magic_bp/rare_bp folds → equal, fails.
+        // The rarity juice is a WORLD SCALAR (B4): spawn_rarity_bp folds
+        // into the digest, so two same-seed maps differing only in
+        // rarity_bp hash apart. Mutation: drop the spawn_rarity_bp fold
+        // from state_hash → equal digests, fails.
         let ticket = |rarity_bp: i64| MapTicket {
             tier: 2,
             rarity_bp,
@@ -4128,7 +4141,7 @@ mod area_level_tests {
         assert_ne!(
             plain.state_hash(),
             juiced.state_hash(),
-            "the pack rarity juice must move the digest"
+            "the instance rarity juice (spawn_rarity_bp, B4) must move the digest"
         );
     }
 
@@ -4176,6 +4189,58 @@ mod area_level_tests {
             w.map_ends_at, MAP_CLOCK_FIRED,
             "a fired clock resumes exactly, never re-arms"
         );
+    }
+
+    #[test]
+    fn the_rarity_juice_reaches_the_spawn_roll() {
+        // B4's decisive consumption test (codex: storing + hashing the
+        // property proves nothing about the ROLL). With juice 9999 the
+        // roll window (0..10000) is fully covered by magic+rare bounds —
+        // EVERY non-unique pack must spawn magic-or-better; the plain
+        // twin at base bps must keep at least one normal pack. Mutation:
+        // drop the juice fold at the roll site → the juiced world spawns
+        // normals and the zero assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let ticket = |rarity_bp: i64| MapTicket {
+            tier: 2,
+            rarity_bp,
+            quantity_bp: 0,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        };
+        let empty = TickInputs::default();
+        // The roll is PER PACK: a rare roll = one rare LEADING normals, so
+        // the census must judge packs, not members.
+        let spawn_census = |rarity_bp: i64| {
+            let mut w =
+                World::new_map_instance(0xB4, &content, "charted_shallows", ticket(rarity_bp));
+            w.tick(&empty); // packs spawn on the first tick
+            let n_packs = w.zone.packs.len();
+            let mut pack_hit = vec![false; n_packs];
+            for (_, e) in w.zone.iter() {
+                if let Some(m) = &e.monster
+                    && m.rarity != Rarity::Normal
+                {
+                    pack_hit[m.pack_idx as usize] = true;
+                }
+            }
+            let juiced_packs = pack_hit.iter().filter(|h| **h).count();
+            (juiced_packs, n_packs, w)
+        };
+        let (plain_juiced, n_packs, _) = spawn_census(0);
+        assert!(plain_juiced < n_packs, "base bps leave fully-normal packs");
+        let (all_juiced, n2, w) = spawn_census(9999);
+        assert_eq!(
+            all_juiced, n2,
+            "juice 9999 covers the whole roll window: every pack magic-or-better"
+        );
+        // And the defs behind those rolls are still pristine content.
+        let base = World::new_for_zone(0xB4, &content, "charted_shallows");
+        for (j, b) in w.zone.packs.iter().zip(base.zone.packs.iter()) {
+            assert_eq!(j.def.magic_bp, b.def.magic_bp, "defs are immutable");
+            assert_eq!(j.def.rare_bp, b.def.rare_bp, "defs are immutable");
+        }
     }
 
     #[test]
@@ -4345,9 +4410,11 @@ mod area_level_tests {
         assert_eq!(w.zone_level(), 15);
         assert!(w.is_map_instance() && !plain.is_map_instance());
         assert_eq!(w.loot_quantity_bp, 1500);
+        // B4: the juice is an instance property; defs stay UNTOUCHED.
+        assert_eq!(w.spawn_rarity_bp, 2100);
         for (juiced, base) in w.zone.packs.iter().zip(plain.zone.packs.iter()) {
-            assert_eq!(juiced.def.magic_bp, base.def.magic_bp + 2100);
-            assert_eq!(juiced.def.rare_bp, base.def.rare_bp + 700);
+            assert_eq!(juiced.def.magic_bp, base.def.magic_bp, "defs are immutable");
+            assert_eq!(juiced.def.rare_bp, base.def.rare_bp, "defs are immutable");
         }
     }
 

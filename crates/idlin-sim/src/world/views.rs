@@ -66,7 +66,7 @@ pub struct SkillStatView {
 /// protocol's CharacterSheet for the focus panel).
 /// A per-character leaderboard row (#148 A6).
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct LeaderRow {
+pub struct RosterRow {
     pub name: String,
     pub level: u32,
     pub kills: u64,
@@ -494,7 +494,7 @@ impl World {
     /// One leaderboard row per character in THIS world (#148 A6): the
     /// per-brain economy scoreboard's raw material. program_hash identifies
     /// the BRAIN (same source = same hash) across its characters.
-    pub fn leaderboard_rows(&self) -> Vec<LeaderRow> {
+    pub fn roster_rows(&self) -> Vec<RosterRow> {
         let zone = self.content.zones[self.zone_idx as usize].id.clone();
         self.zone
             .iter()
@@ -505,7 +505,7 @@ impl World {
                     .and_then(|bi| self.bots.get(bi))
                     .map(|b| b.program_hash)
                     .unwrap_or(0);
-                Some(LeaderRow {
+                Some(RosterRow {
                     name: ch.name.clone(),
                     level: ch.level,
                     kills: ch.kills,
@@ -730,6 +730,7 @@ impl World {
         h.write_u64(self.map_ends_at);
         h.write_u64(self.monster_fury_bp as u64);
         h.write_u64(self.loot_quantity_bp as u64);
+        h.write_u64(self.spawn_rarity_bp as u64);
         h.write_u32(self.is_map_instance as u32);
         h.write_u32(self.zone_level);
         h.write_u64(self.zone_lines.len() as u64);
@@ -1099,11 +1100,8 @@ impl World {
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
             h.write_u32(pack.respawn_timer);
-            // The map's rarity juice MUTATES these per-pack (#148 A4 at
-            // new_map_instance) and respawn rolls read them — mutated
-            // def state is world state, not content (#178, codex).
-            h.write_u32(pack.def.magic_bp);
-            h.write_u32(pack.def.rare_bp);
+            // (B4: pack defs are immutable content again — covered by
+            // content_hash; the rarity juice hashes as spawn_rarity_bp.)
         }
         for p in &self.zone.projectiles {
             h.write_i32(p.pos.x.raw());
