@@ -64,7 +64,6 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
   // deterministic canvas silhouettes alone — enough to verify the doll reads
   // with real icons rather than the cramped name-text fallback.
   store.icons = { icon: (_name, kind) => silhouette(kind) };
-  // Kill-cam rows (#162): EVERY fixture owns its rows — default empty, so
   // still fetched through the dev proxy and could render live boss falls).
   for (const msg of fixture.messages) store.handle(msg);
 

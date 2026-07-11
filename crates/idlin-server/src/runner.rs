@@ -1009,6 +1009,11 @@ pub mod salt_road {
                 let inputs = std::mem::take(&mut mw.pending);
                 let events = mw.world.tick(&inputs);
                 for ev in &events {
+                    if let SimEvent::BotDebug { values, .. } = ev
+                        && std::env::var("BRAIN_DEBUG").is_ok()
+                    {
+                        println!("D t={host_tick} z={} {:?}", mw.zone_id, values);
+                    }
                     if let SimEvent::ActCompleted { name, act, .. } = ev
                         && name == subject
                     {
@@ -1093,13 +1098,24 @@ pub mod salt_road {
                                 .character_sheet(v.id)
                                 .map(|sh| sh.inventory.iter().map(|r| r.0.name.clone()).collect())
                                 .unwrap_or_default();
+                            let mons: Vec<String> = mw
+                                .world
+                                .views()
+                                .iter()
+                                .filter(|m| m.kind == 2 && m.life_pct > 0)
+                                .map(|m| {
+                                    format!("{}@{},{}", m.name, m.x_raw / 65536, m.y_raw / 65536)
+                                })
+                                .collect();
                             println!(
-                                "P t={host_tick} z={} lvl={} x={} y={} maps={}",
+                                "P t={host_tick} z={} lvl={} x={} y={} maps={} alive={} {:?}",
                                 mw.zone_id,
                                 v.level,
                                 v.x_raw / 65536,
                                 v.y_raw / 65536,
-                                bag.iter().filter(|n| n.contains("Map")).count()
+                                bag.iter().filter(|n| n.contains("Map")).count(),
+                                mons.len(),
+                                mons.iter().take(3).collect::<Vec<_>>()
                             );
                         }
                     }

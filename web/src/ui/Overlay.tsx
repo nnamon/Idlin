@@ -296,9 +296,9 @@ export function Overlay({
         </div>
         {store.zone && (
           <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
-            area level {store.zone.level}
+            Area Level {store.zone.level}
             {store.zone.worldKey.includes("#") && (
-              <> · {store.zone.worldKey.split("#")[1]}&rsquo;s instance</>
+              <> · {store.zone.worldKey.split("#")[1].split("@")[0]}&rsquo;s Instance</>
             )}
           </div>
         )}
@@ -306,9 +306,9 @@ export function Overlay({
             readout, not a game fact (#181). */}
         <div style={{ color: "#8d8168", fontSize: 11.5 }}>
           <span style={{ color: status?.connected ? "#9ec89a" : "#d97a6a" }}>
-            {status?.connected ? "● live" : "● disconnected"}
+            {status?.connected ? "● Live" : "● Disconnected"}
           </span>
-          {status?.connected && <> · {status.rttMs ?? "—"} ms</>} · up{" "}
+          {status?.connected && <> · {status.rttMs ?? "—"} ms</>} · Up{" "}
           {formatUptime(store.tick / TICK_HZ)}
         </div>
       </div>
@@ -323,7 +323,7 @@ export function Overlay({
               {focused.state.name}
             </span>
             <div style={{ color: "#ab9d7a", fontSize: 12.5 }}>
-              level {focused.state.level} {focused.state.model}
+              Level {focused.state.level} {focused.state.model}
               {/* the campaign chip (#136 T7): act state at a glance — and
                   once the Mother falls, the map count doubles as the
                   endgame's ticket stub. */}
@@ -331,7 +331,7 @@ export function Overlay({
             </div>
             <LifeBar pct={focused.state.life_pct} dead={focused.state.dead} />
             <div style={{ fontSize: 12.5, color: "#ab9d7a" }}>
-              {focused.state.kills} kills · {focused.state.items} items
+              {focused.state.kills} Kills · {focused.state.items} Items
             </div>
             {/* the idler rotation carousel is director chrome — broadcast only */}
             {!idler && <FocusCarousel names={rosterNames} current={rosterIdx} />}
@@ -616,8 +616,8 @@ function ActChip({ sheet }: { sheet: CharacterSheet }) {
       </span>
     );
   }
-  if ((sheet.story_acts & 1) !== 0) return <span className="act-chip">act 2</span>;
-  return <span className="act-chip">act 1</span>;
+  if ((sheet.story_acts & 1) !== 0) return <span className="act-chip">Act 2</span>;
+  return <span className="act-chip">Act 1</span>;
 }
 
 // Maps count by the base's stable tagged num (RFC #54) — names are

@@ -59,7 +59,6 @@ same code works on either side. The engine contains no AI.
   (spawned/moved/updated/removed + hit effects), broadcasts pre-serialized
   JSON to all clients, and keeps a fresh `ZoneSnapshot` in a watch channel
   for connects and lag resync (a lagging client is healed with a snapshot).
-- The **auto-director** scores events (death 80, join 75, rare drop 70,
   level-up 60, kill 30) with per-focus cooldowns, falls back to rotating
   idlers, and emits `DirectorCue`s the client camera follows.
 

@@ -9,7 +9,6 @@ SIL Open Font License, Version 1.1 (OFL-1.1, https://scripts.sil.org/OFL).
 | IdlinDisplay-*.woff2 | Cinzel | © 2012 The Cinzel Project Authors (Natanael Gama; https://github.com/NDISCOVER/Cinzel) |
 | IdlinText-Regular/Italic/SemiBold/Bold.woff2 | Inter | © 2016 The Inter Project Authors (Rasmus Andersson; https://github.com/rsms/inter) |
 
-The IdlinDisplay/IdlinText/IdlinSC filenames are LOCAL ALIASES of the
 unmodified upstream latin woff2 subsets (renamed for the app's font-role
 tokens); the font programs themselves are unaltered. Per OFL §1 the font
 software may be bundled, embedded, and redistributed with this software;

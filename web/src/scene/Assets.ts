@@ -98,8 +98,8 @@ export class AssetLibrary {
     // Canvas-rendered text (labels, damage numbers) uses the display font;
     // have it ready before any visual draws.
     await Promise.all([
-      document.fonts.load('40px "Anton SC"'),
-      document.fonts.load('600 40px "Cinzel"'),
+      document.fonts.load('40px "Idlin Display"'),
+      document.fonts.load('600 40px "Idlin Display"'),
     ]).catch(() => {});
 
     const files = new Map<string, LoadedFile>();

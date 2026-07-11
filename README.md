@@ -67,9 +67,9 @@ the sport. Monster behavior is bot code too, shipped as content.
   your brain walks its own tutorial shore. A published
   **headless harness** (`cargo run -p idlin-server --bin harness`) runs
   any brain through the whole game deterministically before you deploy.
-- **A broadcast that tells the story**: the director cuts to acts
-  falling, boss kills, map tallies, and first map opens ahead of routine
-  deaths; boss falls mark the recording journal so
+- **A broadcast that follows the roster**: a stable camera watches each
+  character in turn (30s rotation) while the ticker and banners carry
+  acts, boss falls, and map tallies; boss falls mark the recording journal so
   the kill-cam list (`/api/killcams`) deep-links into the deterministic
   replay via the viewer's `&at=<line>` fast-forward.
 - **The stock brains play the whole game**: routing by zone ids, gearing
