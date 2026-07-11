@@ -1,23 +1,22 @@
 import * as THREE from "three";
 
 const FOLLOW_OFFSET = new THREE.Vector3(14, 16, 14);
-/** The page-flip radius (world units): while the subject stays within
- *  this radius of the framed point, the camera DOES NOT MOVE — a fight
- *  plays out under a perfectly still frame. When they reach the edge the
- *  frame CUTS once to recenter on them, then holds again. No gliding,
- *  ever — a walking subject produces a slideshow of still frames, not a
- *  continuous pan. */
-const DEADZONE = 11;
+/** Tight follow damping (1/s): high enough that the subject stays
+ *  visually ANCHORED center-screen while the world scrolls under them —
+ *  the standard ARPG spectate. Low values read as the camera chasing
+ *  (the world sloshes); this is a lock with just enough smoothing to
+ *  swallow tick quantization. */
+const FOLLOW_DAMP = 10;
 /** A target jump past this is a teleport (respawn, world switch): CUT once,
  *  cleanly — never glide across half a zone. */
 const CUT_DISTANCE = 24;
 
 /**
- * The STABLE camera (operator ruling): frame the subject, then hold still.
- * No orbiting, no idle patrol, no shake, no per-step tracking. The camera
- * moves for exactly two reasons: the subject walked out of the deadzone
- * (slow recenter glide) or teleported/switched (one hard cut). When the
- * subject is unresolved (transit, loading), the frame HOLDS where it is.
+ * The FOLLOW camera (operator rulings, both of them): the idler stays
+ * centered and the world scrolls — smooth, tight tracking. The camera
+ * NEVER moves on its own: no orbit, no idle patrol, no shake. Teleports
+ * (respawn) and world switches are one clean cut. Unresolved focus
+ * (transit, loading) HOLDS the last frame.
  */
 export class DirectorCamera {
   private framed = new THREE.Vector3();
@@ -33,18 +32,15 @@ export class DirectorCamera {
     this.hasFrame = false;
   }
 
-  follow(target: THREE.Vector3, _dt: number, zoom = 1): void {
+  follow(target: THREE.Vector3, dt: number, zoom = 1): void {
     const want = target.clone().setY(0);
     if (!this.hasFrame || this.framed.distanceTo(want) > CUT_DISTANCE) {
       // First frame of a shot, or a teleport: one clean cut.
       this.framed.copy(want);
       this.hasFrame = true;
     } else {
-      if (this.framed.distanceTo(want) > DEADZONE) {
-        // The subject reached the frame edge: ONE cut recenters on them.
-        this.framed.copy(want);
-      }
-      // Inside the radius: the frame point does not move AT ALL.
+      // Tight damped lock: the subject stays anchored center-screen.
+      this.framed.lerp(want, 1 - Math.exp(-dt * FOLLOW_DAMP));
     }
     this.camera.position.copy(this.framed).addScaledVector(FOLLOW_OFFSET, zoom);
     this.camera.lookAt(this.framed.x, 1, this.framed.z);
