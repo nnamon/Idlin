@@ -26,7 +26,6 @@ export type Fixture =
   | {
       kind: "overlay";
       /** Kill-cam rows for the panel (#162). */
-      killcams?: unknown[];
       label: string;
       /** Link status the stub client reports (drives the plaque). */
       status: NetStatus;
@@ -803,24 +802,6 @@ const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservatio
 const EDGE_ID = 9;
 // The speaker button (#148 A8): the one UI surface sound adds — shot in
 // its muted default (the fresh-engine state every viewer starts in).
-// The kill-cam panel (#162): injected rows, one with a replay link.
-const killcamPanel: Fixture = {
-  kind: "overlay",
-  label: "Kill-cams: recent boss falls with replay deep-links",
-  status: LIVE_STATUS,
-  killcams: [
-    { world_key: "hollow#Ana", killer: "Ana", monster: "Mother of the Drowned", level: 12, recording: "hollow_Ana", line: 450 },
-    { world_key: "the_undertow#Bo", killer: "Bo", monster: "The Riptide Sovereign", level: 21, recording: "the_undertow_Bo", line: 900 },
-  ],
-  messages: [
-    zoneSnapshot({
-      entities: [
-        character({ id: EDGE_ID, name: "Solo", level: 30, model: "ranger", life_pct: 80, kills: 12, items: 2 }),
-      ],
-    }),
-  ],
-};
-
 const hudEdge: Fixture = {
   kind: "overlay",
   label: "Edge: a lone idler + an overkilled (negative) life pool that clamps to 0",
@@ -1100,7 +1081,6 @@ export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
   "scene-dressing": sceneDressing,
-  "killcam-panel": killcamPanel,
   "item-tooltip": itemTooltip,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,

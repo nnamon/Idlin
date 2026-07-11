@@ -495,10 +495,10 @@ export class EntityVisual {
     const ctx = canvas.getContext("2d")!;
     // Affix-composed elite names run long — shrink to fit the canvas.
     let px = 56;
-    ctx.font = `bold ${px}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+    ctx.font = `bold ${px}px "Idlin Text", system-ui, sans-serif`;
     while (px > 30 && ctx.measureText(text).width > 492) {
       px -= 4;
-      ctx.font = `bold ${px}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+      ctx.font = `bold ${px}px "Idlin Text", system-ui, sans-serif`;
     }
     ctx.textAlign = "center";
     ctx.shadowColor = "rgba(0,0,0,0.9)";
@@ -593,7 +593,7 @@ export class EntityVisual {
       const canvas = (this.bubbleTex!.image as HTMLCanvasElement);
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '32px "Idlin Mono", ui-monospace, Menlo, monospace';
+      ctx.font = '32px "Idlin Text", system-ui, sans-serif';
       ctx.textAlign = "center";
       const w = Math.min(500, ctx.measureText(text).width + 36);
       ctx.fillStyle = "rgba(12, 12, 22, 0.82)";

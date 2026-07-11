@@ -55,7 +55,7 @@ export function ItemTooltip({ item, docs }: { item: TooltipItem; docs: ContentDo
           borderBottom: `1px solid ${color}55`,
         }}
       >
-        <div className="display" style={{ color, fontSize: 14, letterSpacing: 0.5 }}>
+        <div style={{ color, fontSize: 13.5, fontWeight: 700, letterSpacing: 0.3 }}>
           {item.name}
         </div>
         {base && base.name !== item.name && (
