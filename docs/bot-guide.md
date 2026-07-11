@@ -646,15 +646,12 @@ same way the stock three were gated. Names are 1-24 chars of
 Compile errors come back verbatim. The mutating routes demand
 `IDLIN_ADMIN_TOKEN` (unset = disabled, fail closed).
 
-**The kill switch** recalls a runaway brain — the entity despawns, the
-brain stops, nothing transfers:
-
 ```sh
-curl -X POST http://<server>/api/kill \
+curl -X POST http://<server>(removed) \
   -d '{"token": "<IDLIN_ADMIN_TOKEN>", "name": "MyBrain"}'
 ```
 
-**The leaderboard** (`GET /api/leaderboard`, public) ranks every live
+**The leaderboard** (`GET (removed)`, public) ranks every live
 character by campaign progress, then level, then kills — with lifetime
 deaths as the honesty column and `program_hash` identifying the brain
 across its characters.
@@ -698,14 +695,3 @@ Hard-won disciplines the stock templates carry — steal them:
   70% of reach a bow trades inside a caster boss's envelope; at 90% the
   answer can't reach back.
 
-## Sound (#148 A8)
-
-The broadcast talks: a synthesized WebAudio layer (zero assets — every
-cue is oscillators and envelopes) voices the story beats the director
-cuts to — kills (rate-limited), boss falls, act fanfares, deaths,
-default**; the speaker button (bottom-right) is the opt-in, and its
-click doubles as the browser's audio-unlock gesture. Volume persists
-per-browser. Sound is presentation-only — it never touches the sim,
-and the deterministic capture harness asserts the event→cue mapping
-through the engine's log (headless Chromium plays nothing; ears verify
-the rest).

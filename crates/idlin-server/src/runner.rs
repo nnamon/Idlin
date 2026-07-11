@@ -39,6 +39,17 @@ pub enum AdminCommand {
 /// the cap keeps a griefing script from flooding the shore.
 pub const MAX_CHARACTERS: usize = 24;
 
+/// Deploy name uniqueness (#148 A6): a name is taken if it is LIVE in any
+/// world, queued to join one, or mid-ferry to one — the three places a
+/// character can exist. The deploy gate calls this; the test pins it.
+fn name_taken(worlds: &[ManagedWorld], name: &str) -> bool {
+    worlds.iter().any(|mw| {
+        mw.world.roster_rows().iter().any(|r| r.name == name)
+            || mw.pending.joins.iter().any(|j| j.name == name)
+            || mw.pending.arrivals.iter().any(|b| b.character.name == name)
+    })
+}
+
 /// One world's completed tick, with zone identity so any feed can emit a
 /// full snapshot at any moment (late joiners, subscription switches).
 pub struct TickFrame {
@@ -455,13 +466,7 @@ pub fn spawn_tick_loop(
                 // Ferry: land each departure into its destination world (or
                 // back to its source when that zone is unknown or full) — a
                 // transfer never loses a character (#63).
-                ferry_departures_with_maps(
-                    &mut worlds,
-                    all_departures,
-                    &content,
-                    seed,
-                    host_tick,
-                );
+                ferry_departures_with_maps(&mut worlds, all_departures, &content, seed, host_tick);
 
                 // PERSISTENCE: save at the post-ferry boundary — every
                 // character is in exactly one world's state or pending
@@ -592,14 +597,6 @@ pub fn spawn_tick_loop(
                             program,
                             reply,
                         } => {
-                            let taken = |mw: &ManagedWorld| {
-                                mw.world
-                                    .roster_rows()
-                                    .iter()
-                                    .any(|r| r.name == name)
-                                    || mw.pending.joins.iter().any(|j| j.name == name)
-                                    || mw.pending.arrivals.iter().any(|b| b.character.name == name)
-                            };
                             let population: usize = worlds
                                 .iter()
                                 .map(|mw| {
@@ -608,11 +605,11 @@ pub fn spawn_tick_loop(
                                         + mw.pending.arrivals.len()
                                 })
                                 .sum();
-                            let res = if worlds.iter().any(taken) {
+                            let res = if name_taken(&worlds, &name) {
                                 Err(format!("the name {name} is taken"))
                             } else if population >= MAX_CHARACTERS {
                                 Err(format!(
-                                    "the worlds are full ({population}/{MAX_CHARACTERS}) — recall a brain first"
+                                    "the worlds are full ({population}/{MAX_CHARACTERS})"
                                 ))
                             } else {
                                 // Every idler gets their OWN tutorial shore —
@@ -638,10 +635,9 @@ pub fn spawn_tick_loop(
                                     max_players: 1,
                                     pending: TickInputs::default(),
                                 };
-                                mw.pending.joins.push(idlin_sim::JoinRequest {
-                                    name,
-                                    program,
-                                });
+                                mw.pending
+                                    .joins
+                                    .push(idlin_sim::JoinRequest { name, program });
                                 worlds.push(mw);
                                 Ok(())
                             };
@@ -1784,6 +1780,35 @@ mod tests {
             1,
             "the second returns to source, neither overfills nor is lost"
         );
+    }
+
+    #[test]
+    fn a_duplicate_deploy_is_refused_in_all_three_places() {
+        // #185 review (codex): the dedup had no regression test. A name is
+        // taken if LIVE anywhere, QUEUED to join, or MID-FERRY — all three
+        // must refuse; a fresh name must pass. Mutation: drop any arm of
+        // name_taken → its case leaks through and this fails.
+        let content = ContentDb::empty();
+        let mut worlds = vec![
+            managed("town", "town", world_with_chars(1, &content), 8),
+            managed(
+                "shore#B",
+                "withered_shore",
+                world_with_chars(0, &content),
+                8,
+            ),
+        ];
+        // world 0 has one LIVE char (world_with_chars names them c0..).
+        let live = worlds[0].world.roster_rows()[0].name.clone();
+        worlds[1].pending.joins.push(idlin_sim::JoinRequest {
+            name: "Queued".into(),
+            program: Vec::new(),
+        });
+        worlds[1].pending.arrivals.push(bundle("Ferried"));
+        assert!(name_taken(&worlds, &live), "live names are taken");
+        assert!(name_taken(&worlds, "Queued"), "queued joins are taken");
+        assert!(name_taken(&worlds, "Ferried"), "mid-ferry names are taken");
+        assert!(!name_taken(&worlds, "Fresh"), "a new name deploys");
     }
 
     #[test]

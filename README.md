@@ -64,16 +64,14 @@ the sport. Monster behavior is bot code too, shipped as content.
   rides zone transfers and snapshots. The stock brains sell their road
   junk before opening maps.
 - **Player brain deployment**: POST a `.bot` source to `/api/deploy` and
-  your brain walks its own tutorial shore; a kill switch recalls
-  runaways; `/api/leaderboard` ranks every live character by campaign
-  progress with lifetime deaths as the honesty column. A published
+  your brain walks its own tutorial shore. A published
   **headless harness** (`cargo run -p idlin-server --bin harness`) runs
   any brain through the whole game deterministically before you deploy.
 - **A broadcast that tells the story**: the director cuts to acts
   falling, boss kills, map tallies, and first map opens ahead of routine
   deaths; boss falls mark the recording journal so
   the kill-cam list (`/api/killcams`) deep-links into the deterministic
-  replay via the viewer's `&at=<line>` fast-forward;.
+  replay via the viewer's `&at=<line>` fast-forward.
 - **The stock brains play the whole game**: routing by zone ids, gearing
   off the ground via the engine's scorer, managing bags, selling junk,
   breaking every boss, and pivoting to map farming — a fresh level-1
@@ -132,6 +130,6 @@ each checked at its boundary so incompatibilities fail fast and loudly.
 Version 0.1.0 — "The Undertow". The game is a complete two-act campaign
 with a rule-modified map endgame, three self-sufficient stock
 archetypes, a town economy, player brain deployment, a story-aware
-broadcast, and sound. Next horizons: chat integration (Twitch first)
+broadcast. Next horizons: chat integration (Twitch first)
 with player-scoped views, and a third act beneath the Sovereign's
 basin.

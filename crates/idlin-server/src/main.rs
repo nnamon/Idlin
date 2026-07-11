@@ -312,7 +312,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/version", get(version_handler))
         // The bot economy (#148 A6). Deploy/kill demand IDLIN_ADMIN_TOKEN
         // (routes refuse 503 when it is unset — fail closed, no anonymous
-        // deploys); the leaderboard is public read.
+        // deploys).
         .route("/api/deploy", axum::routing::post(deploy_handler))
         .route("/api/killcams", get(killcams_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.

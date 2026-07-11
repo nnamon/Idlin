@@ -495,7 +495,14 @@ impl World {
     /// per-brain economy scoreboard's raw material. program_hash identifies
     /// the BRAIN (same source = same hash) across its characters.
     pub fn roster_rows(&self) -> Vec<RosterRow> {
-        let zone = self.content.zones[self.zone_idx as usize].id.clone();
+        // .get: a test world may run on an empty ContentDb; an unknown
+        // zone_idx must not panic a roster read.
+        let zone = self
+            .content
+            .zones
+            .get(self.zone_idx as usize)
+            .map(|z| z.id.clone())
+            .unwrap_or_default();
         self.zone
             .iter()
             .filter_map(|(_, e)| {

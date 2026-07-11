@@ -800,7 +800,6 @@ const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservatio
 // (bold), not a dim neighbour; and an overkilled pool (sim sends negative life)
 // must read 0 on the orb, never a negative number.
 const EDGE_ID = 9;
-// The speaker button (#148 A8): the one UI surface sound adds — shot in
 // its muted default (the fresh-engine state every viewer starts in).
 const hudEdge: Fixture = {
   kind: "overlay",
