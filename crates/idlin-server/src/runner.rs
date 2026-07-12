@@ -1031,6 +1031,12 @@ pub mod salt_road {
         ];
         let mut deaths = 0u32;
         let mut mapped_at = 0u64;
+        // SALT_ZONESTATS (ranger-scaling diagnosis, #185 §16): per-zone
+        // (ticks-present, kills, deaths) for the subject — separates
+        // "kills slower" (power) from "dies while killing fine" (defense).
+        let zonestats = std::env::var("SALT_ZONESTATS").is_ok();
+        let mut zstats: std::collections::BTreeMap<String, (u64, u32, u32)> =
+            std::collections::BTreeMap::new();
         'run: for host_tick in 0..280_000u64 {
             let mut departures = Vec::new();
             for (i, mw) in worlds.iter_mut().enumerate() {
@@ -1051,10 +1057,19 @@ pub mod salt_road {
                             _ => {}
                         }
                     }
+                    if let SimEvent::MonsterKilled { killer, .. } = ev
+                        && zonestats
+                        && killer == subject
+                    {
+                        zstats.entry(mw.zone_id.clone()).or_default().1 += 1;
+                    }
                     if let SimEvent::CharacterDied { name, killer, .. } = ev
                         && name == subject
                     {
                         deaths += 1;
+                        if zonestats {
+                            zstats.entry(mw.zone_id.clone()).or_default().2 += 1;
+                        }
                         if std::env::var("SALT_DEATHLOG").is_ok() {
                             let pos = mw
                                 .world
@@ -1168,6 +1183,9 @@ pub mod salt_road {
                     if !here {
                         continue;
                     }
+                    if zonestats {
+                        zstats.entry(mw.zone_id.clone()).or_default().0 += 200;
+                    }
                     match mw.zone_id.as_str() {
                         "coast" => milestones[0] = true,
                         "saltworks" => milestones[1] = true,
@@ -1180,6 +1198,16 @@ pub mod salt_road {
                         _ => {}
                     }
                 }
+            }
+        }
+        if zonestats {
+            for (z, (ticks, kills, dths)) in &zstats {
+                let tpk = if *kills > 0 {
+                    *ticks / *kills as u64
+                } else {
+                    0
+                };
+                eprintln!("ZSTAT z={z} ticks={ticks} kills={kills} deaths={dths} ticks/kill={tpk}");
             }
         }
         let final_level = worlds
@@ -1478,12 +1506,12 @@ mod tests {
             assert_complete(seed, &r);
             let (mapped_at, deaths) = (r.mapped_at, r.deaths);
             assert!(mapped_at <= 80_000, "the ranger hit a wall at {mapped_at}");
-            // RE-BAND for the level-38 campaign: measured 126 on the
-            // doubled road (3.3 deaths/level, IMPROVED from the old 5.8;
-            // the court's galleries stay the bow's worst room — the
-            // wight kill-pressure thread continues in-code). 150 gives
-            // ~1.2x headroom; the pre-calibration grinder read 166+.
-            assert!(deaths <= 150, "{deaths} ranger deaths — a grinder for bows");
+            // RE-BAND after the ranger-scaling ruling (full-weight
+            // evasion + dodgeable spell projectiles — the graveyard
+            // casters can finally miss): measured 30/44 across the two
+            // seeds at levels 40/36. 75 keeps ~1.7x headroom on the worst
+            // seed while the REJECTED old world (126) fails loudly.
+            assert!(deaths <= 75, "{deaths} ranger deaths — a grinder for bows");
             // The bow graduates a hair lighter (measured 36 vs melee's
             // 38-39): its kite-and-snipe pattern leaves unseen pockets
             // uncollected — a brain-intelligence thread (the operator's

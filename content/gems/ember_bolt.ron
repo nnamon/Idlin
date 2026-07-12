@@ -1,5 +1,6 @@
 // Skill: a mote of stolen fire. A true spell — its fire is its own,
-// growing with the gem, and it cannot miss.
+// growing with the gem; the flying mote can be sidestepped like any
+// missile (spell projectiles roll accuracy).
 GemDef(
     id: "ember_bolt",
     public: true,

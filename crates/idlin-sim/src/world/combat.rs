@@ -140,7 +140,8 @@ pub(super) struct StrikeSpec {
     pub attacker_net: u32,
     pub attacker_name: String,
     pub attacker_is_char: bool,
-    /// Spells skip the accuracy roll.
+    /// Spell flag: non-projectile spells skip the accuracy roll;
+    /// spell PROJECTILES are dodgeable (see the strike hit roll).
     pub is_spell: bool,
     /// Dots skip accuracy, block, crit, AND variance — steady burn.
     pub is_dot: bool,
@@ -1739,9 +1740,15 @@ impl World {
                 super::progression::fold_target_damage(spec.damage, &a_target_grants, v_ailments);
         }
 
-        // Accuracy: attacks can miss; spells and dots cannot.
-        let mut hit = spec.is_spell
-            || spec.is_dot
+        // Accuracy: attacks can miss, and spell PROJECTILES can be
+        // SIDESTEPPED (operator ruling, #185 §16 ranger rejection: the
+        // evasion archetype's graveyard killers were all casters whose
+        // bolts could never miss — evasion was structurally worthless
+        // against them). A flying bolt rolls the same accuracy-vs-evasion
+        // check an arrow does; ground effects, novas, cones, and dots
+        // remain unmissable — you dodge a missile, not the sea rising.
+        let rolls_accuracy = !spec.is_dot && (!spec.is_spell || spec.projectile);
+        let mut hit = !rolls_accuracy
             || (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(spec.accuracy, t_evasion);
         // Block: a shield can negate the whole hit (not steady burns).
         if hit
@@ -2505,6 +2512,101 @@ mod tests {
         i
     }
 
+    /// The dodge rule (the operator's ranger-scaling ruling): a spell
+    /// PROJECTILE rolls accuracy-vs-evasion like an arrow; a direct
+    /// (non-projectile) spell and a dot can never miss. Mutation: restore
+    /// the old `spec.is_spell ||` accuracy bypass in the strike hit roll →
+    /// every projectile lands and the miss assert fails.
+    #[test]
+    fn spell_projectiles_are_dodgeable_direct_spells_are_not() {
+        let content = content();
+        let mut world = World::new(0x0D0D6E, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Caster".into(),
+                program: halt,
+            }],
+        });
+        let m_slot = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, _)| s)
+            .expect("a monster stands somewhere");
+        // A mountain of evasion (acc 100 → the 30% floor) and a deep life
+        // pool so eighty 1-damage pokes can't kill the fixture.
+        {
+            let m = world.zone.get_mut(m_slot).unwrap();
+            let c = m.combat.as_mut().unwrap();
+            c.life = 100_000;
+            c.life_max = 100_000;
+            c.evasion = 1_000_000;
+        }
+        let ch_net = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .map(|(_, e)| e.net_id)
+            .expect("a character joined");
+        let ch_slot = world.zone.slot_of(ch_net).unwrap();
+        let spec = |projectile: bool| StrikeSpec {
+            attacker_slot: Some(ch_slot),
+            attacker_net: ch_net,
+            attacker_name: "Caster".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: false,
+            accuracy: 100,
+            damage: [1, 0, 0, 0, 0],
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let now = world.tick;
+        let mut count_hits = |projectile: bool| -> u32 {
+            let mut hits = 0;
+            for _ in 0..40 {
+                let mut events = Vec::new();
+                let mut dead = Vec::new();
+                let mut loot = Vec::new();
+                world.strike(
+                    spec(projectile),
+                    m_slot,
+                    now,
+                    &mut events,
+                    &mut dead,
+                    &mut loot,
+                );
+                // The Hit event fires for whiffs too (amount 0 drives the
+                // client's whiff FX) — a LANDED hit is amount > 0.
+                if events
+                    .iter()
+                    .any(|ev| matches!(ev, super::SimEvent::Hit { amount, .. } if *amount > 0))
+                {
+                    hits += 1;
+                }
+            }
+            hits
+        };
+        let direct = count_hits(false);
+        assert_eq!(direct, 40, "a direct spell never misses ({direct}/40)");
+        let proj = count_hits(true);
+        assert!(
+            proj < 40,
+            "a spell projectile against a wall of evasion must miss sometimes ({proj}/40 landed)"
+        );
+        assert!(proj > 0, "the 30% floor keeps it from whiffing forever");
+    }
+
     /// A crushing hit (past the sure-stun knee) STUNS — the victim's
     /// committed windup is cancelled and busy extends — and an attacker
     /// with flat Knockback SHOVES the victim along the blow.
@@ -2561,7 +2663,7 @@ mod tests {
             attacker_net: ch_net,
             attacker_name: "Test".into(),
             attacker_is_char: true,
-            is_spell: true, // never misses
+            is_spell: true, // non-projectile: never misses
             is_dot: false,
             accuracy: 0,
             damage: [160, 0, 0, 0, 0], // 40% of 400: past the knee
@@ -3894,7 +3996,7 @@ mod tests {
             source_name: "Test".into(),
             source_is_char: true,
             hostile_to_players: false,
-            spell: true, // spells never miss via accuracy
+            spell: true, // the fixture target has no evasion — always lands
             accuracy: 0,
             damage: [25, 0, 0, 0, 0],
             crit_bp: 0,

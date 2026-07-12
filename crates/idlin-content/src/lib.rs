@@ -743,7 +743,8 @@ pub enum GemKind {
 }
 
 /// Attacks scale the weapon and roll accuracy; spells carry their own
-/// per-level base damage and never miss via accuracy.
+/// per-level base damage (spell PROJECTILES roll accuracy like arrows —
+/// dodgeable; ground effects, novas, cones, and dots cannot miss).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillKind {

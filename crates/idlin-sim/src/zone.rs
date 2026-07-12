@@ -34,7 +34,8 @@ pub struct Projectile {
     pub source_name: String,
     pub source_is_char: bool,
     pub hostile_to_players: bool,
-    /// Spell projectiles never miss via accuracy.
+    /// Spell flag: FX + the dodge rule (spell PROJECTILES roll
+    /// accuracy like arrows since the ranger-scaling ruling).
     pub spell: bool,
     pub accuracy: i64,
     pub damage: [i64; crate::entity::DMG_COUNT],

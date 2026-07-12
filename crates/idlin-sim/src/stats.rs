@@ -82,11 +82,16 @@ pub fn apply_resist(raw: i64, resist_bp: i64) -> i64 {
 }
 
 /// Chance to hit in basis points: accuracy vs evasion, clamped so nothing
-/// is unhittable and nothing always whiffs.
+/// is unhittable and nothing always whiffs. Evasion counts at FULL weight
+/// (operator ruling, #185 §16 ranger rejection): the old `eva / 2` made
+/// evasion categorically half a stat — against monster accuracy growing
+/// 15/level, the evasion archetype was hit 60-75% through Act 2's back
+/// half with no second defense layer (zone-stats: its kill speed BEAT
+/// melee's wherever it survived; the deaths were the whole gap).
 pub fn hit_chance_bp(accuracy: i64, evasion: i64) -> i64 {
     let acc = accuracy.max(1);
     let eva = evasion.max(0);
-    (10000 * acc / (acc + eva / 2)).clamp(3000, 10000)
+    (10000 * acc / (acc + eva)).clamp(3000, 10000)
 }
 
 #[cfg(test)]
@@ -152,7 +157,10 @@ mod tests {
     fn hit_chance_bounds() {
         assert_eq!(hit_chance_bp(100, 0), 10000);
         assert!(hit_chance_bp(1, 100000) == 3000); // floor
-        let mid = hit_chance_bp(90, 30);
-        assert!((8000..9500).contains(&mid), "got {mid}");
+        // Full-weight evasion (operator ruling): equal piles = a coin flip;
+        // acc 90 vs eva 30 = 75%. Mutation: restore the old `eva / 2` and
+        // both read high (100v100 → 6666, 90v30 → 8571).
+        assert_eq!(hit_chance_bp(100, 100), 5000);
+        assert_eq!(hit_chance_bp(90, 30), 7500);
     }
 }

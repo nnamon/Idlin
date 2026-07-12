@@ -69,7 +69,11 @@ const GOLDEN_TICKS: u64 = 2_000;
 // (coast 7 … undertow 35), boss levels re-anchored, XP re-tuned (both
 // acts ×1.35, bosses re-anchored, curve 80+8l²·1.04^(l−10)), Act-2
 // density trimmed, wight re-authored. Content + behavior both moved.
-const GOLDEN_HASH: u64 = 0x2B2E_8355_7C33_E810;
+// Re-pinned for the ranger-scaling ruling (#185 §16 rejection):
+// full-weight evasion (acc/(acc+eva), was eva/2) + spell PROJECTILES
+// roll the hit check (dodgeable bolts). Combat outcomes moved
+// everywhere; ranger road deaths 126 -> ~30-45, stair 27 -> 2-5.
+const GOLDEN_HASH: u64 = 0x3E0B_2E50_08EB_59A3;
 
 #[test]
 fn golden_replay() {

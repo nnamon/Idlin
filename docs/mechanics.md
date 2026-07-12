@@ -79,7 +79,7 @@ things resist naturally, no special-casing.
 
 ## Hit resolution (per strike)
 
-1. **Hit roll**: chance = `10000·acc / (acc + eva/2)`, clamped to
+1. **Hit roll** (attacks AND spell projectiles — a bolt can be sidestepped; ground effects, novas, cones, and dots cannot miss): chance = `10000·acc / (acc + eva)`, clamped to
    [3000, 10000] — nothing is unhittable, nothing always misses. A miss
    still swings (cooldown spent) and marks both parties in combat.
 2. **Variance**: one roll, 75–125%, applied to every damage component.
@@ -305,8 +305,9 @@ top-center; magic/rare announce themselves with tinted nameplates.
   Spells crit too. Dots never crit.
 - **Spells vs attacks**: attacks scale the weapon and roll accuracy;
   spells carry their own per-gem-level base damage (`(base: 9,
-  per_level: 3)` formulas in content), never miss via accuracy, and cast
-  in `cast_ticks` scaled by cast speed.
+  per_level: 3)` formulas in content) and cast in `cast_ticks` scaled by
+  cast speed. Spell PROJECTILES roll accuracy like arrows (a bolt can be
+  sidestepped); ground effects, novas, cones, and dots cannot miss.
 - **Projectiles are real**: they travel tick by tick, stop on the first
   body they hit (minus `pierce`), and are stopped by walls. Sidestep
   an arrow and it misses you.
