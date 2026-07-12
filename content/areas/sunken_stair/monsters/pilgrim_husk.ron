@@ -5,5 +5,5 @@ MonsterDef(
     level: 13, life: 300, damage: 20, speed_cps: 210,
     radius_cu: 70, range_cu: 200, use_ticks: 15,
     aggro_radius_cu: 1400, armour: 60, resist_cold: 3000,
-    xp: 360, projectile: false,
+    xp: 450, projectile: false,
 )

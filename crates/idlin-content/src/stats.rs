@@ -91,7 +91,7 @@ pub enum Stat {
     /// spreads a fixed total over the duration, so a shorter duration burns faster).
     AilmentDuration,
     /// MAP RULE (#148 A4): basis points of extra monster damage inside the
-    /// map run this item opens. Read only by the Map Table; inert worn.
+    /// map run this item opens. Read only by the Map Device; inert worn.
     MonsterFury,
     /// MAP RULE (#148 A4): the map's time limit in ticks — the clock
     /// takes the strand back and ferries everyone home when it expires.

@@ -18,21 +18,20 @@ ZoneDef(
     spawn_y_u: 104,
     spawn_radius_u: 3,
     camp_radius_u: 8,
-    // Real respawns (this is a grinding ground), juiced: ~20% of pack
-    // refills come up magic, ~7% bring a rare.
+    // packs come up magic, ~7% bring a rare (rolled at their one spawn).
     packs: [
         // Lower strand, south to north.
-        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 32, y_u: 90, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 40, y_u: 78, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 30, y_u: 64, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 38, y_u: 48, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 31, y_u: 34, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 39, y_u: 18, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "drowned_shambler", count: 8, x_u: 32, y_u: 90, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "tide_husk",        count: 7, x_u: 40, y_u: 78, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "drowned_shambler", count: 8, x_u: 30, y_u: 64, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "tide_husk",        count: 7, x_u: 38, y_u: 48, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "drowned_shambler", count: 8, x_u: 31, y_u: 34, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "tide_husk",        count: 7, x_u: 39, y_u: 18, radius_u: 4, magic_bp: 2000, rare_bp: 700),
         // Upper terrace: stalker country.
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 10, y_u: 86, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 9,  y_u: 60, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "bone_stalker",     count: 5, x_u: 11, y_u: 38, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 10, y_u: 14, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 7, x_u: 10, y_u: 86, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 7, x_u: 9,  y_u: 60, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 8, x_u: 11, y_u: 38, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 7, x_u: 10, y_u: 14, radius_u: 4, magic_bp: 2000, rare_bp: 700),
     ],
     // The road back up to Saltmere by the southern camp, and the climb
     // north to the Saltworks where the act continues. Always open —

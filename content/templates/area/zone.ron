@@ -11,8 +11,8 @@ ZoneDef(
     kind: story,                // story | map | town (death rules)
     width_u: 40,
     height_u: 100,
-    spawn_x_u: 20,              // where idlers enter (and respawn, in
-    spawn_y_u: 92,              // story zones)
+    spawn_x_u: 20,              // where idlers enter (and respawn after
+    spawn_y_u: 92,              // death — characters only; packs never do)
     spawn_radius_u: 6,
     camp_radius_u: 10,          // sanctuary: monsters never acquire
                                 // characters inside this (0 = none)
@@ -27,7 +27,7 @@ ZoneDef(
     // tileset: Some("shore"),  // + areas/<id>/map.txt and props.ron
     packs: [
         // radius_u: 0 stakes the spawn exactly on the anchor (scripted
-        // prey, bosses). Packs respawn as a unit.
-        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 20, y_u: 84, radius_u: 0, respawn_ticks: 300),
+        // prey, bosses). Packs rise exactly once.
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 20, y_u: 84, radius_u: 0),
     ],
 )

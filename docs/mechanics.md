@@ -270,7 +270,7 @@ grant engine on top of an inherent elite bulk (magic ×1.6 life, rare
 rolled TIER names ("Hulking … of Haste"); rares draw from the rare
 naming pools.
 
-Packs roll **as a group**, once per refill, from the pack's authored
+Packs roll **as a group**, once at their single spawn, from the pack's authored
 `magic_bp` / `rare_bp` chances: a magic roll raises the WHOLE pack
 magic wearing ONE shared affix set; a rare roll raises a single rare
 leading an otherwise-normal pack. Pack rolls can never come up Unique —
@@ -368,9 +368,10 @@ top-center; magic/rare announce themselves with tinted nameplates.
 - Dead monsters leave corpses where they fell for **300 ticks** (30 s); a
   corpse is inert (no AI, untargetable, skipped by every system) and decays
   away on its own.
-- Packs respawn **as a unit**: survivors hold their ground (no trickle
-  refills); once the whole pack is wiped, `respawn_ticks` later it rises
-  again at its spawn anchor.
+- Packs rise **exactly once**: each authored pack spawns when its world
+  mints and never refills — a cleared zone stays cleared (the world is
+  finite; camping pays nothing). Leaving a story zone entirely and
+  returning re-mints the instance pristine.
 
 ## Loot
 

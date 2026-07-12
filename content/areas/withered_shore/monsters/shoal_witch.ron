@@ -26,6 +26,6 @@ MonsterDef(
     // archetype (melee swings phys) — an exam should grade every class on
     // the same curve.
     resist_fire: 800,
-    xp: 90,
+    xp: 113,
     projectile: false,
 )

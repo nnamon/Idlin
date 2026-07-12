@@ -110,10 +110,14 @@ export class Terrain {
   private wallGeoV: THREE.BoxGeometry | null = null;
   private wallCore: THREE.BoxGeometry | null = null;
   private hasWater = false;
+  /** A true east-edge coastline exists (the sea carve applies only then). */
+  private hasSea = false;
   /** Opt-in cosmetic features from the tileset; legacy zones get all. */
   private features = new Set<string>();
   /** Blurred per-cell terrace levels; null on flat maps. */
   private elevGrid: Float32Array | null = null;
+  /** Blurred interior-pool mask; null when the only water is the sea. */
+  private poolGrid: Float32Array | null = null;
 
   /** Drive the terrain from an authored tile map (call before build). */
   setTiles(tiles: TileMapState): void {
@@ -159,22 +163,34 @@ export class Terrain {
       }
       this.elevGrid = blur;
     }
-    // Per-row x of the first water cell (the authored waterline), lightly
-    // smoothed so the heightmap meanders instead of stair-stepping.
+    // Per-row x of the SEA waterline, lightly smoothed so the heightmap
+    // meanders instead of stair-stepping. A row's water only counts as
+    // coast when it runs contiguously to the map's east edge — interior
+    // pools (the Hollow's basins) are NOT a coastline; treating the first
+    // water cell as one carved all land east of a pool below the sea
+    // plane (characters visibly sank under the map).
+    const isWater = (z: number, x: number) =>
+      this.byGlyph.get(tiles.rows[z][x])?.ground_id === "water";
     const raw: number[] = [];
+    let anyPool = false;
     for (let z = 0; z < tiles.height; z++) {
       let edge = tiles.width + 18;
-      const row = tiles.rows[z];
-      for (let x = 0; x < tiles.width; x++) {
-        if (this.byGlyph.get(row[x])?.ground_id === "water") {
-          edge = x;
+      for (let x = tiles.width - 1; x >= 0; x--) {
+        if (!isWater(z, x)) break;
+        edge = x; // contiguous run touching the east edge
+      }
+      // Anything wet west of the coast run is an interior pool.
+      for (let x = 0; x < Math.min(edge, tiles.width); x++) {
+        if (isWater(z, x)) {
+          anyPool = true;
           break;
         }
       }
       raw.push(edge);
     }
-    this.hasWater = raw.some((e) => e <= tiles.width);
-    if (this.hasWater) {
+    this.hasSea = raw.some((e) => e <= tiles.width);
+    this.hasWater = this.hasSea || anyPool;
+    if (this.hasSea) {
       this.waterEdge = raw.map((_, z) => {
         let sum = 0;
         let n = 0;
@@ -185,6 +201,35 @@ export class Terrain {
         }
         return sum / n;
       });
+    }
+    // Interior pools: a blurred mask sinks just those cells into shallow
+    // basins the water plane shows through (same box-blur as terraces).
+    this.poolGrid = null;
+    if (anyPool) {
+      const rawPool = new Float32Array(ew * eh);
+      for (let z = 0; z < eh; z++) {
+        for (let x = 0; x < Math.min(Math.floor(raw[z]), ew); x++) {
+          if (isWater(z, x)) rawPool[z * ew + x] = 1;
+        }
+      }
+      const blur = new Float32Array(ew * eh);
+      const R = 1;
+      for (let z = 0; z < eh; z++) {
+        for (let x = 0; x < ew; x++) {
+          let sum = 0;
+          let n = 0;
+          for (let dz = -R; dz <= R; dz++) {
+            for (let dx = -R; dx <= R; dx++) {
+              const cx = Math.min(ew - 1, Math.max(0, x + dx));
+              const cz = Math.min(eh - 1, Math.max(0, z + dz));
+              sum += rawPool[cz * ew + cx];
+              n++;
+            }
+          }
+          blur[z * ew + x] = sum / n;
+        }
+      }
+      this.poolGrid = blur;
     }
   }
 
@@ -229,6 +274,24 @@ export class Terrain {
     return v * LEVEL_H;
   }
 
+  /** Blurred interior-pool weight at a position (0 dry .. 1 pool center). */
+  private poolAt(x: number, z: number): number {
+    if (!this.poolGrid || !this.tiles) return 0;
+    const { width: w, height: h } = this.tiles;
+    const fx = Math.min(w - 1.001, Math.max(0, x - 0.5));
+    const fz = Math.min(h - 1.001, Math.max(0, z - 0.5));
+    const x0 = Math.floor(fx);
+    const z0 = Math.floor(fz);
+    const ax = fx - x0;
+    const az = fz - z0;
+    const g = this.poolGrid;
+    const v00 = g[z0 * w + x0];
+    const v10 = g[z0 * w + x0 + 1];
+    const v01 = g[(z0 + 1) * w + x0];
+    const v11 = g[(z0 + 1) * w + x0 + 1];
+    return (v00 * (1 - ax) + v10 * ax) * (1 - az) + (v01 * (1 - ax) + v11 * ax) * az;
+  }
+
   /**
    * Ground height at a world position. The same function shapes the mesh,
    * so feet and geometry always agree.
@@ -240,7 +303,12 @@ export class Terrain {
       let y = vnoise(x * 0.08, z * 0.08, this.seed) * 0.22 - 0.08;
       const out = Math.max(0, -x, x - w, -z, z - h);
       y += smoothstep(2, PAD - 8, out) * (3.5 + vnoise(x * 0.09, z * 0.09, this.seed ^ 13) * 2.2);
-      return y + this.terraceLift(x, z);
+      y += this.terraceLift(x, z);
+      // Interior pools work in ANY tileset (the saltworks pans are water
+      // in the sea-less town set): shallow basins the plane shows through.
+      const pool = this.poolAt(x, z);
+      if (pool > 0) y = y * (1 - pool) + (WATER_Y - 0.3) * pool;
+      return y;
     }
     // Gentle dunes everywhere…
     let y = vnoise(x * 0.06, z * 0.06, this.seed) * 0.9 + vnoise(x * 0.22, z * 0.22, this.seed ^ 7) * 0.22 - 0.5;
@@ -261,6 +329,10 @@ export class Terrain {
     if (x > xw) y = WATER_Y + 0.12 - (x - xw) * 0.3; // seafloor falls away
     // Authored terraces ride on top (0 everywhere on legacy maps).
     y += this.terraceLift(x, z);
+    // Interior pools sink into shallow basins the water plane shows
+    // through — wading depth, never the seafloor carve.
+    const pool = this.poolAt(x, z);
+    if (pool > 0) y = y * (1 - pool) + (WATER_Y - 0.3) * pool;
     return Math.max(y, WATER_Y - 3.2);
   }
 
@@ -324,29 +396,36 @@ export class Terrain {
     ground.receiveShadow = true;
     this.group.add(ground);
 
-    // -- the sea: a broad plane east of the waterline --
-    if (!this.tiles || (this.hasWater && this.features.has("sea"))) {
-    this.water = new THREE.Mesh(
-      new THREE.PlaneGeometry(PAD + 40, spanZ),
-      new THREE.MeshStandardMaterial({
-        color: 0x16344f,
-        roughness: 0.16,
-        metalness: 0.3,
-        transparent: true,
-        opacity: 0.9,
-        emissive: 0x081523,
-        emissiveIntensity: 0.7,
-      }),
-    );
-    this.water.rotation.x = -Math.PI / 2;
-    const seaFrom = this.tiles ? Math.min(...(this.waterEdge ?? [w])) - 2 : w - 6;
-    this.water.position.set(seaFrom + (PAD + 46) / 2, WATER_Y, minZ + spanZ / 2);
-    this.group.add(this.water);
+    // -- the water plane: the sea east of the waterline, or (pool zones,
+    // ANY tileset) a zone-wide sheet the sunken basins reveal --
+    if (!this.tiles || (this.hasWater && this.features.has("sea")) || this.poolGrid) {
+      const poolsOnly = !!this.tiles && !this.hasSea;
+      this.water = new THREE.Mesh(
+        new THREE.PlaneGeometry(poolsOnly ? spanX : PAD + 40, spanZ),
+        new THREE.MeshStandardMaterial({
+          color: 0x16344f,
+          roughness: 0.16,
+          metalness: 0.3,
+          transparent: true,
+          opacity: 0.9,
+          emissive: 0x081523,
+          emissiveIntensity: 0.7,
+        }),
+      );
+      this.water.rotation.x = -Math.PI / 2;
+      if (poolsOnly) {
+        this.water.position.set(minX + spanX / 2, WATER_Y, minZ + spanZ / 2);
+      } else {
+        const seaFrom = this.tiles ? Math.min(...(this.waterEdge ?? [w])) - 2 : w - 6;
+        this.water.position.set(seaFrom + (PAD + 46) / 2, WATER_Y, minZ + spanZ / 2);
+      }
+      this.group.add(this.water);
     }
 
     // -- lapping waves: foam strips that roll up the sand and fade --
+    // (a COAST dressing: pools-only zones get still water, no surf)
     const foamTex = this.makeFoamTexture();
-    for (let i = 0; i < (!this.tiles || (this.hasWater && this.features.has("sea")) ? 3 : 0); i++) {
+    for (let i = 0; i < (!this.tiles || (this.hasSea && this.features.has("sea")) ? 3 : 0); i++) {
       const mat = new THREE.MeshBasicMaterial({
         map: foamTex,
         transparent: true,

@@ -2,6 +2,10 @@
 //! exact same state hash forever, on every platform. CI failure here means
 //! either an intentional content/sim change (update the constants below and
 //! say so in the commit) or — much worse — a determinism leak.
+//!
+//! The re-pin comments below are a LEDGER, oldest first: each entry
+//! describes the world AS IT WAS at that pin (history, like commits —
+//! not current-state claims; later entries supersede earlier ones).
 
 use idlin_content::ContentDb;
 use idlin_sim::{JoinRequest, TickInputs, World};
@@ -48,7 +52,19 @@ const GOLDEN_TICKS: u64 = 2_000;
 /// the per-pack def folds (the old rarity-juice patch) left, spawn_rarity_bp
 /// joined. Pack defs are immutable content again; the shore replay's
 /// BEHAVIOR is bit-identical, only the fingerprint moved.
-const GOLDEN_HASH: u64 = 0x2AED_7753_FAF1_AAD6;
+/// Re-pinned for the no-respawn world + the operator's tuning (#185):
+/// SIM RULES changed (packs rise exactly once — monsters never resurrect;
+/// the out-of-combat burst heal is characters-only — it was silently
+/// resetting kited bosses) AND content moved (pack density ×1.6 campaign /
+/// ×2.1 Act 2, non-boss XP ×1.25, the walk-line movement fix's behavior).
+/// The shore replay's history is materially different by design.
+/// (+ the QueryMonsters clamp 16→64 — content brains widened their scans,
+/// gen_abi/content bytes moved.)
+// 0xA185C5C2AEAC99A6: respawn_ticks removed from SpawnPack + every zone RON
+// (dead schema under the no-respawn world) + the round-4 prose sweep
+// (zone comments + narration are content bytes) — content_hash moved; the
+// 2000-tick behavior is identical.
+const GOLDEN_HASH: u64 = 0xE4E0_16E7_7191_B93C;
 
 #[test]
 fn golden_replay() {

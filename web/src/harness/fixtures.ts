@@ -25,7 +25,6 @@ import {
 export type Fixture =
   | {
       kind: "overlay";
-      /** Kill-cam rows for the panel (#162). */
       label: string;
       /** Link status the stub client reports (drives the plaque). */
       status: NetStatus;
@@ -962,6 +961,74 @@ const itemTooltip: Fixture = {
 };
 
 /**
+ * Tooltip completeness — a NORMAL wand: no rolled mods, so its whole story is
+ * the base's own combat block (damage, cast time) + the spell-damage implicit.
+ * Before this fix a normal item's tooltip was empty ("Normal item" only).
+ */
+const tooltipNormalWand: Fixture = {
+  kind: "tooltip",
+  label: "Item tooltip — normal wand (base block + implicit)",
+  item: {
+    name: "Barnacle Wand",
+    rarity: 0,
+    base_num: 2101,
+    item_level: 4,
+    mods: [],
+  },
+  docsJson: {
+    stats: [],
+    categories: {
+      item: [
+        {
+          num: 2101,
+          name: "Barnacle Wand",
+          req_level: 0,
+          damage_phys: 8,
+          damage_cold: 6,
+          use_ticks: 9,
+          weapon_class: "wand",
+          spell_damage_bp: 4000,
+        },
+      ],
+      affix: [],
+    },
+  },
+};
+
+/**
+ * Tooltip completeness — a SIGNATURE UNIQUE: no rolled affixes (the def's
+ * authored mods ARE the item, v47 `unique_mods` on the wire). Before this fix
+ * a unique's tooltip showed nothing at all.
+ */
+const tooltipUnique: Fixture = {
+  kind: "tooltip",
+  label: "Item tooltip — signature unique (authored mods)",
+  item: {
+    name: "The Tidewarden's Grasp",
+    rarity: 3,
+    base_num: 2102,
+    item_level: 12,
+    mods: [],
+    unique_mods: [
+      { stat: "life", layer: 0, value: 40 },
+      { stat: "resist_cold", layer: 0, value: 2500 },
+      { stat: "attack_speed", layer: 1, value: 1200 },
+    ],
+  },
+  docsJson: {
+    stats: [
+      { key: "life", name: "Life", desc: "", added_unit: "flat" },
+      { key: "resist_cold", name: "Cold Resistance", desc: "", added_unit: "basis_points" },
+      { key: "attack_speed", name: "Attack Speed", desc: "", added_unit: "basis_points" },
+    ],
+    categories: {
+      item: [{ num: 2102, name: "Brine-Crusted Gauntlets", req_level: 12, armour: 34 }],
+      affix: [],
+    },
+  },
+};
+
+/**
  * Boss quality (#136 T2): the Tidewarden at 1.6x unique scale, the top-center
  * boss bar, AND the first-sighted splash — visible deterministically because
  * fixture.tsx pins `performance.now` to a constant IN THE PAGE before any
@@ -1067,6 +1134,7 @@ const fullCampaign: Fixture = {
               base_num: 16777229,
               item_level: 13,
               mods: [],
+              unique_mods: [],
             },
           ],
         }),
@@ -1081,6 +1149,8 @@ export const FIXTURES: Record<string, Fixture> = {
   "hud-edge": hudEdge,
   "scene-dressing": sceneDressing,
   "item-tooltip": itemTooltip,
+  "tooltip-normal-wand": tooltipNormalWand,
+  "tooltip-unique": tooltipUnique,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,
   "scene-ailments": sceneAilments,

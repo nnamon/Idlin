@@ -53,7 +53,7 @@ the sport. Monster behavior is bot code too, shipped as content.
   ladder, and combat discipline; every one completes the entire two-act
   campaign unaided, proven on every commit by seeded full-game band tests.
 - **The map endgame**: completing the campaign unlocks the Map
-  Tables (Saltmere and Lanternfall). Maps drop as items and roll
+  Devices (Saltmere and Lanternfall). Maps drop as items and roll
   affixes like any gear — quantity/rarity juice AND **rules**: Monster
   Fury scales every hostile hit, the Map Clock puts the run on a
   timer, and Sovereign-Marked deep maps spawn a tier boss (the
@@ -69,9 +69,8 @@ the sport. Monster behavior is bot code too, shipped as content.
   any brain through the whole game deterministically before you deploy.
 - **A broadcast that follows the roster**: a stable camera watches each
   character in turn (30s rotation) while the ticker and banners carry
-  acts, boss falls, and map tallies; boss falls mark the recording journal so
-  the kill-cam list (`/api/killcams`) deep-links into the deterministic
-  replay via the viewer's `&at=<line>` fast-forward.
+  acts, boss falls, and map tallies. World journals (`IDLIN_RECORD=1`)
+  replay deterministically in the viewer (`?replay=…&at=<line>`).
 - **The stock brains play the whole game**: routing by zone ids, gearing
   off the ground via the engine's scorer, managing bags, selling junk,
   breaking every boss, and pivoting to map farming — a fresh level-1

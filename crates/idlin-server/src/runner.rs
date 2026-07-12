@@ -7,6 +7,7 @@ use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
     PropState, RolledModView, SkillStat, SkillSupport, StatSourceView, TileMapState, TileVisual,
+    UniqueModView,
 };
 use idlin_sim::world::{CharacterSheetView, SkillStatView};
 use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -587,9 +588,8 @@ pub fn spawn_tick_loop(
                     );
                 }
 
-                // Admin surface (#148 A6): deploy / kill / leaderboard,
-                // staged as ordinary tick inputs — HTTP never touches a
-                // world directly.
+                // Admin surface (#148 A6): deploy, staged as ordinary
+                // tick inputs — HTTP never touches a world directly.
                 while let Ok(cmd) = admin_rx.try_recv() {
                     match cmd {
                         AdminCommand::Deploy {
@@ -665,6 +665,18 @@ fn rolled_mods(mods: &[(i32, u32, Vec<i64>)]) -> Vec<RolledModView> {
             num: *num,
             tier: *tier,
             values: values.iter().map(|v| clamp_i32(*v)).collect(),
+        })
+        .collect()
+}
+
+/// Map a signature unique's authored mods (stat key, layer, value) to the wire
+/// view (v47 — uniques have no rolled affixes; the def's mods are the item).
+fn unique_mods(mods: &[(String, u8, i64)]) -> Vec<UniqueModView> {
+    mods.iter()
+        .map(|(stat, layer, value)| UniqueModView {
+            stat: stat.clone(),
+            layer: *layer,
+            value: clamp_i32(*value),
         })
         .collect()
 }
@@ -755,6 +767,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                     base_num: it.base_num,
                     item_level: it.item_level,
                     mods: rolled_mods(&it.mods),
+                    unique_mods: unique_mods(&it.unique_mods),
                 },
                 None => GearSlotView {
                     slot: slot.to_string(),
@@ -764,6 +777,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                     base_num: -1,
                     item_level: 0,
                     mods: Vec::new(),
+                    unique_mods: Vec::new(),
                 },
             })
             .collect(),
@@ -780,6 +794,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                 base_num: it.base_num,
                 item_level: it.item_level,
                 mods: rolled_mods(&it.mods),
+                unique_mods: unique_mods(&it.unique_mods),
             })
             .collect(),
         gems: v
@@ -820,7 +835,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
 }
 
 /// The headless harness (#148 A6): run ANY brain through the WHOLE game —
-/// shore tutorial, both acts, the table, one map run — under the same
+/// shore tutorial, both acts, the Map Device, one map run — under the same
 /// mini host loop the band tests use. `cargo run -p idlin-server --bin
 /// harness -- --brain my.bot` is the published form; the band tests assert
 /// over the same report.
@@ -858,7 +873,7 @@ pub mod salt_road {
     /// grinder, joined fresh at level 1 in Saltmere, plays the whole game by
     /// itself — walks the road (coast, the Saltworks past Karesh, down the
     /// Hollow), breaks the Mother, completes Act 1, carries her map home
-    /// to the table, and OPENS A MAP. A mini host loop (tick + map-aware ferry)
+    /// to the device, and OPENS A MAP. A mini host loop (tick + map-aware ferry)
     /// stands in for the server. Across SEEDS, the run must also stay
     /// inside the band: done within the tick budget, without death-spam —
     /// a content change that turns a zone into a meat grinder or a wall
@@ -907,7 +922,17 @@ pub mod salt_road {
             let mut departures = Vec::new();
             for (i, mw) in worlds.iter_mut().enumerate() {
                 let inputs = std::mem::take(&mut mw.pending);
-                let _ = mw.world.tick(&inputs);
+                let events = mw.world.tick(&inputs);
+                for ev in &events {
+                    if let SimEvent::CharacterDied { name, killer, .. } = ev
+                        && std::env::var("SALT_DEATHLOG").is_ok()
+                    {
+                        eprintln!(
+                            "CDEATH t={host_tick} z={} who={name} by={killer}",
+                            mw.zone_id
+                        );
+                    }
+                }
                 departures.extend(
                     mw.world
                         .take_departures()
@@ -998,7 +1023,7 @@ pub mod salt_road {
             "complete act 1",
             "descend to Lanternfall",
             "complete act 2",
-            "open a map at a table",
+            "open a map at the device",
             "complete a map run",
         ];
         let mut deaths = 0u32;
@@ -1104,7 +1129,13 @@ pub mod salt_road {
                                 .iter()
                                 .filter(|m| m.kind == 2 && m.life_pct > 0)
                                 .map(|m| {
-                                    format!("{}@{},{}", m.name, m.x_raw / 65536, m.y_raw / 65536)
+                                    format!(
+                                        "{}@{},{} {}%",
+                                        m.name,
+                                        m.x_raw / 65536,
+                                        m.y_raw / 65536,
+                                        m.life_pct
+                                    )
                                 })
                                 .collect();
                             println!(
@@ -1256,7 +1287,7 @@ mod tests {
             let (mapped_at, deaths, sales) = (r.mapped_at, r.deaths, r.sales);
             // #148 A5 (review B2, take two): the vendor-specific economy
             // proof lives in THE MELEE BAND ONLY — its four seeds all
-            // arrive at the table holding act-road junk; the ranged pair
+            // arrive at the device holding act-road junk; the ranged pair
             // sometimes field-shed to a clean bag (the caster did, and a
             // currency-sum assert was vacuous — kills pay obols too). The
             // sell CONTRACT itself is unit-pinned. Mutation: remove the
@@ -1333,7 +1364,12 @@ mod tests {
                 acts, 3,
                 "{name} must complete BOTH acts in the crowd (got acts={acts}, zone={zone})"
             );
-            assert!(deaths <= 150, "{name}: {deaths} deaths — a stall signature");
+            // Re-derived for the no-respawn world + the operator's density/XP
+            // tuning (#185): crowd Kargan measured 158 (census: 55 pressure
+            // court, 41 kelp forest — Act 2 at design level is bloody, and
+            // deaths are currently free; the difficulty rework prices them).
+            // A true stall reads 300+; completion is asserted above.
+            assert!(deaths <= 220, "{name}: {deaths} deaths — a stall signature");
         }
     }
 

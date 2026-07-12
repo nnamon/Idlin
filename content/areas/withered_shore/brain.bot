@@ -233,7 +233,7 @@ fn main() {
                     set_gate(GATE_MIDWAY, 1);
                     narrate(L_MANACOST, who);
                     // A rare STALKER, not a husk: a real fight for a
-                    // level-3 pupil, not a respawn loop. Staked clear of
+                    // level-3 pupil, one authored beat. Staked clear of
                     // the husk pack so they can't gang up.
                     spawn_elite(MON_STALKER, 0xE0000, 0x250000, 2);
                     narrate(L_RARE, 0);

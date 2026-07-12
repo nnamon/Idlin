@@ -56,7 +56,17 @@ export function gear(
   dimmed = false,
   extra: Partial<GearSlotView> = {},
 ): GearSlotView {
-  return { slot, name, rarity, dimmed, base_num: -1, item_level: 0, mods: [], ...extra };
+  return {
+    slot,
+    name,
+    rarity,
+    dimmed,
+    base_num: -1,
+    item_level: 0,
+    mods: [],
+    unique_mods: [],
+    ...extra,
+  };
 }
 
 /** One bag item (grid placement + footprint). Pass `extra` for tooltip data
@@ -70,7 +80,19 @@ export function invItem(
   h: number,
   extra: Partial<InvItemView> = {},
 ): InvItemView {
-  return { name, rarity, x, y, w, h, base_num: -1, item_level: 0, mods: [], ...extra };
+  return {
+    name,
+    rarity,
+    x,
+    y,
+    w,
+    h,
+    base_num: -1,
+    item_level: 0,
+    mods: [],
+    unique_mods: [],
+    ...extra,
+  };
 }
 
 /** Convert sim units to the Q16.16 raw ints the wire uses for positions. */

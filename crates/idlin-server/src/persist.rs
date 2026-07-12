@@ -80,7 +80,7 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// and `ExitState` gained `requires_act: u32` (story-sealed exits) — both serialized; a v14
 /// snapshot would mis-decode. Refuse it.
 /// v16 (#136 charts): `CharacterBundle` gained `chart: Option<MapTicket>` and `World`
-/// gained `loot_quantity_bp` / `map_table` / `is_map_instance` — all serialized; a v15
+/// gained `loot_quantity_bp` / `map_device` / `is_map_instance` — all serialized; a v15
 /// snapshot would mis-decode. Refuse it.
 /// v17 (#136 uniques): `Item` gained `unique_idx: Option<u32>` — serialized; a v16 snapshot
 /// would mis-decode. Refuse it.
@@ -96,9 +96,11 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// `SimEvent::MonsterKilled` gained `rarity` — serialized; a v21 snapshot would mis-decode.
 /// v23 (quality pass): `CombatStats` gained `grace_until` (respawn grace) — serialized;
 /// a v22 snapshot would mis-decode. Refuse it.
+/// v25 (#185, operator ruling — monsters never resurrect): `PackState`
+/// swapped `respawn_timer: u32` for `risen: bool` — layout change.
 /// v24 (#185 B4): `World` gained `spawn_rarity_bp` (the instance rarity
 /// juice as a property; pack defs are immutable again) — layout change.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 24;
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 25;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -583,7 +585,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 24);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 25);
     }
 
     #[test]

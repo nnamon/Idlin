@@ -305,9 +305,9 @@ impl World {
                     out.wrapping_add(abi::SS_ZONE),
                     self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
                 );
-                // The Opening Table (#136 T6): where maps spend, in world
-                // coords (Q16.16 cell centers), or -1/-1 in table-less zones.
-                let (tx, ty) = self.map_table.map_or((-1, -1), |(x, y)| {
+                // The Map Device (#136 T6): where maps spend, in world
+                // coords (Q16.16 cell centers), or -1/-1 in device-less zones.
+                let (tx, ty) = self.map_device.map_or((-1, -1), |(x, y)| {
                     (Fx::from_int(x as i16).raw(), Fx::from_int(y as i16).raw())
                 });
                 bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_X), tx);
@@ -519,8 +519,8 @@ impl World {
                 n as i32
             }
             // OpenMap (#136 T4): consume a map from the bag at the Map
-            // Table and open. 0 = departing this tick; -1 bad index / not a
-            // map; -2 not at a table; -3 campaign incomplete (the sea is sealed
+            // Device and open. 0 = departing this tick; -1 bad index / not a
+            // map; -2 not at the device; -3 campaign incomplete (the sea is sealed
             // until the Mother falls); -4 not a character; -5 a departure is
             // already staged this tick (the map is NOT consumed).
             SYS_OPEN_MAP => {

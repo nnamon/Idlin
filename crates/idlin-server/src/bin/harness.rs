@@ -7,7 +7,7 @@
 //! Compiles the `.bot` with the same prelude the stock templates get (every
 //! content num + ABI const in scope), then walks the salt road under the
 //! band tests' exact mini host loop: the shore tutorial, both acts, the
-//! table, one map run. Prints a JSON report; exits 1 if the road
+//! Map Device, one map run. Prints a JSON report; exits 1 if the road
 //! didn't complete. Deterministic per (seed, brain) — a red run replays
 //! bit-identically, so a debug print in your brain lands on the same tick
 //! every time.

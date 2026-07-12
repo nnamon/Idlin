@@ -211,7 +211,7 @@ pub mod abi {
     pub const SS_MANA_MAX: u16 = 56;
     pub const SS_ES: u16 = 60;
     pub const SS_ZONE: u16 = 64;
-    /// The zone's Opening Table cell in Q16.16, or -1/-1 when the zone has
+    /// The zone's Map Device cell in Q16.16, or -1/-1 when the zone has
     /// none (#136 T6) — how a brain finds where maps are spent.
     pub const SS_TABLE_X: u16 = 68;
     pub const SS_TABLE_Y: u16 = 72;

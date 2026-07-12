@@ -50,7 +50,7 @@ fn main() {
     }
 
     // The Sovereign's beats: find him, read his life, direct the stage.
-    var nm = query_monsters(MONS, 16);
+    var nm = query_monsters(MONS, 40);
     var k = 0;
     while (k < nm) {
         var m = MONS + k * MONSTER_RECORD_SIZE;

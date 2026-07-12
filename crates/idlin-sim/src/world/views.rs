@@ -17,6 +17,11 @@ pub struct ItemRow {
     pub base_num: i32,
     pub item_level: u32,
     pub mods: Vec<(i32, u32, Vec<i64>)>,
+    /// A signature unique's AUTHORED mods as (stat key, layer, value) —
+    /// uniques carry no rolled affixes (the def's mods ARE the item), so
+    /// the tooltip renders these instead. Same contribution shape the
+    /// sheet's stat_sources already ship; empty for non-uniques.
+    pub unique_mods: Vec<(String, u8, i64)>,
 }
 
 /// One inspect-sheet equipment slot: (slot name, the item or None when empty,
@@ -135,12 +140,23 @@ impl World {
                 )
             })
             .collect();
+        let unique_mods = it
+            .unique_idx
+            .map(|u| {
+                self.content.uniques[u as usize]
+                    .mods
+                    .iter()
+                    .map(|g| (g.stat.doc().key.to_string(), g.layer as u8, g.value))
+                    .collect()
+            })
+            .unwrap_or_default();
         ItemRow {
             name: self.item_display(it),
             rarity: it.rarity as u8,
             base_num: self.content_num(idlin_content::ids::Category::Item, it.base_idx as usize),
             item_level: it.item_level,
             mods,
+            unique_mods,
         }
     }
 
@@ -192,6 +208,7 @@ impl World {
                         base_num: -1,
                         item_level: 0,
                         mods: Vec::new(),
+                        unique_mods: Vec::new(),
                     },
                     p.x,
                     p.y,
@@ -1106,7 +1123,7 @@ impl World {
         }
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
-            h.write_u32(pack.respawn_timer);
+            h.write_u32(pack.risen as u32);
             // (B4: pack defs are immutable content again — covered by
             // content_hash; the rarity juice hashes as spawn_rarity_bp.)
         }

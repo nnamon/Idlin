@@ -5299,7 +5299,7 @@
         "speed_cps": 330,
         "unique": false,
         "use_ticks": 14,
-        "xp": 35
+        "xp": 44
       },
       {
         "accuracy": 0,
@@ -5337,7 +5337,7 @@
         "speed_cps": 200,
         "unique": false,
         "use_ticks": 15,
-        "xp": 175
+        "xp": 219
       },
       {
         "accuracy": 0,
@@ -5464,7 +5464,7 @@
         "speed_cps": 225,
         "unique": false,
         "use_ticks": 16,
-        "xp": 780
+        "xp": 975
       },
       {
         "accuracy": 0,
@@ -5508,7 +5508,7 @@
         "speed_cps": 225,
         "unique": false,
         "use_ticks": 16,
-        "xp": 290
+        "xp": 363
       },
       {
         "accuracy": 0,
@@ -5552,7 +5552,7 @@
         "speed_cps": 175,
         "unique": false,
         "use_ticks": 17,
-        "xp": 330
+        "xp": 413
       },
       {
         "accuracy": 0,
@@ -5590,7 +5590,7 @@
         "speed_cps": 250,
         "unique": false,
         "use_ticks": 12,
-        "xp": 25
+        "xp": 32
       },
       {
         "accuracy": 0,
@@ -5628,7 +5628,7 @@
         "speed_cps": 300,
         "unique": false,
         "use_ticks": 8,
-        "xp": 8
+        "xp": 10
       },
       {
         "accuracy": 0,
@@ -5672,7 +5672,7 @@
         "speed_cps": 190,
         "unique": false,
         "use_ticks": 16,
-        "xp": 480
+        "xp": 600
       },
       {
         "accuracy": 0,
@@ -5716,7 +5716,7 @@
         "speed_cps": 235,
         "unique": false,
         "use_ticks": 16,
-        "xp": 400
+        "xp": 500
       },
       {
         "accuracy": 0,
@@ -5856,7 +5856,7 @@
         "speed_cps": 230,
         "unique": false,
         "use_ticks": 16,
-        "xp": 150
+        "xp": 188
       },
       {
         "accuracy": 0,
@@ -5894,7 +5894,7 @@
         "speed_cps": 210,
         "unique": false,
         "use_ticks": 15,
-        "xp": 360
+        "xp": 450
       },
       {
         "accuracy": 0,
@@ -5938,7 +5938,7 @@
         "speed_cps": 200,
         "unique": false,
         "use_ticks": 15,
-        "xp": 640
+        "xp": 800
       },
       {
         "accuracy": 0,
@@ -5982,7 +5982,7 @@
         "speed_cps": 220,
         "unique": false,
         "use_ticks": 17,
-        "xp": 540
+        "xp": 675
       },
       {
         "accuracy": 0,
@@ -6117,7 +6117,7 @@
         "speed_cps": 240,
         "unique": false,
         "use_ticks": 16,
-        "xp": 90
+        "xp": 113
       },
       {
         "accuracy": 0,
@@ -6250,7 +6250,7 @@
         "speed_cps": 195,
         "unique": false,
         "use_ticks": 16,
-        "xp": 70
+        "xp": 88
       },
       {
         "accuracy": 0,

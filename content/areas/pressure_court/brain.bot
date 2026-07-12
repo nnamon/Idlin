@@ -30,7 +30,7 @@ fn main() {
         i = i + 1;
     }
 
-    var nm = query_monsters(MONS, 16);
+    var nm = query_monsters(MONS, 40);
     var k = 0;
     while (k < nm) {
         var m = MONS + k * MONSTER_RECORD_SIZE;

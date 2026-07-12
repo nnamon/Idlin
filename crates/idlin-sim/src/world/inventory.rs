@@ -540,7 +540,7 @@ impl World {
             return -1; // out of range, or the bag slot is a gem
         };
         // Maps are CARGO, not gear (#136 T4): they ride the bag and spend
-        // at the Opening Table; wearing one is refused here (manual) and
+        // at the Map Device; wearing one is refused here (manual) and
         // scored to zero in item_score (autos).
         if self.content.items[gear.base_idx as usize]
             .map_tier

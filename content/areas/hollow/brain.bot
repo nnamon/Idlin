@@ -43,7 +43,7 @@ fn main() {
 
     // The Mother's beats (#162 boss theatre): at half her chorus answers;
     // at a quarter the last verse raises everything she ever pulled under.
-    var nm = query_monsters(MONS, 16);
+    var nm = query_monsters(MONS, 40);
     var k = 0;
     while (k < nm) {
         var m = MONS + k * MONSTER_RECORD_SIZE;

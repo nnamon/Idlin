@@ -559,52 +559,6 @@ function SlotBox({
 
 /** The campaign chip (#136 T7): act state at a glance — and once the
  *  Mother falls, the map count doubles as the endgame's ticket stub. */
-/** Recent boss falls (#162 kill-cams): each row deep-links into the
- *  deterministic replay journal at the fight, not the corpse. Polled
- *  gently; fixtures inject rows directly (no fetch in the harness). */
-export function KillCamPanel({ rows }: { rows: KillCamRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="panel" style={{ marginBottom: 8 }}>
-      <div className="hdr first" style={{ fontSize: 12, marginBottom: 4 }}>
-        Recent boss falls
-      </div>
-      {rows.slice(-4).reverse().map((r, i) => (
-        <div key={i} style={{ fontSize: 12, color: "#ab9d7a", display: "flex", gap: 6 }}>
-          <span style={{ color: "#ff9a3c" }}>{r.monster}</span>
-          <span>by {r.killer}</span>
-          {r.line > 0 && /^[A-Za-z0-9_]+$/.test(r.recording) && (
-            <a
-              // A NEW TAB — the broadcast keeps streaming (codex: the bare
-              // href swapped the live view into replay mode). The stem is
-              // validated client-side and the query built safely — the
-              // server sanitizes recordings, but the client doesn't trust.
-              href={`/?${new URLSearchParams({
-                replay: `/recordings/${r.recording}.jsonl`,
-                at: String(r.line),
-              })}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "#d2ab52", marginLeft: "auto" }}
-            >
-              watch
-            </a>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export type KillCamRow = {
-  world_key: string;
-  killer: string;
-  monster: string;
-  level: number;
-  recording: string;
-  line: number;
-};
-
 function ActChip({ sheet }: { sheet: CharacterSheet }) {
   // Two acts now (#148 A3): show where the road stands; the map count
   // appears once the campaign is done (maps wait for the last act).

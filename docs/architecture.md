@@ -44,7 +44,7 @@ makes the world bit-exact:
    mitigation → deaths (XP, gem XP, loot rolls, pack bookkeeping).
 7. Pickups (bag-grid first-fit; gems to pouch).
 8. Out-of-combat regeneration.
-9. Respawns (characters, packs), loot despawn.
+9. Respawns (characters only), one-shot pack spawns, loot despawn, corpse decay.
 10. Emit `SimEvent`s; canonical state hash on demand.
 
 Everything that acts is a **bot**: monsters are entities whose brain

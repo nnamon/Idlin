@@ -13,8 +13,11 @@ pub struct PackState {
     /// Index into ContentDb::monsters (resolved at zone creation).
     pub monster_idx: u32,
     pub alive: u32,
-    /// Counts down once any member is dead; at zero the pack refills.
-    pub respawn_timer: u32,
+    /// A pack rises EXACTLY ONCE (operator ruling: monsters never
+    /// resurrect — a cleared zone stays cleared, in the campaign and in
+    /// maps alike; progression is forward, the loop is the NEXT map).
+    #[serde(default)]
+    pub risen: bool,
 }
 
 /// A skill projectile in flight. Stepped each tick; hits the first enemy
@@ -79,6 +82,13 @@ impl SimGrid {
 
     pub fn sight_cell(&self, cx: i64, cy: i64) -> bool {
         self.idx(cx, cy).is_some_and(|i| self.los[i])
+    }
+
+    /// The WALK twin of sight_cell (#185 stall fix): true when the cell
+    /// cannot be STOOD on. Water and chasms are transparent to sight but
+    /// solid to feet — movement must test this, never sight.
+    pub fn walk_blocked_cell(&self, x: i64, y: i64) -> bool {
+        self.idx(x, y).is_none_or(|i| !self.walk[i])
     }
 
     /// Deterministic A* over the walk grid (#148 A2.5): 4-connected,

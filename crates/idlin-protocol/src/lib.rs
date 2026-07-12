@@ -27,7 +27,10 @@ use ts_rs::TS;
 /// v44 (#148 A7): `MonsterKilled` gained `rarity`; `GameEvent` gained `VoyageTally`.
 /// v45 (quality pass): `EntityState` gained `hostile` (the readability ember's gate).
 /// v46 (#180, operator directive): `VoyageTally` renamed `MapTally` on the wire.
-pub const PROTO_VERSION: u32 = 46;
+/// v47 (tooltip completeness): `GearSlotView`/`InvItemView` gain `unique_mods`
+/// (a signature unique's authored mods — they carry no rolled affixes) + the
+/// new `UniqueModView`.
+pub const PROTO_VERSION: u32 = 47;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -356,6 +359,20 @@ pub struct RolledModView {
     pub values: Vec<i32>,
 }
 
+/// One AUTHORED mod on a signature unique (v47): uniques carry no rolled
+/// affixes — the def's fixed mods are the item — so the tooltip renders
+/// these. Same (stat, layer, value) contribution shape as StatSourceView.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct UniqueModView {
+    /// Stat vocabulary key (content-docs `stats` lookup).
+    pub stat: String,
+    /// 0 added, 1 increased, 2 more.
+    pub layer: u8,
+    /// Granted amount in the layer's unit (flat or basis points), clamped
+    /// to i32 like every other wire stat value.
+    pub value: i32,
+}
+
 /// One equipment slot on the inspect sheet ("" name = empty slot).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GearSlotView {
@@ -371,6 +388,8 @@ pub struct GearSlotView {
     pub item_level: u32,
     /// Rolled affixes for the tooltip (empty for an empty slot).
     pub mods: Vec<RolledModView>,
+    /// A signature unique's authored mods (v47; empty otherwise).
+    pub unique_mods: Vec<UniqueModView>,
 }
 
 /// One bag item on the inspect sheet (grid placement + footprint).
@@ -387,6 +406,8 @@ pub struct InvItemView {
     pub item_level: u32,
     /// Rolled affixes for the tooltip (empty for gems / plain items).
     pub mods: Vec<RolledModView>,
+    /// A signature unique's authored mods (v47; empty otherwise).
+    pub unique_mods: Vec<UniqueModView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -950,6 +971,12 @@ mod tests {
                         tier: 1,
                         values: vec![24],
                     }],
+                    // v47: unique authored mods must survive the wire too.
+                    unique_mods: vec![UniqueModView {
+                        stat: "life".into(),
+                        layer: 1,
+                        value: 2500,
+                    }],
                 }],
                 inventory: vec![InvItemView {
                     name: "Athlete's Coral Band".into(),
@@ -965,6 +992,7 @@ mod tests {
                         tier: 0,
                         values: vec![83, 900],
                     }],
+                    unique_mods: vec![],
                 }],
                 gems: vec![],
                 skills: vec![SkillStat {
@@ -1057,6 +1085,15 @@ mod tests {
             "rolled tier on the wire"
         );
         assert_eq!(sheet.equipment[0].mods[0].values, vec![24]);
+        // v47: a unique's authored mods survive the wire (drop the field
+        // from serialization and this fails).
+        assert_eq!(sheet.equipment[0].unique_mods.len(), 1);
+        assert_eq!(sheet.equipment[0].unique_mods[0].stat, "life");
+        assert_eq!(sheet.equipment[0].unique_mods[0].layer, 1);
+        assert_eq!(
+            sheet.equipment[0].unique_mods[0].value, 2500,
+            "unique authored mods survive the wire"
+        );
         assert_eq!(
             sheet.inventory[0].base_num, 2002,
             "bag base_num on the wire"

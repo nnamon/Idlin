@@ -6,5 +6,5 @@ MonsterDef(
     radius_cu: 80, range_cu: 210,
     skills: [(gem: "cleave", level: 4)],
     mana: 50, use_ticks: 15, aggro_radius_cu: 1400,
-    armour: 140, resist_cold: 3000, xp: 640, projectile: false,
+    armour: 140, resist_cold: 3000, xp: 800, projectile: false,
 )

@@ -53,14 +53,9 @@ pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
 pub const CORPSE_TICKS: u64 = 300;
 /// Untouched ticks before energy shield begins recharging.
 pub const ES_RECHARGE_DELAY_TICKS: u64 = 40;
-/// The clock a map mints with when no MapClock affix rolled one (#178):
-/// EVERY map ends. 10 minutes at 10Hz — comfortably past the stock
-/// brains' self-return (~5000 ticks), so it only catches broken, stale, or
-/// idle brains that would otherwise farm a private instance forever.
-pub const DEFAULT_MAP_TICKS: u64 = 6000;
 /// `map_ends_at` after the clock rang (#178): distinct from 0 ("never
-/// armed") so resume migration re-arms only genuine pre-#178 clockless
-/// maps, never a world whose map already ended.
+/// armed" — the operator's ruling: a clockless map never ends on its
+/// own), so a post-fire world resumes as ENDED, never re-armed.
 pub const MAP_CLOCK_FIRED: u64 = u64::MAX;
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
@@ -423,9 +418,9 @@ pub struct World {
     /// pack defs are never mutated.
     #[serde(default)]
     pub(crate) spawn_rarity_bp: i64,
-    /// The Map Table's cell, from the ZoneDef (#136 T4). None = no table.
+    /// The Map Device's cell, from the ZoneDef (#136 T4). None = no device.
     #[serde(default)]
-    pub(crate) map_table: Option<(i32, i32)>,
+    pub(crate) map_device: Option<(i32, i32)>,
     /// The town's vendor + stash cells (#148 A5), from the ZoneDef.
     #[serde(default)]
     pub(crate) vendor: Option<(i32, i32)>,
@@ -475,6 +470,17 @@ pub struct World {
 }
 
 // ---- universal (classless) character bases ----
+
+/// The movement-trace target (#185 diagnostics): IDLIN_TRACE_MOVE=<name>.
+/// Debug builds only, env read ONCE — the pure-sim boundary keeps host
+/// environment reads and stderr out of release cores entirely.
+#[cfg(debug_assertions)]
+fn trace_move_wanted() -> Option<&'static String> {
+    use std::sync::OnceLock;
+    static WANT: OnceLock<Option<String>> = OnceLock::new();
+    WANT.get_or_init(|| std::env::var("IDLIN_TRACE_MOVE").ok())
+        .as_ref()
+}
 
 fn default_zone_level() -> u32 {
     1
@@ -681,6 +687,32 @@ fn grid_sight_blocked(
     let sight = |cx: i64, cy: i64| {
         grid.sight_cell(cx, cy) || gates.iter().any(|g| !g.open && g.covers(cx, cy))
     };
+    grid_ray_blocked(grid, a, b, sight)
+}
+
+/// The WALK-line twin (#185 stall fix): can a straight walk traverse every
+/// cell from `a` to `b`? Water/chasms block FEET but not SIGHT — using the
+/// sight test for movement walked characters into unwalkable pockets and
+/// froze them (the slide gets zero progress and the "clear" line never
+/// re-plans).
+fn grid_walk_blocked(
+    grid: &crate::zone::SimGrid,
+    gates: &[crate::zone::GateState],
+    a: FxV2,
+    b: FxV2,
+) -> bool {
+    let solid = |cx: i64, cy: i64| {
+        grid.walk_blocked_cell(cx, cy) || gates.iter().any(|g| !g.open && g.covers(cx, cy))
+    };
+    grid_ray_blocked(grid, a, b, solid)
+}
+
+fn grid_ray_blocked(
+    grid: &crate::zone::SimGrid,
+    a: FxV2,
+    b: FxV2,
+    sight: impl Fn(i64, i64) -> bool,
+) -> bool {
     const CELL: i64 = 65536;
     let (ax, ay) = (a.x.raw() as i64, a.y.raw() as i64);
     let (bx, by) = (b.x.raw() as i64, b.y.raw() as i64);
@@ -784,7 +816,7 @@ impl World {
                         def: pack.clone(),
                         monster_idx,
                         alive: 0,
-                        respawn_timer: 0,
+                        risen: false,
                     });
                 }
                 for gate in &def.gates {
@@ -861,7 +893,7 @@ impl World {
             zone_level: content.zone(zone_id).map_or(1, |z| z.level),
             loot_quantity_bp: 0,
             spawn_rarity_bp: 0,
-            map_table: content.zone(zone_id).and_then(|z| z.map_table),
+            map_device: content.zone(zone_id).and_then(|z| z.map_device),
             vendor: content.zone(zone_id).and_then(|z| z.vendor),
             stash_cell: content.zone(zone_id).and_then(|z| z.stash),
             is_map_instance: false,
@@ -889,15 +921,6 @@ impl World {
         // an empty lookup index — rebuild it from the restored slots before any
         // get_net/slot_of (inspect, syscalls) runs against this world.
         self.zone.rebuild_net_index();
-        // #178 MIGRATION: a pre-#178 map snapshot minted clockless
-        // (map_ends_at == 0 means NEVER ARMED — a rung clock parks at
-        // MAP_CLOCK_FIRED, and post-#178 mints always arm). Re-arm a
-        // fresh default from the resume point so the eternal farm cannot
-        // survive a restart; deterministic (same snapshot, same tick,
-        // same re-arm on every observer).
-        if self.is_map_instance && self.map_ends_at == 0 {
-            self.map_ends_at = self.tick + DEFAULT_MAP_TICKS;
-        }
         if let Some(why) = self.first_malformed_affix() {
             return Err(format!("malformed snapshot: {why}"));
         }
@@ -1074,16 +1097,12 @@ impl World {
         w.spawn_rarity_bp = ticket.rarity_bp.max(0);
         // THE RULES (#148 A4) — applied at the one instance chokepoint.
         w.monster_fury_bp = ticket.fury_bp.clamp(0, 10000);
-        // EVERY map ends (#178): a clockless map plus a non-returning
-        // brain was an infinite private XP/loot faucet (a stale deploy
-        // farmed one tier-1 instance for four hours). The default outlives
-        // any healthy brain's self-return (~5000 ticks); a MapClock
-        // affix still sets its own duration.
-        w.map_ends_at = if ticket.clock > 0 {
-            ticket.clock as u64 // relative to tick 0
-        } else {
-            DEFAULT_MAP_TICKS
-        };
+        // The clock is OPT-IN (operator ruling, #185: "every map ends" is
+        // nonsense while the idler is in there — with no respawns a map
+        // ends by being CLEARED). Only a rolled Deluge clock arms one.
+        if ticket.clock > 0 {
+            w.map_ends_at = ticket.clock as u64; // relative to tick 0
+        }
         if ticket.boss
             && let Some(bi) = w.content.monster_idx("the_unwritten")
         {
@@ -1159,8 +1178,7 @@ impl World {
             return;
         }
         // Fire once. The sentinel (not 0) keeps "already rang" distinct
-        // from "never armed", so the #178 resume migration can re-arm
-        // exactly the pre-#178 clockless maps and nothing else — a
+        // from "never armed" (clockless maps never end on their own) — a
         // post-fire world must resume bit-identical, not with a new clock.
         self.map_ends_at = MAP_CLOCK_FIRED;
         let nets: Vec<u32> = self
@@ -1537,7 +1555,7 @@ impl World {
     /// obol's NUM (positive), or -1 bad selection / -2 not at a vendor /
     /// -4 no character.
     pub(crate) fn sell(&mut self, slot: usize, inv_sel: i32, events: &mut Vec<SimEvent>) -> i32 {
-        const VENDOR_REACH: i64 = 3; // cells, the table's reach
+        const VENDOR_REACH: i64 = 3; // cells, same reach as the Map Device
         let Some(e) = self.zone.get(slot) else {
             return -4;
         };
@@ -1665,7 +1683,7 @@ impl World {
             return -4;
         };
         // The WHOLE campaign gates the sea (#148 retrospective): the brains
-        // already waited for the final act (the table-gate discipline), but
+        // already waited for the final act (the device-gate discipline), but
         // the ENGINE still accepted act-1-only runners — a player brain
         // could skip Act 2 entirely. The bound is content-derived: adding
         // Act 3 moves it with zero engine edits.
@@ -1673,8 +1691,8 @@ impl World {
         if ch.story_acts & (1u32 << (final_act - 1)) == 0 {
             return -3; // the sea is sealed until the campaign falls
         }
-        let Some((tx, ty)) = self.map_table else {
-            return -2; // no table in this zone
+        let Some((tx, ty)) = self.map_device else {
+            return -2; // no device in this zone
         };
         let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
         let (dx, dy) = (cx - tx as i64, cy - ty as i64);
@@ -1801,8 +1819,28 @@ impl World {
                     .zone
                     .grid
                     .as_ref()
-                    .is_some_and(|_| self.los_blocked(pos, target));
+                    .is_some_and(|_| self.walk_line_blocked(pos, target));
+                // DIAGNOSTICS (#185, operator): IDLIN_TRACE_MOVE=<name> prints
+                // the movement decision for that character every tick —
+                // pos, goal, LOS, path length, next hop. DEBUG BUILDS ONLY:
+                // the pure-sim boundary means release binaries carry no env
+                // reads or stderr in the core; the env is read once.
+                #[cfg(debug_assertions)]
+                let trace = trace_move_wanted()
+                    .is_some_and(|want| e.character.as_ref().is_some_and(|c| c.name == *want));
+                #[cfg(not(debug_assertions))]
+                let trace = false;
                 if !blocked {
+                    if trace {
+                        eprintln!(
+                            "MOVE t={} pos={},{} goal={},{} LOS-clear: straight",
+                            self.tick,
+                            pos.x.floor(),
+                            pos.y.floor(),
+                            target.x.floor(),
+                            target.y.floor()
+                        );
+                    }
                     if !e.intents.path.is_empty()
                         && let Some(me) = self.zone.get_mut(slot)
                     {
@@ -1843,6 +1881,19 @@ impl World {
                             me.intents.path = path;
                         }
                     }
+                    if trace {
+                        eprintln!(
+                            "MOVE t={} pos={},{} goal={},{} next={:?} stale={} goal_moved={}",
+                            self.tick,
+                            pos.x.floor(),
+                            pos.y.floor(),
+                            target.x.floor(),
+                            target.y.floor(),
+                            next.map(|w| (w.x.floor(), w.y.floor())),
+                            hop_stale,
+                            goal_moved
+                        );
+                    }
                     match next {
                         Some(w) => {
                             if pos.dist(w) <= speed
@@ -1852,7 +1903,15 @@ impl World {
                             }
                             w
                         }
-                        None => target, // unreachable: fall back to straight
+                        None => {
+                            if trace {
+                                eprintln!(
+                                    "MOVE t={} UNREACHABLE goal — straight fallback",
+                                    self.tick
+                                );
+                            }
+                            target // unreachable: fall back to straight
+                        }
                     }
                 }
             };
@@ -2060,6 +2119,15 @@ impl World {
         }
     }
 
+    /// Can a straight WALK traverse `a`→`b`? (#185 stall fix — movement's
+    /// twin of los_blocked; feet care about water, eyes don't.)
+    pub(crate) fn walk_line_blocked(&self, a: FxV2, b: FxV2) -> bool {
+        match &self.zone.grid {
+            Some(grid) => grid_walk_blocked(grid, &self.zone.gates, a, b),
+            None => false,
+        }
+    }
+
     /// Recovery. Once per second (tick % 10): life/mana regen stats apply
     /// and energy shield recharges if untouched past its delay; mana also
     /// trickles 2%/s inherently. The out-of-combat burst heal (2%/tick
@@ -2071,6 +2139,7 @@ impl World {
             let Some(e) = self.zone.get_mut(slot) else {
                 continue;
             };
+            let is_char = e.character.is_some();
             let Some(c) = e.combat.as_mut() else { continue };
             if c.life <= 0 {
                 continue;
@@ -2088,7 +2157,16 @@ impl World {
                     c.es = (c.es + rate).min(c.es_max);
                 }
             }
-            if c.life < c.life_max && now.saturating_sub(c.last_combat_tick) >= REGEN_DELAY_TICKS {
+            // CHARACTERS ONLY (#185 tuning): the burst heal is a player
+            // convenience — on monsters it fully reset any boss whose
+            // attacker kited for 5s, making ranged archetypes' fights
+            // unwinnable wars against a self-refilling bar (measured:
+            // the Mother cycling 19%→78% against the caster forever).
+            // Monsters regen through their life_regen stat alone.
+            if is_char
+                && c.life < c.life_max
+                && now.saturating_sub(c.last_combat_tick) >= REGEN_DELAY_TICKS
+            {
                 c.life = (c.life + (c.life_max / 50).max(1)).min(c.life_max);
             }
         }
@@ -2122,16 +2200,13 @@ impl World {
             }
         }
 
-        // Packs respawn as a unit: survivors hold their ground (no trickle
-        // refills); once the pack is wiped and its timer runs out, the whole
-        // pack rises again.
+        // A pack rises EXACTLY ONCE (operator ruling: monsters never
+        // resurrect — anywhere). This loop is the SPAWNER, not a respawner:
+        // it raises each authored pack on its first eligible tick and never
+        // again. A cleared zone stays cleared; a cleared map is done.
         for pack_idx in 0..self.zone.packs.len() {
             let pack = &self.zone.packs[pack_idx];
-            if pack.alive > 0 {
-                continue;
-            }
-            if pack.respawn_timer > 0 {
-                self.zone.packs[pack_idx].respawn_timer -= 1;
+            if pack.alive > 0 || pack.risen {
                 continue;
             }
             let (missing, monster_idx, count) = (
@@ -2226,6 +2301,7 @@ impl World {
                 }
             }
             self.zone.packs[pack_idx].alive = count;
+            self.zone.packs[pack_idx].risen = true;
         }
 
         // Loot despawn and corpse decay.
@@ -2729,7 +2805,7 @@ mod pack_rarity_tests {
 
     /// A fresh shore world with ONE multi-member non-unique pack forced
     /// to the given rarity chances (every other pack stays plain), ticked
-    /// once so the initial refill runs. Returns the forced pack's index.
+    /// once so the pack's single spawn runs. Returns the forced pack's index.
     fn world_with_forced_pack(magic_bp: u32, rare_bp: u32) -> (World, u32) {
         let content = content();
         let mut w = World::new(7, &content);
@@ -3465,6 +3541,9 @@ mod area_level_tests {
         //   0xE800: max 16 → count + first record's fields
         //   0xE980: max 2  → the cap holds
         //   0xE9C0: max -5 → clamps to 0, writes nothing, returns 0
+        //   0xEC00: max 64 → MORE than 16 records land (the density-tuned
+        //           saltworks holds 39 monsters; revert the engine clamp to
+        //           16 and this reads exactly 16 — the raised cap is pinned)
         // Mutation: swap the MON_X/MON_Y writes, drop the clamp, or break
         // record layout → the field asserts fail.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
@@ -3474,6 +3553,7 @@ mod area_level_tests {
              mem[0xEA00] = query_monsters(0xE800, 16);\n\
              mem[0xEA04] = query_monsters(0xE980, 2);\n\
              mem[0xEA08] = query_monsters(0xE9C0, 0 - 5);\n\
+             mem[0xEA0C] = query_monsters(0xEC00, 64);\n\
              }\n",
         )
         .unwrap();
@@ -3487,6 +3567,12 @@ mod area_level_tests {
             w.test_zone_brain_word(0xEA08).unwrap(),
             0,
             "negative max clamps to zero"
+        );
+        let wide = w.test_zone_brain_word(0xEA0C).unwrap();
+        assert!(
+            wide > 16 && wide <= 64,
+            "a max-64 query reports past the old 16 cap (density blinded boss \
+             brains): {wide}"
         );
         // First record: a real monster num, sane life, in-bounds position.
         let num = w.test_zone_brain_word(0xE800 + 4).unwrap();
@@ -3688,8 +3774,8 @@ mod area_level_tests {
 
     #[test]
     fn open_map_gates_consumes_and_stages_the_run() {
-        // #136 T4: the full syscall contract at Saltmere's real table —
-        // -3 mid-campaign, -2 away from the table, -1 for a non-map,
+        // #136 T4: the full syscall contract at Saltmere's real device —
+        // -3 mid-campaign, -2 away from the device, -1 for a non-map,
         // 0 = the map is consumed and the ticket (tier from ilvl, juice
         // from the ROLLED affixes) rides pending_exits. Mutations: drop the
         // act gate, the reach check, the consume, or the juice mapping →
@@ -3769,9 +3855,9 @@ mod area_level_tests {
             .as_mut()
             .unwrap()
             .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
-        // Away from the table (the spawn is out of reach of (26,46)).
+        // Away from the device (the spawn is out of reach of (26,46)).
         assert_eq!(w.open_map(slot, inv_idx), -2);
-        let table = w.map_table.expect("saltmere has the table");
+        let table = w.map_device.expect("saltmere has the device");
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
         // A non-map index refuses.
@@ -3809,10 +3895,10 @@ mod area_level_tests {
     fn a_rolled_deluge_clock_rides_the_ticket() {
         // #178 (codex): the MapClock arm in open_map was the ONLY
         // untested juice mapping — mutate it to a no-op and every clock
-        // test still passed (the direct-ticket tests bypass open_map, and
-        // the default-clock test never rolls the affix). A real Deluge
-        // map would have silently departed on the 6000 default instead of
-        // its rolled duration. Mutation: drop the MapClock match arm →
+        // test still passed (the direct-ticket tests bypass open_map).
+        // Before the operator killed the default clock, a real Deluge map
+        // would have silently departed on the then-6000 default instead
+        // of its rolled duration. Mutation: drop the MapClock match arm →
         // the clock assert sees 0, fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new_for_zone(0xDE1, &content, "saltmere");
@@ -3848,7 +3934,7 @@ mod area_level_tests {
                 y: 0,
             });
         }
-        let table = w.map_table.expect("saltmere has the table");
+        let table = w.map_device.expect("saltmere has the device");
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
         let inv_idx = w
@@ -3903,7 +3989,7 @@ mod area_level_tests {
                 y: 0,
             });
         }
-        let table = w.map_table.unwrap();
+        let table = w.map_device.unwrap();
         let net = w.zone.get(slot).unwrap().net_id;
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
@@ -4028,88 +4114,6 @@ mod area_level_tests {
     }
 
     #[test]
-    fn a_clockless_map_still_mints_with_the_default_clock() {
-        // #178 (the eternal map): a clockless map plus a non-returning
-        // brain was an infinite private XP/loot faucet — a stale deploy
-        // farmed one tier-1 instance for four hours. EVERY map now mints
-        // with a clock; a rolled MapClock still sets its own duration
-        // (pinned by map_rules_ride_the_ticket_and_shape_the_run).
-        // Mutation: revert the default arm → map_ends_at is 0, fails.
-        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let w = World::new_map_instance(
-            0x178,
-            &content,
-            "charted_shallows",
-            MapTicket {
-                tier: 1,
-                rarity_bp: 0,
-                quantity_bp: 0,
-                fury_bp: 0,
-                clock: 0,
-                boss: false,
-            },
-        );
-        assert_eq!(
-            w.map_ends_at, DEFAULT_MAP_TICKS,
-            "a clockless ticket mints with the default clock"
-        );
-    }
-
-    #[test]
-    fn the_eternal_farm_ends() {
-        // #178: a runner who NEVER walks out (broken, stale, or idle brain)
-        // is ferried home when the default clock rings — departure staged,
-        // tally settled. Mutation: revert the default arm → no departure
-        // ever fires and this fails at the assert.
-        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_map_instance(
-            0x178,
-            &content,
-            "charted_shallows",
-            MapTicket {
-                tier: 1,
-                rarity_bp: 0,
-                quantity_bp: 0,
-                fury_bp: 0,
-                clock: 0,
-                boss: false,
-            },
-        );
-        let slot = join_one(&mut w, "Fable");
-        // The arrival stamp rides the ferry path (pinned by
-        // a_real_arrival_stamps_the_map_marks); join_one lands via
-        // joins, so stamp the mark manually as that test does.
-        let net = w.zone.get(slot).unwrap().net_id;
-        w.map_marks.insert(net, (0, 0, 0, w.tick));
-        let empty = TickInputs::default();
-        let mut departed = None;
-        let mut tallied = false;
-        for _ in 0..=DEFAULT_MAP_TICKS + 2 {
-            for ev in w.tick(&empty) {
-                match ev {
-                    SimEvent::CharacterDeparted { name, dest, .. } => {
-                        departed = Some((name, dest));
-                    }
-                    SimEvent::MapTally { .. } => tallied = true,
-                    _ => {}
-                }
-            }
-            if departed.is_some() {
-                break;
-            }
-        }
-        let (name, dest) = departed.expect("the default clock ferries the farmer home");
-        assert_eq!(name, "Fable");
-        assert_eq!(dest, "lanternfall", "the current takes the strand back");
-        assert!(tallied, "the forced departure still settles a tally");
-        assert_eq!(
-            w.character_count(),
-            0,
-            "the instance is empty and can retire"
-        );
-    }
-
-    #[test]
     fn state_hash_fingerprints_the_map_rules() {
         // #178: by state_hash's own bar (same hash => same future), the
         // map rules are replay-relevant — two worlds differing only in
@@ -4146,17 +4150,78 @@ mod area_level_tests {
     }
 
     #[test]
-    fn an_old_clockless_snapshot_rearms_on_resume() {
-        // #178 migration (codex): a pre-#178 map snapshot minted
-        // clockless — resumed, it bypassed new_map_instance and the
-        // eternal farm survived every restart. attach_content (the one
-        // hook every resume passes through) re-arms exactly those; a
-        // world whose clock already RANG parks at the sentinel and must
-        // resume bit-identical. Mutations: drop the re-arm → the first
-        // assert sees 0; re-arm on 0-or-fired → the sentinel assert fails.
+    fn the_dead_stay_dead() {
+        // Operator ruling: monsters NEVER resurrect — anywhere. Finite
+        // content IS the progression pressure: a cleared zone stays
+        // cleared, a cleared map is DONE (that is what ends a run), and
+        // camping one spot pays nothing. Mutation: restore the respawn
+        // arm (risen=false on wipe, or spawn when risen) → the pack
+        // refills after its old timer and the zero assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_map_instance(
-            0x0DD,
+        let mut w = World::new(0xDEAD, &content);
+        let empty = TickInputs::default();
+        w.tick(&empty); // packs rise once
+        let before: u32 = w.zone.packs.iter().map(|p| p.alive).sum();
+        assert!(before > 0, "the packs rose");
+        // Kill every monster outright (test seam: massive dot strikes).
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 50_000_000;
+        let slots: Vec<usize> = w
+            .zone
+            .iter()
+            .filter(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, _)| s)
+            .collect();
+        for slot in slots {
+            let spec = combat::StrikeSpec {
+                attacker_slot: None,
+                attacker_net: 0,
+                attacker_name: "TheEnd".into(),
+                attacker_is_char: true,
+                is_spell: false,
+                is_dot: true,
+                accuracy: 0,
+                damage,
+                crit_bp: 0,
+                crit_multi: 10000,
+                projectile: false,
+                dot: None,
+                debuff: None,
+                stagger: 0,
+                knockback_cu: 0,
+                ailment_chance: 0,
+                inherent_ailment_kind: None,
+            };
+            let (mut ev, mut dd, mut ll) = (Vec::new(), Vec::new(), Vec::new());
+            let now = w.tick;
+            w.strike(spec, slot, now, &mut ev, &mut dd, &mut ll);
+        }
+        assert_eq!(
+            w.zone.packs.iter().map(|p| p.alive).sum::<u32>(),
+            0,
+            "the cull landed"
+        );
+        // Tick FAR past any historical respawn timer: nothing rises.
+        for _ in 0..2_000 {
+            w.tick(&empty);
+        }
+        let living = w
+            .zone
+            .iter()
+            .filter(|(_, e)| e.monster.is_some() && e.alive())
+            .count();
+        assert_eq!(living, 0, "the dead stay dead — no respawns, anywhere");
+    }
+
+    #[test]
+    fn a_clockless_map_never_ends_on_its_own() {
+        // Operator ruling (#185): with no respawns a map ends by being
+        // CLEARED — no timer may boot a working idler. Only a rolled
+        // Deluge clock arms map_ends_at. Mutation: restore the default
+        // arm → nonzero, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let w = World::new_map_instance(
+            0x185,
             &content,
             "charted_shallows",
             MapTicket {
@@ -4168,27 +4233,7 @@ mod area_level_tests {
                 boss: false,
             },
         );
-        let empty = TickInputs::default();
-        for _ in 0..100 {
-            w.tick(&empty);
-        }
-        // Simulate the pre-#178 mint: never armed.
-        w.map_ends_at = 0;
-        w.attach_content(&content).expect("content reattaches");
-        assert_eq!(
-            w.map_ends_at,
-            w.tick + DEFAULT_MAP_TICKS,
-            "a never-armed map re-arms from the resume point"
-        );
-        // A RUNG clock stays rung across resume — no rug-pull re-arm.
-        w.map_ends_at = w.tick + 1;
-        w.tick(&empty);
-        assert_eq!(w.map_ends_at, MAP_CLOCK_FIRED, "the clock parks");
-        w.attach_content(&content).expect("content reattaches");
-        assert_eq!(
-            w.map_ends_at, MAP_CLOCK_FIRED,
-            "a fired clock resumes exactly, never re-arms"
-        );
+        assert_eq!(w.map_ends_at, 0, "no rolled clock = no clock, ever");
     }
 
     #[test]

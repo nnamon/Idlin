@@ -111,7 +111,11 @@ impl World {
             SYS_RANDOM => bot.rng.next_u32() as i32,
             SYS_QUERY_MONSTERS => {
                 let out = bot.vm.pop() as u16;
-                let max = bot.vm.pop().clamp(0, 16) as usize;
+                // Cap 64 (was 16): the density tuning (#185) put 24+ living
+                // monsters in boss zones and the stage-director brains went
+                // BLIND to their own boss past the 16th record — phases
+                // never fired. 64 covers any authored zone with headroom.
+                let max = bot.vm.pop().clamp(0, 64) as usize;
                 let mut n = 0u16;
                 for (_, e) in self.zone.iter() {
                     if n as usize >= max {

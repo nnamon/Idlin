@@ -2032,7 +2032,7 @@ impl World {
     }
 
     /// Death bookkeeping shared by strikes, projectiles, and dots: XP,
-    /// loot, pack counts, respawn timers, corpse marking.
+    /// loot, pack counts, corpse marking.
     #[allow(clippy::too_many_arguments)]
     fn handle_kill(
         &mut self,
@@ -2077,13 +2077,10 @@ impl World {
             dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
             // Scripted spawns (spawn_monster/spawn_elite) belong to no
             // pack — the sentinel index has no bookkeeping to update.
+            // Pack bookkeeping only — packs rise exactly once (`risen`);
+            // a wiped pack stays wiped, the world is finite.
             if let Some(pack) = self.zone.packs.get_mut(pack_idx as usize) {
                 pack.alive = pack.alive.saturating_sub(1);
-                // Packs respawn as a unit: the timer starts only once
-                // the whole pack has been wiped.
-                if pack.alive == 0 {
-                    pack.respawn_timer = pack.def.respawn_ticks;
-                }
             }
             if attacker_is_char {
                 events.push(SimEvent::MonsterKilled {

@@ -50,7 +50,7 @@ export const FIXTURES: FixtureMeta[] = [
     kind: "overlay",
     expect: [
       "Brakka",
-      "level 42",
+      "Level 42",
       // The paper doll is icon-only (names ride the hover title), so assert the
       // section is present, not item-name text; the icons are eyeballed + the
       // byte-stable shot pins them.
@@ -83,10 +83,13 @@ export const FIXTURES: FixtureMeta[] = [
     minBytes: 50_000,
   },
   {
-    // PoE-style item tooltip (#87). The needles assert the EXACT formatted mod
-    // strings, not just substrings — so basis-point scaling (3800 → 38%) and the
-    // value(min-max) range rendering are non-vacuously proven: drop the ÷100 in
-    // formatEffect and "+38(35-38)%" becomes "+3800(...)%" and this fails.
+    // PoE-style item tooltip (#87). The needles pin the complete formatted
+    // mod lines as substrings of a byte-stable shot — basis-point scaling
+    // (3800 → 38%) and value(min-max) rendering are non-vacuously proven:
+    // drop the ÷100 in formatEffect and "+38(35-38)%" becomes "+3800(...)%"
+    // and this fails. (Layout/extra-line regressions are the eyeball's job —
+    // the harness contract is pinned needles + a stable shot, not full-text
+    // equality.)
     name: "item-tooltip",
     kind: "tooltip",
     expect: [
@@ -99,6 +102,35 @@ export const FIXTURES: FixtureMeta[] = [
       "+38(35-38)% Critical Strike Multiplier", // basis points ÷100
       "36(35-38)% increased Critical Strike Chance", // increased layer ÷100
       "Tier 1",
+    ],
+  },
+  {
+    // Tooltip completeness: a NORMAL item's whole story is definitional — the
+    // base combat block + the implicit line. Both were previously unrendered
+    // (the tooltip showed "Normal item" and nothing else).
+    name: "tooltip-normal-wand",
+    kind: "tooltip",
+    expect: [
+      "Barnacle Wand",
+      "Physical Damage: 8",
+      "Cold Damage: 6",
+      "Cast Time: 0.9s",
+      "+40% Spell Damage",
+      "(implicit)",
+    ],
+  },
+  {
+    // Tooltip completeness: a signature unique's authored mods (v47
+    // unique_mods — uniques carry no rolled affixes). Basis points ÷100.
+    name: "tooltip-unique",
+    kind: "tooltip",
+    expect: [
+      "The Tidewarden's Grasp",
+      "Brine-Crusted Gauntlets",
+      "Armour: 34",
+      "+40 Life",
+      "+25% Cold Resistance",
+      "12% increased Attack Speed",
     ],
   },
   {

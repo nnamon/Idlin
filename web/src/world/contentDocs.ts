@@ -43,6 +43,25 @@ export interface ItemDoc {
   req_str?: number;
   req_dex?: number;
   req_int?: number;
+  // Base combat stats (#87 tooltip completeness): a normal item's power is
+  // definitional — these render as the tooltip's base block.
+  damage_phys?: number;
+  damage_fire?: number;
+  damage_cold?: number;
+  damage_lightning?: number;
+  damage_chaos?: number;
+  use_ticks?: number;
+  weapon_class?: string;
+  armour?: number;
+  evasion?: number;
+  energy_shield?: number;
+  block_bp?: number;
+  /** The wand implicit (+X bp spell damage) — an implicit line, not a mod. */
+  spell_damage_bp?: number;
+  flask_heal?: number;
+  flask_mana?: number;
+  flask_charges?: number;
+  flask_cost?: number;
 }
 
 /** One formatted modifier ready to render. */

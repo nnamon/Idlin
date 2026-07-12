@@ -14,9 +14,8 @@ ZoneDef(
     tileset: Some("town"),
     packs: [
         // Behind the north gate: bots must cross the wall line to grind.
-        // The long respawn keeps corpses from popping straight back —
-        // each wave is one fight, then the exit loop takes over.
-        (monster: "drowned_shambler", count: 3, x_u: 13, y_u: 3, radius_u: 2, respawn_ticks: 1200),
+        // One pack, one fight — then the exit loop takes over.
+        (monster: "drowned_shambler", count: 3, x_u: 13, y_u: 3, radius_u: 2),
     ],
     // The exit demo: an always-open portal in the north chamber that
     // loops back into this same zone — bots clear the pack, walk through,

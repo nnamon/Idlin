@@ -82,11 +82,15 @@
   margin-top: 0;
 }
 
-/* Display name (focus card, plaque). */
+/* Display name (focus card, plaque). Small chrome speaks the TEXT voice —
+   Cinzel holds only at true display sizes (zone title 26px, boss-sighted
+   34px, banner 44px); 15-17px Trajan caps on Inter panels read as a stray
+   second font, not display type. */
 .display {
-  font-family: var(--font-display);
+  font-family: var(--font-text);
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
   color: #f0e6d2;
   text-shadow: 0 1px 3px #000;
 }
@@ -396,10 +400,12 @@
   pointer-events: none;
 }
 .boss-name {
-  font-family: var(--font-display);
+  /* 14px is below the display-voice floor — text voice, tracked caps. */
+  font-family: var(--font-text);
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 2px;
+  text-transform: uppercase;
   text-align: center;
   /* unique tone — keep in sync with RARITY_COLORS[3] in src/gen/constants.ts
      (CSS can't import TS without a build step) */

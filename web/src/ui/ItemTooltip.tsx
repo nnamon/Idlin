@@ -1,9 +1,13 @@
-// PoE-style item tooltip (#87): name + base header, item/required levels, then
-// the rolled modifiers grouped prefix/suffix with each tier name + the formatted
-// "value(range)" line. Pure + presentational so the capture harness can mount it
-// with a fixed item; the live overlay feeds it the hovered bag/equipped item.
+// PoE-style item tooltip (#87): name + base header, the base's own combat
+// block (weapon damage / attack time / armour / ES / flask charge — a normal
+// item's power is definitional, resolved from content-docs), implicit lines,
+// item/required levels, then the modifiers: rolled affixes grouped
+// prefix/suffix with tier names, or a signature unique's authored mods.
+// Pure + presentational so the capture harness can mount it with a fixed
+// item; the live overlay feeds it the hovered bag/equipped item.
 import { RARITY_COLORS } from "../gen/constants";
-import type { ContentDocs, FormattedMod } from "../world/contentDocs";
+import type { ContentDocs, FormattedMod, ItemDoc } from "../world/contentDocs";
+import { formatContribution } from "../world/contentDocs";
 
 /** The structural item shape shared by GearSlotView and InvItemView. */
 export interface TooltipItem {
@@ -12,9 +16,38 @@ export interface TooltipItem {
   base_num: number;
   item_level: number;
   mods: { num: number; tier: number; values: number[] }[];
+  /** A signature unique's authored mods (v47); empty otherwise. */
+  unique_mods?: { stat: string; layer: number; value: number }[];
 }
 
 const RARITY_NAME = ["Normal", "Magic", "Rare", "Unique"];
+
+/** The base def's own combat lines ("Physical Damage: 8", "Attack Time: 0.9s"). */
+function baseLines(base: ItemDoc): string[] {
+  const out: string[] = [];
+  const dmg: [string, number | undefined][] = [
+    ["Physical", base.damage_phys],
+    ["Fire", base.damage_fire],
+    ["Cold", base.damage_cold],
+    ["Lightning", base.damage_lightning],
+    ["Chaos", base.damage_chaos],
+  ];
+  for (const [kind, v] of dmg) if (v) out.push(`${kind} Damage: ${v}`);
+  if (out.length > 0 && base.use_ticks) {
+    // 10 sim ticks per second; wands cast, everything else attacks.
+    const verb = base.weapon_class === "wand" ? "Cast" : "Attack";
+    out.push(`${verb} Time: ${(base.use_ticks / 10).toFixed(1)}s`);
+  }
+  if (base.armour) out.push(`Armour: ${base.armour}`);
+  if (base.evasion) out.push(`Evasion: ${base.evasion}`);
+  if (base.energy_shield) out.push(`Energy Shield: ${base.energy_shield}`);
+  if (base.block_bp) out.push(`Block: ${base.block_bp / 100}%`);
+  if (base.flask_heal) out.push(`Restores ${base.flask_heal} Life`);
+  if (base.flask_mana) out.push(`Restores ${base.flask_mana} Mana`);
+  if (base.flask_charges)
+    out.push(`${base.flask_charges} Charges (${base.flask_cost ?? 0} per use)`);
+  return out;
+}
 
 export function ItemTooltip({ item, docs }: { item: TooltipItem; docs: ContentDocs | null }) {
   const color = RARITY_COLORS[item.rarity] ?? RARITY_COLORS[0];
@@ -64,11 +97,57 @@ export function ItemTooltip({ item, docs }: { item: TooltipItem; docs: ContentDo
       </div>
 
       <div style={{ padding: "6px 10px" }}>
+        {/* the base's own combat block (definitional — every rarity has it) */}
+        {base && baseLines(base).length > 0 && (
+          <div style={{ color: "#c9bb95", marginBottom: 4 }}>
+            {baseLines(base).map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        )}
+
+        {/* implicit: the wand's spell-damage line, distinct from rolled mods */}
+        {base?.spell_damage_bp ? (
+          <div
+            style={{
+              borderTop: "1px solid #2a2113",
+              paddingTop: 4,
+              marginBottom: 4,
+              color: "#8aa0d8",
+            }}
+          >
+            +{base.spell_damage_bp / 100}% Spell Damage
+            <span style={{ color: "#6f6346", fontStyle: "italic" }}> (implicit)</span>
+          </div>
+        ) : null}
+
         {/* meta */}
         {(item.item_level > 0 || reqs.length > 0) && (
           <div style={{ color: "#8c7f5e", fontSize: 11.5, marginBottom: 4 }}>
             {item.item_level > 0 && <div>Item Level: {item.item_level}</div>}
             {reqs.length > 0 && <div>Requires {reqs.join(", ")}</div>}
+          </div>
+        )}
+
+        {/* a signature unique's authored mods — fixed identity, no tiers */}
+        {(item.unique_mods?.length ?? 0) > 0 && (
+          <div
+            style={{
+              borderTop: "1px solid #2a2113",
+              paddingTop: 5,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            {item.unique_mods!.map((m, i) => {
+              const stat = docs?.stat(m.stat);
+              return (
+                <div key={i} style={{ color: "#d2ab52" }}>
+                  {formatContribution(m.layer, m.value, stat)} {stat?.name ?? m.stat}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -97,11 +176,18 @@ export function ItemTooltip({ item, docs }: { item: TooltipItem; docs: ContentDo
           </div>
         )}
 
-        {formatted.length === 0 && item.mods.length === 0 && (
-          <div style={{ color: "#6f6346", fontStyle: "italic", fontSize: 11.5 }}>
-            {RARITY_NAME[item.rarity] ?? ""} item
-          </div>
-        )}
+        {/* the bare-item filler ONLY when the tooltip rendered nothing else
+            (gems / base-less rows) — an item showing its base block or an
+            implicit is already telling its story */}
+        {formatted.length === 0 &&
+          item.mods.length === 0 &&
+          (item.unique_mods?.length ?? 0) === 0 &&
+          (!base || baseLines(base).length === 0) &&
+          !base?.spell_damage_bp && (
+            <div style={{ color: "#6f6346", fontStyle: "italic", fontSize: 11.5 }}>
+              {RARITY_NAME[item.rarity] ?? ""} item
+            </div>
+          )}
       </div>
     </div>
   );

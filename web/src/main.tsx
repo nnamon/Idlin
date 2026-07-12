@@ -59,8 +59,7 @@ if (replay) {
       return;
     }
     // ?at=N (#148 A7): fast-forward — apply the first N journal lines
-    // instantly, then play at speed. The kill-cam API hands out these
-    // line numbers for boss falls.
+    // instantly, then play at speed.
     const at = Number(params.get("at") ?? 0);
     while (i < at && i < lines.length) {
       try {

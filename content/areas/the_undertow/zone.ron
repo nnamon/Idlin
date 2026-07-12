@@ -20,16 +20,16 @@ ZoneDef(
     ],
     brain: Some("the_undertow"),
     packs: [
-        SpawnPack(monster: "choir_remnant", count: 3, x_u: 23, y_u: 44, radius_u: 3, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "choir_remnant", count: 7, x_u: 23, y_u: 44, radius_u: 3, magic_bp: 2800, rare_bp: 1000),
         // Pilgrims, not stranglers (quality pass): the spiral was a kill
         // box — the game's hardest-hitting trash in its narrowest corridor
         // (583 caster corpses). "Every drowned thing ends up here": the
         // stair's pilgrims fit the words and the fight.
-        SpawnPack(monster: "pilgrim_husk", count: 3, x_u: 22, y_u: 34, radius_u: 3, respawn_ticks: 900, magic_bp: 2800, rare_bp: 1000),
-        SpawnPack(monster: "choir_remnant", count: 3, x_u: 24, y_u: 27, radius_u: 3, respawn_ticks: 900, magic_bp: 3000, rare_bp: 1100),
-        SpawnPack(monster: "choir_remnant", count: 1, x_u: 14, y_u: 14, radius_u: 2, respawn_ticks: 1500, magic_bp: 3000, rare_bp: 1200),
-        SpawnPack(monster: "choir_remnant", count: 1, x_u: 32, y_u: 14, radius_u: 2, respawn_ticks: 1500, magic_bp: 3000, rare_bp: 1200),
-        SpawnPack(monster: "riptide_sovereign", count: 1, x_u: 23, y_u: 8, radius_u: 0, respawn_ticks: 3000),
+        SpawnPack(monster: "pilgrim_husk", count: 7, x_u: 22, y_u: 34, radius_u: 3, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "choir_remnant", count: 7, x_u: 24, y_u: 27, radius_u: 3, magic_bp: 3000, rare_bp: 1100),
+        SpawnPack(monster: "choir_remnant", count: 1, x_u: 14, y_u: 14, radius_u: 2, magic_bp: 3000, rare_bp: 1200),
+        SpawnPack(monster: "choir_remnant", count: 1, x_u: 32, y_u: 14, radius_u: 2, magic_bp: 3000, rare_bp: 1200),
+        SpawnPack(monster: "riptide_sovereign", count: 1, x_u: 23, y_u: 8, radius_u: 0),
     ],
     exits: [
         (x_u: 23, y_u: 56, dest: "pressure_court", open: true),

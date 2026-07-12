@@ -396,7 +396,7 @@ pub struct ItemDef {
     /// only when true; private (the default) defs get an internal num only.
     #[serde(default)]
     pub public: bool,
-    /// A MAP (#136 T4): using it at the Map Table opens a map
+    /// A MAP (#136 T4): using it at the Map Device opens a map
     /// instance. The BASE tier; the effective tier scales with the rolled
     /// item_level. Maps are bag items — never equippable.
     #[serde(default)]
@@ -1111,13 +1111,12 @@ pub struct SpawnPack {
     pub y_u: i32,
     /// Spawn jitter radius around the anchor, whole units.
     pub radius_u: i32,
-    /// Ticks after a wipe before the pack respawns.
-    pub respawn_ticks: u32,
-    /// Basis-point chance, rolled ONCE per pack refill, for the pack to
-    /// come up MAGIC (whole pack, one shared affix set) / RARE (a single
-    /// rare leading an otherwise-normal pack). Packs never roll Unique —
-    /// uniques are authored on the monster def. Defaults 0: tutorial
-    /// packs stay plain; zones author their juice.
+    /// Basis-point chance, rolled ONCE at the pack's single spawn (packs
+    /// rise exactly once — the world is finite, no refills), for the pack
+    /// to come up MAGIC (whole pack, one shared affix set) / RARE (a
+    /// single rare leading an otherwise-normal pack). Packs never roll
+    /// Unique — uniques are authored on the monster def. Defaults 0:
+    /// tutorial packs stay plain; zones author their juice.
     #[serde(default)]
     pub magic_bp: u32,
     #[serde(default)]
@@ -1302,12 +1301,12 @@ pub struct ZoneDef {
     pub camp_radius_u: i32,
     #[serde(default)]
     pub kind: ZoneKind,
-    /// The Map Table's cell (#136 T4): where OpenMap works. One per
+    /// The Map Device's cell (#136 T4): where OpenMap works. One per
     /// game for 1.0 — Saltmere's. None everywhere else.
     #[serde(default)]
-    pub map_table: Option<(i32, i32)>,
+    pub map_device: Option<(i32, i32)>,
     /// The town's VENDOR cell (#148 A5) — where a character sells items
-    /// for obols. Loader-validated walkable + reachable, like the table.
+    /// for obols. Loader-validated walkable + reachable, like the device.
     #[serde(default)]
     pub vendor: Option<(i32, i32)>,
     /// The town's STASH cell (#148 A5) — the persistent chest.
@@ -1841,15 +1840,15 @@ impl ContentDb {
                     )));
                 }
             }
-            // The Map Table (#136 T4) is the endgame's front door — a
+            // The Map Device (#136 T4) is the endgame's front door — a
             // mis-authored cell would silently strand every map run.
-            if let Some((tx, ty)) = zone.map_table {
+            if let Some((tx, ty)) = zone.map_device {
                 if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
-                    return Err(bad(format!("map_table {tx}x{ty} is off the map")));
+                    return Err(bad(format!("map_device {tx}x{ty} is off the map")));
                 }
                 if !walkable_at(tx, ty) || !reachable(tx, ty) {
                     return Err(bad(format!(
-                        "map_table {tx}x{ty} must be walkable and reachable from spawn"
+                        "map_device {tx}x{ty} must be walkable and reachable from spawn"
                     )));
                 }
             }
@@ -4157,7 +4156,7 @@ mod tests {
                     id: "test", name: "Test", width_u: 10, height_u: 10,
                     spawn_x_u: 5, spawn_y_u: 5,
                     packs: [(monster: "no_such_monster", count: 1,
-                             x_u: 2, y_u: 2, radius_u: 1, respawn_ticks: 10)],
+                             x_u: 2, y_u: 2, radius_u: 1)],
                 )"#,
             )],
         );

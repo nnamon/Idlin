@@ -7,5 +7,5 @@ MonsterDef(
     speed_cps: 220, radius_cu: 60, range_cu: 230, mana: 160,
     skills: [(gem: "frost_nova", level: 3)],
     use_ticks: 17, aggro_radius_cu: 1500, armour: 40,
-    resist_cold: 4500, xp: 540, projectile: false,
+    resist_cold: 4500, xp: 675, projectile: false,
 )

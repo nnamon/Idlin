@@ -14,7 +14,7 @@
 // Act 1 is done it pushes DEEPER when leveled for the next zone
 // (coast at once, saltworks at 7, the Hollow at 10) and breaks the
 // Mother. After (SelfStatus flags bit 1) it lives the endgame loop:
-// home to Saltmere, open a map at the Map Table, farm the
+// home to Saltmere, open a map at the Map Device, farm the
 // map for ~8 minutes, walk home, repeat — and when it runs dry
 // of maps, it returns to the Hollow: the Mother always pays one.
 //
@@ -61,6 +61,8 @@ var upkeep_in;             // gear/socket upkeep cadence (budget discipline)
 var shed_cd;               // ticks to ignore ground loot after shedding
 var last_xp;               // XP-drought: earnings mark real progress
 var drought;               // ticks fighting without earning
+var spent;                 // ticks in this zone with NOTHING to fight
+var spent_zid;             // the zone the spent counter belongs to
 var was_dead;              // the dead-bit's edge detector
 var shy;                   // post-respawn: don't re-engage the killers
 var close_in;              // ticks of forced gap-closing
@@ -219,6 +221,11 @@ fn route_dest() {
     var act1 = mem[SELF + SS_FLAGS] & 2;
     var lvl = mem[SELF + SS_LEVEL];
     var zid = mem[SELF + SS_ZONE];
+    // THE ROAD ADVANCES WHEN THE ZONE IS SPENT (operator ruling: monsters
+    // never respawn — camping pays nothing). ~30s with nothing to
+    // fight overrides every level gate below: there is no XP left here;
+    // forward is the only direction that pays.
+    if (zid != spent_zid) { spent = 0; spent_zid = zid; }
     if (act1 == 0) {
         // The campaign: press on when strong enough. (The shore's own
         // brain paces the tutorial; when the bluff gate finally opens,
@@ -226,14 +233,14 @@ fn route_dest() {
         if (zid == ZONE_WITHERED_SHORE) { return ZONE_SALTMERE; }
         if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
         if (zid == ZONE_COAST) {
-            if (lvl >= 7) { return ZONE_SALTWORKS; }
+            if (lvl >= 7 || spent > 300) { return ZONE_SALTWORKS; }
             return -1;
         }
         if (zid == ZONE_SALTWORKS) {
             // 12, not 10: the Hollow at 10 was a meat grinder (the T8 band
             // counted 71 deaths on one seed) — two more Saltworks levels
             // turn it into a fight.
-            if (lvl >= 12) { return ZONE_HOLLOW; }
+            if (lvl >= 12 || spent > 300) { return ZONE_HOLLOW; }
             return -1;
         }
         // The Hollow is the road's business pre-act (the Mother lives
@@ -253,11 +260,11 @@ fn route_dest() {
         if (zid == ZONE_SUNKEN_STAIR) { return ZONE_LANTERNFALL; }
         if (zid == ZONE_LANTERNFALL) { return ZONE_KELP_FOREST; }
         if (zid == ZONE_KELP_FOREST) {
-            if (lvl >= 17) { return ZONE_PRESSURE_COURT; }
+            if (lvl >= 17 || spent > 300) { return ZONE_PRESSURE_COURT; }
             return -1;
         }
         if (zid == ZONE_PRESSURE_COURT) {
-            if (lvl >= 19) { return ZONE_THE_UNDERTOW; }
+            if (lvl >= 19 || spent > 300) { return ZONE_THE_UNDERTOW; }
             return -1;
         }
         if (zid == ZONE_THE_UNDERTOW) { return -1; }
@@ -268,19 +275,19 @@ fn route_dest() {
         return 0;
     }
     // The endgame, both acts down. A map run lasts ~8 minutes, then home
-    // to the NEAREST table (Lanternfall keeps one too); dry, the road
+    // to the NEAREST Map Device (Lanternfall keeps one too); dry, the road
     // leads to the Sovereign — the deepest act boss pays the deepest
     // maps.
     if (zid == ZONE_CHARTED_SHALLOWS) {
         // HOME IS WHERE THE EXIT GOES (#162 live find): the route said
         // Lanternfall but the map run's only exit lands in SALTMERE — want
         // never matched an exit and two brains farmed one tier-1 map run
-        // for two hours. Saltmere keeps a table; the cycle closes there.
+        // for two hours. Saltmere keeps a device; the cycle closes there.
         if (map_t > 5000) { return ZONE_SALTMERE; }
         return -1;
     }
     if (find_map() >= 0) {
-        if (zid == ZONE_LANTERNFALL) { return -1; }  // the table logic in main
+        if (zid == ZONE_LANTERNFALL) { return -1; }  // the device logic in main
         if (zid == ZONE_SALTMERE) { return -1; }
         if (zid == ZONE_THE_UNDERTOW) { return ZONE_PRESSURE_COURT; }
         if (zid == ZONE_PRESSURE_COURT) { return ZONE_KELP_FOREST; }
@@ -369,7 +376,7 @@ fn main() {
     // bag scan, and seven socket probes — is the tick's biggest spender,
     // and gear doesn't change mid-swing. It all fires on ONE tick in ten
     // (shed + gear + sockets together), then rests nine; the campaign
-    // brain (route/table/exits) bought its budget here.
+    // brain (route/device/exits) bought its budget here.
     if (upkeep_in <= 0) {
         upkeep_in = 10;
         shed_trash();
@@ -390,12 +397,12 @@ fn main() {
     socket_into(NODE_SOCKET_GALE, GEM_QUICKENING);
     }
 
-    // THE TABLE (#136 T6): in town, after the act, holding a map —
-    // walk to the Map Table and head. OpenMap refuses harmlessly
+    // THE MAP DEVICE (#136 T6): in town, after the act, holding a map —
+    // walk to the Map Device and head. OpenMap refuses harmlessly
     // (-2) until we're in reach; keep walking until it takes.
     // The CAMPAIGN OUTRANKS the maps (#148 A3): a mid-campaign pupil
-    // carrying the Mother's map once opened from Lanternfall's table the
-    // moment it arrived, abandoning Act 2 — the table waits until no act
+    // carrying the Mother's map once opened from Lanternfall's device the
+    // moment it arrived, abandoning Act 2 — the device waits until no act
     // is pending (flags bit 2 = act 2, the current last; revisit per act).
     if (zid == ZONE_SALTMERE || zid == ZONE_LANTERNFALL) {
         if ((mem[SELF + SS_FLAGS] & 4) != 0) {
@@ -404,7 +411,7 @@ fn main() {
                 // JUNK BECOMES OBOLS first (#148 A5): everything upkeep
                 // left loose is a loser by definition — maps and build
                 // gems excepted (the shed rule, monetized). One sale per
-                // tick at the vendor, then the table.
+                // tick at the vendor, then the device.
                 var vx = mem[SELF + SS_VENDOR_X];
                 if (vx >= 0) {
                     var sn = read_inventory(INV, 60);
@@ -442,7 +449,7 @@ fn main() {
 
     // Find the exit the ROAD wants (#136 T6). A routed destination IS the
     // commitment: the level gates in route_dest decide when a zone is done
-    // (boredom can't — grind zones respawn and would feed us forever).
+    // (boredom can't — a map is private and finite; the clock is the exit).
     var open_ex = 0;
     var ex = 0;
     var ey = 0;
@@ -561,6 +568,8 @@ fn main() {
     if (bored > 120) { leaving = 1; }
 
     if (target >= 0) {
+        spent = 0; // a VISIBLE enemy means the zone still pays (reset
+                   // BEFORE the heading-out branch can return — codex)
         // Heading out? Ignore enemies beyond ~6u (Chebyshev, raw Q16.16:
         // squaring raw deltas would overflow).
         if (open_ex == 1 && leaving == 1) {
@@ -666,6 +675,7 @@ fn main() {
         return;
     }
 
+    spent = spent + 1;
     // Nothing to fight: collect outstanding loot first (it expires),
     // then leave only once boredom commits us (the bot's own call —
     // nothing forces a transfer), else EXPLORE: hold a wander target

@@ -94,6 +94,9 @@ export class EntityVisual {
   private baseRole = "";
   private attacking = false;
   private wasDead = false;
+  /** Ever witnessed alive — false for a visual created over a corpse
+   *  (cross-world cut rebuild), which must POSE dead, never re-die. */
+  private sawAlive = true;
 
   // Modular body
   private def: ModelDef | null = null;
@@ -151,6 +154,7 @@ export class EntityVisual {
     const { state } = er;
     this.myName = state.name;
     this.modelKey = state.model;
+    this.sawAlive = !state.dead;
     if (state.kind === "Loot") {
       this.buildLoot(state.model, state.rarity);
     } else {
@@ -233,10 +237,23 @@ export class EntityVisual {
       if (mesh) this.baseRegionMeshes.set(region, mesh);
     }
 
-    // Monsters with a spawn clip rise out of the ground; everyone else
-    // idles, phase-shifted so packs don't move in lockstep.
+    // A model attached over a CORPSE (born dead, or assets landed after
+    // the dead edge already fired) poses at the death clip's final frame
+    // — no rise, no idle, no re-death.
     const spawn = this.actions.get("spawn");
-    if (isMonster && spawn) {
+    if (this.wasDead || !this.sawAlive) {
+      const death = this.actions.get("death");
+      if (death) {
+        death.setLoop(THREE.LoopOnce, 1);
+        death.clampWhenFinished = true;
+        death.play();
+        death.time = death.getClip().duration;
+      }
+      this.attacking = false;
+      this.baseRole = "idle";
+    } else if (isMonster && spawn) {
+      // Monsters with a spawn clip rise out of the ground; everyone else
+      // idles, phase-shifted so packs don't move in lockstep.
       spawn.setLoop(THREE.LoopOnce, 1);
       spawn.play();
       this.attacking = true; // blocks the base state until "finished"
@@ -745,16 +762,27 @@ export class EntityVisual {
     }
 
     // -- death / respawn --
+    if (!er.state.dead) this.sawAlive = true;
     if (er.state.dead !== this.wasDead) {
+      // A visual never witnessed ALIVE (created over a corpse after a
+      // cross-world cut rebuilt the scene) snaps to the death pose's
+      // final frame — only a live→dead transition animates. Without
+      // this, every rotation cut replayed every corpse's collapse.
+      const bornDead = er.state.dead && !this.sawAlive;
       this.wasDead = er.state.dead;
       if (er.state.dead) {
         this.attacking = false;
+        this.actions.get("spawn")?.stop(); // a corpse never rises
         const death = this.actions.get("death");
         if (death) {
           for (const a of this.actions.values()) a.fadeOut(FADE_S);
           death.setLoop(THREE.LoopOnce, 1);
           death.clampWhenFinished = true;
           death.reset().fadeIn(FADE_S).play();
+          if (bornDead) {
+            death.time = death.getClip().duration; // corpse, not a collapse
+            death.fadeIn(0);
+          }
         }
       } else {
         const death = this.actions.get("death");
