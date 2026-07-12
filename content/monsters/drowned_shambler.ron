@@ -15,6 +15,6 @@ MonsterDef(
     use_ticks: 12,
     aggro_radius_cu: 1400, // 14 u
     armour: 20,
-    xp: 32,
+    xp: 43,
     projectile: false,
 )

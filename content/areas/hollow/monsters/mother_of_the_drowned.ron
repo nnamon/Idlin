@@ -18,7 +18,7 @@ MonsterDef(
     // #136: THE act boss. Breaking her completes Act 1 and unseals the
     // Map Device (the endgame, T4).
     act_boss: Some(1),
-    level: 12,
+    level: 19,
     life: 2000,
     damage: 20,
     damage_cold: 6,
@@ -56,7 +56,7 @@ MonsterDef(
     resist_cold: 2500,
     resist_lightning: 2500,
     resist_chaos: 3000,
-    xp: 2400,
+    xp: 6000,
     projectile: false,
     lines: [
         "Every tide is MINE coming back.",

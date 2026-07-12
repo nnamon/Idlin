@@ -64,7 +64,12 @@ const GOLDEN_TICKS: u64 = 2_000;
 // (dead schema under the no-respawn world) + the round-4 prose sweep
 // (zone comments + narration are content bytes) — content_hash moved; the
 // 2000-tick behavior is identical.
-const GOLDEN_HASH: u64 = 0xE4E0_16E7_7191_B93C;
+// Re-pinned for the difficulty re-anchor (operator: tier-1 maps at 40,
+// campaign graduates ~38): map area = 39+tier, the zone arc re-mapped
+// (coast 7 … undertow 35), boss levels re-anchored, XP re-tuned (both
+// acts ×1.35, bosses re-anchored, curve 80+8l²·1.04^(l−10)), Act-2
+// density trimmed, wight re-authored. Content + behavior both moved.
+const GOLDEN_HASH: u64 = 0x2B2E_8355_7C33_E810;
 
 #[test]
 fn golden_replay() {

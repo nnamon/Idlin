@@ -18,6 +18,6 @@ MonsterDef(
     use_ticks: 8,          // fast little bites
     aggro_radius_cu: 800,  // 8 u: they wait IN the gauntlet, not at its gate
     armour: 0,
-    xp: 10,
+    xp: 13,
     projectile: false,
 )

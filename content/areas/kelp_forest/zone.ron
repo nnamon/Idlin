@@ -4,7 +4,7 @@ ZoneDef(
     id: "kelp_forest",
     name: "The Kelp Forest",
     kind: story,
-    level: 15,
+    level: 27,
     tileset: Some("shore"),
     tileset_variant: Some("abyss"),
     spawn_x_u: 24,
@@ -15,12 +15,12 @@ ZoneDef(
     // pass of fights, then the road moves on — a squishy archetype never
     // re-fights what it already cleared.
     packs: [
-        SpawnPack(monster: "kelp_strangler", count: 10, x_u: 14, y_u: 48, radius_u: 4, magic_bp: 2500, rare_bp: 900),
-        SpawnPack(monster: "reef_chanter",   count: 7, x_u: 30, y_u: 40, radius_u: 4, magic_bp: 2500, rare_bp: 900),
-        SpawnPack(monster: "kelp_strangler", count: 10, x_u: 16, y_u: 32, radius_u: 4, magic_bp: 2500, rare_bp: 900),
-        SpawnPack(monster: "reef_chanter",   count: 7, x_u: 34, y_u: 24, radius_u: 4, magic_bp: 2800, rare_bp: 1000),
-        SpawnPack(monster: "kelp_strangler", count: 11, x_u: 20, y_u: 14, radius_u: 4, magic_bp: 2800, rare_bp: 1000),
-        SpawnPack(monster: "reef_chanter",   count: 7, x_u: 36, y_u: 8,  radius_u: 4, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "kelp_strangler", count: 8, x_u: 14, y_u: 48, radius_u: 4, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "reef_chanter",   count: 6, x_u: 30, y_u: 40, radius_u: 4, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "kelp_strangler", count: 8, x_u: 16, y_u: 32, radius_u: 4, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "reef_chanter",   count: 6, x_u: 34, y_u: 24, radius_u: 4, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "kelp_strangler", count: 9, x_u: 20, y_u: 14, radius_u: 4, magic_bp: 2800, rare_bp: 1000),
+        SpawnPack(monster: "reef_chanter",   count: 6, x_u: 36, y_u: 8,  radius_u: 4, magic_bp: 2800, rare_bp: 1000),
     ],
     exits: [
         (x_u: 24, y_u: 55, dest: "lanternfall", open: true),

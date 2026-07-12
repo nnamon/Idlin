@@ -231,14 +231,14 @@ fn route_dest() {
         if (zid == ZONE_WITHERED_SHORE) { return ZONE_SALTMERE; }
         if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
         if (zid == ZONE_COAST) {
-            if (lvl >= 7 || spent > 300) { return ZONE_SALTWORKS; }
+            if (lvl >= 11 || spent > 300) { return ZONE_SALTWORKS; }
             return -1;
         }
         if (zid == ZONE_SALTWORKS) {
-            // 12, not 10: the Hollow at 10 was a meat grinder (the T8 band
+            // A level under the Hollow's 17: arrive short and the T8 band
             // counted 71 deaths on one seed) — two more Saltworks levels
             // turn it into a fight.
-            if (lvl >= 12 || spent > 300) { return ZONE_HOLLOW; }
+            if (lvl >= 16 || spent > 300) { return ZONE_HOLLOW; }
             return -1;
         }
         // The Hollow is the road's business pre-act (the Mother lives
@@ -258,11 +258,11 @@ fn route_dest() {
         if (zid == ZONE_SUNKEN_STAIR) { return ZONE_LANTERNFALL; }
         if (zid == ZONE_LANTERNFALL) { return ZONE_KELP_FOREST; }
         if (zid == ZONE_KELP_FOREST) {
-            if (lvl >= 17 || spent > 300) { return ZONE_PRESSURE_COURT; }
+            if (lvl >= 30 || spent > 300) { return ZONE_PRESSURE_COURT; }
             return -1;
         }
         if (zid == ZONE_PRESSURE_COURT) {
-            if (lvl >= 19 || spent > 300) { return ZONE_THE_UNDERTOW; }
+            if (lvl >= 34 || spent > 300) { return ZONE_THE_UNDERTOW; }
             return -1;
         }
         if (zid == ZONE_THE_UNDERTOW) { return -1; }

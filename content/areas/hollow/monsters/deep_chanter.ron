@@ -25,6 +25,6 @@ MonsterDef(
     armour: 30,
     resist_cold: 4500,
     resist_lightning: 3000,
-    xp: 363,
+    xp: 490,
     projectile: false,
 )

@@ -2,9 +2,9 @@
 MonsterDef(
     id: "pressure_wight", public: true, name: "Pressure Wight",
     model: "wight", brain: "hostile_melee", hostile: true,
-    level: 17, life: 520, damage: 30, speed_cps: 200,
+    level: 17, life: 520, damage: 25, speed_cps: 200,
     radius_cu: 80, range_cu: 210,
     skills: [(gem: "cleave", level: 4)],
     mana: 50, use_ticks: 15, aggro_radius_cu: 1400,
-    armour: 140, resist_cold: 3000, xp: 800, projectile: false,
+    armour: 140, resist_cold: 3000, xp: 1080, projectile: false,
 )

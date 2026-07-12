@@ -1076,7 +1076,8 @@ impl World {
     }
 
     /// A MAP INSTANCE of a map zone (#136 T4): the ticket's tier sets the
-    /// area level (12 + tier — maps begin where Act 1 ends) and its juice
+    /// area level (39 + tier — the operator's difficulty anchor: tier-1
+    /// maps open at level 40, ABOVE the level-38 campaign graduate) and its juice
     /// boosts every pack's rarity rolls and the world's drop quantity. Must
     /// run before the first tick — packs spawn then, at the lifted level.
     pub fn new_map_instance(
@@ -1087,7 +1088,7 @@ impl World {
     ) -> World {
         let mut w = Self::new_for_zone(seed, content, zone_id);
         w.is_map_instance = true;
-        w.zone_level = 12 + ticket.tier;
+        w.zone_level = 39 + ticket.tier;
         w.loot_quantity_bp = ticket.quantity_bp.max(0);
         // Rarity juice is an INSTANCE PROPERTY read at spawn-roll time —
         // exactly like the quantity bonus (operator ruling on #185, B4).
@@ -1107,7 +1108,7 @@ impl World {
             && let Some(bi) = w.content.monster_idx("the_unwritten")
         {
             // The far end, the strand's north. Uniques keep their AUTHORED
-            // level (20) regardless of tier — the fury/juice dials carry
+            // level (40) regardless of tier — the fury/juice dials carry
             // the tier's difficulty, not the boss's level.
             w.spawn_monster_rolled(
                 bi as u32,
@@ -1671,7 +1672,7 @@ impl World {
 
     /// OpenMap (#136 T4): validate, consume, and stage the run. The map's
     /// effective tier is its base tier lifted by the roll's item_level over
-    /// the act's end (ilvl 13 = tier+1, 14 = tier+2…); the ticket's juice
+    /// the map floor (ilvl 40 = tier+1, 41 = tier+2…); the ticket's juice
     /// comes from the map's rolled quantity/rarity affix values, so the
     /// obols craft BETTER MAPS with the machinery they already have.
     pub(crate) fn open_map(&mut self, slot: usize, inv_sel: i32) -> i32 {
@@ -1711,8 +1712,10 @@ impl World {
         let Some(base_tier) = def.map_tier else {
             return -1; // not a map
         };
-        // Effective tier: base + how far past the act's end this roll dropped.
-        let tier = base_tier + item.item_level.saturating_sub(12);
+        // Effective tier: base + how far past the map floor this roll
+        // dropped (the 39+tier anchor — a tier-N map's own drops, ilvl
+        // 39+N, roll tier N+1 maps: the ladder climbs one rung per run).
+        let tier = base_tier + item.item_level.saturating_sub(39);
         // Juice from the map's OWN rolled affixes (quantity/rarity stats).
         let mut quantity_bp = 0i64;
         let mut rarity_bp = 0i64;
@@ -2880,8 +2883,8 @@ mod area_level_tests {
     use idlin_content::ContentDb;
     use std::path::Path;
 
-    /// The coast is a level-4 area: normal mobs fight at 4 (their def
-    /// baselines scale up), magic at 5, rare at 6 — and a mob's drops
+    /// The coast is a level-7 area: normal mobs fight at 7 (their def
+    /// baselines scale up), magic at 8, rare at 9 — and a mob's drops
     /// carry its EFFECTIVE level. The hand-designed shore (level 1)
     /// keeps every def's authored level via the max() rule.
     #[test]
@@ -2897,16 +2900,16 @@ mod area_level_tests {
             let def = &content.monsters[m.def_idx as usize];
             match m.rarity {
                 Rarity::Normal => {
-                    assert_eq!(m.level, 4, "{}: normal = area level", def.id);
+                    assert_eq!(m.level, 7, "{}: normal = area level", def.id);
                     if m.def_idx as usize == shambler_def {
                         saw_normal = true;
                         let c = e.combat.as_ref().unwrap();
-                        // def level 1 -> 4: +12%/level = +36% life.
-                        assert_eq!(c.life_max, base_life * 13600 / 10000);
+                        // def level 1 -> 7: +12%/level = +72% life.
+                        assert_eq!(c.life_max, base_life * 17200 / 10000);
                     }
                 }
-                Rarity::Magic => assert_eq!(m.level, 5, "{}: magic = area +1", def.id),
-                Rarity::Rare => assert_eq!(m.level, 6, "{}: rare = area +2", def.id),
+                Rarity::Magic => assert_eq!(m.level, 8, "{}: magic = area +1", def.id),
+                Rarity::Rare => assert_eq!(m.level, 9, "{}: rare = area +2", def.id),
                 Rarity::Unique => assert_eq!(m.level, def.level, "uniques stay authored"),
             }
         }
@@ -3804,7 +3807,7 @@ mod area_level_tests {
                 item: crate::entity::BagItem::Gear(crate::entity::Item {
                     base_idx: map_base,
                     rarity: Rarity::Magic,
-                    item_level: 14, // base tier 1 + 2 over the act's end = 3
+                    item_level: 41, // base tier 1 + 2 over the map floor (39) = 3
                     affixes: vec![
                         crate::entity::RolledAffix {
                             affix_idx: plenty,
@@ -3886,7 +3889,7 @@ mod area_level_tests {
         let (_, dest, ticket) = w.pending_exits.last().expect("the depart is staged");
         assert_eq!(dest, "charted_shallows");
         let t = ticket.expect("a map depart carries its ticket");
-        assert_eq!(t.tier, 3, "tier 1 base + ilvl 14 - 12");
+        assert_eq!(t.tier, 3, "tier 1 base + ilvl 41 - 39");
         assert_eq!(t.quantity_bp, 2000, "of_plenty's roll pays quantity");
         assert_eq!(t.rarity_bp, 1800, "of_shoals' roll pays rarity");
     }
@@ -3920,7 +3923,7 @@ mod area_level_tests {
                 item: crate::entity::BagItem::Gear(crate::entity::Item {
                     base_idx: map_base,
                     rarity: Rarity::Magic,
-                    item_level: 14,
+                    item_level: 41,
                     affixes: vec![crate::entity::RolledAffix {
                         affix_idx: deluge,
                         values: vec![7500],
@@ -4433,7 +4436,7 @@ mod area_level_tests {
 
     #[test]
     fn a_map_instance_lifts_level_and_juice() {
-        // #136 T4: the ticket becomes a world — area level 12 + tier, pack
+        // #136 T4: the ticket becomes a world — area level 39 + tier, pack
         // rarity juiced, drop quantity juiced, and the instance marked
         // ephemeral. Mutation: drop any application in new_map_instance →
         // the matching assert fails.
@@ -4452,7 +4455,7 @@ mod area_level_tests {
                 boss: false,
             },
         );
-        assert_eq!(w.zone_level(), 15);
+        assert_eq!(w.zone_level(), 42); // 39 + tier 3 (the level-40 map floor)
         assert!(w.is_map_instance() && !plain.is_map_instance());
         assert_eq!(w.loot_quantity_bp, 1500);
         // B4: the juice is an instance property; defs stay UNTOUCHED.

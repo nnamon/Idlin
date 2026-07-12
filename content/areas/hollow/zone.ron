@@ -11,7 +11,7 @@ ZoneDef(
     id: "hollow",
     name: "The Tidewarden's Hollow",
     kind: story,
-    level: 10,
+    level: 17,
     tileset: Some("shore"),
     tileset_variant: Some("drowned"),
     spawn_x_u: 23,

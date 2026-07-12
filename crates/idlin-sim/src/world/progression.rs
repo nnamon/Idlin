@@ -341,18 +341,22 @@ fn monster_scaled_base(
 
 /// XP to advance from `level` to `level+1`. Hybrid curve: a quadratic
 /// BASE (smooth early game) times an exponential factor that engages
-/// only AFTER the tutorial band, so levels 1..=5 are unchanged and the
-/// back half (90→100) becomes a genuine mountain — roughly the whole
-/// 1→90 climb again. Integer-only (the exponential is fixed-point so
-/// the curve is bit-identical on every platform). Tunable via the two
-/// rate constants.
+/// only AFTER the tutorial band. RE-ANCHORED to the doubled level scale
+/// (operator ruling: the two-act campaign delivers level 38 — what the
+/// old curve called 19 — and tier-1 maps open at 40): the quadratic
+/// coefficient drops to 8 (fit EMPIRICALLY: the finite no-respawn
+/// campaign yields ~300k XP; cumulative-to-38 at A=8 is 302k) and the exponential rate
+/// halves per level (26/25 = 1.04 ≈ √1.08), engaging after level 10
+/// (the doubled tutorial band). Band-measured: four melee seeds collect 267-300k over the full road. Integer-only
+/// (fixed-point exponential, bit-identical on every platform). Tunable
+/// via the two rate constants.
 pub(super) fn xp_to_next(level: u32) -> i64 {
-    const RAMP_FROM: u32 = 5; // levels 1..=5 unchanged (tutorial pacing)
+    const RAMP_FROM: u32 = 10; // levels 1..=10 quadratic-only (tutorial pacing)
     const SCALE: i64 = 1 << 20; // fixed-point multiplier scale
-    const R_NUM: i64 = 27; // r = 1.08, exactly 27/25
+    const R_NUM: i64 = 26; // r = 1.04, exactly 26/25
     const R_DEN: i64 = 25;
     let l = level as i64;
-    let base = 80 + 40 * l * l;
+    let base = 80 + 8 * l * l;
     // r^(level - RAMP_FROM), accumulated in fixed point. Operands stay
     // far inside i64 even at level 100 (base*mult ≈ 6.3e14 « i64::MAX).
     let mut mult = SCALE;
@@ -972,18 +976,18 @@ mod grant_tests {
 mod xp_curve_tests {
     use super::xp_to_next;
 
-    /// Levels 1..=5 are byte-identical to the old quadratic (80 + 40·L²):
-    /// the tutorial completes inside this band and must not be repaced.
+    /// Levels 1..=10 are pure quadratic (80 + 8·L²) — the doubled-scale
+    /// tutorial band (the shore now graduates ~10, where the old scale
+    /// said 5); the exponential must not touch it.
     #[test]
     fn preserves_tutorial_band() {
-        assert_eq!(xp_to_next(1), 120);
-        assert_eq!(xp_to_next(2), 240);
-        assert_eq!(xp_to_next(3), 440);
-        assert_eq!(xp_to_next(4), 720);
-        assert_eq!(xp_to_next(5), 1080);
-        // The old formula for each:
-        for l in 1..=5u32 {
-            assert_eq!(xp_to_next(l), 80 + 40 * (l as i64) * (l as i64));
+        assert_eq!(xp_to_next(1), 88);
+        assert_eq!(xp_to_next(2), 112);
+        assert_eq!(xp_to_next(5), 280);
+        assert_eq!(xp_to_next(10), 880);
+        // The quadratic, exactly, through the whole band:
+        for l in 1..=10u32 {
+            assert_eq!(xp_to_next(l), 80 + 8 * (l as i64) * (l as i64));
         }
     }
 
@@ -1002,26 +1006,31 @@ mod xp_curve_tests {
         }
     }
 
-    /// The back half is a mountain: a single level near the cap costs
-    /// >100× a mid-game level, and the cap value is overflow-safe.
+    /// The back half still climbs hard on the re-anchored curve: a level
+    /// near the cap costs >25× a mid-game level (measured ~29× at 26/25
+    /// per level — the doubled level scale halves the old per-level rate
+    /// by design), and the cap value is overflow-safe.
     #[test]
     fn is_a_back_loaded_mountain() {
         assert!(
-            xp_to_next(99) > 100 * xp_to_next(49),
-            "expected steep back-loading: L99 {} vs 100·L49 {}",
+            xp_to_next(99) > 25 * xp_to_next(49),
+            "expected back-loading: L99 {} vs 25·L49 {}",
             xp_to_next(99),
-            100 * xp_to_next(49)
+            25 * xp_to_next(49)
         );
         let cap = xp_to_next(100);
         assert!(
             cap > 0 && cap < i64::MAX / 2,
             "cap value overflow-safe: {cap}"
         );
-        // Total XP to REACH level 100 (sum of 1..=99) is the mountain.
+        // Total XP to REACH level 100 (sum of 1..=99): ~41.7M on the
+        // re-anchored curve — ~110× the level-38 campaign (376k), so the
+        // cap remains a long endgame mountain at the doubled level scale
+        // (the old curve's billions priced levels the scale no longer has).
         let total: i64 = (1..100u32).map(xp_to_next).sum();
         assert!(
-            total > 5_000_000_000,
-            "total to L100 should be a multi-billion climb, got {total}"
+            total > 30_000_000,
+            "total to L100 should dwarf the campaign, got {total}"
         );
     }
 }

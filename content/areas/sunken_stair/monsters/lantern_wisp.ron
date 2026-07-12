@@ -9,5 +9,5 @@ MonsterDef(
     // zone caster shouldn't hit act-boss-adjacent numbers).
     skills: [(gem: "ember_bolt", level: 3)],
     use_ticks: 16, aggro_radius_cu: 1500, armour: 20,
-    resist_fire: 3500, xp: 500, projectile: false,
+    resist_fire: 3500, xp: 675, projectile: false,
 )

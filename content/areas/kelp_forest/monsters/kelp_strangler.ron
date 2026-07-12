@@ -6,5 +6,5 @@ MonsterDef(
     radius_cu: 85, range_cu: 210,
     skills: [(gem: "heavy_swing", level: 5)],
     mana: 40, use_ticks: 16, aggro_radius_cu: 1300,
-    armour: 90, resist_cold: 3500, xp: 600, projectile: false,
+    armour: 90, resist_cold: 3500, xp: 810, projectile: false,
 )

@@ -9,10 +9,10 @@ MonsterDef(
     model: "mother", brain: "hostile_melee", hostile: true,
     unique: true,
     act_boss: Some(2),
-    // 3000, not 4200 — the Mother's endurance ratio, scaled to level-21
+    // 3000, not 4200 — the Mother's endurance ratio, at the authored level
     // fights (her 2000 worked at 15; doubling the pool re-created the
     // wall she taught us to remove).
-    level: 21, life: 3000, damage: 28, damage_lightning: 10,
+    level: 38, life: 3000, damage: 28, damage_lightning: 10,
     speed_cps: 205, radius_cu: 105, range_cu: 230, mana: 300,
     passives: [
         (stat: crit_chance, layer: increased, value: 10000, condition: Some(below_life_pct(5000))),
@@ -27,7 +27,7 @@ MonsterDef(
     ],
     use_ticks: 15, aggro_radius_cu: 1300, armour: 80,
     resist_cold: 2500, resist_lightning: 2500, resist_chaos: 2500,
-    xp: 5200, projectile: false,
+    xp: 14000, projectile: false,
     lines: [
         "The tide was MY breathing.",
         "Everything sinks. I am where it stops.",

@@ -9,7 +9,7 @@ MonsterDef(
     brain: "hostile_melee",
     hostile: true,
     unique: true,
-    level: 9,
+    level: 13,
     life: 950,
     damage: 22,
     speed_cps: 215,
@@ -33,7 +33,7 @@ MonsterDef(
     aggro_radius_cu: 1700,
     armour: 95,
     resist_cold: 3000,
-    xp: 700,
+    xp: 1400,
     projectile: false,
     lines: [
         "The pans want STIRRING.",

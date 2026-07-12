@@ -1,12 +1,12 @@
 // Charted waters (#136 T4): the endgame's sea. NEVER booted — each map
 // used at Saltmere's device opens a private instance of this strand, its
-// area level set by the map's tier (12 + tier) and its packs juiced by
+// area level set by the map's tier (39 + tier — the level-40 floor) and its packs juiced by
 // the map's rolled affixes. Everything the act taught, all at once.
 ZoneDef(
     id: "charted_shallows",
     name: "The Charted Shallows",
     kind: map,
-    level: 13,
+    level: 40,
     tileset: Some("shore"),
     tileset_variant: Some("drowned"),
     spawn_x_u: 25,

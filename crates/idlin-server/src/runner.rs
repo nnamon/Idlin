@@ -854,6 +854,9 @@ pub mod salt_road {
         pub mapped_at: u64,
         pub deaths: u32,
         pub sales: u32,
+        /// Character level when the run ended — the difficulty re-anchor's
+        /// calibration meter (operator target: ~38 at campaign's end).
+        pub final_level: u32,
     }
 
     impl SaltRoadReport {
@@ -1179,6 +1182,11 @@ pub mod salt_road {
                 }
             }
         }
+        let final_level = worlds
+            .iter()
+            .flat_map(|mw| mw.world.views())
+            .find(|v| v.kind == 1 && v.name == subject)
+            .map_or(0, |v| v.level);
         SaltRoadReport {
             maps: opens,
             milestones: names
@@ -1189,6 +1197,7 @@ pub mod salt_road {
             mapped_at,
             deaths,
             sales,
+            final_level,
         }
     }
 }
@@ -1285,6 +1294,10 @@ mod tests {
             let r = walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
             assert_complete(seed, &r);
             let (mapped_at, deaths, sales) = (r.mapped_at, r.deaths, r.sales);
+            eprintln!(
+                "BAND seed={seed:#x} final_level={} deaths={deaths} mapped_at={mapped_at}",
+                r.final_level
+            );
             // #148 A5 (review B2, take two): the vendor-specific economy
             // proof lives in THE MELEE BAND ONLY — its four seeds all
             // arrive at the device holding act-road junk; the ranged pair
@@ -1305,12 +1318,23 @@ mod tests {
                 mapped_at <= 60_000,
                 "seed {seed:#x}: departed at {mapped_at} — the road has a wall"
             );
-            // Measured 9-24 deaths across the four seeds post-economy;
-            // 60 = ~2.5x headroom, still far below the meat-grinder
-            // signatures the band exists to catch (72+, 151).
+            // RE-BAND for the level-38 campaign (operator's difficulty
+            // re-anchor): the road DOUBLED (19 → 38 levels) and deaths
+            // per level IMPROVED (3.2 → ~1.0; measured 12-60 across the
+            // four seeds at final level 38-39). 75 keeps headroom on the
+            // worst seed while a real grinder (134+ pre-calibration)
+            // still trips.
             assert!(
-                deaths <= 60,
+                deaths <= 75,
                 "seed {seed:#x}: {deaths} deaths — a zone is a meat grinder"
+            );
+            // The operator's calibration pin: the two-act road graduates
+            // at ~38 (tier-1 maps open at 40, just above). Mutation: cut
+            // the XP curve or a zone's income → this reads low and fails.
+            assert!(
+                (37..=41).contains(&r.final_level),
+                "seed {seed:#x}: finished at level {} — the road should deliver ~38",
+                r.final_level
             );
         }
     }
@@ -1364,12 +1388,12 @@ mod tests {
                 acts, 3,
                 "{name} must complete BOTH acts in the crowd (got acts={acts}, zone={zone})"
             );
-            // Re-derived for the no-respawn world + the operator's density/XP
-            // tuning (#185): crowd Kargan measured 158 (census: 55 pressure
-            // court, 41 kelp forest — Act 2 at design level is bloody, and
-            // deaths are currently free; the difficulty rework prices them).
-            // A true stall reads 300+; completion is asserted above.
-            assert!(deaths <= 220, "{name}: {deaths} deaths — a stall signature");
+            // Re-derived for the LEVEL-38 road (operator's difficulty
+            // re-anchor): the journey doubled (19 → 38 levels); crowd
+            // Mirra measured 236 — 118 per old-road-length, an
+            // improvement on the pre-anchor 158. A true stall reads
+            // 400+; completion is asserted above.
+            assert!(deaths <= 280, "{name}: {deaths} deaths — a stall signature");
         }
     }
 
@@ -1427,6 +1451,12 @@ mod tests {
             deaths <= 200,
             "{deaths} caster deaths — a grinder for wands"
         );
+        // The level-38 calibration pin, same as the melee/ranger bands.
+        assert!(
+            (37..=41).contains(&r.final_level),
+            "the caster finished at level {} — the road should deliver ~38",
+            r.final_level
+        );
     }
 
     #[test]
@@ -1448,7 +1478,22 @@ mod tests {
             assert_complete(seed, &r);
             let (mapped_at, deaths) = (r.mapped_at, r.deaths);
             assert!(mapped_at <= 80_000, "the ranger hit a wall at {mapped_at}");
-            assert!(deaths <= 110, "{deaths} ranger deaths — a grinder for bows");
+            // RE-BAND for the level-38 campaign: measured 126 on the
+            // doubled road (3.3 deaths/level, IMPROVED from the old 5.8;
+            // the court's galleries stay the bow's worst room — the
+            // wight kill-pressure thread continues in-code). 150 gives
+            // ~1.2x headroom; the pre-calibration grinder read 166+.
+            assert!(deaths <= 150, "{deaths} ranger deaths — a grinder for bows");
+            // The bow graduates a hair lighter (measured 36 vs melee's
+            // 38-39): its kite-and-snipe pattern leaves unseen pockets
+            // uncollected — a brain-intelligence thread (the operator's
+            // bots-own-their-pathing rework), not an income knob; 900
+            // quiet-ticks and re-anchored gates already closed 35 → 36.
+            assert!(
+                (36..=40).contains(&r.final_level),
+                "the ranger finished at level {} — the road should deliver ~37",
+                r.final_level
+            );
         }
     }
 
@@ -1489,7 +1534,7 @@ mod tests {
         assert_eq!(mw.key, "charted_shallows#Runner@41");
         assert_eq!(mw.zone_id, "charted_shallows");
         assert!(mw.world.is_map_instance());
-        assert_eq!(mw.world.zone_level(), 14, "12 + tier 2");
+        assert_eq!(mw.world.zone_level(), 41, "39 + tier 2");
         assert_eq!(mw.pending.arrivals.len(), 1, "the runner is aboard");
         // Not yet retired: the arrival is pending.
         assert!(!minted_instance_emptied(&worlds[1]));

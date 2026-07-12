@@ -27,14 +27,15 @@ final = (base + Σ added) × (1 + Σ increased/10000) × Π (1 + more_i/10000)
 | Evasion | 20 + 6·(L−1) |
 | Move speed | 3.3 u/s |
 | Body radius | 0.45 u |
-| XP to next level | `(80 + 40·L²) · 1.08^max(0, L−5)` |
+| XP to next level | `(80 + 8·L²) · 1.04^max(0, L−10)` |
 
 The XP curve is a quadratic base times an exponential factor that engages
-only after level 5 — so the tutorial band (1–5) is unchanged but the back
-half is a **mountain**: reaching level 100 costs ~5.7 billion XP, and the
-last ten levels (90→100, ~3.6B) cost more than the entire 1→90 climb.
-The exponential is computed in integer fixed-point (27/25 per level) so
-the curve is bit-identical across platforms. Max level is 100.
+only after level 10. It is anchored to the campaign scale (the two-act
+road graduates at ~38; tier-1 maps open at area level 40): a level costs
+what the pre-re-anchor curve charged at half the number, so the doubled
+level range keeps the same feel per hour. The exponential is computed in
+integer fixed-point (26/25 per level) so the curve is bit-identical
+across platforms. Max level is 100.
 
 The equipped **weapon replaces** the unarmed attack (damage per type,
 range, cooldown, projectile); class damage does not stack on top of weapon

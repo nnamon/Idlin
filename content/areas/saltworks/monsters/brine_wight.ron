@@ -17,6 +17,6 @@ MonsterDef(
     aggro_radius_cu: 1300,
     armour: 70,
     resist_cold: 2000,
-    xp: 219,
+    xp: 295,
     projectile: false,
 )

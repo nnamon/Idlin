@@ -13,5 +13,5 @@ MonsterDef(
     skills: [(gem: "frost_nova", level: 3)],
     use_ticks: 16, aggro_radius_cu: 1500, armour: 50,
     resist_cold: 5000,
-    xp: 975, projectile: false,
+    xp: 1316, projectile: false,
 )

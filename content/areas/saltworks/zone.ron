@@ -7,7 +7,7 @@ ZoneDef(
     id: "saltworks",
     name: "The Saltworks",
     kind: story,
-    level: 7,
+    level: 12,
     tileset: Some("town"),
     spawn_x_u: 22,
     spawn_y_u: 50,

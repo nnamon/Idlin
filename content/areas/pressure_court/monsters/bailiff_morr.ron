@@ -3,7 +3,7 @@
 MonsterDef(
     id: "bailiff_morr", public: true, name: "Bailiff Morr",
     model: "stalker", brain: "hostile_melee", hostile: true,
-    unique: true, level: 18, life: 2200, damage: 34,
+    unique: true, level: 35, life: 2200, damage: 34,
     speed_cps: 210, radius_cu: 85, range_cu: 215, mana: 90,
     passives: [
         (stat: damage_phys, layer: increased, value: 5000, condition: Some(below_life_pct(4000))),
@@ -17,7 +17,7 @@ MonsterDef(
     ],
     use_ticks: 15, aggro_radius_cu: 1600, armour: 120,
     resist_cold: 3000, resist_lightning: 2000,
-    xp: 2200, projectile: false,
+    xp: 9000, projectile: false,
     lines: [
         "Order. ORDER.",
         "The court finds you buoyant. Overruled.",

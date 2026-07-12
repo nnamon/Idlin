@@ -10,7 +10,7 @@ MonsterDef(
     brain: "hostile_melee",
     hostile: true,
     unique: true,
-    level: 20,
+    level: 40,
     life: 3400,
     damage: 30,
     damage_cold: 10,
