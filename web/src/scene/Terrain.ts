@@ -396,12 +396,15 @@ export class Terrain {
     ground.receiveShadow = true;
     this.group.add(ground);
 
-    // -- the water plane: the sea east of the waterline, or (pool zones,
-    // ANY tileset) a zone-wide sheet the sunken basins reveal --
+    // -- the water plane: the sea east of the waterline, or — whenever the
+    // zone has interior pools (with OR without a coast; the charted
+    // shallows carries both) — a zone-wide sheet the sunken basins
+    // reveal. A coast-strip plane over a pool zone left the basins as
+    // dry sunken pits (dfb2598 post-commit audit). --
     if (!this.tiles || (this.hasWater && this.features.has("sea")) || this.poolGrid) {
-      const poolsOnly = !!this.tiles && !this.hasSea;
+      const zoneWide = !!this.tiles && !!this.poolGrid;
       this.water = new THREE.Mesh(
-        new THREE.PlaneGeometry(poolsOnly ? spanX : PAD + 40, spanZ),
+        new THREE.PlaneGeometry(zoneWide ? spanX + PAD + 40 : PAD + 40, spanZ),
         new THREE.MeshStandardMaterial({
           color: 0x16344f,
           roughness: 0.16,
@@ -413,8 +416,10 @@ export class Terrain {
         }),
       );
       this.water.rotation.x = -Math.PI / 2;
-      if (poolsOnly) {
-        this.water.position.set(minX + spanX / 2, WATER_Y, minZ + spanZ / 2);
+      if (zoneWide) {
+        // Cover the zone AND the eastern sea band beyond it (a mixed
+        // coast+pool zone needs both under one sheet).
+        this.water.position.set(minX + (spanX + PAD + 40) / 2, WATER_Y, minZ + spanZ / 2);
       } else {
         const seaFrom = this.tiles ? Math.min(...(this.waterEdge ?? [w])) - 2 : w - 6;
         this.water.position.set(seaFrom + (PAD + 46) / 2, WATER_Y, minZ + spanZ / 2);

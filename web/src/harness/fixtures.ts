@@ -1144,6 +1144,55 @@ const fullCampaign: Fixture = {
   ],
 };
 
+// Mixed coast + interior pool (the charted-shallows shape; dfb2598 audit):
+// water runs to the EAST edge (a true coastline, sea feature on) AND an
+// interior pool sits mid-zone. The water plane must be zone-wide so the
+// sunken pool basin reads as water, not a dry pit — eyeball both the pool
+// and the coast strip under one sheet.
+const sceneWaterMixed: Fixture = {
+  kind: "scene",
+  label: "Water: mixed coast + interior pool under one zone-wide plane",
+  seed: 0xaa77e2,
+  frames: 30,
+  camera: [7, 12, 13, 6, -0.5, 4],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Split Shallows",
+      world_key: "split_shallows",
+      width: 16 * 65536,
+      height: 12 * 65536,
+      tiles: {
+        width: 16,
+        height: 12,
+        rows: [
+          "##############~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,~~~,,,,,,,~~~",
+          "#,,~~~,,,,,,,~~~",
+          "#,,~~~,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "##############~~",
+        ],
+        legend: [
+          { glyph: "#", ground: "#3a3a46", ground_id: "cobble", prop: "wall", walkable: false, elevation: 0 },
+          { glyph: ",", ground: "#5a5340", ground_id: "sand", prop: null, walkable: true, elevation: 0 },
+          { glyph: "~", ground: "#16344f", ground_id: "water", prop: null, walkable: false, elevation: 0 },
+        ],
+        props: [],
+        features: ["sea"],
+      },
+      entities: [
+        character({ id: 1, name: "Wader", level: 40, model: "ranger", life_pct: 100, kills: 0, items: 0 }),
+      ],
+    }),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
@@ -1151,6 +1200,7 @@ export const FIXTURES: Record<string, Fixture> = {
   "item-tooltip": itemTooltip,
   "tooltip-normal-wand": tooltipNormalWand,
   "tooltip-unique": tooltipUnique,
+  "scene-water-mixed": sceneWaterMixed,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,
   "scene-ailments": sceneAilments,

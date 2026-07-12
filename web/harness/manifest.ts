@@ -134,6 +134,14 @@ export const FIXTURES: FixtureMeta[] = [
     ],
   },
   {
+    // Mixed coast + interior pool (dfb2598 audit find): the zone-wide water
+    // plane must cover BOTH — eyeball that the mid-zone pool reads as water,
+    // not a dry sunken pit, alongside the east coast strip.
+    name: "scene-water-mixed",
+    kind: "scene",
+    minBytes: 30_000,
+  },
+  {
     name: "scene-shore",
     kind: "scene",
     minBytes: 50_000,
