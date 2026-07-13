@@ -42,6 +42,8 @@ pub enum ContentError {
     },
     #[error("brain {path} failed to build: {msg}")]
     Brain { path: String, msg: String },
+    #[error("economy.ron: {msg}")]
+    Economy { msg: String },
     #[error("{path}: zone `{zone}` references unknown monster `{monster}`")]
     UnknownMonster {
         path: String,
@@ -605,6 +607,41 @@ pub struct CurrencyDef {
 pub struct SpeechDef {
     #[serde(default)]
     pub lines: Vec<String>,
+}
+
+/// The vendor economy (#185 C8, operator-ruled): obols carry a 0.1
+/// denomination — counts everywhere are integer TENTHS (10 = one obol;
+/// no floats near hashed state). Selling pays tenths of the
+/// rarity-matched obol; crafting consumes whole obols. All numbers here
+/// so retuning the economy is editing data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EconomyDef {
+    /// Tenths paid per sale (1 = a tenth of an obol).
+    pub sell_pays_tenths: u64,
+    /// CurrencyDef id paid per sold rarity, in rarity order
+    /// (normal, magic, rare, unique). Loader-validated.
+    pub sell_obols: [String; 4],
+    /// CurrencyDef id paid for sold gems and maps.
+    pub sell_obol_gem: String,
+    /// The town chest's slot cap.
+    pub stash_cap: u32,
+}
+
+impl Default for EconomyDef {
+    fn default() -> Self {
+        EconomyDef {
+            sell_pays_tenths: 1,
+            sell_obols: [
+                "transmute_obol".into(),
+                "alter_obol".into(),
+                "alchemy_obol".into(),
+                "regal_obol".into(),
+            ],
+            sell_obol_gem: "transmute_obol".into(),
+            stash_cap: 40,
+        }
+    }
 }
 
 /// Word pools for generated rare/unique item names ("Vile Thorns").
@@ -1376,6 +1413,8 @@ pub struct ContentDb {
     pub affix_pool_members: std::collections::BTreeMap<String, Vec<u32>>,
     /// Name word pools for rare/unique items.
     pub naming: NamingDef,
+    /// The vendor economy (#185 C8): denomination + sell payouts + stash cap.
+    pub economy: EconomyDef,
     /// Sorted by id. Currency is COUNTED, not bag-stored.
     pub currency: Vec<CurrencyDef>,
     /// Player-sayable speech lines (speech.ron).
@@ -1903,6 +1942,10 @@ impl ContentDb {
         let mut files = Vec::new();
         collect_ron_files(dir, &mut files)?;
         files.sort();
+        // #185 C8: the economy vocabulary check binds only when an
+        // economy.ron was actually loaded (a typo against real content
+        // fails the boot; synthetic fixtures ride the defaults).
+        let mut economy_loaded = false;
 
         let mut hash = FNV1A_OFFSET;
         let write = |hash: &mut u64, bytes: &[u8]| {
@@ -1951,6 +1994,9 @@ impl ContentDb {
                 // Affix pools own their membership; resolved to indices after the
                 // affixes are sorted (below), so collect the raw defs for now.
                 pending_pools.push(ron::from_str::<AffixPool>(&text).map_err(parse_err)?);
+            } else if rel_str == "economy.ron" {
+                db.economy = ron::from_str::<EconomyDef>(&text).map_err(parse_err)?;
+                economy_loaded = true;
             } else if rel_str == "naming.ron" {
                 db.naming = ron::from_str::<NamingDef>(&text).map_err(parse_err)?;
             } else if rel_str == "speech.ron" {
@@ -2047,6 +2093,38 @@ impl ContentDb {
                     id: w[0].id.clone(),
                 });
             }
+        }
+        // The economy's obol vocabulary must resolve (#185 C8) — a sell
+        // paying a nonexistent obol would panic at the vendor, not load.
+        // Binds only when an economy.ron was LOADED: real-content typos
+        // fail the boot; fixture dirs without the file ride the defaults
+        // (sell() refuses gracefully on an unknown id regardless).
+        if economy_loaded {
+            for id in db
+                .economy
+                .sell_obols
+                .iter()
+                .chain([&db.economy.sell_obol_gem])
+            {
+                if !db.currency.iter().any(|c| &c.id == id) {
+                    return Err(ContentError::Economy {
+                        msg: format!("sell obol `{id}` is not a known currency"),
+                    });
+                }
+            }
+        }
+        if db.economy.sell_pays_tenths == 0 || db.economy.sell_pays_tenths > 10 {
+            return Err(ContentError::Economy {
+                msg: format!(
+                    "sell_pays_tenths {} out of range 1..=10",
+                    db.economy.sell_pays_tenths
+                ),
+            });
+        }
+        if db.economy.stash_cap == 0 {
+            return Err(ContentError::Economy {
+                msg: "stash_cap must be at least 1".into(),
+            });
         }
         db.affixes.sort_by(|a, b| a.id.cmp(&b.id));
         db.uniques.sort_by(|a, b| a.id.cmp(&b.id));
@@ -3598,6 +3676,75 @@ mod tests {
                 );
             }
             other => panic!("expected BadAffixTiers, got {other:?}"),
+        }
+    }
+
+    /// A minimal currency def for economy fixtures.
+    const OBOL_OK: &str = r#"CurrencyDef(
+        id: "transmute_obol", public: true, name: "Transmute Obol",
+        op: to_magic, weight: 100, tier: 1,
+    )"#;
+
+    /// The economy loader gate (#185 C8): a LOADED economy.ron with a
+    /// payout obol the currency set doesn't know must refuse the boot.
+    /// Mutation: delete the vocabulary loop in load() → this loads fine.
+    #[test]
+    fn an_unknown_sell_obol_is_rejected() {
+        let tc = TempContent::new(
+            "eco_unknown",
+            &[
+                ("currency/transmute_obol.ron", OBOL_OK),
+                (
+                    "economy.ron",
+                    r#"EconomyDef(
+                        sell_pays_tenths: 1,
+                        sell_obols: ("transmute_obol", "no_such_obol", "transmute_obol", "transmute_obol"),
+                        sell_obol_gem: "transmute_obol",
+                        stash_cap: 40,
+                    )"#,
+                ),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::Economy { msg }) => {
+                assert!(msg.contains("no_such_obol"), "msg: {msg}");
+            }
+            other => panic!("expected Economy, got {other:?}"),
+        }
+    }
+
+    /// Out-of-range economy numbers refuse the boot (#185 C8). Mutations:
+    /// drop either range guard → the matching fixture loads fine.
+    #[test]
+    fn out_of_range_economy_numbers_are_rejected() {
+        for (name, tenths, cap, needle) in [
+            ("eco_zero_tenths", 0u64, 40u32, "sell_pays_tenths"),
+            ("eco_big_tenths", 11, 40, "sell_pays_tenths"),
+            ("eco_zero_stash", 1, 0, "stash_cap"),
+        ] {
+            let tc = TempContent::new(
+                name,
+                &[
+                    ("currency/transmute_obol.ron", OBOL_OK),
+                    (
+                        "economy.ron",
+                        &format!(
+                            r#"EconomyDef(
+                                sell_pays_tenths: {tenths},
+                                sell_obols: ("transmute_obol", "transmute_obol", "transmute_obol", "transmute_obol"),
+                                sell_obol_gem: "transmute_obol",
+                                stash_cap: {cap},
+                            )"#
+                        ),
+                    ),
+                ],
+            );
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::Economy { msg }) => {
+                    assert!(msg.contains(needle), "{name}: msg {msg}");
+                }
+                other => panic!("{name}: expected Economy, got {other:?}"),
+            }
         }
     }
 

@@ -1550,9 +1550,11 @@ impl World {
         }
     }
 
-    /// Sell a bag item at the town vendor (#148 A5). Pays ONE obol keyed to
-    /// what the item was — normal→transmute, magic→alter, rare→alchemy,
-    /// unique→regal; gems and maps sell as transmutes. Returns the paid
+    /// Sell a bag item at the town vendor (#148 A5). Pays TENTHS of the
+    /// rarity-matched obol (#185 C8 — the 0.1 denomination; the rate and
+    /// mapping live in content/economy.ron): normal→transmute,
+    /// magic→alter, rare→alchemy, unique→regal; gems and MAPS pay the
+    /// gem/map obol regardless of rolled rarity. Returns the paid
     /// obol's NUM (positive), or -1 bad selection / -2 not at a vendor /
     /// -4 no character.
     pub(crate) fn sell(&mut self, slot: usize, inv_sel: i32, events: &mut Vec<SimEvent>) -> i32 {
@@ -1576,15 +1578,21 @@ impl World {
             return -1;
         }
         let net = e.net_id;
+        // The payout table is CONTENT (#185 C8): rarity → obol id and the
+        // tenths paid both live in content/economy.ron.
+        let eco = &self.content.economy;
         let obol_id = match &ch.inventory[idx].item {
-            crate::entity::BagItem::Gear(it) => match it.rarity {
-                Rarity::Normal => "transmute_obol",
-                Rarity::Magic => "alter_obol",
-                Rarity::Rare => "alchemy_obol",
-                Rarity::Unique => "regal_obol",
-            },
-            crate::entity::BagItem::Gem(_) => "transmute_obol",
+            // A MAP is gear with a map_tier — it pays the gem/map rate,
+            // not its rolled rarity (the documented contract).
+            crate::entity::BagItem::Gear(it)
+                if self.content.items[it.base_idx as usize].map_tier.is_some() =>
+            {
+                eco.sell_obol_gem.as_str()
+            }
+            crate::entity::BagItem::Gear(it) => eco.sell_obols[it.rarity as usize].as_str(),
+            crate::entity::BagItem::Gem(_) => eco.sell_obol_gem.as_str(),
         };
+        let pay_tenths = eco.sell_pays_tenths;
         let Some(cidx) = self.content.currency.iter().position(|c| c.id == obol_id) else {
             return -1; // the obol vocabulary is loader-guaranteed; belt+braces
         };
@@ -1603,10 +1611,20 @@ impl World {
         };
         let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
         ch.inventory.remove(idx);
-        ch.currency[cidx] += 1;
+        ch.currency[cidx] += pay_tenths; // tenths: selling is a trickle
+        let paid = if pay_tenths.is_multiple_of(10) {
+            format!("{} {}", pay_tenths / 10, self.content.currency[cidx].name)
+        } else {
+            format!(
+                "{}.{} of {}",
+                pay_tenths / 10,
+                pay_tenths % 10,
+                self.content.currency[cidx].name
+            )
+        };
         events.push(SimEvent::Narration {
             target: net,
-            text: format!("Sold {name} — one {}.", self.content.currency[cidx].name),
+            text: format!("Sold {name} — {paid}."),
         });
         self.content_num(idlin_content::ids::Category::Currency, cidx)
     }
@@ -1638,7 +1656,7 @@ impl World {
                 if sel < 0 || idx >= ch.inventory.len() {
                     return -1;
                 }
-                if ch.stash.len() >= crate::entity::STASH_CAP {
+                if ch.stash.len() >= self.content.economy.stash_cap as usize {
                     return -3;
                 }
                 let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
@@ -3697,7 +3715,7 @@ mod area_level_tests {
             .inventory
             .len();
         assert_eq!(n_before, 1, "refusal consumes nothing");
-        // At the vendor: a RARE pays exactly one alchemy obol.
+        // At the vendor: a RARE pays one TENTH of an alchemy obol.
         let (vx, vy) = w.vendor.unwrap();
         w.test_teleport(w.zone.get(slot).unwrap().net_id, vx as i16, vy as i16);
         let paid = w.sell(slot, 0, &mut ev);
@@ -3713,10 +3731,146 @@ mod area_level_tests {
         );
         let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
         assert_eq!(ch.inventory.len(), 0, "the item is gone");
-        assert_eq!(ch.currency[alch], 1, "the obol landed");
+        assert_eq!(
+            ch.currency[alch], 1,
+            "a tenth landed (selling is a trickle)"
+        );
         // Bad selection on the emptied bag.
         assert_eq!(w.sell(slot, 0, &mut ev), -1);
         assert_eq!(w.sell(slot, -7, &mut ev), -1);
+        // A MAP pays the gem/map rate (transmute), NEVER its rolled
+        // rarity (#185 C8 contract). Mutation: drop the map_tier guard in
+        // sell() → this magic map pays alter and the assert fails.
+        let map_base = content
+            .items
+            .iter()
+            .position(|i| i.map_tier.is_some())
+            .expect("a map base exists") as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: map_base,
+                    rarity: Rarity::Magic,
+                    item_level: 40,
+                    affixes: Vec::new(),
+                    name: "Seething Salt-Stained Map".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let paid_map = w.sell(slot, 0, &mut ev);
+        let transmute = content
+            .currency
+            .iter()
+            .position(|c| c.id == "transmute_obol")
+            .unwrap();
+        assert_eq!(
+            paid_map,
+            w.content_num(idlin_content::ids::Category::Currency, transmute),
+            "a map pays the gem/map rate, not its rarity"
+        );
+    }
+
+    /// The currency ABI speaks TENTHS (#185 C8). UseCurrency requires and
+    /// consumes a WHOLE obol: 9 tenths refuse, 15 spend ten and keep 5;
+    /// bad selections refuse without panicking. ReadCurrency (via a
+    /// deployed probe bot) reports RAW tenths, never divided. Mutations:
+    /// revert the guard to `> 0`/`-= 1` → the 9-refuses and 15→5 asserts
+    /// fail; divide ReadCurrency's count by 10 → the raw-read assert fails.
+    #[test]
+    fn currency_syscalls_speak_tenths() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let probe = idlin_botc::compile_deployed(
+            "fn main() {\n\
+             debug(read_currency(0xE000, 16));\n\
+             debug(mem[0xE000]);\n\
+             }\n",
+        )
+        .expect("compiles");
+        let mut w = World::new(0x0B01, &content);
+        w.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Wallet".into(),
+                program: probe,
+            }],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| w.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .expect("character");
+        let net = w.zone.get(slot).unwrap().net_id;
+        let alch = content
+            .currency
+            .iter()
+            .position(|c| c.id == "alchemy_obol")
+            .unwrap();
+        // Seed a craftable rare + 9 tenths: a craft must REFUSE.
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.currency.resize(content.currency.len(), 0);
+            ch.currency[alch] = 9;
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: 0,
+                    rarity: Rarity::Normal, // alchemy applies to NORMAL bases
+                    item_level: 10,
+                    affixes: Vec::new(),
+                    name: "Testpiece".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let mut ev = Vec::new();
+        assert_eq!(
+            w.use_currency(slot, alch as i32, 0, &mut ev),
+            -1,
+            "nine tenths are not an obol"
+        );
+        // 15 tenths: the craft spends a WHOLE obol, five tenths remain.
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .currency[alch] = 15;
+        let r = w.use_currency(slot, alch as i32, 0, &mut ev);
+        assert!(r >= 0, "fifteen tenths afford a craft: {r}");
+        assert_eq!(
+            w.zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .currency[alch],
+            5,
+            "ten tenths consumed, five remain"
+        );
+        // Bad selections refuse, never panic.
+        assert_eq!(w.use_currency(slot, -3, 0, &mut ev), -1);
+        assert_eq!(w.use_currency(slot, 9999, 0, &mut ev), -1);
+        // ReadCurrency reports RAW tenths: the probe's next tick reads 5.
+        let events = w.tick(&crate::TickInputs::default());
+        let vals: Vec<i32> = events
+            .iter()
+            .filter_map(|e| match e {
+                SimEvent::BotDebug { id, values } if *id == net => values.first().copied(),
+                _ => None,
+            })
+            .collect();
+        assert!(vals.len() >= 2, "the probe debugged: {vals:?}");
+        // vals[0] = stacks written; vals[1] = alchemy's RAW count
+        // (registry order puts alchemy first — bot-guide row 24).
+        assert_eq!(vals[1], 5, "ReadCurrency reports raw tenths, undivided");
     }
 
     #[test]

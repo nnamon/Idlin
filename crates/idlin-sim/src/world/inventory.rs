@@ -854,7 +854,7 @@ impl World {
                         if ch.currency.len() <= idx {
                             ch.currency.resize(idx + 1, 0);
                         }
-                        ch.currency[idx] += 1;
+                        ch.currency[idx] += 10; // a dropped obol is whole (tenths)
                         ch.items += 1;
                     }
                 }

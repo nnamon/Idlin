@@ -2,7 +2,8 @@
 
 export type CurrencyView = { name: string, 
 /**
- * Owned count (only nonzero entries ship).
+ * Owned count in TENTHS of an obol (v48, #185 C8: the 0.1
+ * denomination) — the client renders count/10 with one decimal.
  */
 count: number, 
 /**

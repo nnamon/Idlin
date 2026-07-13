@@ -988,7 +988,9 @@ function ObolsPanel({ sheet }: { sheet: CharacterSheet }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
         {sheet.currency.map((c, i) => (
           <span key={i} style={{ fontSize: 12.5, color: RARITY_COLORS[c.tier] ?? RARITY_COLORS[0] }}>
-            {c.name.replace(" Obol", "")} ×{c.count}
+            {/* count is TENTHS (v48, the 0.1 denomination): whole obols
+                render clean, fractions show one decimal ("3.4"). */}
+            {c.name.replace(" Obol", "")} ×{c.count % 10 === 0 ? c.count / 10 : (c.count / 10).toFixed(1)}
           </span>
         ))}
       </div>

@@ -84,7 +84,8 @@ impl World {
             let have = regret
                 .map(|i| ch.currency.get(i).copied().unwrap_or(0))
                 .unwrap_or(0);
-            let Some(regret_idx) = regret.filter(|_| have > 0) else {
+            // A respec costs a WHOLE Regret Obol — ten tenths (#185 C8).
+            let Some(regret_idx) = regret.filter(|_| have >= 10) else {
                 events.push(SimEvent::BuildRejected {
                     id: net_id,
                     owner,
@@ -94,7 +95,7 @@ impl World {
             };
             if let Some(me) = self.zone.get_mut(slot) {
                 let ch = me.character.as_mut().unwrap();
-                ch.currency[regret_idx] -= 1;
+                ch.currency[regret_idx] -= 10; // one whole obol, in tenths
                 ch.allocated.clear();
             }
             events.push(SimEvent::TreeRespecced {
@@ -341,7 +342,7 @@ mod tests {
             if ch.currency.len() <= regret {
                 ch.currency.resize(regret + 1, 0);
             }
-            ch.currency[regret] = 1;
+            ch.currency[regret] = 10; // one whole obol, in tenths
         }
         let mut events = Vec::new();
         let r = world.set_build(slot, &[DEX1, DEX2], &mut events);

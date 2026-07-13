@@ -252,9 +252,6 @@ fn default_spell_bp() -> i64 {
     10000
 }
 
-/// The stash chest's capacity (#148 A5) — flat records, no grid.
-pub const STASH_CAP: usize = 40;
-
 /// Speech-bubble rate limit (ticks between says).
 pub const SAY_COOLDOWN_CHAR: u64 = 100;
 pub const SAY_COOLDOWN_MONSTER: u64 = 50;
@@ -414,12 +411,15 @@ pub struct CharacterState {
     /// bot initialization (SetBuild); auto-allocated as levels arrive.
     /// Append-only by construction — changing plans means redeploying.
     pub build_plan: Vec<u32>,
-    /// Obol counts, indexed like ContentDb::currency (resized on demand).
+    /// Obol counts in TENTHS (#185 C8: obols carry a 0.1 denomination;
+    /// 10 = one whole obol — integer math only, no floats near hashed
+    /// state), indexed like ContentDb::currency (resized on demand).
     #[serde(default)]
     pub currency: Vec<u64>,
     /// The persistent chest (#148 A5): items parked at a town stash. Flat
     /// (no grid — the bag's tetris is the scarcity; the chest just holds),
-    /// capped at STASH_CAP by the syscall. Rides bundles + snapshots.
+    /// capped by economy.ron's stash_cap at the syscall. Rides bundles +
+    /// snapshots.
     #[serde(default)]
     pub stash: Vec<BagItem>,
     /// Gems socketed into allocated tree socket nodes (keyed by node index;

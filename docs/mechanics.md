@@ -204,6 +204,14 @@ empty slot wear nothing — fresh wretches wash ashore naked.
 
 ## Currency (the obols)
 
+Obols carry a **0.1 denomination** (#185 C8): every count is integer
+tenths under the hood (no floats near hashed state), shown with one
+decimal ("Alchemy 3.4"). Dropped obols are whole (10 tenths); crafting
+and respecs consume whole obols; SELLING pays a 0.1 trickle of the
+rarity-matched obol — the payout table, rate, and the stash cap live in
+`content/economy.ron`, so the economy is tuned by editing data.
+
+
 Story zones are choreographed by their zone BRAIN (a bot, like
 everything else): the Withered Shore's script guarantees a weapon on
 your first kill, a gem suited to your wielded weapon on your second,
