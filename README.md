@@ -52,8 +52,9 @@ the sport. Monster behavior is bot code too, shipped as content.
   caster), bow (Deadeye ranger) — each with its own build plan, gear
   ladder, and combat discipline; every one completes the entire two-act
   campaign unaided, proven on every commit by seeded full-game band tests.
-- **The map endgame**: completing the campaign unlocks the Map
-  Devices (Saltmere and Lanternfall). Maps drop as items and roll
+- **The map endgame**: completing the campaign opens the
+  passage to the Last Harbor — the endgame's town, holding the game's
+  only Map Device. Maps drop as items and roll
   affixes like any gear — quantity/rarity juice AND **rules**: Monster
   Fury scales every hostile hit, the Map Clock puts the run on a
   timer, and Sovereign-Marked deep maps spawn a tier boss (the

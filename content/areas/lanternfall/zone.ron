@@ -1,6 +1,6 @@
 // Act 2's town (#148 A3): Lanternfall — an air-bell caught under the
-// world, lit by wreck-lanterns. The second Map Device hangs here;
-// the whole bell is sanctuary.
+// world, lit by wreck-lanterns. The mapping desk is retired — the
+// device lives at the Last Harbor now; the whole bell is sanctuary.
 ZoneDef(
     id: "lanternfall",
     name: "Lanternfall",
@@ -10,14 +10,14 @@ ZoneDef(
     spawn_y_u: 21,
     spawn_radius_u: 3,
     camp_radius_u: 60,
-    map_device: Some((24, 15)),
+    map_device: None, // the device lives at the Last Harbor (#185 D-1)
     vendor: Some((16, 15)),
     stash: Some((28, 18)),
     brain: Some("lanternfall"),
     lines: [
         (id: "welcome", text: "Lanternfall. Air that stays air. Breathe while it's cheap."),
         (id: "announce", text: "The bell rings once — a climber down from the Stair."),
-        (id: "table", text: "A second device, older maps. The deep sea kept better records."),
+        (id: "table", text: "The old mapping desk, retired. The deep sea keeps its records at the Last Harbor now."),
     ],
     packs: [
         (monster: "villager", count: 3, x_u: 14, y_u: 18, radius_u: 4),

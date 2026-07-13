@@ -435,7 +435,7 @@ pub struct World {
     #[serde(default)]
     pub(crate) monster_fury_bp: i64,
     /// MAP RULE: the tick this map ends (0 = no clock). At expiry the
-    /// current ferries every character home to Lanternfall.
+    /// current ferries every character home to the Last Harbor (#185 D-1).
     #[serde(default)]
     pub(crate) map_ends_at: u64,
     /// Map tallies (#148 A7): per-runner (kills, deaths, items, tick)
@@ -1139,9 +1139,9 @@ impl World {
 
     /// Advance the world by exactly one tick.
     /// MAP RULE (#148 A4): when the map clock expires, the current
-    /// takes the strand back — every character is staged home to
-    /// Lanternfall as an ordinary departure (loot in the bag comes along;
-    /// the ferry lands them; the empty map retires).
+    /// takes the strand back — every character is staged home to the
+    /// LAST HARBOR (#185 D-1) as an ordinary departure (loot in the bag
+    /// comes along; the ferry lands them; the empty map retires).
     /// KILL SWITCH (#148 A6): remove named characters — despawn the
     /// entity, drop its bot, narrate the removal. Idempotent on unknown
     /// names (the host may race a transfer; the miss is harmless).
@@ -1190,7 +1190,7 @@ impl World {
             .collect();
         for net in nets {
             if !self.pending_exits.iter().any(|(n, ..)| *n == net) {
-                self.pending_exits.push((net, "lanternfall".into(), None));
+                self.pending_exits.push((net, "last_harbor".into(), None)); // home is the harbor (#185 D-1)
             }
             events.push(SimEvent::Narration {
                 target: net,
@@ -3086,6 +3086,150 @@ mod area_level_tests {
         );
     }
 
+    /// THE D-1 INVARIANT: exactly ONE Map Device exists in the whole
+    /// authored world, and it stands at the Last Harbor. Mutation:
+    /// restore `map_device: Some(...)` to Saltmere or Lanternfall (the
+    /// pre-D-1 state) → the count reads 2 and this names the leak.
+    #[test]
+    fn the_last_harbor_holds_the_only_map_device() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let with_device: Vec<&str> = content
+            .zones
+            .iter()
+            .filter(|z| z.map_device.is_some())
+            .map(|z| z.id.as_str())
+            .collect();
+        assert_eq!(
+            with_device,
+            vec!["last_harbor"],
+            "the endgame is linear: one device, at the harbor"
+        );
+    }
+
+    /// The AUTHORED harbor passage (#185 D-1): the undertow's north door
+    /// is sealed until the campaign falls — story_acts without bit 1
+    /// (act 2) reads -3 through the real UseExit ABI and stays put; a
+    /// finished campaign (acts 0b11) stages last_harbor. Mutation: strip
+    /// `requires_act: 2` from the undertow's zone.ron → the mid-campaign
+    /// walker leaks into the harbor and the -3 assert fails.
+    #[test]
+    fn the_harbor_passage_is_sealed_until_the_campaign_falls() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x1A5B, &content, "the_undertow");
+        // The fixture walker takes ANY exit underfoot every tick, and the
+        // undertow's spawn is two cells from the pressure_court door —
+        // strip it so the sealed harbor door is the only exit in play.
+        w.zone.exits.retain(|e| e.dest == "last_harbor");
+        let slot = {
+            w.tick(&TickInputs {
+                arrivals: Vec::new(),
+                removals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "Walker".into(),
+                    program: idlin_botc::assemble(
+                        "loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n",
+                    )
+                    .unwrap(),
+                }],
+            });
+            (0..w.zone.slot_count())
+                .find(|&s| {
+                    w.zone
+                        .get(s)
+                        .is_some_and(|e| e.character.as_ref().is_some_and(|c| c.name == "Walker"))
+                })
+                .expect("walker joined")
+        };
+        // Park the walker ON the authored harbor door with act 1 only.
+        let door = w
+            .zone
+            .exits
+            .iter()
+            .find(|e| e.dest == "last_harbor")
+            .map(|e| e.pos)
+            .expect("the undertow has the harbor door");
+        w.zone.get_mut(slot).unwrap().pos = door;
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        w.tick(&TickInputs::default());
+        assert!(
+            w.take_departures().is_empty(),
+            "mid-campaign, the harbor door holds"
+        );
+        let bot_idx = w.zone.get(slot).unwrap().bot.expect("walker has a bot");
+        assert_eq!(
+            w.bots.get_mut(bot_idx).unwrap().vm.load_i32(0xF200),
+            -3,
+            "the sealed harbor door reads -3 on the ABI"
+        );
+        // The campaign falls; the same door opens onto the harbor.
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 3;
+        w.zone.get_mut(slot).unwrap().pos = door;
+        w.tick(&TickInputs::default());
+        let departed = w.take_departures();
+        assert_eq!(departed.len(), 1, "the graduate departs");
+        assert_eq!(
+            departed[0].1, "last_harbor",
+            "the door opens onto the harbor"
+        );
+    }
+
+    /// The dry-road bounce's world-layer guarantee (#185 D-1): a retired
+    /// story instance RE-MINTS pristine from its stable key — the fresh
+    /// undertow holds a LIVING Sovereign again, so a map-less graduate
+    /// bouncing harbor → undertow always finds a boss whose fall pays a
+    /// map. Mutation: make packs survive re-mint spent (persist `risen`
+    /// across mints) → the second world's Sovereign is absent and this
+    /// fails.
+    #[test]
+    fn a_reminted_undertow_holds_a_living_sovereign() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let sovereign_alive = |w: &World| {
+            w.zone.iter().any(|(_, e)| {
+                e.alive()
+                    && e.monster.as_ref().is_some_and(|m| {
+                        content.monsters[m.def_idx as usize].id == "riptide_sovereign"
+                    })
+            })
+        };
+        let mut w1 = World::new_for_zone(0xD1CE, &content, "the_undertow");
+        w1.tick(&TickInputs::default());
+        assert!(sovereign_alive(&w1), "the first mint holds the Sovereign");
+        // Kill every monster (the cleared, spent state) — then drop the
+        // world entirely (retirement) and re-mint from the same seed+key.
+        let dead: Vec<usize> = w1
+            .zone
+            .iter()
+            .filter(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, _)| s)
+            .collect();
+        for s in dead {
+            if let Some(c) = w1.zone.get_mut(s).unwrap().combat.as_mut() {
+                c.life = 0;
+            }
+        }
+        w1.tick(&TickInputs::default());
+        assert!(!sovereign_alive(&w1), "the first mint is spent");
+        drop(w1);
+        let mut w2 = World::new_for_zone(0xD1CE, &content, "the_undertow");
+        w2.tick(&TickInputs::default());
+        assert!(
+            sovereign_alive(&w2),
+            "the re-mint holds a LIVING Sovereign — the dry road's map faucet"
+        );
+    }
+
     #[test]
     fn a_story_sealed_exit_refuses_until_the_act_is_complete() {
         // #136: an exit with `requires_act: 1` returns -3 (stays put) for a
@@ -3938,7 +4082,7 @@ mod area_level_tests {
         // act gate, the reach check, the consume, or the juice mapping →
         // the matching assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_for_zone(0xC4A7, &content, "saltmere");
+        let mut w = World::new_for_zone(0xC4A7, &content, "last_harbor");
         let slot = join_one(&mut w, "Runner");
         let map_base = content
             .items
@@ -4014,7 +4158,7 @@ mod area_level_tests {
             .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
         // Away from the device (the spawn is out of reach of (26,46)).
         assert_eq!(w.open_map(slot, inv_idx), -2);
-        let table = w.map_device.expect("saltmere has the device");
+        let table = w.map_device.expect("the harbor has the device");
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
         // A non-map index refuses.
@@ -4058,7 +4202,7 @@ mod area_level_tests {
         // of its rolled duration. Mutation: drop the MapClock match arm →
         // the clock assert sees 0, fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_for_zone(0xDE1, &content, "saltmere");
+        let mut w = World::new_for_zone(0xDE1, &content, "last_harbor");
         let slot = join_one(&mut w, "Belled");
         let map_base = content
             .items
@@ -4091,7 +4235,7 @@ mod area_level_tests {
                 y: 0,
             });
         }
-        let table = w.map_device.expect("saltmere has the device");
+        let table = w.map_device.expect("the harbor has the device");
         w.zone.get_mut(slot).unwrap().pos =
             FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
         let inv_idx = w
@@ -4122,7 +4266,7 @@ mod area_level_tests {
         // return said success. Mutation: reorder consume before the guard →
         // the bag_after assert fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
-        let mut w = World::new_for_zone(0xEA7, &content, "saltmere");
+        let mut w = World::new_for_zone(0xEA7, &content, "last_harbor");
         let slot = join_one(&mut w, "Hasty");
         let map_base = content
             .items
@@ -4558,8 +4702,9 @@ mod area_level_tests {
 
     #[test]
     fn the_map_clock_ferries_everyone_home() {
-        // #148 A4: at expiry every character departs to Lanternfall as an
-        // ordinary bundle — nothing carried is lost. Mutation: drop the
+        // #148 A4: at expiry every character departs HOME — the Last
+        // Harbor (#185 D-1) — as an ordinary bundle; nothing carried is
+        // lost. Mutation: drop the
         // map_clock call from tick → no departure, this fails.
         let content = ContentDb::load(Path::new("../../content")).expect("content loads");
         let mut w = World::new_map_instance(
@@ -4584,7 +4729,7 @@ mod area_level_tests {
         }
         assert_eq!(departed.len(), 1, "the clock ferries the runner out");
         let (bundle, dest) = &departed[0];
-        assert_eq!(dest, "lanternfall");
+        assert_eq!(dest, "last_harbor", "the clock ferries HOME (#185 D-1)");
         assert_eq!(bundle.character.name, "Timed");
     }
 

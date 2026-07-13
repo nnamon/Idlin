@@ -77,7 +77,11 @@ const GOLDEN_TICKS: u64 = 2_000;
 // content/economy.ron is new content bytes, and currency counts became
 // TENTHS — pickups pay 10, crafting consumes 10, selling pays 1, so
 // craft timing shifts anywhere a bot was saving for an obol.
-const GOLDEN_HASH: u64 = 0x593C_BED6_C81C_4F85;
+// Re-pinned for #185 D-1 (operator: a NEW third town): the Last Harbor
+// zone (new content bytes + registry num), the act-2-sealed undertow
+// passage, the devices leaving Saltmere/Lanternfall, and the templates
+// re-routing the endgame through the harbor.
+const GOLDEN_HASH: u64 = 0x3467_F3F3_4894_51EA;
 
 #[test]
 fn golden_replay() {

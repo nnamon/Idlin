@@ -14,9 +14,10 @@
 // Act 1 is done it pushes DEEPER when leveled for the next zone
 // (coast at once, saltworks at 7, the Hollow at 10) and breaks the
 // Mother. After (SelfStatus flags bit 1) it lives the endgame loop:
-// home to Saltmere, open a map at the Map Device, farm the
-// map for ~8 minutes, walk home, repeat — and when it runs dry
-// of maps, it returns to the Hollow: the Mother always pays one.
+// home to the Last Harbor, open a map at its Device (the game's
+// only one, #185 D-1), farm the map for ~8 minutes, walk home,
+// repeat — dry of maps, the road leads back through the Undertow:
+// a re-minted Sovereign always pays one.
 //
 // See docs/bot-guide.md for the syscall reference.
 // ============================================================
@@ -276,39 +277,39 @@ fn route_dest() {
         }
         if (zid == ZONE_THE_UNDERTOW) { return -1; }
         if (zid == ZONE_CHARTED_SHALLOWS) {
-            if (map_t > 5000) { return ZONE_SALTMERE; }
+            if (map_t > 5000) { return ZONE_LAST_HARBOR; }
             return -1;
         }
         return 0;
     }
     // The endgame, both acts down. A map run lasts ~8 minutes, then home
-    // to the NEAREST Map Device (Lanternfall keeps one too); dry, the road
-    // leads to the Sovereign — the deepest act boss pays the deepest
-    // maps.
+    // to THE Map Device — the Last Harbor holds the only one (#185 D-1);
+    // dry, the road leads to the Sovereign, and the harbor lies one door
+    // past his basin.
     if (zid == ZONE_CHARTED_SHALLOWS) {
-        // HOME IS WHERE THE EXIT GOES (#162 live find): the route said
-        // Lanternfall but the map run's only exit lands in SALTMERE — want
-        // never matched an exit and two brains farmed one tier-1 map run
-        // for two hours. Saltmere keeps a device; the cycle closes there.
-        if (map_t > 5000) { return ZONE_SALTMERE; }
+        // HOME IS WHERE THE EXIT GOES (#162 live find): the map run's
+        // only exit lands at the LAST HARBOR now — want matches the door.
+        if (map_t > 5000) { return ZONE_LAST_HARBOR; }
         return -1;
     }
     if (find_map() >= 0) {
-        if (zid == ZONE_LANTERNFALL) { return -1; }  // the device logic in main
-        if (zid == ZONE_SALTMERE) { return -1; }
-        if (zid == ZONE_THE_UNDERTOW) { return ZONE_PRESSURE_COURT; }
-        if (zid == ZONE_PRESSURE_COURT) { return ZONE_KELP_FOREST; }
-        if (zid == ZONE_KELP_FOREST) { return ZONE_LANTERNFALL; }
+        if (zid == ZONE_LAST_HARBOR) { return -1; }  // the device logic in main
+        if (zid == ZONE_THE_UNDERTOW) { return ZONE_LAST_HARBOR; }
+        if (zid == ZONE_PRESSURE_COURT) { return ZONE_THE_UNDERTOW; }
+        if (zid == ZONE_KELP_FOREST) { return ZONE_PRESSURE_COURT; }
+        if (zid == ZONE_LANTERNFALL) { return ZONE_KELP_FOREST; }
         if (zid == ZONE_SUNKEN_STAIR) { return ZONE_LANTERNFALL; }
         if (zid == ZONE_HOLLOW) { return ZONE_SUNKEN_STAIR; }
         if (zid == ZONE_SALTWORKS) { return ZONE_HOLLOW; }
         if (zid == ZONE_COAST) { return ZONE_SALTWORKS; }
+        if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
         return -1;
     }
     if (zid == ZONE_LANTERNFALL) { return ZONE_KELP_FOREST; }
     if (zid == ZONE_KELP_FOREST) { return ZONE_PRESSURE_COURT; }
     if (zid == ZONE_PRESSURE_COURT) { return ZONE_THE_UNDERTOW; }
     if (zid == ZONE_THE_UNDERTOW) { return -1; }
+    if (zid == ZONE_LAST_HARBOR) { return ZONE_THE_UNDERTOW; }
     if (zid == ZONE_SALTMERE) { return ZONE_COAST; }
     if (zid == ZONE_COAST) { return ZONE_SALTWORKS; }
     if (zid == ZONE_SALTWORKS) { return ZONE_HOLLOW; }
@@ -440,7 +441,7 @@ fn main() {
     // carrying the Mother's map once opened from Lanternfall's device the
     // moment it arrived, abandoning Act 2 — the device waits until no act
     // is pending (flags bit 2 = act 2, the current last; revisit per act).
-    if (zid == ZONE_SALTMERE || zid == ZONE_LANTERNFALL) {
+    if (zid == ZONE_LAST_HARBOR) {
         if ((mem[SELF + SS_FLAGS] & 4) != 0) {
             var map = find_map();
             if (map >= 0) {

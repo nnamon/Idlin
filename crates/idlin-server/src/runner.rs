@@ -857,6 +857,10 @@ pub mod salt_road {
         /// Character level when the run ended — the difficulty re-anchor's
         /// calibration meter (operator target: ~38 at campaign's end).
         pub final_level: u32,
+        /// Level at the FIRST harbor arrival — the campaign graduate's
+        /// number (the operator's "~38 at the final town" pin), before
+        /// map-run XP moves it (#185 D-1).
+        pub harbor_level: u32,
     }
 
     impl SaltRoadReport {
@@ -1016,7 +1020,7 @@ pub mod salt_road {
             program,
         }];
         let mut worlds = boot_worlds(&content, seed, &joins);
-        let mut milestones = [false; 8];
+        let mut milestones = [false; 9];
         let mut sales = 0u32;
         let mut opens = 0u32;
         let names = [
@@ -1026,6 +1030,7 @@ pub mod salt_road {
             "complete act 1",
             "descend to Lanternfall",
             "complete act 2",
+            "reach the Last Harbor",
             "open a map at the device",
             "complete a map run",
         ];
@@ -1035,6 +1040,11 @@ pub mod salt_road {
         // (ticks-present, kills, deaths) for the subject — separates
         // "kills slower" (power) from "dies while killing fine" (defense).
         let zonestats = std::env::var("SALT_ZONESTATS").is_ok();
+        // The run can BREAK while the subject is mid-ferry (the return-lit
+        // map milestone) — in no world at scan time; the sampler's last
+        // sighting backstops the final-level readout.
+        let mut last_seen_level = 0u32;
+        let mut harbor_level = 0u32;
         let mut zstats: std::collections::BTreeMap<String, (u64, u32, u32)> =
             std::collections::BTreeMap::new();
         'run: for host_tick in 0..280_000u64 {
@@ -1092,19 +1102,32 @@ pub mod salt_road {
                         sales += 1;
                     }
                 }
-                departures.extend(
-                    mw.world
-                        .take_departures()
-                        .into_iter()
-                        .map(|(b, dest)| (i, b, dest)),
-                );
+                let from_map = mw.zone_id.starts_with("charted_shallows");
+                departures.extend(mw.world.take_departures().into_iter().map(|(b, dest)| {
+                    // The harbor stop can be SHORTER than the 200-tick zone
+                    // sampler (arrive → device → depart) — light its
+                    // milestone on the departure toward it. And a departure
+                    // FROM a map instance TO the harbor is the run actually
+                    // CLOSING — real completion evidence, not mere entry
+                    // (#185 D-1; the critic's map-run-semantics finding).
+                    if dest == "last_harbor" && b.character.name == subject {
+                        if !milestones[6] {
+                            harbor_level = b.character.level;
+                        }
+                        milestones[6] = true;
+                        if from_map {
+                            milestones[8] = true;
+                        }
+                    }
+                    (i, b, dest)
+                }));
             }
             // A ticketed departure IS the town milestone: standing at the
             // table, act done, map spent (zone sampling every 200 ticks
             // can miss the transit — the road home is 6 cells long).
             for (_, b, dest) in &departures {
                 if b.character.name == subject && b.map.is_some() {
-                    milestones[6] = true;
+                    milestones[7] = true;
                     opens += 1;
                 }
                 // Town transits outrun the 200-tick zone sampling (the T6
@@ -1115,6 +1138,13 @@ pub mod salt_road {
                 }
             }
             ferry_departures_with_maps(&mut worlds, departures, &content, seed, host_tick);
+            // LIVE PARITY (#185 D-1, critic find): the host retires emptied
+            // minted instances; the harness must too, or the dry-road
+            // bounce (harbor → a RE-MINTED undertow → a fresh Sovereign)
+            // can never re-mint here.
+            if host_tick % 512 == 0 {
+                worlds.retain(|mw| !minted_instance_emptied(mw));
+            }
             if host_tick % 20_000 == 0 {
                 for mw in &worlds {
                     for v in mw.world.views() {
@@ -1170,7 +1200,7 @@ pub mod salt_road {
                     }
                 }
             }
-            if opens >= map_target && milestones[7] {
+            if opens >= map_target && milestones[8] {
                 break 'run;
             }
             if host_tick % 200 == 0 {
@@ -1186,13 +1216,23 @@ pub mod salt_road {
                     if zonestats {
                         zstats.entry(mw.zone_id.clone()).or_default().0 += 200;
                     }
+                    if let Some(v) = mw
+                        .world
+                        .views()
+                        .iter()
+                        .find(|v| v.kind == 1 && v.name == subject)
+                    {
+                        last_seen_level = v.level;
+                    }
                     match mw.zone_id.as_str() {
                         "coast" => milestones[0] = true,
                         "saltworks" => milestones[1] = true,
                         "hollow" => milestones[2] = true,
                         "lanternfall" => milestones[4] = true,
-                        "charted_shallows" if !milestones[7] => {
-                            milestones[7] = true;
+                        "last_harbor" => milestones[6] = true,
+                        "charted_shallows" if mapped_at == 0 => {
+                            // First map ENTRY stamps the pace meter; the
+                            // completion milestone lights on the RETURN.
                             mapped_at = host_tick;
                         }
                         _ => {}
@@ -1214,7 +1254,7 @@ pub mod salt_road {
             .iter()
             .flat_map(|mw| mw.world.views())
             .find(|v| v.kind == 1 && v.name == subject)
-            .map_or(0, |v| v.level);
+            .map_or(last_seen_level, |v| v.level);
         SaltRoadReport {
             maps: opens,
             milestones: names
@@ -1226,6 +1266,7 @@ pub mod salt_road {
             deaths,
             sales,
             final_level,
+            harbor_level,
         }
     }
 }
@@ -1323,8 +1364,8 @@ mod tests {
             assert_complete(seed, &r);
             let (mapped_at, deaths, sales) = (r.mapped_at, r.deaths, r.sales);
             eprintln!(
-                "BAND seed={seed:#x} final_level={} deaths={deaths} mapped_at={mapped_at}",
-                r.final_level
+                "BAND seed={seed:#x} harbor_level={} final_level={} deaths={deaths} mapped_at={mapped_at}",
+                r.harbor_level, r.final_level
             );
             // #148 A5 (review B2, take two): the vendor-specific economy
             // proof lives in THE MELEE BAND ONLY — its four seeds all
@@ -1360,9 +1401,9 @@ mod tests {
             // at ~38 (tier-1 maps open at 40, just above). Mutation: cut
             // the XP curve or a zone's income → this reads low and fails.
             assert!(
-                (37..=41).contains(&r.final_level),
-                "seed {seed:#x}: finished at level {} — the road should deliver ~38",
-                r.final_level
+                (37..=41).contains(&r.harbor_level),
+                "seed {seed:#x}: reached the harbor at level {} — the campaign should deliver ~38",
+                r.harbor_level
             );
         }
     }
@@ -1481,9 +1522,9 @@ mod tests {
         );
         // The level-38 calibration pin, same as the melee/ranger bands.
         assert!(
-            (37..=41).contains(&r.final_level),
-            "the caster finished at level {} — the road should deliver ~38",
-            r.final_level
+            (37..=41).contains(&r.harbor_level),
+            "the caster reached the harbor at level {} — the campaign should deliver ~38",
+            r.harbor_level
         );
     }
 
@@ -1518,9 +1559,9 @@ mod tests {
             // bots-own-their-pathing rework), not an income knob; 900
             // quiet-ticks and re-anchored gates already closed 35 → 36.
             assert!(
-                (36..=40).contains(&r.final_level),
-                "the ranger finished at level {} — the road should deliver ~37",
-                r.final_level
+                (36..=40).contains(&r.harbor_level),
+                "the ranger reached the harbor at level {} — the campaign should deliver ~37",
+                r.harbor_level
             );
         }
     }

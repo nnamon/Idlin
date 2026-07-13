@@ -1339,8 +1339,8 @@ pub struct ZoneDef {
     pub camp_radius_u: i32,
     #[serde(default)]
     pub kind: ZoneKind,
-    /// The Map Device's cell (#136 T4): where OpenMap works. One per
-    /// game for 1.0 — Saltmere's. None everywhere else.
+    /// The Map Device's cell (#136 T4): where OpenMap works. ONE per
+    /// game (#185 D-1) — the Last Harbor's. None everywhere else.
     #[serde(default)]
     pub map_device: Option<(i32, i32)>,
     /// The town's VENDOR cell (#148 A5) — where a character sells items

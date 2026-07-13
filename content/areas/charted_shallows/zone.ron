@@ -1,5 +1,5 @@
 // Charted waters (#136 T4): the endgame's sea. NEVER booted — each map
-// used at Saltmere's device opens a private instance of this strand, its
+// used at the Last Harbor's device opens a private instance of this strand, its
 // area level set by the map's tier (39 + tier — the level-40 floor) and its packs juiced by
 // the map's rolled affixes. Everything the act taught, all at once.
 ZoneDef(
@@ -29,6 +29,6 @@ ZoneDef(
     ],
     exits: [
         // The map home. Leaving retires the instance behind you.
-        (x_u: 25, y_u: 61, dest: "saltmere", open: true),
+        (x_u: 25, y_u: 61, dest: "last_harbor", open: true), // the cycle closes at the harbor (#185 D-1)
     ],
 )

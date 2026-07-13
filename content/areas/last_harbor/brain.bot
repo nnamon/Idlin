@@ -1,0 +1,20 @@
+// Area brain: the Last Harbor — the endgame's town. Greets each
+// graduate once; the quay speaks for itself.
+
+include "zone_lib.bot";
+
+const L_WELCOME = line "welcome";
+const F_WELCOMED = 1;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_WELCOMED) == 1) {
+            narrate(L_WELCOME, net);
+        }
+        i = i + 1;
+    }
+}

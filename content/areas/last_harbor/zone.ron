@@ -1,0 +1,33 @@
+// The Last Harbor — the endgame's town (#185 D-1, operator-ruled: a NEW
+// third town). The passage opens only when the campaign falls; the
+// game's ONLY Map Device stands on this quay. Linear until here, open
+// sea after. No monsters; the whole harbor is sanctuary.
+ZoneDef(
+    id: "last_harbor",
+    name: "The Last Harbor",
+    kind: town,
+    spawn_x_u: 20,
+    spawn_y_u: 4,
+    spawn_radius_u: 2,
+    camp_radius_u: 60,      // the whole town is sanctuary
+    tileset: Some("town"),
+    // The ONLY Map Device: center plaza, facing the quay.
+    map_device: Some((20, 15)),
+    vendor: Some((14, 15)),
+    stash: Some((26, 15)),
+    brain: Some("last_harbor"),
+    lines: [
+        (id: "welcome",  text: "The Last Harbor. The road ends; the sea does not."),
+        (id: "announce", text: "A campaign-worn idler walks the quay. The harbor takes their measure."),
+        (id: "table",    text: "The Map Device. Every chart the drowned kept, waiting to be spent."),
+    ],
+    packs: [
+        // Harborfolk: the last people left standing this far out.
+        (monster: "villager", count: 2, x_u: 12, y_u: 12, radius_u: 3),
+        (monster: "villager", count: 2, x_u: 28, y_u: 12, radius_u: 3),
+    ],
+    exits: [
+        // Back up the drowned road (the way you came).
+        (x_u: 19, y_u: 0, dest: "the_undertow", open: true),
+    ],
+)
