@@ -243,6 +243,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![JoinRequest {
                 name: "Regretful".into(),
                 program: halt,
@@ -296,6 +297,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         world.refresh_derived_stats(slot);

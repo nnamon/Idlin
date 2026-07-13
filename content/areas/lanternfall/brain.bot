@@ -1,0 +1,23 @@
+// Area brain: Lanternfall, the Act 2 town — the Saltmere idiom, one
+// bell deeper.
+
+include "zone_lib.bot";
+
+const L_WELCOME = line "welcome";
+const L_ANNOUNCE = line "announce";
+
+const F_WELCOMED = 1;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_WELCOMED) == 1) {
+            narrate(L_WELCOME, net);
+            narrate(L_ANNOUNCE, 0);
+        }
+        i = i + 1;
+    }
+}

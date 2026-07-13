@@ -94,6 +94,9 @@ export class EntityVisual {
   private baseRole = "";
   private attacking = false;
   private wasDead = false;
+  /** Ever witnessed alive — false for a visual created over a corpse
+   *  (cross-world cut rebuild), which must POSE dead, never re-die. */
+  private sawAlive = true;
 
   // Modular body
   private def: ModelDef | null = null;
@@ -151,10 +154,16 @@ export class EntityVisual {
     const { state } = er;
     this.myName = state.name;
     this.modelKey = state.model;
+    this.sawAlive = !state.dead;
     if (state.kind === "Loot") {
       this.buildLoot(state.model, state.rarity);
     } else {
-      this.buildModel(state.model, state.kind === "Monster", state.rarity);
+      this.buildModel(
+        state.model,
+        state.kind === "Monster",
+        state.rarity,
+        state.hostile,
+      );
       this.buildBars();
       if (state.kind === "Character") this.buildLabel(state.name);
       // Elite monsters announce themselves: rarity-tinted nameplates,
@@ -167,7 +176,13 @@ export class EntityVisual {
     }
   }
 
-  private buildModel(model: string, isMonster: boolean, rarity = 0): void {
+  private hostileEmber = false;
+
+  private buildModel(model: string, isMonster: boolean, rarity = 0, hostile = false): void {
+    // Codex round 2: conflating "hostile" with "is monster" stole the
+    // villagers' per-id body variation (they took the character seed
+    // path). Kind drives seeding/clips/scale; hostility drives the ember.
+    this.hostileEmber = isMonster && hostile;
     // Cosmetic body variant: stable per character name; per entity id for
     // monsters so packs come out mixed. Pure client-side — not replicated.
     const def = this.assets.modelDef(model);
@@ -192,9 +207,14 @@ export class EntityVisual {
 
     inst.root.traverse((o) => {
       if (o instanceof THREE.Bone) this.boneByName.set(o.name, o);
-      // Fixed monster tint applies to the body skin too (shared cache).
-      if (inst.def.tint && o instanceof THREE.Mesh && !Array.isArray(o.material)) {
-        o.material = this.assets.tintedMaterial(o.material, inst.def.tint);
+      // Fixed monster tint applies to the body skin too (shared cache);
+      // hostiles also carry the readability ember (broadcast audit).
+      if (o instanceof THREE.Mesh && !Array.isArray(o.material)) {
+        if (inst.def.tint) {
+          o.material = this.assets.tintedMaterial(o.material, inst.def.tint, this.hostileEmber);
+        } else if (this.hostileEmber) {
+          o.material = this.assets.tintedMaterial(o.material, "#ffffff", true);
+        }
       }
     });
 
@@ -217,10 +237,23 @@ export class EntityVisual {
       if (mesh) this.baseRegionMeshes.set(region, mesh);
     }
 
-    // Monsters with a spawn clip rise out of the ground; everyone else
-    // idles, phase-shifted so packs don't move in lockstep.
+    // A model attached over a CORPSE (born dead, or assets landed after
+    // the dead edge already fired) poses at the death clip's final frame
+    // — no rise, no idle, no re-death.
     const spawn = this.actions.get("spawn");
-    if (isMonster && spawn) {
+    if (this.wasDead || !this.sawAlive) {
+      const death = this.actions.get("death");
+      if (death) {
+        death.setLoop(THREE.LoopOnce, 1);
+        death.clampWhenFinished = true;
+        death.play();
+        death.time = death.getClip().duration;
+      }
+      this.attacking = false;
+      this.baseRole = "idle";
+    } else if (isMonster && spawn) {
+      // Monsters with a spawn clip rise out of the ground; everyone else
+      // idles, phase-shifted so packs don't move in lockstep.
       spawn.setLoop(THREE.LoopOnce, 1);
       spawn.play();
       this.attacking = true; // blocks the base state until "finished"
@@ -236,6 +269,19 @@ export class EntityVisual {
     // they are their own design, and they carry the boss bar.
     if (isMonster && (rarity === 1 || rarity === 2)) {
       this.addOutline(inst.root, RARITY_COLORS_NUM[rarity]);
+    }
+    // Uniques read as BOSSES (#136 T2): 1.6x presence via a WRAPPER group —
+    // the animation mixer stomps armature-node scales every frame (the same
+    // trap the asset pipeline hit), so scaling inst.root silently reverts;
+    // a parent the mixer never owns holds the scale. Stats are untouched;
+    // this is presentation, like the bar and the nameplate tint.
+    if (isMonster && rarity === 3) {
+      const podium = new THREE.Group();
+      podium.scale.multiplyScalar(1.6);
+      inst.root.removeFromParent();
+      podium.add(inst.root);
+      this.group.add(podium);
+      this.height *= 1.6;
     }
   }
 
@@ -378,7 +424,13 @@ export class EntityVisual {
         mesh.castShadow = true;
         if (!Array.isArray(mesh.material)) {
           if (this.def.tint) {
-            mesh.material = this.assets.tintedMaterial(mesh.material, this.def.tint);
+            // Monster paper-doll parts carry the readability ember too
+            // (codex: the first cut embered the body but not defaultParts).
+            mesh.material = this.assets.tintedMaterial(
+              mesh.material,
+              this.def.tint,
+              this.hostileEmber,
+            );
           } else if (tintByName) {
             const mat = mesh.material.clone() as THREE.MeshStandardMaterial;
             mat.color?.lerp(nameColor(this.myName), 0.55);
@@ -460,10 +512,10 @@ export class EntityVisual {
     const ctx = canvas.getContext("2d")!;
     // Affix-composed elite names run long — shrink to fit the canvas.
     let px = 56;
-    ctx.font = `bold ${px}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+    ctx.font = `bold ${px}px "Idlin Text", system-ui, sans-serif`;
     while (px > 30 && ctx.measureText(text).width > 492) {
       px -= 4;
-      ctx.font = `bold ${px}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+      ctx.font = `bold ${px}px "Idlin Text", system-ui, sans-serif`;
     }
     ctx.textAlign = "center";
     ctx.shadowColor = "rgba(0,0,0,0.9)";
@@ -558,7 +610,7 @@ export class EntityVisual {
       const canvas = (this.bubbleTex!.image as HTMLCanvasElement);
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = '32px "Idlin Mono", ui-monospace, Menlo, monospace';
+      ctx.font = '32px "Idlin Text", system-ui, sans-serif';
       ctx.textAlign = "center";
       const w = Math.min(500, ctx.measureText(text).width + 36);
       ctx.fillStyle = "rgba(12, 12, 22, 0.82)";
@@ -710,16 +762,27 @@ export class EntityVisual {
     }
 
     // -- death / respawn --
+    if (!er.state.dead) this.sawAlive = true;
     if (er.state.dead !== this.wasDead) {
+      // A visual never witnessed ALIVE (created over a corpse after a
+      // cross-world cut rebuilt the scene) snaps to the death pose's
+      // final frame — only a live→dead transition animates. Without
+      // this, every rotation cut replayed every corpse's collapse.
+      const bornDead = er.state.dead && !this.sawAlive;
       this.wasDead = er.state.dead;
       if (er.state.dead) {
         this.attacking = false;
+        this.actions.get("spawn")?.stop(); // a corpse never rises
         const death = this.actions.get("death");
         if (death) {
           for (const a of this.actions.values()) a.fadeOut(FADE_S);
           death.setLoop(THREE.LoopOnce, 1);
           death.clampWhenFinished = true;
           death.reset().fadeIn(FADE_S).play();
+          if (bornDead) {
+            death.time = death.getClip().duration; // corpse, not a collapse
+            death.fadeIn(0);
+          }
         }
       } else {
         const death = this.actions.get("death");

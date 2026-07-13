@@ -99,6 +99,8 @@ impl World {
             .and_then(|e| e.combat.as_ref())
             .map(|c| (c.item_quantity.max(0), c.item_rarity.max(0)))
             .unwrap_or((10000, 10000));
+        // Map juice (#136 T4): the instance's rolled quantity bonus.
+        quantity += self.loot_quantity_bp;
         match monster_rarity {
             Rarity::Magic => {
                 quantity += 3000;
@@ -143,6 +145,53 @@ impl World {
             drops.push(payload);
         }
         drops
+    }
+
+    /// Mint a SIGNATURE UNIQUE (#136 T5): fixed identity, no rolls — the
+    /// def's name and mods ARE the item. ilvl records the kill for the
+    /// tooltip; nothing tiers off it.
+    pub(super) fn mint_unique(&self, unique_idx: u32, item_level: u32) -> LootPayload {
+        let u = &self.content.uniques[unique_idx as usize];
+        let base_idx = self
+            .content
+            .items
+            .iter()
+            .position(|i| i.id == u.base)
+            .expect("loader validated the base") as u32;
+        LootPayload::Gear(Item {
+            base_idx,
+            rarity: Rarity::Unique,
+            item_level,
+            affixes: Vec::new(),
+            name: u.name.clone(),
+            charges: self.content.items[base_idx as usize].flask_charges,
+            unique_idx: Some(unique_idx),
+        })
+    }
+
+    /// Roll a MAP (#136 T4): the endgame's own drop, never in the common
+    /// pool (its base has weight 0). Always Magic — 1-2 affixes off the
+    /// map pool (quantity/rarity juice) — at the kill's item level, so
+    /// deeper waters map deeper waters.
+    pub(super) fn roll_map(&mut self, item_level: u32) -> Option<LootPayload> {
+        let base_idx = self
+            .content
+            .items
+            .iter()
+            .position(|d| d.map_tier.is_some())? as u32;
+        let mut item = Item {
+            base_idx,
+            rarity: Rarity::Magic,
+            item_level,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+            unique_idx: None,
+        };
+        let affix_count = 1 + self.rng_loot.next_range(2);
+        roll_affixes(&self.content, &mut self.rng_loot, &mut item, affix_count, 1);
+        item.name = compose_name(&self.content, &mut self.rng_loot, &item);
+        Some(LootPayload::Gear(item))
     }
 
     /// A weighted low-tier obol (tier ≤ 1) for trash compaction.
@@ -239,6 +288,7 @@ impl World {
             name: String::new(),
             // A fresh flask is a full flask.
             charges: self.content.items[base_idx as usize].flask_charges,
+            unique_idx: None,
         };
         roll_affixes(
             &self.content,
@@ -306,6 +356,7 @@ impl World {
             name: String::new(),
             // A fresh flask is a full flask.
             charges: self.content.items[base_idx as usize].flask_charges,
+            unique_idx: None,
         };
         roll_affixes(
             &self.content,
@@ -739,6 +790,7 @@ mod craft_tests {
             affixes: Vec::new(),
             name: content.items[base_idx as usize].name.clone(),
             charges: 0,
+            unique_idx: None,
         };
         (content, rng, item)
     }
@@ -967,6 +1019,7 @@ mod find_tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         w.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Finder".into(),
                 program,

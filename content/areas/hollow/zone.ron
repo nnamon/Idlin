@@ -1,0 +1,49 @@
+// Act 1's end: the Tidewarden's Hollow — the drowned throat under the
+// bluffs where the water is oldest. A winding descent past the Mother's
+// choir opens into the basin where she waits. Breaking her completes
+// Act 1 and unseals the Map Device in Saltmere.
+//
+// AUTHORING RULE (#136 T6): bots have no pathfinding — the chase chain
+// (fight a pack, sight the next) is what pulls them through a zone, so
+// the throat's jogs are GENTLE (sightlines never fully break) and packs
+// sit ≤8 rows apart on the corridor's center line.
+ZoneDef(
+    id: "hollow",
+    name: "The Tidewarden's Hollow",
+    kind: story,
+    level: 17,
+    tileset: Some("shore"),
+    tileset_variant: Some("drowned"),
+    spawn_x_u: 23,
+    spawn_y_u: 55,
+    spawn_radius_u: 2,
+    camp_radius_u: 5,
+    brain: Some("hollow"),
+    lines: [
+        (id: "enter", text: "The Hollow. The tide goes in here and does not come out."),
+        (id: "basin", text: "The water ahead is standing up."),
+        (id: "chorus", text: "The Mother falters — and the CHORUS ANSWERS. The drowned rise singing."),
+        (id: "last_verse", text: "Her last verse. Everything she ever pulled under comes up with it."),
+    ],
+    packs: [
+        // The throat, descending: her choir first, then the fists.
+        SpawnPack(monster: "deep_chanter",     count: 5, x_u: 23, y_u: 48, radius_u: 3, magic_bp: 2200, rare_bp: 800),
+        SpawnPack(monster: "drowned_colossus", count: 4, x_u: 23, y_u: 42, radius_u: 3, magic_bp: 2200, rare_bp: 800),
+        SpawnPack(monster: "deep_chanter",     count: 5, x_u: 24, y_u: 36, radius_u: 3, magic_bp: 2200, rare_bp: 800),
+        SpawnPack(monster: "drowned_colossus", count: 4, x_u: 23, y_u: 29, radius_u: 3, magic_bp: 2500, rare_bp: 1000),
+        // The basin: the choir's last stand ringing the Mother.
+        SpawnPack(monster: "deep_chanter",     count: 1, x_u: 15, y_u: 18, radius_u: 2, magic_bp: 3000, rare_bp: 1200),
+        SpawnPack(monster: "deep_chanter",     count: 1, x_u: 31, y_u: 18, radius_u: 2, magic_bp: 3000, rare_bp: 1200),
+        // The Mother of the Drowned: the act boss. Unique by def; every
+        // idler's private hollow holds its own finale.
+        SpawnPack(monster: "mother_of_the_drowned", count: 1, x_u: 23, y_u: 10, radius_u: 0),
+    ],
+    exits: [
+        // Back up to the Saltworks. The only way out is the way in — or a
+        // map, once the device unseals (T4).
+        (x_u: 23, y_u: 58, dest: "saltworks", open: true),
+        // DOWN (#148 A3): the basin drains into the Sunken Stair — and the
+        // way answers only to those who broke her (the story seal, live).
+        (x_u: 14, y_u: 4, dest: "sunken_stair", open: true, requires_act: 1),
+    ],
+)

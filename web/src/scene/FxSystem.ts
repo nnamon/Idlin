@@ -537,7 +537,7 @@ export class FxSystem {
     }
     const { ctx, canvas } = n;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = `bold ${big ? 44 : 32}px "Idlin Mono", ui-monospace, Menlo, monospace`;
+    ctx.font = `bold ${big ? 44 : 32}px "Idlin Text", system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.shadowColor = "rgba(0,0,0,0.95)";
     ctx.shadowBlur = 6;

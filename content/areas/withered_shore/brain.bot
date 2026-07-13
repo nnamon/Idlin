@@ -152,14 +152,21 @@ fn main() {
         // class; the "second" gate opens onto the gauntlet.
         if (kills >= 2) {
             if (zl_once(net, F_GEMDROP) == 1) {
-                var wc = mem[r + QC_WCLASS];
+                // Key on the DECLARED archetype first (#148 A2) — the same
+                // trust the weapon payment shows. The wielded class lags
+                // the declaration (a ranged pupil's bow lands six units
+                // away at its kill and gets worn a breath later — lesson 2
+                // once paid a SPELL to a bow build in that gap); intent is
+                // declared, not worn.
                 var g = GEM_EMBER;
-                if (wc == 0) {
+                var ga = mem[r + QC_ARCH];
+                if (ga < 0) { ga = mem[r + QC_WCLASS]; }
+                if (ga == 0) {
                     g = GEM_CLEAVE;
                     if ((random() & 1) == 1) { g = GEM_HEAVY; }
                 }
-                if (wc == 1) { g = GEM_SHOT; }
-                if (wc == 2 || wc == -1) {
+                if (ga == 1) { g = GEM_SHOT; }
+                if (ga == 2 || ga < 0) {
                     var s = (random() & 0x7FFFFFFF) % 4;
                     if (s == 1) { g = GEM_FROST; }
                     if (s == 2) { g = GEM_ARC; }
@@ -226,7 +233,7 @@ fn main() {
                     set_gate(GATE_MIDWAY, 1);
                     narrate(L_MANACOST, who);
                     // A rare STALKER, not a husk: a real fight for a
-                    // level-3 pupil, not a respawn loop. Staked clear of
+                    // level-3 pupil, one authored beat. Staked clear of
                     // the husk pack so they can't gang up.
                     spawn_elite(MON_STALKER, 0xE0000, 0x250000, 2);
                     narrate(L_RARE, 0);
@@ -242,8 +249,9 @@ fn main() {
                     var qr = ZL_Q + k * CHAR_RECORD_SIZE;
                     if (mem[qr + QC_NET] == who) {
                         var sup = SUP_QUICKENING;
-                        var wc2 = mem[qr + QC_WCLASS];
-                        if (wc2 == 2 || wc2 == -1) { sup = SUP_SWIFT; }
+                        var wa = mem[qr + QC_ARCH];
+                        if (wa < 0) { wa = mem[qr + QC_WCLASS]; }
+                        if (wa == 2 || wa < 0) { sup = SUP_SWIFT; }
                         drop_loot(1, sup, mem[qr + QC_X], mem[qr + QC_Y], who);
                         drop_loot(0, IT_MANAFLASK, mem[qr + QC_X], mem[qr + QC_Y], who);
                         k = nq;
@@ -251,6 +259,22 @@ fn main() {
                     k = k + 1;
                 }
                 narrate(L_ELITEDOWN, who);
+                // The support lesson may ALREADY be landed — a wild support
+                // socketed before the witch leaves nothing to socket after
+                // her, and the EV_SOCKET opener below can never re-fire
+                // (found by the tri-archetype band: a pupil parked at the
+                // midway gate forever with the witch dead and a spare
+                // Quickening in the bag). Her kill opens the gate itself
+                // when the socket beat has already happened.
+                var wrow = zl_state_row(who);
+                if ((mem[wrow + 4] & F_SOCKET) != 0) {
+                    if (zl_once(who, F_MANACOST) == 1) {
+                        set_gate(GATE_MIDWAY, 1);
+                        narrate(L_MANACOST, who);
+                        spawn_elite(MON_STALKER, 0xE0000, 0x250000, 2);
+                        narrate(L_RARE, 0);
+                    }
+                }
             }
         }
         if (kind == EV_KILL && mem[ev + PE_A] == MON_TIDEWARDEN) {

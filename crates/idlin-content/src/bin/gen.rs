@@ -78,6 +78,23 @@ fn gen_abi_bot() -> String {
     let _ = writeln!(s, "const SS_MANA_MAX = {};", abi::SS_MANA_MAX);
     let _ = writeln!(s, "const SS_ES = {};", abi::SS_ES);
     let _ = writeln!(s, "const SS_ZONE = {};", abi::SS_ZONE);
+    let _ = writeln!(s, "const SS_TABLE_X = {};", abi::SS_TABLE_X);
+    let _ = writeln!(s, "const SS_TABLE_Y = {};", abi::SS_TABLE_Y);
+    let _ = writeln!(s, "const MON_NET = {};", abi::MON_NET);
+    let _ = writeln!(s, "const MON_NUM = {};", abi::MON_NUM);
+    let _ = writeln!(s, "const MON_LIFE = {};", abi::MON_LIFE);
+    let _ = writeln!(s, "const MON_X = {};", abi::MON_X);
+    let _ = writeln!(s, "const MON_Y = {};", abi::MON_Y);
+    let _ = writeln!(s, "const MON_RARITY = {};", abi::MON_RARITY);
+    let _ = writeln!(
+        s,
+        "const MONSTER_RECORD_SIZE = {};",
+        abi::MONSTER_RECORD_SIZE
+    );
+    let _ = writeln!(s, "const SS_VENDOR_X = {};", abi::SS_VENDOR_X);
+    let _ = writeln!(s, "const SS_VENDOR_Y = {};", abi::SS_VENDOR_Y);
+    let _ = writeln!(s, "const SS_STASH_X = {};", abi::SS_STASH_X);
+    let _ = writeln!(s, "const SS_STASH_Y = {};", abi::SS_STASH_Y);
     let _ = writeln!(s, "const SELF_STATUS_SIZE = {};", abi::SELF_STATUS_SIZE);
     s
 }
@@ -147,10 +164,15 @@ fn main() {
                 .collect::<Vec<_>>(),
         ),
         (
+            // Zones: ALL of them get consts (#136 T6) — a brain routes by
+            // ZONE_* num (ReadExits dest, SelfStatus zone), and the num is
+            // opaque identity, the same privacy class as SS_ZONE. The
+            // AUTHORED SURFACE (packs, gates, narration, maps) stays out of
+            // the public docs regardless: the fog's anti-precomputation
+            // stance (#129) covers geometry, not names.
             Category::Zone,
             db.zones
                 .iter()
-                .filter(|d| d.public)
                 .map(|d| (d.id.clone(), d.name.clone()))
                 .collect::<Vec<_>>(),
         ),

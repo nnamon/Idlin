@@ -1,0 +1,16 @@
+// The Unwritten's signature (#148 A4): the pen that refused to finish
+// the map — the tier-boss loop's own reward.
+UniqueDef(
+    id: "cartographers_regret",
+    name: "Cartographer's Regret",
+    base: "sovereign_scepter",
+    lore: "Some edges are edges for a reason.",
+    mods: [
+        (stat: damage_cold, layer: added, value: 10),
+        (stat: cast_speed, layer: increased, value: 1500),
+        (stat: item_rarity, layer: added, value: 2000),
+        (stat: energy_shield, layer: added, value: 30),
+    ],
+    drop_from: "the_unwritten",
+    drop_bp: 1200,
+)

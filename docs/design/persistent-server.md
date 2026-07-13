@@ -247,7 +247,7 @@ boundary and the existing `ManagedWorld` granularity.
   - **Refresh-without-home = full RESET to a fresh tutorial — character state AND
     world instance.** A `CharacterState`-only wipe is *not* enough: tutorial
     freshness also depends on **world-local** state (the zone brain's per-net_id
-    `zl_once` flags, gate open/shut, pack alive/respawn, un-picked ground loot),
+    `zl_once` flags, gate open/shut, pack alive/risen, un-picked ground loot),
     all of which live in the `World`, not `CharacterState`. So the reset must:
     (a) wipe the character to level-1 (clearing `tutorial_grants`), and (b) reap
     the idler's tutorial instance and spawn a fresh one — an `incarnation_id`

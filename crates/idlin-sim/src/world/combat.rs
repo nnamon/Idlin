@@ -140,7 +140,8 @@ pub(super) struct StrikeSpec {
     pub attacker_net: u32,
     pub attacker_name: String,
     pub attacker_is_char: bool,
-    /// Spells skip the accuracy roll.
+    /// Spell flag: non-projectile spells skip the accuracy roll;
+    /// spell PROJECTILES are dodgeable (see the strike hit roll).
     pub is_spell: bool,
     /// Dots skip accuracy, block, crit, AND variance — steady burn.
     pub is_dot: bool,
@@ -343,7 +344,13 @@ impl World {
     /// effects cleared, `CharacterDied` emitted — because no strike ran the death
     /// path. Monsters can't carry a life cost (rejected at content load), so the
     /// monster corpse/pack bookkeeping is intentionally not duplicated here.
-    fn pay_life_cost(&mut self, slot: usize, life_cost: i64, now: u64, events: &mut Vec<SimEvent>) {
+    pub(super) fn pay_life_cost(
+        &mut self,
+        slot: usize,
+        life_cost: i64,
+        now: u64,
+        events: &mut Vec<SimEvent>,
+    ) {
         let Some(me) = self.zone.get_mut(slot) else {
             return;
         };
@@ -354,6 +361,7 @@ impl World {
             let died = match me.character.as_mut() {
                 Some(ch) if ch.respawn_at.is_none() => {
                     ch.respawn_at = Some(now + RESPAWN_TICKS);
+                    ch.deaths += 1;
                     Some((me.net_id, ch.name.clone()))
                 }
                 _ => None,
@@ -607,6 +615,10 @@ impl World {
             None
         };
         let char_damage = eff.as_ref().map_or(c.damage, |o| o.damage);
+        let spell_bp = eff
+            .as_ref()
+            .map_or(c.spell_damage_bp, |o| o.spell_damage_bp)
+            .max(0);
         let (accuracy, weapon_range) = eff
             .as_ref()
             .map_or((c.accuracy, c.range), |o| (o.accuracy, o.range));
@@ -647,6 +659,12 @@ impl World {
                 char_damage[i] * gem_def.coeff_bp / 10000
             };
             damage[i] = (weapon_part + added[i] + mods.added[i]).max(0);
+            // The caster's gear curve (quality pass): spells scale by the
+            // sheet's increased-spell-damage factor — the wand implicit's
+            // whole reason to exist. Attacks already scale via char_damage.
+            if is_spell {
+                damage[i] = damage[i] * spell_bp / 10000;
+            }
             damage[i] = damage[i] * mods.more_bp[i] / 10000;
         }
 
@@ -1529,7 +1547,7 @@ impl World {
                     // travel segment to the target, not just the endpoint —
                     // an endpoint check tunnels through small targets when
                     // the per-tick step exceeds the combined radii (fast
-                    // arrows sailed clean through skeletons). Coordinates
+                    // arrows departed clean through skeletons). Coordinates
                     // downshift 8 bits so every product fits i64; ordering
                     // is by first contact ALONG the flight, then net id.
                     const S: i64 = 8;
@@ -1631,6 +1649,33 @@ impl World {
         dead_monsters: &mut DeadList,
         loot_spawns: &mut LootList,
     ) {
+        // RESPAWN GRACE (post-playtest): a graced target can't be hit —
+        // spawn camping is not a fight — and a graced ATTACKER breaks
+        // their own shield by throwing this strike (acting = fair game).
+        if let Some(aslot) = spec.attacker_slot
+            && let Some(a) = self.zone.get_mut(aslot)
+            && let Some(c) = a.combat.as_mut()
+            && c.grace_until > now
+        {
+            c.grace_until = 0;
+        }
+        if self
+            .zone
+            .get(target_slot)
+            .and_then(|t| t.combat.as_ref())
+            .is_some_and(|c| c.grace_until > now)
+        {
+            return;
+        }
+        // MAP RULE (#148 A4): Monster Fury scales EVERY monster-dealt hit
+        // at the one place all of them pass — spells, attacks, and dots
+        // alike (the first draft folded it into the derive tail, which
+        // spells never read: the tier boss's own kit was fury-blind).
+        if !spec.attacker_is_char && self.monster_fury_bp > 0 {
+            for d in spec.damage.iter_mut() {
+                *d = *d * (10000 + self.monster_fury_bp) / 10000;
+            }
+        }
         let Some(t) = self.zone.get(target_slot) else {
             return;
         };
@@ -1695,9 +1740,15 @@ impl World {
                 super::progression::fold_target_damage(spec.damage, &a_target_grants, v_ailments);
         }
 
-        // Accuracy: attacks can miss; spells and dots cannot.
-        let mut hit = spec.is_spell
-            || spec.is_dot
+        // Accuracy: attacks can miss, and spell PROJECTILES can be
+        // SIDESTEPPED (operator ruling, #185 §16 ranger rejection: the
+        // evasion archetype's graveyard killers were all casters whose
+        // bolts could never miss — evasion was structurally worthless
+        // against them). A flying bolt rolls the same accuracy-vs-evasion
+        // check an arrow does; ground effects, novas, cones, and dots
+        // remain unmissable — you dodge a missile, not the sea rising.
+        let rolls_accuracy = !spec.is_dot && (!spec.is_spell || spec.projectile);
+        let mut hit = !rolls_accuracy
             || (self.rng_combat.next_range(10000) as i64) < hit_chance_bp(spec.accuracy, t_evasion);
         // Block: a shield can negate the whole hit (not steady burns).
         if hit
@@ -1988,7 +2039,7 @@ impl World {
     }
 
     /// Death bookkeeping shared by strikes, projectiles, and dots: XP,
-    /// loot, pack counts, respawn timers, corpse marking.
+    /// loot, pack counts, corpse marking.
     #[allow(clippy::too_many_arguments)]
     fn handle_kill(
         &mut self,
@@ -2026,29 +2077,128 @@ impl World {
                 def.name.clone(),
                 def.xp * xp_mult * level_bp.max(2500) / 10000,
             );
+            // Story beat (#136): an act boss falls (an authored unique — the
+            // loader enforces that). Copied out here — the def borrow ends
+            // before the killer is mutated below.
+            let act_boss = def.act_boss;
             dead_monsters.push((target_slot, target_bot.unwrap_or(u32::MAX)));
             // Scripted spawns (spawn_monster/spawn_elite) belong to no
             // pack — the sentinel index has no bookkeeping to update.
+            // Pack bookkeeping only — packs rise exactly once (`risen`);
+            // a wiped pack stays wiped, the world is finite.
             if let Some(pack) = self.zone.packs.get_mut(pack_idx as usize) {
                 pack.alive = pack.alive.saturating_sub(1);
-                // Packs respawn as a unit: the timer starts only once
-                // the whole pack has been wiped.
-                if pack.alive == 0 {
-                    pack.respawn_timer = pack.def.respawn_ticks;
-                }
             }
             if attacker_is_char {
                 events.push(SimEvent::MonsterKilled {
                     killer_id: attacker_net,
                     killer: attacker_name.to_string(),
                     monster: monster_name,
+                    rarity: m_rarity,
                     def_idx,
                     level: monster_level,
                 });
+                // Act completion (#136): the KILLER's campaign advances (each
+                // idler runs their own story — instances are per-idler). Only
+                // the first kill fires the beat; a re-kill is just a kill.
+                if let (Some(a_slot), Some(act)) = (attacker_slot, act_boss)
+                    && (1..=32).contains(&act)
+                    && let Some(ch) = self.zone.get_mut(a_slot).and_then(|e| e.character.as_mut())
+                {
+                    let bit = 1u32 << (act - 1);
+                    if ch.story_acts & bit == 0 {
+                        ch.story_acts |= bit;
+                        events.push(SimEvent::ActCompleted {
+                            id: attacker_net,
+                            name: attacker_name.to_string(),
+                            act,
+                        });
+                    }
+                }
                 // Loot (personal: owned by the killer): quantity first,
                 // then per-drop rarity — both the killer's stats. Multiple
                 // drops scatter a little so pillars don't stack.
-                for payload in self.roll_kill_drops_juiced(monster_level, attacker_slot, m_rarity) {
+                // Maps drop (#136 T4) from exactly two hands: an ACT BOSS
+                // always pays one (the campaign's finish line hands you the
+                // endgame's key), and mapped waters sustain themselves at 4%
+                // a kill. ilvl = the kill's level, so tiers ladder naturally.
+                let map_due = attacker_is_char
+                    && (act_boss.is_some()
+                        || (self.is_map_instance && self.rng_loot.next_range(10000) < 400));
+                let mut map_drop = if map_due {
+                    self.roll_map(monster_level)
+                } else {
+                    None
+                };
+                // An ACT BOSS's map goes straight to the killer's BAG
+                // (ground only on overflow): it is the campaign's key
+                // reward, and a ground drop is missable — the first
+                // salt-road run watched the Mother's map despawn while
+                // her killer respawned at the mouth (#136 T6).
+                if act_boss.is_some()
+                    && let Some(crate::entity::LootPayload::Gear(item)) = map_drop.take()
+                    && let Some(a_slot) = attacker_slot
+                {
+                    // Overflow falls to the ground but LASTS an hour — the
+                    // key reward outwaits a corpse run, never a despawn race.
+                    let (w, h) = {
+                        let d = &self.content.items[item.base_idx as usize];
+                        (d.w, d.h)
+                    };
+                    let spot = self
+                        .zone
+                        .get(a_slot)
+                        .and_then(|e| e.character.as_ref())
+                        .and_then(|ch| self.first_fit(ch, w, h));
+                    match spot {
+                        Some((x, y)) => {
+                            if let Some(me) = self.zone.get_mut(a_slot) {
+                                me.character.as_mut().unwrap().inventory.push(
+                                    crate::entity::PlacedItem {
+                                        item: crate::entity::BagItem::Gear(item),
+                                        x,
+                                        y,
+                                    },
+                                );
+                            }
+                        }
+                        None => {
+                            let (pos, net) = {
+                                let e = self.zone.get(a_slot).unwrap();
+                                (e.pos, e.net_id)
+                            };
+                            self.spawn_loot_lasting(
+                                pos,
+                                crate::entity::LootPayload::Gear(item),
+                                net,
+                                36_000,
+                            );
+                        }
+                    }
+                }
+                // Signature uniques (#136 T5): each boss may pay their
+                // named item — a fixed-identity mint, chance from the def.
+                // Deterministic order: uniques are id-sorted at load, and
+                // every candidate consumes exactly one roll. Rolls are
+                // independent BY DESIGN: a boss with two signatures can pay
+                // both on one kill (~0.8% for the Mother) — a jackpot, not
+                // a bug.
+                let mut unique_drops: Vec<LootPayload> = Vec::new();
+                if attacker_is_char {
+                    let monster_id = &self.content.monsters[def_idx as usize].id;
+                    for ui in 0..self.content.uniques.len() {
+                        if self.content.uniques[ui].drop_from == *monster_id
+                            && self.rng_loot.next_range(10000) < self.content.uniques[ui].drop_bp
+                        {
+                            unique_drops.push(self.mint_unique(ui as u32, monster_level));
+                        }
+                    }
+                }
+                for payload in map_drop
+                    .into_iter()
+                    .chain(unique_drops)
+                    .chain(self.roll_kill_drops_juiced(monster_level, attacker_slot, m_rarity))
+                {
                     let dx = self.rng_loot.next_range(120) as i32 - 60;
                     let dy = self.rng_loot.next_range(120) as i32 - 60;
                     let pos = FxV2::new(
@@ -2080,6 +2230,7 @@ impl World {
             }
         } else if let Some(ch) = &mut t.character {
             ch.respawn_at = Some(now + RESPAWN_TICKS);
+            ch.deaths += 1;
             let (id, name) = (t.net_id, ch.name.clone());
             t.intents = Default::default();
             t.effects.clear();
@@ -2361,6 +2512,101 @@ mod tests {
         i
     }
 
+    /// The dodge rule (the operator's ranger-scaling ruling): a spell
+    /// PROJECTILE rolls accuracy-vs-evasion like an arrow; a direct
+    /// (non-projectile) spell and a dot can never miss. Mutation: restore
+    /// the old `spec.is_spell ||` accuracy bypass in the strike hit roll →
+    /// every projectile lands and the miss assert fails.
+    #[test]
+    fn spell_projectiles_are_dodgeable_direct_spells_are_not() {
+        let content = content();
+        let mut world = World::new(0x0D0D6E, &content);
+        let halt = idlin_botc::assemble("halt\n").unwrap();
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Caster".into(),
+                program: halt,
+            }],
+        });
+        let m_slot = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, _)| s)
+            .expect("a monster stands somewhere");
+        // A mountain of evasion (acc 100 → the 30% floor) and a deep life
+        // pool so eighty 1-damage pokes can't kill the fixture.
+        {
+            let m = world.zone.get_mut(m_slot).unwrap();
+            let c = m.combat.as_mut().unwrap();
+            c.life = 100_000;
+            c.life_max = 100_000;
+            c.evasion = 1_000_000;
+        }
+        let ch_net = world
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .map(|(_, e)| e.net_id)
+            .expect("a character joined");
+        let ch_slot = world.zone.slot_of(ch_net).unwrap();
+        let spec = |projectile: bool| StrikeSpec {
+            attacker_slot: Some(ch_slot),
+            attacker_net: ch_net,
+            attacker_name: "Caster".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: false,
+            accuracy: 100,
+            damage: [1, 0, 0, 0, 0],
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let now = world.tick;
+        let mut count_hits = |projectile: bool| -> u32 {
+            let mut hits = 0;
+            for _ in 0..40 {
+                let mut events = Vec::new();
+                let mut dead = Vec::new();
+                let mut loot = Vec::new();
+                world.strike(
+                    spec(projectile),
+                    m_slot,
+                    now,
+                    &mut events,
+                    &mut dead,
+                    &mut loot,
+                );
+                // The Hit event fires for whiffs too (amount 0 drives the
+                // client's whiff FX) — a LANDED hit is amount > 0.
+                if events
+                    .iter()
+                    .any(|ev| matches!(ev, super::SimEvent::Hit { amount, .. } if *amount > 0))
+                {
+                    hits += 1;
+                }
+            }
+            hits
+        };
+        let direct = count_hits(false);
+        assert_eq!(direct, 40, "a direct spell never misses ({direct}/40)");
+        let proj = count_hits(true);
+        assert!(
+            proj < 40,
+            "a spell projectile against a wall of evasion must miss sometimes ({proj}/40 landed)"
+        );
+        assert!(proj > 0, "the 30% floor keeps it from whiffing forever");
+    }
+
     /// A crushing hit (past the sure-stun knee) STUNS — the victim's
     /// committed windup is cancelled and busy extends — and an attacker
     /// with flat Knockback SHOVES the victim along the blow.
@@ -2371,6 +2617,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Crusher".into(),
                 program: halt,
@@ -2416,7 +2663,7 @@ mod tests {
             attacker_net: ch_net,
             attacker_name: "Test".into(),
             attacker_is_char: true,
-            is_spell: true, // never misses
+            is_spell: true, // non-projectile: never misses
             is_dot: false,
             accuracy: 0,
             damage: [160, 0, 0, 0, 0], // 40% of 400: past the knee
@@ -2516,6 +2763,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -2560,6 +2808,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         let c = e.combat.as_mut().unwrap();
@@ -2606,6 +2855,7 @@ mod tests {
         .expect("compiles");
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Seer".into(),
                 program,
@@ -2652,6 +2902,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -2701,6 +2952,7 @@ mod tests {
         .expect("compiles");
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Jeweler".into(),
                 program,
@@ -2736,6 +2988,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -2768,6 +3021,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Resumer".into(),
                 program: halt,
@@ -2796,6 +3050,7 @@ mod tests {
                 affixes: vec![ra],
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         };
 
@@ -2847,6 +3102,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Brawler".into(),
                 program: halt,
@@ -2879,6 +3135,7 @@ mod tests {
             affixes: vec![],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         let str_ring = Item {
             base_idx: coral,
@@ -2891,6 +3148,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         // phys damage with `weapon` equipped, optionally with a +100 STR ring.
         let phys = |world: &mut World, weapon: u32, with_str: bool| -> i64 {
@@ -2965,6 +3223,7 @@ mod tests {
             },
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         assert!(
             world.item_score(&item(cleaver, true)) > world.item_score(&item(cleaver, false)),
@@ -2989,6 +3248,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Savage".into(),
                 program: halt,
@@ -3031,6 +3291,7 @@ mod tests {
                     affixes,
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             }
             world.refresh_derived_stats(slot);
@@ -3068,6 +3329,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Hunter".into(),
                 program: halt,
@@ -3106,6 +3368,7 @@ mod tests {
                 }],
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         world.refresh_derived_stats(slot);
@@ -3164,6 +3427,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Doomed".into(),
                 program: halt,
@@ -3202,6 +3466,7 @@ mod tests {
                 }],
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         world.refresh_derived_stats(slot);
@@ -3304,6 +3569,7 @@ mod tests {
             let halt = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Hitter".into(),
                     program: halt,
@@ -3348,6 +3614,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             }
             world.refresh_derived_stats(aslot);
@@ -3408,6 +3675,7 @@ mod tests {
             let halt = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Target".into(),
                     program: halt,
@@ -3594,6 +3862,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -3655,6 +3924,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Talker".into(),
                 program,
@@ -3701,7 +3971,7 @@ mod tests {
     fn fast_projectiles_cannot_tunnel_through_small_targets() {
         // An 8u-per-tick projectile crosses a staked shambler whose
         // combined radii are far smaller than the step. The endpoint-only
-        // check sailed straight through; the swept segment must connect.
+        // check departed straight through; the swept segment must connect.
         let content = content();
         let mut world = World::new(0xA110, &content);
         world.tick(&crate::TickInputs::default()); // packs spawn
@@ -3726,7 +3996,7 @@ mod tests {
             source_name: "Test".into(),
             source_is_char: true,
             hostile_to_players: false,
-            spell: true, // spells never miss via accuracy
+            spell: true, // the fixture target has no evasion — always lands
             accuracy: 0,
             damage: [25, 0, 0, 0, 0],
             crit_bp: 0,
@@ -3759,6 +4029,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Bait".into(),
                 program,
@@ -3835,6 +4106,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![
                 crate::JoinRequest {
                     name: "Caster".into(),
@@ -3929,6 +4201,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4191,6 +4464,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4249,6 +4523,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4422,6 +4697,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4515,6 +4791,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4559,6 +4836,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4578,6 +4856,7 @@ mod tests {
                 }],
                 name: "Probe".into(),
                 charges,
+                unique_idx: None,
             };
             world
                 .zone
@@ -4619,6 +4898,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program,
@@ -4672,6 +4952,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "A".into(),
                     program,
@@ -4703,6 +4984,7 @@ mod tests {
                         ],
                         name: "Probe".into(),
                         charges: 0,
+                        unique_idx: None,
                     });
                     ch.allocated.push(str_node); // tree source
                 }
@@ -4760,6 +5042,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -4791,6 +5074,7 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             e.combat.as_mut().unwrap().mana = 100;
         };
@@ -4871,6 +5155,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -4967,6 +5252,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program,
@@ -5071,6 +5357,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "A".into(),
                 program,
@@ -5163,6 +5450,92 @@ mod tests {
     }
 
     #[test]
+    fn an_act_boss_kill_completes_the_act_exactly_once() {
+        // #136 campaign spine: killing a monster whose def carries
+        // `act_boss: Some(1)` sets bit 0 of the KILLER's story_acts and emits
+        // ActCompleted — once. A second boss kill and any non-boss kill are
+        // just kills. Mutations: drop the story hook in handle_kill → the
+        // flag/event asserts fail; drop the first-kill guard → two events.
+        use crate::entity::DMG_PHYS;
+        let mut content = content();
+        let husk = content.monster_idx("tide_husk").unwrap();
+        content.monsters[husk].unique = true;
+        content.monsters[husk].act_boss = Some(1);
+        let mut world = World::new(7_77, &content);
+        world.tick(&crate::TickInputs {
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "A".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            }],
+        });
+        let aslot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let anet = world.zone.get(aslot).unwrap().net_id;
+        let kill = |world: &mut World, mslot: usize| -> Vec<SimEvent> {
+            let mut s = typed_spec(aslot, anet, DMG_PHYS, 100_000_000);
+            s.is_dot = true; // no rng: the kill is certain and deterministic
+            let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+            let now = world.tick;
+            world.strike(s, mslot, now, &mut ev, &mut dead, &mut loot);
+            ev
+        };
+        let find = |world: &World, id: &str, skip: usize| -> Option<usize> {
+            world
+                .zone
+                .iter()
+                .filter(|(_, e)| {
+                    e.alive()
+                        && e.monster
+                            .as_ref()
+                            .is_some_and(|m| content.monsters[m.def_idx as usize].id == id)
+                })
+                .map(|(s, _)| s)
+                .nth(skip)
+        };
+        // A NON-boss kill first: no story movement.
+        let shambler = find(&world, "drowned_shambler", 0).expect("a shambler spawned");
+        let ev = kill(&mut world, shambler);
+        let story = |world: &World| {
+            world
+                .zone
+                .get(aslot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .story_acts
+        };
+        assert_eq!(story(&world), 0, "a trash kill moves no story");
+        assert!(
+            !ev.iter()
+                .any(|e| matches!(e, SimEvent::ActCompleted { .. })),
+            "no act event for trash"
+        );
+        // The boss falls: bit set + ONE event.
+        let boss = find(&world, "tide_husk", 0).expect("a husk spawned");
+        let ev = kill(&mut world, boss);
+        assert_eq!(story(&world), 1, "act 1 bit set on the killer");
+        let acts: Vec<_> = ev
+            .iter()
+            .filter(|e| matches!(e, SimEvent::ActCompleted { act: 1, .. }))
+            .collect();
+        assert_eq!(acts.len(), 1, "exactly one ActCompleted");
+        // A second boss kill: no re-completion.
+        if let Some(boss2) = find(&world, "tide_husk", 0) {
+            let ev = kill(&mut world, boss2);
+            assert_eq!(story(&world), 1);
+            assert!(
+                !ev.iter()
+                    .any(|e| matches!(e, SimEvent::ActCompleted { .. })),
+                "re-kills are just kills"
+            );
+        }
+    }
+
+    #[test]
     fn target_ailment_affix_scales_a_hit_not_a_dot_against_an_ailed_victim() {
         use crate::entity::{ActiveEffect, AilmentKind, DMG_COLD, Item, Rarity, RolledAffix};
         use idlin_content::GearSlot;
@@ -5205,6 +5578,7 @@ mod tests {
                     }],
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 });
             }
             world.refresh_derived_stats(aslot);
@@ -5629,6 +6003,7 @@ mod tests {
             let program = idlin_botc::assemble("halt\n").unwrap();
             world.tick(&crate::TickInputs {
                 arrivals: Vec::new(),
+                removals: Vec::new(),
                 joins: vec![crate::JoinRequest {
                     name: "Caster".into(),
                     program,
@@ -5761,6 +6136,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Tester".into(),
                 program,
@@ -5830,6 +6206,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Swapper".into(),
                 program,
@@ -5906,6 +6283,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Archer".into(),
                 program,
@@ -5923,6 +6301,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         let bow = base("driftwood_bow"); // two_handed
         let buckler = base("driftwood_buckler"); // offhand
@@ -5995,6 +6374,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Jeweler".into(),
                 program,
@@ -6022,6 +6402,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         let plain = |id: &str| Item {
             base_idx: base(id),
@@ -6030,6 +6411,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         // Push a bag item and return its index (robust to any starter bag).
         let stash = |world: &mut World, item: Item| -> i32 {
@@ -6141,6 +6523,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Collector".into(),
                 program,
@@ -6161,6 +6544,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6206,6 +6590,7 @@ mod tests {
         let program = idlin_botc::template_grinder().expect("template assembles");
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Grinder".into(),
                 program,
@@ -6226,6 +6611,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6279,6 +6665,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Appraiser".into(),
                 program,
@@ -6305,6 +6692,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6354,6 +6742,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: "Packer".into(),
                 program,
@@ -6392,6 +6781,7 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 0,
                 y: 0,
@@ -6503,6 +6893,7 @@ mod tests {
         let program = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![
                 crate::JoinRequest {
                     name: "Sacrifice".into(),
@@ -6606,6 +6997,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6652,6 +7044,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6709,6 +7102,7 @@ mod tests {
                     affixes: Vec::new(),
                     name: String::new(),
                     charges: 0,
+                    unique_idx: None,
                 }),
                 x: 5,
                 y: 0,
@@ -6745,6 +7139,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6770,6 +7165,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         };
         wear_cleaver(&mut world);
@@ -6868,6 +7264,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6883,6 +7280,7 @@ mod tests {
             affixes: Vec::new(),
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         };
         {
             let ch = world
@@ -6949,6 +7347,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -6974,6 +7373,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         let recs = world.equipment_records(slot, crate::entity::GEAR_SLOTS);
@@ -7014,6 +7414,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7116,6 +7517,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -7348,6 +7750,7 @@ mod tests {
         let halt = idlin_botc::assemble("halt\n").unwrap();
         world.tick(&crate::TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: name.into(),
                 program: halt,

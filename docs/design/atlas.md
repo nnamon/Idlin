@@ -7,7 +7,7 @@ endless to go. It is built on four commitments:
   stashed exactly like gear. Its affixes *are* its difficulty and reward dials.
 - **The device opens them.** A device in town consumes a map and opens it into an
   instanced zone built to that map's tier and mods.
-- **Higher maps drop higher maps.** Sustain — keeping your stock of charts
+- **Higher maps drop higher maps.** Sustain — keeping your stock of maps
   climbing — is the meta-game. There is no fixed "end."
 - **No private hideouts, ever.** The only personal space is a map you are
   actively running; it is ephemeral and reaped when you leave.
@@ -24,10 +24,10 @@ A **map base** is an item with `map: true` — a 1×1 bag item, not worn gear, t
 carries rolled affixes.
 
 ```ron
-// content/maps/tidewashed_chart.ron
+// content/maps/tidewashed_map.ron
 MapBase(
-    id: "tidewashed_chart",
-    name: "Tidewashed Chart",
+    id: "tidewashed_map",
+    name: "Tidewashed Map",
     tier: 1,                       // difficulty rung (1..N)
     tileset: "drowned_shore",      // the family the instance generates in
     tileset_variant: Some("storm"),
@@ -40,12 +40,12 @@ MapBase(
 
 - **Rarity rolls like gear:** Normal (no mods) · Magic (1–2 mods) · Rare (3–6
   mods) · Unique (fixed, authored). The full obol set applies — transmute a white
-  chart to magic, alchemy/chaos a rare one chasing a juicy combination, exalt to
+  map to magic, alchemy/chaos a rare one chasing a juicy combination, exalt to
   add, scour a bricked roll, divine the values. **The crafting economy now
   applies to *content itself*.**
 - **`item_level`** is set on drop from the dropping instance's level (the same
   level → ilvl → affix-tier chain gear uses), so higher-tier instances drop
-  charts that can roll higher map-mod tiers.
+  maps that can roll higher map-mod tiers.
 - Maps sit in the bag, so they travel in the character bundle and are protected
   by the same anti-dupe transfer protocol as any possession (§6).
 
@@ -55,13 +55,13 @@ MapBase(
 
 **Every map affix makes the instance more dangerous. There are no "good" affixes
 to chase, and no prefix/suffix good-vs-bad division — reward is *derived* from
-danger.** You roll a chart the same way you craft gear (the shared roller + the
+danger.** You roll a map the same way you craft gear (the shared roller + the
 obol currencies, unchanged); what you're chasing is a dense, high-tier set of
 dangers, because that is exactly what pays.
 
 Structurally, map affixes still occupy the normal prefix/suffix slots — that's
 only so the crafting verbs (transmute/augment/regal/exalt/scour/divine) and the
-roller's slot caps work on charts identically to gear. The prefix/suffix label is
+roller's slot caps work on maps identically to gear. The prefix/suffix label is
 purely structural here; it carries **no** good/bad meaning, and both buckets hold
 danger mods.
 
@@ -81,7 +81,7 @@ danger mods.
 | `map_player_less_recovery` | the runner's flask/regen recovery is reduced |
 
 **Many tiers, ilvl-gated.** Each affix has a deep tier ladder; each tier is gated
-by an item-level requirement, so a higher-tier chart (higher `item_level`) rolls
+by an item-level requirement, so a higher-tier map (higher `item_level`) rolls
 higher, nastier tiers — the exact gear-affix mechanism. Illustrative ladder for
 `map_monster_life`:
 
@@ -103,9 +103,9 @@ factors *inside that instance only*. So:
 
 - more affixes → more reward;
 - higher-tier (nastier) affixes → more reward;
-- a white chart pays little; a fully-rolled, high-tier rare chart pays a lot.
+- a white map pays little; a fully-rolled, high-tier rare map pays a lot.
 
-The chase is clean: craft a chart as dangerous as you can survive, and the reward
+The chase is clean: craft a map as dangerous as you can survive, and the reward
 follows automatically — there is no separate "good mod" competing for slots.
 *(Exactly how much quantity/rarity each affix/tier contributes is a balance pass —
 TODO; the mechanism is a per-tier `quant_contribution` + `rarity_contribution` on
@@ -126,7 +126,7 @@ break the model; portals come from the base + the atlas tree, §5.)
 Opening a map creates one ephemeral, per-owner zone instance.
 
 - **Identity & seed.** The instance key is `map#<character_id>#<map base>#<run
-  incarnation>`; its seed is `base_seed ^ fnv1a64(key)`. The same chart run by the
+  incarnation>`; its seed is `base_seed ^ fnv1a64(key)`. The same map run by the
   same character within an incarnation reproduces the same layout, packs, and loot
   rolls — fully deterministic.
 - **Level.** `zone_level = map.area_level + map_area_level mod`. That drives
@@ -193,7 +193,7 @@ covers the gameplay.)
 
 - **Maps sustain maps.** An instance drops map bases weighted toward its own
   tier, with a chance — scaled by the map's derived quantity (so a more dangerous
-  chart sustains better) and by atlas progression — to drop the **next** tier.
+  map sustains better) and by atlas progression — to drop the **next** tier.
   Baseline drop rates target ≥1 map per map cleared at the boss, so a competent
   runner climbs rather than runs dry.
 - **Bosses are the completion mark.** Every map ends at a boss; killing it is the
@@ -214,15 +214,15 @@ covers the gameplay.)
 
 ## 6. Determinism & integrity
 
-- **Deterministic.** Every instance is seeded by its key; same chart + same
+- **Deterministic.** Every instance is seeded by its key; same map + same
   character + same incarnation ⇒ identical run. The sim uses only seeded RNG (no
   wall-clock, no `Math.random`).
 - **No dupes.** Maps are possessions in the character bundle, so consuming a map
   and opening its instance is a fenced transfer under the anti-dupe protocol
-  (`persistent-server.md` §6) — a crash mid-open never duplicates a chart or its
+  (`persistent-server.md` §6) — a crash mid-open never duplicates a map or its
   contents.
 - **Crafting integrity.** Rolling maps draws from the same dedicated deterministic
-  currency RNG stream as gear crafting, so chart-spam never perturbs loot luck.
+  currency RNG stream as gear crafting, so map-spam never perturbs loot luck.
 
 ---
 
@@ -238,7 +238,7 @@ These are genuine design decisions, not implementation status:
 - **Pinnacle-key design** — what assembles a key, how many bosses, the cadence.
 - **Atlas-tree scope** — size, the content-weighting axes, whether tier access is
   gated by the tree or by boss completion.
-- **Trade of maps** — whether charts are tradeable between players from day one
+- **Trade of maps** — whether maps are tradeable between players from day one
   (they are bundle items, so the machinery allows it; it's a design call).
 
 > Implementation status, dependencies, and the phased build are tracked in the

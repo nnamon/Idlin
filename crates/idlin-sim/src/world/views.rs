@@ -17,6 +17,11 @@ pub struct ItemRow {
     pub base_num: i32,
     pub item_level: u32,
     pub mods: Vec<(i32, u32, Vec<i64>)>,
+    /// A signature unique's AUTHORED mods as (stat key, layer, value) —
+    /// uniques carry no rolled affixes (the def's mods ARE the item), so
+    /// the tooltip renders these instead. Same contribution shape the
+    /// sheet's stat_sources already ship; empty for non-uniques.
+    pub unique_mods: Vec<(String, u8, i64)>,
 }
 
 /// One inspect-sheet equipment slot: (slot name, the item or None when empty,
@@ -64,6 +69,18 @@ pub struct SkillStatView {
 
 /// Inspection snapshot of one character (the server maps this onto the
 /// protocol's CharacterSheet for the focus panel).
+/// A per-character leaderboard row (#148 A6).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RosterRow {
+    pub name: String,
+    pub level: u32,
+    pub kills: u64,
+    pub deaths: u64,
+    pub story_acts: u32,
+    pub zone: String,
+    pub program_hash: u64,
+}
+
 pub struct CharacterSheetView {
     pub id: u32,
     pub name: String,
@@ -78,6 +95,9 @@ pub struct CharacterSheetView {
     pub es_max: i64,
     pub block: i64,
     pub kills: u64,
+    /// Campaign progress (#136 T7): bit N-1 = act N complete. The client's
+    /// act tracker reads this; the map panel unlocks on bit 0.
+    pub story_acts: u32,
     pub damage: [i64; crate::entity::DMG_COUNT],
     pub accuracy: i64,
     pub evasion: i64,
@@ -120,12 +140,23 @@ impl World {
                 )
             })
             .collect();
+        let unique_mods = it
+            .unique_idx
+            .map(|u| {
+                self.content.uniques[u as usize]
+                    .mods
+                    .iter()
+                    .map(|g| (g.stat.doc().key.to_string(), g.layer as u8, g.value))
+                    .collect()
+            })
+            .unwrap_or_default();
         ItemRow {
             name: self.item_display(it),
             rarity: it.rarity as u8,
             base_num: self.content_num(idlin_content::ids::Category::Item, it.base_idx as usize),
             item_level: it.item_level,
             mods,
+            unique_mods,
         }
     }
 
@@ -177,6 +208,7 @@ impl World {
                         base_num: -1,
                         item_level: 0,
                         mods: Vec::new(),
+                        unique_mods: Vec::new(),
                     },
                     p.x,
                     p.y,
@@ -256,6 +288,21 @@ impl World {
                     }
                 }
             }
+            // Unique fixed mods (#136 T5) surface under the item's name too.
+            if let Some(u) = it.unique_idx {
+                for g in &self.content.uniques[u as usize].mods {
+                    if g.condition
+                        .is_none_or(|c| !c.is_strike_time() && c.holds(&ctx))
+                    {
+                        stat_sources.push((
+                            g.stat.doc().key.to_string(),
+                            name.clone(),
+                            g.layer as u8,
+                            g.value,
+                        ));
+                    }
+                }
+            }
         }
         for &node_idx in &ch.allocated {
             if let Some(node) = self.content.tree.get(node_idx as usize) {
@@ -308,6 +355,7 @@ impl World {
             es_max: c.es_max,
             block: c.block,
             kills: ch.kills,
+            story_acts: ch.story_acts,
             damage: c.damage,
             accuracy: c.accuracy,
             evasion: c.evasion,
@@ -384,7 +432,132 @@ impl World {
         )
     }
 
+    /// TEST SEAM (#148 A1): wear a PLAIN ilvl-6 helm and bag a MAGIC ilvl-5
+    /// one (an of_warding roll) — the fixture for the template's
+    /// rarity-first upgrade rule.
+    pub fn test_wear_and_bag_helms(&mut self, net_id: u32, helm_idx: u32, affix_idx: u32) {
+        let Some(slot) = self.zone.slot_of(net_id) else {
+            return;
+        };
+        let Some(ch) = self.zone.get_mut(slot).and_then(|e| e.character.as_mut()) else {
+            return;
+        };
+        // Past the base's req_level so the swap is legal for the template.
+        ch.level = ch.level.max(5);
+        ch.equipment[idlin_content::GearSlot::Helm.idx()] = Some(crate::entity::Item {
+            base_idx: helm_idx,
+            rarity: crate::entity::Rarity::Normal,
+            item_level: 6,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+            unique_idx: None,
+        });
+        ch.inventory.push(crate::entity::PlacedItem {
+            item: crate::entity::BagItem::Gear(crate::entity::Item {
+                base_idx: helm_idx,
+                rarity: crate::entity::Rarity::Magic,
+                item_level: 5,
+                affixes: vec![crate::entity::RolledAffix {
+                    affix_idx,
+                    values: vec![1100],
+                    tier: 0,
+                }],
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            }),
+            x: 6,
+            y: 0,
+        });
+    }
+
+    /// TEST SEAM (#148 A1): the worn helm's (rarity, item_level), if any.
+    pub fn test_worn_helm(&self, net_id: u32) -> Option<(u8, u32)> {
+        let e = self.zone.get_net(net_id)?;
+        e.character.as_ref()?.equipment[idlin_content::GearSlot::Helm.idx()]
+            .as_ref()
+            .map(|it| (it.rarity as u8, it.item_level))
+    }
+
     /// TEST HARNESS ONLY: teleport an entity (whole units).
+    /// TEST SEAM (#148 A3): read one word of a character's bot VM memory —
+    /// how integration tests observe a syscall's stored return code.
+    /// TEST SEAM (#162): install a zone brain program — how syscall
+    /// contract tests drive the zone-brain dispatch directly.
+    pub fn test_install_zone_brain(&mut self, program: Vec<u8>) {
+        let vm = idlin_vm::Vm::new(&program).expect("probe brain assembles");
+        self.zone_brain = Some(crate::bots::Bot {
+            vm,
+            rng: crate::rng::Pcg32::stream(self.seed, crate::rng::Domain::Bot, u64::MAX),
+            params: Vec::new(),
+            program: program.clone(),
+            program_hash: crate::bots::program_hash(&program),
+            version: 0,
+        });
+    }
+
+    /// TEST SEAM: read one word of the ZONE BRAIN's VM memory.
+    pub fn test_zone_brain_word(&mut self, addr: u16) -> Option<i32> {
+        Some(self.zone_brain.as_mut()?.vm.load_i32(addr))
+    }
+
+    pub fn test_vm_word(&mut self, net_id: u32, addr: u16) -> Option<i32> {
+        let slot = self.zone.slot_of(net_id)?;
+        let idx = self.zone.get(slot)?.bot?;
+        Some(self.bots.get_mut(idx)?.vm.load_i32(addr))
+    }
+
+    /// One leaderboard row per character in THIS world (#148 A6): the
+    /// per-brain economy scoreboard's raw material. program_hash identifies
+    /// the BRAIN (same source = same hash) across its characters.
+    pub fn roster_rows(&self) -> Vec<RosterRow> {
+        // .get: a test world may run on an empty ContentDb; an unknown
+        // zone_idx must not panic a roster read.
+        let zone = self
+            .content
+            .zones
+            .get(self.zone_idx as usize)
+            .map(|z| z.id.clone())
+            .unwrap_or_default();
+        self.zone
+            .iter()
+            .filter_map(|(_, e)| {
+                let ch = e.character.as_ref()?;
+                let program_hash = e
+                    .bot
+                    .and_then(|bi| self.bots.get(bi))
+                    .map(|b| b.program_hash)
+                    .unwrap_or(0);
+                Some(RosterRow {
+                    name: ch.name.clone(),
+                    level: ch.level,
+                    kills: ch.kills,
+                    deaths: ch.deaths,
+                    story_acts: ch.story_acts,
+                    zone: zone.clone(),
+                    program_hash,
+                })
+            })
+            .collect()
+    }
+
+    /// TEST SEAM (quality pass): corrupt the zone index — the resume
+    /// gate's fail-closed path needs a malformed world to probe.
+    pub fn test_set_zone_index(&mut self, idx: u32) {
+        self.zone_idx = idx;
+    }
+
+    /// TEST SEAM (#162): set an entity's life to a percent of max — how
+    /// boss-phase tests reach a threshold without simulating the fight.
+    pub fn test_set_life_pct(&mut self, net_id: u32, pct: i64) {
+        if let Some(slot) = self.zone.slot_of(net_id)
+            && let Some(c) = self.zone.get_mut(slot).and_then(|e| e.combat.as_mut())
+        {
+            c.life = c.life_max * pct / 100;
+        }
+    }
+
     pub fn test_teleport(&mut self, net_id: u32, x_u: i16, y_u: i16) {
         if let Some(slot) = self.zone.slot_of(net_id)
             && let Some(e) = self.zone.get_mut(slot)
@@ -511,6 +684,10 @@ impl World {
                 EntityView {
                     id: e.net_id,
                     kind: e.kind_code() as u8,
+                    hostile: e
+                        .monster
+                        .as_ref()
+                        .is_some_and(|m| self.content.monsters[m.def_idx as usize].hostile),
                     x_raw: e.pos.x.raw(),
                     y_raw: e.pos.y.raw(),
                     life_pct: combat.map(|c| c.life_pct()).unwrap_or(0),
@@ -561,6 +738,24 @@ impl World {
         // Which zone this world runs (bots read it via SelfStatus), its level, and
         // the zone's authored speech — all serialized World state.
         h.write_u32(self.zone_idx);
+        // Map marks steer the tally event (#148 A7) — replayed state.
+        h.write_u64(self.map_marks.len() as u64);
+        for (net, (k, d, i, t)) in &self.map_marks {
+            h.write_u32(*net);
+            h.write_u64(*k);
+            h.write_u64(*d);
+            h.write_u64(*i);
+            h.write_u64(*t);
+        }
+        // The map rules (#148 A4; folded by #178): replay-relevant by this
+        // hash's own bar. Two worlds differing only in the map clock
+        // ferry everyone home at different ticks; fury and quantity steer
+        // every strike and drop roll; the instance bit steers retirement.
+        h.write_u64(self.map_ends_at);
+        h.write_u64(self.monster_fury_bp as u64);
+        h.write_u64(self.loot_quantity_bp as u64);
+        h.write_u64(self.spawn_rarity_bp as u64);
+        h.write_u32(self.is_map_instance as u32);
         h.write_u32(self.zone_level);
         h.write_u64(self.zone_lines.len() as u64);
         for line in &self.zone_lines {
@@ -608,6 +803,7 @@ impl World {
             // kill); the rolled tier feeds equip requirements and bot-visible
             // ReadItemMods. Both steer future behavior, so both are hashed.
             h.write_u32(item.charges);
+            h.write_u32(item.unique_idx.map_or(u32::MAX, |u| u + 1));
             h.write_u64(item.affixes.len() as u64);
             for ra in &item.affixes {
                 h.write_u32(ra.affix_idx);
@@ -687,12 +883,14 @@ impl World {
                 h.write_i64(c.mana);
                 h.write_i64(c.mana_max);
                 h.write_i64(c.es);
+                h.write_u64(c.grace_until);
                 h.write_i64(c.es_max);
                 h.write_u64(c.es_recharge_at);
                 h.write_i64(c.block);
                 h.write_i64(c.crit_inc);
                 h.write_i64(c.crit_multi);
                 h.write_i64(c.cast_speed);
+                h.write_i64(c.spell_damage_bp);
                 h.write_u64(c.busy_until);
                 h.write_u64(c.last_combat_tick);
                 h.write_u64(c.last_kill_tick);
@@ -742,6 +940,7 @@ impl World {
                 h.write_i64(ch.xp);
                 h.write_u64(ch.respawn_at.unwrap_or(0));
                 h.write_u64(ch.kills);
+                h.write_u64(ch.deaths);
                 h.write_u64(ch.items);
                 h.write_u64(ch.inventory.len() as u64);
                 for placed in &ch.inventory {
@@ -785,6 +984,23 @@ impl World {
                 for count in &ch.currency {
                     h.write_u64(*count);
                 }
+                // The chest is replay-relevant (#148 A5 review): ReadStash
+                // steers bots, so a corrupted stash MUST diverge the hash.
+                h.write_u64(ch.stash.len() as u64);
+                for si in &ch.stash {
+                    match si {
+                        crate::entity::BagItem::Gear(it) => {
+                            h.write_u8(0);
+                            fold_item(&mut h, it);
+                        }
+                        crate::entity::BagItem::Gem(g) => {
+                            h.write_u8(1);
+                            h.write_u32(g.gem_idx);
+                            h.write_u32(g.level);
+                            h.write_i64(g.xp);
+                        }
+                    }
+                }
                 for (node, sg) in &ch.sockets {
                     h.write_u32(*node);
                     h.write_u32(sg.gem.gem_idx);
@@ -805,6 +1021,8 @@ impl World {
                 for &word in &ch.explored {
                     h.write_u64(word);
                 }
+                // Campaign progress (#136): gates exits/maps — future state.
+                h.write_u32(ch.story_acts);
             }
             h.write_u64(e.last_say_tick);
             h.write_u64(e.effects.len() as u64);
@@ -905,7 +1123,9 @@ impl World {
         }
         for pack in &self.zone.packs {
             h.write_u32(pack.alive);
-            h.write_u32(pack.respawn_timer);
+            h.write_u32(pack.risen as u32);
+            // (B4: pack defs are immutable content again — covered by
+            // content_hash; the rarity juice hashes as spawn_rarity_bp.)
         }
         for p in &self.zone.projectiles {
             h.write_i32(p.pos.x.raw());
@@ -968,6 +1188,8 @@ impl World {
             h.write_i32(ex.pos.x.raw());
             h.write_i32(ex.pos.y.raw());
             h.write_u8(ex.open as u8);
+            // The story seal (#136) gates who may depart — future state.
+            h.write_u32(ex.requires_act);
         }
         for g in &self.zone.gates {
             h.write_u8(g.open as u8);

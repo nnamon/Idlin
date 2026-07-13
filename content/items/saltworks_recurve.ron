@@ -1,0 +1,19 @@
+// The ranger ladder's middle rung (#148 A2): pan-strap sinew over a
+// walkway rib — the works' dead made decent bowyers.
+ItemDef(
+    id: "saltworks_recurve",
+    public: true,
+    name: "Saltworks Recurve",
+    model: "bow",
+    slot: weapon,
+    weapon_class: Some(bow),
+    two_handed: true,
+    w: 2,
+    h: 4,
+    damage_phys: 18,
+    range_cu: 1000,
+    use_ticks: 7,
+    projectile: true,
+    weight: 55,
+    affix_pools: ["weapon"],
+)

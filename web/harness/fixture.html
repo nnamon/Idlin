@@ -18,6 +18,11 @@
       type="font/woff2"
       crossorigin
     />
+    <link rel="preload" href="/fonts/IdlinDisplay-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/IdlinDisplay-Bold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/IdlinText-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/IdlinText-Bold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/IdlinText-Italic.woff2" as="font" type="font/woff2" crossorigin />
     <style>
       /* Mirror index.html's base shell so the overlay lays out identically. */
       @font-face {
@@ -32,13 +37,52 @@
         font-display: block;
         src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
       }
+      /* #181: the three voices, mirrored from index.html — captures must
+         render the REAL faces, not fallback serifs. */
+      @font-face {
+        font-family: "Idlin Display";
+        font-weight: 600;
+        font-display: block;
+        src: url("/fonts/IdlinDisplay-SemiBold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Display";
+        font-weight: 700;
+        font-display: block;
+        src: url("/fonts/IdlinDisplay-Bold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 400;
+        font-display: block;
+        src: url("/fonts/IdlinText-Regular.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 600;
+        font-display: block;
+        src: url("/fonts/IdlinText-SemiBold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 700;
+        font-display: block;
+        src: url("/fonts/IdlinText-Bold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Idlin Text";
+        font-weight: 400;
+        font-style: italic;
+        font-display: block;
+        src: url("/fonts/IdlinText-Italic.woff2") format("woff2");
+      }
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
         background: #0a0a0f;
-        font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        font-family: "Idlin Text", system-ui, sans-serif;
       }
       #scene {
         position: fixed;

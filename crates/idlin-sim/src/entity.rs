@@ -68,6 +68,14 @@ pub struct CombatStats {
     pub mana_max: i64,
     /// Depletes before life; recharges after a delay untouched.
     pub es: i64,
+    /// RESPAWN GRACE (post-playtest quality pass): until this tick the
+    /// entity is invisible to hostile target scans and unhittable — the
+    /// answer to spawn-camping (A* chasers linger where they killed; a
+    /// respawner walked straight back into their arms, 700+ deaths per
+    /// run on surveyed seeds). Acting breaks it early: the first strike
+    /// the graced entity throws clears the shield.
+    #[serde(default)]
+    pub grace_until: u64,
     pub es_max: i64,
     /// Tick at which ES may begin recharging (pushed on any damage taken).
     pub es_recharge_at: u64,
@@ -85,6 +93,10 @@ pub struct CombatStats {
     pub crit_multi: i64,
     /// Factor on spell cast time (10000 = unchanged; higher = faster).
     pub cast_speed: i64,
+    /// Increased spell damage factor (10000 = unchanged) — wand implicits
+    /// and caster gear (quality pass).
+    #[serde(default = "default_spell_bp")]
+    pub spell_damage_bp: i64,
     /// Per-type attack damage: phys, fire, cold, lightning, chaos.
     pub damage: [i64; DMG_COUNT],
     pub accuracy: i64,
@@ -228,7 +240,20 @@ pub struct Intents {
     pub move_to: Option<FxV2>,
     pub attack: Option<AttackIntent>,
     pub pickup: Option<u32>,
+    /// Waypoints toward move_to when the straight line is blocked (#148
+    /// A2.5): cell centers from a deterministic A* over the walk grid,
+    /// walked back-to-front. Recomputed when the target changes or the
+    /// next hop stops being reachable; empty = walk straight.
+    #[serde(default)]
+    pub path: Vec<FxV2>,
 }
+
+fn default_spell_bp() -> i64 {
+    10000
+}
+
+/// The stash chest's capacity (#148 A5) — flat records, no grid.
+pub const STASH_CAP: usize = 40;
 
 /// Speech-bubble rate limit (ticks between says).
 pub const SAY_COOLDOWN_CHAR: u64 = 100;
@@ -266,6 +291,11 @@ pub struct Item {
     /// flask_charges; kills refill while equipped).
     #[serde(default)]
     pub charges: u32,
+    /// A SIGNATURE UNIQUE (#136 T5): index into ContentDb::uniques. The
+    /// def's fixed mods fold at the gear chokepoint; `affixes` stays empty.
+    /// Serialized (snapshot v17) and hashed — identity is state.
+    #[serde(default)]
+    pub unique_idx: Option<u32>,
 }
 
 /// What occupies a bag cell: gear, or — since #54 PR2b — a 1×1 gem. Gems
@@ -368,6 +398,9 @@ pub struct CharacterState {
     /// Set while dead; tick at which the character respawns.
     pub respawn_at: Option<u64>,
     pub kills: u64,
+    /// Lifetime deaths (#148 A6) — the leaderboard's honesty column.
+    #[serde(default)]
+    pub deaths: u64,
     /// Lifetime pickups (display stat); the bag is `inventory`.
     pub items: u64,
     /// Grid-placed bag contents.
@@ -384,6 +417,11 @@ pub struct CharacterState {
     /// Obol counts, indexed like ContentDb::currency (resized on demand).
     #[serde(default)]
     pub currency: Vec<u64>,
+    /// The persistent chest (#148 A5): items parked at a town stash. Flat
+    /// (no grid — the bag's tetris is the scarcity; the chest just holds),
+    /// capped at STASH_CAP by the syscall. Rides bundles + snapshots.
+    #[serde(default)]
+    pub stash: Vec<BagItem>,
     /// Gems socketed into allocated tree socket nodes (keyed by node index;
     /// BTreeMap for deterministic iteration).
     pub sockets: std::collections::BTreeMap<u32, SocketedGem>,
@@ -395,6 +433,13 @@ pub struct CharacterState {
     /// zone entry (a new zone starts undiscovered). Hashed + serialized.
     #[serde(default)]
     pub explored: Vec<u64>,
+    /// Campaign progress (#136): bit N-1 set = act N complete. Set by killing
+    /// the act boss; read by story-sealed exits and by bots via SelfStatus
+    /// (SS_FLAGS bit1 = act 1). Travels with the bundle — progress survives
+    /// zone transfers. Hashed + serialized. (The maps gate, #136 T4, reads
+    /// it next.)
+    #[serde(default)]
+    pub story_acts: u32,
 }
 
 /// Total passive points earned by a level: 2 per level-up, with every
@@ -569,6 +614,7 @@ mod tests {
             ],
             name: "Test".into(),
             charges: 0,
+            unique_idx: None,
         };
         let bytes = postcard::to_allocvec(&item).expect("serialize");
         let back: Item = postcard::from_bytes(&bytes).expect("deserialize");

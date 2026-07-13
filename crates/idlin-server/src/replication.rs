@@ -7,7 +7,7 @@
 //! disk as a replayable recording.
 
 use crate::director::{Director, WorldView};
-use crate::runner::TickBatch;
+use crate::runner::{TickBatch, TickFrame};
 use idlin_protocol::{
     EntityKind, EntityMove, EntityPatch, EntityState, FocusQueueEntry, GameEvent, HitFx,
     ProjectileFx, S2C, SkillFx, UseFx,
@@ -68,120 +68,351 @@ struct WorldState {
     recorder: Option<std::fs::File>,
 }
 
-/// Fog of war (#129): is a CELL in the residents' explored set? Out-of-range
-/// reads false — an off-map exit/prop can never leak through a bounds bug.
-fn cell_explored(explored: &[u64], w: i64, x: i64, y: i64) -> bool {
-    if w <= 0 || x < 0 || y < 0 || x >= w {
-        return false;
-    }
-    let bit = (y * w + x) as usize;
-    explored
-        .get(bit / 64)
-        .is_some_and(|word| word & (1 << (bit % 64)) != 0)
-}
-
-/// Fog of war (#129): a gate rect counts as explored when ANY of its cells is
-/// — a gate spanning the fog boundary is part of the discovered map.
-fn gate_explored(explored: &[u64], w: i64, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
-    (y0..=y1).any(|y| (x0..=x1).any(|x| cell_explored(explored, w, x as i64, y as i64)))
-}
-
-/// Fog of war (#129): a bit set in `explored` but not in `prev` — newly
-/// discovered this frame. A missing word in `prev` (feed just created against
-/// a stale-length baseline) reads as never-explored, so everything current
-/// counts as new — the caller seeds `prev` from the first frame to avoid that.
-fn newly_explored(explored: &[u64], prev: &[u64], bit: usize) -> bool {
-    let (wi, m) = (bit / 64, 1u64 << (bit % 64));
-    explored.get(wi).is_some_and(|w| w & m != 0) && prev.get(wi).is_none_or(|w| w & m == 0)
-}
-
-/// Fog of war (#129): the tile cells newly explored this frame, with their
-/// TRUE glyphs — the reveal delta that un-masks the map as it is discovered.
-fn reveal_cells(
-    tiles: &idlin_protocol::TileMapState,
-    explored: &[u64],
-    prev: &[u64],
+/// Fog of war (#129/#134): THE single owner of wire visibility for one world
+/// frame. Two tiers, matching the client fog: entities and positioned FX gate
+/// on the residents' CURRENT sight (living characters' discs); layout — tiles,
+/// props, exits, gates, and their change events — gates on the residents'
+/// EXPLORED memory (terrain, once seen, stays). Every predicate lives here,
+/// and `compose` below is the only place feed messages are built, so a new
+/// data path cannot reach the wire without passing this type.
+struct Visibility<'a> {
+    /// Living characters' cells — the CURRENT sight sources. Characters always
+    /// ship (they are the sources; a corpse is the viewer's own story), but
+    /// dead ones project no sight, matching the sim's explore().
+    sources: Vec<(i64, i64)>,
+    /// The residents' union explored bitset (bit = y*zw + x).
+    explored: &'a [u64],
+    /// Zone width in cells.
     zw: i64,
-) -> Vec<idlin_protocol::RevealedCell> {
-    let mut out = Vec::new();
-    if zw <= 0 {
-        return out;
+}
+
+impl<'a> Visibility<'a> {
+    fn new(views: &[EntityView], explored: &'a [u64], zone_width_raw: i32) -> Visibility<'a> {
+        Visibility {
+            sources: views
+                .iter()
+                .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
+                .map(|v| ((v.x_raw >> 16) as i64, (v.y_raw >> 16) as i64))
+                .collect(),
+            explored,
+            zw: (zone_width_raw >> 16) as i64,
+        }
     }
-    for (wi, &cur) in explored.iter().enumerate() {
-        let mut new_bits = cur & !prev.get(wi).copied().unwrap_or(0);
-        while new_bits != 0 {
-            let b = new_bits.trailing_zeros() as usize;
-            new_bits &= new_bits - 1;
-            let bit = (wi * 64 + b) as i64;
-            let (x, y) = (bit % zw, bit / zw);
-            if let Some(glyph) = tiles
-                .rows
-                .get(y as usize)
-                .and_then(|row| row.chars().nth(x as usize))
-            {
-                out.push(idlin_protocol::RevealedCell {
-                    x: x as i32,
-                    y: y as i32,
-                    glyph: glyph.to_string(),
-                });
+
+    /// CURRENT sight: is a Q16.16 raw position within any living character's
+    /// FOG_SIGHT_CELLS disc?
+    fn sees_raw(&self, x_raw: i32, y_raw: i32) -> bool {
+        const R: i64 = idlin_sim::FOG_SIGHT_CELLS as i64;
+        let (x, y) = ((x_raw >> 16) as i64, (y_raw >> 16) as i64);
+        self.sources.iter().any(|&(cx, cy)| {
+            let (dx, dy) = (x - cx, y - cy);
+            dx * dx + dy * dy <= R * R
+        })
+    }
+
+    /// Does this entity go on the wire? Characters unconditionally; everything
+    /// else only within current sight.
+    fn keeps_entity(&self, v: &EntityView) -> bool {
+        v.kind == KIND_CHARACTER || self.sees_raw(v.x_raw, v.y_raw)
+    }
+
+    /// EXPLORED memory: is this cell in a bitset? Out-of-range reads false — an
+    /// off-map exit/prop can never leak through a bounds bug.
+    fn cell_in(explored: &[u64], zw: i64, x: i64, y: i64) -> bool {
+        if zw <= 0 || x < 0 || y < 0 || x >= zw {
+            return false;
+        }
+        let bit = (y * zw + x) as usize;
+        explored
+            .get(bit / 64)
+            .is_some_and(|word| word & (1 << (bit % 64)) != 0)
+    }
+
+    fn cell_explored(&self, x: i64, y: i64) -> bool {
+        Self::cell_in(self.explored, self.zw, x, y)
+    }
+
+    /// A gate rect counts as explored when ANY of its cells is — a gate
+    /// spanning the fog boundary is part of the discovered map.
+    fn gate_in(explored: &[u64], zw: i64, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
+        (y0..=y1).any(|y| (x0..=x1).any(|x| Self::cell_in(explored, zw, x as i64, y as i64)))
+    }
+
+    fn gate_explored(&self, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
+        Self::gate_in(self.explored, self.zw, x0, y0, x1, y1)
+    }
+
+    /// An exit's bitset cell, or `usize::MAX` when off-map — which every bit
+    /// test reads as never-explored. `ExitView` positions are raw Q16.16.
+    fn exit_cell(&self, e: &idlin_protocol::ExitView) -> usize {
+        let (x, y) = (((e.x >> 16) as i64), ((e.y >> 16) as i64));
+        if x < 0 || y < 0 || x >= self.zw {
+            return usize::MAX;
+        }
+        (y * self.zw + x) as usize
+    }
+
+    fn exit_explored(&self, e: &idlin_protocol::ExitView) -> bool {
+        self.cell_explored((e.x >> 16) as i64, (e.y >> 16) as i64)
+    }
+
+    /// Newly discovered: set in this frame's explored, not in `prev`.
+    fn newly(&self, prev: &[u64], bit: usize) -> bool {
+        let (wi, m) = (bit / 64, 1u64 << (bit % 64));
+        self.explored.get(wi).is_some_and(|w| w & m != 0) && prev.get(wi).is_none_or(|w| w & m == 0)
+    }
+
+    /// The tile cells newly explored this frame, with their TRUE glyphs — the
+    /// reveal delta that un-masks the map as it is discovered.
+    fn reveal_cells(
+        &self,
+        tiles: &idlin_protocol::TileMapState,
+        prev: &[u64],
+    ) -> Vec<idlin_protocol::RevealedCell> {
+        let mut out = Vec::new();
+        if self.zw <= 0 {
+            return out;
+        }
+        for (wi, &cur) in self.explored.iter().enumerate() {
+            let mut new_bits = cur & !prev.get(wi).copied().unwrap_or(0);
+            while new_bits != 0 {
+                let b = new_bits.trailing_zeros() as usize;
+                new_bits &= new_bits - 1;
+                let bit = (wi * 64 + b) as i64;
+                let (x, y) = (bit % self.zw, bit / self.zw);
+                if let Some(glyph) = tiles
+                    .rows
+                    .get(y as usize)
+                    .and_then(|row| row.chars().nth(x as usize))
+                {
+                    out.push(idlin_protocol::RevealedCell {
+                        x: x as i32,
+                        y: y as i32,
+                        glyph: glyph.to_string(),
+                    });
+                }
             }
         }
+        out
     }
-    out
-}
 
-/// Fog of war (#129): an exit's explored-bitset CELL, or `usize::MAX` when
-/// off-map — which every bit test reads as never-explored, so a stray exit can
-/// never leak through an index wrap. `ExitView` positions are raw Q16.16.
-fn exit_cell(e: &idlin_protocol::ExitView, zw: i64) -> usize {
-    let (x, y) = (((e.x >> 16) as i64), ((e.y >> 16) as i64));
-    if x < 0 || y < 0 || x >= zw {
-        return usize::MAX;
-    }
-    (y * zw + x) as usize
-}
-
-/// Fog of war (#129): may this event reach viewers? Gate/exit CHANGE events
-/// carry positions, so they are dropped until their ground is explored (the
-/// reveal delta then carries the current open state); everything else passes.
-fn event_visible(ev: &GameEvent, explored: &[u64], zw: i64) -> bool {
-    match ev {
-        GameEvent::ExitChanged { x, y, .. } => {
-            cell_explored(explored, zw, (x >> 16) as i64, (y >> 16) as i64)
+    /// May this event reach viewers? EXHAUSTIVE on purpose (#134): a NEW event
+    /// variant refuses to compile until it makes a visibility decision here —
+    /// a wildcard pass-through was fail-open for future positional events.
+    fn event_visible(&self, ev: &GameEvent) -> bool {
+        match ev {
+            // Positional: gated on explored ground (the reveal delta carries
+            // the current open state once the ground is found).
+            GameEvent::ExitChanged { x, y, .. } => {
+                self.cell_explored((x >> 16) as i64, (y >> 16) as i64)
+            }
+            GameEvent::GateChanged { x0, y0, x1, y1, .. } => self.gate_explored(*x0, *y0, *x1, *y1),
+            // Non-positional narration/progress chatter: names and levels only
+            // (the accepted union-of-residents knowledge, #129).
+            GameEvent::CharacterJoined { .. }
+            | GameEvent::CharacterDied { .. }
+            | GameEvent::CharacterRespawned { .. }
+            | GameEvent::LevelUp { .. }
+            | GameEvent::MonsterKilled { .. }
+            | GameEvent::LootDropped { .. }
+            | GameEvent::ItemPickedUp { .. }
+            | GameEvent::ItemEquipped { .. }
+            | GameEvent::PassiveAllocated { .. }
+            | GameEvent::GemSocketed { .. }
+            | GameEvent::GemRejected { .. }
+            | GameEvent::CurrencyUsed { .. }
+            | GameEvent::Narration { .. }
+            | GameEvent::Speech { .. }
+            | GameEvent::CharacterDeparted { .. }
+            | GameEvent::BuildDeclared { .. }
+            | GameEvent::TreeRespecced { .. }
+            | GameEvent::GearShed { .. }
+            | GameEvent::BuildRejected { .. }
+            | GameEvent::GemLevelUp { .. }
+            | GameEvent::ActCompleted { .. }
+            | GameEvent::CharacterRemoved { .. }
+            | GameEvent::MapTally { .. } => true,
         }
-        GameEvent::GateChanged { x0, y0, x1, y1, .. } => {
-            gate_explored(explored, zw, *x0, *y0, *x1, *y1)
+    }
+
+    /// The MASKED tile map a snapshot ships — unexplored glyphs blanked to ' '
+    /// (the data is absent from the wire, not client-hidden), props on
+    /// unexplored cells dropped. The legend stays whole: vocabulary, not
+    /// positions.
+    fn mask_tiles(&self, tiles: &idlin_protocol::TileMapState) -> idlin_protocol::TileMapState {
+        let mut out = tiles.clone();
+        for (y, row) in out.rows.iter_mut().enumerate() {
+            *row = row
+                .chars()
+                .enumerate()
+                .map(|(x, g)| {
+                    if self.cell_explored(x as i64, y as i64) {
+                        g
+                    } else {
+                        ' '
+                    }
+                })
+                .collect();
         }
-        _ => true,
+        out.props
+            .retain(|p| self.cell_explored(p.x_u as i64, p.y_u as i64));
+        out
     }
 }
 
-/// Fog of war (#129): the MASKED tile map a snapshot ships — unexplored cells'
-/// glyphs blanked to ' ' (the data is absent from the wire, not client-hidden)
-/// and props on unexplored cells dropped. The legend stays whole: it is the
-/// zone's tile VOCABULARY, not positions.
-fn mask_tiles(
-    tiles: &idlin_protocol::TileMapState,
-    explored: &[u64],
-    w: i64,
-) -> idlin_protocol::TileMapState {
-    let mut out = tiles.clone();
-    for (y, row) in out.rows.iter_mut().enumerate() {
-        *row = row
-            .chars()
-            .enumerate()
-            .map(|(x, g)| {
-                if cell_explored(explored, w, x as i64, y as i64) {
-                    g
-                } else {
-                    ' '
-                }
+/// One world's composed wire output for a tick. Only `compose` builds these.
+struct ComposedFeed {
+    delta: Frame,
+    snapshot: Frame,
+    events: Vec<GameEvent>,
+    events_msg: Option<Frame>,
+    /// True when this was the feed's first composed frame (drives the
+    /// recording's leading snapshot line).
+    first_frame: bool,
+}
+
+/// Fog of war (#134): THE single constructor of world-feed wire messages. The
+/// frame is destructured EXHAUSTIVELY — adding a field to `TickFrame` refuses
+/// to compile until this function classifies it as visible or masked — and
+/// every filter it applies is a `Visibility` method, the one policy owner.
+fn compose(frame: &TickFrame, ws: &mut WorldState) -> ComposedFeed {
+    let TickFrame {
+        world_key,
+        tick,
+        zone_name,
+        zone_level,
+        zone_width,
+        zone_height,
+        tiles,
+        exits,
+        gates,
+        views,
+        events,
+        explored,
+    } = frame;
+    let vis = Visibility::new(views, explored, *zone_width);
+
+    // Entities: filtered BEFORE the prev-diff, so entering/leaving sight rides
+    // the existing spawned/removed machinery; the snapshot shares the map.
+    let mut current: HashMap<u32, EntityState> = HashMap::with_capacity(views.len());
+    for v in views.iter().filter(|v| vis.keeps_entity(v)) {
+        current.insert(v.id, to_state(v));
+    }
+    let (spawned, moved, updated, removed) = diff(&ws.prev, &current);
+
+    // Positioned FX gate on CURRENT sight; a hit (it carries no coordinates)
+    // ships when either party is on the wire — a visible victim struck from
+    // the dark still flinches.
+    let mut hits = collect_hits(events);
+    hits.retain(|h| current.contains_key(&h.attacker) || current.contains_key(&h.target));
+    let mut projectiles = collect_projectiles(events);
+    projectiles.retain(|p| vis.sees_raw(p.x, p.y));
+    let mut skills = collect_skills(events);
+    skills.retain(|s| vis.sees_raw(s.x, s.y));
+    let mut uses = collect_uses(events);
+    uses.retain(|u| vis.sees_raw(u.x, u.y));
+
+    // Layout gates on EXPLORED memory: the snapshot ships masked, and newly
+    // explored ground streams as a reveal delta with its true glyphs. A
+    // stale-length baseline (never expected — a world keeps its zone)
+    // degrades to everything-new.
+    let prev: &[u64] = if ws.prev_explored.len() == explored.len() {
+        &ws.prev_explored
+    } else {
+        &[]
+    };
+    let mut revealed = Vec::new();
+    let mut revealed_props = Vec::new();
+    if let Some(tiles) = tiles.as_deref() {
+        revealed = vis.reveal_cells(tiles, prev);
+        revealed_props = tiles
+            .props
+            .iter()
+            .filter(|p| {
+                let (x, y) = (p.x_u as i64, p.y_u as i64);
+                x >= 0 && x < vis.zw && y >= 0 && vis.newly(prev, (y * vis.zw + x) as usize)
             })
+            .cloned()
             .collect();
     }
-    out.props
-        .retain(|p| cell_explored(explored, w, p.x_u as i64, p.y_u as i64));
-    out
+    let revealed_exits: Vec<_> = exits
+        .iter()
+        .filter(|e| vis.newly(prev, vis.exit_cell(e)))
+        .cloned()
+        .collect();
+    let revealed_gates: Vec<_> = gates
+        .iter()
+        .filter(|g| {
+            vis.gate_explored(g.x0, g.y0, g.x1, g.y1)
+                && !Visibility::gate_in(prev, vis.zw, g.x0, g.y0, g.x1, g.y1)
+        })
+        .cloned()
+        .collect();
+    ws.prev_explored = explored.clone();
+
+    let delta = serialize(&S2C::ZoneDelta {
+        tick: *tick,
+        spawned,
+        moved,
+        updated,
+        removed,
+        hits,
+        projectiles,
+        skills,
+        uses,
+        revealed,
+        revealed_props,
+        revealed_exits,
+        revealed_gates,
+    });
+
+    let events_out: Vec<GameEvent> = events
+        .iter()
+        .filter_map(to_game_event)
+        .filter(|ev| vis.event_visible(ev))
+        .collect();
+    let events_msg = if events_out.is_empty() {
+        None
+    } else {
+        Some(serialize(&S2C::Events {
+            events: events_out.clone(),
+        }))
+    };
+
+    // Snapshot (joiners + lag resync): the same filtered entity map, masked
+    // tiles, and explored-gated exits/gates.
+    let mut entities: Vec<EntityState> = current.values().cloned().collect();
+    entities.sort_by_key(|s| s.id);
+    let snapshot = serialize(&S2C::ZoneSnapshot {
+        tick: *tick,
+        zone_name: zone_name.clone(),
+        zone_level: *zone_level,
+        world_key: world_key.clone(),
+        width: *zone_width,
+        height: *zone_height,
+        tiles: tiles.as_deref().map(|t| vis.mask_tiles(t)),
+        exits: exits
+            .iter()
+            .filter(|e| vis.exit_explored(e))
+            .cloned()
+            .collect(),
+        gates: gates
+            .iter()
+            .filter(|g| vis.gate_explored(g.x0, g.y0, g.x1, g.y1))
+            .cloned()
+            .collect(),
+        entities,
+    });
+
+    let first_frame = ws.prev.is_empty();
+    ws.prev = current;
+    ComposedFeed {
+        delta,
+        snapshot,
+        events: events_out,
+        events_msg,
+        first_frame,
+    }
 }
 
 /// One world's already-serialized output for this tick, kept so the
@@ -202,6 +433,12 @@ fn is_announcement(ev: &GameEvent) -> bool {
         GameEvent::CharacterDeparted { .. }
             | GameEvent::CharacterJoined { .. }
             | GameEvent::Narration { .. }
+            | GameEvent::ActCompleted { .. }
+            // The map scoreboard fires in the map instance its runner
+            // is LEAVING — a world the camera almost never watches at that
+            // exact tick. Without the splice the endgame's signature ticker
+            // line never reaches the viewer (#176).
+            | GameEvent::MapTally { .. }
     )
 }
 
@@ -280,162 +517,38 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                 }
                 let ws = worlds.get_mut(&frame.world_key).expect("just inserted");
 
-                // Fog of war (#129): entities outside the residents' current
-                // sight never reach the wire. Filtering CURRENT before the
-                // diff makes enter/leave-sight ride the existing spawned/
-                // removed machinery, and the snapshot below shares the same
-                // filtered map — one chokepoint for both. (Routing still sees
-                // every character: characters always pass the filter.)
-                let sight = SightFilter::from_views(&frame.views);
-                let mut current: HashMap<u32, EntityState> =
-                    HashMap::with_capacity(frame.views.len());
-                for v in frame.views.iter().filter(|v| sight.keeps(v)) {
-                    current.insert(v.id, to_state(v));
-                    if v.kind == KIND_CHARACTER {
-                        routing
-                            .by_character
-                            .insert(v.name.clone(), frame.world_key.clone());
-                    }
-                }
-
-                let (spawned, moved, updated, removed) = diff(&ws.prev, &current);
-                // Positioned FX gate on sight; a hit ships when either party is
-                // on the wire (a visible victim struck from the dark still
-                // flinches — the attacker id resolves to nothing client-side).
-                let mut hits = collect_hits(&frame.events);
-                hits.retain(|h| {
-                    current.contains_key(&h.attacker) || current.contains_key(&h.target)
-                });
-                let mut projectiles = collect_projectiles(&frame.events);
-                projectiles.retain(|p| sight.sees_raw(p.x, p.y));
-                let mut skills = collect_skills(&frame.events);
-                skills.retain(|s| sight.sees_raw(s.x, s.y));
-                let mut uses = collect_uses(&frame.events);
-                uses.retain(|u| sight.sees_raw(u.x, u.y));
-
-                // Fog of war (#129 stage 2b): everything POSITIONAL is gated
-                // by the residents' EXPLORED set (terrain is memory — once
-                // seen, it stays on the client), and newly explored ground
-                // streams as a reveal delta with its true glyphs/props/exits.
-                let zw = (frame.zone_width >> 16) as i64;
-                let explored = &frame.explored;
-                // A stale-length baseline (shouldn't happen — a world never
-                // changes zone) degrades to "everything is new": prev = empty.
-                let prev: &[u64] = if ws.prev_explored.len() == explored.len() {
-                    &ws.prev_explored
-                } else {
-                    &[]
-                };
-                let mut revealed = Vec::new();
-                let mut revealed_props = Vec::new();
-                if let Some(tiles) = frame.tiles.as_deref() {
-                    revealed = reveal_cells(tiles, explored, prev, zw);
-                    revealed_props = tiles
-                        .props
-                        .iter()
-                        .filter(|p| {
-                            let (x, y) = (p.x_u as i64, p.y_u as i64);
-                            x >= 0
-                                && x < zw
-                                && y >= 0
-                                && newly_explored(explored, prev, (y * zw + x) as usize)
-                        })
-                        .cloned()
-                        .collect();
-                }
-                let revealed_exits: Vec<_> = frame
-                    .exits
-                    .iter()
-                    .filter(|e| newly_explored(explored, prev, exit_cell(e, zw)))
-                    .cloned()
-                    .collect();
-                let revealed_gates: Vec<_> = frame
-                    .gates
-                    .iter()
-                    .filter(|g| {
-                        gate_explored(explored, zw, g.x0, g.y0, g.x1, g.y1)
-                            && !gate_explored(prev, zw, g.x0, g.y0, g.x1, g.y1)
-                    })
-                    .cloned()
-                    .collect();
-                ws.prev_explored = explored.clone();
-
-                let delta = serialize(&S2C::ZoneDelta {
-                    tick: frame.tick,
-                    spawned,
-                    moved,
-                    updated,
-                    removed,
-                    hits,
-                    projectiles,
-                    skills,
-                    uses,
-                    revealed,
-                    revealed_props,
-                    revealed_exits,
-                    revealed_gates,
-                });
-                let events: Vec<GameEvent> = frame
-                    .events
-                    .iter()
-                    .filter_map(to_game_event)
-                    .filter(|ev| event_visible(ev, explored, zw))
-                    .collect();
-                let events_msg = if events.is_empty() {
-                    None
-                } else {
-                    Some(serialize(&S2C::Events {
-                        events: events.clone(),
-                    }))
-                };
-
-                // Snapshot for this world (joiners + lag resync): tiles are
-                // MASKED to the explored set; unexplored exits/gates withheld.
-                let mut entities: Vec<EntityState> = current.values().cloned().collect();
-                entities.sort_by_key(|s| s.id);
-                let snapshot = serialize(&S2C::ZoneSnapshot {
-                    tick: frame.tick,
-                    zone_name: frame.zone_name.clone(),
-                    zone_level: frame.zone_level,
-                    world_key: frame.world_key.clone(),
-                    width: frame.zone_width,
-                    height: frame.zone_height,
-                    tiles: frame.tiles.as_deref().map(|t| mask_tiles(t, explored, zw)),
-                    exits: frame
-                        .exits
-                        .iter()
-                        .filter(|e| {
-                            cell_explored(explored, zw, (e.x >> 16) as i64, (e.y >> 16) as i64)
-                        })
-                        .cloned()
-                        .collect(),
-                    gates: frame
-                        .gates
-                        .iter()
-                        .filter(|g| gate_explored(explored, zw, g.x0, g.y0, g.x1, g.y1))
-                        .cloned()
-                        .collect(),
-                    entities,
-                });
+                // ONE chokepoint (#134): every wire message this feed emits is
+                // built inside compose(), which destructures the frame
+                // exhaustively and filters through the Visibility policy.
+                let out = compose(frame, ws);
 
                 // The recording IS the wire stream: snapshot first, then
                 // every delta and event line — replayable verbatim.
                 if let Some(f) = ws.recorder.as_mut() {
-                    if ws.prev.is_empty() {
-                        let _ = writeln!(f, "{snapshot}");
+                    if out.first_frame {
+                        // The journal's first line is a VERSION HEADER
+                        // (codex on PROTO 45): a stale recording replayed
+                        // against a newer client must refuse loudly, not
+                        // silently mis-render fields it never carried —
+                        // the same fail-closed rule every other format
+                        // already follows.
+                        let _ = writeln!(
+                            f,
+                            "{{\"type\":\"RecordingHeader\",\"data\":{{\"proto_version\":{}}}}}",
+                            idlin_protocol::PROTO_VERSION
+                        );
+                        let _ = writeln!(f, "{}", out.snapshot);
                     }
-                    let _ = writeln!(f, "{delta}");
-                    if let Some(ev) = &events_msg {
+                    let _ = writeln!(f, "{}", out.delta);
+                    if let Some(ev) = &out.events_msg {
                         let _ = writeln!(f, "{ev}");
                     }
                 }
-
-                let _ = ws.tx.send(delta.clone());
-                if let Some(ev) = &events_msg {
+                let _ = ws.tx.send(out.delta.clone());
+                if let Some(ev) = &out.events_msg {
                     let _ = ws.tx.send(ev.clone());
                 }
-                let _ = ws.snap_tx.send(snapshot.clone());
-                ws.prev = current;
+                let _ = ws.snap_tx.send(out.snapshot.clone());
 
                 roster.push(
                     frame
@@ -445,15 +558,18 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
                         .map(|v| {
                             char_info
                                 .insert(v.name.clone(), (v.level, v.dead, frame.zone_name.clone()));
+                            routing
+                                .by_character
+                                .insert(v.name.clone(), frame.world_key.clone());
                             (v.id, v.name.clone())
                         })
                         .collect(),
                 );
                 outs.push(FrameOut {
                     key: frame.world_key.clone(),
-                    delta,
-                    snapshot,
-                    events,
+                    delta: out.delta,
+                    snapshot: out.snapshot,
+                    events: out.events,
                 });
             }
 
@@ -549,16 +665,23 @@ pub fn spawn_replication(mut batches: mpsc::UnboundedReceiver<TickBatch>) -> Rep
 }
 
 /// Open a JSONL journal for one world's wire stream.
+/// A world key as its recording filename stem (#148 A7): the ONE
+/// sanitizer, so a replay URL is mechanically constructible from a
+/// world key.
+pub fn recording_stem(world_key: &str) -> String {
+    world_key
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
 fn open_recorder(world_key: &str) -> Option<std::fs::File> {
     let dir = std::path::Path::new("data/recordings");
     if let Err(e) = std::fs::create_dir_all(dir) {
         warn!("recordings dir: {e}");
         return None;
     }
-    let name: String = world_key
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
+    let name = recording_stem(world_key);
     match std::fs::File::create(dir.join(format!("{name}.jsonl"))) {
         Ok(f) => {
             info!("recording {world_key} → data/recordings/{name}.jsonl");
@@ -568,49 +691,6 @@ fn open_recorder(world_key: &str) -> Option<std::fs::File> {
             warn!("recorder for {world_key}: {e}");
             None
         }
-    }
-}
-
-/// Fog of war (#129 Layer B): the wire carries only what this world's LIVING
-/// characters can currently SEE — a `FOG_SIGHT_CELLS` disc around each (the
-/// union of residents: on a per-idler grind instance that is exactly the
-/// watched idler's own sight; in the shared town it is the residents'
-/// collective knowledge). Entities outside every disc are WITHHELD — the
-/// prev-diff then emits natural spawned/removed as they enter and leave sight
-/// — and positioned FX outside are dropped, so network analysis of a per-idler
-/// stream finds nothing the idler hasn't seen. Characters themselves always
-/// ship: they are the reveal sources (dead ones too — a corpse awaiting
-/// respawn is the viewer's own story — but dead characters do NOT project
-/// sight, matching the sim's explore() and the client fog).
-struct SightFilter {
-    /// Living characters' cells (sim units).
-    sources: Vec<(i64, i64)>,
-}
-
-impl SightFilter {
-    fn from_views(views: &[idlin_sim::EntityView]) -> SightFilter {
-        SightFilter {
-            sources: views
-                .iter()
-                .filter(|v| v.kind == KIND_CHARACTER && !v.dead)
-                .map(|v| ((v.x_raw >> 16) as i64, (v.y_raw >> 16) as i64))
-                .collect(),
-        }
-    }
-
-    /// Is a Q16.16 raw position within any living character's sight disc?
-    fn sees_raw(&self, x_raw: i32, y_raw: i32) -> bool {
-        const R: i64 = idlin_sim::FOG_SIGHT_CELLS as i64;
-        let (x, y) = ((x_raw >> 16) as i64, (y_raw >> 16) as i64);
-        self.sources.iter().any(|&(cx, cy)| {
-            let (dx, dy) = (x - cx, y - cy);
-            dx * dx + dy * dy <= R * R
-        })
-    }
-
-    /// Does this entity go on the wire?
-    fn keeps(&self, v: &idlin_sim::EntityView) -> bool {
-        v.kind == KIND_CHARACTER || self.sees_raw(v.x_raw, v.y_raw)
     }
 }
 
@@ -822,6 +902,7 @@ fn empty_snapshot(zone_name: &str, width: i32, height: i32) -> String {
 fn to_state(v: &EntityView) -> EntityState {
     EntityState {
         id: v.id,
+        hostile: v.hostile,
         kind: match v.kind {
             KIND_CHARACTER => EntityKind::Character,
             KIND_MONSTER => EntityKind::Monster,
@@ -857,6 +938,25 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             name: name.clone(),
             killer: killer.clone(),
         },
+        SimEvent::CharacterRemoved { net_id, name } => GameEvent::CharacterRemoved {
+            id: *net_id,
+            name: name.clone(),
+        },
+        SimEvent::MapTally {
+            id,
+            name,
+            kills,
+            deaths,
+            items,
+            ticks,
+        } => GameEvent::MapTally {
+            id: *id,
+            name: name.clone(),
+            kills: *kills,
+            deaths: *deaths,
+            items: *items,
+            ticks: *ticks,
+        },
         SimEvent::CharacterRespawned { id } => GameEvent::CharacterRespawned { id: *id },
         SimEvent::GateChanged {
             x0,
@@ -871,6 +971,11 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             y1: *y1,
             open: *open,
         },
+        SimEvent::ActCompleted { id, name, act } => GameEvent::ActCompleted {
+            id: *id,
+            name: name.clone(),
+            act: *act,
+        },
         SimEvent::ExitChanged { x, y, open } => GameEvent::ExitChanged {
             x: *x,
             y: *y,
@@ -882,6 +987,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
             level: *level,
         },
         SimEvent::MonsterKilled {
+            rarity,
             killer_id,
             killer,
             monster,
@@ -890,6 +996,7 @@ fn to_game_event(ev: &SimEvent) -> Option<GameEvent> {
         } => GameEvent::MonsterKilled {
             killer_id: *killer_id,
             killer: killer.clone(),
+            rarity: *rarity as u8,
             monster: monster.clone(),
             level: *level,
         },
@@ -1020,6 +1127,7 @@ mod tests {
         EntityState {
             id,
             kind: EntityKind::Character,
+            hostile: false,
             x,
             y: 0,
             life_pct,
@@ -1048,6 +1156,7 @@ mod tests {
         idlin_sim::EntityView {
             id,
             kind,
+            hostile: kind == 2,
             x_raw: (x as i32) << 16,
             y_raw: (y as i32) << 16,
             life_pct: if dead { 0 } else { 100 },
@@ -1094,6 +1203,16 @@ mod tests {
         vec![w]
     }
 
+    /// A Visibility over a 4-wide grid with NO sight sources — the explored/
+    /// layout predicates under test don't read current sight.
+    fn vis(explored: &[u64]) -> Visibility<'_> {
+        Visibility {
+            sources: vec![],
+            explored,
+            zw: 4,
+        }
+    }
+
     #[test]
     fn snapshot_masks_unexplored_tiles_props_exits_and_gates() {
         // #129 stage 2b: a snapshot must not carry unexplored layout in ANY
@@ -1103,7 +1222,7 @@ mod tests {
         // leaks; break gate_explored's any-cell rule → the spanning gate hides.
         let tiles = tiny_tiles();
         let explored = bits(&[(0, 0), (1, 0), (0, 1)]); // top-left corner only
-        let masked = mask_tiles(&tiles, &explored, 4);
+        let masked = vis(&explored).mask_tiles(&tiles);
         assert_eq!(masked.rows, vec!["ab  ".to_string(), "e   ".to_string()]);
         assert_eq!(masked.props.len(), 1, "only the explored-corner prop ships");
         assert_eq!(masked.props[0].x_u, 0);
@@ -1113,19 +1232,85 @@ mod tests {
             "the legend is vocabulary, not positions"
         );
         // Exit/gate predicates.
-        assert!(cell_explored(&explored, 4, 1, 0));
-        assert!(!cell_explored(&explored, 4, 3, 1));
+        assert!(vis(&explored).cell_explored(1, 0));
+        assert!(!vis(&explored).cell_explored(3, 1));
         assert!(
-            !cell_explored(&explored, 4, -1, 0),
+            !vis(&explored).cell_explored(-1, 0),
             "off-map is never explored"
         );
         assert!(
-            gate_explored(&explored, 4, 1, 0, 3, 1),
+            vis(&explored).gate_explored(1, 0, 3, 1),
             "a gate rect spanning the fog boundary counts as explored (any cell)"
         );
         assert!(
-            !gate_explored(&explored, 4, 2, 1, 3, 1),
+            !vis(&explored).gate_explored(2, 1, 3, 1),
             "a fully dark rect does not"
+        );
+    }
+
+    #[test]
+    fn act_completed_reaches_the_wire_and_the_featured_splice() {
+        // #136: the campaign's biggest beat must map to the wire, pass the
+        // visibility gate (non-positional), and splice onto the featured feed
+        // as an announcement. Mutations: drop the to_game_event arm → None
+        // here; drop the announcement arm → the splice assert fails.
+        let ev = SimEvent::ActCompleted {
+            id: 7,
+            name: "Vex".into(),
+            act: 1,
+        };
+        let wire = to_game_event(&ev).expect("ActCompleted maps to the wire");
+        match &wire {
+            GameEvent::ActCompleted {
+                id: 7,
+                name,
+                act: 1,
+            } => assert_eq!(name, "Vex"),
+            other => panic!("wrong mapping: {other:?}"),
+        }
+        assert!(
+            vis(&[]).event_visible(&wire),
+            "non-positional: visible even with nothing explored"
+        );
+        assert!(
+            is_announcement(&wire),
+            "an act completion is broadcast-worthy cross-world"
+        );
+    }
+
+    #[test]
+    fn a_map_tally_reaches_the_wire_and_the_featured_splice() {
+        // #176: the tally fires in the map instance its runner is LEAVING
+        // — a world the camera almost never watches at that tick. It must
+        // splice onto the featured feed or the endgame's signature ticker
+        // line never reaches the viewer. Mutations: drop the to_game_event
+        // arm → None here; drop the announcement arm → the splice assert
+        // fails.
+        let ev = SimEvent::MapTally {
+            id: 7,
+            name: "Kargan".into(),
+            kills: 120,
+            deaths: 1,
+            items: 30,
+            ticks: 9000,
+        };
+        let wire = to_game_event(&ev).expect("MapTally maps to the wire");
+        match &wire {
+            GameEvent::MapTally {
+                id: 7,
+                name,
+                kills: 120,
+                ..
+            } => assert_eq!(name, "Kargan"),
+            other => panic!("wrong mapping: {other:?}"),
+        }
+        assert!(
+            vis(&[]).event_visible(&wire),
+            "non-positional: visible even with nothing explored"
+        );
+        assert!(
+            is_announcement(&wire),
+            "the map scoreboard is broadcast-worthy cross-world"
         );
     }
 
@@ -1144,11 +1329,11 @@ mod tests {
             open: true,
         };
         assert!(
-            event_visible(&exit_ev(1, 0), &explored, 4),
+            vis(&explored).event_visible(&exit_ev(1, 0)),
             "explored exit event passes"
         );
         assert!(
-            !event_visible(&exit_ev(3, 1), &explored, 4),
+            !vis(&explored).event_visible(&exit_ev(3, 1)),
             "dark exit event is dropped"
         );
         let gate_ev = GameEvent::GateChanged {
@@ -1159,7 +1344,7 @@ mod tests {
             open: false,
         };
         assert!(
-            event_visible(&gate_ev, &explored, 4),
+            vis(&explored).event_visible(&gate_ev),
             "a gate rect touching explored ground passes (any-cell rule)"
         );
         let dark_gate = GameEvent::GateChanged {
@@ -1170,7 +1355,7 @@ mod tests {
             open: false,
         };
         assert!(
-            !event_visible(&dark_gate, &explored, 4),
+            !vis(&explored).event_visible(&dark_gate),
             "a fully dark gate is dropped"
         );
         let other = GameEvent::CharacterJoined {
@@ -1178,7 +1363,7 @@ mod tests {
             name: "Vex".into(),
         };
         assert!(
-            event_visible(&other, &explored, 4),
+            vis(&explored).event_visible(&other),
             "non-positional events always pass"
         );
         // The exit-cell sentinel: off-map coordinates never read as explored.
@@ -1187,23 +1372,23 @@ mod tests {
             y: y << 16,
             open: true,
         };
-        assert_eq!(exit_cell(&exit(1, 0), 4), 1);
+        assert_eq!(vis(&explored).exit_cell(&exit(1, 0)), 1);
         assert_eq!(
-            exit_cell(&exit(-1, 0), 4),
+            vis(&explored).exit_cell(&exit(-1, 0)),
             usize::MAX,
             "negative x is off-map"
         );
         assert_eq!(
-            exit_cell(&exit(0, -1), 4),
+            vis(&explored).exit_cell(&exit(0, -1)),
             usize::MAX,
             "negative y is off-map"
         );
         assert_eq!(
-            exit_cell(&exit(4, 0), 4),
+            vis(&explored).exit_cell(&exit(4, 0)),
             usize::MAX,
             "x >= width is off-map"
         );
-        assert!(!newly_explored(&explored, &[], exit_cell(&exit(-1, 0), 4)));
+        assert!(!vis(&explored).newly(&[], vis(&explored).exit_cell(&exit(-1, 0))));
     }
 
     #[test]
@@ -1214,7 +1399,12 @@ mod tests {
         let tiles = tiny_tiles();
         let prev = bits(&[(0, 0), (1, 0)]);
         let now = bits(&[(0, 0), (1, 0), (2, 0), (3, 1)]);
-        let mut cells = reveal_cells(&tiles, &now, &prev, 4);
+        let v = Visibility {
+            sources: vec![],
+            explored: &now,
+            zw: 4,
+        };
+        let mut cells = v.reveal_cells(&tiles, &prev);
         cells.sort_by_key(|c| (c.y, c.x));
         let flat: Vec<(i32, i32, &str)> =
             cells.iter().map(|c| (c.x, c.y, c.glyph.as_str())).collect();
@@ -1224,16 +1414,13 @@ mod tests {
             "only the new cells, true glyphs"
         );
         // Steady state: nothing new → nothing streamed.
-        assert!(reveal_cells(&tiles, &now, &now, 4).is_empty());
+        assert!(v.reveal_cells(&tiles, &now).is_empty());
         // First frame against an empty baseline: everything explored streams.
-        assert_eq!(reveal_cells(&tiles, &now, &[], 4).len(), 4);
+        assert_eq!(v.reveal_cells(&tiles, &[]).len(), 4);
         // newly_explored agrees with the same window (drives props/exits).
-        assert!(newly_explored(&now, &prev, 2)); // cell (2,0)
-        assert!(!newly_explored(&now, &prev, 0)); // already known
-        assert!(
-            !newly_explored(&now, &prev, usize::MAX / 2),
-            "far off-map is never new"
-        );
+        assert!(v.newly(&prev, 2)); // cell (2,0)
+        assert!(!v.newly(&prev, 0)); // already known
+        assert!(!v.newly(&prev, usize::MAX / 2), "far off-map is never new");
     }
 
     #[test]
@@ -1252,10 +1439,10 @@ mod tests {
             view(5, idlin_sim::KIND_MONSTER, 150 + 2, 30, false), // near ONLY the corpse
             view(6, 3, 150, 32, false),                        // loot near only the corpse
         ];
-        let sight = SightFilter::from_views(&views);
+        let sight = Visibility::new(&views, &[], 200 << 16);
         let kept: Vec<u32> = views
             .iter()
-            .filter(|v| sight.keeps(v))
+            .filter(|v| sight.keeps_entity(v))
             .map(|v| v.id)
             .collect();
         assert_eq!(
@@ -1282,10 +1469,10 @@ mod tests {
                 view(1, idlin_sim::KIND_CHARACTER, 30, 30, false),
                 view(2, idlin_sim::KIND_MONSTER, mx, 30, false),
             ];
-            let sight = SightFilter::from_views(&views);
+            let sight = Visibility::new(&views, &[], 200 << 16);
             views
                 .iter()
-                .filter(|v| sight.keeps(v))
+                .filter(|v| sight.keeps_entity(v))
                 .map(|v| (v.id, to_state(v)))
                 .collect()
         };

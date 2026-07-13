@@ -1,0 +1,76 @@
+// Area brain: the Undertow — Act 2's last room, AND the Sovereign's
+// stage director (#162 boss mechanics): the fight breaks into readable
+// beats — at half life the current rises (a narrated add wave from the
+// flanks); at a quarter, the drowned themselves come to hold the crown
+// on. The bots must clear the wave pressure or burn the boss; either
+// reads on camera.
+
+include "zone_lib.bot";
+
+const L_ENTER = line "enter";
+const L_BASIN = line "basin";
+const L_RISES = line "rises";
+const L_BREAKS = line "breaks";
+
+const F_ENTERED = 1;
+const F_BASIN = 2;
+
+// The basin opens where the spiral ends (rows above y=25).
+const BASIN_Y = 25;
+
+// 0xE800: clear of the var allocator (0xC000 UP — a buffer there gets
+// clobber-written by records; `phase` once read a monster's net id) and
+// of zone_lib's regions (ZL_STATE 0xD000, ZL_EVS 0xE000, ZL_Q 0xE400).
+const MONS = 0xE800;
+
+const MON_SOVEREIGN = monster "riptide_sovereign";
+const MON_CHOIR = monster "choir_remnant";
+const MON_HUSK = monster "pilgrim_husk";
+
+// Fight phases fired (world-global, not per-character): 0 none, 1 the
+// rise, 2 the break. Persist survives brain ticks.
+var phase;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_ENTERED) == 1) {
+            narrate(L_ENTER, net);
+        }
+        var y_u = mem[r + QC_Y] / 65536;
+        if (y_u < BASIN_Y) {
+            if (zl_once(net, F_BASIN) == 1) {
+                narrate(L_BASIN, net);
+            }
+        }
+        i = i + 1;
+    }
+
+    // The Sovereign's beats: find him, read his life, direct the stage.
+    var nm = query_monsters(MONS, 40);
+    var k = 0;
+    while (k < nm) {
+        var m = MONS + k * MONSTER_RECORD_SIZE;
+        if (mem[m + MON_NUM] == MON_SOVEREIGN) {
+            var life = mem[m + MON_LIFE];
+            if (phase < 1 && life <= 50 && life > 0) {
+                phase = 1;
+                narrate(L_RISES, 0);
+                // The wave rises from the basin's flanking pools.
+                spawn_monster(MON_CHOIR, 9 * 65536, 6 * 65536);
+                spawn_monster(MON_CHOIR, 37 * 65536, 6 * 65536);
+            }
+            if (phase < 2 && life <= 25 && life > 0) {
+                phase = 2;
+                narrate(L_BREAKS, 0);
+                spawn_monster(MON_HUSK, 9 * 65536, 20 * 65536);
+                spawn_monster(MON_HUSK, 37 * 65536, 20 * 65536);
+                spawn_monster(MON_CHOIR, 23 * 65536, 4 * 65536);
+            }
+        }
+        k = k + 1;
+    }
+}

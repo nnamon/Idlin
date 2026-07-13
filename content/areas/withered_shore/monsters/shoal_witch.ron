@@ -22,7 +22,10 @@ MonsterDef(
     use_ticks: 16,
     aggro_radius_cu: 1500,
     armour: 10,
-    resist_fire: 2000,
-    xp: 90,
+    // 8%, not 20% (#148 A2): her old fire wall only ever taxed the caster
+    // archetype (melee swings phys) — an exam should grade every class on
+    // the same curve.
+    resist_fire: 800,
+    xp: 152,
     projectile: false,
 )

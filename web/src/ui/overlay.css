@@ -11,10 +11,17 @@
   --fs-data: 13px;
   --fs-caption: 11px;
   --fs-display: 16px;
+  /* The three voices (#181): titles speak Display, prose speaks Text,
+     NUMBERS alone keep the mono (tabular alignment). */
+  --font-display: "Idlin Display", "Palatino", serif;
+  --font-sc: "Idlin Text", system-ui, sans-serif;
+  --font-text: "Idlin Text", system-ui, sans-serif;
+  --font-num: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 .panel {
   position: relative;
+  font-family: var(--font-text);
   /* Opaque info panels capture the pointer (the HUD root is pointer-events:none
      so the scene stays clickable through the gaps) — needed for the item-hover
      tooltips on gear/bag (#87). */
@@ -59,9 +66,9 @@
 
 /* Section rule: engraved small caps with a fading hairline. */
 .hdr {
-  font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11.5px;
-  font-weight: 700;
+  font-family: var(--font-sc);
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 2.5px;
   color: #d2ab52;
   text-transform: uppercase;
@@ -75,11 +82,15 @@
   margin-top: 0;
 }
 
-/* Display name (focus card, plaque). */
+/* Display name (focus card, plaque). Small chrome speaks the TEXT voice —
+   Cinzel holds only at true display sizes (zone title 26px, boss-sighted
+   34px, banner 44px); 15-17px Trajan caps on Inter panels read as a stray
+   second font, not display type. */
 .display {
-  font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-text);
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
   color: #f0e6d2;
   text-shadow: 0 1px 3px #000;
 }
@@ -141,7 +152,7 @@
   left: 0;
   right: 0;
   text-align: center;
-  font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-text);
   font-size: 10px;
   font-weight: 700;
   color: var(--rar);
@@ -192,6 +203,9 @@
 }
 .row .v {
   color: #ecdfc0;
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- HUD layout: desktop columns; phones get a drawer ---- */
@@ -330,10 +344,10 @@
   top: 50%;
   transform: translateY(-50%);
   text-align: center;
-  font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-num);
   font-size: calc(var(--globe) * 7.5 / 112); /* scales with the orb */
   line-height: 1.5;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.2px;
   color: #f0e6cc;
   opacity: 0.9;
@@ -386,10 +400,12 @@
   pointer-events: none;
 }
 .boss-name {
-  font-family: "Idlin Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* 14px is below the display-voice floor — text voice, tracked caps. */
+  font-family: var(--font-text);
   font-weight: 700;
   font-size: 14px;
   letter-spacing: 2px;
+  text-transform: uppercase;
   text-align: center;
   /* unique tone — keep in sync with RARITY_COLORS[3] in src/gen/constants.ts
      (CSS can't import TS without a build step) */
@@ -425,7 +441,7 @@
   inset: 0;
   background: radial-gradient(120% 100% at 50% 0%, #11131b, #07070d 70%);
   color: #e9e4d4;
-  font-family: "Idlin Mono", ui-monospace, Menlo, monospace;
+  font-family: var(--font-text);
   display: flex;
   flex-direction: column;
   pointer-events: auto;
@@ -508,7 +524,7 @@
   align-items: center;
   justify-content: center;
   background: radial-gradient(120% 100% at 50% 40%, #11131b, #07070d 70%);
-  font-family: "Idlin Mono", ui-monospace, Menlo, monospace;
+  font-family: var(--font-text);
   pointer-events: auto;
 }
 .not-in-realms-card {
@@ -617,7 +633,7 @@
   align-items: baseline;
   gap: 0 8px;
   font-size: 12.5px;
-  color: #5adfdf;
+  color: #8fb8c8;
 }
 .skill-head-metric {
   font-weight: 700;
@@ -635,10 +651,10 @@
 .xp-bar > span {
   display: block;
   height: 100%;
-  background: #5adfdf;
+  background: #8fb8c8;
 }
 .xp-bar.maxed > span {
-  background: #ffd75a;
+  background: #d8c07a;
 }
 .skill-meta {
   display: flex;
@@ -675,10 +691,10 @@
 .chip-xp > span {
   display: block;
   height: 100%;
-  background: #5adfdf;
+  background: #8fb8c8;
 }
 .chip-xp.maxed > span {
-  background: #ffd75a;
+  background: #d8c07a;
 }
 
 /* A viewport pinned to a fraction of the screen; overflow is hidden (the box
@@ -747,4 +763,78 @@
   color: #f0e2bf;
   background: linear-gradient(rgba(92, 70, 36, 0.45), rgba(50, 38, 20, 0.45));
   box-shadow: inset 0 0 8px rgba(230, 200, 140, 0.12);
+}
+
+/* Boss first-sighted splash (#136 T2): the unique's name, big and gold,
+   center-high. Static styling on purpose — the capture harness asserts
+   byte-stable pixels, so the age-out is a JS timestamp, not an animation. */
+.boss-sighted {
+  position: absolute;
+  top: 26%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  color: #ff9a3c; /* unique orange — RARITY_COLORS[3] */
+  text-shadow:
+    0 0 18px rgba(255, 120, 30, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+/* Zone title card (#136 T7): where you are, on every cut. Static styling
+   (byte-stable captures); the age-out is a JS timestamp check. */
+.zone-title {
+  position: absolute;
+  top: 16%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 26px;
+  letter-spacing: 0.22em;
+  color: #d8d2c4;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+/* The campaign chip (#136 T7): act state on the inspect panel. */
+.act-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 11px;
+  border: 1px solid #6b5a33;
+  border-radius: 3px;
+  color: #d9b25f;
+}
+.act-chip.done {
+  border-color: #3f6b4a;
+  color: #7fd693;
+}
+
+/* BEAT BANNER (#162): the road's biggest moments — an act falling, a boss
+   falling — center-screen, bigger than the boss splash, gold. Timestamp
+   visibility only (captures need stable pixels). */
+.beat-banner {
+  position: absolute;
+  top: 38%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: bold;
+  letter-spacing: 0.18em;
+  color: #ffd27a;
+  text-shadow:
+    0 0 26px rgba(255, 160, 40, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.95);
+  pointer-events: none;
 }

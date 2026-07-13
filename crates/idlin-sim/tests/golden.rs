@@ -2,6 +2,10 @@
 //! exact same state hash forever, on every platform. CI failure here means
 //! either an intentional content/sim change (update the constants below and
 //! say so in the commit) or — much worse — a determinism leak.
+//!
+//! The re-pin comments below are a LEDGER, oldest first: each entry
+//! describes the world AS IT WAS at that pin (history, like commits —
+//! not current-state claims; later entries supersede earlier ones).
 
 use idlin_content::ContentDb;
 use idlin_sim::{JoinRequest, TickInputs, World};
@@ -10,90 +14,66 @@ use std::path::Path;
 const GOLDEN_SEED: u64 = 0x1D71_C0DE;
 const GOLDEN_TICKS: u64 = 2_000;
 /// Update via: cargo test -p idlin-sim --test golden -- --nocapture
-/// Re-pinned for #109 B2b (target-dependent strike conditions): the new
-/// `Condition::TargetHasAilment` + the per-element "vs-ailed" weapon suffixes
-/// (`of_scorch`/`of_jolt`/`of_rime`, MORE damage vs ignited/shocked/chilled) shift
-/// content_hash (new affix files + their weapon-pool membership reweights the
-/// suffix rolls) AND widen the FINGERPRINT — `CombatStats` gained `target_grants`
-/// (the per-victim target-conditional grants), now folded into `state_hash`. The
-/// 2000-tick grind's monster affix rolls move; the mechanism itself is inert in the
-/// grind (the phys grinders inflict no elemental ailments, so no `TargetHasAilment`
-/// fires) — the unit + strike tests prove it. The determinism trio still agrees.
-/// (Prior: 0xA5C3 — #125 monster parity.)
-/// Re-pinned for #125 full monster/character parity: monsters now derive through the
-/// SAME pipeline as characters (`derive_from_sheet`) — folding rolled affixes + a new
-/// fixed passive set + buffs + attribute conversion over the level/rarity-scaled def,
-/// computing EVERY field (crit/leech/regen/ES/block/stagger/poise/knockback/cast-speed
-/// were previously hardcoded). This fixes a real bug — a refresh (e.g. on chill) used to
-/// rebuild from the RAW def, dropping the spawn-time scaling AND rolled affixes — and
-/// folds the elite bulk into the base (flat-life affixes no longer bulk-scaled), so
-/// every monster's stats over the 2000-tick grind move; `tide_husk` also gains a passive
-/// kit (a small bloat + a gentle strike-time enrage, kept MILD so it doesn't overtune
-/// the tutorial gauntlet). content_hash + grind outcomes both shift. Elite bulk
-/// multiplies LIFE only, as before. The determinism trio still agrees.
-/// (Prior: 0x19A4 — #125 with the overtuned tide_husk kit; 0x82D3 — #125 with the
-/// elite-damage-bulk bug too; 0x960F — #109 RecentlyKilled.)
-/// Re-pinned for the #86 grant-unification follow-up: `state_hash` was widened to
-/// fingerprint all REPLAY-RELEVANT world state it had silently dropped — active-
-/// buff grant internals, the full projectile payload, `intents.move_to`,
-/// `CharacterState.build_plan`, the WHOLE `CombatStats` (regen/leech/range/stagger/
-/// poise/knockback/use_ticks/speed/projectile/find factors), `MonsterState`
-/// (pack_idx/affixes/display_name/skill supports), and the World's zone identity
-/// (zone_idx/level/lines). The world is byte-identical (no sim-rule or content
-/// change — `content_hash` is unchanged); only the FINGERPRINT widened, so the
-/// digest of the same 2000-tick replay moves. The determinism trio still agrees
-/// under the wider hash, confirming a representation change, not a leak. (The
-/// later item-charges/affix-tier additions left the digest at this value — the
-/// 2000-tick golden replay holds no items or monster affixes at the hashed tick.)
-/// Re-pinned for #109 RecentlyKilled re-integrated onto current main (which carries #88
-/// ailments + the #124 affix-pool inversion + #119 strike-conditions): (1) `CombatStats`
-/// gained `last_kill_tick: u64`, folded into `state_hash` (a FINGERPRINT widening); AND
-/// (2) the new `of_the_hunt` affix ("+phys for 4s after a kill"), now a member of the
-/// `weapon` pool, shifts content_hash and the weapon-suffix rolls. Inert until a character
-/// wields it and lands a kill; the determinism trio agrees.
-/// --- prior re-pin chain (kept for the bisect trail) ---
-/// Re-pinned for #109 (strike-time conditional affixes) re-integrated onto current main
-/// (which carries #88 per-element ailments + the #124 affix-pool inversion): (1)
-/// `CombatStats` gained `has_strike_conditions`, folded into `state_hash` (a FINGERPRINT
-/// widening); AND (2) the new `of_desperation` affix (strike-time "+phys while below 35%
-/// life"), now a member of the `weapon` pool, shifts content_hash and the weighted
-/// weapon-suffix rolls, so the 2000-tick grind's outcomes move. The strike-time mechanism
-/// is inert until a character wields such an affix below the threshold; the determinism
-/// trio still agrees, confirming no leak.
-/// --- prior #88/#124 re-pin chain (kept for the bisect trail) ---
-/// Re-pinned for #88 first-class ailments MERGED onto a `main` that already carries
-/// #50 (VM-ABI generation; main was 0xF08B…). #88 brings: a content_hash change (new
-/// ailment affixes; `frost_nova`'s hardcoded chill debuff replaced by an inherent
-/// Chill ailment) AND a sim-rule change (cold/fire/lightning hits proc Ignite/Shock/
-/// Chill on crit or via ailment-chance), so the 2000-tick grind's outcomes move; AND
-/// a FINGERPRINT widening — the ailment `CombatStats` fields (the per-element inflict
-/// chances/crits_no_ailment/shock_max/chill_max/ailment_duration, spawn-set for
-/// monsters from rolled affixes) and the in-flight projectile's `ailment_chance` now
-/// fold into `state_hash`.
-/// Re-pinned again for the per-element ailment-chance rework: the single blanket
-/// `AilmentChance` stat (which scaled all ailments at once — too strong) is SPLIT into
-/// `IgniteChance`/`ShockChance`/`ChillChance`, the proc picks chance by the hit's
-/// element, `of_affliction` becomes a HYBRID composed of the three, and the keystone-
-/// only `of_composure` weapon affix is DELETED (tombstoned). This moves content_hash
-/// (affix effects + tombstone + stat vocab → 0xBA6F31C912F0421D), the fingerprint (3
-/// chance fields hashed instead of 1), AND grind outcomes (monsters with of_affliction
-/// now derive per-element chances). The determinism trio still agrees.
-/// Re-pinned again for the single-element chance affixes: of_kindling (ignite),
-/// of_conduction (shock), of_numbing (chill) added to the weapon pool, and the
-/// all-elemental of_affliction hybrid made rarer (weight 50→20). Three new content
-/// files + the weight edit move content_hash (→0xC089DD7B8DD3B1C1), and the weapon-
-/// pool affix rolls shift monster stats over the 2000-tick grind. Both intentional.
-/// Re-pinned for the affix-pool inversion: eligibility moves entirely to the pool
-/// side — `AffixDef.pool` is removed, `content/pools/*.ron` now LIST their member
-/// affixes, and items/monsters subscribe by name. This is content_hash-ONLY: the
-/// `pool:` field stripped from 49 affix files + 8 new pool files change content_hash
-/// (→0x95F068BD5300692A), but the resolved affix→pool membership is preserved EXACTLY
-/// (pinned per-pool in `affix_pool_subscriptions_resolve`), so the roller's candidate
-/// sets — and thus every loot roll and grind outcome — are byte-identical. The
-/// determinism trio still agrees.
-/// (Prior: 0x4839 — single-element chance affixes; 0x53B5 — per-element split; 0xBB5A
-/// — #88-onto-#50 merge; 0xF08B — #50 part 2; 0x5662 — #86 state_hash widening; etc.)
-const GOLDEN_HASH: u64 = 0x4E18_9903_724D_83C7;
+/// Re-pinned for the wanted-door guard (quality pass, live find): the
+/// templates' opportunistic use_exit() ate whatever door was underfoot —
+/// the Pressure Court respawn sits beside its SOUTH exit, so a dying bot
+/// heading north kept commuting backward. Template bytes only.
+/// Re-pinned for the endgame cycle (quality pass, live find): the three
+/// templates' voyage-return route now names SALTMERE — the town the
+/// voyage exit actually reaches. Template bytes only.
+/// Re-pinned for the itemization ladder (quality pass): content-only —
+/// eight deep armour/accessory bases (the audit found ONE base per
+/// slot; a level-23 character wore tutorial gloves). New bases enter
+/// the drop pool, so every seeded roll reshuffles.
+/// Re-pinned for the Mother + Bailiff directors (quality pass):
+/// content-only — the hollow brain gained the chorus/last-verse beats,
+/// the Pressure Court its FIRST brain (the ORDER beat), plus their zone
+/// lines. Same pattern as the Sovereign's; no engine change.
+/// Re-pinned for boss mechanics (quality pass): content_hash moved — the
+/// Undertow's brain became the Sovereign's stage director (add waves +
+/// beat lines at life thresholds), two zone lines were added, AND
+/// gen_abi.bot regenerated with the QueryMonsters record consts (it
+/// lives under content/lib and is hashed like all content). The engine
+/// syscall itself hashes nothing; the shore replay has no zone brain
+/// wave logic.
+/// Re-pinned for #178 (the eternal voyage): the HASH DOMAIN grew — the
+/// map rules (map_ends_at, monster_fury_bp, loot_quantity_bp,
+/// is_map_instance) AND (AT THE TIME — since reworked by B4 below) the
+/// per-pack rarity juice folds joined state_hash, so every digest moved. The shore replay's
+/// BEHAVIOR is bit-identical (chart fields zero/false there, pack defs at
+/// authored values; the default voyage clock arms only in
+/// new_map_instance) — only the fingerprint changed.
+/// Re-pinned for #180 (sailing → mapping, operator directive): content-only
+/// — the map item's display name, the map_clock/map_tier/map_table serde
+/// names in RON, the vocabulary sweep over content-file COMMENTS (every
+/// byte under content/ is hashed), and the regenerated content-docs all
+/// move content_hash. No sim rule changed; the vocabulary did.
+/// Re-pinned for #185 B4 (operator ruling): the hash DOMAIN changed shape —
+/// the per-pack def folds (the old rarity-juice patch) left, spawn_rarity_bp
+/// joined. Pack defs are immutable content again; the shore replay's
+/// BEHAVIOR is bit-identical, only the fingerprint moved.
+/// Re-pinned for the no-respawn world + the operator's tuning (#185):
+/// SIM RULES changed (packs rise exactly once — monsters never resurrect;
+/// the out-of-combat burst heal is characters-only — it was silently
+/// resetting kited bosses) AND content moved (pack density ×1.6 campaign /
+/// ×2.1 Act 2, non-boss XP ×1.25, the walk-line movement fix's behavior).
+/// The shore replay's history is materially different by design.
+/// (+ the QueryMonsters clamp 16→64 — content brains widened their scans,
+/// gen_abi/content bytes moved.)
+// 0xA185C5C2AEAC99A6: respawn_ticks removed from SpawnPack + every zone RON
+// (dead schema under the no-respawn world) + the round-4 prose sweep
+// (zone comments + narration are content bytes) — content_hash moved; the
+// 2000-tick behavior is identical.
+// Re-pinned for the difficulty re-anchor (operator: tier-1 maps at 40,
+// campaign graduates ~38): map area = 39+tier, the zone arc re-mapped
+// (coast 7 … undertow 35), boss levels re-anchored, XP re-tuned (both
+// acts ×1.35, bosses re-anchored, curve 80+8l²·1.04^(l−10)), Act-2
+// density trimmed, wight re-authored. Content + behavior both moved.
+// Re-pinned for the ranger-scaling ruling (#185 §16 rejection):
+// full-weight evasion (acc/(acc+eva), was eva/2) + spell PROJECTILES
+// roll the hit check (dodgeable bolts). Combat outcomes moved
+// everywhere; ranger road deaths 126 -> ~30-45, stair 27 -> 2-5.
+const GOLDEN_HASH: u64 = 0x3E0B_2E50_08EB_59A3;
 
 #[test]
 fn golden_replay() {
@@ -103,6 +83,7 @@ fn golden_replay() {
 
     let joins = TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Golden".into(),

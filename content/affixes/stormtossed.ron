@@ -1,0 +1,14 @@
+// Map prefix (#148 A4): a RULE, not juice — every monster in the map
+// hits harder. Risk bought with the same obols as reward.
+AffixDef(
+    id: "stormtossed",
+    public: true,
+    name: "Stormtossed",
+    kind: prefix,
+    weight: 70,
+    effects: [(stat: monster_fury, layer: added)],
+    tiers: [
+        (ilvl: 4, name: "Stormtossed", weight: 100, rolls: [(min: 1500, max: 2500)]),
+        (ilvl: 12, name: "Tempest-Torn", weight: 40, rolls: [(min: 2501, max: 4000)]),
+    ],
+)

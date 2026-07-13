@@ -1,0 +1,30 @@
+// Act 2's town (#148 A3): Lanternfall — an air-bell caught under the
+// world, lit by wreck-lanterns. The second Map Device hangs here;
+// the whole bell is sanctuary.
+ZoneDef(
+    id: "lanternfall",
+    name: "Lanternfall",
+    kind: town,
+    tileset: Some("town"),
+    spawn_x_u: 20,
+    spawn_y_u: 21,
+    spawn_radius_u: 3,
+    camp_radius_u: 60,
+    map_device: Some((24, 15)),
+    vendor: Some((16, 15)),
+    stash: Some((28, 18)),
+    brain: Some("lanternfall"),
+    lines: [
+        (id: "welcome", text: "Lanternfall. Air that stays air. Breathe while it's cheap."),
+        (id: "announce", text: "The bell rings once — a climber down from the Stair."),
+        (id: "table", text: "A second device, older maps. The deep sea kept better records."),
+    ],
+    packs: [
+        (monster: "villager", count: 3, x_u: 14, y_u: 18, radius_u: 4),
+        (monster: "villager", count: 2, x_u: 26, y_u: 26, radius_u: 4),
+    ],
+    exits: [
+        (x_u: 19, y_u: 3, dest: "sunken_stair", open: true),
+        (x_u: 19, y_u: 40, dest: "kelp_forest", open: true),
+    ],
+)

@@ -20,7 +20,10 @@ pub mod lang;
 mod templates;
 
 pub use lang::{CompileError, Resolver, compile, compile_with};
-pub use templates::{TEMPLATE_GRINDER, template_grinder};
+pub use templates::{
+    TEMPLATE_CASTER, TEMPLATE_GRINDER, TEMPLATE_RANGER, compile_deployed, template_caster,
+    template_grinder, template_ranger,
+};
 
 use idlin_vm::Op;
 use std::collections::BTreeMap;

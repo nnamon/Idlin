@@ -20,6 +20,7 @@ type Require<T, K extends keyof T> = Partial<T> & Pick<T, K>;
 export function character(over: Require<EntityState, "id" | "name">): EntityState {
   return {
     kind: "Character",
+    hostile: false,
     x: 0,
     y: 0,
     life_pct: 100,
@@ -42,7 +43,7 @@ export function character(over: Require<EntityState, "id" | "name">): EntityStat
 /** A monster entity (for scene fixtures). `model` must be a manifest monster
  *  key (shambler/husk/stalker/tidewarden/idler). */
 export function monster(over: Require<EntityState, "id" | "name" | "model">): EntityState {
-  return character({ ...over, kind: "Monster" });
+  return character({ hostile: true, ...over, kind: "Monster" });
 }
 
 /** One equipment slot. `dimmed` greys a two-handed weapon mirrored into the
@@ -55,7 +56,17 @@ export function gear(
   dimmed = false,
   extra: Partial<GearSlotView> = {},
 ): GearSlotView {
-  return { slot, name, rarity, dimmed, base_num: -1, item_level: 0, mods: [], ...extra };
+  return {
+    slot,
+    name,
+    rarity,
+    dimmed,
+    base_num: -1,
+    item_level: 0,
+    mods: [],
+    unique_mods: [],
+    ...extra,
+  };
 }
 
 /** One bag item (grid placement + footprint). Pass `extra` for tooltip data
@@ -69,7 +80,19 @@ export function invItem(
   h: number,
   extra: Partial<InvItemView> = {},
 ): InvItemView {
-  return { name, rarity, x, y, w, h, base_num: -1, item_level: 0, mods: [], ...extra };
+  return {
+    name,
+    rarity,
+    x,
+    y,
+    w,
+    h,
+    base_num: -1,
+    item_level: 0,
+    mods: [],
+    unique_mods: [],
+    ...extra,
+  };
 }
 
 /** Convert sim units to the Q16.16 raw ints the wire uses for positions. */
@@ -93,6 +116,7 @@ export function sheet(over: Require<CharacterSheet, "id" | "name">): CharacterSh
     mana_reserved: 0,
     block_bp: 0,
     kills: 0,
+    story_acts: 0,
     dmg_phys: 0,
     dmg_fire: 0,
     dmg_cold: 0,

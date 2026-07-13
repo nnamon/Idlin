@@ -7,6 +7,7 @@ use idlin_content::ContentDb;
 use idlin_protocol::{
     CharacterSheet, CurrencyView, ExitView, GateView, GearSlotView, GemView, InvItemView,
     PropState, RolledModView, SkillStat, SkillSupport, StatSourceView, TileMapState, TileVisual,
+    UniqueModView,
 };
 use idlin_sim::world::{CharacterSheetView, SkillStatView};
 use idlin_sim::{CharacterBundle, EntityView, SimEvent, TICK_HZ, TickInputs, World};
@@ -21,6 +22,34 @@ use tracing::{info, warn};
 /// the pure sim never crosses a thread boundary. The world key scopes the
 /// lookup (net ids are per-world); None = the featured world.
 pub type InspectRequest = (Option<String>, u32, oneshot::Sender<Option<CharacterSheet>>);
+
+/// Admin-surface commands (#148 A6), answered by the tick thread at tick
+/// boundaries — the sim stays single-threaded and deterministic; HTTP only
+/// stages inputs.
+pub enum AdminCommand {
+    /// Deploy a compiled brain: the character joins the shore (the tutorial
+    /// gates everyone the same). The reply is Ok(()) or a refusal string.
+    Deploy {
+        name: String,
+        program: Vec<u8>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+}
+
+/// Deployed-brain headroom (#148 A6): builtins + deploys share the worlds;
+/// the cap keeps a griefing script from flooding the shore.
+pub const MAX_CHARACTERS: usize = 24;
+
+/// Deploy name uniqueness (#148 A6): a name is taken if it is LIVE in any
+/// world, queued to join one, or mid-ferry to one — the three places a
+/// character can exist. The deploy gate calls this; the test pins it.
+fn name_taken(worlds: &[ManagedWorld], name: &str) -> bool {
+    worlds.iter().any(|mw| {
+        mw.world.roster_rows().iter().any(|r| r.name == name)
+            || mw.pending.joins.iter().any(|j| j.name == name)
+            || mw.pending.arrivals.iter().any(|b| b.character.name == name)
+    })
+}
 
 /// One world's completed tick, with zone identity so any feed can emit a
 /// full snapshot at any moment (late joiners, subscription switches).
@@ -118,15 +147,124 @@ fn route_departure(worlds: &[ManagedWorld], source: usize, dest: &str) -> usize 
         .unwrap_or(source)
 }
 
+/// A MINTED instance (map instance or private story instance — any world
+/// whose key differs from its zone id) is done when nothing lives there
+/// and nothing is bound for it. Shared boot worlds (towns) never retire.
+/// A retired story instance re-mints DETERMINISTICALLY from its stable
+/// key if the owner walks back in.
+fn minted_instance_emptied(mw: &ManagedWorld) -> bool {
+    (mw.world.is_map_instance() || mw.key != mw.zone_id)
+        && mw.pending.arrivals.is_empty()
+        && mw.pending.joins.is_empty()
+        && mw.world.views().iter().all(|v| v.kind != 1)
+}
+
+/// The map-aware ferry (#136 T4): departures carrying a MapTicket open a
+/// FRESH instance of their (map-kind) destination — keyed
+/// "<zone>#<name>@<tick>", seeded from that key, its area level and juice set
+/// by the ticket — and land there. Everything else rides the normal ferry.
+/// Instances retire at the top of a later tick once they empty (never
+/// mid-tick: frame posting indexes into `worlds`).
+fn ferry_departures_with_maps(
+    worlds: &mut Vec<ManagedWorld>,
+    departures: Vec<(usize, CharacterBundle, String)>,
+    content: &ContentDb,
+    seed: u64,
+    server_tick: u64,
+) {
+    let mut plain = Vec::new();
+    for (source, mut bundle, dest) in departures {
+        let Some(ticket) = bundle.map.take() else {
+            plain.push((source, bundle, dest));
+            continue;
+        };
+        // Only map-kind zones may be map-instanced; anything else rides
+        // the normal ferry (and bounces home if unknown) — fail safe.
+        let is_map = content
+            .zone(&dest)
+            .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Map));
+        if !is_map {
+            warn!(
+                "{} opened a map to non-map zone {dest}; refunding the trip home",
+                bundle.character.name
+            );
+            plain.push((source, bundle, dest));
+            continue;
+        }
+        let key = format!("{dest}#{}@{server_tick}", bundle.character.name);
+        let mut h = idlin_content::FNV1A_OFFSET;
+        for b in key.bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+        }
+        info!(
+            "opening map {} for {} (tier {})",
+            key, bundle.character.name, ticket.tier
+        );
+        let mut mw = ManagedWorld {
+            key: key.clone(),
+            zone_id: dest.clone(),
+            world: World::new_map_instance(seed ^ h, content, &dest, ticket),
+            tiles: resolve_tile_map(content, &dest),
+            max_players: 1,
+            pending: TickInputs::default(),
+        };
+        mw.pending.arrivals.push(bundle);
+        worlds.push(mw);
+    }
+    ferry_departures(worlds, plain, content, seed);
+}
+
 /// Land each of this tick's departures into exactly one world's arrivals.
 /// `route_departure` guarantees a valid target — the destination instance, or
 /// the source world when the destination is unknown or full — so a transfer
 /// can never drop a character ("lost at sea", #63).
 fn ferry_departures(
-    worlds: &mut [ManagedWorld],
+    worlds: &mut Vec<ManagedWorld>,
     departures: Vec<(usize, CharacterBundle, String)>,
+    content: &ContentDb,
+    seed: u64,
 ) {
     for (source, bundle, dest) in departures {
+        // STORY ZONES ARE PRIVATE (post-playtest rework): every character
+        // walks their OWN campaign — "each idler runs their own story" was
+        // already true of the STATE (acts, seals, boss payouts are all
+        // per-character); the SPACE finally agrees. The instance key is
+        // stable ("saltworks#Kargan"), so a retired instance re-mints
+        // deterministically if its owner returns. Towns stay shared —
+        // they're where idlers are supposed to meet.
+        let is_story = content
+            .zone(&dest)
+            .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Story));
+        if is_story {
+            let key = format!("{dest}#{}", bundle.character.name);
+            let target = match worlds.iter().position(|mw| mw.key == key) {
+                Some(i) => i,
+                None => {
+                    let mut h = idlin_content::FNV1A_OFFSET;
+                    for b in key.bytes() {
+                        h ^= b as u64;
+                        h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+                    }
+                    info!("opening private story instance {key}");
+                    worlds.push(ManagedWorld {
+                        key: key.clone(),
+                        zone_id: dest.clone(),
+                        world: World::new_for_zone(seed ^ h, content, &dest),
+                        tiles: resolve_tile_map(content, &dest),
+                        max_players: 1,
+                        pending: TickInputs::default(),
+                    });
+                    worlds.len() - 1
+                }
+            };
+            info!(
+                "ferrying {} to {}",
+                bundle.character.name, worlds[target].key
+            );
+            worlds[target].pending.arrivals.push(bundle);
+            continue;
+        }
         let target = route_departure(worlds, source, &dest);
         if target == source {
             warn!(
@@ -141,6 +279,64 @@ fn ferry_departures(
         }
         worlds[target].pending.arrivals.push(bundle);
     }
+}
+
+/// Derive the boot world set from CONTENT (#136 T3): every authored zone
+/// boots by kind — shared town/story zones as one world each, solo story
+/// zones as one instance per built-in idler, and `map` zones not at all
+/// (they are map-instanced on demand, #136 T4). Shipping a new zone never
+/// needs a server change again: the Saltworks and the Hollow shipped
+/// unbootable once, and route_departure silently bounced travelers home.
+pub fn boot_worlds(
+    content: &ContentDb,
+    seed: u64,
+    joins: &[idlin_sim::JoinRequest],
+) -> Vec<ManagedWorld> {
+    let twist = |name: &str| -> u64 {
+        let mut h = idlin_content::FNV1A_OFFSET;
+        for b in name.bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+        }
+        h
+    };
+    let mut worlds = Vec::new();
+    for def in &content.zones {
+        match def.kind {
+            idlin_content::ZoneKind::Map => continue,
+            // Shared-story worlds are GONE (post-playtest rework): story
+            // zones mint privately on arrival; only towns boot shared.
+            idlin_content::ZoneKind::Story if def.max_players == 0 => continue,
+            idlin_content::ZoneKind::Town if def.max_players == 0 => {
+                worlds.push(ManagedWorld {
+                    key: def.id.clone(),
+                    zone_id: def.id.clone(),
+                    world: World::new_for_zone(seed ^ twist(&def.id), content, &def.id),
+                    tiles: resolve_tile_map(content, &def.id),
+                    max_players: def.max_players,
+                    pending: TickInputs::default(),
+                });
+            }
+            _ => {
+                for join in joins {
+                    let key = format!("{}#{}", def.id, join.name);
+                    worlds.push(ManagedWorld {
+                        key: key.clone(),
+                        zone_id: def.id.clone(),
+                        world: World::new_for_zone(seed ^ twist(&key), content, &def.id),
+                        tiles: resolve_tile_map(content, &def.id),
+                        max_players: def.max_players,
+                        pending: TickInputs {
+                            joins: vec![join.clone()],
+                            arrivals: Vec::new(),
+                            removals: Vec::new(),
+                        },
+                    });
+                }
+            }
+        }
+    }
+    worlds
 }
 
 /// Resolve a zone's authored map into wire form: tileset + variant
@@ -198,22 +394,53 @@ pub fn resolve_tile_map(content: &ContentDb, zone_id: &str) -> Option<Arc<TileMa
     }))
 }
 
+#[allow(clippy::too_many_arguments)] // a top-level spawn: each arg is a distinct host wire
 pub fn spawn_tick_loop(
     mut worlds: Vec<ManagedWorld>,
     frames: UnboundedSender<TickBatch>,
     mut inspect_rx: UnboundedReceiver<InspectRequest>,
+    mut admin_rx: UnboundedReceiver<AdminCommand>,
     server_tick: Arc<AtomicU64>,
     snapshot_base: Option<std::path::PathBuf>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
+    // Map instancing (#136 T4): the ferry mints fresh worlds on demand.
+    content: ContentDb,
+    seed: u64,
 ) {
     std::thread::Builder::new()
         .name("idlin-sim".into())
         .spawn(move || {
             let tick_interval = Duration::from_millis(1000 / TICK_HZ as u64);
             let mut ticks_since_save = 0u64;
+            // Host tick: only for unique map-instance keys (worlds each
+            // keep their own sim tick).
+            let mut host_tick: u64 = 0;
             loop {
                 let started = std::time::Instant::now();
                 let stopping = shutdown.load(Ordering::Relaxed);
+                host_tick += 1;
+
+                // Retire emptied MINTED instances (maps + private story worlds) —
+                // the tick so no frame index from the previous loop survives
+                // the removal. A map ends when its idler leaves or dies
+                // out; the strand folds back into the sea.
+                worlds.retain(|mw| {
+                    let retire = minted_instance_emptied(mw);
+                    if retire {
+                        info!("minted instance {} emptied; retired", mw.key);
+                        // The map's snapshot goes with it — a retired
+                        // instance must never resume as a ghost.
+                        if let Some(base) = &snapshot_base {
+                            let dir = crate::persist::world_dir(base, &mw.key);
+                            if let Err(e) = std::fs::remove_dir_all(&dir)
+                                && dir.exists()
+                            {
+                                warn!("could not clear {}: {e}", dir.display());
+                            }
+                        }
+                    }
+                    !retire
+                });
 
                 // Tick every world, collecting its events and departures.
                 let mut all_departures = Vec::new();
@@ -240,7 +467,7 @@ pub fn spawn_tick_loop(
                 // Ferry: land each departure into its destination world (or
                 // back to its source when that zone is unknown or full) — a
                 // transfer never loses a character (#63).
-                ferry_departures(&mut worlds, all_departures);
+                ferry_departures_with_maps(&mut worlds, all_departures, &content, seed, host_tick);
 
                 // PERSISTENCE: save at the post-ferry boundary — every
                 // character is in exactly one world's state or pending
@@ -253,11 +480,18 @@ pub fn spawn_tick_loop(
                 {
                     ticks_since_save = 0;
                     for mw in &worlds {
+                        // Map instances snapshot like any world (#136 T4):
+                        // a crash must never cost the CHARACTER inside one.
+                        // Their dirs carry a plaintext `key` file so the boot
+                        // scan can resume them (the dirname is a one-way
+                        // hash); retirement deletes the dir.
                         let dir = crate::persist::world_dir(base, &mw.key);
                         if let Err(e) =
                             crate::persist::save_managed(&mw.world, &mw.pending.arrivals, &dir)
                         {
                             warn!("snapshot for {} failed: {e:#}", mw.key);
+                        } else {
+                            crate::persist::save_world_key(&dir, &mw.key);
                         }
                     }
                     if stopping {
@@ -354,6 +588,64 @@ pub fn spawn_tick_loop(
                     );
                 }
 
+                // Admin surface (#148 A6): deploy, staged as ordinary
+                // tick inputs — HTTP never touches a world directly.
+                while let Ok(cmd) = admin_rx.try_recv() {
+                    match cmd {
+                        AdminCommand::Deploy {
+                            name,
+                            program,
+                            reply,
+                        } => {
+                            let population: usize = worlds
+                                .iter()
+                                .map(|mw| {
+                                    mw.world.roster_rows().len()
+                                        + mw.pending.joins.len()
+                                        + mw.pending.arrivals.len()
+                                })
+                                .sum();
+                            let res = if name_taken(&worlds, &name) {
+                                Err(format!("the name {name} is taken"))
+                            } else if population >= MAX_CHARACTERS {
+                                Err(format!(
+                                    "the worlds are full ({population}/{MAX_CHARACTERS})"
+                                ))
+                            } else {
+                                // Every idler gets their OWN tutorial shore —
+                                // the boot model (withered_shore#Kargan…),
+                                // never a seat in a builtin's max_players:1
+                                // instance (the review's B2: find() dumped
+                                // every deploy into Kargan's).
+                                let key = format!("withered_shore#{name}");
+                                let mut h = idlin_content::FNV1A_OFFSET;
+                                for b in key.bytes() {
+                                    h ^= b as u64;
+                                    h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
+                                }
+                                let mut mw = ManagedWorld {
+                                    key: key.clone(),
+                                    zone_id: "withered_shore".into(),
+                                    world: World::new_for_zone(
+                                        seed ^ h,
+                                        &content,
+                                        "withered_shore",
+                                    ),
+                                    tiles: resolve_tile_map(&content, "withered_shore"),
+                                    max_players: 1,
+                                    pending: TickInputs::default(),
+                                };
+                                mw.pending
+                                    .joins
+                                    .push(idlin_sim::JoinRequest { name, program });
+                                worlds.push(mw);
+                                Ok(())
+                            };
+                            let _ = reply.send(res);
+                        }
+                    }
+                }
+
                 // Fixed cadence with drop-behind: if a tick overruns we don't
                 // repay the debt all at once.
                 std::thread::sleep(tick_interval.saturating_sub(started.elapsed()));
@@ -373,6 +665,18 @@ fn rolled_mods(mods: &[(i32, u32, Vec<i64>)]) -> Vec<RolledModView> {
             num: *num,
             tier: *tier,
             values: values.iter().map(|v| clamp_i32(*v)).collect(),
+        })
+        .collect()
+}
+
+/// Map a signature unique's authored mods (stat key, layer, value) to the wire
+/// view (v47 — uniques have no rolled affixes; the def's mods are the item).
+fn unique_mods(mods: &[(String, u8, i64)]) -> Vec<UniqueModView> {
+    mods.iter()
+        .map(|(stat, layer, value)| UniqueModView {
+            stat: stat.clone(),
+            layer: *layer,
+            value: clamp_i32(*value),
         })
         .collect()
 }
@@ -436,6 +740,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
         mana_reserved: 0,
         block_bp: clamp_i32(v.block),
         kills: v.kills.min(u32::MAX as u64) as u32,
+        story_acts: v.story_acts,
         dmg_phys: clamp_i32(v.damage[0]),
         dmg_fire: clamp_i32(v.damage[1]),
         dmg_cold: clamp_i32(v.damage[2]),
@@ -462,6 +767,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                     base_num: it.base_num,
                     item_level: it.item_level,
                     mods: rolled_mods(&it.mods),
+                    unique_mods: unique_mods(&it.unique_mods),
                 },
                 None => GearSlotView {
                     slot: slot.to_string(),
@@ -471,6 +777,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                     base_num: -1,
                     item_level: 0,
                     mods: Vec::new(),
+                    unique_mods: Vec::new(),
                 },
             })
             .collect(),
@@ -487,6 +794,7 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
                 base_num: it.base_num,
                 item_level: it.item_level,
                 mods: rolled_mods(&it.mods),
+                unique_mods: unique_mods(&it.unique_mods),
             })
             .collect(),
         gems: v
@@ -526,8 +834,416 @@ fn sheet_to_proto(v: CharacterSheetView) -> CharacterSheet {
     }
 }
 
+/// The headless harness (#148 A6): run ANY brain through the WHOLE game —
+/// shore tutorial, both acts, the Map Device, one map run — under the same
+/// mini host loop the band tests use. `cargo run -p idlin-server --bin
+/// harness -- --brain my.bot` is the published form; the band tests assert
+/// over the same report.
+pub mod salt_road {
+    use super::*;
+    use idlin_content::ContentDb;
+
+    /// What a full run reports: every campaign milestone by name, plus the
+    /// band's three meters.
+    #[derive(Debug, serde::Serialize)]
+    pub struct SaltRoadReport {
+        /// Ticketed maps opened — 1 = reached the endgame; 2+ = the
+        /// CYCLE closes (return, re-map, depart again).
+        pub maps: u32,
+        pub milestones: Vec<(String, bool)>,
+        pub mapped_at: u64,
+        pub deaths: u32,
+        pub sales: u32,
+        /// Character level when the run ended — the difficulty re-anchor's
+        /// calibration meter (operator target: ~38 at campaign's end).
+        pub final_level: u32,
+    }
+
+    impl SaltRoadReport {
+        pub fn completed(&self) -> bool {
+            self.milestones.iter().all(|(_, m)| *m)
+        }
+        /// The first unlit milestone's name (the wall), if any.
+        pub fn stuck_before(&self) -> Option<&str> {
+            self.milestones
+                .iter()
+                .find(|(_, m)| !m)
+                .map(|(n, _)| n.as_str())
+        }
+    }
+
+    /// THE 1.0 PROMISE (#136 T6) + THE BALANCE BAND (#136 T8): a stock
+    /// grinder, joined fresh at level 1 in Saltmere, plays the whole game by
+    /// itself — walks the road (coast, the Saltworks past Karesh, down the
+    /// Hollow), breaks the Mother, completes Act 1, carries her map home
+    /// to the device, and OPENS A MAP. A mini host loop (tick + map-aware ferry)
+    /// stands in for the server. Across SEEDS, the run must also stay
+    /// inside the band: done within the tick budget, without death-spam —
+    /// a content change that turns a zone into a meat grinder or a wall
+    /// fails here, not in front of the operator. Mutation: break routing,
+    /// the act hook, OpenMap, the ferry mint, or overtune any fight → a
+    /// milestone never lights (or the band breaks) and this fails named.
+    pub fn walk_the_salt_road(seed: u64, program: Vec<u8>) -> SaltRoadReport {
+        walk_the_salt_road_to(seed, program, 1)
+    }
+
+    /// The same road, run until `map_target` MAPS have minted — the
+    /// endgame CYCLE test's core (#162 live find: the band ended at the
+    /// first depart, so "depart, return, re-map, depart again" was never
+    /// tested and shipped broken — the route pointed home to a town the
+    /// map's exit never reaches).
+    pub fn walk_the_salt_road_to(seed: u64, program: Vec<u8>, map_target: u32) -> SaltRoadReport {
+        walk_the_salt_road_as(seed, program, map_target, "Pathfinder")
+    }
+
+    /// The same road under a specific NAME (#162 live-stall repro): live
+    /// worlds seed by `seed ^ fnv(zone#name)`, so reproducing a live
+    /// character's exact deterministic chain requires their name — Mirra
+    /// stalled identically across two live runs and this is how the
+    /// harness replays HER world, not Pathfinder's.
+    /// The CROWD rig (#162 Mirra): the live server's exact boot — same
+    /// seed, same names, same join order — run for `ticks`, reporting
+    /// (name, level, acts, kills, deaths, zone) per character. The solo
+    /// harness couldn't reproduce a stall that only happens with shared
+    /// towns; this is the repro that can.
+    pub fn walk_the_road_with_crowd(
+        seed: u64,
+        names: &[&str],
+        program: Vec<u8>,
+        ticks: u64,
+    ) -> Vec<(String, u32, u32, u64, u64, String)> {
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let joins: Vec<idlin_sim::JoinRequest> = names
+            .iter()
+            .map(|n| idlin_sim::JoinRequest {
+                name: (*n).into(),
+                program: program.clone(),
+            })
+            .collect();
+        let mut worlds = boot_worlds(&content, seed, &joins);
+        for host_tick in 0..ticks {
+            let mut departures = Vec::new();
+            for (i, mw) in worlds.iter_mut().enumerate() {
+                let inputs = std::mem::take(&mut mw.pending);
+                let events = mw.world.tick(&inputs);
+                for ev in &events {
+                    if let SimEvent::CharacterDied { name, killer, .. } = ev
+                        && std::env::var("SALT_DEATHLOG").is_ok()
+                    {
+                        eprintln!(
+                            "CDEATH t={host_tick} z={} who={name} by={killer}",
+                            mw.zone_id
+                        );
+                    }
+                }
+                departures.extend(
+                    mw.world
+                        .take_departures()
+                        .into_iter()
+                        .map(|(b, dest)| (i, b, dest)),
+                );
+            }
+            ferry_departures_with_maps(&mut worlds, departures, &content, seed, host_tick);
+            if host_tick % 512 == 0 {
+                worlds.retain(|mw| !minted_instance_emptied(mw));
+            }
+            // CROWD_PROBE=<name>: that character's gear + position, sampled.
+            if host_tick
+                % if std::env::var("CROWD_TRACE").is_ok() {
+                    500
+                } else {
+                    10_000
+                }
+                == 0
+                && let Ok(probe) = std::env::var("CROWD_PROBE")
+            {
+                for mw in &worlds {
+                    if let Some(sheet) = mw
+                        .world
+                        .views()
+                        .iter()
+                        .find(|v| v.kind == 1 && v.name == probe)
+                        .and_then(|v| mw.world.character_sheet(v.id))
+                    {
+                        let gear: Vec<String> = sheet
+                            .equipment
+                            .iter()
+                            .filter_map(|(_, item, _)| item.as_ref().map(|i| i.name.clone()))
+                            .collect();
+                        let pos = mw
+                            .world
+                            .views()
+                            .iter()
+                            .find(|v| v.kind == 1 && v.name == probe)
+                            .map(|v| (v.x_raw / 65536, v.y_raw / 65536));
+                        eprintln!(
+                            "PROBE t={host_tick} z={} lvl={} pos={pos:?} gear={gear:?}",
+                            mw.zone_id, sheet.level
+                        );
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for mw in &worlds {
+            for row in mw.world.roster_rows() {
+                out.push((
+                    row.name,
+                    row.level,
+                    row.story_acts,
+                    row.kills,
+                    row.deaths,
+                    mw.zone_id.clone(),
+                ));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    pub fn walk_the_salt_road_as(
+        seed: u64,
+        program: Vec<u8>,
+        map_target: u32,
+        subject: &str,
+    ) -> SaltRoadReport {
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        // The WHOLE game: the join lands on the shore, so the real tutorial
+        // (gates, lessons, the Tidewarden exam) delivers a ~level-5 pupil to
+        // Saltmere before the campaign begins — exactly a fresh idler's life.
+        let joins = vec![idlin_sim::JoinRequest {
+            name: subject.into(),
+            program,
+        }];
+        let mut worlds = boot_worlds(&content, seed, &joins);
+        let mut milestones = [false; 8];
+        let mut sales = 0u32;
+        let mut opens = 0u32;
+        let names = [
+            "reach the coast",
+            "reach the saltworks",
+            "reach the hollow",
+            "complete act 1",
+            "descend to Lanternfall",
+            "complete act 2",
+            "open a map at the device",
+            "complete a map run",
+        ];
+        let mut deaths = 0u32;
+        let mut mapped_at = 0u64;
+        // SALT_ZONESTATS (ranger-scaling diagnosis, #185 §16): per-zone
+        // (ticks-present, kills, deaths) for the subject — separates
+        // "kills slower" (power) from "dies while killing fine" (defense).
+        let zonestats = std::env::var("SALT_ZONESTATS").is_ok();
+        let mut zstats: std::collections::BTreeMap<String, (u64, u32, u32)> =
+            std::collections::BTreeMap::new();
+        'run: for host_tick in 0..280_000u64 {
+            let mut departures = Vec::new();
+            for (i, mw) in worlds.iter_mut().enumerate() {
+                let inputs = std::mem::take(&mut mw.pending);
+                let events = mw.world.tick(&inputs);
+                for ev in &events {
+                    if let SimEvent::BotDebug { values, .. } = ev
+                        && std::env::var("BRAIN_DEBUG").is_ok()
+                    {
+                        println!("D t={host_tick} z={} {:?}", mw.zone_id, values);
+                    }
+                    if let SimEvent::ActCompleted { name, act, .. } = ev
+                        && name == subject
+                    {
+                        match act {
+                            1 => milestones[3] = true,
+                            2 => milestones[5] = true,
+                            _ => {}
+                        }
+                    }
+                    if let SimEvent::MonsterKilled { killer, .. } = ev
+                        && zonestats
+                        && killer == subject
+                    {
+                        zstats.entry(mw.zone_id.clone()).or_default().1 += 1;
+                    }
+                    if let SimEvent::CharacterDied { name, killer, .. } = ev
+                        && name == subject
+                    {
+                        deaths += 1;
+                        if zonestats {
+                            zstats.entry(mw.zone_id.clone()).or_default().2 += 1;
+                        }
+                        if std::env::var("SALT_DEATHLOG").is_ok() {
+                            let pos = mw
+                                .world
+                                .views()
+                                .iter()
+                                .find(|v| v.kind == 1)
+                                .map(|v| (v.x_raw / 65536, v.y_raw / 65536, v.level));
+                            eprintln!(
+                                "DEATH t={host_tick} z={} by={killer} at={pos:?}",
+                                mw.zone_id
+                            );
+                        }
+                    }
+                    // #148 A5 (review B2): the economy proof must be VENDOR-
+                    // specific — kills also pay obols, so a currency-sum
+                    // assert was vacuous. Only sell() narrates "Sold ".
+                    if let SimEvent::Narration { text, .. } = ev
+                        && text.starts_with("Sold ")
+                    {
+                        sales += 1;
+                    }
+                }
+                departures.extend(
+                    mw.world
+                        .take_departures()
+                        .into_iter()
+                        .map(|(b, dest)| (i, b, dest)),
+                );
+            }
+            // A ticketed departure IS the town milestone: standing at the
+            // table, act done, map spent (zone sampling every 200 ticks
+            // can miss the transit — the road home is 6 cells long).
+            for (_, b, dest) in &departures {
+                if b.character.name == subject && b.map.is_some() {
+                    milestones[6] = true;
+                    opens += 1;
+                }
+                // Town transits outrun the 200-tick zone sampling (the T6
+                // lesson, again): a departure BOUND for the town proves the
+                // descent as well as standing in it would.
+                if b.character.name == subject && dest == "lanternfall" {
+                    milestones[4] = true;
+                }
+            }
+            ferry_departures_with_maps(&mut worlds, departures, &content, seed, host_tick);
+            if host_tick % 20_000 == 0 {
+                for mw in &worlds {
+                    for v in mw.world.views() {
+                        if v.kind == 1 {
+                            eprintln!(
+                                "W t={host_tick} k={} lvl={} x={} y={} life={} dead={}",
+                                mw.key,
+                                v.level,
+                                v.x_raw / 65536,
+                                v.y_raw / 65536,
+                                v.life_pct,
+                                v.dead
+                            );
+                        }
+                    }
+                }
+            }
+            if host_tick % 20_000 == 1 {
+                for mw in &worlds {
+                    for v in mw.world.views() {
+                        if v.kind == 1 {
+                            let bag: Vec<String> = mw
+                                .world
+                                .character_sheet(v.id)
+                                .map(|sh| sh.inventory.iter().map(|r| r.0.name.clone()).collect())
+                                .unwrap_or_default();
+                            let mons: Vec<String> = mw
+                                .world
+                                .views()
+                                .iter()
+                                .filter(|m| m.kind == 2 && m.life_pct > 0)
+                                .map(|m| {
+                                    format!(
+                                        "{}@{},{} {}%",
+                                        m.name,
+                                        m.x_raw / 65536,
+                                        m.y_raw / 65536,
+                                        m.life_pct
+                                    )
+                                })
+                                .collect();
+                            println!(
+                                "P t={host_tick} z={} lvl={} x={} y={} maps={} alive={} {:?}",
+                                mw.zone_id,
+                                v.level,
+                                v.x_raw / 65536,
+                                v.y_raw / 65536,
+                                bag.iter().filter(|n| n.contains("Map")).count(),
+                                mons.len(),
+                                mons.iter().take(3).collect::<Vec<_>>()
+                            );
+                        }
+                    }
+                }
+            }
+            if opens >= map_target && milestones[7] {
+                break 'run;
+            }
+            if host_tick % 200 == 0 {
+                for mw in &worlds {
+                    let here = mw
+                        .world
+                        .views()
+                        .iter()
+                        .any(|v| v.kind == 1 && v.name == subject);
+                    if !here {
+                        continue;
+                    }
+                    if zonestats {
+                        zstats.entry(mw.zone_id.clone()).or_default().0 += 200;
+                    }
+                    match mw.zone_id.as_str() {
+                        "coast" => milestones[0] = true,
+                        "saltworks" => milestones[1] = true,
+                        "hollow" => milestones[2] = true,
+                        "lanternfall" => milestones[4] = true,
+                        "charted_shallows" if !milestones[7] => {
+                            milestones[7] = true;
+                            mapped_at = host_tick;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        if zonestats {
+            for (z, (ticks, kills, dths)) in &zstats {
+                let tpk = if *kills > 0 {
+                    *ticks / *kills as u64
+                } else {
+                    0
+                };
+                eprintln!("ZSTAT z={z} ticks={ticks} kills={kills} deaths={dths} ticks/kill={tpk}");
+            }
+        }
+        let final_level = worlds
+            .iter()
+            .flat_map(|mw| mw.world.views())
+            .find(|v| v.kind == 1 && v.name == subject)
+            .map_or(0, |v| v.level);
+        SaltRoadReport {
+            maps: opens,
+            milestones: names
+                .iter()
+                .zip(milestones.iter())
+                .map(|(n, m)| (n.to_string(), *m))
+                .collect(),
+            mapped_at,
+            deaths,
+            sales,
+            final_level,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::salt_road::{SaltRoadReport, walk_the_salt_road};
+
+    /// Band-side assertion: the road must COMPLETE — the report names the
+    /// wall when it doesn't.
+    fn assert_complete(seed: u64, r: &SaltRoadReport) {
+        assert!(
+            r.completed(),
+            "seed {seed:#x}: the road ends early — stuck before `{}`",
+            r.stuck_before().unwrap()
+        );
+    }
+
     use super::*;
     use idlin_sim::JoinRequest;
     use idlin_sim::entity::CharacterState;
@@ -587,8 +1303,423 @@ mod tests {
         w.tick(&TickInputs {
             joins,
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         w
+    }
+
+    #[test]
+    fn the_stock_grinder_walks_the_salt_road() {
+        // Three seeds (#136 T8): the promise must hold for EVERY fresh
+        // idler, not one lucky roll. Bands (generous — regression trips,
+        // not tuning drift): depart within 90k ticks vs measured 9.8k-27.2k,
+        // and at most 40 deaths vs measured 1-4 — death-SPAM is the smell
+        // this catches, not death itself: dying is idle life. The band's
+        // first catch: 72 deaths in the pre-tune Hollow on one seed. A
+        // subtle 2x pacing drift passes by design; walls and grinders trip.
+        // The fourth seed is 1.0's tutorial-deadlock finder — kept forever.
+        for seed in [0x05A1_70AD, 0x1D71_2026, 0xBADC_0DE5, 0x0CA5_7E12] {
+            let r = walk_the_salt_road(seed, idlin_botc::template_grinder().unwrap());
+            assert_complete(seed, &r);
+            let (mapped_at, deaths, sales) = (r.mapped_at, r.deaths, r.sales);
+            eprintln!(
+                "BAND seed={seed:#x} final_level={} deaths={deaths} mapped_at={mapped_at}",
+                r.final_level
+            );
+            // #148 A5 (review B2, take two): the vendor-specific economy
+            // proof lives in THE MELEE BAND ONLY — its four seeds all
+            // arrive at the device holding act-road junk; the ranged pair
+            // sometimes field-shed to a clean bag (the caster did, and a
+            // currency-sum assert was vacuous — kills pay obols too). The
+            // sell CONTRACT itself is unit-pinned. Mutation: remove the
+            // templates' sell adoption → no "Sold " narration, this trips.
+            assert!(
+                sales > 0,
+                "seed {seed:#x}: the runner should have SOLD junk before opening the map"
+            );
+            // RETROSPECTIVE re-band (#148): the A3-era 180k line was set
+            // against a pre-scorer 103k run; the economy arcs quietly
+            // quintupled the pace — measured 19-26k across all four seeds.
+            // 60k = ~2.5x headroom; drift past it means the road slowed
+            // for a reason someone should name.
+            assert!(
+                mapped_at <= 60_000,
+                "seed {seed:#x}: departed at {mapped_at} — the road has a wall"
+            );
+            // RE-BAND for the level-38 campaign (operator's difficulty
+            // re-anchor): the road DOUBLED (19 → 38 levels) and deaths
+            // per level IMPROVED (3.2 → ~1.0; measured 12-60 across the
+            // four seeds at final level 38-39). 75 keeps headroom on the
+            // worst seed while a real grinder (134+ pre-calibration)
+            // still trips.
+            assert!(
+                deaths <= 75,
+                "seed {seed:#x}: {deaths} deaths — a zone is a meat grinder"
+            );
+            // The operator's calibration pin: the two-act road graduates
+            // at ~38 (tier-1 maps open at 40, just above). Mutation: cut
+            // the XP curve or a zone's income → this reads low and fails.
+            assert!(
+                (37..=41).contains(&r.final_level),
+                "seed {seed:#x}: finished at level {} — the road should deliver ~38",
+                r.final_level
+            );
+        }
+    }
+
+    /// #148 A2: the promise holds for EVERY ARCHETYPE, not just the sword.
+    /// One seed each (melee has four above): the caster and the ranger
+    /// must ALSO walk the whole road — tutorial, campaign, Mother, depart —
+    /// inside the same bands. Mutation: break either build plan, ladder,
+    /// or the ranged hold badly enough and the road ends early.
+    #[test]
+    #[ignore = "a 5-run balance survey (~7 min) — the tuning tool, not the gate; run with --ignored"]
+    fn survey_caster_seeds() {
+        for seed in [
+            0x0CA5_7E12u64,
+            0x0CA5_7E13,
+            0x0CA5_7E14,
+            0x7AB1_E77E,
+            0x0BB0_77A1,
+        ] {
+            let r = walk_the_salt_road(seed, idlin_botc::template_caster().unwrap());
+            eprintln!(
+                "CSEED {seed:#x}: complete={} departed={} deaths={} stuck={:?}",
+                r.completed(),
+                r.mapped_at,
+                r.deaths,
+                r.stuck_before()
+            );
+        }
+    }
+
+    #[test]
+    fn the_crowd_all_complete_the_campaign() {
+        // The multi-character regression the suite never had (#162 Mirra):
+        // the LIVE boot — same seed, same builtin names, shared towns.
+        // Mirra's roll deterministically hit the wrong-door commute loop
+        // (die in the court → respawn beside the south exit → the
+        // opportunistic use_exit() ate the door BEHIND her → 191 deaths,
+        // act 2 never done) while her solo chain was clean — only a crowd
+        // run catches interleaving-dependent stalls. Mutation: drop the
+        // wanted-door guard from the templates → Mirra stalls, this fails.
+        let rows = salt_road::walk_the_road_with_crowd(
+            0xC0FFEE,
+            &["Kargan", "Veles", "Mirra"],
+            idlin_botc::template_grinder().unwrap(),
+            120_000,
+        );
+        assert_eq!(rows.len(), 3, "nobody may be lost");
+        for (name, lvl, acts, kills, deaths, zone) in rows {
+            eprintln!("CROWD {name:8} lv{lvl} acts={acts} k={kills} d={deaths} zone={zone}");
+            assert_eq!(
+                acts, 3,
+                "{name} must complete BOTH acts in the crowd (got acts={acts}, zone={zone})"
+            );
+            // Re-derived for the LEVEL-38 road (operator's difficulty
+            // re-anchor): the journey doubled (19 → 38 levels); crowd
+            // Mirra measured 236 — 118 per old-road-length, an
+            // improvement on the pre-anchor 158. A true stall reads
+            // 400+; completion is asserted above.
+            assert!(deaths <= 280, "{name}: {deaths} deaths — a stall signature");
+        }
+    }
+
+    #[test]
+    #[ignore = "the live-stall repro rig — run with --ignored while diagnosing"]
+    fn repro_mirra() {
+        let r = salt_road::walk_the_salt_road_as(
+            0xC0FFEE,
+            idlin_botc::template_grinder().unwrap(),
+            2,
+            "Mirra",
+        );
+        eprintln!(
+            "MIRRA complete={} maps={} deaths={} stuck={:?}",
+            r.completed(),
+            r.maps,
+            r.deaths,
+            r.stuck_before()
+        );
+    }
+
+    #[test]
+    fn the_endgame_cycle_closes() {
+        // #162 live find: two runners farmed ONE tier-1 map for two
+        // hours because the return route named a town the map's exit
+        // never reaches — and no test ran past the first depart. This one
+        // does: the grinder must depart, come HOME, spend another map,
+        // and depart AGAIN. Mutation: re-break the map-return route (or
+        // the exit dest) → one depart forever, this fails.
+        let r = salt_road::walk_the_salt_road_to(
+            0x05A1_70AD,
+            idlin_botc::template_grinder().unwrap(),
+            2,
+        );
+        assert!(
+            r.maps >= 2,
+            "the cycle must close: depart, return, re-map, depart again (got {})",
+            r.maps
+        );
+    }
+
+    #[test]
+    fn the_caster_walks_the_salt_road() {
+        // RETROSPECTIVE re-band (#148): the debt-era lines were set before
+        // the scorer economy landed — measured 69.4k/128 on the nastiest
+        // seed (the 1.0-deadlock canary): 2.2x on time, 1.6x on deaths.
+        // The caster's 128 deaths remain the balance OUTLIER (melee runs
+        // 9-24, the bow 10-50): the wand corpse-trades where the bow
+        // out-ranges — a tuning thread, not a wall.
+        let r = walk_the_salt_road(0x0CA5_7E12, idlin_botc::template_caster().unwrap());
+        assert_complete(0x0CA5_7E12, &r);
+        let (mapped_at, deaths) = (r.mapped_at, r.deaths);
+        assert!(mapped_at <= 150_000, "the caster hit a wall at {mapped_at}");
+        assert!(
+            deaths <= 200,
+            "{deaths} caster deaths — a grinder for wands"
+        );
+        // The level-38 calibration pin, same as the melee/ranger bands.
+        assert!(
+            (37..=41).contains(&r.final_level),
+            "the caster finished at level {} — the road should deliver ~38",
+            r.final_level
+        );
+    }
+
+    #[test]
+    fn the_ranger_walks_the_salt_road() {
+        // Measured ~20-50k departs; 120k = the wall line. Deaths measured
+        // 48-130 across configs — the bow shares the wand's defense debt
+        // (bases exist since A2.5, but the stock brains don't stat-weigh
+        // gear: rarity-first wears whatever drops). 160 = the same debt
+        // band as the caster; both tighten when brains learn to value
+        // defense (the remaining A2.5 thread, noted in #148).
+        // THREAD CLOSED (#148 retrospective): seed 0x0BB0_77A1 used to WALL
+        // at the bow-vs-Mother fight and was parked as a known repro. The
+        // A5 scorer economy + the A2.5 nine-tenths hold healed it as a
+        // side effect — measured complete at 22.8k/10 deaths — so BOTH
+        // seeds are banded again. If either regresses, the fight thread
+        // reopens.
+        for seed in [0x0BB0_77A1u64, 0x0BB0_77A2] {
+            let r = walk_the_salt_road(seed, idlin_botc::template_ranger().unwrap());
+            assert_complete(seed, &r);
+            let (mapped_at, deaths) = (r.mapped_at, r.deaths);
+            assert!(mapped_at <= 80_000, "the ranger hit a wall at {mapped_at}");
+            // RE-BAND after the ranger-scaling ruling (full-weight
+            // evasion + dodgeable spell projectiles — the graveyard
+            // casters can finally miss): measured 30/44 across the two
+            // seeds at levels 40/36. 75 keeps ~1.7x headroom on the worst
+            // seed while the REJECTED old world (126) fails loudly.
+            assert!(deaths <= 75, "{deaths} ranger deaths — a grinder for bows");
+            // The bow graduates a hair lighter (measured 36 vs melee's
+            // 38-39): its kite-and-snipe pattern leaves unseen pockets
+            // uncollected — a brain-intelligence thread (the operator's
+            // bots-own-their-pathing rework), not an income knob; 900
+            // quiet-ticks and re-anchored gates already closed 35 → 36.
+            assert!(
+                (36..=40).contains(&r.final_level),
+                "the ranger finished at level {} — the road should deliver ~37",
+                r.final_level
+            );
+        }
+    }
+
+    #[test]
+    fn a_map_departure_mints_an_instance_and_it_retires_when_empty() {
+        // #136 T4: a ticketed departure opens a fresh instance of the map
+        // zone (leveled + juiced + ephemeral) holding exactly that bundle;
+        // an unticketed one rides the normal ferry; and the emptied map
+        // retires while booted worlds never do. Mutations: drop the ticket
+        // branch, the map-kind guard, or the retire predicate → fails.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let mut worlds = vec![ManagedWorld {
+            key: "saltmere".into(),
+            zone_id: "saltmere".into(),
+            world: World::new_for_zone(3, &content, "saltmere"),
+            tiles: None,
+            max_players: 0,
+            pending: TickInputs::default(),
+        }];
+        let mut b = bundle("Runner");
+        b.map = Some(idlin_sim::MapTicket {
+            tier: 2,
+            rarity_bp: 1000,
+            quantity_bp: 500,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        });
+        ferry_departures_with_maps(
+            &mut worlds,
+            vec![(0, b, "charted_shallows".to_string())],
+            &content,
+            99,
+            41,
+        );
+        assert_eq!(worlds.len(), 2, "the map exists");
+        let mw = &worlds[1];
+        assert_eq!(mw.key, "charted_shallows#Runner@41");
+        assert_eq!(mw.zone_id, "charted_shallows");
+        assert!(mw.world.is_map_instance());
+        assert_eq!(mw.world.zone_level(), 41, "39 + tier 2");
+        assert_eq!(mw.pending.arrivals.len(), 1, "the runner is aboard");
+        // Not yet retired: the arrival is pending.
+        assert!(!minted_instance_emptied(&worlds[1]));
+        // Land the arrival, then walk them home: the instance empties.
+        let inputs = std::mem::take(&mut worlds[1].pending);
+        worlds[1].world.tick(&inputs);
+        assert!(
+            !minted_instance_emptied(&worlds[1]),
+            "occupied maps persist"
+        );
+        // A booted world is never "emptied", even with zero characters.
+        assert!(!minted_instance_emptied(&worlds[0]));
+        // A ticket for a NON-map zone refunds home instead of minting.
+        let mut b2 = bundle("Confused");
+        b2.map = Some(idlin_sim::MapTicket {
+            tier: 1,
+            rarity_bp: 0,
+            quantity_bp: 0,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        });
+        let before = worlds.len();
+        ferry_departures_with_maps(
+            &mut worlds,
+            vec![(0, b2, "saltmere".to_string())],
+            &content,
+            99,
+            42,
+        );
+        assert_eq!(worlds.len(), before, "no map minted for a story zone");
+        assert!(
+            worlds[0]
+                .pending
+                .arrivals
+                .iter()
+                .any(|a| a.character.name == "Confused"),
+            "the confused runner lands home"
+        );
+    }
+
+    #[test]
+    fn story_departures_mint_private_instances() {
+        // The post-playtest rework's core promise: two characters bound for
+        // the same story zone get SEPARATE worlds, keyed by name; the same
+        // character re-entering after a retire gets a DETERMINISTIC
+        // re-mint (stable key → same seed → same world). Mutation: drop
+        // the story-mint branch in ferry_departures → both land in one
+        // shared world and the key asserts fail.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let mut worlds = vec![managed(
+            "saltmere",
+            "saltmere",
+            World::new_for_zone(1, &content, "saltmere"),
+            0,
+        )];
+        ferry_departures(
+            &mut worlds,
+            vec![
+                (0, bundle("Ana"), "coast".to_string()),
+                (0, bundle("Bo"), "coast".to_string()),
+            ],
+            &content,
+            0x5EED,
+        );
+        let keys: Vec<&str> = worlds.iter().map(|w| w.key.as_str()).collect();
+        assert!(keys.contains(&"coast#Ana"), "got {keys:?}");
+        assert!(keys.contains(&"coast#Bo"), "got {keys:?}");
+        let ana = worlds.iter().position(|w| w.key == "coast#Ana").unwrap();
+        assert_eq!(worlds[ana].pending.arrivals.len(), 1);
+        assert_eq!(worlds[ana].pending.arrivals[0].character.name, "Ana");
+        let h1 = worlds[ana].world.state_hash();
+        // Retire and re-mint: the fresh instance replays identically.
+        worlds.remove(ana);
+        ferry_departures(
+            &mut worlds,
+            vec![(0, bundle("Ana"), "coast".to_string())],
+            &content,
+            0x5EED,
+        );
+        let ana2 = worlds.iter().position(|w| w.key == "coast#Ana").unwrap();
+        assert_eq!(
+            worlds[ana2].world.state_hash(),
+            h1,
+            "a re-minted instance is deterministic from its stable key"
+        );
+    }
+
+    #[test]
+    fn boot_worlds_runs_every_live_zone() {
+        // #136 T3: THE test that was missing when the Saltworks and the
+        // Hollow shipped unbootable — every non-map authored zone must be
+        // live at boot, solo zones per idler, map zones absent (they are
+        // map-instanced, T4). Mutation: drop a kind arm (or hardcode the
+        // world list again) → the matching assert fails.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let joins = vec![
+            idlin_sim::JoinRequest {
+                name: "Kargan".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            },
+            idlin_sim::JoinRequest {
+                name: "Veles".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            },
+        ];
+        let worlds = boot_worlds(&content, 7, &joins);
+        let keys: Vec<&str> = worlds.iter().map(|w| w.key.as_str()).collect();
+        // Towns boot shared, keyed by id — the only shared spaces left
+        // (post-playtest rework: story zones are PRIVATE, minted on
+        // arrival, so they must NOT boot).
+        for town in ["saltmere", "lanternfall"] {
+            assert!(keys.contains(&town), "{town} must boot; got {keys:?}");
+        }
+        for story in [
+            "coast",
+            "saltworks",
+            "hollow",
+            "sunken_stair",
+            "kelp_forest",
+            "pressure_court",
+            "the_undertow",
+        ] {
+            assert!(
+                !keys.contains(&story),
+                "{story} must NOT boot shared — story zones mint privately; got {keys:?}"
+            );
+        }
+        // Solo story zones that receive JOINS: one instance per built-in.
+        assert!(keys.contains(&"withered_shore#Kargan"));
+        assert!(keys.contains(&"withered_shore#Veles"));
+        // Map zones never boot — the proving ground stays off the live set.
+        assert!(
+            !keys.iter().any(|k| k.contains("test_range")),
+            "map zones are map-instanced, not booted; got {keys:?}"
+        );
+        // Every travel destination resolves SOMEWHERE: a booted world
+        // (towns), or a kind the ferry mints on demand (story = private
+        // instances, map = map instances). An exit into a zone of no kind
+        // would bounce travelers home forever.
+        for def in &content.zones {
+            for exit in &def.exits {
+                let dest = &exit.dest;
+                let booted = worlds.iter().any(|w| w.zone_id == *dest);
+                let minted = content.zone(dest).is_some_and(|z| {
+                    matches!(
+                        z.kind,
+                        idlin_content::ZoneKind::Map | idlin_content::ZoneKind::Story
+                    )
+                });
+                assert!(
+                    booted || minted,
+                    "exit {}->{dest} leads nowhere live or mintable",
+                    def.id
+                );
+            }
+        }
     }
 
     fn managed(key: &str, zone_id: &str, world: World, max_players: u32) -> ManagedWorld {
@@ -610,19 +1741,23 @@ mod tests {
                 xp: 0,
                 respawn_at: None,
                 kills: 0,
+                deaths: 0,
                 items: 0,
                 inventory: Vec::new(),
                 equipment: Default::default(),
                 allocated: Vec::new(),
                 build_plan: Vec::new(),
                 currency: Vec::new(),
+                stash: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 explored: Vec::new(),
+                story_acts: 0,
             },
             program: idlin_botc::assemble("halt\n").unwrap(),
             persist: Vec::new(),
             params: Vec::new(),
             bot_version: 1,
+            map: None,
         }
     }
 
@@ -694,7 +1829,7 @@ mod tests {
             (0, bundle("Lost"), "atlantis".to_string()),
             (0, bundle("Crowded"), "withered_shore".to_string()),
         ];
-        ferry_departures(&mut worlds, departures);
+        ferry_departures(&mut worlds, departures, &content, 0x5EED);
         assert_eq!(
             worlds[0].pending.arrivals.len(),
             2,
@@ -718,17 +1853,19 @@ mod tests {
     fn ferry_delivers_to_a_matching_roomy_world() {
         let content = ContentDb::empty();
         let mut worlds = vec![
-            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
             managed(
                 "shore#A",
                 "withered_shore",
                 world_with_chars(0, &content),
                 0,
             ),
+            managed("saltmere", "saltmere", world_with_chars(0, &content), 0),
         ];
         ferry_departures(
             &mut worlds,
-            vec![(0, bundle("Traveler"), "withered_shore".to_string())],
+            vec![(0, bundle("Traveler"), "saltmere".to_string())],
+            &content,
+            0x5EED,
         );
         assert_eq!(
             worlds[1].pending.arrivals.len(),
@@ -755,7 +1892,7 @@ mod tests {
             (0, bundle("First"), "withered_shore".to_string()),
             (0, bundle("Second"), "withered_shore".to_string()),
         ];
-        ferry_departures(&mut worlds, departures);
+        ferry_departures(&mut worlds, departures, &content, 0x5EED);
         // The cap-1 instance admits exactly one; counting queued arrivals stops
         // the second from seeing the same free slot and overfilling it.
         assert_eq!(
@@ -768,6 +1905,35 @@ mod tests {
             1,
             "the second returns to source, neither overfills nor is lost"
         );
+    }
+
+    #[test]
+    fn a_duplicate_deploy_is_refused_in_all_three_places() {
+        // #185 review (codex): the dedup had no regression test. A name is
+        // taken if LIVE anywhere, QUEUED to join, or MID-FERRY — all three
+        // must refuse; a fresh name must pass. Mutation: drop any arm of
+        // name_taken → its case leaks through and this fails.
+        let content = ContentDb::empty();
+        let mut worlds = vec![
+            managed("town", "town", world_with_chars(1, &content), 8),
+            managed(
+                "shore#B",
+                "withered_shore",
+                world_with_chars(0, &content),
+                8,
+            ),
+        ];
+        // world 0 has one LIVE char (world_with_chars names them c0..).
+        let live = worlds[0].world.roster_rows()[0].name.clone();
+        worlds[1].pending.joins.push(idlin_sim::JoinRequest {
+            name: "Queued".into(),
+            program: Vec::new(),
+        });
+        worlds[1].pending.arrivals.push(bundle("Ferried"));
+        assert!(name_taken(&worlds, &live), "live names are taken");
+        assert!(name_taken(&worlds, "Queued"), "queued joins are taken");
+        assert!(name_taken(&worlds, "Ferried"), "mid-ferry names are taken");
+        assert!(!name_taken(&worlds, "Fresh"), "a new name deploys");
     }
 
     #[test]
@@ -792,7 +1958,7 @@ mod tests {
             // shore#A's own occupant, destination unknown → bounces home.
             (1, bundle("Owner"), "atlantis".to_string()),
         ];
-        ferry_departures(&mut worlds, departures);
+        ferry_departures(&mut worlds, departures, &content, 0x5EED);
         let total: usize = worlds.iter().map(|w| w.pending.arrivals.len()).sum();
         assert_eq!(
             total, 2,

@@ -15,6 +15,7 @@ fn join_two() -> TickInputs {
     let program = idlin_botc::template_grinder().expect("template assembles");
     TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Probe".into(),

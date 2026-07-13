@@ -291,6 +291,59 @@ const inspectPanel: Fixture = {
  * braziers, fog, post-processing, and two animated rigged models — the whole
  * `ZoneRenderer` path under a seeded clock + RNG.
  */
+// The zone-dressing fixture (codex round 2: no other fixture carries
+// authored TILES, so the crate-variety and ambient-scatter branches
+// rendered NOWHERE in the harness — the mutation-proof was partial).
+// One small authored map exercises every dressing branch: crates,
+// bare grass (tuft scatter), bare cobble (rubble scatter), an authored
+// tuft, walls (soot edges), and an elevated terrace.
+const sceneDressing: Fixture = {
+  kind: "scene",
+  label: "Dressing: authored tiles — crates, scatter, soot, terrace",
+  seed: 0xd0e55,
+  frames: 30,
+  camera: [8, 10, 18, 8, 0.5, 6],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Dressing Yard",
+      world_key: "dressing_yard",
+      width: 16 * 65536,
+      height: 12 * 65536,
+      tiles: {
+        width: 16,
+        height: 12,
+        rows: [
+          "################",
+          "#,,,,,,::::::::#",
+          "#,,g,,,::::c:::#",
+          "#,,,,,,::::::::#",
+          "#,,,,,,::c:::::#",
+          "#,,,,,,::::::::#",
+          "#,,,,,,,:::::::#",
+          "#,,,,,,,:::c:::#",
+          "#,,,,,,,:::::::#",
+          "#,,,,,,,,::::::#",
+          "#,,,,,,,,~~~~,,#",
+          "################",
+        ],
+        legend: [
+          { glyph: "#", ground: "#3a3a46", ground_id: "cobble", prop: "wall", walkable: false, elevation: 0 },
+          { glyph: ",", ground: "#2c3b2a", ground_id: "grass", prop: null, walkable: true, elevation: 0 },
+          { glyph: ":", ground: "#3f3d49", ground_id: "cobble", prop: null, walkable: true, elevation: 0 },
+          { glyph: "c", ground: "#3f3d49", ground_id: "cobble", prop: "crate", walkable: false, elevation: 0 },
+          { glyph: "g", ground: "#2c3b2a", ground_id: "grass", prop: "tuft", walkable: false, elevation: 0 },
+          { glyph: "~", ground: "#16344f", ground_id: "water", prop: null, walkable: false, elevation: 0 },
+        ],
+        props: [],
+        features: [],
+      },
+      entities: [
+        character({ id: 1, name: "Dresser", level: 5, model: "ranger", life_pct: 100, kills: 0, items: 0 }),
+      ],
+    }),
+  ],
+};
+
 const sceneShore: Fixture = {
   kind: "scene",
   label: "Scene: a grinder and a stalker on the Withered Shore at night, close 3/4 view",
@@ -588,14 +641,18 @@ const fullShore: Fixture = {
       type: "Events",
       data: {
         events: [
-          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Bone Stalker", level: 40 } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Bone Stalker", level: 40 , rarity: 0 } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "The Riptide Sovereign", level: 21, rarity: 3 } },
+          { type: "MapTally", data: { id: FOCUS_ID, name: NAME, kills: 34n, deaths: 1n, items: 12n, ticks: 4000n } },
           { type: "LootDropped", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
           { type: "ItemPickedUp", data: { owner_id: FOCUS_ID, owner: NAME, rarity: 2, item: "Coral Band" } },
-          { type: "MonsterKilled", data: { killer_id: 3, killer: "Mirra", monster: "Drowned Shambler", level: 39 } },
+          { type: "MonsterKilled", data: { killer_id: 3, killer: "Mirra", monster: "Drowned Shambler", level: 39 , rarity: 0 } },
           { type: "LevelUp", data: { id: 4, name: "Veles", level: 41 } },
           { type: "GemSocketed", data: { id: FOCUS_ID, owner: NAME, gem: "Cleave" } },
           { type: "CurrencyUsed", data: { id: FOCUS_ID, owner: NAME, currency: "Alchemy Obol", item: "Kelp-Woven Vest" } },
-          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Tide Husk", level: 40 } },
+          { type: "MonsterKilled", data: { killer_id: FOCUS_ID, killer: NAME, monster: "Tide Husk", level: 40 , rarity: 0 } },
+          // The campaign's biggest beat (#136) — the gold act-completion line.
+          { type: "ActCompleted", data: { id: FOCUS_ID, name: NAME, act: 1 } },
         ],
       },
     },
@@ -742,6 +799,7 @@ const fullFresh = fullVariant("Whole game view: full pools, no ES, no reservatio
 // (bold), not a dim neighbour; and an overkilled pool (sim sends negative life)
 // must read 0 on the orb, never a negative number.
 const EDGE_ID = 9;
+// its muted default (the fresh-engine state every viewer starts in).
 const hudEdge: Fixture = {
   kind: "overlay",
   label: "Edge: a lone idler + an overkilled (negative) life pool that clamps to 0",
@@ -902,10 +960,247 @@ const itemTooltip: Fixture = {
   },
 };
 
+/**
+ * Tooltip completeness — a NORMAL wand: no rolled mods, so its whole story is
+ * the base's own combat block (damage, cast time) + the spell-damage implicit.
+ * Before this fix a normal item's tooltip was empty ("Normal item" only).
+ */
+const tooltipNormalWand: Fixture = {
+  kind: "tooltip",
+  label: "Item tooltip — normal wand (base block + implicit)",
+  item: {
+    name: "Barnacle Wand",
+    rarity: 0,
+    base_num: 2101,
+    item_level: 4,
+    mods: [],
+  },
+  docsJson: {
+    stats: [],
+    categories: {
+      item: [
+        {
+          num: 2101,
+          name: "Barnacle Wand",
+          req_level: 0,
+          damage_phys: 8,
+          damage_cold: 6,
+          use_ticks: 9,
+          weapon_class: "wand",
+          spell_damage_bp: 4000,
+        },
+      ],
+      affix: [],
+    },
+  },
+};
+
+/**
+ * Tooltip completeness — a SIGNATURE UNIQUE: no rolled affixes (the def's
+ * authored mods ARE the item, v47 `unique_mods` on the wire). Before this fix
+ * a unique's tooltip showed nothing at all.
+ */
+const tooltipUnique: Fixture = {
+  kind: "tooltip",
+  label: "Item tooltip — signature unique (authored mods)",
+  item: {
+    name: "The Tidewarden's Grasp",
+    rarity: 3,
+    base_num: 2102,
+    item_level: 12,
+    mods: [],
+    unique_mods: [
+      { stat: "life", layer: 0, value: 40 },
+      { stat: "resist_cold", layer: 0, value: 2500 },
+      { stat: "attack_speed", layer: 1, value: 1200 },
+    ],
+  },
+  docsJson: {
+    stats: [
+      { key: "life", name: "Life", desc: "", added_unit: "flat" },
+      { key: "resist_cold", name: "Cold Resistance", desc: "", added_unit: "basis_points" },
+      { key: "attack_speed", name: "Attack Speed", desc: "", added_unit: "basis_points" },
+    ],
+    categories: {
+      item: [{ num: 2102, name: "Brine-Crusted Gauntlets", req_level: 12, armour: 34 }],
+      affix: [],
+    },
+  },
+};
+
+/**
+ * Boss quality (#136 T2): the Tidewarden at 1.6x unique scale, the top-center
+ * boss bar, AND the first-sighted splash — visible deterministically because
+ * fixture.tsx pins `performance.now` to a constant IN THE PAGE before any
+ * message is applied, so the splash's 4s window can never age out in a shot.
+ * Eyeball: the colossus reads as a boss next to the idler; the gold name
+ * splash sits center-high; the bar tracks 70%.
+ */
+const fullBoss: Fixture = {
+  kind: "full",
+  label: "Boss quality (#136 T2): Tidewarden scale + boss bar + first-sighted splash",
+  status: LIVE_STATUS,
+  seed: 0x1d71c0de,
+  frames: 40,
+  camera: [31, 9, 36, 32.5, 1.6, 22.5],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Withered Shore",
+      entities: [
+        character({
+          id: 1,
+          name: "Brakka",
+          model: "idler",
+          level: 12,
+          weapon: "cleaver",
+          ...simXY(30, 22),
+        }),
+        monster({
+          id: 2,
+          name: "The Tidewarden",
+          model: "tidewarden",
+          level: 8,
+          life_pct: 70,
+          rarity: 3,
+          ...simXY(34, 23),
+        }),
+      ],
+    }),
+    directorCue(1, "the final exam"),
+  ],
+};
+
+/**
+ * Campaign UI (#136 T7): the zone title card (fires on the fixture's own
+ * snapshot cut — frozen clock keeps it up), the act-done chip with the
+ * map count on the focus panel, and a Salt-Stained Map in the bag.
+ * Eyeball: "THE CHARTED SHALLOWS" center-high; the green "act 1 done ·
+ * 1 map" chip beside the level line.
+ */
+const fullCampaign: Fixture = {
+  kind: "full",
+  label: "Campaign UI (#136 T7): zone title card + act chip + map in bag",
+  status: LIVE_STATUS,
+  seed: 0x7c1d5,
+  frames: 40,
+  camera: [25, 9, 30, 26.5, 1.6, 16.5],
+  messages: [
+    // The title card marks a CUT — so the fixture cuts: town first, then
+    // the map run (the initial ""→world load deliberately never splashes).
+    zoneSnapshot({
+      zone_name: "Saltmere",
+      world_key: "saltmere",
+      entities: [],
+    }),
+    zoneSnapshot({
+      zone_name: "The Charted Shallows",
+      world_key: "charted_shallows#Brakka@41",
+      entities: [
+        character({
+          id: 1,
+          name: "Brakka",
+          model: "idler",
+          level: 16,
+          weapon: "cleaver",
+          ...simXY(24, 18),
+        }),
+        monster({
+          id: 2,
+          name: "Deep Chanter",
+          model: "husk",
+          level: 13,
+          life_pct: 100,
+          rarity: 1,
+          ...simXY(28, 15),
+        }),
+      ],
+    }),
+    {
+      type: "CharacterSheet",
+      data: {
+        sheet: sheet({
+          id: 1,
+          name: "Brakka",
+          level: 16,
+          story_acts: 3,
+          inventory: [
+            {
+              name: "Seething Salt-Stained Map of Bounty",
+              rarity: 1,
+              x: 0,
+              y: 0,
+              w: 2,
+              h: 2,
+              base_num: 16777229,
+              item_level: 13,
+              mods: [],
+              unique_mods: [],
+            },
+          ],
+        }),
+      },
+    } as S2C,
+    directorCue(1, "the mapped waters"),
+  ],
+};
+
+// Mixed coast + interior pool (the charted-shallows shape; dfb2598 audit):
+// water runs to the EAST edge (a true coastline, sea feature on) AND an
+// interior pool sits mid-zone. The water plane must be zone-wide so the
+// sunken pool basin reads as water, not a dry pit — eyeball both the pool
+// and the coast strip under one sheet.
+const sceneWaterMixed: Fixture = {
+  kind: "scene",
+  label: "Water: mixed coast + interior pool under one zone-wide plane",
+  seed: 0xaa77e2,
+  frames: 30,
+  camera: [7, 12, 13, 6, -0.5, 4],
+  messages: [
+    zoneSnapshot({
+      zone_name: "The Split Shallows",
+      world_key: "split_shallows",
+      width: 16 * 65536,
+      height: 12 * 65536,
+      tiles: {
+        width: 16,
+        height: 12,
+        rows: [
+          "##############~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,~~~,,,,,,,~~~",
+          "#,,~~~,,,,,,,~~~",
+          "#,,~~~,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "#,,,,,,,,,,,,~~~",
+          "##############~~",
+        ],
+        legend: [
+          { glyph: "#", ground: "#3a3a46", ground_id: "cobble", prop: "wall", walkable: false, elevation: 0 },
+          { glyph: ",", ground: "#5a5340", ground_id: "sand", prop: null, walkable: true, elevation: 0 },
+          { glyph: "~", ground: "#16344f", ground_id: "water", prop: null, walkable: false, elevation: 0 },
+        ],
+        props: [],
+        features: ["sea"],
+      },
+      entities: [
+        character({ id: 1, name: "Wader", level: 40, model: "ranger", life_pct: 100, kills: 0, items: 0 }),
+      ],
+    }),
+  ],
+};
+
 export const FIXTURES: Record<string, Fixture> = {
   "inspect-panel": inspectPanel,
   "hud-edge": hudEdge,
+  "scene-dressing": sceneDressing,
   "item-tooltip": itemTooltip,
+  "tooltip-normal-wand": tooltipNormalWand,
+  "tooltip-unique": tooltipUnique,
+  "scene-water-mixed": sceneWaterMixed,
   "scene-shore": sceneShore,
   "scene-bars": sceneBars,
   "scene-ailments": sceneAilments,
@@ -915,6 +1210,8 @@ export const FIXTURES: Record<string, Fixture> = {
   "skill-overflow": skillOverflow,
   globes,
   "full-shore": fullShore,
+  "full-boss": fullBoss,
+  "full-campaign": fullCampaign,
   "full-bloodied": fullBloodied,
   "full-fresh": fullFresh,
   "idler-view": idlerView,

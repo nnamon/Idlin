@@ -24,8 +24,8 @@ pub const EV_PICKUP: i32 = 6; // a = rarity
 // Syscall numbers come from idlin_vm — the single ABI owner. Zone-scoped
 // syscalls (100+) get -1 for entity bots; debug/random are shared.
 use idlin_vm::{
-    SYS_DEBUG, SYS_DROP_LOOT, SYS_NARRATE, SYS_POLL_EVENTS, SYS_QUERY_CHARACTERS, SYS_RANDOM,
-    SYS_SET_EXIT, SYS_SET_GATE, SYS_SPAWN_ELITE, SYS_SPAWN_MONSTER,
+    SYS_DEBUG, SYS_DROP_LOOT, SYS_NARRATE, SYS_POLL_EVENTS, SYS_QUERY_CHARACTERS,
+    SYS_QUERY_MONSTERS, SYS_RANDOM, SYS_SET_EXIT, SYS_SET_GATE, SYS_SPAWN_ELITE, SYS_SPAWN_MONSTER,
 };
 
 /// QueryCharacters record (10 words): net, kills, level, x, y, weapon_class,
@@ -109,6 +109,43 @@ impl World {
                 0
             }
             SYS_RANDOM => bot.rng.next_u32() as i32,
+            SYS_QUERY_MONSTERS => {
+                let out = bot.vm.pop() as u16;
+                // Cap 64 (was 16): the density tuning (#185) put 24+ living
+                // monsters in boss zones and the stage-director brains went
+                // BLIND to their own boss past the 16th record — phases
+                // never fired. 64 covers any authored zone with headroom.
+                let max = bot.vm.pop().clamp(0, 64) as usize;
+                let mut n = 0u16;
+                for (_, e) in self.zone.iter() {
+                    if n as usize >= max {
+                        break;
+                    }
+                    let Some(m) = &e.monster else { continue };
+                    if !e.alive() {
+                        continue;
+                    }
+                    let life = e.combat.as_ref().map(|c| c.life_pct() as i32).unwrap_or(0);
+                    let num =
+                        self.content_num(idlin_content::ids::Category::Monster, m.def_idx as usize);
+                    let base = out.wrapping_add(n * idlin_vm::abi::MONSTER_RECORD_SIZE);
+                    bot.vm.store_i32(base, e.net_id as i32);
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_NUM), num);
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_LIFE), life);
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_X), e.pos.x.raw());
+                    bot.vm
+                        .store_i32(base.wrapping_add(idlin_vm::abi::MON_Y), e.pos.y.raw());
+                    bot.vm.store_i32(
+                        base.wrapping_add(idlin_vm::abi::MON_RARITY),
+                        m.rarity as i32,
+                    );
+                    n += 1;
+                }
+                n as i32
+            }
             SYS_QUERY_CHARACTERS => {
                 let out = bot.vm.pop() as u16;
                 let max = bot.vm.pop().clamp(0, 16) as usize;
@@ -129,10 +166,15 @@ impl World {
                     // build plan's limb sockets/keystones: 0 melee, 1 bow,
                     // 2 wand, -1 undeclared/unclear.
                     let arch = {
+                        // build_plan holds TREE INDICES (translated at
+                        // declare, #54); match by each index's raw num via
+                        // tree_refs ONLY. The old `n == num` fallback let
+                        // an index collide with a NUM — a Deadeye whose
+                        // dex-limb landed at index 25 read as MELEE, and
+                        // the shore paid it a cleave (#148 A2).
                         let has = |num: u16| {
                             ch.build_plan.iter().any(|&n| {
                                 self.content.tree_refs.get(n as usize).copied() == Some(num)
-                                    || n == num as u32
                             })
                         };
                         if ch.build_plan.is_empty() {
@@ -219,6 +261,7 @@ impl World {
                             affixes: Vec::new(),
                             name: self.content.items[i].name.clone(),
                             charges: self.content.items[i].flask_charges,
+                            unique_idx: None,
                         })
                     }
                     // A level-1 gem.

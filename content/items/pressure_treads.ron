@@ -1,0 +1,18 @@
+// Boots that keep their shape ten fathoms down. The deep boot rung.
+//
+// (Quality pass: the itemization audit found ONE base per
+// armour/accessory slot — a level-23 endgame character wore tutorial
+// gloves; weapons had ladders, armour never did).
+ItemDef(
+    id: "pressure_treads",
+    public: true,
+    name: "Pressure Treads",
+    slot: boots,
+    req_level: 13,
+    w: 2,
+    h: 2,
+    armour: 45,
+    evasion: 24,
+    affix_pools: ["armour", "arcana"],
+    weight: 45,
+)

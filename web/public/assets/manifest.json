@@ -142,6 +142,57 @@
           "partSuffix": "_m"
         }
       ]
+    },
+    "wight": {
+      "file": "models/body.glb",
+      "scale": 1.34,
+      "tint": "#c9cfc4",
+      "clips": {
+        "idle": "Zombie_Idle_Loop",
+        "run": "Walk_Loop",
+        "attack": "Melee_Hook",
+        "death": "Death01"
+      },
+      "defaultParts": [
+        "peasant_legs"
+      ],
+      "baseRegions": {
+        "body": "Base_body",
+        "legs": "Base_legs",
+        "feet": "Base_feet"
+      },
+      "variants": [
+        {
+          "file": "models/body.glb",
+          "partSuffix": "_m"
+        }
+      ]
+    },
+    "mother": {
+      "file": "models/body.glb",
+      "scale": 1.72,
+      "tint": "#173f38",
+      "clips": {
+        "idle": "Zombie_Idle_Loop",
+        "run": "Walk_Loop",
+        "attack": "Melee_Hook",
+        "cast": "Spell_Simple_Shoot",
+        "death": "Death01"
+      },
+      "defaultParts": [
+        "peasant_legs"
+      ],
+      "baseRegions": {
+        "body": "Base_body",
+        "legs": "Base_legs",
+        "feet": "Base_feet"
+      },
+      "variants": [
+        {
+          "file": "models/body.glb",
+          "partSuffix": "_m"
+        }
+      ]
     }
   },
   "parts": {

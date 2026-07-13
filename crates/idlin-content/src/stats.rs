@@ -90,9 +90,22 @@ pub enum Stat {
     /// Attacker: basis points scaling the duration of ailments you inflict (Ignite
     /// spreads a fixed total over the duration, so a shorter duration burns faster).
     AilmentDuration,
+    /// MAP RULE (#148 A4): basis points of extra monster damage inside the
+    /// map run this item opens. Read only by the Map Device; inert worn.
+    MonsterFury,
+    /// MAP RULE (#148 A4): the map's time limit in ticks — the clock
+    /// takes the strand back and ferries everyone home when it expires.
+    MapClock,
+    /// MAP RULE (#148 A4): nonzero = the map's far end holds a TIER
+    /// BOSS. Rolls only on deep maps.
+    SovereignsMark,
+    /// Basis points of increased SPELL damage (quality pass): the caster's
+    /// gear curve. Spells never read weapon damage — a wand's implicit
+    /// spell-damage grant is how the wand ladder finally feeds the kit.
+    SpellDamage,
 }
 
-pub const STAT_COUNT: usize = 40;
+pub const STAT_COUNT: usize = 44;
 
 impl Stat {
     pub const ALL: [Stat; STAT_COUNT] = [
@@ -136,6 +149,10 @@ impl Stat {
         Stat::ShockMax,
         Stat::ChillMax,
         Stat::AilmentDuration,
+        Stat::MonsterFury,
+        Stat::MapClock,
+        Stat::SovereignsMark,
+        Stat::SpellDamage,
     ];
 
     pub fn idx(self) -> usize {
@@ -383,6 +400,30 @@ impl Stat {
                 "Maximum Chill Effect",
                 "Raises the cap on the action slow your Chill inflicts.",
                 AddedUnit::BasisPoints,
+            ),
+            Stat::MonsterFury => (
+                "monster_fury",
+                "Monster Fury",
+                "Map rule: monsters in the map deal this much more damage (basis points).",
+                AddedUnit::Factor,
+            ),
+            Stat::MapClock => (
+                "map_clock",
+                "Map Clock",
+                "Map rule: the map closes after this many ticks — beat the clock.",
+                AddedUnit::Flat,
+            ),
+            Stat::SpellDamage => (
+                "spell_damage",
+                "Spell Damage",
+                "Increased spell damage (basis points) — wand implicits and caster gear.",
+                AddedUnit::Factor,
+            ),
+            Stat::SovereignsMark => (
+                "sovereigns_mark",
+                "Sovereign's Mark",
+                "Map rule: the map’s far end holds a tier boss.",
+                AddedUnit::Flat,
             ),
             Stat::AilmentDuration => (
                 "ailment_duration",

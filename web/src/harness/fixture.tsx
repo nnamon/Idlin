@@ -20,6 +20,13 @@ import { stubClient } from "./stubClient";
 import { makeSeededRandom } from "./random";
 import { FIXTURES, type Fixture } from "./fixtures";
 
+/** The harness store probe: capture specs read the store directly
+ *  (window.__idlinStore) — the same idiom the old audio log used. */
+function publishStore(store: WorldStore): WorldStore {
+  (window as unknown as { __idlinStore?: WorldStore }).__idlinStore = store;
+  return store;
+}
+
 declare global {
   interface Window {
     /** Set true once the fixture has rendered and assets/fonts are ready — the
@@ -45,17 +52,23 @@ function nextTask(): Promise<void> {
   });
 }
 
+/** Sound (#148 A8): every harness mount runs the REAL event→cue mapping
+ *  and exposes the engine's log — the capture spec asserts cues without
+ *  audible output (the context never unlocks headless; the log always
+ *  records). */
 async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Promise<void> {
   const overlay = document.getElementById("overlay")!;
-  const store = new WorldStore();
+  const store = publishStore(new WorldStore());
   // The live client paints slot icons (3D model renders + canvas silhouettes);
   // the headless harness has no WebGL/model pipeline, so feed it the
   // deterministic canvas silhouettes alone — enough to verify the doll reads
   // with real icons rather than the cramped name-text fallback.
   store.icons = { icon: (_name, kind) => silhouette(kind) };
+  // still fetched through the dev proxy and could render live boss falls).
   for (const msg of fixture.messages) store.handle(msg);
 
   const client = stubClient(fixture.status);
+  // engine is fresh (muted, 🔇) so the shot is deterministic.
   createRoot(overlay).render(
     <Overlay client={client} store={store} idler={fixture.idler ?? null} />,
   );
@@ -75,7 +88,7 @@ async function renderOverlay(fixture: Extract<Fixture, { kind: "overlay" }>): Pr
  *  the idler's stream (here, canned messages populate the event ticker). */
 async function renderManage(fixture: Extract<Fixture, { kind: "manage" }>): Promise<void> {
   const overlay = document.getElementById("overlay")!;
-  const store = new WorldStore();
+  const store = publishStore(new WorldStore());
   for (const msg of fixture.messages) store.handle(msg);
   createRoot(overlay).render(<ManagePage store={store} idler={fixture.idler} />);
   for (let i = 0; i < 6; i++) await nextTask();
@@ -100,7 +113,7 @@ async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promis
   // and animation-reproducible.
   Math.random = makeSeededRandom(fixture.seed);
 
-  const store = new WorldStore();
+  const store = publishStore(new WorldStore());
   for (const msg of fixture.messages) store.handle(msg);
 
   const scene = document.getElementById("scene")!;
@@ -119,7 +132,7 @@ async function renderScene(fixture: Extract<Fixture, { kind: "scene" }>): Promis
  *  from the SAME store — so the overlay (orbs, panels) is shot in real context. */
 async function renderFull(fixture: Extract<Fixture, { kind: "full" }>): Promise<void> {
   Math.random = makeSeededRandom(fixture.seed);
-  const store = new WorldStore();
+  const store = publishStore(new WorldStore());
   store.icons = { icon: (_name, kind) => silhouette(kind) };
   for (const msg of fixture.messages) store.handle(msg);
 

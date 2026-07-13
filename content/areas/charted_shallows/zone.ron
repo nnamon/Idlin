@@ -1,0 +1,34 @@
+// Charted waters (#136 T4): the endgame's sea. NEVER booted — each map
+// used at Saltmere's device opens a private instance of this strand, its
+// area level set by the map's tier (39 + tier — the level-40 floor) and its packs juiced by
+// the map's rolled affixes. Everything the act taught, all at once.
+ZoneDef(
+    id: "charted_shallows",
+    name: "The Charted Shallows",
+    kind: map,
+    level: 40,
+    tileset: Some("shore"),
+    tileset_variant: Some("drowned"),
+    spawn_x_u: 25,
+    spawn_y_u: 59,
+    spawn_radius_u: 2,
+    camp_radius_u: 4,
+    lines: [
+        (id: "enter", text: "Charted water. The ink was right about the shape — wrong about what lives here."),
+    ],
+    packs: [
+        // The whole act's roster, dense — one rich pass per map (no refills).
+        SpawnPack(monster: "brine_wight",      count: 4, x_u: 20, y_u: 47, radius_u: 3, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "pan_haunt",        count: 3, x_u: 30, y_u: 46, radius_u: 3, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "deep_chanter",     count: 3, x_u: 14, y_u: 40, radius_u: 3, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "drowned_colossus", count: 2, x_u: 26, y_u: 34, radius_u: 3, magic_bp: 2500, rare_bp: 900),
+        SpawnPack(monster: "bone_stalker",     count: 5, x_u: 12, y_u: 26, radius_u: 3, magic_bp: 3000, rare_bp: 1100),
+        SpawnPack(monster: "deep_chanter",     count: 3, x_u: 32, y_u: 18, radius_u: 3, magic_bp: 3000, rare_bp: 1100),
+        SpawnPack(monster: "drowned_colossus", count: 3, x_u: 18, y_u: 10, radius_u: 3, magic_bp: 3000, rare_bp: 1100),
+        SpawnPack(monster: "tide_husk",        count: 5, x_u: 28, y_u: 6,  radius_u: 3, magic_bp: 3000, rare_bp: 1100),
+    ],
+    exits: [
+        // The map home. Leaving retires the instance behind you.
+        (x_u: 25, y_u: 61, dest: "saltmere", open: true),
+    ],
+)

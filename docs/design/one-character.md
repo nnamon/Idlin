@@ -27,9 +27,10 @@ Two overlapping climbs give one character a long timebase *before* the arcs even
 begin.
 
 - **Levels (the body) — an exponential mountain.** XP-to-next follows
-  `(80 + 40·L²) · 1.08^max(0, L−5)`: identical to a gentle quadratic through
-  level 5 (onboarding untouched), then compounding into a back half measured in
-  **weeks** — roughly **5.7 billion** cumulative XP to level 100. Base life
+  (today: `(80 + 8·L²) · 1.04^max(0, L−10)`): a pure quadratic through
+  level 10 (the tutorial band), then compounding into a back half measured
+  in **weeks** — ~**41.7 million** cumulative XP to level 100, ~110× the
+  level-38 two-act campaign. Base life
   starts at `100 + 14·(L−1)`; gear, the tree, and attributes (Strength adds flat
   life) feed it through the added → increased → more stat pipeline. A level-up
   recomputes every stat and refills life to full.

@@ -120,7 +120,7 @@ gen-content:
 content-check: gen-content
     git diff --exit-code content/ids.ron content/lib/gen_ids.bot content/lib/gen_abi.bot web/public/content-docs.json
 
-# Boot the world fresh (4 built-in bots) with the production frontend.
+# Boot the world fresh (3 built-in bots) with the production frontend.
 demo: web-build
     rm -rf data/snapshots
     cargo run -p idlin-server

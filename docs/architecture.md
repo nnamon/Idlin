@@ -12,8 +12,8 @@ crates/
 ├── idlin-vm        the bot VM: stack machine, 64 KiB wrapping memory,
 │                   instruction budgets, ILBC versioned bytecode. Zero
 │                   game knowledge; the security boundary.
-├── idlin-botc      bot toolchain: assembler (a C-like compiler is
-│                   planned) + built-in player templates.
+├── idlin-botc      bot toolchain: assembler + the C-like `.bot` compiler
+│                   (stock brains and zone scripts are `.bot` source).
 ├── idlin-content   content schemas + RON/asm loader + validation +
 │                   content hash. The stat vocabulary (Stat/Layer/Grant)
 │                   lives here so content can speak it.
@@ -44,7 +44,7 @@ makes the world bit-exact:
    mitigation → deaths (XP, gem XP, loot rolls, pack bookkeeping).
 7. Pickups (bag-grid first-fit; gems to pouch).
 8. Out-of-combat regeneration.
-9. Respawns (characters, packs), loot despawn.
+9. Respawns (characters only), one-shot pack spawns, loot despawn, corpse decay.
 10. Emit `SimEvent`s; canonical state hash on demand.
 
 Everything that acts is a **bot**: monsters are entities whose brain
@@ -59,7 +59,6 @@ same code works on either side. The engine contains no AI.
   (spawned/moved/updated/removed + hit effects), broadcasts pre-serialized
   JSON to all clients, and keeps a fresh `ZoneSnapshot` in a watch channel
   for connects and lag resync (a lagging client is healed with a snapshot).
-- The **auto-director** scores events (death 80, join 75, rare drop 70,
   level-up 60, kill 30) with per-focus cooldowns, falls back to rotating
   idlers, and emits `DirectorCue`s the client camera follows.
 

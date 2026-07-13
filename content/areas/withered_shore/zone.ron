@@ -41,37 +41,34 @@ ZoneDef(
         (id: "manacost",  text: "Power borrowed is power paid for. The blue flask keeps the debt serviced. Onward."),
         (id: "rare",      text: "Something old and angry stirs ahead. It has a NAME."),
     ],
-    // Packs spawn (and respawn) as a unit: survivors hold their ground
-    // until the whole pack is wiped, then the timer brings it back.
     // The opening is choreographed: a staked single, a pair, then a
-    // ramp of 3/4/5 before the strand opens up.
-    // ONE-SHOT waves (no respawns), one per tutorial beat. The shore is
+    // ramp of 3/4/5 before the strand opens up — each pack rises once.
     // hand-designed and DETERMINISTIC: no rarity chances ever — the
     // scripted magic witch and the guaranteed rare come from the brain
     // (spawn_elite).
     packs: [
         // Beat 1: the staked first kill (pays weapon + life flask).
-        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 17, y_u: 110, radius_u: 0, respawn_ticks: 9000000),
+        // pupil who falls behind the curve (fragile-early archetypes die into
+        // a spiral on a one-shot shore) can always re-earn on the south
+        // beach; a healthy pupil is long past before the tide returns them.
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 17, y_u: 110, radius_u: 0),
         // Beat 2: the second single (pays the suited skill gem).
-        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 16, y_u: 102, radius_u: 0, respawn_ticks: 9000000),
+        SpawnPack(monster: "drowned_shambler", count: 1, x_u: 16, y_u: 102, radius_u: 0),
         // Beat 3: the flask gauntlet — weak, many, relentless.
-        SpawnPack(monster: "grasping_drowned", count: 6, x_u: 16, y_u: 92,  radius_u: 2, respawn_ticks: 9000000),
+        SpawnPack(monster: "grasping_drowned", count: 8, x_u: 16, y_u: 92,  radius_u: 2),
         // Beat 4: the open strand.
-        SpawnPack(monster: "drowned_shambler", count: 3, x_u: 15, y_u: 80,  radius_u: 3, respawn_ticks: 9000000),
-        SpawnPack(monster: "bone_stalker",     count: 3, x_u: 14, y_u: 68,  radius_u: 4, respawn_ticks: 9000000),
+        SpawnPack(monster: "drowned_shambler", count: 4, x_u: 15, y_u: 80,  radius_u: 3),
+        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 14, y_u: 68,  radius_u: 4),
         // Beat 6: past the midway gate, harder packs (+ the brain's rare).
         // Stalkers, not husks: a level-3 pupil straight off the witch
-        // fight must be PRESSED here, never farmed for respawn walks.
-        SpawnPack(monster: "bone_stalker",     count: 3, x_u: 16, y_u: 44,  radius_u: 4, respawn_ticks: 9000000),
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 15, y_u: 30,  radius_u: 4, respawn_ticks: 9000000),
+        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 16, y_u: 44,  radius_u: 4),
+        SpawnPack(monster: "bone_stalker",     count: 6, x_u: 15, y_u: 30,  radius_u: 4),
         // The pull: a pair at the arena mouth, in line with the gap, so
-        // the strand funnels bots into the Tidewarden's sightline. These
-        // RESPAWN — the Tidewarden keeps raising them — so every attempt
-        // on the boss refills flask charges and pays a little XP: retries
-        // grow stronger instead of looping identical.
-        SpawnPack(monster: "tide_husk",        count: 2, x_u: 14, y_u: 14,  radius_u: 1, respawn_ticks: 600),
+        // the strand funnels bots into the Tidewarden's sightline — one
+        // last flask-charge fight on the way in.
+        SpawnPack(monster: "tide_husk",        count: 3, x_u: 14, y_u: 14,  radius_u: 1),
         // Beat 7: the boss holds the bluff path.
-        SpawnPack(monster: "tidewarden",       count: 1, x_u: 17, y_u: 6,   radius_u: 0, respawn_ticks: 9000000),
+        SpawnPack(monster: "tidewarden",       count: 1, x_u: 17, y_u: 6,   radius_u: 0),
     ],
     // The bluff path up to Saltmere, behind the boss. Starts shut; the
     // brain opens it when the Tidewarden falls — walking through is the

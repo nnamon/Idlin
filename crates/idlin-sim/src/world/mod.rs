@@ -17,7 +17,7 @@ mod tree;
 mod views;
 mod zone_brain;
 
-pub use views::{CharacterSheetView, SkillStatView};
+pub use views::{CharacterSheetView, RosterRow, SkillStatView};
 
 use crate::bots::{Bot, BotArena, program_hash};
 use crate::entity::{CharacterState, CombatStats, Entity, MonsterState, Rarity};
@@ -53,6 +53,10 @@ pub const XP_SHARE_RADIUS: Fx = Fx::from_int(10);
 pub const CORPSE_TICKS: u64 = 300;
 /// Untouched ticks before energy shield begins recharging.
 pub const ES_RECHARGE_DELAY_TICKS: u64 = 40;
+/// `map_ends_at` after the clock rang (#178): distinct from 0 ("never
+/// armed" — the operator's ruling: a clockless map never ends on its
+/// own), so a post-fire world resumes as ENDED, never re-armed.
+pub const MAP_CLOCK_FIRED: u64 = u64::MAX;
 
 /// Inputs applied at the start of a tick. Everything entering the world goes
 /// through here — never by mutating state directly.
@@ -64,6 +68,11 @@ pub struct TickInputs {
     /// cross-world traffic is plain I/O, like joins always were.
     #[serde(default)]
     pub arrivals: Vec<CharacterBundle>,
+    /// KILL SWITCH (#148 A6): character names to remove this tick — the
+    /// entity despawns, its bot stops, nothing transfers. The operator's
+    /// answer to a runaway deployed brain.
+    #[serde(default)]
+    pub removals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +92,36 @@ pub struct CharacterBundle {
     pub persist: Vec<u8>,
     pub params: Vec<u8>,
     pub bot_version: u32,
+    /// Maps (#136 T4): set when this departure was an OpenMap — the host
+    /// creates a fresh map instance from it instead of routing to a booted
+    /// world. Consumed by the ferry; never survives into the next departure.
+    #[serde(default)]
+    pub map: Option<MapTicket>,
+}
+
+/// A consumed map, as instance parameters (#136 T4): the tier drives the
+/// instance's area level; the juice bps (from the map's rolled affixes)
+/// drive spawn rarity and drop quantity inside. Deterministic: rolled once
+/// on the item, carried whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapTicket {
+    pub tier: u32,
+    /// The instance's rarity juice (B4): folded into every pack's
+    /// spawn-rarity ROLL at read time (magic += juice, rare += juice/3).
+    /// Pack defs are never mutated.
+    pub rarity_bp: i64,
+    /// Folded into every kill's drop quantity in the instance.
+    pub quantity_bp: i64,
+    /// RULE (#148 A4): basis points of extra monster damage in the map.
+    #[serde(default)]
+    pub fury_bp: i64,
+    /// RULE: the map's clock in ticks (0 = none) — expiry ferries
+    /// everyone home; what you carried out, you keep.
+    #[serde(default)]
+    pub clock: i64,
+    /// RULE: the far end holds a TIER BOSS (the Unwritten).
+    #[serde(default)]
+    pub boss: bool,
 }
 
 /// Things that happened during a tick that the outside world may care about
@@ -98,6 +137,11 @@ pub enum SimEvent {
     JoinRejected {
         name: String,
         reason: String,
+    },
+    /// KILL SWITCH (#148 A6): a deployed brain was recalled by the operator.
+    CharacterRemoved {
+        net_id: u32,
+        name: String,
     },
     CharacterDied {
         id: u32,
@@ -121,6 +165,13 @@ pub enum SimEvent {
         y: i32,
         open: bool,
     },
+    /// A character completed an ACT (#136): they killed its act boss. The
+    /// broadcast's biggest story beat.
+    ActCompleted {
+        id: u32,
+        name: String,
+        act: u32,
+    },
     LevelUp {
         id: u32,
         name: String,
@@ -130,6 +181,10 @@ pub enum SimEvent {
         killer_id: u32,
         killer: String,
         monster: String,
+        /// The victim's rank (#148 A7): the director cuts to boss kills;
+        /// same live-rarity source the entity record uses (the A2.5 lesson:
+        /// loot-state rarity is 0 for everything alive).
+        rarity: Rarity,
         /// Index into ContentDb::monsters. The zone brain does NOT see this
         /// directly — `run_zone_brain` translates it to the monster's stable
         /// tagged num (#54) before the kill event reaches the script.
@@ -290,6 +345,17 @@ pub enum SimEvent {
         name: String,
         dest: String,
     },
+    /// The map scoreboard (#148 A7): what a runner did in a map
+    /// instance, tallied at departure (either exit: walked out or the
+    /// clock rang). The broadcast cuts to it; the UI cards it.
+    MapTally {
+        id: u32,
+        name: String,
+        kills: u64,
+        deaths: u64,
+        items: u64,
+        ticks: u64,
+    },
 }
 
 /// Flat renderable view of an entity, exported to the server each tick.
@@ -298,6 +364,9 @@ pub struct EntityView {
     pub id: u32,
     /// 1 = character, 2 = monster, 3 = loot.
     pub kind: u8,
+    /// Faction hostility (broadcast readability): the client embers
+    /// HOSTILE monsters only — a villager NPC must not glow.
+    pub hostile: bool,
     pub x_raw: i32,
     pub y_raw: i32,
     pub life_pct: u8,
@@ -339,6 +408,41 @@ pub struct World {
     /// max(def level, area level); magic +1, rare +2; uniques authored.
     #[serde(default = "default_zone_level")]
     pub(crate) zone_level: u32,
+    /// Map juice (#136 T4): extra drop quantity in this world (bp; 0 =
+    /// none). Set at map-instance creation; folded into every kill's
+    /// drop roll. Serialized + hashed — it steers future loot.
+    #[serde(default)]
+    pub(crate) loot_quantity_bp: i64,
+    /// MAP RULE (#148 A4; B4 rework): the instance's rolled rarity juice,
+    /// folded into pack-rarity rolls at spawn time. An instance property —
+    /// pack defs are never mutated.
+    #[serde(default)]
+    pub(crate) spawn_rarity_bp: i64,
+    /// The Map Device's cell, from the ZoneDef (#136 T4). None = no device.
+    #[serde(default)]
+    pub(crate) map_device: Option<(i32, i32)>,
+    /// The town's vendor + stash cells (#148 A5), from the ZoneDef.
+    #[serde(default)]
+    pub(crate) vendor: Option<(i32, i32)>,
+    #[serde(default)]
+    pub(crate) stash_cell: Option<(i32, i32)>,
+    /// True in a map instance (#136 T4): maps keep dropping here (the
+    /// loop sustains itself), and the host retires the world when it empties.
+    #[serde(default)]
+    pub(crate) is_map_instance: bool,
+    /// MAP RULE (#148 A4): extra monster damage in this map (bp).
+    /// Hashed + serialized — it steers every fight here.
+    #[serde(default)]
+    pub(crate) monster_fury_bp: i64,
+    /// MAP RULE: the tick this map ends (0 = no clock). At expiry the
+    /// current ferries every character home to Lanternfall.
+    #[serde(default)]
+    pub(crate) map_ends_at: u64,
+    /// Map tallies (#148 A7): per-runner (kills, deaths, items, tick)
+    /// marks at ARRIVAL into a map instance; the departure delta is the
+    /// scoreboard. BTreeMap for hash order; empty outside map worlds.
+    #[serde(default)]
+    pub(crate) map_marks: std::collections::BTreeMap<u32, (u64, u64, u64, u64)>,
     pub(crate) bots: BotArena,
     next_net_id: u32,
     rng_ai: Pcg32,
@@ -359,13 +463,24 @@ pub struct World {
     /// UseExit calls staged during bot execution; detached in slot-call
     /// order after bots finish (an entity can't vanish mid-arena-walk).
     #[serde(skip)]
-    pub(crate) pending_exits: Vec<(u32, String)>,
+    pub(crate) pending_exits: Vec<(u32, String, Option<MapTicket>)>,
     /// Committed uses winding up toward their contact tick.
     #[serde(default)]
     pub(crate) pending_uses: Vec<crate::world::combat::PendingUse>,
 }
 
 // ---- universal (classless) character bases ----
+
+/// The movement-trace target (#185 diagnostics): IDLIN_TRACE_MOVE=<name>.
+/// Debug builds only, env read ONCE — the pure-sim boundary keeps host
+/// environment reads and stderr out of release cores entirely.
+#[cfg(debug_assertions)]
+fn trace_move_wanted() -> Option<&'static String> {
+    use std::sync::OnceLock;
+    static WANT: OnceLock<Option<String>> = OnceLock::new();
+    WANT.get_or_init(|| std::env::var("IDLIN_TRACE_MOVE").ok())
+        .as_ref()
+}
 
 fn default_zone_level() -> u32 {
     1
@@ -412,6 +527,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         mana: def.mana,
         mana_max: def.mana,
         es: 0,
+        grace_until: 0,
         es_max: 0,
         es_recharge_at: 0,
         life_regen: 0,
@@ -422,6 +538,7 @@ pub(crate) fn monster_base_stats(def: &idlin_content::MonsterDef) -> CombatStats
         crit_inc: 10000,
         crit_multi: 15000,
         cast_speed: 10000,
+        spell_damage_bp: 10000,
         damage: [
             def.damage,
             def.damage_fire,
@@ -501,6 +618,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         mana: base_mana(level),
         mana_max: base_mana(level),
         es: 0,
+        grace_until: 0,
         es_max: 0,
         es_recharge_at: 0,
         life_regen: 0,
@@ -511,6 +629,7 @@ pub fn universal_stats(level: u32) -> CombatStats {
         crit_inc: 10000,
         crit_multi: 15000,
         cast_speed: 10000,
+        spell_damage_bp: 10000,
         damage: [base_unarmed_damage(level), 0, 0, 0, 0],
         accuracy: base_accuracy(level),
         evasion: base_evasion(level),
@@ -568,6 +687,32 @@ fn grid_sight_blocked(
     let sight = |cx: i64, cy: i64| {
         grid.sight_cell(cx, cy) || gates.iter().any(|g| !g.open && g.covers(cx, cy))
     };
+    grid_ray_blocked(grid, a, b, sight)
+}
+
+/// The WALK-line twin (#185 stall fix): can a straight walk traverse every
+/// cell from `a` to `b`? Water/chasms block FEET but not SIGHT — using the
+/// sight test for movement walked characters into unwalkable pockets and
+/// froze them (the slide gets zero progress and the "clear" line never
+/// re-plans).
+fn grid_walk_blocked(
+    grid: &crate::zone::SimGrid,
+    gates: &[crate::zone::GateState],
+    a: FxV2,
+    b: FxV2,
+) -> bool {
+    let solid = |cx: i64, cy: i64| {
+        grid.walk_blocked_cell(cx, cy) || gates.iter().any(|g| !g.open && g.covers(cx, cy))
+    };
+    grid_ray_blocked(grid, a, b, solid)
+}
+
+fn grid_ray_blocked(
+    grid: &crate::zone::SimGrid,
+    a: FxV2,
+    b: FxV2,
+    sight: impl Fn(i64, i64) -> bool,
+) -> bool {
     const CELL: i64 = 65536;
     let (ax, ay) = (a.x.raw() as i64, a.y.raw() as i64);
     let (bx, by) = (b.x.raw() as i64, b.y.raw() as i64);
@@ -671,7 +816,7 @@ impl World {
                         def: pack.clone(),
                         monster_idx,
                         alive: 0,
-                        respawn_timer: 0,
+                        risen: false,
                     });
                 }
                 for gate in &def.gates {
@@ -695,6 +840,7 @@ impl World {
                         ),
                         dest: exit.dest.clone(),
                         open: exit.open,
+                        requires_act: exit.requires_act,
                     });
                 }
                 // Authored zones: collision IS the map. Tileset presence
@@ -745,6 +891,15 @@ impl World {
             pending_exits: Vec::new(),
             pending_uses: Vec::new(),
             zone_level: content.zone(zone_id).map_or(1, |z| z.level),
+            loot_quantity_bp: 0,
+            spawn_rarity_bp: 0,
+            map_device: content.zone(zone_id).and_then(|z| z.map_device),
+            vendor: content.zone(zone_id).and_then(|z| z.vendor),
+            stash_cell: content.zone(zone_id).and_then(|z| z.stash),
+            is_map_instance: false,
+            monster_fury_bp: 0,
+            map_ends_at: 0,
+            map_marks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -778,6 +933,18 @@ impl World {
         content: &ContentDb,
         item: &crate::entity::Item,
     ) -> Option<String> {
+        // A unique_idx must index content.uniques (#136 T5) — the same
+        // fail-closed defense rolled affixes get. content_hash gating makes
+        // an out-of-range index near-impossible (any content change refuses
+        // the snapshot), but a fold panic is not an acceptable failure mode.
+        if let Some(u) = item.unique_idx
+            && u as usize >= content.uniques.len()
+        {
+            return Some(format!(
+                "unique_idx {u} out of range ({} uniques)",
+                content.uniques.len()
+            ));
+        }
         item.affixes.iter().find_map(|ra| {
             content
                 .check_rolled_affix(ra.affix_idx, ra.values.len(), ra.tier)
@@ -859,6 +1026,17 @@ impl World {
 
     /// The stable tagged num a read should emit for `cat`'s def at `idx`
     /// (the bot↔engine id, #54). -1 if unmapped — bots treat negative as unknown.
+    /// A zone's stable tagged num by id, or -1 (#136 T6: ReadExits dest).
+    pub(crate) fn zone_num_by_id(&self, id: &str) -> i32 {
+        self.content
+            .zones
+            .binary_search_by(|z| z.id.as_str().cmp(id))
+            .ok()
+            .map_or(-1, |zi| {
+                self.content_num(idlin_content::ids::Category::Zone, zi)
+            })
+    }
+
     pub(crate) fn content_num(&self, cat: idlin_content::ids::Category, idx: usize) -> i32 {
         self.content.content_num(cat, idx).unwrap_or(-1)
     }
@@ -885,6 +1063,65 @@ impl World {
         self.zone_level
     }
 
+    /// True for map instances (#136 T4) — the host retires these when empty.
+    pub fn is_map_instance(&self) -> bool {
+        self.is_map_instance
+    }
+
+    /// This world's zone, as an index into `ContentDb::zones` (#136 T4):
+    /// lets the host recover a resumed map's zone id (its key file names
+    /// the world; the zone comes from the state itself).
+    pub fn zone_index(&self) -> u32 {
+        self.zone_idx
+    }
+
+    /// A MAP INSTANCE of a map zone (#136 T4): the ticket's tier sets the
+    /// area level (39 + tier — the operator's difficulty anchor: tier-1
+    /// maps open at level 40, ABOVE the level-38 campaign graduate) and its juice
+    /// boosts every pack's rarity rolls and the world's drop quantity. Must
+    /// run before the first tick — packs spawn then, at the lifted level.
+    pub fn new_map_instance(
+        seed: u64,
+        content: &ContentDb,
+        zone_id: &str,
+        ticket: MapTicket,
+    ) -> World {
+        let mut w = Self::new_for_zone(seed, content, zone_id);
+        w.is_map_instance = true;
+        w.zone_level = 39 + ticket.tier;
+        w.loot_quantity_bp = ticket.quantity_bp.max(0);
+        // Rarity juice is an INSTANCE PROPERTY read at spawn-roll time —
+        // exactly like the quantity bonus (operator ruling on #185, B4).
+        // The old code mutated pack.def.magic_bp/rare_bp per instance:
+        // per-world vandalism of content definitions, which then needed
+        // its own state-hash patch to stay sound.
+        w.spawn_rarity_bp = ticket.rarity_bp.max(0);
+        // THE RULES (#148 A4) — applied at the one instance chokepoint.
+        w.monster_fury_bp = ticket.fury_bp.clamp(0, 10000);
+        // The clock is OPT-IN (operator ruling, #185: "every map ends" is
+        // nonsense while the idler is in there — with no respawns a map
+        // ends by being CLEARED). Only a rolled Deluge clock arms one.
+        if ticket.clock > 0 {
+            w.map_ends_at = ticket.clock as u64; // relative to tick 0
+        }
+        if ticket.boss
+            && let Some(bi) = w.content.monster_idx("the_unwritten")
+        {
+            // The far end, the strand's north. Uniques keep their AUTHORED
+            // level (40) regardless of tier — the fury/juice dials carry
+            // the tier's difficulty, not the boss's level.
+            w.spawn_monster_rolled(
+                bi as u32,
+                0,
+                FxV2::new(Fx::from_int(24), Fx::from_int(6)),
+                Rarity::Unique,
+                vec![],
+                "The Unwritten".into(),
+            );
+        }
+        w
+    }
+
     pub fn zone_name(&self) -> &str {
         &self.zone.name
     }
@@ -901,12 +1138,75 @@ impl World {
     }
 
     /// Advance the world by exactly one tick.
+    /// MAP RULE (#148 A4): when the map clock expires, the current
+    /// takes the strand back — every character is staged home to
+    /// Lanternfall as an ordinary departure (loot in the bag comes along;
+    /// the ferry lands them; the empty map retires).
+    /// KILL SWITCH (#148 A6): remove named characters — despawn the
+    /// entity, drop its bot, narrate the removal. Idempotent on unknown
+    /// names (the host may race a transfer; the miss is harmless).
+    fn process_removals(&mut self, removals: &[String], events: &mut Vec<SimEvent>) {
+        for name in removals {
+            let Some((slot, net, bot_idx)) = self
+                .zone
+                .iter()
+                .find(|(_, e)| e.character.as_ref().is_some_and(|c| &c.name == name))
+                .map(|(s, e)| (s, e.net_id, e.bot))
+            else {
+                continue;
+            };
+            if let Some(bi) = bot_idx {
+                self.bots.remove(bi);
+            }
+            self.zone.remove(slot);
+            self.map_marks.remove(&net);
+            events.push(SimEvent::Narration {
+                target: 0,
+                text: format!("{name} is recalled — the brain is switched off."),
+            });
+            events.push(SimEvent::CharacterRemoved {
+                net_id: net,
+                name: name.clone(),
+            });
+        }
+    }
+
+    fn map_clock(&mut self, events: &mut Vec<SimEvent>) {
+        if self.map_ends_at == 0
+            || self.map_ends_at == MAP_CLOCK_FIRED
+            || self.tick < self.map_ends_at
+        {
+            return;
+        }
+        // Fire once. The sentinel (not 0) keeps "already rang" distinct
+        // from "never armed" (clockless maps never end on their own) — a
+        // post-fire world must resume bit-identical, not with a new clock.
+        self.map_ends_at = MAP_CLOCK_FIRED;
+        let nets: Vec<u32> = self
+            .zone
+            .iter()
+            .filter(|(_, e)| e.character.is_some())
+            .map(|(_, e)| e.net_id)
+            .collect();
+        for net in nets {
+            if !self.pending_exits.iter().any(|(n, ..)| *n == net) {
+                self.pending_exits.push((net, "lanternfall".into(), None));
+            }
+            events.push(SimEvent::Narration {
+                target: net,
+                text: "The map unravels. The portal takes you home.".into(),
+            });
+        }
+    }
+
     pub fn tick(&mut self, inputs: &TickInputs) -> Vec<SimEvent> {
         self.tick += 1;
         let mut events = Vec::new();
         self.clear_transient_intents();
         self.apply_joins(inputs, &mut events);
         self.run_bots(&mut events);
+        self.process_removals(&inputs.removals, &mut events);
+        self.map_clock(&mut events);
         self.process_exits(&mut events);
         self.movement();
         self.separation();
@@ -1000,7 +1300,7 @@ impl World {
     /// exactly one zone. The persist block travels; working VM memory
     /// resets, like a redeploy.
     fn process_exits(&mut self, events: &mut Vec<SimEvent>) {
-        for (net, dest) in std::mem::take(&mut self.pending_exits) {
+        for (net, dest, map) in std::mem::take(&mut self.pending_exits) {
             let Some(slot) = self.zone.slot_of(net) else {
                 continue; // died and was removed in the same tick
             };
@@ -1022,9 +1322,26 @@ impl World {
                     program: b.program,
                     params: b.params,
                     bot_version: b.version,
+                    map,
                 },
                 dest.clone(),
             ));
+            // The map scoreboard (#148 A7): departing a map instance
+            // settles the tally against the arrival marks — either exit
+            // path (walked out, or the clock staged the same departure).
+            if self.is_map_instance
+                && let Some((k0, d0, i0, t0)) = self.map_marks.remove(&net)
+            {
+                let ch = &self.pending_departures.last().unwrap().0.character;
+                events.push(SimEvent::MapTally {
+                    id: net,
+                    name: name.clone(),
+                    kills: ch.kills.saturating_sub(k0),
+                    deaths: ch.deaths.saturating_sub(d0),
+                    items: ch.items.saturating_sub(i0),
+                    ticks: self.tick.saturating_sub(t0),
+                });
+            }
             events.push(SimEvent::CharacterDeparted {
                 id: net,
                 name,
@@ -1139,15 +1456,18 @@ impl World {
                     xp: 0,
                     respawn_at: None,
                     kills: 0,
+                    deaths: 0,
                     items: 0,
                     inventory: Vec::new(),
                     equipment: Default::default(),
                     allocated: Vec::new(),
                     build_plan: Vec::new(),
                     currency: vec![0; self.content.currency.len()],
+                    stash: Vec::new(),
                     sockets: std::collections::BTreeMap::new(),
                     // Sized + stamped by this tick's explore() pass (#129).
                     explored: Vec::new(),
+                    story_acts: 0,
                 }),
                 monster: None,
                 loot: None,
@@ -1193,6 +1513,19 @@ impl World {
             }
             let name = character.name.clone();
             let level = character.level;
+            // Map tally marks (#148 A7): stamp what the runner arrives
+            // with; the departure delta is the scoreboard.
+            if self.is_map_instance {
+                self.map_marks.insert(
+                    net_id,
+                    (
+                        character.kills,
+                        character.deaths,
+                        character.items,
+                        self.tick,
+                    ),
+                );
+            }
             let pos = self.spawn_pos();
             let slot = self.zone.insert(Entity {
                 net_id,
@@ -1215,6 +1548,222 @@ impl World {
             }
             events.push(SimEvent::CharacterJoined { id: net_id, name });
         }
+    }
+
+    /// Sell a bag item at the town vendor (#148 A5). Pays ONE obol keyed to
+    /// what the item was — normal→transmute, magic→alter, rare→alchemy,
+    /// unique→regal; gems and maps sell as transmutes. Returns the paid
+    /// obol's NUM (positive), or -1 bad selection / -2 not at a vendor /
+    /// -4 no character.
+    pub(crate) fn sell(&mut self, slot: usize, inv_sel: i32, events: &mut Vec<SimEvent>) -> i32 {
+        const VENDOR_REACH: i64 = 3; // cells, same reach as the Map Device
+        let Some(e) = self.zone.get(slot) else {
+            return -4;
+        };
+        let Some(ch) = e.character.as_ref() else {
+            return -4;
+        };
+        let Some((vx, vy)) = self.vendor else {
+            return -2;
+        };
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let (dx, dy) = (cx - vx as i64, cy - vy as i64);
+        if dx * dx + dy * dy > VENDOR_REACH * VENDOR_REACH {
+            return -2;
+        }
+        let idx = inv_sel as usize;
+        if inv_sel < 0 || idx >= ch.inventory.len() {
+            return -1;
+        }
+        let net = e.net_id;
+        let obol_id = match &ch.inventory[idx].item {
+            crate::entity::BagItem::Gear(it) => match it.rarity {
+                Rarity::Normal => "transmute_obol",
+                Rarity::Magic => "alter_obol",
+                Rarity::Rare => "alchemy_obol",
+                Rarity::Unique => "regal_obol",
+            },
+            crate::entity::BagItem::Gem(_) => "transmute_obol",
+        };
+        let Some(cidx) = self.content.currency.iter().position(|c| c.id == obol_id) else {
+            return -1; // the obol vocabulary is loader-guaranteed; belt+braces
+        };
+        let name = match &self
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory[idx]
+            .item
+        {
+            crate::entity::BagItem::Gear(it) => it.name.clone(),
+            crate::entity::BagItem::Gem(g) => self.content.gems[g.gem_idx as usize].name.clone(),
+        };
+        let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+        ch.inventory.remove(idx);
+        ch.currency[cidx] += 1;
+        events.push(SimEvent::Narration {
+            target: net,
+            text: format!("Sold {name} — one {}.", self.content.currency[cidx].name),
+        });
+        self.content_num(idlin_content::ids::Category::Currency, cidx)
+    }
+
+    /// Move an item between bag and stash at the town chest (#148 A5).
+    /// op 0 = deposit inventory[sel]; op 1 = withdraw stash[sel] (first-fit
+    /// back into the bag). Returns 1, or -1 bad selection / -2 not at the
+    /// stash / -3 no room / -4 no character.
+    pub(crate) fn stash_op(&mut self, slot: usize, op: i32, sel: i32) -> i32 {
+        const STASH_REACH: i64 = 3;
+        let Some(e) = self.zone.get(slot) else {
+            return -4;
+        };
+        if e.character.is_none() {
+            return -4;
+        }
+        let Some((sx, sy)) = self.stash_cell else {
+            return -2;
+        };
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let (dx, dy) = (cx - sx as i64, cy - sy as i64);
+        if dx * dx + dy * dy > STASH_REACH * STASH_REACH {
+            return -2;
+        }
+        let idx = sel as usize;
+        match op {
+            0 => {
+                let ch = self.zone.get(slot).unwrap().character.as_ref().unwrap();
+                if sel < 0 || idx >= ch.inventory.len() {
+                    return -1;
+                }
+                if ch.stash.len() >= crate::entity::STASH_CAP {
+                    return -3;
+                }
+                let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+                let placed = ch.inventory.remove(idx);
+                ch.stash.push(placed.item);
+                1
+            }
+            1 => {
+                let ch = self.zone.get(slot).unwrap().character.as_ref().unwrap();
+                if sel < 0 || idx >= ch.stash.len() {
+                    return -1;
+                }
+                let (w, h) = match &ch.stash[idx] {
+                    crate::entity::BagItem::Gear(it) => {
+                        let def = &self.content.items[it.base_idx as usize];
+                        (def.w, def.h)
+                    }
+                    crate::entity::BagItem::Gem(_) => (1, 1),
+                };
+                let Some((x, y)) = self.first_fit(ch, w, h) else {
+                    return -3;
+                };
+                let ch = self.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+                let item = ch.stash.remove(idx);
+                ch.inventory.push(crate::entity::PlacedItem { item, x, y });
+                1
+            }
+            _ => -1,
+        }
+    }
+
+    /// OpenMap (#136 T4): validate, consume, and stage the run. The map's
+    /// effective tier is its base tier lifted by the roll's item_level over
+    /// the map floor (ilvl 40 = tier+1, 41 = tier+2…); the ticket's juice
+    /// comes from the map's rolled quantity/rarity affix values, so the
+    /// obols craft BETTER MAPS with the machinery they already have.
+    pub(crate) fn open_map(&mut self, slot: usize, inv_sel: i32) -> i32 {
+        const TABLE_REACH: i64 = 3; // cells
+        let Some(e) = self.zone.get(slot) else {
+            return -4;
+        };
+        let Some(ch) = e.character.as_ref() else {
+            return -4;
+        };
+        // The WHOLE campaign gates the sea (#148 retrospective): the brains
+        // already waited for the final act (the device-gate discipline), but
+        // the ENGINE still accepted act-1-only runners — a player brain
+        // could skip Act 2 entirely. The bound is content-derived: adding
+        // Act 3 moves it with zero engine edits.
+        let final_act = self.content.final_act.max(1);
+        if ch.story_acts & (1u32 << (final_act - 1)) == 0 {
+            return -3; // the sea is sealed until the campaign falls
+        }
+        let Some((tx, ty)) = self.map_device else {
+            return -2; // no device in this zone
+        };
+        let (cx, cy) = (e.pos.x.floor() as i64, e.pos.y.floor() as i64);
+        let (dx, dy) = (cx - tx as i64, cy - ty as i64);
+        if dx * dx + dy * dy > TABLE_REACH * TABLE_REACH {
+            return -2;
+        }
+        let net = e.net_id;
+        let idx = inv_sel as usize;
+        if inv_sel < 0 || idx >= ch.inventory.len() {
+            return -1;
+        }
+        let crate::entity::BagItem::Gear(item) = &ch.inventory[idx].item else {
+            return -1; // gems are not maps
+        };
+        let def = &self.content.items[item.base_idx as usize];
+        let Some(base_tier) = def.map_tier else {
+            return -1; // not a map
+        };
+        // Effective tier: base + how far past the map floor this roll
+        // dropped (the 39+tier anchor — a tier-N map's own drops, ilvl
+        // 39+N, roll tier N+1 maps: the ladder climbs one rung per run).
+        let tier = base_tier + item.item_level.saturating_sub(39);
+        // Juice from the map's OWN rolled affixes (quantity/rarity stats).
+        let mut quantity_bp = 0i64;
+        let mut rarity_bp = 0i64;
+        let mut fury_bp = 0i64;
+        let mut clock = 0i64;
+        let mut boss = false;
+        for ra in &item.affixes {
+            let a = &self.content.affixes[ra.affix_idx as usize];
+            for g in a.grants(&ra.values) {
+                match g.stat {
+                    crate::stats::Stat::ItemQuantity => quantity_bp += g.value,
+                    crate::stats::Stat::ItemRarity => rarity_bp += g.value,
+                    // THE RULES (#148 A4): risk crafted with the same obols.
+                    crate::stats::Stat::MonsterFury => fury_bp += g.value,
+                    crate::stats::Stat::MapClock => clock = g.value,
+                    crate::stats::Stat::SovereignsMark => boss = g.value > 0,
+                    _ => {}
+                }
+            }
+        }
+        // A departure is already staged this tick (an exit, or an earlier
+        // map): refuse WITHOUT consuming — the critic's same-tick trap
+        // (#136 T4 review): consume-before-guard destroyed the map and
+        // reported success while the bot departed somewhere else entirely.
+        if self.pending_exits.iter().any(|(n, ..)| *n == net) {
+            return -5;
+        }
+        // Stage the depart, then spend the map — both or neither.
+        self.pending_exits.push((
+            net,
+            "charted_shallows".into(),
+            Some(MapTicket {
+                // Tier capped at 16: the ladder ends where the maps do,
+                // not where an overflow would.
+                tier: tier.clamp(1, 16),
+                rarity_bp,
+                quantity_bp,
+                fury_bp,
+                clock,
+                boss,
+            }),
+        ));
+        if let Some(me) = self.zone.get_mut(slot)
+            && let Some(c) = me.character.as_mut()
+        {
+            c.inventory.remove(idx);
+        }
+        0
     }
 
     /// Drain the characters that left this world this tick (the host
@@ -1261,15 +1810,145 @@ impl World {
                 continue;
             }
 
-            let delta = target - pos;
+            // PATHFOLLOW (#148 A2.5): when the straight line to the intent
+            // is LoS-blocked by terrain, walk a deterministic A* path
+            // instead (computed once, cached on the intent, re-planned when
+            // the target moves a cell or a hop goes stale). The straight
+            // walk remains the common case — open-ground behavior (and its
+            // replays) is untouched.
+            let step_target = {
+                let e = self.zone.get(slot).unwrap();
+                let blocked = self
+                    .zone
+                    .grid
+                    .as_ref()
+                    .is_some_and(|_| self.walk_line_blocked(pos, target));
+                // DIAGNOSTICS (#185, operator): IDLIN_TRACE_MOVE=<name> prints
+                // the movement decision for that character every tick —
+                // pos, goal, LOS, path length, next hop. DEBUG BUILDS ONLY:
+                // the pure-sim boundary means release binaries carry no env
+                // reads or stderr in the core; the env is read once.
+                #[cfg(debug_assertions)]
+                let trace = trace_move_wanted()
+                    .is_some_and(|want| e.character.as_ref().is_some_and(|c| c.name == *want));
+                #[cfg(not(debug_assertions))]
+                let trace = false;
+                if !blocked {
+                    if trace {
+                        eprintln!(
+                            "MOVE t={} pos={},{} goal={},{} LOS-clear: straight",
+                            self.tick,
+                            pos.x.floor(),
+                            pos.y.floor(),
+                            target.x.floor(),
+                            target.y.floor()
+                        );
+                    }
+                    if !e.intents.path.is_empty()
+                        && let Some(me) = self.zone.get_mut(slot)
+                    {
+                        me.intents.path.clear();
+                    }
+                    target
+                } else {
+                    // Follow (or build) the waypoint path. Shut gates veto
+                    // cells at PLAN time, and a hop that a gate has since
+                    // shut on is STALE — re-plan (the documented contract;
+                    // the review found the first draft soft-pinning on a
+                    // closed lesson gate its plan walked through).
+                    let gate_blocked = |cx: i64, cy: i64| {
+                        self.zone.gates.iter().any(|g| !g.open && g.covers(cx, cy))
+                    };
+                    let hop_stale = e.intents.path.first().is_some_and(|w| {
+                        let (cx, cy) = (
+                            (w.x.raw() as i64).div_euclid(65536),
+                            (w.y.raw() as i64).div_euclid(65536),
+                        );
+                        gate_blocked(cx, cy)
+                    });
+                    let mut next = e.intents.path.first().copied();
+                    let goal_moved = e
+                        .intents
+                        .path
+                        .last()
+                        .is_some_and(|w| w.dist(target) > Fx::from_int(1));
+                    if next.is_none() || goal_moved || hop_stale {
+                        let path = self
+                            .zone
+                            .grid
+                            .as_ref()
+                            .and_then(|g| g.find_path(pos, target, gate_blocked))
+                            .unwrap_or_default();
+                        next = path.first().copied();
+                        if let Some(me) = self.zone.get_mut(slot) {
+                            me.intents.path = path;
+                        }
+                    }
+                    if trace {
+                        eprintln!(
+                            "MOVE t={} pos={},{} goal={},{} next={:?} stale={} goal_moved={}",
+                            self.tick,
+                            pos.x.floor(),
+                            pos.y.floor(),
+                            target.x.floor(),
+                            target.y.floor(),
+                            next.map(|w| (w.x.floor(), w.y.floor())),
+                            hop_stale,
+                            goal_moved
+                        );
+                    }
+                    match next {
+                        Some(w) => {
+                            if pos.dist(w) <= speed
+                                && let Some(me) = self.zone.get_mut(slot)
+                            {
+                                me.intents.path.remove(0);
+                            }
+                            w
+                        }
+                        None => {
+                            if trace {
+                                eprintln!(
+                                    "MOVE t={} UNREACHABLE goal — straight fallback",
+                                    self.tick
+                                );
+                            }
+                            target // unreachable: fall back to straight
+                        }
+                    }
+                }
+            };
+            let delta = step_target - pos;
+            let dist_step = pos.dist(step_target);
             let dist = pos.dist(target);
-            let new_pos = if dist <= speed {
-                target
+            let new_pos = if dist_step <= speed {
+                step_target
             } else {
-                let factor = speed / dist;
+                let factor = speed / dist_step;
                 FxV2::new(pos.x + delta.x * factor, pos.y + delta.y * factor)
             };
             let new_pos = self.zone.clamp_pos(new_pos);
+            // WALL SLIDE (#148 A2.5): a blocked diagonal keeps its free
+            // axis instead of stalling — the classic steering slide, at the
+            // ONE movement chokepoint. Before this, a bot walking at a wall
+            // parked forever against it (the terrace pins, the court-wall
+            // pins — a whole class of template escape hacks fought this);
+            // now it slides along the wall to the gap. Deterministic: the
+            // axis order is fixed (x first), the checks are grid reads.
+            let new_pos = match &self.zone.grid {
+                Some(grid) if !grid.walkable_pos(new_pos) => {
+                    let x_only = self.zone.clamp_pos(FxV2::new(new_pos.x, pos.y));
+                    let y_only = self.zone.clamp_pos(FxV2::new(pos.x, new_pos.y));
+                    if grid.walkable_pos(x_only) {
+                        x_only
+                    } else if grid.walkable_pos(y_only) {
+                        y_only
+                    } else {
+                        pos
+                    }
+                }
+                _ => new_pos,
+            };
             if let Some(me) = self.zone.get_mut(slot) {
                 me.pos = new_pos;
                 if dist <= speed {
@@ -1443,6 +2122,15 @@ impl World {
         }
     }
 
+    /// Can a straight WALK traverse `a`→`b`? (#185 stall fix — movement's
+    /// twin of los_blocked; feet care about water, eyes don't.)
+    pub(crate) fn walk_line_blocked(&self, a: FxV2, b: FxV2) -> bool {
+        match &self.zone.grid {
+            Some(grid) => grid_walk_blocked(grid, &self.zone.gates, a, b),
+            None => false,
+        }
+    }
+
     /// Recovery. Once per second (tick % 10): life/mana regen stats apply
     /// and energy shield recharges if untouched past its delay; mana also
     /// trickles 2%/s inherently. The out-of-combat burst heal (2%/tick
@@ -1454,6 +2142,7 @@ impl World {
             let Some(e) = self.zone.get_mut(slot) else {
                 continue;
             };
+            let is_char = e.character.is_some();
             let Some(c) = e.combat.as_mut() else { continue };
             if c.life <= 0 {
                 continue;
@@ -1471,7 +2160,16 @@ impl World {
                     c.es = (c.es + rate).min(c.es_max);
                 }
             }
-            if c.life < c.life_max && now.saturating_sub(c.last_combat_tick) >= REGEN_DELAY_TICKS {
+            // CHARACTERS ONLY (#185 tuning): the burst heal is a player
+            // convenience — on monsters it fully reset any boss whose
+            // attacker kited for 5s, making ranged archetypes' fights
+            // unwinnable wars against a self-refilling bar (measured:
+            // the Mother cycling 19%→78% against the caster forever).
+            // Monsters regen through their life_regen stat alone.
+            if is_char
+                && c.life < c.life_max
+                && now.saturating_sub(c.last_combat_tick) >= REGEN_DELAY_TICKS
+            {
                 c.life = (c.life + (c.life_max / 50).max(1)).min(c.life_max);
             }
         }
@@ -1498,20 +2196,20 @@ impl World {
                 c.mana = c.mana_max;
                 c.es = c.es_max;
                 c.busy_until = 0;
+                // Five seconds of respawn grace (or until the first strike
+                // they throw) — spawn camping is not a fight.
+                c.grace_until = self.tick + 50;
                 events.push(SimEvent::CharacterRespawned { id });
             }
         }
 
-        // Packs respawn as a unit: survivors hold their ground (no trickle
-        // refills); once the pack is wiped and its timer runs out, the whole
-        // pack rises again.
+        // A pack rises EXACTLY ONCE (operator ruling: monsters never
+        // resurrect — anywhere). This loop is the SPAWNER, not a respawner:
+        // it raises each authored pack on its first eligible tick and never
+        // again. A cleared zone stays cleared; a cleared map is done.
         for pack_idx in 0..self.zone.packs.len() {
             let pack = &self.zone.packs[pack_idx];
-            if pack.alive > 0 {
-                continue;
-            }
-            if pack.respawn_timer > 0 {
-                self.zone.packs[pack_idx].respawn_timer -= 1;
+            if pack.alive > 0 || pack.risen {
                 continue;
             }
             let (missing, monster_idx, count) = (
@@ -1531,7 +2229,10 @@ impl World {
             // on the def and spawn Unique regardless.
             let (magic_bp, rare_bp) = {
                 let d = &self.zone.packs[pack_idx].def;
-                (d.magic_bp, d.rare_bp)
+                // The instance's rarity juice folds at READ time (B4):
+                // defs stay immutable content.
+                let juice = self.spawn_rarity_bp.max(0) as u32;
+                (d.magic_bp + juice, d.rare_bp + juice / 3)
             };
             let roll = self.rng_ai.next_range(10000);
             let pack_rarity = if self.content.monsters[monster_idx as usize].unique {
@@ -1603,6 +2304,7 @@ impl World {
                 }
             }
             self.zone.packs[pack_idx].alive = count;
+            self.zone.packs[pack_idx].risen = true;
         }
 
         // Loot despawn and corpse decay.
@@ -2106,7 +2808,7 @@ mod pack_rarity_tests {
 
     /// A fresh shore world with ONE multi-member non-unique pack forced
     /// to the given rarity chances (every other pack stays plain), ticked
-    /// once so the initial refill runs. Returns the forced pack's index.
+    /// once so the pack's single spawn runs. Returns the forced pack's index.
     fn world_with_forced_pack(magic_bp: u32, rare_bp: u32) -> (World, u32) {
         let content = content();
         let mut w = World::new(7, &content);
@@ -2124,6 +2826,7 @@ mod pack_rarity_tests {
         w.tick(&TickInputs {
             joins: Vec::new(),
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         (w, pack_idx)
     }
@@ -2180,8 +2883,8 @@ mod area_level_tests {
     use idlin_content::ContentDb;
     use std::path::Path;
 
-    /// The coast is a level-4 area: normal mobs fight at 4 (their def
-    /// baselines scale up), magic at 5, rare at 6 — and a mob's drops
+    /// The coast is a level-7 area: normal mobs fight at 7 (their def
+    /// baselines scale up), magic at 8, rare at 9 — and a mob's drops
     /// carry its EFFECTIVE level. The hand-designed shore (level 1)
     /// keeps every def's authored level via the max() rule.
     #[test]
@@ -2197,16 +2900,16 @@ mod area_level_tests {
             let def = &content.monsters[m.def_idx as usize];
             match m.rarity {
                 Rarity::Normal => {
-                    assert_eq!(m.level, 4, "{}: normal = area level", def.id);
+                    assert_eq!(m.level, 7, "{}: normal = area level", def.id);
                     if m.def_idx as usize == shambler_def {
                         saw_normal = true;
                         let c = e.combat.as_ref().unwrap();
-                        // def level 1 -> 4: +12%/level = +36% life.
-                        assert_eq!(c.life_max, base_life * 13600 / 10000);
+                        // def level 1 -> 7: +12%/level = +72% life.
+                        assert_eq!(c.life_max, base_life * 17200 / 10000);
                     }
                 }
-                Rarity::Magic => assert_eq!(m.level, 5, "{}: magic = area +1", def.id),
-                Rarity::Rare => assert_eq!(m.level, 6, "{}: rare = area +2", def.id),
+                Rarity::Magic => assert_eq!(m.level, 8, "{}: magic = area +1", def.id),
+                Rarity::Rare => assert_eq!(m.level, 9, "{}: rare = area +2", def.id),
                 Rarity::Unique => assert_eq!(m.level, def.level, "uniques stay authored"),
             }
         }
@@ -2231,6 +2934,7 @@ mod area_level_tests {
     fn join_one(w: &mut World, name: &str) -> usize {
         w.tick(&TickInputs {
             arrivals: Vec::new(),
+            removals: Vec::new(),
             joins: vec![crate::JoinRequest {
                 name: name.into(),
                 program: idlin_botc::assemble("halt\n").unwrap(),
@@ -2318,25 +3022,30 @@ mod area_level_tests {
                 xp: 0,
                 respawn_at: None,
                 kills: 0,
+                deaths: 0,
                 items: 0,
                 inventory: Vec::new(),
                 equipment: Default::default(),
                 allocated: Vec::new(),
                 build_plan: Vec::new(),
                 currency: Vec::new(),
+                stash: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 // The old zone's knowledge: everything explored, same size as
                 // the destination — the case the size check alone can't catch.
                 explored: vec![u64::MAX; words],
+                story_acts: 0,
             },
             persist: Vec::new(),
             program: idlin_botc::assemble("halt\n").unwrap(),
             params: Vec::new(),
             bot_version: 1,
+            map: None,
         };
         w.tick(&TickInputs {
             joins: Vec::new(),
             arrivals: vec![bundle],
+            removals: Vec::new(),
         });
         let slot = (0..w.zone.slot_count())
             .find(|&s| {
@@ -2357,6 +3066,1745 @@ mod area_level_tests {
             !explored_bit(&w, slot, fx, fy),
             "the old zone's knowledge did NOT carry over"
         );
+    }
+
+    #[test]
+    fn a_story_sealed_exit_refuses_until_the_act_is_complete() {
+        // #136: an exit with `requires_act: 1` returns -3 (stays put) for a
+        // fresh character and works normally once story_acts bit 0 is set —
+        // through the REAL UseExit syscall path. Mutations: drop the seal
+        // check in bots.rs → the fresh character departs on the first tick;
+        // read the wrong bit → the post-completion tick strands them.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x5EA1, &content);
+        // A bot that takes any exit underfoot, every tick.
+        let slot = {
+            w.tick(&TickInputs {
+                arrivals: Vec::new(),
+                removals: Vec::new(),
+                joins: vec![crate::JoinRequest {
+                    name: "Walker".into(),
+                    program: idlin_botc::assemble(
+                        "loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n",
+                    )
+                    .unwrap(),
+                }],
+            });
+            (0..w.zone.slot_count())
+                .find(|&s| {
+                    w.zone
+                        .get(s)
+                        .is_some_and(|e| e.character.as_ref().is_some_and(|c| c.name == "Walker"))
+                })
+                .expect("walker joined")
+        };
+        // A sealed, open exit right underfoot.
+        let pos = w.zone.get(slot).unwrap().pos;
+        w.zone.exits.push(crate::zone::ExitState {
+            pos,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 1,
+        });
+        w.tick(&TickInputs::default());
+        assert!(
+            w.take_departures().is_empty(),
+            "the seal held: no departure without act 1"
+        );
+        assert!(
+            w.zone.get(slot).is_some_and(|e| e.character.is_some()),
+            "the walker is still here"
+        );
+        // The ABI itself: the walker parked UseExit's last result at 0xF200 —
+        // a SEALED exit reads -3, distinctly from -2 closed / -1 none.
+        let bot_idx = w.zone.get(slot).unwrap().bot.expect("walker has a bot");
+        assert_eq!(
+            w.bots.get_mut(bot_idx).unwrap().vm.load_i32(0xF200),
+            -3,
+            "a story-sealed exit returns -3 on the wire ABI"
+        );
+        // Complete the act; the same exit now works.
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        w.tick(&TickInputs::default());
+        let departed = w.take_departures();
+        assert_eq!(departed.len(), 1, "the seal lifted with the act");
+        assert_eq!(departed[0].0.character.name, "Walker");
+        assert_eq!(
+            departed[0].0.character.story_acts, 1,
+            "progress travels in the bundle"
+        );
+    }
+
+    #[test]
+    fn an_open_unsealed_exit_wins_over_a_sealed_neighbor() {
+        // #136: with BOTH a sealed exit and an open unsealed one in reach, the
+        // bot departs — success outranks -3 (the loop keeps scanning past a
+        // sealed exit instead of bailing). Mutation: break on the sealed exit
+        // (or fold sealed into closed) → no departure here.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x5EA2, &content);
+        w.tick(&TickInputs {
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Walker".into(),
+                program: idlin_botc::assemble("loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n")
+                    .unwrap(),
+            }],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| w.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let pos = w.zone.get(slot).unwrap().pos;
+        w.zone.exits.push(crate::zone::ExitState {
+            pos,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 1, // sealed for a fresh character
+        });
+        w.zone.exits.push(crate::zone::ExitState {
+            pos,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 0, // free
+        });
+        w.tick(&TickInputs::default());
+        assert_eq!(
+            w.take_departures().len(),
+            1,
+            "the free exit wins over its sealed neighbor"
+        );
+    }
+
+    #[test]
+    fn base_energy_shield_folds_from_worn_gear() {
+        // #148 A2.5: the first ES bases — a worn 30-ES circlet gives exactly
+        // es_max 30 to a no-INT character (attribute conversion multiplies
+        // ON TOP). Mutation: drop the es_base accumulation or the
+        // sheet.value(EnergyShield, base.es) seed → es_max 0.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xE5F0, &content, "saltmere");
+        let slot = join_one(&mut w, "Warded");
+        let circlet = content
+            .items
+            .iter()
+            .position(|i| i.id == "tideglass_circlet")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.level = 5;
+            ch.equipment[idlin_content::GearSlot::Helm.idx()] = Some(crate::entity::Item {
+                base_idx: circlet,
+                rarity: Rarity::Normal,
+                item_level: 5,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            });
+        }
+        w.refresh_derived_stats(slot);
+        let es = w.zone.get(slot).unwrap().combat.as_ref().unwrap().es_max;
+        assert!(es >= 30, "a 30-ES base must fold into es_max; got {es}");
+    }
+
+    #[test]
+    fn a_signature_unique_folds_its_fixed_mods() {
+        // #136 T5: wearing Tideclaw moves the sheet exactly like gear affixes
+        // — cold on the swing, faster swings — through the SAME chokepoint.
+        // Mutation: drop the unique fold in progression.rs → both deltas
+        // vanish and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x517E, &content, "saltmere");
+        let slot = join_one(&mut w, "Bearer");
+        let cold_before = w.effective_offense(slot).unwrap().damage[crate::entity::DMG_COLD];
+        let ui = content
+            .uniques
+            .iter()
+            .position(|u| u.id == "tideclaw")
+            .unwrap() as u32;
+        let tideclaw = match w.mint_unique(ui, 8) {
+            crate::entity::LootPayload::Gear(item) => item,
+            other => panic!("a unique mints as gear: {other:?}"),
+        };
+        assert_eq!(tideclaw.name, "Tideclaw");
+        assert_eq!(tideclaw.rarity, Rarity::Unique);
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(tideclaw);
+        }
+        w.refresh_derived_stats(slot);
+        let cold_after = w.effective_offense(slot).unwrap().damage[crate::entity::DMG_COLD];
+        assert!(
+            cold_after >= cold_before + 8,
+            "the claw's cold folds ({cold_after} vs {cold_before})"
+        );
+        // And the sheet surfaces every fixed mod under the unique's name —
+        // the inspect panel's data path (#87 stat_sources).
+        let net = w.zone.get(slot).unwrap().net_id;
+        let sheet = w.character_sheet(net).unwrap();
+        let claw_mods: Vec<&str> = sheet
+            .stat_sources
+            .iter()
+            .filter(|(_, src, ..)| src.starts_with("Tideclaw"))
+            .map(|(stat, ..)| stat.as_str())
+            .collect();
+        assert!(
+            claw_mods.contains(&"attack_speed") && claw_mods.contains(&"chill_chance"),
+            "the claw's mods surface by name; got {claw_mods:?}"
+        );
+    }
+
+    #[test]
+    fn a_boss_pays_their_signature_when_the_roll_hits() {
+        // #136 T5: the drop hook, end to end, with the chance forced certain
+        // (drop_bp -> 10000 on the loaded db — a content probe, not a code
+        // fork). Mutation: drop the unique arm in handle_kill → no unique in
+        // the loot and this fails.
+        let mut content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        for u in &mut content.uniques {
+            if u.id == "tideclaw" {
+                u.drop_bp = 10000;
+            }
+        }
+        let mut w = World::new(0xD809, &content);
+        let slot = join_one(&mut w, "Slayer");
+        let anet = w.zone.get(slot).unwrap().net_id;
+        let warden = content.monster_idx("tidewarden").unwrap() as u32;
+        w.spawn_monster_rolled(
+            warden,
+            0,
+            FxV2::new(Fx::from_int(20), Fx::from_int(20)),
+            Rarity::Unique,
+            vec![],
+            "The Tidewarden".into(),
+        );
+        let mslot = w
+            .zone
+            .iter()
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| m.def_idx == warden && e.alive())
+            })
+            .map(|(s, _)| s)
+            .unwrap();
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 100_000_000;
+        let spec = combat::StrikeSpec {
+            attacker_slot: Some(slot),
+            attacker_net: anet,
+            attacker_name: "Slayer".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: true,
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        let now = w.tick;
+        w.strike(spec, mslot, now, &mut ev, &mut dead, &mut loot);
+        assert!(
+            loot.iter().any(|(_, payload, ..)| matches!(
+                payload,
+                crate::entity::LootPayload::Gear(item)
+                    if item.unique_idx.is_some() && item.name == "Tideclaw"
+            )),
+            "the warden must pay Tideclaw at 100%"
+        );
+    }
+
+    #[test]
+    fn a_unique_outscores_its_bare_base() {
+        // #136 T5 review (B2): item_score must SEE a unique's fixed mods —
+        // without the fold, a unique scored as its bare base and equip_best
+        // replaced signatures with any magic item (dead content for bots).
+        // Mutation: drop the unique arm in item_score → equal scores, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let w = World::new_for_zone(0x5C03, &content, "saltmere");
+        let ui = content
+            .uniques
+            .iter()
+            .position(|u| u.id == "tideclaw")
+            .unwrap() as u32;
+        let claw = match w.mint_unique(ui, 8) {
+            crate::entity::LootPayload::Gear(item) => item,
+            _ => unreachable!(),
+        };
+        let mut bare = claw.clone();
+        bare.unique_idx = None;
+        bare.rarity = Rarity::Normal;
+        assert!(
+            w.item_score(&claw) > w.item_score(&bare),
+            "the claw's mods must count ({} vs {})",
+            w.item_score(&claw),
+            w.item_score(&bare)
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_unique_identity() {
+        // #136 T5: two otherwise-identical worn items differing only in
+        // unique_idx must hash apart — identity is state. Mutation: drop the
+        // unique_idx write in views.rs → identical digests.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xF1D0, &content, "saltmere");
+        let slot = join_one(&mut w, "Twin");
+        let ui = content
+            .uniques
+            .iter()
+            .position(|u| u.id == "tideclaw")
+            .unwrap() as u32;
+        let item = match w.mint_unique(ui, 8) {
+            crate::entity::LootPayload::Gear(item) => item,
+            _ => unreachable!(),
+        };
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(item);
+        }
+        let h1 = w.state_hash();
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .equipment[idlin_content::GearSlot::Weapon.idx()]
+        .as_mut()
+        .unwrap()
+        .unique_idx = None;
+        assert_ne!(h1, w.state_hash(), "unique identity must move the digest");
+    }
+
+    #[test]
+    fn hostility_reaches_the_view_faithfully() {
+        // PROTO 45 (codex round 2): the ember gates on the wire's hostile
+        // flag — a villager must arrive false, a shambler true. Mutation:
+        // hardcode EntityView.hostile (either way) → one side fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x4057, &content, "saltmere");
+        w.tick(&TickInputs::default());
+        let vs = w.views();
+        let villager = vs
+            .iter()
+            .find(|v| v.kind == 2 && v.name.contains("Survivor"))
+            .expect("saltmere has villagers");
+        assert!(!villager.hostile, "a villager NPC must not read hostile");
+        let mut shore = World::new_for_zone(0x4058, &content, "withered_shore");
+        shore.tick(&TickInputs::default());
+        let hostile = shore.views().iter().any(|v| v.kind == 2 && v.hostile);
+        assert!(hostile, "the shore's monsters read hostile");
+    }
+
+    #[test]
+    fn a_combat_death_counts_on_the_ledger() {
+        // #148 A6 review (B1): the leaderboard's honesty column must be
+        // mutation-proof — kill a character through the REAL strike path
+        // and read deaths back. Mutation: revert the handle-kill
+        // `ch.deaths += 1` → this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xDEAD, &content);
+        let slot = join_one(&mut w, "Ledger");
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 1_000_000;
+        let spec = combat::StrikeSpec {
+            attacker_slot: None,
+            attacker_net: 0,
+            attacker_name: "The Test".into(),
+            attacker_is_char: false,
+            is_spell: false,
+            is_dot: true, // skip accuracy/crit rng — a guaranteed lethal hit
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let (mut ev, mut dd, mut ll) = (Vec::new(), Vec::new(), Vec::new());
+        let now = w.tick;
+        w.strike(spec, slot, now, &mut ev, &mut dd, &mut ll);
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.deaths, 1, "the combat death must be counted");
+    }
+
+    #[test]
+    fn a_life_cost_death_counts_on_the_ledger() {
+        // The OTHER death site (#148 A6 review B1): a skill's life cost
+        // can self-kill through pay_life_cost. Mutation: revert its
+        // `ch.deaths += 1` → this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xDEAE, &content);
+        let slot = join_one(&mut w, "Spent");
+        let life = w.zone.get(slot).unwrap().combat.as_ref().unwrap().life;
+        let mut ev = Vec::new();
+        let now = w.tick;
+        w.pay_life_cost(slot, life + 1, now, &mut ev);
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.deaths, 1, "the life-cost death must be counted");
+    }
+
+    #[test]
+    fn a_wand_implicit_scales_spell_damage() {
+        // Quality pass: spells never read weapon damage, so the wand ladder
+        // fed the caster NOTHING until the implicit existed. A worn wand
+        // with spell_damage_bp must lift a resolved spell hit by exactly
+        // its factor. Mutation: drop the is_spell scaling in resolve_skill
+        // (or the implicit fold in the derive) → equal damage, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x57E1, &content);
+        let slot = join_one(&mut w, "Wanded");
+        let nova = content
+            .gems
+            .iter()
+            .position(|g| g.id == "frost_nova")
+            .unwrap() as u32;
+        let wand = content
+            .items
+            .iter()
+            .position(|i| i.id == "sovereign_scepter")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.level = 10;
+            ch.allocated = vec![0];
+            ch.sockets.insert(
+                0,
+                crate::entity::SocketedGem {
+                    gem: crate::entity::GemInstance {
+                        gem_idx: nova,
+                        level: 5,
+                        xp: 0,
+                    },
+                    supports: Vec::new(),
+                    cooldown_left: 0,
+                },
+            );
+        }
+        w.refresh_derived_stats(slot);
+        let bare = w
+            .resolve_skill(slot, 0)
+            .expect("nova resolves")
+            .spec_template
+            .damage;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.equipment[idlin_content::GearSlot::Weapon.idx()] = Some(crate::entity::Item {
+                base_idx: wand,
+                rarity: Rarity::Normal,
+                item_level: 10,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            });
+        }
+        w.refresh_derived_stats(slot);
+        let armed = w
+            .resolve_skill(slot, 0)
+            .expect("nova resolves")
+            .spec_template
+            .damage;
+        let (b, a) = (
+            bare[crate::entity::DMG_COLD],
+            armed[crate::entity::DMG_COLD],
+        );
+        assert_eq!(
+            a,
+            b * 23000 / 10000,
+            "the scepter's +130% implicit must scale the nova ({b} -> {a})"
+        );
+    }
+
+    #[test]
+    fn query_monsters_contract_records_caps_and_refusals() {
+        // #162 review: the syscall's own contract, not just its use in the
+        // Sovereign's stage direction. A probe brain calls it three ways:
+        //   0xE800: max 16 → count + first record's fields
+        //   0xE980: max 2  → the cap holds
+        //   0xE9C0: max -5 → clamps to 0, writes nothing, returns 0
+        //   0xEC00: max 64 → MORE than 16 records land (the density-tuned
+        //           saltworks holds 39 monsters; revert the engine clamp to
+        //           16 and this reads exactly 16 — the raised cap is pinned)
+        // Mutation: swap the MON_X/MON_Y writes, drop the clamp, or break
+        // record layout → the field asserts fail.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0x9E57, &content, "saltworks");
+        let probe = idlin_botc::compile_deployed(
+            "fn main() {\n\
+             mem[0xEA00] = query_monsters(0xE800, 16);\n\
+             mem[0xEA04] = query_monsters(0xE980, 2);\n\
+             mem[0xEA08] = query_monsters(0xE9C0, 0 - 5);\n\
+             mem[0xEA0C] = query_monsters(0xEC00, 64);\n\
+             }\n",
+        )
+        .unwrap();
+        w.test_install_zone_brain(probe);
+        w.tick(&TickInputs::default());
+        let n = w.test_zone_brain_word(0xEA00).unwrap();
+        assert!(n > 0 && n <= 16, "live monsters reported: {n}");
+        let capped = w.test_zone_brain_word(0xEA04).unwrap();
+        assert_eq!(capped, 2, "the max cap holds");
+        assert_eq!(
+            w.test_zone_brain_word(0xEA08).unwrap(),
+            0,
+            "negative max clamps to zero"
+        );
+        let wide = w.test_zone_brain_word(0xEA0C).unwrap();
+        assert!(
+            wide > 16 && wide <= 64,
+            "a max-64 query reports past the old 16 cap (density blinded boss \
+             brains): {wide}"
+        );
+        // First record: a real monster num, sane life, in-bounds position.
+        let num = w.test_zone_brain_word(0xE800 + 4).unwrap();
+        assert!(
+            w.content_idx(num).is_some(),
+            "record num resolves in the registry: {num}"
+        );
+        let life = w.test_zone_brain_word(0xE800 + 8).unwrap();
+        assert!((1..=100).contains(&life), "life_pct sane: {life}");
+        let x = w.test_zone_brain_word(0xE800 + 12).unwrap();
+        let y = w.test_zone_brain_word(0xE800 + 16).unwrap();
+        assert!(x > 0 && y > 0, "position is Q16.16 in-bounds ({x},{y})");
+        let rarity = w.test_zone_brain_word(0xE800 + 20).unwrap();
+        assert!((0..=3).contains(&rarity), "rarity in the ladder: {rarity}");
+        // ENTITY bots must NOT get this syscall (zone-brain only): the
+        // dispatch in bots.rs has no arm for 109 → unknown syscall.
+        let mut w2 = World::new(0x9E58, &content);
+        let bot = idlin_botc::compile_deployed(
+            "fn main() {\n mem[0xEA00] = query_monsters(0xE800, 16);\n }\n",
+        );
+        // The builtin exists language-wide; the ENTITY dispatch refuses it.
+        let program = bot.unwrap();
+        let slot = {
+            let ev = w2.tick(&TickInputs {
+                joins: vec![JoinRequest {
+                    name: "Probe".into(),
+                    program,
+                }],
+                arrivals: Vec::new(),
+                removals: Vec::new(),
+            });
+            let _ = ev;
+            0
+        };
+        let _ = slot;
+        w2.tick(&TickInputs::default());
+        let refused = w2
+            .zone
+            .iter()
+            .find(|(_, e)| e.character.is_some())
+            .and_then(|(_, e)| e.bot)
+            .and_then(|bi| w2.bots.get(bi))
+            .map(|b| b.vm.load_i32(0xEA00));
+        assert_eq!(
+            refused,
+            Some(-1),
+            "an entity bot's query_monsters must refuse (-1), not see the zone"
+        );
+    }
+
+    #[test]
+    fn the_kill_switch_removes_a_character_cleanly() {
+        // #148 A6: a removal despawns the entity + its bot and announces
+        // it; unknown names are harmless. Mutation: drop process_removals
+        // from tick → the character survives and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xA6, &content);
+        let _ = join_one(&mut w, "Runaway");
+        let inputs = TickInputs {
+            joins: Vec::new(),
+            arrivals: Vec::new(),
+            removals: vec!["Runaway".into(), "Nobody".into()],
+        };
+        let events = w.tick(&inputs);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SimEvent::CharacterRemoved { name, .. } if name == "Runaway")),
+            "the removal announces itself"
+        );
+        assert!(
+            !w.views().iter().any(|v| v.kind == 1),
+            "the character is gone"
+        );
+        // The next tick is business as usual — no dangling bot panics.
+        w.tick(&TickInputs::default());
+    }
+
+    #[test]
+    fn the_vendor_pays_the_right_obol_and_guards_its_reach() {
+        // #148 A5: sell contract — rarity keys the obol; reach and bad
+        // selections refuse without consuming. Mutation: drop the reach
+        // check → the far-away sell succeeds; drop the rarity match → the
+        // wrong obol pays.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xA5, &content, "saltmere");
+        let slot = join_one(&mut w, "Seller");
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: cleaver,
+                    rarity: Rarity::Rare,
+                    item_level: 5,
+                    affixes: Vec::new(),
+                    name: "Doomcleaver".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let mut ev = Vec::new();
+        // Far from the vendor: refused, nothing consumed.
+        assert_eq!(w.sell(slot, 0, &mut ev), -2, "reach guards the vendor");
+        let n_before = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(n_before, 1, "refusal consumes nothing");
+        // At the vendor: a RARE pays exactly one alchemy obol.
+        let (vx, vy) = w.vendor.unwrap();
+        w.test_teleport(w.zone.get(slot).unwrap().net_id, vx as i16, vy as i16);
+        let paid = w.sell(slot, 0, &mut ev);
+        let alch = content
+            .currency
+            .iter()
+            .position(|c| c.id == "alchemy_obol")
+            .unwrap();
+        assert_eq!(
+            paid,
+            w.content_num(idlin_content::ids::Category::Currency, alch),
+            "a rare pays alchemy"
+        );
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.inventory.len(), 0, "the item is gone");
+        assert_eq!(ch.currency[alch], 1, "the obol landed");
+        // Bad selection on the emptied bag.
+        assert_eq!(w.sell(slot, 0, &mut ev), -1);
+        assert_eq!(w.sell(slot, -7, &mut ev), -1);
+    }
+
+    #[test]
+    fn the_stash_roundtrips_an_affixed_item_intact() {
+        // #148 A5: deposit → withdraw returns the SAME item — affixes,
+        // rarity, name. Mutation: drop the stash push or the withdraw
+        // remove → the roundtrip loses the item.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xA5A, &content, "saltmere");
+        let slot = join_one(&mut w, "Keeper");
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: cleaver,
+                    rarity: Rarity::Magic,
+                    item_level: 7,
+                    affixes: vec![crate::entity::RolledAffix {
+                        affix_idx: 0,
+                        tier: 0,
+                        values: vec![7],
+                    }],
+                    name: "Keepsake".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let (sx, sy) = w.stash_cell.unwrap();
+        w.test_teleport(w.zone.get(slot).unwrap().net_id, sx as i16, sy as i16);
+        assert_eq!(w.stash_op(slot, 0, 0), 1, "deposit lands");
+        {
+            let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+            assert_eq!(ch.inventory.len(), 0);
+            assert_eq!(ch.stash.len(), 1);
+        }
+        assert_eq!(w.stash_op(slot, 1, 0), 1, "withdraw lands");
+        let ch = w.zone.get(slot).unwrap().character.as_ref().unwrap();
+        assert_eq!(ch.stash.len(), 0);
+        let crate::entity::BagItem::Gear(it) = &ch.inventory[0].item else {
+            panic!("gear came back");
+        };
+        assert_eq!(it.name, "Keepsake");
+        assert_eq!(it.rarity, Rarity::Magic);
+        assert_eq!(it.affixes.len(), 1, "the affix survived the chest");
+        assert_eq!(it.affixes[0].values, vec![7]);
+        // Bad ops refuse cleanly.
+        assert_eq!(w.stash_op(slot, 2, 0), -1, "unknown op");
+        assert_eq!(w.stash_op(slot, 1, 5), -1, "empty chest withdraw");
+    }
+
+    #[test]
+    fn open_map_gates_consumes_and_stages_the_run() {
+        // #136 T4: the full syscall contract at Saltmere's real device —
+        // -3 mid-campaign, -2 away from the device, -1 for a non-map,
+        // 0 = the map is consumed and the ticket (tier from ilvl, juice
+        // from the ROLLED affixes) rides pending_exits. Mutations: drop the
+        // act gate, the reach check, the consume, or the juice mapping →
+        // the matching assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xC4A7, &content, "saltmere");
+        let slot = join_one(&mut w, "Runner");
+        let map_base = content
+            .items
+            .iter()
+            .position(|d| d.map_tier.is_some())
+            .expect("a map base ships") as u32;
+        let plenty = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_plenty")
+            .unwrap() as u32;
+        let shoals = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_shoals")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: map_base,
+                    rarity: Rarity::Magic,
+                    item_level: 41, // base tier 1 + 2 over the map floor (39) = 3
+                    affixes: vec![
+                        crate::entity::RolledAffix {
+                            affix_idx: plenty,
+                            values: vec![2000],
+                            tier: 0,
+                        },
+                        crate::entity::RolledAffix {
+                            affix_idx: shoals,
+                            values: vec![1800],
+                            tier: 0,
+                        },
+                    ],
+                    name: "Test Map".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let inv_idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        // Mid-campaign: the sea is sealed.
+        assert_eq!(w.open_map(slot, inv_idx), -3);
+        // Act 1 alone no longer buys the sea (#148 retro): the gate is the
+        // content-derived FINAL act. Mutation: revert open_map to the
+        // `story_acts & 1` check → this -3 becomes a depart and fails.
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        assert_eq!(w.open_map(slot, inv_idx), -3);
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
+        // Away from the device (the spawn is out of reach of (26,46)).
+        assert_eq!(w.open_map(slot, inv_idx), -2);
+        let table = w.map_device.expect("saltmere has the device");
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
+        // A non-map index refuses.
+        assert_eq!(w.open_map(slot, 999), -1);
+        // The map.
+        let bag_before = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(w.open_map(slot, inv_idx), 0);
+        let bag_after = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len();
+        assert_eq!(bag_after, bag_before - 1, "the map is spent");
+        let (_, dest, ticket) = w.pending_exits.last().expect("the depart is staged");
+        assert_eq!(dest, "charted_shallows");
+        let t = ticket.expect("a map depart carries its ticket");
+        assert_eq!(t.tier, 3, "tier 1 base + ilvl 41 - 39");
+        assert_eq!(t.quantity_bp, 2000, "of_plenty's roll pays quantity");
+        assert_eq!(t.rarity_bp, 1800, "of_shoals' roll pays rarity");
+    }
+
+    #[test]
+    fn a_rolled_deluge_clock_rides_the_ticket() {
+        // #178 (codex): the MapClock arm in open_map was the ONLY
+        // untested juice mapping — mutate it to a no-op and every clock
+        // test still passed (the direct-ticket tests bypass open_map).
+        // Before the operator killed the default clock, a real Deluge map
+        // would have silently departed on the then-6000 default instead
+        // of its rolled duration. Mutation: drop the MapClock match arm →
+        // the clock assert sees 0, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xDE1, &content, "saltmere");
+        let slot = join_one(&mut w, "Belled");
+        let map_base = content
+            .items
+            .iter()
+            .position(|d| d.map_tier.is_some())
+            .expect("a map base ships") as u32;
+        let deluge = content
+            .affixes
+            .iter()
+            .position(|a| a.id == "of_the_deluge")
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.story_acts = 3; // the WHOLE campaign
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: map_base,
+                    rarity: Rarity::Magic,
+                    item_level: 41,
+                    affixes: vec![crate::entity::RolledAffix {
+                        affix_idx: deluge,
+                        values: vec![7500],
+                        tier: 0,
+                    }],
+                    name: "Deluge Map".into(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let table = w.map_device.expect("saltmere has the device");
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
+        let inv_idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        assert_eq!(w.open_map(slot, inv_idx), 0);
+        let (_, _, ticket) = w.pending_exits.last().expect("the depart is staged");
+        let t = ticket.expect("a map depart carries its ticket");
+        assert_eq!(t.clock, 7500, "the rolled Deluge duration rides the ticket");
+        // And the minted world honors the ROLL, not the default.
+        let minted = World::new_map_instance(0xDE1, &content, "charted_shallows", t);
+        assert_eq!(minted.map_ends_at, 7500, "the roll beats the default");
+    }
+
+    #[test]
+    fn a_staged_departure_never_eats_the_map() {
+        // #136 T4 (critic's same-tick trap): with ANY departure already
+        // pending — an exit taken earlier this tick, or a previous map —
+        // OpenMap must refuse (-5) WITHOUT consuming. The original code
+        // consumed first and guarded second: the map vanished, no map,
+        // return said success. Mutation: reorder consume before the guard →
+        // the bag_after assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xEA7, &content, "saltmere");
+        let slot = join_one(&mut w, "Hasty");
+        let map_base = content
+            .items
+            .iter()
+            .position(|d| d.map_tier.is_some())
+            .unwrap() as u32;
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(crate::entity::Item {
+                    base_idx: map_base,
+                    rarity: Rarity::Normal,
+                    item_level: 13,
+                    affixes: Vec::new(),
+                    name: String::new(),
+                    charges: 0,
+                    unique_idx: None,
+                }),
+                x: 0,
+                y: 0,
+            });
+        }
+        let table = w.map_device.unwrap();
+        let net = w.zone.get(slot).unwrap().net_id;
+        w.zone.get_mut(slot).unwrap().pos =
+            FxV2::new(Fx::from_int(table.0 as i16), Fx::from_int(table.1 as i16));
+        // An exit is already staged this tick (as if UseExit ran first).
+        w.pending_exits.push((net, "coast".into(), None));
+        let inv_idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        let bag_before = inv_idx + 1;
+        assert_eq!(w.open_map(slot, inv_idx), -5, "refuse, don't lie");
+        let bag_after = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32;
+        assert_eq!(bag_after, bag_before, "the map survives the refusal");
+        assert_eq!(w.pending_exits.len(), 1, "no second departure was staged");
+    }
+
+    #[test]
+    fn map_rules_ride_the_ticket_and_shape_the_run() {
+        // #148 A4: the three RULES — fury folds into every monster's damage,
+        // the clock arms the expiry, the mark spawns the Unwritten at the
+        // far end at Unique rarity. Mutation: drop any application in
+        // new_map_instance (or the fury fold in the monster derive) →
+        // its assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let plain = World::new_map_instance(
+            0x41,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 4,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let mut ruled = World::new_map_instance(
+            0x41,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 4,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 3000,
+                clock: 6000,
+                boss: true,
+            },
+        );
+        assert_eq!(ruled.map_ends_at, 6000, "the clock arms");
+        assert_eq!(ruled.monster_fury_bp, 3000, "the fury dial sets");
+        let empty = TickInputs::default();
+        ruled.tick(&empty);
+        let vs = ruled.views();
+        let boss: Vec<_> = vs
+            .iter()
+            .filter(|v| v.rarity == 3 && v.name == "The Unwritten")
+            .collect();
+        assert_eq!(boss.len(), 1, "the mark spawns the tier boss");
+        // Fury scales at the STRIKE chokepoint (spells included — the boss's
+        // own kit was fury-blind when the fold lived in the derive tail):
+        // the SAME synthetic hit from a monster lands harder in the ruled
+        // map. Mutation: drop the strike() fold → equal damage, fails.
+        let mut plain = plain;
+        plain.tick(&empty);
+        let hit_for = |w: &mut World| {
+            let victim = join_one(w, "Struck");
+            let mslot = w
+                .zone
+                .iter()
+                .find(|(_, e)| e.monster.is_some() && e.alive())
+                .map(|(s, _)| s)
+                .unwrap();
+            let before = w.zone.get(victim).unwrap().combat.as_ref().unwrap().life;
+            let mut damage = [0i64; crate::entity::DMG_COUNT];
+            damage[crate::entity::DMG_PHYS] = 40;
+            let spec = combat::StrikeSpec {
+                attacker_slot: Some(mslot),
+                attacker_net: w.zone.get(mslot).unwrap().net_id,
+                attacker_name: "Wight".into(),
+                attacker_is_char: false,
+                is_spell: true,
+                is_dot: true, // dots skip accuracy/crit rng: a pure fury delta
+                accuracy: 0,
+                damage,
+                crit_bp: 0,
+                crit_multi: 10000,
+                projectile: false,
+                dot: None,
+                debuff: None,
+                stagger: 0,
+                knockback_cu: 0,
+                ailment_chance: 0,
+                inherent_ailment_kind: None,
+            };
+            let (mut ev, mut dd, mut ll) = (Vec::new(), Vec::new(), Vec::new());
+            let now = w.tick;
+            w.strike(spec, victim, now, &mut ev, &mut dd, &mut ll);
+            before - w.zone.get(victim).unwrap().combat.as_ref().unwrap().life
+        };
+        let base = hit_for(&mut plain);
+        let furied = hit_for(&mut ruled);
+        assert!(
+            furied > base,
+            "fury must lift the SAME hit ({furied} vs {base})"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_the_map_rules() {
+        // #178: by state_hash's own bar (same hash => same future), the
+        // map rules are replay-relevant — two worlds differing only in
+        // the map clock ferry everyone home at different ticks; fury
+        // steers every strike. Mutation: drop the #178 folds → identical
+        // hashes, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0B, &content);
+        let h1 = w.state_hash();
+        w.map_ends_at = 4242;
+        let h2 = w.state_hash();
+        assert_ne!(h1, h2, "the map clock must move the digest");
+        w.monster_fury_bp = 2500;
+        assert_ne!(h2, w.state_hash(), "the fury dial must move the digest");
+        // The rarity juice is a WORLD SCALAR (B4): spawn_rarity_bp folds
+        // into the digest, so two same-seed maps differing only in
+        // rarity_bp hash apart. Mutation: drop the spawn_rarity_bp fold
+        // from state_hash → equal digests, fails.
+        let ticket = |rarity_bp: i64| MapTicket {
+            tier: 2,
+            rarity_bp,
+            quantity_bp: 0,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        };
+        let plain = World::new_map_instance(0xF0C, &content, "charted_shallows", ticket(0));
+        let juiced = World::new_map_instance(0xF0C, &content, "charted_shallows", ticket(1500));
+        assert_ne!(
+            plain.state_hash(),
+            juiced.state_hash(),
+            "the instance rarity juice (spawn_rarity_bp, B4) must move the digest"
+        );
+    }
+
+    #[test]
+    fn the_dead_stay_dead() {
+        // Operator ruling: monsters NEVER resurrect — anywhere. Finite
+        // content IS the progression pressure: a cleared zone stays
+        // cleared, a cleared map is DONE (that is what ends a run), and
+        // camping one spot pays nothing. Mutation: restore the respawn
+        // arm (risen=false on wipe, or spawn when risen) → the pack
+        // refills after its old timer and the zero assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xDEAD, &content);
+        let empty = TickInputs::default();
+        w.tick(&empty); // packs rise once
+        let before: u32 = w.zone.packs.iter().map(|p| p.alive).sum();
+        assert!(before > 0, "the packs rose");
+        // Kill every monster outright (test seam: massive dot strikes).
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 50_000_000;
+        let slots: Vec<usize> = w
+            .zone
+            .iter()
+            .filter(|(_, e)| e.monster.is_some() && e.alive())
+            .map(|(s, _)| s)
+            .collect();
+        for slot in slots {
+            let spec = combat::StrikeSpec {
+                attacker_slot: None,
+                attacker_net: 0,
+                attacker_name: "TheEnd".into(),
+                attacker_is_char: true,
+                is_spell: false,
+                is_dot: true,
+                accuracy: 0,
+                damage,
+                crit_bp: 0,
+                crit_multi: 10000,
+                projectile: false,
+                dot: None,
+                debuff: None,
+                stagger: 0,
+                knockback_cu: 0,
+                ailment_chance: 0,
+                inherent_ailment_kind: None,
+            };
+            let (mut ev, mut dd, mut ll) = (Vec::new(), Vec::new(), Vec::new());
+            let now = w.tick;
+            w.strike(spec, slot, now, &mut ev, &mut dd, &mut ll);
+        }
+        assert_eq!(
+            w.zone.packs.iter().map(|p| p.alive).sum::<u32>(),
+            0,
+            "the cull landed"
+        );
+        // Tick FAR past any historical respawn timer: nothing rises.
+        for _ in 0..2_000 {
+            w.tick(&empty);
+        }
+        let living = w
+            .zone
+            .iter()
+            .filter(|(_, e)| e.monster.is_some() && e.alive())
+            .count();
+        assert_eq!(living, 0, "the dead stay dead — no respawns, anywhere");
+    }
+
+    #[test]
+    fn a_clockless_map_never_ends_on_its_own() {
+        // Operator ruling (#185): with no respawns a map ends by being
+        // CLEARED — no timer may boot a working idler. Only a rolled
+        // Deluge clock arms map_ends_at. Mutation: restore the default
+        // arm → nonzero, fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let w = World::new_map_instance(
+            0x185,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        assert_eq!(w.map_ends_at, 0, "no rolled clock = no clock, ever");
+    }
+
+    #[test]
+    fn the_rarity_juice_reaches_the_spawn_roll() {
+        // B4's decisive consumption test (codex: storing + hashing the
+        // property proves nothing about the ROLL). With juice 9999 the
+        // roll window (0..10000) is fully covered by magic+rare bounds —
+        // EVERY non-unique pack must spawn magic-or-better; the plain
+        // twin at base bps must keep at least one normal pack. Mutation:
+        // drop the juice fold at the roll site → the juiced world spawns
+        // normals and the zero assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let ticket = |rarity_bp: i64| MapTicket {
+            tier: 2,
+            rarity_bp,
+            quantity_bp: 0,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        };
+        let empty = TickInputs::default();
+        // The roll is PER PACK: a rare roll = one rare LEADING normals, so
+        // the census must judge packs, not members.
+        let spawn_census = |rarity_bp: i64| {
+            let mut w =
+                World::new_map_instance(0xB4, &content, "charted_shallows", ticket(rarity_bp));
+            w.tick(&empty); // packs spawn on the first tick
+            let n_packs = w.zone.packs.len();
+            let mut pack_hit = vec![false; n_packs];
+            for (_, e) in w.zone.iter() {
+                if let Some(m) = &e.monster
+                    && m.rarity != Rarity::Normal
+                {
+                    pack_hit[m.pack_idx as usize] = true;
+                }
+            }
+            let juiced_packs = pack_hit.iter().filter(|h| **h).count();
+            (juiced_packs, n_packs, w)
+        };
+        let (plain_juiced, n_packs, _) = spawn_census(0);
+        assert!(plain_juiced < n_packs, "base bps leave fully-normal packs");
+        let (all_juiced, n2, w) = spawn_census(9999);
+        assert_eq!(
+            all_juiced, n2,
+            "juice 9999 covers the whole roll window: every pack magic-or-better"
+        );
+        // And the defs behind those rolls are still pristine content.
+        let base = World::new_for_zone(0xB4, &content, "charted_shallows");
+        for (j, b) in w.zone.packs.iter().zip(base.zone.packs.iter()) {
+            assert_eq!(j.def.magic_bp, b.def.magic_bp, "defs are immutable");
+            assert_eq!(j.def.rare_bp, b.def.rare_bp, "defs are immutable");
+        }
+    }
+
+    #[test]
+    fn the_map_tally_settles_on_departure() {
+        // #148 A7: the scoreboard is the DELTA between arrival marks and
+        // departure state — kills earned inside the map count, the
+        // career total doesn't leak in. Mutation: drop the arrival stamp
+        // or the departure emit → no tally / wrong kills, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_map_instance(
+            0xA7,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 30,
+                boss: false,
+            },
+        );
+        let slot = join_one(&mut w, "Talleyrand");
+        {
+            // A career behind them: 100 kills BEFORE the map.
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.kills = 100;
+        }
+        // This test drives the DEPARTURE/delta half through a manual stamp
+        // (join_one lands via joins); the ARRIVAL stamp — the production
+        // path — is pinned by the arrivals-path test below.
+        let net = w.zone.get(slot).unwrap().net_id;
+        w.map_marks.insert(net, (100, 0, 0, w.tick));
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.kills = 102;
+        }
+        let empty = TickInputs::default();
+        let mut tally = None;
+        for _ in 0..60 {
+            for ev in w.tick(&empty) {
+                if let SimEvent::MapTally { kills, name, .. } = ev {
+                    tally = Some((name, kills));
+                }
+            }
+            let _ = w.take_departures();
+        }
+        let (name, kills) = tally.expect("the clock departure settles a tally");
+        assert_eq!(name, "Talleyrand");
+        assert_eq!(kills, 2, "only the map's kills count");
+    }
+
+    #[test]
+    fn a_real_arrival_stamps_the_map_marks() {
+        // #148 A7 review (B2): the ARRIVAL stamp is the only wiring between
+        // the tally and real gameplay (transfers land via arrivals) — the
+        // critic proved it was untested by reverting it under a green
+        // suite. Mutation: drop the stamp block in apply_joins → no mark,
+        // no tally, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut source = World::new(0xA7B, &content);
+        let slot = join_one(&mut source, "Ferried");
+        {
+            let ch = source
+                .zone
+                .get_mut(slot)
+                .unwrap()
+                .character
+                .as_mut()
+                .unwrap();
+            ch.kills = 50;
+        }
+        let net = source.zone.get(slot).unwrap().net_id;
+        source
+            .pending_exits
+            .push((net, "charted_shallows".into(), None));
+        let mut ev = Vec::new();
+        source.process_exits(&mut ev);
+        let (bundle, _dest) = source.take_departures().pop().expect("departed");
+
+        let mut map = World::new_map_instance(
+            0xA7C,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let inputs = TickInputs {
+            joins: Vec::new(),
+            arrivals: vec![bundle],
+            removals: Vec::new(),
+        };
+        map.tick(&inputs);
+        let vnet = map
+            .views()
+            .iter()
+            .find(|v| v.kind == 1)
+            .map(|v| v.id)
+            .unwrap();
+        let mark = map.map_marks.get(&vnet).copied();
+        assert_eq!(
+            mark.map(|(k, ..)| k),
+            Some(50),
+            "the arrival stamps the career kills as the map baseline"
+        );
+    }
+
+    #[test]
+    fn the_map_clock_ferries_everyone_home() {
+        // #148 A4: at expiry every character departs to Lanternfall as an
+        // ordinary bundle — nothing carried is lost. Mutation: drop the
+        // map_clock call from tick → no departure, this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_map_instance(
+            0x42,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 20,
+                boss: false,
+            },
+        );
+        let _ = join_one(&mut w, "Timed");
+        let empty = TickInputs::default();
+        let mut departed = Vec::new();
+        for _ in 0..40 {
+            w.tick(&empty);
+            departed.extend(w.take_departures());
+        }
+        assert_eq!(departed.len(), 1, "the clock ferries the runner out");
+        let (bundle, dest) = &departed[0];
+        assert_eq!(dest, "lanternfall");
+        assert_eq!(bundle.character.name, "Timed");
+    }
+
+    #[test]
+    fn a_map_instance_lifts_level_and_juice() {
+        // #136 T4: the ticket becomes a world — area level 39 + tier, pack
+        // rarity juiced, drop quantity juiced, and the instance marked
+        // ephemeral. Mutation: drop any application in new_map_instance →
+        // the matching assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let plain = World::new_for_zone(0x11, &content, "charted_shallows");
+        let w = World::new_map_instance(
+            0x11,
+            &content,
+            "charted_shallows",
+            MapTicket {
+                tier: 3,
+                rarity_bp: 2100,
+                quantity_bp: 1500,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        assert_eq!(w.zone_level(), 42); // 39 + tier 3 (the level-40 map floor)
+        assert!(w.is_map_instance() && !plain.is_map_instance());
+        assert_eq!(w.loot_quantity_bp, 1500);
+        // B4: the juice is an instance property; defs stay UNTOUCHED.
+        assert_eq!(w.spawn_rarity_bp, 2100);
+        for (juiced, base) in w.zone.packs.iter().zip(plain.zone.packs.iter()) {
+            assert_eq!(juiced.def.magic_bp, base.def.magic_bp, "defs are immutable");
+            assert_eq!(juiced.def.rare_bp, base.def.rare_bp, "defs are immutable");
+        }
+    }
+
+    #[test]
+    fn maps_are_cargo_not_gear() {
+        // #136 T4: a map can never be worn — the manual path refuses and
+        // the auto path scores it below any real item. Mutation: drop either
+        // guard in inventory.rs → the matching assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new_for_zone(0xCA60, &content, "saltmere");
+        let slot = join_one(&mut w, "Porter");
+        let map_base = content
+            .items
+            .iter()
+            .position(|d| d.map_tier.is_some())
+            .unwrap() as u32;
+        let map = crate::entity::Item {
+            base_idx: map_base,
+            rarity: Rarity::Normal,
+            item_level: 13,
+            affixes: Vec::new(),
+            name: String::new(),
+            charges: 0,
+            unique_idx: None,
+        };
+        assert_eq!(w.item_score(&map), 0, "autos skip cargo");
+        {
+            let ch = w.zone.get_mut(slot).unwrap().character.as_mut().unwrap();
+            ch.inventory.push(crate::entity::PlacedItem {
+                item: crate::entity::BagItem::Gear(map),
+                x: 4,
+                y: 0,
+            });
+        }
+        let idx = w
+            .zone
+            .get(slot)
+            .unwrap()
+            .character
+            .as_ref()
+            .unwrap()
+            .inventory
+            .len() as i32
+            - 1;
+        let mut ev = Vec::new();
+        assert_eq!(w.equip(slot, idx, &mut ev), -1, "manual equip refuses");
+    }
+
+    #[test]
+    fn the_mothers_fall_completes_act_1_with_real_content() {
+        // #136 T3: the ACTUAL act boss — spawned from her shipped def — sets
+        // the killer's act bit through the real kill path. Mutation: strip
+        // act_boss from mother_of_the_drowned.ron (or point it at another
+        // monster) → this fails. (Once-only/trash rules are pinned in
+        // combat.rs with a synthetic boss; this pins the CONTENT.)
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xAC71, &content);
+        let slot = join_one(&mut w, "Breaker");
+        let anet = w.zone.get(slot).unwrap().net_id;
+        let mother = content.monster_idx("mother_of_the_drowned").unwrap() as u32;
+        w.spawn_monster_rolled(
+            mother,
+            0,
+            FxV2::new(Fx::from_int(20), Fx::from_int(20)),
+            Rarity::Unique,
+            vec![],
+            "Mother of the Drowned".into(),
+        );
+        let mslot = w
+            .zone
+            .iter()
+            .find(|(_, e)| {
+                e.monster
+                    .as_ref()
+                    .is_some_and(|m| m.def_idx == mother && e.alive())
+            })
+            .map(|(s, _)| s)
+            .unwrap();
+        // A deterministic, certain kill through the real strike path (a DoT
+        // spec rolls no accuracy/crit/variance RNG).
+        let mut damage = [0i64; crate::entity::DMG_COUNT];
+        damage[crate::entity::DMG_PHYS] = 100_000_000;
+        let spec = combat::StrikeSpec {
+            attacker_slot: Some(slot),
+            attacker_net: anet,
+            attacker_name: "Breaker".into(),
+            attacker_is_char: true,
+            is_spell: true,
+            is_dot: true,
+            accuracy: 0,
+            damage,
+            crit_bp: 0,
+            crit_multi: 10000,
+            projectile: false,
+            dot: None,
+            debuff: None,
+            stagger: 0,
+            knockback_cu: 0,
+            ailment_chance: 0,
+            inherent_ailment_kind: None,
+        };
+        let (mut ev, mut dead, mut loot) = (Vec::new(), Vec::new(), Vec::new());
+        let now = w.tick;
+        w.strike(spec, mslot, now, &mut ev, &mut dead, &mut loot);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, SimEvent::ActCompleted { act: 1, .. })),
+            "the Mother's fall fires the act beat"
+        );
+        assert_eq!(
+            w.zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .story_acts,
+            1,
+            "act 1 belongs to the breaker"
+        );
+        // The act boss ALWAYS pays a map, INTO THE KILLER'S BAG (#136
+        // T4+T6): the campaign's key reward is unmissable — a ground drop
+        // once despawned while her killer respawned across the zone.
+        // Mutation: drop the act-boss arm or the hand-delivery → fails.
+        assert!(
+            w.zone
+                .get(slot)
+                .unwrap()
+                .character
+                .as_ref()
+                .unwrap()
+                .inventory
+                .iter()
+                .any(|p| matches!(
+                    &p.item,
+                    crate::entity::BagItem::Gear(item)
+                        if self_content_map(&content, item.base_idx)
+                )),
+            "the Mother's map lands in the killer's bag"
+        );
+        assert!(
+            !loot.iter().any(|(_, payload, ..)| matches!(
+                payload,
+                crate::entity::LootPayload::Gear(item)
+                    if self_content_map(&content, item.base_idx)
+            )),
+            "no duplicate map on the ground"
+        );
+    }
+
+    fn self_content_map(content: &ContentDb, base_idx: u32) -> bool {
+        content.items[base_idx as usize].map_tier.is_some()
+    }
+
+    #[test]
+    fn the_tidewardens_storm_rises_below_half_life() {
+        // #136 T2: the boss PHASE is real, not lore — below 50% life the
+        // Tidewarden's kit (below_life_pct passives) folds in: double crit
+        // chance, +50% crit multi, +60% phys on his fists, through the same
+        // per-strike machinery as player gear. Mutation: strip the passives
+        // from tidewarden.ron (or break monster strike conditions) → wounded
+        // == healthy and this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xB055, &content);
+        let warden = content.monster_idx("tidewarden").unwrap() as u32;
+        w.spawn_monster_rolled(
+            warden,
+            0,
+            FxV2::new(Fx::from_int(10), Fx::from_int(10)),
+            Rarity::Unique,
+            vec![],
+            "The Tidewarden".into(),
+        );
+        let slot = w
+            .zone
+            .iter()
+            .find(|(_, e)| e.monster.is_some())
+            .map(|(s, _)| s)
+            .unwrap();
+        let offense = |w: &World, s: usize| {
+            let o = w.effective_offense(s).unwrap();
+            (o.damage[crate::entity::DMG_PHYS], o.crit_inc, o.crit_multi)
+        };
+        let (phys_hale, crit_hale, multi_hale) = offense(&w, slot);
+        {
+            let c = w.zone.get_mut(slot).unwrap().combat.as_mut().unwrap();
+            c.life = c.life_max * 4 / 10; // 40%: the storm rises
+        }
+        let (phys_low, crit_low, multi_low) = offense(&w, slot);
+        assert!(
+            phys_low > phys_hale,
+            "the colossus swings harder wounded ({phys_low} vs {phys_hale})"
+        );
+        assert_eq!(crit_low, crit_hale * 2, "storms crit twice as often");
+        assert_eq!(multi_low, multi_hale + 5000, "and half again as hard");
+    }
+
+    #[test]
+    fn state_hash_fingerprints_exit_seals() {
+        // #136: two worlds identical but for an exit's requires_act admit
+        // different futures (one departs, one gets -3) — the seal must hash.
+        // Mutation: drop the requires_act fold in views.rs → identical digests.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0A, &content);
+        w.zone.exits.push(crate::zone::ExitState {
+            pos: w.zone.spawn,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 1,
+        });
+        let h1 = w.state_hash();
+        w.zone.exits.last_mut().unwrap().requires_act = 2;
+        assert_ne!(h1, w.state_hash(), "the seal must move the digest");
+    }
+
+    #[test]
+    fn self_status_flags_carry_act_completion_on_bit_1() {
+        // #136: SS_FLAGS bit1 = act 1 complete, bit0 = dead — through the REAL
+        // SelfStatus syscall. Mutation: shift act1 to bit 2 (or drop it) → the
+        // post-completion read isn't 2; corrupt bit0 → the alive read fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0B, &content);
+        // SelfStatus(out=0xF000) every tick; flags land at 0xF000 + 32.
+        w.tick(&TickInputs {
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+            joins: vec![crate::JoinRequest {
+                name: "Flagbearer".into(),
+                program: idlin_botc::assemble(
+                    "loop:\npush 0xF000\nsys 1 1\npush 0xF200\nstore\njmp loop\n",
+                )
+                .unwrap(),
+            }],
+        });
+        let slot = (0..w.zone.slot_count())
+            .find(|&s| w.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let bot_idx = w.zone.get(slot).unwrap().bot.unwrap();
+        let flags = |w: &mut World, idx: u32| -> i32 {
+            w.bots.get_mut(idx).unwrap().vm.load_i32(0xF000 + 32)
+        };
+        assert_eq!(flags(&mut w, bot_idx), 0, "alive, no acts: flags 0");
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        w.tick(&TickInputs::default());
+        assert_eq!(
+            flags(&mut w, bot_idx),
+            2,
+            "act 1 complete + alive: exactly bit 1"
+        );
+    }
+
+    #[test]
+    fn story_and_sealed_exits_survive_world_serde() {
+        // #136: the WORLD snapshot must carry a character's story_acts and an
+        // exit's requires_act — a `#[serde(skip)]` on either would resume a
+        // wiped campaign or an unsealed exit. Mutation: skip either field →
+        // the corresponding assert fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0x51A8, &content);
+        let slot = join_one(&mut w, "Pilgrim");
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 0b101;
+        w.zone.exits.push(crate::zone::ExitState {
+            pos: w.zone.spawn,
+            dest: "saltmere".into(),
+            open: true,
+            requires_act: 2,
+        });
+        let bytes = postcard::to_allocvec(&w).expect("world serializes");
+        let mut back: World = postcard::from_bytes(&bytes).expect("world resumes");
+        back.attach_content(&content).expect("content re-attaches");
+        let ch = (0..back.zone.slot_count())
+            .find_map(|s| back.zone.get(s).and_then(|e| e.character.as_ref()))
+            .expect("character restored");
+        assert_eq!(ch.story_acts, 0b101, "story_acts survives the snapshot");
+        assert_eq!(
+            back.zone.exits.last().unwrap().requires_act,
+            2,
+            "the sealed exit survives the snapshot"
+        );
+    }
+
+    #[test]
+    fn state_hash_fingerprints_story_acts() {
+        // #136: campaign progress gates future behavior (exits/maps), so it
+        // must be hashed. Mutation: drop the story_acts fold → identical hash.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF09, &content);
+        let slot = join_one(&mut w, "Storied");
+        let h1 = w.state_hash();
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 3; // the WHOLE campaign (final_act-derived gate, #148 retro)
+        assert_ne!(h1, w.state_hash(), "story_acts must move the digest");
+    }
+
+    #[test]
+    fn state_hash_fingerprints_stash() {
+        // #148 A5 review (B1): the chest steers bots (ReadStash → withdraw
+        // branches), so it is replayed state and must be hashed. Mutation:
+        // drop the stash fold from state_hash → this fails.
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut w = World::new(0xF0A, &content);
+        let slot = join_one(&mut w, "Chested");
+        let h1 = w.state_hash();
+        let cleaver = content
+            .items
+            .iter()
+            .position(|i| i.id == "rusted_cleaver")
+            .unwrap() as u32;
+        w.zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .stash
+            .push(crate::entity::BagItem::Gear(crate::entity::Item {
+                base_idx: cleaver,
+                rarity: Rarity::Normal,
+                item_level: 1,
+                affixes: Vec::new(),
+                name: String::new(),
+                charges: 0,
+                unique_idx: None,
+            }));
+        assert_ne!(h1, w.state_hash(), "stash must move the digest");
     }
 
     #[test]

@@ -1,0 +1,19 @@
+// The road's last blade (#136 T6): a ship's rib, salt-hardened past
+// iron. The melee ladder's top rung for Act 1 — the Hollow and the
+// mapped waters expect it.
+ItemDef(
+    id: "wreckwood_maul",
+    public: true,
+    name: "Wreckwood Maul",
+    model: "cleaver",
+    slot: weapon,
+    weapon_class: Some(melee),
+    w: 2,
+    h: 4,
+    damage_phys: 40,
+    range_cu: 240,
+    use_ticks: 11,
+    projectile: false,
+    weight: 30,
+    affix_pools: ["weapon"],
+)

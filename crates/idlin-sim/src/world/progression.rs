@@ -111,6 +111,9 @@ struct CharDerived {
     crit_inc: i64,
     crit_multi: i64,
     cast_speed: i64,
+    /// Increased spell damage as a factor (10000 = unchanged) — the wand
+    /// implicit's road into spell hits (quality pass).
+    spell_damage_bp: i64,
     damage: [i64; DMG_COUNT],
     accuracy: i64,
     evasion: i64,
@@ -143,6 +146,7 @@ struct CharDerived {
 /// so the full `CharDerived` stays private to the derive.
 pub(super) struct EffectiveOffense {
     pub damage: [i64; DMG_COUNT],
+    pub spell_damage_bp: i64,
     pub crit_inc: i64,
     pub crit_multi: i64,
     pub accuracy: i64,
@@ -163,6 +167,8 @@ struct DeriveBase {
     accuracy: i64,
     evasion: i64,
     armour: i64,
+    /// Base energy shield from worn gear (#148 A2.5) — folds like armour.
+    es: i64,
     resists: [i64; RES_COUNT],
     use_ticks: u32,
     speed: Fx,
@@ -237,7 +243,7 @@ fn derive_from_sheet(
     CharDerived {
         life_max: sheet.value(Stat::Life, base.life).max(1),
         mana_max: sheet.value(Stat::Mana, base.mana).max(0),
-        es_max: sheet.value(Stat::EnergyShield, 0),
+        es_max: sheet.value(Stat::EnergyShield, base.es),
         life_regen: sheet.value(Stat::LifeRegen, 0),
         mana_regen: sheet.value(Stat::ManaRegen, 0),
         leech_life: sheet.value(Stat::LeechLife, 0),
@@ -246,6 +252,7 @@ fn derive_from_sheet(
         crit_inc: sheet.value(Stat::CritChance, 10000).max(0),
         crit_multi: (15000 + sheet.value(Stat::CritMulti, 0)).max(10000),
         cast_speed: sheet.value(Stat::CastSpeed, 10000).max(1000),
+        spell_damage_bp: sheet.value(Stat::SpellDamage, 10000).max(0),
         damage,
         accuracy: sheet.value(Stat::Accuracy, base.accuracy),
         evasion: sheet.value(Stat::Evasion, base.evasion),
@@ -316,6 +323,7 @@ fn monster_scaled_base(
         damage,
         accuracy,
         evasion: def.evasion,
+        es: 0,
         armour: def.armour,
         resists: [
             def.resist_fire,
@@ -333,18 +341,22 @@ fn monster_scaled_base(
 
 /// XP to advance from `level` to `level+1`. Hybrid curve: a quadratic
 /// BASE (smooth early game) times an exponential factor that engages
-/// only AFTER the tutorial band, so levels 1..=5 are unchanged and the
-/// back half (90→100) becomes a genuine mountain — roughly the whole
-/// 1→90 climb again. Integer-only (the exponential is fixed-point so
-/// the curve is bit-identical on every platform). Tunable via the two
-/// rate constants.
+/// only AFTER the tutorial band. RE-ANCHORED to the doubled level scale
+/// (operator ruling: the two-act campaign delivers level 38 — what the
+/// old curve called 19 — and tier-1 maps open at 40): the quadratic
+/// coefficient drops to 8 (fit EMPIRICALLY: the finite no-respawn
+/// campaign yields ~300k XP; cumulative-to-38 at A=8 is 302k) and the exponential rate
+/// halves per level (26/25 = 1.04 ≈ √1.08), engaging after level 10
+/// (the doubled tutorial band). Band-measured: four melee seeds collect 267-300k over the full road. Integer-only
+/// (fixed-point exponential, bit-identical on every platform). Tunable
+/// via the two rate constants.
 pub(super) fn xp_to_next(level: u32) -> i64 {
-    const RAMP_FROM: u32 = 5; // levels 1..=5 unchanged (tutorial pacing)
+    const RAMP_FROM: u32 = 10; // levels 1..=10 quadratic-only (tutorial pacing)
     const SCALE: i64 = 1 << 20; // fixed-point multiplier scale
-    const R_NUM: i64 = 27; // r = 1.08, exactly 27/25
+    const R_NUM: i64 = 26; // r = 1.04, exactly 26/25
     const R_DEN: i64 = 25;
     let l = level as i64;
-    let base = 80 + 40 * l * l;
+    let base = 80 + 8 * l * l;
     // r^(level - RAMP_FROM), accumulated in fixed point. Operands stay
     // far inside i64 even at level 100 (base*mult ≈ 6.3e14 « i64::MAX).
     let mut mult = SCALE;
@@ -556,6 +568,7 @@ impl World {
             c.crit_inc = d.crit_inc;
             c.crit_multi = d.crit_multi;
             c.cast_speed = d.cast_speed;
+            c.spell_damage_bp = d.spell_damage_bp;
             c.damage = d.damage;
             c.accuracy = d.accuracy;
             c.evasion = d.evasion;
@@ -656,6 +669,7 @@ impl World {
         let mut weapon: Option<&Item> = None;
         let mut armour_base = 0i64;
         let mut evasion_base = base_evasion(level);
+        let mut es_base = 0i64;
         let mut block_base = 0i64;
         for (i, slot_item) in ch.equipment.iter().enumerate() {
             let Some(item) = slot_item else { continue };
@@ -666,11 +680,32 @@ impl World {
                     has_strike |= fold_and_collect(&mut sheet, &g, &ctx, &mut target_grants);
                 }
             }
+            // A unique's FIXED mods (#136 T5) fold exactly like rolled
+            // affixes — same chokepoint, same conditional machinery.
+            if let Some(u) = item.unique_idx {
+                for g in &self.content.uniques[u as usize].mods {
+                    has_strike |= fold_and_collect(&mut sheet, g, &ctx, &mut target_grants);
+                }
+            }
             if i == GearSlot::Weapon.idx() {
                 weapon = Some(item);
+                // The wand's IMPLICIT (quality pass): spells never read
+                // weapon damage, so the caster's ladder feeds the sheet
+                // here instead — an increased-spell-damage grant baked
+                // into the base, exactly like an affix would fold.
+                if def.spell_damage_bp > 0 {
+                    let g = Grant {
+                        stat: Stat::SpellDamage,
+                        layer: crate::stats::Layer::Increased,
+                        value: def.spell_damage_bp,
+                        condition: None,
+                    };
+                    has_strike |= fold_and_collect(&mut sheet, &g, &ctx, &mut target_grants);
+                }
             } else {
                 armour_base += def.armour;
                 evasion_base += def.evasion;
+                es_base += def.energy_shield;
                 block_base += def.block_bp;
             }
         }
@@ -708,6 +743,7 @@ impl World {
             accuracy: base_accuracy(level),
             evasion: evasion_base,
             armour: armour_base,
+            es: es_base,
             resists: [0; RES_COUNT],
             use_ticks: use_base,
             speed: speed_from_cps(BASE_SPEED_CPS),
@@ -753,6 +789,7 @@ impl World {
             c.crit_inc = d.crit_inc;
             c.crit_multi = d.crit_multi;
             c.cast_speed = d.cast_speed;
+            c.spell_damage_bp = d.spell_damage_bp;
             c.damage = d.damage;
             c.accuracy = d.accuracy;
             c.evasion = d.evasion;
@@ -798,6 +835,7 @@ impl World {
         };
         Some(EffectiveOffense {
             damage: d.damage,
+            spell_damage_bp: d.spell_damage_bp,
             crit_inc: d.crit_inc,
             crit_multi: d.crit_multi,
             accuracy: d.accuracy,
@@ -938,18 +976,18 @@ mod grant_tests {
 mod xp_curve_tests {
     use super::xp_to_next;
 
-    /// Levels 1..=5 are byte-identical to the old quadratic (80 + 40·L²):
-    /// the tutorial completes inside this band and must not be repaced.
+    /// Levels 1..=10 are pure quadratic (80 + 8·L²) — the doubled-scale
+    /// tutorial band (the shore now graduates ~10, where the old scale
+    /// said 5); the exponential must not touch it.
     #[test]
     fn preserves_tutorial_band() {
-        assert_eq!(xp_to_next(1), 120);
-        assert_eq!(xp_to_next(2), 240);
-        assert_eq!(xp_to_next(3), 440);
-        assert_eq!(xp_to_next(4), 720);
-        assert_eq!(xp_to_next(5), 1080);
-        // The old formula for each:
-        for l in 1..=5u32 {
-            assert_eq!(xp_to_next(l), 80 + 40 * (l as i64) * (l as i64));
+        assert_eq!(xp_to_next(1), 88);
+        assert_eq!(xp_to_next(2), 112);
+        assert_eq!(xp_to_next(5), 280);
+        assert_eq!(xp_to_next(10), 880);
+        // The quadratic, exactly, through the whole band:
+        for l in 1..=10u32 {
+            assert_eq!(xp_to_next(l), 80 + 8 * (l as i64) * (l as i64));
         }
     }
 
@@ -968,26 +1006,31 @@ mod xp_curve_tests {
         }
     }
 
-    /// The back half is a mountain: a single level near the cap costs
-    /// >100× a mid-game level, and the cap value is overflow-safe.
+    /// The back half still climbs hard on the re-anchored curve: a level
+    /// near the cap costs >25× a mid-game level (measured ~29× at 26/25
+    /// per level — the doubled level scale halves the old per-level rate
+    /// by design), and the cap value is overflow-safe.
     #[test]
     fn is_a_back_loaded_mountain() {
         assert!(
-            xp_to_next(99) > 100 * xp_to_next(49),
-            "expected steep back-loading: L99 {} vs 100·L49 {}",
+            xp_to_next(99) > 25 * xp_to_next(49),
+            "expected back-loading: L99 {} vs 25·L49 {}",
             xp_to_next(99),
-            100 * xp_to_next(49)
+            25 * xp_to_next(49)
         );
         let cap = xp_to_next(100);
         assert!(
             cap > 0 && cap < i64::MAX / 2,
             "cap value overflow-safe: {cap}"
         );
-        // Total XP to REACH level 100 (sum of 1..=99) is the mountain.
+        // Total XP to REACH level 100 (sum of 1..=99): ~41.7M on the
+        // re-anchored curve — ~110× the level-38 campaign (376k), so the
+        // cap remains a long endgame mountain at the doubled level scale
+        // (the old curve's billions priced levels the scale no longer has).
         let total: i64 = (1..100u32).map(xp_to_next).sum();
         assert!(
-            total > 5_000_000_000,
-            "total to L100 should be a multi-billion climb, got {total}"
+            total > 30_000_000,
+            "total to L100 should dwarf the campaign, got {total}"
         );
     }
 }

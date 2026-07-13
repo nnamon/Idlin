@@ -33,19 +33,19 @@ ZoneDef(
         SpawnPack(monster: "drowned_shambler", count: 4,
                   x_u: 14, y_u: 16,   // pack anchor
                   radius_u: 5,        // spawn jitter
-                  respawn_ticks: 150,
-                  magic_bp: 2000,     // rarity roll, ONCE per refill:
+                  magic_bp: 2000,     // rarity roll, ONCE at spawn:
                   rare_bp: 700),      //   20% whole-pack magic, 7% one rare
     ],
 )
 ```
 
-Packs respawn as a group `respawn_ticks` after first loss once wiped low.
-The rarity roll happens once per refill: magic raises the WHOLE pack
-under one shared affix set; rare raises a single rare leading normals;
-packs never roll unique (author `unique: true` on a def instead). Omit
-the chances (default 0) for hand-choreographed zones like the tutorial,
-where elites come from the brain's `spawn_elite`.
+Packs rise exactly once, at the world's mint — a wiped pack stays wiped
+(the world is finite; no refills). The rarity roll happens at that one
+spawn: magic raises the WHOLE pack under one shared affix set; rare
+raises a single rare leading normals; packs never roll unique (author
+`unique: true` on a def instead). Omit the chances (default 0) for
+hand-choreographed zones like the tutorial, where elites come from the
+brain's `spawn_elite`.
 
 ### Previewing a map
 
@@ -285,7 +285,7 @@ compound condition.
 Zones are data: `kind` (story | map | town — story zones respawn you
 at the entrance), extent, spawn point/scatter, `camp_radius_u` (a
 sanctuary monsters never acquire characters inside), area-gen counts,
-and packs that respawn as units (radius 0 = staked on the anchor).
+and packs that rise once as units (radius 0 = staked on the anchor).
 Behavior belongs to the zone's `brain:` — a bot program with
 zone-scoped syscalls (see bot-guide) — and its narration text lives in
 the def's `lines:` list as `(id: "welcome", text: "…")` entries the

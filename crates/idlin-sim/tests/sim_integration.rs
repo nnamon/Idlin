@@ -22,6 +22,7 @@ fn join_inputs() -> TickInputs {
     TickInputs {
         joins,
         arrivals: Vec::new(),
+        removals: Vec::new(),
     }
 }
 
@@ -48,6 +49,7 @@ fn bots_grind_the_shore() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     // 6000 ticks = 10 minutes of game time.
     for _ in 0..6000 {
@@ -104,6 +106,260 @@ fn bots_grind_the_shore() {
         "characters never vanish without a departure"
     );
     assert!(views.len() < 200, "entity leak? {} entities", views.len());
+}
+
+#[test]
+fn the_grinder_prefers_affixed_gear_over_plain() {
+    // #148 A1: the stock template upgrades by RARITY first, item level as
+    // the tiebreak — the old ilvl-only rule let plain bases evict affixed
+    // gear, and every 1.0 seed departed at zero resist. A worn plain ilvl-6
+    // helm must lose to a bagged magic ilvl-5 helm. Mutation: revert the
+    // rule to ilvl-only → the magic helm stays in the bag and this fails.
+    let content = content();
+    let mut w = World::new_for_zone(0xA1F1, &content, "test_range");
+    let program = idlin_botc::template_grinder().expect("template assembles");
+    w.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Chooser".into(),
+            program,
+        }],
+        arrivals: Vec::new(),
+        removals: Vec::new(),
+    });
+    let net = w
+        .views()
+        .iter()
+        .find(|v| v.kind == 1)
+        .map(|v| v.id)
+        .unwrap();
+    let helm = content
+        .items
+        .iter()
+        .position(|i| i.id == "brine_helm")
+        .unwrap() as u32;
+    let warding = content
+        .affixes
+        .iter()
+        .position(|a| a.id == "of_warding")
+        .unwrap() as u32;
+    w.test_wear_and_bag_helms(net, helm, warding);
+    // Give the template a few upkeep cadences.
+    let empty = TickInputs::default();
+    for _ in 0..40 {
+        w.tick(&empty);
+    }
+    let worn = w.test_worn_helm(net).expect("a helm is worn");
+    assert_eq!(
+        worn,
+        (1, 5),
+        "the magic ilvl-5 helm must displace the plain ilvl-6 one; got rarity/ilvl {worn:?}"
+    );
+}
+
+#[test]
+fn the_act_1_zones_stand_up() {
+    // #136 T3: both new zones boot from shipped content — packs spawn, the
+    // bosses rise at Unique rarity with their authored names, and the exit
+    // chain runs shore->saltmere->coast->saltworks->hollow and back.
+    // Mutation: break a pack anchor, an exit dest, or a boss def -> fails.
+    let content = content();
+    let empty = TickInputs::default();
+
+    let mut works = World::new_for_zone(0x5A17, &content, "saltworks");
+    works.tick(&empty);
+    let views = works.views();
+    let mobs = views.iter().filter(|v| v.kind == 2).count();
+    assert!(mobs >= 15, "the pans are worked; got {mobs}");
+    let karesh: Vec<_> = views.iter().filter(|v| v.rarity == 3 && !v.dead).collect();
+    assert_eq!(karesh.len(), 1, "one Brinelord holds the court");
+    assert_eq!(karesh[0].name, "Brinelord Karesh");
+
+    let mut hollow = World::new_for_zone(0x5A18, &content, "hollow");
+    hollow.tick(&empty);
+    let views = hollow.views();
+    let mobs = views.iter().filter(|v| v.kind == 2).count();
+    assert!(mobs >= 12, "the throat is sung; got {mobs}");
+    let mother: Vec<_> = views.iter().filter(|v| v.rarity == 3 && !v.dead).collect();
+    assert_eq!(mother.len(), 1, "one Mother in the basin");
+    assert_eq!(mother[0].name, "Mother of the Drowned");
+
+    // The Sovereign's stage direction (#162 boss mechanics): drop him
+    // below half and the zone brain narrates the rise + spawns the wave.
+    // Mutation: drop the query_monsters phase block from the brain (or
+    // break the syscall) → no adds, this fails.
+    let mut stage = World::new_for_zone(0x50FA, &content, "the_undertow");
+    stage.tick(&empty);
+    let before = stage
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    let boss = stage
+        .views()
+        .iter()
+        .find(|v| v.name == "The Riptide Sovereign")
+        .map(|v| v.id)
+        .expect("the Sovereign stands");
+    stage.test_set_life_pct(boss, 40);
+    stage.tick(&empty);
+    stage.tick(&empty);
+    let after = stage
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        after >= before + 2,
+        "the rise must add its wave ({before} -> {after})"
+    );
+    // The 25% break too (codex on Q7: an unpinned phase is a deletable
+    // phase — the same gap existed in this committed Q6 pin).
+    stage.test_set_life_pct(boss, 20);
+    stage.tick(&empty);
+    stage.tick(&empty);
+    let broke = stage
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        broke >= after + 3,
+        "the break brings the drowned ({after} -> {broke})"
+    );
+
+    // The Mother's and the Bailiff's directors (#162, same pattern —
+    // mutation: drop either brain's phase block → its assert fails).
+    let mut hollow = World::new_for_zone(0x50FB, &content, "hollow");
+    hollow.tick(&empty);
+    let before = hollow
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    let mother = hollow
+        .views()
+        .iter()
+        .find(|v| v.name == "Mother of the Drowned")
+        .map(|v| v.id)
+        .expect("the Mother stands");
+    hollow.test_set_life_pct(mother, 40);
+    hollow.tick(&empty);
+    hollow.tick(&empty);
+    let after = hollow
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        after >= before + 2,
+        "the chorus answers ({before} -> {after})"
+    );
+    // The 25% verse too (codex: an unpinned phase is a deletable phase).
+    hollow.test_set_life_pct(mother, 20);
+    hollow.tick(&empty);
+    hollow.tick(&empty);
+    let last = hollow
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        last >= after + 2,
+        "the last verse rises ({after} -> {last})"
+    );
+
+    let mut court = World::new_for_zone(0x50FC, &content, "pressure_court");
+    court.tick(&empty);
+    let before = court
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    let bailiff = court
+        .views()
+        .iter()
+        .find(|v| v.name == "Bailiff Morr")
+        .map(|v| v.id)
+        .expect("the Bailiff holds session");
+    court.test_set_life_pct(bailiff, 40);
+    court.tick(&empty);
+    court.tick(&empty);
+    let after = court
+        .views()
+        .iter()
+        .filter(|v| v.kind == 2 && !v.dead)
+        .count();
+    assert!(
+        after >= before + 2,
+        "the session files in ({before} -> {after})"
+    );
+
+    // Act 2 (#148 A3): the Undertow stands up the same way.
+    let mut deep = World::new_for_zone(0x5A19, &content, "the_undertow");
+    deep.tick(&empty);
+    let views = deep.views();
+    let sovereign: Vec<_> = views.iter().filter(|v| v.rarity == 3 && !v.dead).collect();
+    assert_eq!(sovereign.len(), 1, "one Sovereign in the basin");
+    assert_eq!(sovereign[0].name, "The Riptide Sovereign");
+
+    // The chain: every authored exit leads where the campaign says —
+    // both acts, and the sealed stair rides the hollow's exit list.
+    let chain = [
+        ("withered_shore", vec!["saltmere"]),
+        ("saltmere", vec!["coast"]),
+        ("coast", vec!["saltmere", "saltworks"]),
+        ("saltworks", vec!["coast", "hollow"]),
+        ("hollow", vec!["saltworks", "sunken_stair"]),
+        ("sunken_stair", vec!["hollow", "lanternfall"]),
+        ("lanternfall", vec!["sunken_stair", "kelp_forest"]),
+        ("kelp_forest", vec!["lanternfall", "pressure_court"]),
+        ("pressure_court", vec!["kelp_forest", "the_undertow"]),
+        ("the_undertow", vec!["pressure_court"]),
+    ];
+    for (zone, dests) in chain {
+        let def = content.zone(zone).expect(zone);
+        let got: Vec<&str> = def.exits.iter().map(|e| e.dest.as_str()).collect();
+        for d in dests {
+            assert!(got.contains(&d), "{zone} must reach {d}; has {got:?}");
+        }
+    }
+    // The stair is STORY-SEALED (#148 A3): the way down demands Act 1 —
+    // asserted at RUNTIME on the real exit, not just the content field. A
+    // walker bot standing on the stair reads -3 mid-campaign and departs
+    // the moment the bit is granted. Mutation: drop requires_act from the
+    // hollow's exit (or the seal check in use_exit) → the -3 read fails.
+    let mut hollow = World::new_for_zone(0x5EA1, &content, "hollow");
+    let walker = idlin_botc::assemble("loop:\nsys 28 0\npush 0xF200\nstore\njmp loop\n").unwrap();
+    hollow.tick(&TickInputs {
+        joins: vec![JoinRequest {
+            name: "Sealed".into(),
+            program: walker,
+        }],
+        arrivals: Vec::new(),
+        removals: Vec::new(),
+    });
+    let net = hollow
+        .views()
+        .iter()
+        .find(|v| v.kind == 1)
+        .map(|v| v.id)
+        .unwrap();
+    let stair_pos = content
+        .zone("hollow")
+        .unwrap()
+        .exits
+        .iter()
+        .find(|e| e.dest == "sunken_stair")
+        .map(|e| (e.x_u, e.y_u))
+        .unwrap();
+    assert_eq!(stair_pos, (14, 4), "the stair sits where authored");
+    hollow.test_teleport(net, stair_pos.0 as i16, stair_pos.1 as i16);
+    hollow.tick(&empty);
+    assert_eq!(
+        hollow.test_vm_word(net, 0xF200),
+        Some(-3),
+        "mid-campaign, the stair refuses with the story-seal code"
+    );
 }
 
 #[test]
@@ -166,6 +422,7 @@ fn same_faction_spawn_stack_drifts_apart() {
     let halt = idlin_botc::assemble("halt\n").unwrap();
     let joins = TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: ["A", "B", "C", "D"]
             .into_iter()
             .map(|name| JoinRequest {
@@ -248,6 +505,7 @@ fn disconnected_builds_are_rejected_at_declaration() {
         .unwrap();
     let joins = TickInputs {
         arrivals: Vec::new(),
+        removals: Vec::new(),
         joins: vec![
             JoinRequest {
                 name: "Bad".into(),
@@ -290,6 +548,7 @@ fn the_shore_brain_choreographs_the_opening() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     for _ in 0..1200 {
         events.extend(world.tick(&TickInputs::default()));
@@ -356,6 +615,7 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
     town.tick(&TickInputs::default());
 
@@ -379,12 +639,16 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     }
 
     let mut departed = None;
+    let mut act_beat = false;
     let empty = TickInputs::default();
     // Generous budget: the grinder hunts every effigy in view first, then
     // must sit out the ~12s boredom latch before it commits to the exit,
     // then walk the whole strand back to the bluff gate.
     for _ in 0..3000 {
         let events = shore.tick(&empty);
+        act_beat |= events
+            .iter()
+            .any(|ev| matches!(ev, SimEvent::ActCompleted { .. }));
         let dep = shore.take_departures();
         if !dep.is_empty() {
             assert!(events.iter().any(|ev| matches!(
@@ -397,11 +661,24 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
         }
     }
     let mut departed = departed.expect("the pilgrim must break the Tidewarden and leave");
+    // #136 T3: the shore's Tidewarden is the TUTORIAL exam, not the act boss —
+    // Act 1 now ends at the Mother in the Hollow. Mutation: put act_boss back
+    // on the tutorial warden → a beat fires here and this fails.
+    assert!(
+        !act_beat,
+        "the tutorial exam must NOT complete an act (the Mother does, in the Hollow)"
+    );
     let (bundle, dest) = departed.pop().unwrap();
     assert_eq!(dest, "saltmere");
     assert!(
         bundle.character.kills >= 1,
         "the killer carries their tally"
+    );
+    // #136 T3: no act completes on the shore — the pilgrim climbs to
+    // Saltmere still mid-campaign; the Hollow's Mother holds the flag.
+    assert_eq!(
+        bundle.character.story_acts, 0,
+        "the tutorial leaves the campaign unfinished"
     );
     let kills_at_departure = bundle.character.kills;
 
@@ -409,6 +686,7 @@ fn the_tidewarden_falls_and_the_killer_climbs_to_saltmere() {
     let events = town.tick(&TickInputs {
         joins: Vec::new(),
         arrivals: vec![bundle],
+        removals: Vec::new(),
     });
     assert!(
         events
@@ -469,6 +747,7 @@ fn run_tutorial(content: &ContentDb, seed: u64) {
             program,
         }],
         arrivals: Vec::new(),
+        removals: Vec::new(),
     });
 
     let mut min_life = 100u8;

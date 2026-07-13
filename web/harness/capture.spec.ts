@@ -354,7 +354,7 @@ test("a stats row hovers to its per-source breakdown (#87)", async ({ browser })
 
   // (the stats panel is mounted twice — desktop + a mobile-drawer copy; the
   // first is the visible desktop one)
-  await page.getByText("armour", { exact: true }).first().hover();
+  await page.getByText("Armour", { exact: true }).first().hover();
   // the breakdown tooltip lists each contributing source + its formatted amount
   const tip = page.locator(".item-tooltip", { hasText: "Brinescoured Helm" });
   await expect(tip).toBeVisible();
@@ -429,7 +429,9 @@ test("idler-view: focus is pinned to the requested idler, not the director cue",
   // read Brakka. Mutation: fall focusId back to store.cue?.focus → the panel reads
   // "Veles" and this fails. (This is the non-vacuous proof of name-pinned focus.)
   const { ctx, page } = await loadFixture(browser, "idler-view");
-  await expect(page.locator(".display")).toHaveText("Brakka");
+  // The plaque also speaks the display face now (#181): target the focus
+  // panel's name element, not every .display on screen.
+  await expect(page.locator(".hud-right .display").first()).toHaveText("Brakka");
   await ctx.close();
 });
 
@@ -466,4 +468,55 @@ test("resolveFocusId pins to the named idler with no director-cue fallback (#79)
   expect(resolveFocusId("Ghost", entities, 2)).toBeUndefined(); // pinned + ABSENT → nobody, never the cue
   expect(resolveFocusId("bone stalker", entities, 2)).toBeUndefined(); // a monster's shared name never resolves (even lowercased)
   expect(resolveFocusId(null, entities, 2)).toBe(2); // unpinned → the director's cue
+});
+
+
+test("beat banners are world-scoped (#162 beat presentation)", async ({ browser }) => {
+  // Codex on Q9: replication splices act announcements into every feed —
+  // a FOREIGN actor's act must stay a ticker line (no banner), and a cut
+  // to another world ends the local banner. Mutation: drop the
+  // entities.has gate or the cut-clear in store.ts → these fail.
+  const { ctx, page } = await loadFixture(browser, "full-shore");
+  // The fixture's LOCAL act beat fired (the needle asserts the banner);
+  // now inject a FOREIGN announcement and assert no new banner replaces
+  // a cleared one.
+  const verdict = await page.evaluate(() => {
+    const s = (window as unknown as { __idlinStore?: any }).__idlinStore;
+    if (!s) return "no store handle";
+    s.beat = null;
+    // The COLLIDING id case (codex ran this exploit): net ids restart
+    // per world, so a foreign actor can share a LOCAL entity's id — the
+    // gate must match identity (id AND name), not presence.
+    const localId = [...s.entities.keys()][0];
+    s.handle({
+      type: "Events",
+      data: {
+        events: [
+          { type: "ActCompleted", data: { id: localId, name: "ForeignTwin", act: 2 } },
+        ],
+      },
+    });
+    const foreign = s.beat === null ? "foreign-no-banner" : "FOREIGN BANNERED";
+    // A local beat, then a cut: the banner must clear.
+    s.beat = { text: "ACT 1 FALLS — X", at: performance.now() };
+    s.handle({
+      type: "ZoneSnapshot",
+      data: {
+        tick: 1,
+        zone_name: "Elsewhere Keep",
+        zone_level: 9,
+        world_key: "elsewhere#X",
+        width: 60 << 16,
+        height: 40 << 16,
+        tiles: null,
+        exits: [],
+        gates: [],
+        entities: [],
+      },
+    });
+    const cut = s.beat === null ? "cut-clears" : "BANNER SURVIVED CUT";
+    return `${foreign}/${cut}`;
+  });
+  expect(verdict).toBe("foreign-no-banner/cut-clears");
+  await ctx.close();
 });

@@ -1,4 +1,4 @@
-// The Drowned Coast: the first MAP-kind zone — a wide strand on TWO
+// The Drowned Coast: a wide strand on TWO
 // height levels (lower beach, upper terrace; ramps through the crag
 // line link them). Same shore tileset as the tutorial, at the colder
 // "drowned" hour. Unlike the hand-choreographed shore, packs here roll
@@ -7,36 +7,37 @@
 ZoneDef(
     id: "coast",
     name: "The Drowned Coast",
-    kind: map,
-    // Area level 4: idlers arrive off the shore around 4-5. Normal
-    // packs fight at 4, magic at 5, rare at 6 — the defs' authored
+    kind: story,
+    // Area level 7: idlers arrive off the shore around 6-8. Normal
+    // packs fight at 7, magic at 8, rare at 9 — the defs' authored
     // baselines scale up (+12% life / +10% damage per level).
-    level: 4,
+    level: 7,
     tileset: Some("shore"),
     tileset_variant: Some("drowned"),
     spawn_x_u: 31,
     spawn_y_u: 104,
     spawn_radius_u: 3,
     camp_radius_u: 8,
-    // Real respawns (this is a grinding ground), juiced: ~20% of pack
-    // refills come up magic, ~7% bring a rare.
+    // packs come up magic, ~7% bring a rare (rolled at their one spawn).
     packs: [
         // Lower strand, south to north.
-        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 32, y_u: 90, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 40, y_u: 78, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 30, y_u: 64, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 38, y_u: 48, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "drowned_shambler", count: 5, x_u: 31, y_u: 34, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "tide_husk",        count: 4, x_u: 39, y_u: 18, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "drowned_shambler", count: 8, x_u: 32, y_u: 90, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "tide_husk",        count: 7, x_u: 40, y_u: 78, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "drowned_shambler", count: 8, x_u: 30, y_u: 64, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "tide_husk",        count: 7, x_u: 38, y_u: 48, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "drowned_shambler", count: 8, x_u: 31, y_u: 34, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "tide_husk",        count: 7, x_u: 39, y_u: 18, radius_u: 4, magic_bp: 2000, rare_bp: 700),
         // Upper terrace: stalker country.
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 10, y_u: 86, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 9,  y_u: 60, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "bone_stalker",     count: 5, x_u: 11, y_u: 38, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
-        SpawnPack(monster: "bone_stalker",     count: 4, x_u: 10, y_u: 14, radius_u: 4, respawn_ticks: 450, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 7, x_u: 10, y_u: 86, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 7, x_u: 9,  y_u: 60, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 8, x_u: 11, y_u: 38, radius_u: 4, magic_bp: 2000, rare_bp: 700),
+        SpawnPack(monster: "bone_stalker",     count: 7, x_u: 10, y_u: 14, radius_u: 4, magic_bp: 2000, rare_bp: 700),
     ],
-    // The road back up to Saltmere, by the southern camp. Always open —
-    // leaving the grind is the bot's own call.
+    // The road back up to Saltmere by the southern camp, and the climb
+    // north to the Saltworks where the act continues. Always open —
+    // where to go is the bot's own call; the levels do the gating.
     exits: [
         (x_u: 34, y_u: 106, dest: "saltmere", open: true),
+        (x_u: 30, y_u: 3, dest: "saltworks", open: true),
     ],
 )

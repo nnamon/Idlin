@@ -2,10 +2,7 @@
 //! time, sockets, persistence, and (later) chat; feeds `TickInputs` into the
 //! world and fans state out to web clients.
 
-mod director;
-mod persist;
-mod replication;
-mod runner;
+use idlin_server::{persist, replication, runner};
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -42,6 +39,10 @@ struct AppState {
     routing: watch::Receiver<replication::Routing>,
     /// Focus-panel inspections, answered by the tick thread.
     inspect: mpsc::UnboundedSender<runner::InspectRequest>,
+    /// Admin surface (#148 A6): deploy.
+    admin: mpsc::UnboundedSender<runner::AdminCommand>,
+    /// Shared secret for the mutating admin routes; None = routes disabled.
+    admin_token: Option<Arc<str>>,
     /// Pre-serialized passive tree for the map page.
     tree_json: Arc<str>,
     /// Pre-serialized deploy identity for `/version` (fixed at boot).
@@ -62,6 +63,7 @@ fn builtin_joins() -> anyhow::Result<TickInputs> {
     Ok(TickInputs {
         joins,
         arrivals: Vec::new(),
+        removals: Vec::new(),
     })
 }
 
@@ -136,48 +138,10 @@ async fn main() -> anyhow::Result<()> {
             pending: builtin_joins()?,
         }]
     } else {
-        let mut worlds = vec![
-            runner::ManagedWorld {
-                key: "saltmere".into(),
-                zone_id: "saltmere".into(),
-                world: World::new_for_zone(seed, &content, "saltmere"),
-                tiles: runner::resolve_tile_map(&content, "saltmere"),
-                max_players: content.zone("saltmere").map_or(0, |z| z.max_players),
-                pending: TickInputs::default(),
-            },
-            // The shared grinding ground past town: one Drowned Coast
-            // for everyone, like the town itself.
-            runner::ManagedWorld {
-                key: "coast".into(),
-                zone_id: "coast".into(),
-                world: World::new_for_zone(seed ^ 0xC0A57, &content, "coast"),
-                tiles: runner::resolve_tile_map(&content, "coast"),
-                max_players: content.zone("coast").map_or(0, |z| z.max_players),
-                pending: TickInputs::default(),
-            },
-        ];
+        // The world set derives from CONTENT via runner::boot_worlds (#136
+        // T3) — shipping a new zone never needs a server change again.
         let joins = builtin_joins()?;
-        for join in joins.joins {
-            let key = format!("withered_shore#{}", join.name);
-            // Per-instance seed: every idler gets their own deterministic
-            // shore.
-            let mut h = idlin_content::FNV1A_OFFSET;
-            for b in join.name.bytes() {
-                h ^= b as u64;
-                h = h.wrapping_mul(idlin_content::FNV1A_PRIME);
-            }
-            worlds.push(runner::ManagedWorld {
-                key,
-                zone_id: "withered_shore".into(),
-                world: World::new_for_zone(seed ^ h, &content, "withered_shore"),
-                tiles: runner::resolve_tile_map(&content, "withered_shore"),
-                max_players: content.zone("withered_shore").map_or(0, |z| z.max_players),
-                pending: TickInputs {
-                    joins: vec![join],
-                    arrivals: Vec::new(),
-                },
-            });
-        }
+        let mut worlds = runner::boot_worlds(&content, seed, &joins.joins);
         // RESUME: swap in snapshots where they exist (content-hash
         // gated), carry mid-ferry arrivals, and only join a builtin
         // idler if they exist NOWHERE (state, pendings, or another
@@ -203,6 +167,55 @@ async fn main() -> anyhow::Result<()> {
             for b in &mw.pending.arrivals {
                 resident.push(b.character.name.clone());
             }
+        }
+        // Map maps (#136 T4): resume any snapshot whose key no booted
+        // world claims — the idler mid-map survives the restart. Runs
+        // AFTER the booted-resume loop so a map run is never double-loaded;
+        // its characters count as residents like anyone else's. The
+        // content-hash gate inside load_managed refuses stale content, and
+        // only worlds that self-identify as map instances are accepted.
+        let booted: Vec<PathBuf> = worlds
+            .iter()
+            .map(|mw| persist::world_dir(&snapshot_dir, &mw.key))
+            .collect();
+        for (key, dir) in persist::scan_world_keys(&snapshot_dir) {
+            if booted.contains(&dir) {
+                continue;
+            }
+            let Some((world, pendings)) = persist::load_managed(&content, &dir) else {
+                continue;
+            };
+            // Resume ANY minted instance: map runs AND private story
+            // worlds (codex round 1 caught the gap — a restart silently
+            // dropped a mid-campaign character; "lost at sea" is the exact
+            // loss class the ferry was built to prevent). The predicate is
+            // extracted + unit-pinned; it fails CLOSED on malformed
+            // zone_idx (codex round 2: the old index expression panicked).
+            let Some(zone_id) = persist::resume_acceptable(&content, &key, &world) else {
+                warn!("scanned snapshot {key}: not a resumable instance; skipped");
+                continue;
+            };
+            info!("resuming instance {key} at tick {}", world.tick_count());
+            for v in world.views() {
+                if v.kind == 1 {
+                    resident.push(v.name);
+                }
+            }
+            for b in &pendings {
+                resident.push(b.character.name.clone());
+            }
+            worlds.push(runner::ManagedWorld {
+                key,
+                zone_id: zone_id.clone(),
+                tiles: runner::resolve_tile_map(&content, &zone_id),
+                max_players: 1,
+                pending: TickInputs {
+                    joins: Vec::new(),
+                    arrivals: pendings,
+                    removals: Vec::new(),
+                },
+                world,
+            });
         }
         for mw in &mut worlds {
             mw.pending.joins.retain(|j| {
@@ -263,13 +276,17 @@ async fn main() -> anyhow::Result<()> {
         option_env!("IDLIN_GIT_SHA"),
     ));
 
+    let (admin_tx, admin_rx) = mpsc::unbounded_channel::<runner::AdminCommand>();
     runner::spawn_tick_loop(
         worlds,
         frame_tx,
         inspect_rx,
+        admin_rx,
         server_tick.clone(),
         persistence,
         shutdown,
+        content.clone(),
+        seed,
     );
     let handles = replication::spawn_replication(frame_rx);
 
@@ -280,6 +297,8 @@ async fn main() -> anyhow::Result<()> {
         feeds: handles.feeds,
         routing: handles.routing,
         inspect: inspect_tx,
+        admin: admin_tx,
+        admin_token: std::env::var("IDLIN_ADMIN_TOKEN").ok().map(Arc::from),
         tree_json,
         version_json,
     };
@@ -288,6 +307,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tree", get(tree_handler))
         .route("/healthz", get(|| async { "ok" }))
         .route("/version", get(version_handler))
+        // The bot economy (#148 A6). Deploy demands IDLIN_ADMIN_TOKEN
+        // (the route refuses 503 when it is unset — fail closed, no
+        // anonymous deploys).
+        .route("/api/deploy", axum::routing::post(deploy_handler))
         // World journals (IDLIN_RECORD=1): playable via ?replay=/recordings/<file>.
         .nest_service("/recordings", ServeDir::new("data/recordings"))
         // SPA shell for the client's OWN routes (the individual idler view +
@@ -376,6 +399,76 @@ async fn version_handler(State(state): State<AppState>) -> impl axum::response::
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         state.version_json.to_string(),
     )
+}
+
+#[derive(serde::Deserialize)]
+struct DeployBody {
+    token: String,
+    name: String,
+    /// `.bot` source — compiled server-side; errors return verbatim.
+    source: String,
+}
+
+/// Gate a mutating admin route (#148 A6): no configured token = disabled
+/// (503), wrong token = 403. Fail closed, never open.
+fn admin_gate(state: &AppState, token: &str) -> Result<(), (axum::http::StatusCode, String)> {
+    match &state.admin_token {
+        None => Err((
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "admin routes disabled: set IDLIN_ADMIN_TOKEN".into(),
+        )),
+        Some(t) if t.as_ref() == token => Ok(()),
+        Some(_) => Err((axum::http::StatusCode::FORBIDDEN, "bad token".into())),
+    }
+}
+
+async fn deploy_handler(
+    State(state): State<AppState>,
+    axum::Json(body): axum::Json<DeployBody>,
+) -> Result<String, (axum::http::StatusCode, String)> {
+    admin_gate(&state, &body.token)?;
+    let name = body.name.trim();
+    if name.is_empty()
+        || name.len() > 24
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "name: 1-24 chars of [A-Za-z0-9_-]".into(),
+        ));
+    }
+    if body.source.len() > 64 * 1024 {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "source too large (64KB cap)".into(),
+        ));
+    }
+    let program = idlin_botc::compile_deployed(&body.source)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("compile: {e}")))?;
+    let (reply, rx) = tokio::sync::oneshot::channel();
+    state
+        .admin
+        .send(runner::AdminCommand::Deploy {
+            name: name.to_string(),
+            program,
+            reply,
+        })
+        .map_err(|_| {
+            (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "sim gone".into(),
+            )
+        })?;
+    match rx.await {
+        Ok(Ok(())) => Ok(format!("{name} walks the shore")),
+        Ok(Err(e)) => Err((axum::http::StatusCode::CONFLICT, e)),
+        Err(_) => Err((
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "sim gone".into(),
+        )),
+    }
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {

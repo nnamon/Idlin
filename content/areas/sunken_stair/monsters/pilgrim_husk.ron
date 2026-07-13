@@ -1,0 +1,9 @@
+// Stair trash: pilgrims who walked down and kept walking after.
+MonsterDef(
+    id: "pilgrim_husk", public: true, name: "Pilgrim Husk",
+    model: "husk", brain: "hostile_melee", hostile: true,
+    level: 13, life: 300, damage: 20, speed_cps: 210,
+    radius_cu: 70, range_cu: 200, use_ticks: 15,
+    aggro_radius_cu: 1400, armour: 60, resist_cold: 3000,
+    xp: 607, projectile: false,
+)

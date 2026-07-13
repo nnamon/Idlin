@@ -244,8 +244,8 @@ export class ZoneRenderer {
     // entity creation — the face must be resolved before the first bake.
     this.whenReady = Promise.all([
       AssetLibrary.load(),
-      document.fonts.load('bold 56px "Idlin Mono"'),
-      document.fonts.load('32px "Idlin Mono"'),
+      document.fonts.load('bold 56px "Idlin Text"'),
+      document.fonts.load('32px "Idlin Text"'),
     ]).then(([assets]) => {
       this.assets = assets;
       // The HUD draws item icons rendered from the same models.

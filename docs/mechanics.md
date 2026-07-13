@@ -27,14 +27,15 @@ final = (base + Σ added) × (1 + Σ increased/10000) × Π (1 + more_i/10000)
 | Evasion | 20 + 6·(L−1) |
 | Move speed | 3.3 u/s |
 | Body radius | 0.45 u |
-| XP to next level | `(80 + 40·L²) · 1.08^max(0, L−5)` |
+| XP to next level | `(80 + 8·L²) · 1.04^max(0, L−10)` |
 
 The XP curve is a quadratic base times an exponential factor that engages
-only after level 5 — so the tutorial band (1–5) is unchanged but the back
-half is a **mountain**: reaching level 100 costs ~5.7 billion XP, and the
-last ten levels (90→100, ~3.6B) cost more than the entire 1→90 climb.
-The exponential is computed in integer fixed-point (27/25 per level) so
-the curve is bit-identical across platforms. Max level is 100.
+only after level 10. It is anchored to the campaign scale (the two-act
+road graduates at ~38; tier-1 maps open at area level 40): a level costs
+what the pre-re-anchor curve charged at half the number, so the doubled
+level range keeps the same feel per hour. The exponential is computed in
+integer fixed-point (26/25 per level) so the curve is bit-identical
+across platforms. Max level is 100.
 
 The equipped **weapon replaces** the unarmed attack (damage per type,
 range, cooldown, projectile); class damage does not stack on top of weapon
@@ -78,7 +79,7 @@ things resist naturally, no special-casing.
 
 ## Hit resolution (per strike)
 
-1. **Hit roll**: chance = `10000·acc / (acc + eva/2)`, clamped to
+1. **Hit roll** (attacks AND spell projectiles — a bolt can be sidestepped; ground effects, novas, cones, and dots cannot miss): chance = `10000·acc / (acc + eva)`, clamped to
    [3000, 10000] — nothing is unhittable, nothing always misses. A miss
    still swings (cooldown spent) and marks both parties in combat.
 2. **Variance**: one roll, 75–125%, applied to every damage component.
@@ -270,7 +271,7 @@ grant engine on top of an inherent elite bulk (magic ×1.6 life, rare
 rolled TIER names ("Hulking … of Haste"); rares draw from the rare
 naming pools.
 
-Packs roll **as a group**, once per refill, from the pack's authored
+Packs roll **as a group**, once at their single spawn, from the pack's authored
 `magic_bp` / `rare_bp` chances: a magic roll raises the WHOLE pack
 magic wearing ONE shared affix set; a rare roll raises a single rare
 leading an otherwise-normal pack. Pack rolls can never come up Unique —
@@ -304,8 +305,9 @@ top-center; magic/rare announce themselves with tinted nameplates.
   Spells crit too. Dots never crit.
 - **Spells vs attacks**: attacks scale the weapon and roll accuracy;
   spells carry their own per-gem-level base damage (`(base: 9,
-  per_level: 3)` formulas in content), never miss via accuracy, and cast
-  in `cast_ticks` scaled by cast speed.
+  per_level: 3)` formulas in content) and cast in `cast_ticks` scaled by
+  cast speed. Spell PROJECTILES roll accuracy like arrows (a bolt can be
+  sidestepped); ground effects, novas, cones, and dots cannot miss.
 - **Projectiles are real**: they travel tick by tick, stop on the first
   body they hit (minus `pierce`), and are stopped by walls. Sidestep
   an arrow and it misses you.
@@ -368,9 +370,10 @@ top-center; magic/rare announce themselves with tinted nameplates.
 - Dead monsters leave corpses where they fell for **300 ticks** (30 s); a
   corpse is inert (no AI, untargetable, skipped by every system) and decays
   away on its own.
-- Packs respawn **as a unit**: survivors hold their ground (no trickle
-  refills); once the whole pack is wiped, `respawn_ticks` later it rises
-  again at its spawn anchor.
+- Packs rise **exactly once**: each authored pack spawns when its world
+  mints and never refills — a cleared zone stays cleared (the world is
+  finite; camping pays nothing). Leaving a story zone entirely and
+  returning re-mints the instance pristine.
 
 ## Loot
 

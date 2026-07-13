@@ -76,7 +76,31 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// v14 (#129 fog of war): `CharacterState` gained `explored: Vec<u64>` (the per-character
 /// discovered-cells bitset that drives the wire visibility filter) — a serialized character
 /// field; a v13 snapshot's `CharacterState` would mis-decode. Refuse it.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 14;
+/// v15 (#136 campaign spine): `CharacterState` gained `story_acts: u32` (campaign progress)
+/// and `ExitState` gained `requires_act: u32` (story-sealed exits) — both serialized; a v14
+/// snapshot would mis-decode. Refuse it.
+/// v16 (#136 charts): `CharacterBundle` gained `chart: Option<MapTicket>` and `World`
+/// gained `loot_quantity_bp` / `map_device` / `is_map_instance` — all serialized; a v15
+/// snapshot would mis-decode. Refuse it.
+/// v17 (#136 uniques): `Item` gained `unique_idx: Option<u32>` — serialized; a v16 snapshot
+/// would mis-decode. Refuse it.
+/// v18 (#148 A2.5): `Intents` gained `path: Vec<FxV2>` (cached A* waypoints) and `ItemDef`
+/// gained `energy_shield` — serialized; a v17 snapshot would mis-decode. Refuse it.
+/// v19 (#148 A4): `MapTicket` gained the rule fields (`fury_bp`/`clock`/`boss`) and `World`
+/// gained `monster_fury_bp`/`voyage_ends_at` — serialized; a v18 snapshot would mis-decode.
+/// v20 (#148 A5): `CharacterState` gained `stash: Vec<BagItem>` — serialized; a v19
+/// snapshot would mis-decode. Refuse it.
+/// v21 (#148 A6): `CharacterState` gained `deaths: u64` — serialized; a v20 snapshot
+/// would mis-decode. Refuse it.
+/// v22 (#148 A7): `World` gained `map_marks` (the tally's arrival stamps) and
+/// `SimEvent::MonsterKilled` gained `rarity` — serialized; a v21 snapshot would mis-decode.
+/// v23 (quality pass): `CombatStats` gained `grace_until` (respawn grace) — serialized;
+/// a v22 snapshot would mis-decode. Refuse it.
+/// v25 (#185, operator ruling — monsters never resurrect): `PackState`
+/// swapped `respawn_timer: u32` for `risen: bool` — layout change.
+/// v24 (#185 B4): `World` gained `spawn_rarity_bp` (the instance rarity
+/// juice as a property; pack defs are immutable again) — layout change.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 25;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -84,6 +108,57 @@ pub const SAVE_EVERY_TICKS: u64 = 300;
 
 /// A world key's snapshot directory: filesystem-safe name plus a short
 /// hash so sanitization can never collide two keys.
+/// The world's KEY, plaintext, beside its snapshot: `world_dir` hashes the
+/// key one-way, so resuming a world whose key isn't known at boot (a map
+/// instance, #136 T4) needs it written down.
+pub fn save_world_key(dir: &Path, key: &str) {
+    let _ = std::fs::write(dir.join("key"), key);
+}
+
+/// Every (key, dir) under the snapshot base — booted worlds resume by
+/// derived dir; anything else (map instances) resumes from this scan.
+///
+/// May a SCANNED (non-booted) snapshot resume? Returns its zone id when
+/// yes. Accepts map instances and PRIVATE STORY instances (the key must be
+/// "<zone>#<owner>" and the zone Story-kind); refuses towns/maps/unknowns
+/// and — fail CLOSED, never panic (codex round 2) — any snapshot whose
+/// zone_idx points outside the loaded content.
+pub fn resume_acceptable(
+    content: &idlin_content::ContentDb,
+    key: &str,
+    world: &idlin_sim::World,
+) -> Option<String> {
+    let zone_id = content.zones.get(world.zone_index() as usize)?.id.clone();
+    if world.is_map_instance() {
+        return Some(zone_id);
+    }
+    let is_story_instance = key.starts_with(&format!("{zone_id}#"))
+        && content
+            .zone(&zone_id)
+            .is_some_and(|z| matches!(z.kind, idlin_content::ZoneKind::Story));
+    is_story_instance.then_some(zone_id)
+}
+pub fn scan_world_keys(base: &Path) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(base) else {
+        return out;
+    };
+    for entry in rd.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        if let Ok(key) = std::fs::read_to_string(dir.join("key")) {
+            let key = key.trim().to_string();
+            if !key.is_empty() {
+                out.push((key, dir));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 pub fn world_dir(base: &Path, world_key: &str) -> PathBuf {
     let safe: String = world_key
         .chars()
@@ -232,20 +307,76 @@ mod tests {
                 xp: 0,
                 respawn_at: None,
                 kills: 0,
+                deaths: 0,
                 items: 0,
                 inventory: Vec::new(),
                 equipment: Default::default(),
                 allocated: Vec::new(),
                 build_plan: Vec::new(),
                 currency: Vec::new(),
+                stash: Vec::new(),
                 sockets: std::collections::BTreeMap::new(),
                 explored: Vec::new(),
+                story_acts: 0,
             },
             program: idlin_botc::assemble("halt\n").unwrap(),
             persist: Vec::new(),
             params: Vec::new(),
             bot_version: 1,
+            map: None,
         }
+    }
+
+    #[test]
+    fn the_resume_gate_accepts_exactly_the_minted_kinds() {
+        // Codex rounds 1+2 (quality pass): the scanned-snapshot gate must
+        // accept map instances AND private story instances, refuse shared
+        // kinds, and fail CLOSED (no panic) on a malformed zone_idx.
+        // Mutation: revert the gate to map-only → the story case fails;
+        // reintroduce the direct index → the malformed case panics.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let story = World::new_for_zone(1, &content, "coast");
+        assert_eq!(
+            resume_acceptable(&content, "coast#Ana", &story).as_deref(),
+            Some("coast"),
+            "a private story instance resumes"
+        );
+        assert_eq!(
+            resume_acceptable(&content, "coast", &story),
+            None,
+            "a bare story key (no owner) is not a minted instance"
+        );
+        let town = World::new_for_zone(1, &content, "saltmere");
+        assert_eq!(
+            resume_acceptable(&content, "saltmere#Ana", &town),
+            None,
+            "towns are shared — never scan-resumed"
+        );
+        let map = World::new_map_instance(
+            1,
+            &content,
+            "charted_shallows",
+            idlin_sim::MapTicket {
+                tier: 1,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        assert_eq!(
+            resume_acceptable(&content, "charted_shallows#Ana@42", &map).as_deref(),
+            Some("charted_shallows"),
+            "a map resumes"
+        );
+        let mut broken = World::new_for_zone(1, &content, "coast");
+        broken.test_set_zone_index(9999);
+        assert_eq!(
+            resume_acceptable(&content, "coast#Ana", &broken),
+            None,
+            "a malformed zone_idx fails closed, not loudly"
+        );
     }
 
     #[test]
@@ -302,6 +433,7 @@ mod tests {
             }],
             name: String::new(),
             charges: 0,
+            unique_idx: None,
         });
         let dir = temp_dir("bad-pending");
         save_managed(&world, &[b], &dir).expect("save");
@@ -350,12 +482,110 @@ mod tests {
     }
 
     #[test]
+    fn a_crashed_map_run_resumes_by_key_scan() {
+        // #136 T4: map instances snapshot like any world; their dirs carry
+        // a plaintext `key` file so the boot scan can find them (the dirname
+        // is a one-way hash of the key). The character inside survives the
+        // restart. Mutation: drop save_world_key from the save loop, or the
+        // is_map_instance marker → the scan (or the accept gate) fails.
+        let content = ContentDb::load(std::path::Path::new("../../content")).unwrap();
+        let world = World::new_map_instance(
+            9,
+            &content,
+            "charted_shallows",
+            idlin_sim::MapTicket {
+                tier: 2,
+                rarity_bp: 0,
+                quantity_bp: 0,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            },
+        );
+        let base = std::env::temp_dir().join(format!("idlin-map-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let key = "charted_shallows#Mariner@7";
+        let dir = world_dir(&base, key);
+        save_managed(&world, &[bundle("Mariner")], &dir).unwrap();
+        save_world_key(&dir, key);
+        let found = scan_world_keys(&base);
+        assert_eq!(found.len(), 1, "the map is discoverable");
+        assert_eq!(found[0].0, key);
+        let (back, pendings) = load_managed(&content, &found[0].1).expect("resumes");
+        assert!(back.is_map_instance(), "ephemerality survives the disk");
+        assert_eq!(
+            content.zones[back.zone_index() as usize].id,
+            "charted_shallows",
+            "the zone id comes back from the state itself"
+        );
+        assert_eq!(pendings[0].character.name, "Mariner");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_pending_map_ticket_survives_the_snapshot() {
+        // #136 T4: a mid-ferry map bundle (saved at the post-ferry
+        // boundary) must resume with its ticket intact — otherwise a restart
+        // silently downgrades a paid map to a walk home. Mutation: drop
+        // `map` from the bundle serde → this fails to decode the juice.
+        let content = ContentDb::empty();
+        let world = World::new(3, &content);
+        let mut b = bundle("Mariner");
+        b.map = Some(idlin_sim::MapTicket {
+            tier: 4,
+            rarity_bp: 2100,
+            quantity_bp: 900,
+            fury_bp: 0,
+            clock: 0,
+            boss: false,
+        });
+        let dir = temp_dir("map-ticket");
+        save_managed(&world, &[b], &dir).unwrap();
+        let (_, pendings) = load_managed(&content, &dir).expect("snapshot loads");
+        let back = &pendings[0];
+        assert_eq!(back.character.name, "Mariner");
+        assert_eq!(
+            back.map,
+            Some(idlin_sim::MapTicket {
+                tier: 4,
+                rarity_bp: 2100,
+                quantity_bp: 900,
+                fury_bp: 0,
+                clock: 0,
+                boss: false,
+            })
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn nonzero_story_progress_survives_the_pending_bundle() {
+        // #136: campaign state must roundtrip — every other fixture uses
+        // zeros, so a `#[serde(skip)]` on story_acts would pass them all.
+        // (The live-world half — ExitState.requires_act + an in-zone
+        // character's story — is covered in-crate in idlin-sim, where the
+        // zone is reachable.) Mutation: skip story_acts → this fails.
+        let content = ContentDb::empty();
+        let world = World::new(0x51A7, &content);
+        let mut pilgrim = bundle("Pilgrim");
+        pilgrim.character.story_acts = 0b101; // acts 1 + 3
+        let dir = temp_dir("story_roundtrip");
+        save_managed(&world, &[pilgrim], &dir).expect("save");
+        let (_, pendings) = load_managed(&content, &dir).expect("load");
+        assert_eq!(
+            pendings[0].character.story_acts, 0b101,
+            "story_acts roundtrips through the snapshot file"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn snapshot_format_version_is_pinned() {
         // Deliberate checkpoint (like GOLDEN_HASH / PROTO_VERSION): any serialized-layout
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 14);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 25);
     }
 
     #[test]

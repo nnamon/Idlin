@@ -250,7 +250,7 @@ address you supply and return a count/status.
 | 6 | `MoveTo` | x, y (Q16.16) | 0 |
 | 7 | `UseSkill` | slot, target_id, x, y | 0 ok; **<0** a defined failure (slot / cooldown / busy / mana / range / LoS / mode / target / weapon — see the skill error-code table below) |
 | 8 | `PickUp` | loot_id | 0 |
-| 12 | `EquipBest` | — | number of swaps made |
+| 12 | `EquipBest` | — | number of swaps made. Covers ARMOUR + ACCESSORIES only — the weapon slot is never touched (a weapon is the build's identity; wield manually). Scoring weighs life, defenses (incl. ES), attributes, and resists. |
 | 14 | `SetBuild` | table_addr, count | nodes resolved (compiler-emitted from `build [...]`; the table is packed i32 stable tagged node nums, translated to tree nodes at deploy) |
 | 15 | `Random` | — | a value from your private RNG stream |
 | 16 | `MoveItem` | inv_idx, x, y | 0 ok; −1 invalid/overlap |
@@ -284,8 +284,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 22 | `UseSkillAt` | slot, x, y (raw Q16.16) | point-aimed skills (ground-target AoE): cast at a location you compute. Same return codes as UseSkill. |
 | 23 | `UseSkillDir` | slot, dx, dy (raw Q16.16 vector) | direction-aimed skills (cones, lines, projectile volleys): sweep where you point. Same return codes as UseSkill. |
 | 26 | `Say` | line_idx | speak a speech-bubble line: monsters use their def's `lines:`, characters the global `content/speech.ron` set (index wraps — bots can NEVER inject arbitrary text). 0 ok; −1 no lines for you; −2 rate-limited (characters 10s, monsters 5s). |
-| 27 | `ReadExits` | out_addr, max | the zone's exits as 16-byte records: (x raw, y raw, open, reserved). Returns the count written. Exits are PLACES — walk to one and take it yourself. |
-| 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed. There are NO forced transfers — leaving is always the bot's own call. |
+| 27 | `ReadExits` | out_addr, max | the zone's exits as 16-byte records: (x raw, y raw, open, dest zone num). Returns the count written. The dest num matches the generated `ZONE_*` consts, so a brain can ROUTE (-1 = unknown). Exits are PLACES — walk to one and take it yourself. |
+| 28 | `UseExit` | — | take the exit underfoot (within 1.5u). 0 = staged, you depart this tick; −1 no exit in reach; −2 the exit in reach is closed; −3 the exit is story-sealed (complete the required act first — check SelfStatus flags bit 1). There are NO forced transfers — leaving is always the bot's own call. |
 | 24 | `ReadCurrency` | out_addr, max (≤16) | a positional count array: obol stacks as u32 words in registry order (alchemy 0, alter 1, augment 2, chaotic 3, divine 4, exalted 5, regal 6, scouring 7, transmute 8); returns how many were written. The slot's matching id is the `CURRENCY_*` const at the same position — read the count here, spend by num below. |
 | 25 | `UseCurrency` | currency_num, inv_idx | spend one obol on the bag item at inv_idx. `currency_num` is the currency's stable tagged num (#54) — pass a `CURRENCY_*` const, not an array position. 0 ok; −1 unknown/non-currency num / no stock / no item; −2 the verb doesn't apply (wrong rarity, no room, nothing to change). Crafting rolls come from their own deterministic RNG stream — your strategy IS the build. |
 | 30 | `SkillInfo` | slot, out_addr | the static geometry of the skill in `slot` (same 1-based slot space as ReadSkills) → a 3-word record at out_addr: `shape (0 target / 1 nova / 2 cone / 3 line / 4 point-AoE / 5 projectile), radius (Q16.16), skill_kind (0 attack / 1 spell)`. Returns 0, or −1 for an empty/invalid slot. You only need this to position AoE — `target_mode` rides in ReadSkills. |
@@ -295,6 +295,11 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 34 | `ItemSlot` | base_num | the gear slot a gear item num belongs to (0 weapon … 5 flask, 7 ring, 9 belt, 10 amulet, 11 gloves), or −1 for a gem / unknown / non-gear num. The one definitional escape hatch (RFC #54 Q2): base reads stay pure, but matching a bag candidate to the worn piece needs `base_num → slot`. It does NOT tell you the weapon CLASS — keep a whitelist of the weapon bases your build can actually wield (a wand/bow would silence a melee skill at the weapon gate). |
 | 35 | `Unequip` | gear_slot | bare a gear slot — move the worn item back to the bag, leaving the slot empty (the deliberate counterpart to `Equip`'s swap). `gear_slot` is the 0–11 index `ReadEquipment` reports. 0 ok; −1 if the index is out of range, the slot is already empty, or **the bag is full**. Like manual `Equip`, and unlike `EquipBest`'s auto-swap (which drops to juggle), `Unequip` REFUSES rather than ever dropping the item. |
 | 36 | `ReadAilments` | net_id | the active ailments on the entity with `net_id` (your own from `SelfStatus`, an enemy's from `ReadEntities`) as a **bitmask**: `1 Ignite` (fire DoT), `2 Shock` (takes more damage), `4 Chill` (slowed). Returns 0 if the entity is unknown or unafflicted. Inflict ailments by hitting with the matching element while you have that element's chance (`ignite_chance` / `shock_chance` / `chill_chance`) (or on a crit, unless your gear says crits cannot cause ailments); the magnitude scales with the hit. |
+| 37 | OpenMap | `inv_idx` | Spend a map from the bag at the town's Map Device: opens a private map instance at area level 39 + tier (tier = base + ilvl over 39; tier-1 maps are level 40), juiced by the map's rolled quantity/rarity affixes. Returns 0 on open, -1 bad index / not a map, -2 not at the device, -3 campaign incomplete (the gate is the content-derived FINAL act — all acts, not just Act 1), -4 not a character, -5 a departure is already staged this tick. The map is consumed ONLY on success; tiers cap at 16. |
+| 38 | Sell | `inv_idx` | Sell a bag item at the town VENDOR cell (SelfStatus +76/+80; reach 3 cells). Pays ONE obol keyed to what the item was: normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and maps sell as transmutes. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
+| 39 | Stash | `op, sel` | Move an item between bag and chest at the town STASH cell (+84/+88; reach 3). op 0 deposits `inventory[sel]` (chest cap 40, flat — no grid); op 1 withdraws `stash[sel]` first-fit into the bag. The chest is yours forever — it rides transfers and snapshots. Returns 1, or -1 bad selection, -2 not at the stash, -3 no room, -4 not a character. |
+| 40 | ReadStash | `max, out` | Read the chest like ReadInventory (same 20-byte record); x/y are −1 (a chest has no grid). Returns the record count, or -4. |
+| 109 | QueryMonsters | `max, out` | ZONE BRAINS ONLY. Live monsters as MONSTER_RECORD_SIZE (24B) records: net id, def NUM, life_pct, x, y (Q16.16), rarity. The boss-director syscall (max clamps at 64): watch a boss's live life and stage add waves / beat lines at thresholds. Buffers: allocate at 0xE800+ — the var allocator owns 0xC000 up, and zone_lib holds 0xD000/0xE000/0xE400. |
 
 ### Skill-use return codes
 
@@ -337,7 +342,7 @@ can never hit your own faction.
 
 ### Struct layouts
 
-**SelfStatus** (17 words, 68 bytes):
+**SelfStatus** (23 words, 92 bytes):
 
 | Offset | Field |
 |---|---|
@@ -345,13 +350,17 @@ can never hit your own faction.
 | +8 / +12 | life, life_max |
 | +16 / +20 | level, xp |
 | +24 / +28 | map_w, map_h (Q16.16) |
-| +32 | flags (bit 0 = dead) |
+| +32 | flags (bit 0 = dead; bit N = act N complete — bit 1 is Act 1, bit 2 is Act 2: your campaign progress) |
 | +36 / +40 | anchor x, y (monsters: home; characters: zone spawn) |
 | +44 | aggro radius (Q16.16; 0 for characters) |
 | +48 | attack range (Q16.16) |
 | +52 / +56 | mana, mana_max |
 | +60 | energy shield |
 | +64 | zone num (the zone's stable tagged content id — an OPAQUE handle: zones are private, so there are no `ZONE_*` consts to compare against. Watch it for CHANGES — when it differs from the value you saw last tick you've transferred maps — and branch your strategy on that, not on a hardcoded value) |
+| +68 | the zone’s Map Device x (Q16.16), or −1 when the zone has none |
+| +72 | the zone’s Map Device y (Q16.16), or −1 — walk here and `OpenMap` (37) once the campaign is complete |
+| +76 / +80 | the town VENDOR cell x/y (Q16.16), or −1 — walk here and `Sell` (38) |
+| +84 / +88 | the town STASH cell x/y (Q16.16), or −1 — walk here and `Stash` (39) / `ReadStash` (40) |
 
 **ReadEntities record** (6 words, 24 bytes each): `id, kind (1 char / 2
 monster / 3 loot), x, y, life_pct, rarity`. Filters: **1 = enemies of you**
@@ -618,3 +627,61 @@ The whole world is bit-exact reproducible. For bot authors this means:
   same history, same numbers. There is no wall clock; count ticks instead.
 - Query results are sorted deterministically (distance, then id).
 - All math is integer/fixed-point. There are no floats anywhere.
+
+## Deploying your brain (#148 A6)
+
+The server takes live deployments — your `.bot` source, compiled with the
+same prelude the stock brains get (every generated content num and ABI
+const already in scope):
+
+```sh
+curl -X POST http://<server>/api/deploy \
+  -H 'content-type: application/json' \
+  -d '{"token": "<IDLIN_ADMIN_TOKEN>", "name": "MyBrain", "source": "<your .bot source>"}'
+```
+
+Your character joins **the shore** — the tutorial gates every brain the
+same way the stock three were gated. Names are 1-24 chars of
+`[A-Za-z0-9_-]` and must be unique; the worlds cap at 24 characters.
+Compile errors come back verbatim. The deploy route demands
+`IDLIN_ADMIN_TOKEN` (unset = disabled, fail closed).
+
+### The headless harness
+
+Before deploying, run the WHOLE game locally — the same loop the repo's
+band tests use:
+
+```sh
+cargo run -p idlin-server --bin harness -- --brain my.bot --seed 0xC0FFEE
+```
+
+The JSON report lists every campaign milestone by name plus ticks-to-first-map,
+deaths, and vendor sales; exit 1 = the road didn't complete (the report
+names the wall). Runs are deterministic per (seed, brain): a red run
+replays bit-identically, so a `debug()` in your brain lands on the same
+tick every time.
+
+## Lessons from the stock brains (1.0/2.0 field notes)
+
+Hard-won disciplines the stock templates carry — steal them:
+
+- **Budget cadence.** 5,000 instructions per tick sounds like plenty; a
+  60-record bag scan inside a pack fight isn't. The stock brains run gear
+  and socket upkeep on ONE tick in ten and rest the other nine.
+- **Route trichotomy.** A route decision is one of: a destination num
+  (travel), `-1` (stay — you're where you should be), or `0` (unknown —
+  let the boredom valve decide). Collapsing stay into unknown made brains
+  bounce out of boss rooms mid-fight.
+- **The XP-drought futility detector.** Life bars lie (chip + regen
+  yo-yo); XP only rises. Fifteen seconds of combat without earning any =
+  walk away — with a UNIQUE-rarity exemption, because bosses pay all
+  their XP at the end.
+- **Bag discipline, then the vendor.** In the field, shed what upkeep
+  didn't wear (keep maps and one copy of each build gem). In town, the
+  same junk is OBOLS — sell it before you open the map, and only on
+  the tick right after upkeep ran, so a freshly returned winner is worn,
+  never sold.
+- **Hold at nine tenths.** A ranged weapon's whole identity is range: at
+  70% of reach a bow trades inside a caster boss's envelope; at 90% the
+  answer can't reach back.
+

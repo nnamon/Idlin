@@ -1,14 +1,14 @@
 [package]
 name = "idlin-content"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-idlin-botc = { version = "0.0.1", path = "../idlin-botc" }
+idlin-botc = { version = "0.1.0", path = "../idlin-botc" }
 # #50 part 2: the `gen` tool emits content/lib/gen_abi.bot from idlin_vm::abi (the
 # VM-ABI single owner), so the .bot side consumes the same strides/offsets the host
 # does. Acyclic — idlin-vm is a leaf (already transitively present via idlin-botc).
-idlin-vm = { version = "0.0.1", path = "../idlin-vm" }
+idlin-vm = { version = "0.1.0", path = "../idlin-vm" }
 ron = "0.12.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = "1"

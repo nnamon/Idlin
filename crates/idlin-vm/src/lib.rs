@@ -97,6 +97,7 @@ pub const SYS_READ_ITEM_MODS: i32 = 31;
 /// #54 PR3: the currently worn gear, per slot (slot, base_num, rarity, item_level)
 /// — so a bot can score its own gear instead of leaning on `equip_best`.
 pub const SYS_READ_EQUIPMENT: i32 = 32;
+
 /// #54 PR3: equip a specific bag item into its content-defined slot (manual
 /// counterpart to `equip_best`); the displaced item returns to the bag, or the
 /// swap is REFUSED (-1) if it can't re-home there — never dropped (unlike
@@ -115,6 +116,22 @@ pub const SYS_UNEQUIP: i32 = 35;
 /// bit1 Shock, bit2 Chill; 0 if the entity is unknown or unafflicted. Lets a bot
 /// read self/target ailment state (and is the read #109's vs-ailing condition uses).
 pub const SYS_READ_AILMENTS: i32 = 36;
+pub const SYS_OPEN_MAP: i32 = 37;
+/// Sell a bag item at the town vendor (#148 A5): pops inv_sel; pays an obol
+/// by what the item was (normal→transmute, magic→alter, rare→alchemy,
+/// unique→regal, gems/maps→transmute). Returns the obol's NUM, or
+/// -1 bad selection / -2 not at a vendor / -4 no character.
+pub const SYS_SELL: i32 = 38;
+/// Move an item between bag and stash at the town stash chest (#148 A5):
+/// pops op (0 = deposit inv_sel, 1 = withdraw stash_sel), then sel.
+/// Returns 1, or -1 bad selection / -2 not at the stash / -3 no room
+/// (bag on withdraw, stash cap on deposit) / -4 no character.
+pub const SYS_STASH: i32 = 39;
+/// Read the stash like ReadInventory (#148 A5): pops max, out; writes
+/// INVENTORY_RECORD_SIZE records (x/y are -1 — a stash has no grid).
+/// Readable from ANYWHERE, like ReadInventory (only Stash needs the
+/// chest's cell). Returns the record count, or -4 no character.
+pub const SYS_READ_STASH: i32 = 40;
 // Zone-brain syscalls (no-ops for entity bots).
 pub const SYS_QUERY_CHARACTERS: i32 = 100;
 pub const SYS_POLL_EVENTS: i32 = 101;
@@ -124,6 +141,13 @@ pub const SYS_SPAWN_MONSTER: i32 = 104;
 pub const SYS_SET_EXIT: i32 = 106;
 pub const SYS_SET_GATE: i32 = 107;
 pub const SYS_SPAWN_ELITE: i32 = 108;
+/// Zone brains read the MONSTERS on their stage (#162 boss mechanics):
+/// pops max, out; writes MONSTER_RECORD_SIZE records (net id, def NUM,
+/// life_pct, x, y, rarity) for live monsters, nearest-spawn order not
+/// guaranteed — deterministic zone-slot order. Returns the count. The
+/// syscall that turns a zone brain into a BOSS DIRECTOR: add waves and
+/// beat lines keyed to the boss's live life.
+pub const SYS_QUERY_MONSTERS: i32 = 109;
 
 /// VM-ABI: the binary memory CONTRACTS bots read out of VM memory (#50). The
 /// SINGLE OWNER of every record stride + `SelfStatus` offset — the Rust host
@@ -152,13 +176,23 @@ pub mod abi {
     /// `QueryCharacters` record stride (10 words, zone-brain): the per-character
     /// block a brain reads. (Was duplicated as `QC_STRIDE`/`CHAR_RECORD_WORDS`.)
     pub const CHAR_RECORD_SIZE: u16 = 40;
+
+    /// `QueryMonsters` record layout (#162): net id, def num, life_pct,
+    /// x (Q16.16), y (Q16.16), rarity.
+    pub const MON_NET: u16 = 0;
+    pub const MON_NUM: u16 = 4;
+    pub const MON_LIFE: u16 = 8;
+    pub const MON_X: u16 = 12;
+    pub const MON_Y: u16 = 16;
+    pub const MON_RARITY: u16 = 20;
+    pub const MONSTER_RECORD_SIZE: u16 = 24;
     /// `ReadExits` record stride (4 words): x, y, open, reserved.
     pub const EXIT_RECORD_SIZE: u16 = 16;
     /// `PollEvents` record stride (4 words, zone-brain): the per-event block a
     /// brain drains from its inbox.
     pub const EVENT_RECORD_SIZE: u16 = 16;
 
-    /// `SelfStatus` field byte-offsets into the out buffer (17 words). The order
+    /// `SelfStatus` field byte-offsets into the out buffer (23 words). The order
     /// is the host's write order in `bots.rs`; bots read each field at its offset.
     pub const SS_X: u16 = 0;
     pub const SS_Y: u16 = 4;
@@ -168,7 +202,7 @@ pub mod abi {
     pub const SS_XP: u16 = 20;
     pub const SS_MAP_W: u16 = 24;
     pub const SS_MAP_H: u16 = 28;
-    pub const SS_FLAGS: u16 = 32; // bit0 = dead
+    pub const SS_FLAGS: u16 = 32; // bit0 = dead; bit1 = act 1 complete (#136)
     pub const SS_ANCHOR_X: u16 = 36;
     pub const SS_ANCHOR_Y: u16 = 40;
     pub const SS_AGGRO_RADIUS: u16 = 44;
@@ -177,8 +211,20 @@ pub mod abi {
     pub const SS_MANA_MAX: u16 = 56;
     pub const SS_ES: u16 = 60;
     pub const SS_ZONE: u16 = 64;
+    /// The zone's Map Device cell in Q16.16, or -1/-1 when the zone has
+    /// none (#136 T6) — how a brain finds where maps are spent.
+    pub const SS_TABLE_X: u16 = 68;
+    pub const SS_TABLE_Y: u16 = 72;
+    /// The zone's VENDOR cell (#148 A5) — where items become obols; -1/-1
+    /// when the zone has none. Towns keep one.
+    pub const SS_VENDOR_X: u16 = 76;
+    pub const SS_VENDOR_Y: u16 = 80;
+    /// The zone's STASH cell (#148 A5) — the character's persistent chest;
+    /// -1/-1 when the zone has none.
+    pub const SS_STASH_X: u16 = 84;
+    pub const SS_STASH_Y: u16 = 88;
     /// Total `SelfStatus` block size (bytes) — the buffer a bot must reserve.
-    pub const SELF_STATUS_SIZE: u16 = 68;
+    pub const SELF_STATUS_SIZE: u16 = 92;
 }
 
 /// Instruction set. Stack machine, RPN: operands are pushed, opcodes pop them.
@@ -722,6 +768,11 @@ mod tests {
         assert_eq!(SYS_ITEM_SLOT, 34);
         assert_eq!(SYS_UNEQUIP, 35);
         assert_eq!(SYS_READ_AILMENTS, 36);
+        assert_eq!(SYS_OPEN_MAP, 37);
+        assert_eq!(SYS_SELL, 38);
+        assert_eq!(SYS_STASH, 39);
+        assert_eq!(SYS_READ_STASH, 40);
+        assert_eq!(SYS_QUERY_MONSTERS, 109);
         assert_eq!(SYS_QUERY_CHARACTERS, 100);
         assert_eq!(SYS_POLL_EVENTS, 101);
         assert_eq!(SYS_NARRATE, 102);
@@ -746,9 +797,10 @@ mod tests {
         assert_eq!(ITEM_MODS_RECORD_SIZE, 16);
         assert_eq!(EQUIPMENT_RECORD_SIZE, 16);
         assert_eq!(CHAR_RECORD_SIZE, 40);
+        assert_eq!(MONSTER_RECORD_SIZE, 24);
         assert_eq!(EXIT_RECORD_SIZE, 16);
         assert_eq!(EVENT_RECORD_SIZE, 16);
-        // SelfStatus: sequential 4-byte words, 17 fields, 68-byte block.
+        // SelfStatus: sequential 4-byte words, 19 fields, 76-byte block.
         let offsets = [
             SS_X,
             SS_Y,
@@ -767,6 +819,12 @@ mod tests {
             SS_MANA_MAX,
             SS_ES,
             SS_ZONE,
+            SS_TABLE_X,
+            SS_TABLE_Y,
+            SS_VENDOR_X,
+            SS_VENDOR_Y,
+            SS_STASH_X,
+            SS_STASH_Y,
         ];
         for (i, off) in offsets.iter().enumerate() {
             assert_eq!(*off, (i as u16) * 4, "SelfStatus field {i} offset");

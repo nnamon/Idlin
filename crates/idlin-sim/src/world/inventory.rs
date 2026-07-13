@@ -98,7 +98,7 @@ impl World {
 
     /// Put a shed gear item back in the bag (first-fit) or drop it at the
     /// character's feet when the grid is full.
-    fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
+    pub(super) fn stash_or_drop_gear(&mut self, slot: usize, item: Item) {
         let spot = {
             let Some(e) = self.zone.get(slot) else { return };
             let Some(ch) = e.character.as_ref() else {
@@ -362,6 +362,16 @@ impl World {
 
         let mut changes = 0;
         for gear_idx in 0..GEAR_SLOTS {
+            // The WEAPON is the build's identity (#148 A2.5): a wand on a
+            // maul build silences every skill, and no scalar score can know
+            // that. EquipBest owns armour + accessories; bots wield
+            // manually (the stock brains keep ranked ladders). This is what
+            // finally let the templates delegate armour to the SCORER — and
+            // the scorer is what values the resists that stop casting
+            // bosses from farming the ranged archetypes.
+            if gear_idx == GearSlot::Weapon.idx() {
+                continue;
+            }
             let Some(e) = self.zone.get(slot) else { break };
             let ch = e.character.as_ref().unwrap();
             // A two-handed weapon claims the offhand: never fill that slot while
@@ -529,6 +539,15 @@ impl World {
         let Some(gear) = ch.inventory.get(inv_idx).and_then(|p| p.item.as_gear()) else {
             return -1; // out of range, or the bag slot is a gem
         };
+        // Maps are CARGO, not gear (#136 T4): they ride the bag and spend
+        // at the Map Device; wearing one is refused here (manual) and
+        // scored to zero in item_score (autos).
+        if self.content.items[gear.base_idx as usize]
+            .map_tier
+            .is_some()
+        {
+            return -1;
+        }
         let islot = self.content.items[gear.base_idx as usize].slot;
         // Land on the first FREE loop of the item's slot family (flasks and
         // rings own two), else its primary — single-slot families collapse to
@@ -688,6 +707,13 @@ impl World {
     /// own affixes over its own bases. Bots with opinions can do better.
     /// `pub(crate)` for the conditional-scoring regression test.
     pub(crate) fn item_score(&self, item: &Item) -> i64 {
+        // Maps never score as wearable gear (#136 T4).
+        if self.content.items[item.base_idx as usize]
+            .map_tier
+            .is_some()
+        {
+            return 0;
+        }
         let def = &self.content.items[item.base_idx as usize];
         // Evaluate conditional affixes against the CANDIDATE's own context so a
         // gated mod is scored only when it would actually fire on this item (#86):
@@ -707,6 +733,15 @@ impl World {
                 crate::world::progression::apply_conditional(&mut sheet, &g, &ctx);
             }
         }
+        // A signature unique's FIXED mods score like rolled affixes (#136
+        // T5 review): without this, a unique's empty affix list made it
+        // score as a bare base — bots equipped any magic item over it and
+        // the feature was dead content for its only wearers.
+        if let Some(u) = item.unique_idx {
+            for g in &self.content.uniques[u as usize].mods {
+                crate::world::progression::apply_conditional(&mut sheet, g, &ctx);
+            }
+        }
         if def.slot == GearSlot::Flask {
             // Bigger heals win; charges are state, not quality.
             return def.flask_heal;
@@ -723,6 +758,9 @@ impl World {
             sheet.value(Stat::Armour, def.armour) * 100
                 + sheet.value(Stat::Block, def.block_bp) / 3
                 + sheet.value(Stat::Evasion, def.evasion) * 100
+                // ES is the caster's life (#148 A2.5) — it was never scored,
+                // so ES gear lost to bare armour on every auto decision.
+                + sheet.value(Stat::EnergyShield, def.energy_shield) * 150
                 + sheet.value(Stat::Life, 0) * 200
                 + sheet.value(Stat::Mana, 0) * 50
                 // Attributes feed real derived stats (STR→life/melee, DEX→acc/eva,
@@ -732,10 +770,17 @@ impl World {
                     + sheet.value(Stat::Dexterity, 0)
                     + sheet.value(Stat::Intelligence, 0))
                     * 80
-                + sheet.value(Stat::ResistFire, 0) / 10
-                + sheet.value(Stat::ResistCold, 0) / 10
-                + sheet.value(Stat::ResistLightning, 0) / 10
-                + sheet.value(Stat::ResistChaos, 0) / 10
+                // Resists at 1% ≈ 2.5 flat life (#148 A1): the old /10 weight
+                // made a 20% roll worth 200 vs 7000 for a mid life roll.
+                // FORWARD-LOOKING: no shipped bot calls equip_best today (the
+                // stock template's own rarity-first rule is the live fix for
+                // the zero-resist 1.0 runs) — this corrects the heuristic for
+                // the consumers A2's archetypes will bring.
+                // 100bp (1%) * 5 = 500 = 2.5 life-equivalents.
+                + sheet.value(Stat::ResistFire, 0) * 5
+                + sheet.value(Stat::ResistCold, 0) * 5
+                + sheet.value(Stat::ResistLightning, 0) * 5
+                + sheet.value(Stat::ResistChaos, 0) * 5
                 + (sheet.value(Stat::MoveSpeed, 10000) - 10000)
         }
     }

@@ -44,6 +44,10 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     ("say", idlin_vm::SYS_SAY, 1),
     ("read_exits", idlin_vm::SYS_READ_EXITS, 2),
     ("use_exit", idlin_vm::SYS_USE_EXIT, 0),
+    ("open_map", idlin_vm::SYS_OPEN_MAP, 1),
+    ("sell", idlin_vm::SYS_SELL, 1),
+    ("stash_op", idlin_vm::SYS_STASH, 2),
+    ("read_stash", idlin_vm::SYS_READ_STASH, 2),
     ("use_flask", idlin_vm::SYS_USE_FLASK, 0),
     ("skill_info", idlin_vm::SYS_SKILL_INFO, 2),
     ("read_item_mods", idlin_vm::SYS_READ_ITEM_MODS, 3),
@@ -56,6 +60,7 @@ pub const BUILTINS: &[(&str, i32, usize)] = &[
     // character transfer: bots take exits themselves (use_exit); brains
     // only gate whether an exit is open.
     ("query_characters", idlin_vm::SYS_QUERY_CHARACTERS, 2),
+    ("query_monsters", idlin_vm::SYS_QUERY_MONSTERS, 2),
     ("poll_events", idlin_vm::SYS_POLL_EVENTS, 2),
     ("narrate", idlin_vm::SYS_NARRATE, 2),
     ("drop_loot", idlin_vm::SYS_DROP_LOOT, 5),

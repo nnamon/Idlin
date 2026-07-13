@@ -22,7 +22,15 @@ use ts_rs::TS;
 //     `revealed_gates`, and the new RevealedCell type. Snapshots ship MASKED
 //     tiles (unexplored glyphs blanked to ' ', props/exits/gates filtered by
 //     what the world's residents have explored).
-pub const PROTO_VERSION: u32 = 40;
+// 41: GameEvent gains ActCompleted (#136 campaign spine).
+/// v43 (#148 A6): `GameEvent` gained `CharacterRemoved` (the kill switch on the wire).
+/// v44 (#148 A7): `MonsterKilled` gained `rarity`; `GameEvent` gained `VoyageTally`.
+/// v45 (quality pass): `EntityState` gained `hostile` (the readability ember's gate).
+/// v46 (#180, operator directive): `VoyageTally` renamed `MapTally` on the wire.
+/// v47 (tooltip completeness): `GearSlotView`/`InvItemView` gain `unique_mods`
+/// (a signature unique's authored mods — they carry no rolled affixes) + the
+/// new `UniqueModView`.
+pub const PROTO_VERSION: u32 = 47;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -56,6 +64,9 @@ pub struct EntityState {
     pub name: String,
     /// Visual key: character class or monster model or "loot".
     pub model: String,
+    /// Faction hostility (broadcast readability, PROTO 45): the client
+    /// embers HOSTILE monsters only — villager NPCs must not glow.
+    pub hostile: bool,
     /// 0 normal, 1 magic, 2 rare, 3 unique (loot drops AND monsters —
     /// elite monsters tint their nameplates; uniques get boss bars).
     pub rarity: u8,
@@ -189,6 +200,12 @@ pub enum GameEvent {
         id: u32,
         name: String,
     },
+    /// A character completed an ACT (#136) — the campaign's biggest beat.
+    ActCompleted {
+        id: u32,
+        name: String,
+        act: u32,
+    },
     /// A tutorial gate lifted or shut (cell rect).
     GateChanged {
         x0: i32,
@@ -209,6 +226,20 @@ pub enum GameEvent {
         name: String,
         killer: String,
     },
+    /// KILL SWITCH (#148 A6): a deployed brain was recalled by the operator.
+    CharacterRemoved {
+        id: u32,
+        name: String,
+    },
+    /// The map scoreboard (#148 A7).
+    MapTally {
+        id: u32,
+        name: String,
+        kills: u64,
+        deaths: u64,
+        items: u64,
+        ticks: u64,
+    },
     CharacterRespawned {
         id: u32,
     },
@@ -222,6 +253,8 @@ pub enum GameEvent {
         killer: String,
         monster: String,
         level: u32,
+        /// The victim's rank (#148 A7): 3 = unique — the boss-kill tier.
+        rarity: u8,
     },
     LootDropped {
         owner_id: u32,
@@ -326,6 +359,20 @@ pub struct RolledModView {
     pub values: Vec<i32>,
 }
 
+/// One AUTHORED mod on a signature unique (v47): uniques carry no rolled
+/// affixes — the def's fixed mods are the item — so the tooltip renders
+/// these. Same (stat, layer, value) contribution shape as StatSourceView.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct UniqueModView {
+    /// Stat vocabulary key (content-docs `stats` lookup).
+    pub stat: String,
+    /// 0 added, 1 increased, 2 more.
+    pub layer: u8,
+    /// Granted amount in the layer's unit (flat or basis points), clamped
+    /// to i32 like every other wire stat value.
+    pub value: i32,
+}
+
 /// One equipment slot on the inspect sheet ("" name = empty slot).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GearSlotView {
@@ -341,6 +388,8 @@ pub struct GearSlotView {
     pub item_level: u32,
     /// Rolled affixes for the tooltip (empty for an empty slot).
     pub mods: Vec<RolledModView>,
+    /// A signature unique's authored mods (v47; empty otherwise).
+    pub unique_mods: Vec<UniqueModView>,
 }
 
 /// One bag item on the inspect sheet (grid placement + footprint).
@@ -357,6 +406,8 @@ pub struct InvItemView {
     pub item_level: u32,
     /// Rolled affixes for the tooltip (empty for gems / plain items).
     pub mods: Vec<RolledModView>,
+    /// A signature unique's authored mods (v47; empty otherwise).
+    pub unique_mods: Vec<UniqueModView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -553,6 +604,9 @@ pub struct CharacterSheet {
     /// Basis points chance to block (0 without a shield).
     pub block_bp: i32,
     pub kills: u32,
+    /// Campaign progress (#136 T7): bit N-1 = act N complete (bit 0 = Act 1 —
+    /// the map endgame's key). The act tracker and map panel read this.
+    pub story_acts: u32,
     pub dmg_phys: i32,
     pub dmg_fire: i32,
     pub dmg_cold: i32,
@@ -812,6 +866,63 @@ mod tests {
             other => panic!("expected ZoneDelta, got {other:?}"),
         }
 
+        // The campaign beat (#136) survives the wire with its tag + fields.
+        let beat = S2C::Events {
+            events: vec![GameEvent::ActCompleted {
+                id: 7,
+                name: "Vex".into(),
+                act: 1,
+            }],
+        };
+        let json = serde_json::to_string(&beat).unwrap();
+        assert!(
+            json.contains("\"ActCompleted\""),
+            "tagged variant name: {json}"
+        );
+        let back: S2C = serde_json::from_str(&json).unwrap();
+        match back {
+            S2C::Events { events } => match &events[0] {
+                GameEvent::ActCompleted {
+                    id: 7,
+                    name,
+                    act: 1,
+                } => assert_eq!(name, "Vex"),
+                other => panic!("wrong event back: {other:?}"),
+            },
+            other => panic!("wrong message back: {other:?}"),
+        }
+
+        // The map scoreboard survives the wire under its v46 tag (#180 —
+        // the variant was RENAMED from VoyageTally; JSON is name-based, so
+        // the tag itself is contract). Mutation: revert the rename → the
+        // tag assert fails before any client sees a mistagged event.
+        let tally = S2C::Events {
+            events: vec![GameEvent::MapTally {
+                id: 7,
+                name: "Kargan".into(),
+                kills: 120,
+                deaths: 1,
+                items: 30,
+                ticks: 9000,
+            }],
+        };
+        let json = serde_json::to_string(&tally).unwrap();
+        assert!(json.contains("\"MapTally\""), "tagged variant name: {json}");
+        let back: S2C = serde_json::from_str(&json).unwrap();
+        match back {
+            S2C::Events { events } => match &events[0] {
+                GameEvent::MapTally {
+                    id: 7,
+                    name,
+                    kills: 120,
+                    ticks: 9000,
+                    ..
+                } => assert_eq!(name, "Kargan"),
+                other => panic!("wrong event back: {other:?}"),
+            },
+            other => panic!("wrong message back: {other:?}"),
+        }
+
         // The per-skill readout (#19) survives the wire — notably `width_cu`,
         // the newest field, and a nested support.
         let sheet = S2C::CharacterSheet {
@@ -831,6 +942,7 @@ mod tests {
                 mana_reserved: 40,
                 block_bp: 0,
                 kills: 0,
+                story_acts: 1,
                 dmg_phys: 0,
                 dmg_fire: 0,
                 dmg_cold: 0,
@@ -859,6 +971,12 @@ mod tests {
                         tier: 1,
                         values: vec![24],
                     }],
+                    // v47: unique authored mods must survive the wire too.
+                    unique_mods: vec![UniqueModView {
+                        stat: "life".into(),
+                        layer: 1,
+                        value: 2500,
+                    }],
                 }],
                 inventory: vec![InvItemView {
                     name: "Athlete's Coral Band".into(),
@@ -874,6 +992,7 @@ mod tests {
                         tier: 0,
                         values: vec![83, 900],
                     }],
+                    unique_mods: vec![],
                 }],
                 gems: vec![],
                 skills: vec![SkillStat {
@@ -939,6 +1058,7 @@ mod tests {
         assert_eq!(sheet.skills[0].xp, 120, "gem xp survives the wire");
         assert_eq!(sheet.skills[0].xp_next, 400);
         assert_eq!(sheet.skills[0].supports[0].name, "Added Lightning");
+        assert_eq!(sheet.story_acts, 1, "campaign progress survives the wire");
         assert_eq!(sheet.life_reserved, 25, "reserved life survives the wire");
         assert_eq!(sheet.mana_reserved, 40, "reserved mana survives the wire");
         assert_eq!(
@@ -965,6 +1085,15 @@ mod tests {
             "rolled tier on the wire"
         );
         assert_eq!(sheet.equipment[0].mods[0].values, vec![24]);
+        // v47: a unique's authored mods survive the wire (drop the field
+        // from serialization and this fails).
+        assert_eq!(sheet.equipment[0].unique_mods.len(), 1);
+        assert_eq!(sheet.equipment[0].unique_mods[0].stat, "life");
+        assert_eq!(sheet.equipment[0].unique_mods[0].layer, 1);
+        assert_eq!(
+            sheet.equipment[0].unique_mods[0].value, 2500,
+            "unique authored mods survive the wire"
+        );
         assert_eq!(
             sheet.inventory[0].base_num, 2002,
             "bag base_num on the wire"

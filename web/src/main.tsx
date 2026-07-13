@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { NetClient } from "./net/client";
 import type { S2C } from "./gen/S2C";
+import { PROTO_VERSION } from "./gen/proto";
 import { WorldStore } from "./world/store";
 import { ZoneRenderer } from "./scene/ZoneRenderer";
 import { Overlay } from "./ui/Overlay";
@@ -43,6 +44,31 @@ if (replay) {
     const res = await fetch(replay);
     const lines = (await res.text()).split("\n").filter(Boolean);
     let i = 0;
+    // Recordings are versioned (their first line is a RecordingHeader):
+    // a stale journal refuses loudly instead of silently mis-rendering
+    // fields it never carried. Headerless = pre-versioning = also stale.
+    try {
+      const head = JSON.parse(lines[0]) as { type?: string; data?: { proto_version?: number } };
+      if (head.type !== "RecordingHeader" || head.data?.proto_version !== PROTO_VERSION) {
+        document.body.textContent = `stale recording (proto ${head.data?.proto_version ?? "unversioned"}, client ${PROTO_VERSION})`;
+        return;
+      }
+      i = 1;
+    } catch {
+      document.body.textContent = "stale recording (unversioned)";
+      return;
+    }
+    // ?at=N (#148 A7): fast-forward — apply the first N journal lines
+    // instantly, then play at speed.
+    const at = Number(params.get("at") ?? 0);
+    while (i < at && i < lines.length) {
+      try {
+        store.handle(JSON.parse(lines[i]) as S2C);
+      } catch {
+        // torn line
+      }
+      i += 1;
+    }
     const step = () => {
       if (i >= lines.length) return;
       try {

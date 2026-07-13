@@ -27,6 +27,8 @@ TilesetDef(
     variants: [
         // The same strand at a colder, darker hour (later maps).
         (id: "drowned", palette: [("sand", "#3e4046"), ("water", "#0e1c30")]),
+        // Act 2 (#148 A3): below the waterline — the abyss palette.
+        (id: "abyss", palette: [("sand", "#23262e"), ("water", "#050b18"), ("grass", "#1d3028")]),
     ],
     natural_monsters: ["drowned_shambler", "bone_stalker", "tide_husk"],
     // The strand's look, OPT-IN: variants of this family compose from these.

@@ -24,6 +24,13 @@
       25165847,
       25165849
     ],
+    "chart": [
+      25165879,
+      25165880,
+      25165881,
+      25165882,
+      25165883
+    ],
     "find": [
       25165859,
       25165834,
@@ -1247,6 +1254,45 @@
         "weight": 35
       },
       {
+        "description": "+#% Item Quantity",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "item_quantity"
+          }
+        ],
+        "id": "of_plenty",
+        "kind": "suffix",
+        "name": "of Plenty",
+        "num": 25165879,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "of Plenty",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 15,
+            "name": "of Bounty",
+            "rolls": [
+              {
+                "max": 5000,
+                "min": 3001
+              }
+            ],
+            "weight": 40
+          }
+        ],
+        "weight": 100
+      },
+      {
         "description": "#% increased Item Rarity",
         "effects": [
           {
@@ -1638,9 +1684,59 @@
               }
             ],
             "weight": 45
+          },
+          {
+            "ilvl": 10,
+            "name": "of Absolution",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2300
+              }
+            ],
+            "weight": 20
           }
         ],
         "weight": 70
+      },
+      {
+        "description": "+#% Item Rarity",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "item_rarity"
+          }
+        ],
+        "id": "of_shoals",
+        "kind": "prefix",
+        "name": "Teeming",
+        "num": 25165880,
+        "tiers": [
+          {
+            "ilvl": 1,
+            "name": "Teeming",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 1500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 15,
+            "name": "Seething",
+            "rolls": [
+              {
+                "max": 5000,
+                "min": 3001
+              }
+            ],
+            "weight": 40
+          }
+        ],
+        "weight": 100
       },
       {
         "description": "+#% Ailment Duration",
@@ -1783,9 +1879,70 @@
               }
             ],
             "weight": 15
+          },
+          {
+            "ilvl": 10,
+            "name": "of the Stormwall",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2401
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Earthed",
+            "rolls": [
+              {
+                "max": 3800,
+                "min": 3100
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 80
+      },
+      {
+        "description": "+# Map Clock",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "map_clock"
+          }
+        ],
+        "id": "of_the_deluge",
+        "kind": "suffix",
+        "name": "of the Deluge",
+        "num": 25165881,
+        "tiers": [
+          {
+            "ilvl": 6,
+            "name": "of the Deluge",
+            "rolls": [
+              {
+                "max": 9000,
+                "min": 7000
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Drowning Bell",
+            "rolls": [
+              {
+                "max": 6999,
+                "min": 5000
+              }
+            ],
+            "weight": 40
+          }
+        ],
+        "weight": 60
       },
       {
         "description": "+#% Cold Resistance",
@@ -1833,6 +1990,28 @@
               }
             ],
             "weight": 15
+          },
+          {
+            "ilvl": 10,
+            "name": "of the Icebound",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2401
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Glacier",
+            "rolls": [
+              {
+                "max": 3800,
+                "min": 3100
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 80
@@ -2123,6 +2302,28 @@
               }
             ],
             "weight": 45
+          },
+          {
+            "ilvl": 10,
+            "name": "of the Hearthstone",
+            "rolls": [
+              {
+                "max": 3000,
+                "min": 2300
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Unburnt",
+            "rolls": [
+              {
+                "max": 3800,
+                "min": 3100
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 80
@@ -2201,6 +2402,28 @@
               }
             ],
             "weight": 45
+          },
+          {
+            "ilvl": 10,
+            "name": "of Gales",
+            "rolls": [
+              {
+                "max": 90,
+                "min": 51
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "of the Tempest",
+            "rolls": [
+              {
+                "max": 140,
+                "min": 91
+              }
+            ],
+            "weight": 8
           }
         ],
         "weight": 90
@@ -2290,6 +2513,95 @@
               }
             ],
             "weight": 15
+          },
+          {
+            "ilvl": 10,
+            "name": "Lucent",
+            "rolls": [
+              {
+                "max": 55,
+                "min": 33
+              }
+            ],
+            "weight": 20
+          },
+          {
+            "ilvl": 14,
+            "name": "Prismatic",
+            "rolls": [
+              {
+                "max": 85,
+                "min": 56
+              }
+            ],
+            "weight": 8
+          }
+        ],
+        "weight": 70
+      },
+      {
+        "description": "+# Sovereign's Mark",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "sovereigns_mark"
+          }
+        ],
+        "id": "sovereigns_mark",
+        "kind": "prefix",
+        "name": "Sovereign-Marked",
+        "num": 25165882,
+        "tiers": [
+          {
+            "ilvl": 16,
+            "name": "Sovereign-Marked",
+            "rolls": [
+              {
+                "max": 1,
+                "min": 1
+              }
+            ],
+            "weight": 100
+          }
+        ],
+        "weight": 40
+      },
+      {
+        "description": "+#% Monster Fury",
+        "effects": [
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "monster_fury"
+          }
+        ],
+        "id": "stormtossed",
+        "kind": "prefix",
+        "name": "Stormtossed",
+        "num": 25165883,
+        "tiers": [
+          {
+            "ilvl": 4,
+            "name": "Stormtossed",
+            "rolls": [
+              {
+                "max": 2500,
+                "min": 1500
+              }
+            ],
+            "weight": 100
+          },
+          {
+            "ilvl": 12,
+            "name": "Tempest-Torn",
+            "rolls": [
+              {
+                "max": 4000,
+                "min": 2501
+              }
+            ],
+            "weight": 40
           }
         ],
         "weight": 70
@@ -3429,6 +3741,45 @@
     "item": [
       {
         "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 70,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "bailiffs_visor",
+        "map_tier": null,
+        "model": "",
+        "name": "Bailiff's Visor",
+        "num": 16777245,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 13,
+        "req_str": 0,
+        "slot": "helm",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 45
+      },
+      {
+        "affix_pools": [
           "weapon"
         ],
         "armour": 0,
@@ -3438,6 +3789,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 8,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3446,6 +3798,7 @@
         "flask_mana": 0,
         "h": 3,
         "id": "barnacle_wand",
+        "map_tier": null,
         "model": "wand",
         "name": "Barnacle Wand",
         "num": 16777216,
@@ -3456,6 +3809,7 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "weapon",
+        "spell_damage_bp": 4000,
         "two_handed": false,
         "use_ticks": 9,
         "w": 1,
@@ -3475,6 +3829,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3483,6 +3838,7 @@
         "flask_mana": 0,
         "h": 2,
         "id": "brine_helm",
+        "map_tier": null,
         "model": "ranger_hood",
         "name": "Brinescoured Helm",
         "num": 16777217,
@@ -3493,11 +3849,91 @@
         "req_level": 3,
         "req_str": 0,
         "slot": "helm",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 2,
         "weapon_class": null,
         "weight": 90
+      },
+      {
+        "affix_pools": [
+          "accessory",
+          "arcana",
+          "find"
+        ],
+        "armour": 30,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 1,
+        "id": "chain_of_office",
+        "map_tier": null,
+        "model": "",
+        "name": "Chain of Office",
+        "num": 16777246,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 13,
+        "req_str": 0,
+        "slot": "belt",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 40
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 15,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 45,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "chanters_shroud",
+        "map_tier": null,
+        "model": "",
+        "name": "Chanter's Shroud",
+        "num": 16777236,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 6,
+        "req_str": 0,
+        "slot": "chest",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 55
       },
       {
         "affix_pools": [
@@ -3512,6 +3948,85 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 20,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 1,
+        "id": "choir_pendant",
+        "map_tier": null,
+        "model": "",
+        "name": "Choir Pendant",
+        "num": 16777247,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 12,
+        "req_str": 0,
+        "slot": "amulet",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 1,
+        "weapon_class": null,
+        "weight": 35
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 10,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 12,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "chorister_wand",
+        "map_tier": null,
+        "model": "wand",
+        "name": "Chorister Wand",
+        "num": 16777232,
+        "projectile": true,
+        "range_cu": 850,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 6000,
+        "two_handed": false,
+        "use_ticks": 9,
+        "w": 1,
+        "weapon_class": "wand",
+        "weight": 55
+      },
+      {
+        "affix_pools": [
+          "accessory",
+          "arcana",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3520,6 +4035,7 @@
         "flask_mana": 0,
         "h": 1,
         "id": "coral_ring",
+        "map_tier": null,
         "model": "",
         "name": "Coral Band",
         "num": 16777225,
@@ -3530,6 +4046,7 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "ring",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 1,
@@ -3548,6 +4065,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3556,6 +4074,7 @@
         "flask_mana": 0,
         "h": 1,
         "id": "corded_belt",
+        "map_tier": null,
         "model": "",
         "name": "Corded Belt",
         "num": 16777226,
@@ -3566,11 +4085,89 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "belt",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 2,
         "weapon_class": null,
         "weight": 80
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 65,
+        "block_bp": 2200,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "court_aegis",
+        "map_tier": null,
+        "model": "",
+        "name": "Court Aegis",
+        "num": 16777248,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 14,
+        "req_str": 0,
+        "slot": "offhand",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 40
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 58,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "courtcrusher",
+        "map_tier": null,
+        "model": "cleaver",
+        "name": "Courtcrusher",
+        "num": 16777239,
+        "projectile": false,
+        "range_cu": 230,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": true,
+        "use_ticks": 10,
+        "w": 2,
+        "weapon_class": "melee",
+        "weight": 55
       },
       {
         "affix_pools": [
@@ -3583,6 +4180,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 10,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3591,6 +4189,7 @@
         "flask_mana": 0,
         "h": 4,
         "id": "driftwood_bow",
+        "map_tier": null,
         "model": "bow",
         "name": "Driftwood Bow",
         "num": 16777218,
@@ -3601,6 +4200,7 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "weapon",
+        "spell_damage_bp": 0,
         "two_handed": true,
         "use_ticks": 7,
         "w": 2,
@@ -3618,6 +4218,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3626,6 +4227,7 @@
         "flask_mana": 0,
         "h": 2,
         "id": "driftwood_buckler",
+        "map_tier": null,
         "model": "shield_round",
         "name": "Driftwood Buckler",
         "num": 16777219,
@@ -3636,11 +4238,51 @@
         "req_level": 2,
         "req_str": 0,
         "slot": "offhand",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 2,
         "weapon_class": null,
         "weight": 80
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 25,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "drowned_lantern",
+        "map_tier": null,
+        "model": "",
+        "name": "Drowned Lantern",
+        "num": 16777237,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 5,
+        "req_str": 0,
+        "slot": "offhand",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 1,
+        "weapon_class": null,
+        "weight": 50
       },
       {
         "affix_pools": [
@@ -3655,6 +4297,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3663,6 +4306,7 @@
         "flask_mana": 0,
         "h": 2,
         "id": "kelp_grips",
+        "map_tier": null,
         "model": "",
         "name": "Kelp Grips",
         "num": 16777228,
@@ -3673,6 +4317,7 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "gloves",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 2,
@@ -3691,6 +4336,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 30,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3699,6 +4345,7 @@
         "flask_mana": 0,
         "h": 3,
         "id": "kelp_vest",
+        "map_tier": null,
         "model": "ranger_body",
         "name": "Kelp-Woven Vest",
         "num": 16777220,
@@ -3709,6 +4356,7 @@
         "req_level": 2,
         "req_str": 0,
         "slot": "chest",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 2,
@@ -3725,7 +4373,199 @@
         "damage_cold": 0,
         "damage_fire": 0,
         "damage_lightning": 0,
+        "damage_phys": 46,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 4,
+        "id": "kelpstrung_bow",
+        "map_tier": null,
+        "model": "bow",
+        "name": "Kelpstrung Bow",
+        "num": 16777240,
+        "projectile": true,
+        "range_cu": 1000,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": true,
+        "use_ticks": 7,
+        "w": 2,
+        "weapon_class": "bow",
+        "weight": 55
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 14,
+        "damage_phys": 16,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "mothersong_rod",
+        "map_tier": null,
+        "model": "wand",
+        "name": "Mothersong Rod",
+        "num": 16777233,
+        "projectile": true,
+        "range_cu": 900,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 8000,
+        "two_handed": false,
+        "use_ticks": 8,
+        "w": 1,
+        "weapon_class": "wand",
+        "weight": 30
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 45,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 24,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "pressure_treads",
+        "map_tier": null,
+        "model": "",
+        "name": "Pressure Treads",
+        "num": 16777249,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 13,
+        "req_str": 0,
+        "slot": "boots",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 45
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 12,
+        "damage_phys": 24,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "pressure_wand",
+        "map_tier": null,
+        "model": "wand",
+        "name": "Pressure Wand",
+        "num": 16777241,
+        "projectile": true,
+        "range_cu": 900,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 10000,
+        "two_handed": false,
+        "use_ticks": 9,
+        "w": 1,
+        "weapon_class": "wand",
+        "weight": 55
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 64,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 4,
+        "id": "riptide_longbow",
+        "map_tier": null,
+        "model": "bow",
+        "name": "Riptide Longbow",
+        "num": 16777242,
+        "projectile": true,
+        "range_cu": 1100,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": true,
+        "use_ticks": 8,
+        "w": 2,
+        "weapon_class": "bow",
+        "weight": 30
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
         "damage_phys": 14,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3734,6 +4574,7 @@
         "flask_mana": 0,
         "h": 3,
         "id": "rusted_cleaver",
+        "map_tier": null,
         "model": "cleaver",
         "name": "Rusted Cleaver",
         "num": 16777221,
@@ -3744,11 +4585,126 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "weapon",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 8,
         "w": 2,
         "weapon_class": "melee",
         "weight": 100
+      },
+      {
+        "affix_pools": [
+          "chart"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "salt_stained_chart",
+        "map_tier": 1,
+        "model": "",
+        "name": "Salt-Stained Map",
+        "num": 16777229,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "flask",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 0
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 26,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "salt_worn_axe",
+        "map_tier": null,
+        "model": "cleaver",
+        "name": "Salt-Worn Axe",
+        "num": 16777230,
+        "projectile": false,
+        "range_cu": 230,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 9,
+        "w": 2,
+        "weapon_class": "melee",
+        "weight": 55
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 18,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 4,
+        "id": "saltworks_recurve",
+        "map_tier": null,
+        "model": "bow",
+        "name": "Saltworks Recurve",
+        "num": 16777234,
+        "projectile": true,
+        "range_cu": 1000,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": true,
+        "use_ticks": 7,
+        "w": 2,
+        "weapon_class": "bow",
+        "weight": 55
       },
       {
         "affix_pools": [
@@ -3761,6 +4717,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 12,
         "flask_cost": 4,
@@ -3769,6 +4726,7 @@
         "flask_mana": 0,
         "h": 2,
         "id": "small_life_flask",
+        "map_tier": null,
         "model": "",
         "name": "Small Life Flask",
         "num": 16777222,
@@ -3779,6 +4737,7 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "flask",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 1,
@@ -3796,6 +4755,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 12,
         "flask_cost": 4,
@@ -3804,6 +4764,7 @@
         "flask_mana": 25,
         "h": 2,
         "id": "small_mana_flask",
+        "map_tier": null,
         "model": "",
         "name": "Small Mana Flask",
         "num": 16777223,
@@ -3814,6 +4775,7 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "flask",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 1,
@@ -3833,6 +4795,124 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 1,
+        "id": "sovereign_band",
+        "map_tier": null,
+        "model": "",
+        "name": "Sovereign Band",
+        "num": 16777250,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 15,
+        "req_str": 0,
+        "slot": "ring",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 1,
+        "weapon_class": null,
+        "weight": 30
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 12,
+        "damage_phys": 34,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "sovereign_scepter",
+        "map_tier": null,
+        "model": "wand",
+        "name": "Sovereign Scepter",
+        "num": 16777243,
+        "projectile": true,
+        "range_cu": 950,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 13000,
+        "two_handed": false,
+        "use_ticks": 8,
+        "w": 1,
+        "weapon_class": "wand",
+        "weight": 30
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 40,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 28,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "strangler_grips",
+        "map_tier": null,
+        "model": "",
+        "name": "Strangler Grips",
+        "num": 16777251,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 12,
+        "req_str": 0,
+        "slot": "gloves",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 45
+      },
+      {
+        "affix_pools": [
+          "accessory",
+          "arcana",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 0,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3841,6 +4921,7 @@
         "flask_mana": 0,
         "h": 1,
         "id": "tidal_amulet",
+        "map_tier": null,
         "model": "",
         "name": "Tidal Charm",
         "num": 16777227,
@@ -3851,11 +4932,90 @@
         "req_level": 0,
         "req_str": 0,
         "slot": "amulet",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 1,
         "weapon_class": null,
         "weight": 60
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana",
+          "find"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 30,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 2,
+        "id": "tideglass_circlet",
+        "map_tier": null,
+        "model": "",
+        "name": "Tideglass Circlet",
+        "num": 16777238,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 4,
+        "req_str": 0,
+        "slot": "helm",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 60
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 80,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 4,
+        "id": "undertow_anchor",
+        "map_tier": null,
+        "model": "cleaver",
+        "name": "Undertow Anchor",
+        "num": 16777244,
+        "projectile": false,
+        "range_cu": 240,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": true,
+        "use_ticks": 12,
+        "w": 2,
+        "weapon_class": "melee",
+        "weight": 30
       },
       {
         "affix_pools": [
@@ -3870,6 +5030,7 @@
         "damage_fire": 0,
         "damage_lightning": 0,
         "damage_phys": 0,
+        "energy_shield": 0,
         "evasion": 40,
         "flask_charges": 0,
         "flask_cost": 0,
@@ -3878,6 +5039,7 @@
         "flask_mana": 0,
         "h": 2,
         "id": "wader_boots",
+        "map_tier": null,
         "model": "ranger_feet",
         "name": "Wader's Boots",
         "num": 16777224,
@@ -3888,16 +5050,216 @@
         "req_level": 2,
         "req_str": 0,
         "slot": "boots",
+        "spell_damage_bp": 0,
         "two_handed": false,
         "use_ticks": 0,
         "w": 2,
         "weapon_class": null,
         "weight": 90
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 28,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 4,
+        "id": "wardens_greatbow",
+        "map_tier": null,
+        "model": "bow",
+        "name": "Warden's Greatbow",
+        "num": 16777235,
+        "projectile": true,
+        "range_cu": 1050,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": true,
+        "use_ticks": 8,
+        "w": 2,
+        "weapon_class": "bow",
+        "weight": 30
+      },
+      {
+        "affix_pools": [
+          "armour",
+          "arcana"
+        ],
+        "armour": 130,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 0,
+        "energy_shield": 0,
+        "evasion": 20,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 3,
+        "id": "wight_plate",
+        "map_tier": null,
+        "model": "",
+        "name": "Wight-Pressed Plate",
+        "num": 16777252,
+        "projectile": false,
+        "range_cu": 0,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 14,
+        "req_str": 0,
+        "slot": "chest",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 0,
+        "w": 2,
+        "weapon_class": null,
+        "weight": 45
+      },
+      {
+        "affix_pools": [
+          "weapon"
+        ],
+        "armour": 0,
+        "block_bp": 0,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "damage_phys": 40,
+        "energy_shield": 0,
+        "evasion": 0,
+        "flask_charges": 0,
+        "flask_cost": 0,
+        "flask_gain": 0,
+        "flask_heal": 0,
+        "flask_mana": 0,
+        "h": 4,
+        "id": "wreckwood_maul",
+        "map_tier": null,
+        "model": "cleaver",
+        "name": "Wreckwood Maul",
+        "num": 16777231,
+        "projectile": false,
+        "range_cu": 240,
+        "req_dex": 0,
+        "req_int": 0,
+        "req_level": 0,
+        "req_str": 0,
+        "slot": "weapon",
+        "spell_damage_bp": 0,
+        "two_handed": false,
+        "use_ticks": 11,
+        "w": 2,
+        "weapon_class": "melee",
+        "weight": 30
       }
     ],
     "monster": [
       {
         "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1600,
+        "armour": 120,
+        "brain": "hostile_melee",
+        "damage": 34,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "bailiff_morr",
+        "level": 35,
+        "life": 2200,
+        "lines": [
+          "Order. ORDER.",
+          "The court finds you buoyant. Overruled.",
+          "Session stands until the sea rests."
+        ],
+        "mana": 90,
+        "model": "stalker",
+        "name": "Bailiff Morr",
+        "num": 33554445,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "increased",
+            "stat": "stagger",
+            "value": 6000
+          },
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "added",
+            "stat": "knockback",
+            "value": 90
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 85,
+        "range_cu": 215,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 2000,
+        "skills": [
+          {
+            "gem": "heavy_swing",
+            "level": 5,
+            "supports": []
+          },
+          {
+            "gem": "cleave",
+            "level": 4,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 210,
+        "unique": true,
+        "use_ticks": 15,
+        "xp": 9000
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -3937,10 +5299,264 @@
         "speed_cps": 330,
         "unique": false,
         "use_ticks": 14,
-        "xp": 35
+        "xp": 59
       },
       {
         "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1300,
+        "armour": 70,
+        "brain": "hostile_melee",
+        "damage": 17,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "brine_wight",
+        "level": 8,
+        "life": 170,
+        "lines": [],
+        "mana": 0,
+        "model": "wight",
+        "name": "Brine Wight",
+        "num": 33554439,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 75,
+        "range_cu": 200,
+        "resist_chaos": 0,
+        "resist_cold": 2000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [],
+        "speed_cps": 200,
+        "unique": false,
+        "use_ticks": 15,
+        "xp": 295
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1700,
+        "armour": 95,
+        "brain": "hostile_melee",
+        "damage": 22,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "brinelord_karesh",
+        "level": 13,
+        "life": 950,
+        "lines": [
+          "The pans want STIRRING.",
+          "You'll keep. Everything here keeps.",
+          "Salt takes the soft parts first."
+        ],
+        "mana": 80,
+        "model": "stalker",
+        "name": "Brinelord Karesh",
+        "num": 33554440,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "added",
+            "stat": "knockback",
+            "value": 90
+          },
+          {
+            "condition": {
+              "below_life_pct": 4000
+            },
+            "layer": "increased",
+            "stat": "stagger",
+            "value": 6000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 80,
+        "range_cu": 210,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "heavy_swing",
+            "level": 4,
+            "supports": []
+          },
+          {
+            "gem": "cleave",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 2,
+            "supports": []
+          }
+        ],
+        "speed_cps": 215,
+        "unique": true,
+        "use_ticks": 14,
+        "xp": 1400
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1500,
+        "armour": 50,
+        "brain": "hostile_melee",
+        "damage": 18,
+        "damage_chaos": 0,
+        "damage_cold": 8,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "choir_remnant",
+        "level": 19,
+        "life": 460,
+        "lines": [],
+        "mana": 200,
+        "model": "husk",
+        "name": "Choir Remnant",
+        "num": 33554446,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 60,
+        "range_cu": 240,
+        "resist_chaos": 0,
+        "resist_cold": 5000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "frost_nova",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 225,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 1316
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1600,
+        "armour": 30,
+        "brain": "hostile_melee",
+        "damage": 11,
+        "damage_chaos": 0,
+        "damage_cold": 4,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "deep_chanter",
+        "level": 11,
+        "life": 240,
+        "lines": [],
+        "mana": 130,
+        "model": "husk",
+        "name": "Deep Chanter",
+        "num": 33554441,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 60,
+        "range_cu": 230,
+        "resist_chaos": 0,
+        "resist_cold": 4500,
+        "resist_fire": 0,
+        "resist_lightning": 3000,
+        "skills": [
+          {
+            "gem": "frost_nova",
+            "level": 2,
+            "supports": []
+          }
+        ],
+        "speed_cps": 225,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 490
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1200,
+        "armour": 130,
+        "brain": "hostile_melee",
+        "damage": 22,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "drowned_colossus",
+        "level": 10,
+        "life": 430,
+        "lines": [],
+        "mana": 40,
+        "model": "shambler",
+        "name": "Drowned Colossus",
+        "num": 33554442,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 95,
+        "range_cu": 210,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "heavy_swing",
+            "level": 4,
+            "supports": []
+          }
+        ],
+        "speed_cps": 175,
+        "unique": false,
+        "use_ticks": 17,
+        "xp": 557
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -3974,10 +5590,11 @@
         "speed_cps": 250,
         "unique": false,
         "use_ticks": 12,
-        "xp": 25
+        "xp": 43
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4011,10 +5628,456 @@
         "speed_cps": 300,
         "unique": false,
         "use_ticks": 8,
-        "xp": 8
+        "xp": 13
       },
       {
         "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1300,
+        "armour": 90,
+        "brain": "hostile_melee",
+        "damage": 26,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "kelp_strangler",
+        "level": 15,
+        "life": 420,
+        "lines": [],
+        "mana": 40,
+        "model": "shambler",
+        "name": "Kelp Strangler",
+        "num": 33554447,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 85,
+        "range_cu": 210,
+        "resist_chaos": 0,
+        "resist_cold": 3500,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "heavy_swing",
+            "level": 5,
+            "supports": []
+          }
+        ],
+        "speed_cps": 190,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 810
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1500,
+        "armour": 20,
+        "brain": "hostile_melee",
+        "damage": 10,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "lantern_wisp",
+        "level": 14,
+        "life": 240,
+        "lines": [],
+        "mana": 140,
+        "model": "wight",
+        "name": "Lantern Wisp",
+        "num": 33554448,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 55,
+        "range_cu": 230,
+        "resist_chaos": 0,
+        "resist_cold": 0,
+        "resist_fire": 3500,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "ember_bolt",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 235,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 675
+      },
+      {
+        "accuracy": 0,
+        "act_boss": 1,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1300,
+        "armour": 70,
+        "brain": "hostile_melee",
+        "damage": 20,
+        "damage_chaos": 0,
+        "damage_cold": 6,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "mother_of_the_drowned",
+        "level": 19,
+        "life": 2000,
+        "lines": [
+          "Every tide is MINE coming back.",
+          "The Warden was a finger. I am the HAND.",
+          "Drown slowly. I want to keep you."
+        ],
+        "mana": 220,
+        "model": "mother",
+        "name": "Mother of the Drowned",
+        "num": 33554443,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "added",
+            "stat": "crit_multi",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_cold",
+            "value": 5000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 100,
+        "range_cu": 220,
+        "resist_chaos": 3000,
+        "resist_cold": 2500,
+        "resist_fire": 0,
+        "resist_lightning": 2500,
+        "skills": [
+          {
+            "gem": "arc",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "frost_nova",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "plague_cloud",
+            "level": 2,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 2,
+            "supports": []
+          }
+        ],
+        "speed_cps": 200,
+        "unique": true,
+        "use_ticks": 16,
+        "xp": 6000
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1500,
+        "armour": 20,
+        "brain": "hostile_melee",
+        "damage": 8,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "pan_haunt",
+        "level": 7,
+        "life": 110,
+        "lines": [],
+        "mana": 60,
+        "model": "husk",
+        "name": "Pan Haunt",
+        "num": 33554444,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 60,
+        "range_cu": 220,
+        "resist_chaos": 0,
+        "resist_cold": 0,
+        "resist_fire": 3500,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "ember_bolt",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 230,
+        "unique": false,
+        "use_ticks": 16,
+        "xp": 253
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1400,
+        "armour": 60,
+        "brain": "hostile_melee",
+        "damage": 20,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "pilgrim_husk",
+        "level": 13,
+        "life": 300,
+        "lines": [],
+        "mana": 0,
+        "model": "husk",
+        "name": "Pilgrim Husk",
+        "num": 33554449,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 70,
+        "range_cu": 200,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [],
+        "speed_cps": 210,
+        "unique": false,
+        "use_ticks": 15,
+        "xp": 607
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1400,
+        "armour": 140,
+        "brain": "hostile_melee",
+        "damage": 25,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "pressure_wight",
+        "level": 17,
+        "life": 520,
+        "lines": [],
+        "mana": 50,
+        "model": "wight",
+        "name": "Pressure Wight",
+        "num": 33554450,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 80,
+        "range_cu": 210,
+        "resist_chaos": 0,
+        "resist_cold": 3000,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "cleave",
+            "level": 4,
+            "supports": []
+          }
+        ],
+        "speed_cps": 200,
+        "unique": false,
+        "use_ticks": 15,
+        "xp": 1080
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1500,
+        "armour": 40,
+        "brain": "hostile_melee",
+        "damage": 14,
+        "damage_chaos": 0,
+        "damage_cold": 6,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "reef_chanter",
+        "level": 16,
+        "life": 340,
+        "lines": [],
+        "mana": 160,
+        "model": "husk",
+        "name": "Reef Chanter",
+        "num": 33554451,
+        "passives": [],
+        "projectile": false,
+        "radius_cu": 60,
+        "range_cu": 230,
+        "resist_chaos": 0,
+        "resist_cold": 4500,
+        "resist_fire": 0,
+        "resist_lightning": 0,
+        "skills": [
+          {
+            "gem": "frost_nova",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 220,
+        "unique": false,
+        "use_ticks": 17,
+        "xp": 911
+      },
+      {
+        "accuracy": 0,
+        "act_boss": 2,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1300,
+        "armour": 80,
+        "brain": "hostile_melee",
+        "damage": 28,
+        "damage_chaos": 0,
+        "damage_cold": 0,
+        "damage_fire": 0,
+        "damage_lightning": 10,
+        "evasion": 0,
+        "hostile": true,
+        "id": "riptide_sovereign",
+        "level": 38,
+        "life": 3000,
+        "lines": [
+          "The tide was MY breathing.",
+          "Everything sinks. I am where it stops.",
+          "Wear the crown, then. It is heavier wet."
+        ],
+        "mana": 300,
+        "model": "mother",
+        "name": "The Riptide Sovereign",
+        "num": 33554452,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "added",
+            "stat": "crit_multi",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_lightning",
+            "value": 6000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 4000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 105,
+        "range_cu": 230,
+        "resist_chaos": 2500,
+        "resist_cold": 2500,
+        "resist_fire": 0,
+        "resist_lightning": 2500,
+        "skills": [
+          {
+            "gem": "arc",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "frost_nova",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 205,
+        "unique": true,
+        "use_ticks": 15,
+        "xp": 14000
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4042,7 +6105,7 @@
         "range_cu": 220,
         "resist_chaos": 0,
         "resist_cold": 0,
-        "resist_fire": 2000,
+        "resist_fire": 800,
         "resist_lightning": 0,
         "skills": [
           {
@@ -4054,10 +6117,85 @@
         "speed_cps": 240,
         "unique": false,
         "use_ticks": 16,
-        "xp": 90
+        "xp": 152
       },
       {
         "accuracy": 0,
+        "act_boss": null,
+        "affix_pools": [
+          "monster"
+        ],
+        "aggro_radius_cu": 1400,
+        "armour": 90,
+        "brain": "hostile_melee",
+        "damage": 30,
+        "damage_chaos": 0,
+        "damage_cold": 10,
+        "damage_fire": 0,
+        "damage_lightning": 0,
+        "evasion": 0,
+        "hostile": true,
+        "id": "the_unwritten",
+        "level": 40,
+        "life": 3400,
+        "lines": [
+          "No map holds me. Yours will not either.",
+          "You walked PAST the edge of the drawn world. Bold."
+        ],
+        "mana": 260,
+        "model": "mother",
+        "name": "The Unwritten",
+        "num": 33554453,
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 2500
+            },
+            "layer": "increased",
+            "stat": "damage_cold",
+            "value": 6000
+          }
+        ],
+        "projectile": false,
+        "radius_cu": 100,
+        "range_cu": 230,
+        "resist_chaos": 0,
+        "resist_cold": 2500,
+        "resist_fire": 0,
+        "resist_lightning": 2500,
+        "skills": [
+          {
+            "gem": "frost_nova",
+            "level": 4,
+            "supports": []
+          },
+          {
+            "gem": "arc",
+            "level": 3,
+            "supports": []
+          },
+          {
+            "gem": "war_cry",
+            "level": 3,
+            "supports": []
+          }
+        ],
+        "speed_cps": 210,
+        "unique": true,
+        "use_ticks": 15,
+        "xp": 6000
+      },
+      {
+        "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4112,10 +6250,11 @@
         "speed_cps": 195,
         "unique": false,
         "use_ticks": 16,
-        "xp": 70
+        "xp": 118
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4141,7 +6280,32 @@
         "model": "tidewarden",
         "name": "The Tidewarden",
         "num": 33554437,
-        "passives": [],
+        "passives": [
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "crit_chance",
+            "value": 10000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "added",
+            "stat": "crit_multi",
+            "value": 5000
+          },
+          {
+            "condition": {
+              "below_life_pct": 5000
+            },
+            "layer": "increased",
+            "stat": "damage_phys",
+            "value": 6000
+          }
+        ],
         "projectile": false,
         "radius_cu": 70,
         "range_cu": 200,
@@ -4173,6 +6337,7 @@
       },
       {
         "accuracy": 0,
+        "act_boss": null,
         "affix_pools": [
           "monster"
         ],
@@ -4799,6 +6964,12 @@
             "layer": "added",
             "stat": "intelligence",
             "value": 10
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "energy_shield",
+            "value": 15
           }
         ],
         "id": "int1",
@@ -4819,6 +6990,12 @@
             "layer": "added",
             "stat": "intelligence",
             "value": 10
+          },
+          {
+            "condition": null,
+            "layer": "increased",
+            "stat": "energy_shield",
+            "value": 1500
           }
         ],
         "id": "int2",
@@ -4841,6 +7018,18 @@
             "layer": "added",
             "stat": "intelligence",
             "value": 20
+          },
+          {
+            "condition": null,
+            "layer": "added",
+            "stat": "energy_shield",
+            "value": 25
+          },
+          {
+            "condition": null,
+            "layer": "increased",
+            "stat": "energy_shield",
+            "value": 1500
           },
           {
             "condition": null,
@@ -5585,7 +7774,7 @@
     "tileset": [],
     "zone": []
   },
-  "fingerprint": "7e761fe7a3c9f245",
+  "fingerprint": "1c16b073b1a996a6",
   "note": "AUTO-GENERATED by `cargo run -p idlin-content --bin gen` — do not edit. Bot/player content reference (RFC #54): every public def's full definitional surface, keyed by category, identified by `num`.",
   "seq_bits": 23,
   "stats": [
@@ -5828,6 +8017,30 @@
       "desc": "Scales how long your ailments last (Ignite spreads a fixed total, so shorter burns faster).",
       "key": "ailment_duration",
       "name": "Ailment Duration"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Map rule: monsters in the map deal this much more damage (basis points).",
+      "key": "monster_fury",
+      "name": "Monster Fury"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Map rule: the map closes after this many ticks — beat the clock.",
+      "key": "map_clock",
+      "name": "Map Clock"
+    },
+    {
+      "added_unit": "flat",
+      "desc": "Map rule: the map’s far end holds a tier boss.",
+      "key": "sovereigns_mark",
+      "name": "Sovereign's Mark"
+    },
+    {
+      "added_unit": "factor_bp",
+      "desc": "Increased spell damage (basis points) — wand implicits and caster gear.",
+      "key": "spell_damage",
+      "name": "Spell Damage"
     }
   ]
 }

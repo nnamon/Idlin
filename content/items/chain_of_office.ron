@@ -1,0 +1,17 @@
+// A drowned magistrate's regalia. The deep belt rung.
+//
+// (Quality pass: the itemization audit found ONE base per
+// armour/accessory slot — a level-23 endgame character wore tutorial
+// gloves; weapons had ladders, armour never did).
+ItemDef(
+    id: "chain_of_office",
+    public: true,
+    name: "Chain of Office",
+    slot: belt,
+    req_level: 13,
+    w: 2,
+    h: 1,
+    armour: 30,
+    affix_pools: ["accessory", "arcana", "find"],
+    weight: 40,
+)

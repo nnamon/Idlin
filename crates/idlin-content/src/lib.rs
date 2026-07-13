@@ -93,6 +93,10 @@ pub enum ContentError {
     UnsupportedTargetGrant { at: String },
     #[error("tile map for `{zone}`: {msg}")]
     BadMap { zone: String, msg: String },
+    #[error("monster `{monster}`: {msg}")]
+    BadMonster { monster: String, msg: String },
+    #[error("unique `{unique}`: {msg}")]
+    BadUnique { unique: String, msg: String },
     #[error("tileset `{tileset}`: {msg}")]
     BadTileset { tileset: String, msg: String },
     #[error("the committed id registry `ids.ron` is malformed: {msg}")]
@@ -191,9 +195,32 @@ pub struct MonsterSkillDef {
     pub supports: Vec<MonsterGemRef>,
 }
 
+/// A SIGNATURE UNIQUE (#136 T5 / #6): a named item with a FIXED mod set on
+/// an existing base, bound to the boss that pays it. Uniques never roll —
+/// their identity IS the mods; the same `Grant` shape as monster passives
+/// and tree nodes, folded at the same gear chokepoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UniqueDef {
+    pub id: String,
+    pub name: String,
+    /// The ItemDef id this unique is built on (validated at load).
+    pub base: String,
+    /// One line of voice for the tooltip.
+    #[serde(default)]
+    pub lore: String,
+    /// The fixed mods — every one folds like a gear affix grant.
+    pub mods: Vec<Grant>,
+    /// The monster def that pays this unique (validated at load)…
+    pub drop_from: String,
+    /// …at this chance per character kill, in basis points.
+    pub drop_bp: u32,
+}
+
 /// A monster archetype. `model` picks the client-side visual; `brain` picks
 /// the bot program that drives it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MonsterDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -276,6 +303,12 @@ pub struct MonsterDef {
     /// attribute grants work exactly as they do for characters.
     #[serde(default)]
     pub passives: Vec<Grant>,
+    /// Killing this monster completes the given ACT for the killer (#136):
+    /// sets the character's story bit and emits ActCompleted. Requires
+    /// `unique: true` — act bosses ARE authored uniques (one boss identity,
+    /// not two): they already spawn at Unique rarity with the boss bar.
+    #[serde(default)]
+    pub act_boss: Option<u32>,
 }
 
 fn default_radius_cu() -> i32 {
@@ -356,12 +389,18 @@ impl GearSlot {
 
 /// An item base type. Rolled affixes provide everything beyond these bases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ItemDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
     /// only when true; private (the default) defs get an internal num only.
     #[serde(default)]
     pub public: bool,
+    /// A MAP (#136 T4): using it at the Map Device opens a map
+    /// instance. The BASE tier; the effective tier scales with the rolled
+    /// item_level. Maps are bag items — never equippable.
+    #[serde(default)]
+    pub map_tier: Option<u32>,
     pub name: String,
     pub slot: GearSlot,
     /// Requirements: a character must MEET these to equip — and to KEEP —
@@ -435,11 +474,18 @@ pub struct ItemDef {
     #[serde(default)]
     pub affix_pools: Vec<String>,
     /// Armor: base mitigation/avoidance (armour attenuates physical damage;
-    /// evasion makes hits miss).
+    /// evasion makes hits miss; energy shield is a hit-absorbing pool that
+    /// recharges out of combat — the caster's armour class, #148 A2.5).
     #[serde(default)]
     pub armour: i64,
     #[serde(default)]
     pub evasion: i64,
+    #[serde(default)]
+    pub energy_shield: i64,
+    /// IMPLICIT increased spell damage (bp) — the wand ladder's reason to
+    /// exist for the archetype that ignores weapon damage (quality pass).
+    #[serde(default)]
+    pub spell_damage_bp: i64,
     /// Relative drop weight.
     #[serde(default = "default_weight")]
     pub weight: u32,
@@ -536,6 +582,7 @@ pub enum CurrencyOp {
 
 /// A currency item: stored as a plain count, spent on gear in the bag.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CurrencyDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -573,6 +620,7 @@ pub struct NamingDef {
 /// from the highest tier the item level allows. One effect = a plain mod; many
 /// effects = a HYBRID (#86), one roll granting several stats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AffixDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -695,7 +743,8 @@ pub enum GemKind {
 }
 
 /// Attacks scale the weapon and roll accuracy; spells carry their own
-/// per-level base damage and never miss via accuracy.
+/// per-level base damage (spell PROJECTILES roll accuracy like arrows —
+/// dodgeable; ground effects, novas, cones, and dots cannot miss).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillKind {
@@ -853,6 +902,7 @@ fn default_max_targets() -> u32 {
 /// grants applied to the skill socketed in its tree cluster). Gems gain XP
 /// from kills; levels scale their numbers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GemDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -1021,6 +1071,10 @@ pub struct ExitDef {
     /// Usable from boot? Closed exits open via the zone brain's set_exit.
     #[serde(default)]
     pub open: bool,
+    /// Story seal (#136): 0 = none; N = only characters who have completed
+    /// act N may take this exit (UseExit returns -3 otherwise).
+    #[serde(default)]
+    pub requires_act: u32,
 }
 
 /// A brain-togglable barrier: a rect of cells that block movement while
@@ -1058,13 +1112,12 @@ pub struct SpawnPack {
     pub y_u: i32,
     /// Spawn jitter radius around the anchor, whole units.
     pub radius_u: i32,
-    /// Ticks after a wipe before the pack respawns.
-    pub respawn_ticks: u32,
-    /// Basis-point chance, rolled ONCE per pack refill, for the pack to
-    /// come up MAGIC (whole pack, one shared affix set) / RARE (a single
-    /// rare leading an otherwise-normal pack). Packs never roll Unique —
-    /// uniques are authored on the monster def. Defaults 0: tutorial
-    /// packs stay plain; zones author their juice.
+    /// Basis-point chance, rolled ONCE at the pack's single spawn (packs
+    /// rise exactly once — the world is finite, no refills), for the pack
+    /// to come up MAGIC (whole pack, one shared affix set) / RARE (a
+    /// single rare leading an otherwise-normal pack). Packs never roll
+    /// Unique — uniques are authored on the monster def. Defaults 0:
+    /// tutorial packs stay plain; zones author their juice.
     #[serde(default)]
     pub magic_bp: u32,
     #[serde(default)]
@@ -1217,6 +1270,7 @@ pub struct PropsDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ZoneDef {
     pub id: String,
     /// Exposed in the generated consts + docs (the bot-facing contract)
@@ -1248,6 +1302,17 @@ pub struct ZoneDef {
     pub camp_radius_u: i32,
     #[serde(default)]
     pub kind: ZoneKind,
+    /// The Map Device's cell (#136 T4): where OpenMap works. One per
+    /// game for 1.0 — Saltmere's. None everywhere else.
+    #[serde(default)]
+    pub map_device: Option<(i32, i32)>,
+    /// The town's VENDOR cell (#148 A5) — where a character sells items
+    /// for obols. Loader-validated walkable + reachable, like the device.
+    #[serde(default)]
+    pub vendor: Option<(i32, i32)>,
+    /// The town's STASH cell (#148 A5) — the persistent chest.
+    #[serde(default)]
+    pub stash: Option<(i32, i32)>,
     /// The zone's BRAIN: a bot program (content/brains) that runs once per
     /// tick with zone-scoped syscalls — scripted encounters, narration,
     /// drops. The dungeon master is a bot too.
@@ -1288,10 +1353,16 @@ pub struct ZoneDef {
 pub struct ContentDb {
     /// FNV-1a 64 over every content file (relative path + bytes), sorted by path.
     pub content_hash: u64,
+    /// The campaign's FINAL act (#148 retrospective): the highest act_boss
+    /// any monster carries — the one content-derived truth for "is the
+    /// campaign done" gates (OpenMap). Adding Act 3 moves it with zero
+    /// engine edits.
+    pub final_act: u32,
     /// Sorted by id — indices into this vec are stable for a given content set.
     pub monsters: Vec<MonsterDef>,
     /// Sorted by id.
     pub zones: Vec<ZoneDef>,
+    pub uniques: Vec<UniqueDef>,
     /// Sorted by id.
     pub brains: Vec<BrainDef>,
     /// Sorted by id.
@@ -1770,6 +1841,38 @@ impl ContentDb {
                     )));
                 }
             }
+            // The Map Device (#136 T4) is the endgame's front door — a
+            // mis-authored cell would silently strand every map run.
+            if let Some((tx, ty)) = zone.map_device {
+                if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
+                    return Err(bad(format!("map_device {tx}x{ty} is off the map")));
+                }
+                if !walkable_at(tx, ty) || !reachable(tx, ty) {
+                    return Err(bad(format!(
+                        "map_device {tx}x{ty} must be walkable and reachable from spawn"
+                    )));
+                }
+            }
+            if let Some((tx, ty)) = zone.vendor {
+                if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
+                    return Err(bad(format!("vendor {tx}x{ty} is off the map")));
+                }
+                if !walkable_at(tx, ty) || !reachable(tx, ty) {
+                    return Err(bad(format!(
+                        "vendor {tx}x{ty} must be walkable and reachable from spawn"
+                    )));
+                }
+            }
+            if let Some((tx, ty)) = zone.stash {
+                if tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height {
+                    return Err(bad(format!("stash {tx}x{ty} is off the map")));
+                }
+                if !walkable_at(tx, ty) || !reachable(tx, ty) {
+                    return Err(bad(format!(
+                        "stash {tx}x{ty} must be walkable and reachable from spawn"
+                    )));
+                }
+            }
             let zone = &mut self.zones[zi];
             zone.width_u = grid.width;
             zone.height_u = grid.height;
@@ -1858,6 +1961,9 @@ impl ContentDb {
             } else if rel_str.starts_with("tilesets/") {
                 db.tilesets
                     .push(ron::from_str::<TilesetDef>(&text).map_err(parse_err)?);
+            } else if rel_str.starts_with("uniques/") {
+                db.uniques
+                    .push(ron::from_str::<UniqueDef>(&text).map_err(parse_err)?);
             } else if rel_str.starts_with("gems/") {
                 db.gems
                     .push(ron::from_str::<GemDef>(&text).map_err(parse_err)?);
@@ -1921,6 +2027,12 @@ impl ContentDb {
             // they still feed the hash so changes are never invisible.
         }
         db.content_hash = hash;
+        db.final_act = db
+            .monsters
+            .iter()
+            .filter_map(|m| m.act_boss)
+            .max()
+            .unwrap_or(0);
 
         db.monsters.sort_by(|a, b| a.id.cmp(&b.id));
         db.zones.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1937,6 +2049,7 @@ impl ContentDb {
             }
         }
         db.affixes.sort_by(|a, b| a.id.cmp(&b.id));
+        db.uniques.sort_by(|a, b| a.id.cmp(&b.id));
         for w in db.affixes.windows(2) {
             if w[0].id == w[1].id {
                 return Err(ContentError::DuplicateId {
@@ -2067,6 +2180,52 @@ impl ContentDb {
                 });
             }
         }
+        // Uniques (#136 T5): the base and the paying boss must exist; every
+        // fixed mod obeys the same grant rules as affixes/passives/buffs.
+        for u in &db.uniques {
+            if !db.items.iter().any(|i| i.id == u.base) {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("base `{}` does not exist", u.base),
+                });
+            }
+            if !db.monsters.iter().any(|m| m.id == u.drop_from) {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("drop_from `{}` does not exist", u.drop_from),
+                });
+            }
+            if u.drop_bp == 0 || u.drop_bp > 10000 {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: format!("drop_bp {} out of (0, 10000]", u.drop_bp),
+                });
+            }
+            if u.mods.is_empty() {
+                return Err(ContentError::BadUnique {
+                    unique: u.id.clone(),
+                    msg: "a unique with no mods is a normal item".into(),
+                });
+            }
+            for g in &u.mods {
+                if is_conditional_attribute(g.stat, &g.condition) {
+                    return Err(ContentError::ConditionalAttribute {
+                        at: format!("unique `{}`", u.id),
+                    });
+                }
+                if let Some(bp) = invalid_condition_threshold(&g.condition) {
+                    return Err(ContentError::BadConditionThreshold {
+                        at: format!("unique `{}`", u.id),
+                        bp,
+                    });
+                }
+                if unsupported_target_grant(g.stat, g.layer, &g.condition) {
+                    return Err(ContentError::UnsupportedTargetGrant {
+                        at: format!("unique `{}`", u.id),
+                    });
+                }
+            }
+        }
         // A gem buff/debuff grant feeds the same conditional-grant fold as
         // tree/affix grants (#86), so it is subject to the same attribute rule.
         for gem in &db.gems {
@@ -2110,6 +2269,25 @@ impl ContentDb {
                 if unsupported_target_grant(g.stat, g.layer, &g.condition) {
                     return Err(ContentError::UnsupportedTargetGrant {
                         at: format!("monster `{}` passive", m.id),
+                    });
+                }
+            }
+            // Act bosses (#136): the act must fit the u32 story bitmask, and
+            // an act boss must BE an authored unique (the one boss identity —
+            // Unique rarity + the boss bar). Both are authoring mistakes that
+            // would ship silently; refuse them at load.
+            if let Some(act) = m.act_boss {
+                if !(1..=32).contains(&act) {
+                    return Err(ContentError::BadMonster {
+                        monster: m.id.clone(),
+                        msg: format!("act_boss {act} out of range (1..=32)"),
+                    });
+                }
+                if !m.unique {
+                    return Err(ContentError::BadMonster {
+                        monster: m.id.clone(),
+                        msg: "act_boss requires unique: true (act bosses are authored uniques)"
+                            .into(),
                     });
                 }
             }
@@ -2318,6 +2496,18 @@ impl ContentDb {
                     return Err(ContentError::BadMap {
                         zone: zone.id.clone(),
                         msg: format!("exit leads to unknown zone `{}`", exit.dest),
+                    });
+                }
+                // Story seals (#136): acts live in a u32 bitmask — an act
+                // outside 1..=32 would shift-overflow (panic) or silently
+                // never unlock. Fail at load, like every other dead-content trap.
+                if exit.requires_act > 32 {
+                    return Err(ContentError::BadMap {
+                        zone: zone.id.clone(),
+                        msg: format!(
+                            "exit requires_act {} out of range (1..=32, or 0 for none)",
+                            exit.requires_act
+                        ),
                     });
                 }
             }
@@ -3562,7 +3752,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(-1)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3583,7 +3773,7 @@ mod tests {
             &[(
                 "affixes/bad.ron",
                 r#"AffixDef(
-                    id: "bad", name: "Bad", kind: suffix, pool: "weapon",
+                    id: "bad", name: "Bad", kind: suffix,
                     effects: [(stat: damage_phys, layer: increased, condition: Some(recently_killed(9223372036854775807)))],
                     tiers: [(ilvl: 1, rolls: [(min: 5, max: 10)])],
                 )"#,
@@ -3709,6 +3899,147 @@ mod tests {
     )"#;
 
     #[test]
+    fn unknown_content_fields_are_rejected_not_swallowed() {
+        // #148 A2.5: the authored surfaces are STRICT — a typo'd or unknown
+        // field fails at parse instead of vanishing (the review's origin
+        // story: hand-authored `energy_shield:` fields were silently eaten
+        // for a whole content pass before the field existed). Mutation:
+        // drop deny_unknown_fields from ItemDef → this probe loads clean.
+        let tc = TempContent::new(
+            "strict_probe",
+            &[(
+                "items/probe.ron",
+                r#"ItemDef(id: "p", name: "P", slot: weapon, w: 1, h: 1, energy_shielf: 30)"#,
+            )],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::Parse { path, .. }) => {
+                assert!(path.contains("probe"), "{path}");
+            }
+            other => panic!("expected a parse rejection, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_uniques_are_rejected() {
+        // #136 T5: a unique's base and paying boss must exist, the chance
+        // must be a real chance, and an empty mod list is a normal item
+        // wearing a name. Mutation: drop any of the four guards → its probe
+        // loads clean.
+        const ITEM_PROBE: &str =
+            r#"ItemDef(id: "probe_blade", name: "Probe Blade", slot: weapon, w: 1, h: 2)"#;
+        const MON_PROBE: &str = r#"MonsterDef(
+            id: "probe_boss", public: false, name: "Probe Boss",
+            model: "x", brain: "mobbrain", hostile: true, level: 1,
+            life: 50, damage: 5, speed_cps: 100, radius_cu: 80, range_cu: 200,
+            use_ticks: 16, aggro_radius_cu: 1000, xp: 10, projectile: false,
+            affix_pools: [],
+        )"#;
+        let unique = |base: &str, from: &str, bp: u32, mods: &str| {
+            format!(
+                r#"UniqueDef(id: "probe_u", name: "Probe", base: "{base}", mods: [{mods}], drop_from: "{from}", drop_bp: {bp})"#
+            )
+        };
+        let ok_mod = "(stat: life, layer: added, value: 5)";
+        let cases = [
+            (unique("nope", "probe_boss", 500, ok_mod), "base `nope`"),
+            (
+                unique("probe_blade", "nope", 500, ok_mod),
+                "drop_from `nope`",
+            ),
+            (unique("probe_blade", "probe_boss", 0, ok_mod), "drop_bp 0"),
+            (unique("probe_blade", "probe_boss", 500, ""), "no mods"),
+        ];
+        for (probe, why) in cases {
+            let tc = TempContent::new(
+                "unique_probe",
+                &[
+                    ("brains/mobbrain.bot", "fn main() {}"),
+                    ("items/probe_blade.ron", ITEM_PROBE),
+                    ("monsters/probe_boss.ron", MON_PROBE),
+                    ("uniques/probe_u.ron", probe.as_str()),
+                ],
+            );
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::BadUnique { unique, .. }) => {
+                    assert_eq!(unique, "probe_u", "case: {why}");
+                }
+                other => panic!("expected BadUnique for {why}, got {other:?}"),
+            }
+        }
+        // And the happy probe loads.
+        let tc = TempContent::new(
+            "unique_probe_ok",
+            &[
+                ("brains/mobbrain.bot", "fn main() {}"),
+                ("items/probe_blade.ron", ITEM_PROBE),
+                ("monsters/probe_boss.ron", MON_PROBE),
+                (
+                    "uniques/probe_u.ron",
+                    unique("probe_blade", "probe_boss", 500, ok_mod).as_str(),
+                ),
+            ],
+        );
+        let db = ContentDb::load(&tc.0).expect("a well-formed unique loads");
+        assert_eq!(db.uniques.len(), 1);
+        assert_eq!(db.uniques[0].name, "Probe");
+    }
+
+    #[test]
+    fn malformed_act_metadata_is_rejected() {
+        // #136: acts live in a u32 bitmask — out-of-range values would shift-
+        // overflow (requires_act) or never unlock (act_boss); an act boss that
+        // isn't an authored unique would grant story without the boss identity.
+        // Mutation: drop any of the three loader guards → its probe loads.
+        let zone = TILE_ZONE_OK.replace(
+            "packs: [],",
+            "packs: [], exits: [(x_u: 1, y_u: 1, dest: \"den\", open: true, requires_act: 33)],",
+        );
+        let tc = TempContent::new(
+            "act_seal_range",
+            &[
+                ("tilesets/cave.ron", TILESET_OK),
+                ("areas/den/zone.ron", zone.as_str()),
+                ("areas/den/map.txt", "###\n#.#\n###\n"),
+            ],
+        );
+        match ContentDb::load(&tc.0) {
+            Err(ContentError::BadMap { zone, msg }) => {
+                assert_eq!(zone, "den");
+                assert!(msg.contains("requires_act"), "{msg}");
+            }
+            other => panic!("expected BadMap for requires_act 33, got {other:?}"),
+        }
+
+        let monster = |unique: bool, act: u32| {
+            MONSTER_WITH_PASSIVE.replace(
+                "passives: [GRANT],",
+                &format!("passives: [], unique: {unique}, act_boss: Some({act}),"),
+            )
+        };
+        for (unique, act, why) in [
+            (true, 0, "act 0 out of range"),
+            (true, 33, "act 33 out of range"),
+            (false, 1, "act boss must be unique"),
+        ] {
+            let body = monster(unique, act);
+            let tc = TempContent::new(
+                &format!("act_boss_{act}_{unique}"),
+                &[
+                    ("brains/mobbrain.bot", "fn main() {}"),
+                    ("monsters/mob.ron", body.as_str()),
+                ],
+            );
+            match ContentDb::load(&tc.0) {
+                Err(ContentError::BadMonster { monster, .. }) => {
+                    assert_eq!(monster, "mob", "{why}");
+                }
+                other => panic!("{why}: expected BadMonster, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn a_conditional_attribute_monster_passive_is_rejected() {
         // Monster passives (#125) fold through the same conditional path, so a
         // conditional attribute is rejected like everywhere else. Mutation: drop the
@@ -3826,7 +4157,7 @@ mod tests {
                     id: "test", name: "Test", width_u: 10, height_u: 10,
                     spawn_x_u: 5, spawn_y_u: 5,
                     packs: [(monster: "no_such_monster", count: 1,
-                             x_u: 2, y_u: 2, radius_u: 1, respawn_ticks: 10)],
+                             x_u: 2, y_u: 2, radius_u: 1)],
                 )"#,
             )],
         );

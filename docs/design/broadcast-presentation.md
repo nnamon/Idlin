@@ -24,11 +24,11 @@ centerpiece, `atlas.md` §4) and the camera/HUD that frame everything.
 The gameplay is in `atlas.md` §4 (a portal plaza; transit-not-accumulation;
 per-owner portals). The *show*:
 
-- **The rift IS the chart.** A map's portal visually encodes the chart:
+- **The rift IS the map item.** A map's portal visually encodes its mods:
   - **rarity rim** — white / blue / yellow / orange, like an item, for an instant
     "ooh, an orange map";
   - **danger glow scaled by the map's derived reward/danger** (`atlas.md` §2) — a
-    juiced, high-tier chart tears a **bigger, angrier, more violent** rift (size,
+    juiced, high-tier map tears a **bigger, angrier, more violent** rift (size,
     particle intensity, color, a touch of screen-shake), so watchers can *see*
     who's running something spicy. The danger-derives-reward model pays off
     visually here: scary portal ⇒ big stakes.
@@ -59,7 +59,7 @@ per-owner portals). The *show*:
 
 - **Leaderboard ticker:** deepest tier today, longest deathless streaks, recent
   pinnacle-boss kills — stakes on screen even during the calm town shot.
-- **Per-run badges** on the featured run: tier, the chart's danger mods, portals
+- **Per-run badges** on the featured run: tier, the map's danger mods, portals
   remaining, and the derived quantity/rarity — so a viewer reads the risk/reward
   of what they're watching.
 

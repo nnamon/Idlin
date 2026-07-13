@@ -43,11 +43,12 @@ use idlin_vm::abi;
 // the compiler's BUILTINS table.
 use idlin_vm::{
     SYS_COUNT_ENTITIES, SYS_DEBUG, SYS_DROP_ITEM, SYS_EQUIP, SYS_EQUIP_BEST, SYS_ITEM_SLOT,
-    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_PICK_UP, SYS_RANDOM, SYS_READ_AILMENTS,
-    SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS, SYS_READ_INVENTORY,
-    SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_SAY, SYS_SELF_STATUS, SYS_SET_BUILD, SYS_SKILL_INFO,
-    SYS_SOCKET_GEM, SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL,
-    SYS_USE_SKILL_AT, SYS_USE_SKILL_DIR,
+    SYS_LINE_OF_SIGHT, SYS_MOVE_ITEM, SYS_MOVE_TO, SYS_OPEN_MAP, SYS_PICK_UP, SYS_RANDOM,
+    SYS_READ_AILMENTS, SYS_READ_CURRENCY, SYS_READ_ENTITIES, SYS_READ_EQUIPMENT, SYS_READ_EXITS,
+    SYS_READ_INVENTORY, SYS_READ_ITEM_MODS, SYS_READ_SKILLS, SYS_READ_STASH, SYS_SAY,
+    SYS_SELF_STATUS, SYS_SELL, SYS_SET_BUILD, SYS_SKILL_INFO, SYS_SOCKET_GEM, SYS_STASH,
+    SYS_UNEQUIP, SYS_USE_CURRENCY, SYS_USE_EXIT, SYS_USE_FLASK, SYS_USE_SKILL, SYS_USE_SKILL_AT,
+    SYS_USE_SKILL_DIR,
 };
 /// UseExit reach: how close a bot must stand to take an exit.
 pub const EXIT_REACH_RAW: i32 = 3 * 65536 / 2; // 1.5 u
@@ -125,6 +126,11 @@ impl BotArena {
         self.free.push(idx);
         self.free.sort_unstable_by(|a, b| b.cmp(a)); // pop() yields lowest
         Some(bot)
+    }
+
+    /// Immutable peek (#148 A6): the leaderboard reads program_hash.
+    pub fn get(&self, idx: u32) -> Option<&Bot> {
+        self.slots.get(idx as usize)?.as_ref()
     }
 
     pub fn take(&mut self, idx: u32) -> Option<Bot> {
@@ -235,6 +241,11 @@ impl World {
                     .map(|c| c.xp.clamp(0, i32::MAX as i64) as i32)
                     .unwrap_or(0);
                 let dead = !e.alive();
+                // SS_FLAGS bit1 (#136): act 1 complete — exposed so brains can
+                // pivot on campaign progress (the stock brain adopts it in T6).
+                let act1 = e.character.as_ref().is_some_and(|c| c.story_acts & 1 != 0);
+                // Act 2 (#148 A3): the same generic ladder — flags bit N = act N.
+                let act2 = e.character.as_ref().is_some_and(|c| c.story_acts & 2 != 0);
                 // Characters anchor to the zone spawn point; monsters to home.
                 let anchor = e
                     .monster
@@ -272,8 +283,10 @@ impl World {
                     .store_i32(out.wrapping_add(abi::SS_MAP_W), self.zone.width.raw());
                 bot.vm
                     .store_i32(out.wrapping_add(abi::SS_MAP_H), self.zone.height.raw());
-                bot.vm
-                    .store_i32(out.wrapping_add(abi::SS_FLAGS), dead as i32);
+                bot.vm.store_i32(
+                    out.wrapping_add(abi::SS_FLAGS),
+                    dead as i32 | ((act1 as i32) << 1) | ((act2 as i32) << 2),
+                );
                 bot.vm
                     .store_i32(out.wrapping_add(abi::SS_ANCHOR_X), anchor.x.raw());
                 bot.vm
@@ -292,6 +305,23 @@ impl World {
                     out.wrapping_add(abi::SS_ZONE),
                     self.content_num(idlin_content::ids::Category::Zone, self.zone_idx as usize),
                 );
+                // The Map Device (#136 T6): where maps spend, in world
+                // coords (Q16.16 cell centers), or -1/-1 in device-less zones.
+                let (tx, ty) = self.map_device.map_or((-1, -1), |(x, y)| {
+                    (Fx::from_int(x as i16).raw(), Fx::from_int(y as i16).raw())
+                });
+                bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_X), tx);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_TABLE_Y), ty);
+                let cellq = |c: Option<(i32, i32)>| match c {
+                    Some((x, y)) => (x * 65536 + 32768, y * 65536 + 32768),
+                    None => (-1, -1),
+                };
+                let (vx, vy) = cellq(self.vendor);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_VENDOR_X), vx);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_VENDOR_Y), vy);
+                let (sx2, sy2) = cellq(self.stash_cell);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_STASH_X), sx2);
+                bot.vm.store_i32(out.wrapping_add(abi::SS_STASH_Y), sy2);
                 0
             }
             SYS_READ_ENTITIES => {
@@ -317,9 +347,18 @@ impl World {
                         && self.zone.camp_radius.raw() > 0
                         && self.zone.get(slot).is_some_and(|q| q.monster.is_some())
                         && e.pos.dist(self.zone.spawn) < self.zone.camp_radius;
+                    // Respawn grace: a freshly respawned entity is not a
+                    // target until the shield lapses or they throw a hit.
+                    let graced = e
+                        .combat
+                        .as_ref()
+                        .is_some_and(|c| c.grace_until > self.tick_count());
                     let visible = match filter {
                         FILTER_ENEMIES => {
-                            my_faction.is_enemy_of(e.faction()) && e.alive() && !sanctified
+                            my_faction.is_enemy_of(e.faction())
+                                && e.alive()
+                                && !sanctified
+                                && !graced
                         }
                         FILTER_CHARACTERS => e.character.is_some() && e.alive(),
                         FILTER_LOOT => e.loot.as_ref().is_some_and(|l| l.owner == my_net),
@@ -335,7 +374,17 @@ impl World {
                         continue;
                     }
                     let life_pct = e.combat.as_ref().map(|c| c.life_pct() as i32).unwrap_or(0);
-                    let rarity = e.loot.as_ref().map(|l| l.rarity as i32).unwrap_or(0);
+                    // The record's rarity word covers BOTH ladders (#148
+                    // A2.5 review): a live monster's rank (normal 0 …
+                    // unique 3) or a loot pile's tier — the old loot-only
+                    // read left every live enemy at 0, which silently
+                    // killed the templates' boss exemption.
+                    let rarity = e
+                        .monster
+                        .as_ref()
+                        .map(|m| m.rarity as i32)
+                        .or_else(|| e.loot.as_ref().map(|l| l.rarity as i32))
+                        .unwrap_or(0);
                     found.push((
                         d2,
                         e.net_id,
@@ -469,6 +518,64 @@ impl World {
                 }
                 n as i32
             }
+            // OpenMap (#136 T4): consume a map from the bag at the Map
+            // Device and open. 0 = departing this tick; -1 bad index / not a
+            // map; -2 not at the device; -3 campaign incomplete (the sea is sealed
+            // until the Mother falls); -4 not a character; -5 a departure is
+            // already staged this tick (the map is NOT consumed).
+            SYS_OPEN_MAP => {
+                let inv_sel = bot.vm.pop();
+                self.open_map(slot, inv_sel)
+            }
+            SYS_SELL => {
+                let inv_sel = bot.vm.pop();
+                self.sell(slot, inv_sel, events)
+            }
+            SYS_STASH => {
+                let sel = bot.vm.pop();
+                let op = bot.vm.pop();
+                self.stash_op(slot, op, sel)
+            }
+            SYS_READ_STASH => {
+                let out = bot.vm.pop() as u16;
+                let max = bot.vm.pop().clamp(0, MAX_INVENTORY_RESULTS as i32) as usize;
+                let Some(e) = self.zone.get(slot) else {
+                    return -4;
+                };
+                let Some(ch) = &e.character else { return -4 };
+                // Same record as ReadInventory; x/y are -1 (no grid).
+                let records: Vec<[i32; 5]> = ch
+                    .stash
+                    .iter()
+                    .take(max)
+                    .map(|item| match item {
+                        crate::entity::BagItem::Gear(it) => [
+                            self.content_num(
+                                idlin_content::ids::Category::Item,
+                                it.base_idx as usize,
+                            ),
+                            it.rarity as i32,
+                            it.item_level as i32,
+                            -1,
+                            -1,
+                        ],
+                        crate::entity::BagItem::Gem(g) => [
+                            self.content_num(idlin_content::ids::Category::Gem, g.gem_idx as usize),
+                            crate::entity::Rarity::Normal as i32,
+                            g.level as i32,
+                            -1,
+                            -1,
+                        ],
+                    })
+                    .collect();
+                for (i, rec) in records.iter().enumerate() {
+                    let base = out.wrapping_add(i as u16 * INVENTORY_RECORD_SIZE);
+                    for (j, v) in rec.iter().enumerate() {
+                        bot.vm.store_i32(base.wrapping_add(4 * j as u16), *v);
+                    }
+                }
+                records.len() as i32
+            }
             SYS_USE_CURRENCY => {
                 let currency_sel = bot.vm.pop();
                 let inv_sel = bot.vm.pop();
@@ -531,10 +638,11 @@ impl World {
                 0
             }
             SYS_READ_EXITS => {
-                // The zone's exits as 16-byte records: (x raw, y raw,
-                // open, reserved). Returns how many were written — the
-                // bot navigates to and takes them itself; nothing ever
-                // forces a transfer.
+                // The zone's exits as 16-byte records: (x raw, y raw, open,
+                // dest zone num). Returns how many were written — the bot
+                // navigates to and takes them itself; nothing ever forces a
+                // transfer. The dest num (#136 T6) lets a brain ROUTE (match
+                // it against the generated ZONE_* consts); -1 = unknown.
                 let out = bot.vm.pop() as u16;
                 let max = bot.vm.pop().clamp(0, 16) as usize;
                 let n = self.zone.exits.len().min(max);
@@ -543,10 +651,12 @@ impl World {
                     bot.vm.store_i32(base, exit.pos.x.raw());
                     bot.vm.store_i32(base.wrapping_add(4), exit.pos.y.raw());
                     bot.vm.store_i32(base.wrapping_add(8), exit.open as i32);
-                    bot.vm.store_i32(base.wrapping_add(12), 0);
+                    let dest = self.zone_num_by_id(&exit.dest);
+                    bot.vm.store_i32(base.wrapping_add(12), dest);
                 }
                 n as i32
             }
+            // 0 staged; -1 none in reach; -2 closed; -3 story-sealed (#136).
             SYS_USE_EXIT => {
                 // Take the exit underfoot. 0 = staged (departs this tick),
                 // −1 no exit in reach, −2 the exit in reach is closed.
@@ -558,11 +668,20 @@ impl World {
                 }
                 let net = e.net_id;
                 let pos = e.pos;
+                let story_acts = e.character.as_ref().map(|c| c.story_acts).unwrap_or(0);
                 let reach = crate::fixed::Fx::from_raw(EXIT_REACH_RAW);
                 let mut found_closed = false;
+                let mut found_sealed = false;
                 let mut dest: Option<String> = None;
                 for exit in &self.zone.exits {
                     if pos.dist(exit.pos) > reach {
+                        continue;
+                    }
+                    // Story seal (#136): an exit can require a completed act.
+                    // Sealed reads distinctly from closed — the bot can tell
+                    // "come back stronger" (-3) apart from "not open yet" (-2).
+                    if exit.requires_act > 0 && story_acts & (1 << (exit.requires_act - 1)) == 0 {
+                        found_sealed = true;
                         continue;
                     }
                     if exit.open {
@@ -573,11 +692,12 @@ impl World {
                 }
                 match dest {
                     Some(dest) => {
-                        if !self.pending_exits.iter().any(|(n, _)| *n == net) {
-                            self.pending_exits.push((net, dest));
+                        if !self.pending_exits.iter().any(|(n, ..)| *n == net) {
+                            self.pending_exits.push((net, dest, None));
                         }
                         0
                     }
+                    None if found_sealed => -3,
                     None if found_closed => -2,
                     None => -1,
                 }
@@ -913,6 +1033,66 @@ mod tests {
     use idlin_content::ContentDb;
     use std::path::Path;
 
+    /// #136: SS_FLAGS packs bit0 = dead and bit1 = act-1-complete — asserted
+    /// through the REAL syscall handler with a DEAD entity. (run_bots skips
+    /// dead bots, so the per-tick path can never observe bit0 on yourself; the
+    /// handler below is still the ABI's single owner and must stay correct.)
+    /// Mutations: shift `dead` off bit0 → the dead read isn't 1; shift act1
+    /// off bit1 → the storied read isn't 2; the combined read pins 3.
+    #[test]
+    fn self_status_flags_pack_dead_bit0_and_act_bit1() {
+        let content = ContentDb::load(Path::new("../../content")).expect("content loads");
+        let mut world = World::new(14, &content);
+        world.tick(&crate::TickInputs {
+            joins: vec![crate::JoinRequest {
+                name: "Flagged".into(),
+                program: idlin_botc::assemble("halt\n").unwrap(),
+            }],
+            arrivals: Vec::new(),
+            removals: Vec::new(),
+        });
+        let slot = (0..world.zone.slot_count())
+            .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
+            .unwrap();
+        let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
+        let mut bot = world.bots.take(bot_idx).unwrap();
+        let read_flags = |world: &mut World, bot: &mut Bot| -> i32 {
+            bot.vm.push(0xF000);
+            let r = world.syscall(slot, bot, SYS_SELF_STATUS, 1, &mut Vec::new());
+            assert_eq!(r, 0, "SelfStatus succeeds");
+            bot.vm.load_i32(0xF000 + abi::SS_FLAGS)
+        };
+        assert_eq!(read_flags(&mut world, &mut bot), 0, "alive, no acts");
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 1;
+        assert_eq!(read_flags(&mut world, &mut bot), 2, "act 1 on bit 1");
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .life = 0;
+        assert_eq!(read_flags(&mut world, &mut bot), 3, "dead + act 1 = 3");
+        world
+            .zone
+            .get_mut(slot)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .story_acts = 0;
+        assert_eq!(read_flags(&mut world, &mut bot), 1, "dead alone = bit 0");
+        world.bots.put_back(bot_idx, bot);
+    }
+
     /// #54 PR3: drive SYS_READ_EQUIPMENT through the VM and confirm the records
     /// land at the `EQUIPMENT_RECORD_SIZE` (16-byte) stride the bot-guide
     /// promises. The pure-records unit test pins field order; THIS pins the
@@ -929,6 +1109,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -956,6 +1137,7 @@ mod tests {
                 affixes: Vec::new(),
                 name: String::new(),
                 charges: 0,
+                unique_idx: None,
             });
         }
         let bot_idx = world.zone.get(slot).unwrap().bot.unwrap();
@@ -1006,6 +1188,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))
@@ -1088,6 +1271,7 @@ mod tests {
                 program,
             }],
             arrivals: Vec::new(),
+            removals: Vec::new(),
         });
         let slot = (0..world.zone.slot_count())
             .find(|&s| world.zone.get(s).is_some_and(|e| e.character.is_some()))

@@ -50,7 +50,7 @@ export const FIXTURES: FixtureMeta[] = [
     kind: "overlay",
     expect: [
       "Brakka",
-      "level 42",
+      "Level 42",
       // The paper doll is icon-only (names ride the hover title), so assert the
       // section is present, not item-name text; the icons are eyeballed + the
       // byte-stable shot pins them.
@@ -78,10 +78,18 @@ export const FIXTURES: FixtureMeta[] = [
     expect: ["Solo", "Life: 0/1180"],
   },
   {
-    // PoE-style item tooltip (#87). The needles assert the EXACT formatted mod
-    // strings, not just substrings — so basis-point scaling (3800 → 38%) and the
-    // value(min-max) range rendering are non-vacuously proven: drop the ÷100 in
-    // formatEffect and "+38(35-38)%" becomes "+3800(...)%" and this fails.
+    name: "scene-dressing",
+    kind: "scene",
+    minBytes: 50_000,
+  },
+  {
+    // PoE-style item tooltip (#87). The needles pin the complete formatted
+    // mod lines as substrings of a byte-stable shot — basis-point scaling
+    // (3800 → 38%) and value(min-max) rendering are non-vacuously proven:
+    // drop the ÷100 in formatEffect and "+38(35-38)%" becomes "+3800(...)%"
+    // and this fails. (Layout/extra-line regressions are the eyeball's job —
+    // the harness contract is pinned needles + a stable shot, not full-text
+    // equality.)
     name: "item-tooltip",
     kind: "tooltip",
     expect: [
@@ -95,6 +103,43 @@ export const FIXTURES: FixtureMeta[] = [
       "36(35-38)% increased Critical Strike Chance", // increased layer ÷100
       "Tier 1",
     ],
+  },
+  {
+    // Tooltip completeness: a NORMAL item's whole story is definitional — the
+    // base combat block + the implicit line. Both were previously unrendered
+    // (the tooltip showed "Normal item" and nothing else).
+    name: "tooltip-normal-wand",
+    kind: "tooltip",
+    expect: [
+      "Barnacle Wand",
+      "Physical Damage: 8",
+      "Cold Damage: 6",
+      "Cast Time: 0.9s",
+      "+40% Spell Damage",
+      "(implicit)",
+    ],
+  },
+  {
+    // Tooltip completeness: a signature unique's authored mods (v47
+    // unique_mods — uniques carry no rolled affixes). Basis points ÷100.
+    name: "tooltip-unique",
+    kind: "tooltip",
+    expect: [
+      "The Tidewarden's Grasp",
+      "Brine-Crusted Gauntlets",
+      "Armour: 34",
+      "+40 Life",
+      "+25% Cold Resistance",
+      "12% increased Attack Speed",
+    ],
+  },
+  {
+    // Mixed coast + interior pool (dfb2598 audit find): the zone-wide water
+    // plane must cover BOTH — eyeball that the mid-zone pool reads as water,
+    // not a dry sunken pit, alongside the east coast strip.
+    name: "scene-water-mixed",
+    kind: "scene",
+    minBytes: 30_000,
   },
   {
     name: "scene-shore",
@@ -158,7 +203,24 @@ export const FIXTURES: FixtureMeta[] = [
     // AND that the full-page PNG is non-blank (scene rendered).
     name: "full-shore",
     kind: "full",
-    expect: ["Brakka", "Heavy Swing"],
+    expect: [
+      "has completed Act 1", "Brakka", "Heavy Swing", "ACT 1 FALLS"],
+    minBytes: 60_000,
+  },
+  {
+    // Boss quality (#136 T2): the scaled Tidewarden, its bar, and the gold
+    // first-sighted splash — the name appears in BOTH the bar and the splash.
+    name: "full-boss",
+    kind: "full",
+    expect: ["The Tidewarden"],
+    minBytes: 60_000,
+  },
+  {
+    // Campaign UI (#136 T7): the zone title card + the act-done chip with
+    // the map count ("act 1 done · 1 map") + the named map in the bag.
+    name: "full-campaign",
+    kind: "full",
+    expect: ["The Charted Shallows", "campaign done"],
     minBytes: 60_000,
   },
   {
@@ -193,7 +255,7 @@ export const FIXTURES: FixtureMeta[] = [
     // broken stream / wrong render leaves the empty state and fails these.
     name: "idler-manage",
     kind: "manage",
-    expect: ["Brakka", "manage", "Event stream", "Bone Stalker"],
+    expect: ["Brakka", "manage", "Event stream", "Bone Stalker", "FELLS", "completes the map"],
   },
   {
     // Individual view for an idler not in any world (#79): a clean "not in the
