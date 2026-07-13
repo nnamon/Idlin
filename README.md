@@ -60,10 +60,12 @@ the sport. Monster behavior is bot code too, shipped as content.
   timer, and Sovereign-Marked deep maps spawn a tier boss (the
   Unwritten) with its own signature. Every run settles a **scoreboard**
   on the way out — kills, deaths, items, duration.
-- **A town economy**: vendors turn junk into obols (the crafting
-  currency), and every character owns a persistent stash chest that
-  rides zone transfers and snapshots. The stock brains sell their road
-  junk before opening maps.
+- **An economy taught from the first map**: vendors turn junk into
+  obols (the crafting currency) — every town has one, and the tutorial
+  shore keeps a beachcomber's cart so selling is learned beside killing.
+  Every character owns a persistent stash chest that rides zone
+  transfers and snapshots. The stock brains sell their junk wherever a
+  cart stands.
 - **Player brain deployment**: POST a `.bot` source to `/api/deploy` and
   your brain walks its own tutorial shore. A published
   **headless harness** (`cargo run -p idlin-server --bin harness`) runs

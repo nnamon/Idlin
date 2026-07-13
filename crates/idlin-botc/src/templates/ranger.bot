@@ -66,6 +66,7 @@ var spent;                 // ticks in this zone with NOTHING to fight
 var spent_zid;             // the zone the spent counter belongs to
 var was_dead;              // the dead-bit's edge detector
 var shy;                   // post-respawn: don't re-engage the killers
+var errand;                // cart errand latch: junk seen, walk to the vendor
 var close_in;              // ticks of forced gap-closing
 var strafed;               // the drought already bought one strafe
 
@@ -167,16 +168,14 @@ fn upkeep_gear() {
 // bag DROPS NOTHING NEW — the Mother's map bounced off one once. When
 // the bag runs hot, shed the first NORMAL-rarity gear (never gems, never
 // maps): normals are either worn already or losers by definition.
-fn shed_trash() {
+// The bag index of the first LOSER, or -1. Policy: anything upkeep_gear
+// did NOT wear is a loser by definition — keep maps and ONE copy of each
+// build gem. Shared by the shed (pressure-gated, drops) and the cart
+// errand (ungated, sells). Returns -1 below min_records so each caller
+// prices its own trigger.
+fn find_junk(min_records) {
     var n = read_inventory(INV, 60);
-    // The bag fills by CELLS, not count — a dozen 6-cell weapons brick
-    // it long before 60 records, pickups fail silently, and the Mother's
-    // map bounces (it did AGAIN at 12:
-    // weapons it can never wield). Policy: anything upkeep_gear did NOT
-    // wear is a loser by definition — keep maps and ONE copy of each
-    // build gem, shed the rest (one per pass; drops shift the bag).
-    // Eight records keeps a 2x2 hole under any mix.
-    if (n < 8) { return 0; }
+    if (n < min_records) { return -1; }
     var seen_0 = 0;
     var seen_1 = 0;
     var seen_2 = 0;
@@ -189,12 +188,22 @@ fn shed_trash() {
         if (num == GEM_POWER_SHOT && seen_0 == 0) { keep = 1; seen_0 = 1; }
         if (num == GEM_SPLIT_QUIVER && seen_1 == 0) { keep = 1; seen_1 = 1; }
         if (num == GEM_QUICKENING && seen_2 == 0) { keep = 1; seen_2 = 1; }
-        if (keep == 0) {
-            drop_item(i);
-            shed_cd = 50;
-            return 0;
-        }
+        if (keep == 0) { return i; }
         i = i + 1;
+    }
+    return -1;
+}
+
+fn shed_trash() {
+    // The bag fills by CELLS, not count — a dozen 6-cell weapons brick
+    // it long before 60 records, pickups fail silently, and the Mother's
+    // map bounces (it did AGAIN at 12:
+    // weapons it can never wield). One shed per pass; drops shift the
+    // bag. Eight records keeps a 2x2 hole under any mix.
+    var junk = find_junk(8);
+    if (junk >= 0) {
+        drop_item(junk);
+        shed_cd = 50;
     }
     return 0;
 }
@@ -687,6 +696,34 @@ fn main() {
     if (have_loot == 1) {
         move_to(loot_x, loot_y);
         return;
+    }
+    // THE CART ERRAND (#185 D-2): where a vendor stands, junk is not
+    // shed — it's SOLD. Pre-campaign zones with a cart (the shore's
+    // beachcomber, the towns): once the packs are cleared, walk the
+    // junk over BEFORE taking the road — the harbor rule, taught
+    // early: junk becomes obols, then you go. Budget-priced like
+    // upkeep: the bag scan probes only on the tick after upkeep ran
+    // (so a returned WINNER is worn before the vendor can see it);
+    // the walk rides a latch between probes. Post-campaign the harbor
+    // errand above owns selling.
+    if ((mem[SELF + SS_FLAGS] & 4) == 0) {
+        var cvx = mem[SELF + SS_VENDOR_X];
+        if (cvx >= 0) {
+            if (upkeep_in == 9) {
+                var cjunk = find_junk(1);
+                errand = 0;
+                if (cjunk >= 0) {
+                    errand = 1;
+                    // Takes within 3 cells of the cart; refuses (-2)
+                    // beyond, and the walk below closes the gap.
+                    if (sell(cjunk) > 0) { return; }
+                }
+            }
+            if (errand == 1) {
+                move_to(cvx, mem[SELF + SS_VENDOR_Y]);
+                return;
+            }
+        }
     }
     if (open_ex == 1 && leaving == 1) {
         // Only the WANTED door (#162 Mirra): use_exit() consumes whatever

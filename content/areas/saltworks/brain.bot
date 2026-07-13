@@ -1,17 +1,27 @@
 // Area brain: the Saltworks. Greets each arrival with the pans' welcome,
-// and marks the overseer's court the first time they climb past the last
-// pans — the same once-per-character narration idiom as Saltmere.
+// teaches the walkway doctrine at the narrows, marks the overseer's
+// court, and primes the Karesh fight at his threshold — the same
+// once-per-character narration idiom as Saltmere.
 
 include "zone_lib.bot";
 
 const L_ENTER = line "enter";
 const L_COURT = line "court";
+const L_NARROWS = line "narrows";
+const L_OVERSEER = line "overseer";
 
 const F_ENTERED = 1;
 const F_COURT = 2;
+const F_NARROWS = 4;
+const F_OVERSEER = 8;
 
 // The court's threshold row (the yard's south wall sits at y=12).
 const COURT_Y = 14;
+// The pan walkways start below the yard approach; the wight packs hold
+// rows 18-24 — the doctrine lands just before the first plank.
+const NARROWS_Y = 28;
+// Deep in the court, in sight of Karesh (staked at y=6).
+const OVERSEER_Y = 10;
 
 fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
@@ -24,9 +34,19 @@ fn main() {
         }
         // Cells are Q16.16 on the record; the court check is in whole units.
         var y_u = mem[r + QC_Y] / 65536;
+        if (y_u < NARROWS_Y) {
+            if (zl_once(net, F_NARROWS) == 1) {
+                narrate(L_NARROWS, net);
+            }
+        }
         if (y_u < COURT_Y) {
             if (zl_once(net, F_COURT) == 1) {
                 narrate(L_COURT, net);
+            }
+        }
+        if (y_u < OVERSEER_Y) {
+            if (zl_once(net, F_OVERSEER) == 1) {
+                narrate(L_OVERSEER, net);
             }
         }
         i = i + 1;

@@ -754,6 +754,8 @@ fn run_tutorial(content: &ContentDb, seed: u64) {
     let mut witch_seen = false;
     let mut rare_seen = false;
     let mut deaths = 0u32;
+    let mut market_heard = false;
+    let mut sales = 0u32;
     let mut departed = None;
     let empty = TickInputs::default();
     for tick in 0..40_000u32 {
@@ -762,6 +764,19 @@ fn run_tutorial(content: &ContentDb, seed: u64) {
             .iter()
             .filter(|e| matches!(e, SimEvent::CharacterDied { .. }))
             .count() as u32;
+        for e in &events {
+            if let SimEvent::Narration { text, .. } = e {
+                // The economy lesson (#185 D-2): the cart beat fires, and
+                // the pupil actually SELLS (the sell syscall narrates
+                // "Sold ..." — reverting the template errand kills this).
+                if text.contains("beachcomber") {
+                    market_heard = true;
+                }
+                if text.starts_with("Sold ") {
+                    sales += 1;
+                }
+            }
+        }
         if std::env::var("IDLIN_TRACE").is_ok() {
             for e in &events {
                 match e {
@@ -856,6 +871,16 @@ fn run_tutorial(content: &ContentDb, seed: u64) {
         "seed {seed:#x}: the scripted magic witch must rise"
     );
     assert!(rare_seen, "seed {seed:#x}: the guaranteed rare must rise");
+    // The economy teaches ON THE SHORE (#185 D-2): the cart beat narrated
+    // and at least one piece of junk crossed the counter.
+    assert!(
+        market_heard,
+        "seed {seed:#x}: the beachcomber's cart lesson must narrate"
+    );
+    assert!(
+        sales >= 1,
+        "seed {seed:#x}: the pupil must sell at the cart (sales: {sales})"
+    );
     // The gauntlet must BITE (the flask lesson needs stakes) — if this
     // fails the grasping_drowned need sharper teeth, not the test.
     assert!(

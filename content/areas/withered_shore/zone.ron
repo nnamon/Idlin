@@ -8,6 +8,10 @@ ZoneDef(
     kind: story,
     tileset: Some("shore"),
     spawn_x_u: 17,
+    // The beachcomber's cart + salvage chest (#185 D-2, operator ruling:
+    // EVERYTHING critical teaches on the first map — the economy included).
+    vendor: Some((8, 50)),
+    stash: Some((14, 50)),
     spawn_y_u: 122,
     spawn_radius_u: 3,
     // Sanctuary: monsters never acquire idlers resting at the camp.
@@ -40,6 +44,9 @@ ZoneDef(
         (id: "elitedown", text: "The witch breaks. Her gem hums with borrowed hunger — socket it, and feel the cost."),
         (id: "manacost",  text: "Power borrowed is power paid for. The blue flask keeps the debt serviced. Onward."),
         (id: "rare",      text: "Something old and angry stirs ahead. It has a NAME."),
+        (id: "market",    text: "A beachcomber's cart, wheels sunk in sand. She takes what the sea gave — sell the junk; the dead don't haggle."),
+        (id: "chest",     text: "Her salvage chest holds what you'd keep: maps, gems, the things worth more than obols."),
+        (id: "craft",     text: "Obols turn plain steel strange. Spend one on a base worth keeping — crafting is the shore's other violence."),
     ],
     // The opening is choreographed: a staked single, a pair, then a
     // ramp of 3/4/5 before the strand opens up — each pack rises once.

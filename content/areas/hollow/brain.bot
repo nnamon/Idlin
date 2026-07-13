@@ -1,11 +1,12 @@
 // Area brain: the Tidewarden's Hollow — Act 1's last room. Greets each
-// descent, and calls the basin when they reach the old water where the
-// Mother stands.
+// descent, teaches the retreat craft in the throat, and calls the basin
+// when they reach the old water where the Mother stands.
 
 include "zone_lib.bot";
 
 const L_ENTER = line "enter";
 const L_BASIN = line "basin";
+const L_THROAT = line "throat";
 const L_CHORUS = line "chorus";
 const L_LAST = line "last_verse";
 
@@ -19,9 +20,13 @@ var phase;
 
 const F_ENTERED = 1;
 const F_BASIN = 2;
+const F_THROAT = 4;
 
 // The basin opens at the bottom of the throat (rows above y=23).
 const BASIN_Y = 23;
+// Mid-descent, between the first chanter choir and the colossus fists —
+// the retreat doctrine lands while the way back up is still short.
+const THROAT_Y = 40;
 
 fn main() {
     var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
@@ -33,6 +38,11 @@ fn main() {
             narrate(L_ENTER, net);
         }
         var y_u = mem[r + QC_Y] / 65536;
+        if (y_u < THROAT_Y) {
+            if (zl_once(net, F_THROAT) == 1) {
+                narrate(L_THROAT, net);
+            }
+        }
         if (y_u < BASIN_Y) {
             if (zl_once(net, F_BASIN) == 1) {
                 narrate(L_BASIN, net);

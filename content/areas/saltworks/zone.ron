@@ -17,6 +17,8 @@ ZoneDef(
     lines: [
         (id: "enter", text: "The Saltworks. The pans still steam. Nothing living tends them."),
         (id: "court", text: "The overseer's court. Something in there remembers having a name."),
+        (id: "narrows",  text: "Wights hold the walkways. Planks make the fight two-wide — pull them TO you. The open pans make it six-wide. Don't fight six-wide."),
+        (id: "overseer", text: "Karesh. Wounded, he throws what he holds. When the shoving starts, give ground — the pans keep what falls in."),
     ],
     packs: [
         // The pan field, south to north: haunts throw embers off the rims,

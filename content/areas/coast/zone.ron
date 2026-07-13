@@ -17,6 +17,14 @@ ZoneDef(
     spawn_x_u: 31,
     spawn_y_u: 104,
     spawn_radius_u: 3,
+    // Act 1 teaches STRATEGY (#185 D-2): the shore taught the verbs; the
+    // coast teaches the road. Doctrine beats, once per character.
+    brain: Some("coast"),
+    lines: [
+        (id: "enter",   text: "The open coast. The road runs north — it always runs north. Kill what pays, keep what fits, and keep moving."),
+        (id: "terrace", text: "Terraces and crag-pockets off the road. They pay in packs — sweep them while they're your level; they'll be sand and small change when you're not."),
+        (id: "roadcall", text: "The Saltworks gate. If the beach still kills you, it isn't done teaching — another terrace first. If it bores you, you've outgrown it. Go."),
+    ],
     camp_radius_u: 8,
     // packs come up magic, ~7% bring a rare (rolled at their one spawn).
     packs: [

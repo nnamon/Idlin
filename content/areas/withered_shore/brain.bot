@@ -11,6 +11,9 @@
 //   5. The Shoal Witch  -> a scripted MAGIC elite pays a support gem
 //                          + mana flask; SOCKET it and gate "midway"
 //                          lifts (power borrowed is power paid for)
+//   5.5 The economy     -> past midway the beachcomber's cart (vendor)
+//                          + salvage chest (stash) narrate; the stock
+//                          brains SELL their junk there (#185 D-2)
 //   6. Harder packs     -> with a guaranteed scripted RARE among them
 //   7. The Tidewarden   -> the hoard, and the bluff path to Saltmere
 //
@@ -62,6 +65,9 @@ const L_ELITE = line "elite";
 const L_ELITEDOWN = line "elitedown";
 const L_MANACOST = line "manacost";
 const L_RARE = line "rare";
+const L_MARKET = line "market";
+const L_CHEST = line "chest";
+const L_CRAFT = line "craft";
 
 // The lesson ladder (gates by id) and the bluff-path exit (by dest).
 // The brain only GATES things open — walking through is always the
@@ -92,6 +98,8 @@ const F_RECOVER = 16384;
 const F_ELITE = 32768;
 const F_ELITEDOWN = 65536;
 const F_MANACOST = 131072;
+const F_MARKET = 262144;
+const F_CRAFT = 524288;
 
 // The gauntlet is cleared at this kill tally (beats 1+2 = 2, plus the
 // six grasping dead) — the gate waits for the tally AND full health.
@@ -111,6 +119,17 @@ fn main() {
         var life = mem[r + QC_LIFE];
 
         zl_narrate_once(net, F_WELCOME, L_WELCOME);
+        // Lesson 5.5: the ECONOMY teaches on the first map. Past the
+        // midway gate the strand holds the beachcomber's cart (vendor)
+        // and her salvage chest (stash) — narrated once as the pupil
+        // reaches them; the craft lesson rides a little further north.
+        if (y < 0x360000) {
+            if (zl_once(net, F_MARKET) == 1) {
+                narrate(L_MARKET, net);
+                narrate(L_CHEST, net);
+            }
+        }
+        if (y < 0x280000) { zl_narrate_once(net, F_CRAFT, L_CRAFT); }
 
         // Lesson 0: declare a build. The starting gate answers intent —
         // and the declared ARCHETYPE steers the weapon drop later.

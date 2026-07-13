@@ -81,7 +81,13 @@ const GOLDEN_TICKS: u64 = 2_000;
 // zone (new content bytes + registry num), the act-2-sealed undertow
 // passage, the devices leaving Saltmere/Lanternfall, and the templates
 // re-routing the endgame through the harbor.
-const GOLDEN_HASH: u64 = 0x3467_F3F3_4894_51EA;
+// Re-pinned for #185 D-2 (operator: everything critical teaches on the
+// first map; Act 1 teaches strategy): the shore gains a vendor + stash
+// and economy lessons, the coast gains a brain, saltworks/hollow gain
+// doctrine beats (all content bytes), and the stock templates sell
+// junk at any pre-campaign cart — grind outcomes shift wherever a bot
+// now errands instead of shedding.
+const GOLDEN_HASH: u64 = 0xD2EE_3F6E_AD04_44F2;
 
 #[test]
 fn golden_replay() {

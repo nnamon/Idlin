@@ -296,8 +296,8 @@ if (read_entities(ENTS, 8, F_ENEMY) > 0) {
 | 35 | `Unequip` | gear_slot | bare a gear slot — move the worn item back to the bag, leaving the slot empty (the deliberate counterpart to `Equip`'s swap). `gear_slot` is the 0–11 index `ReadEquipment` reports. 0 ok; −1 if the index is out of range, the slot is already empty, or **the bag is full**. Like manual `Equip`, and unlike `EquipBest`'s auto-swap (which drops to juggle), `Unequip` REFUSES rather than ever dropping the item. |
 | 36 | `ReadAilments` | net_id | the active ailments on the entity with `net_id` (your own from `SelfStatus`, an enemy's from `ReadEntities`) as a **bitmask**: `1 Ignite` (fire DoT), `2 Shock` (takes more damage), `4 Chill` (slowed). Returns 0 if the entity is unknown or unafflicted. Inflict ailments by hitting with the matching element while you have that element's chance (`ignite_chance` / `shock_chance` / `chill_chance`) (or on a crit, unless your gear says crits cannot cause ailments); the magnitude scales with the hit. |
 | 37 | OpenMap | `inv_idx` | Spend a map from the bag at the town's Map Device: opens a private map instance at area level 39 + tier (tier = base + ilvl over 39; tier-1 maps are level 40), juiced by the map's rolled quantity/rarity affixes. Returns 0 on open, -1 bad index / not a map, -2 not at the device, -3 campaign incomplete (the gate is the content-derived FINAL act — all acts, not just Act 1), -4 not a character, -5 a departure is already staged this tick. The map is consumed ONLY on success; tiers cap at 16. |
-| 38 | Sell | `inv_idx` | Sell a bag item at the town VENDOR cell (SelfStatus +76/+80; reach 3 cells). Pays **0.1 of an obol** (one tenth — selling is a trickle; the mapping and rate live in `content/economy.ron`): normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and maps pay transmute tenths. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
-| 39 | Stash | `op, sel` | Move an item between bag and chest at the town STASH cell (+84/+88; reach 3). op 0 deposits `inventory[sel]` (chest cap 40, flat — no grid); op 1 withdraws `stash[sel]` first-fit into the bag. The chest is yours forever — it rides transfers and snapshots. Returns 1, or -1 bad selection, -2 not at the stash, -3 no room, -4 not a character. |
+| 38 | Sell | `inv_idx` | Sell a bag item at the zone's VENDOR cell (every town, plus the shore's tutorial cart) (SelfStatus +76/+80; reach 3 cells). Pays **0.1 of an obol** (one tenth — selling is a trickle; the mapping and rate live in `content/economy.ron`): normal→transmute, magic→alter, rare→alchemy, unique→regal; gems and maps pay transmute tenths. Returns the obol's NUM, or -1 bad selection, -2 not at a vendor, -4 not a character. |
+| 39 | Stash | `op, sel` | Move an item between bag and chest at the zone's STASH cell (every town, plus the shore's salvage chest) (+84/+88; reach 3). op 0 deposits `inventory[sel]` (chest cap 40, flat — no grid); op 1 withdraws `stash[sel]` first-fit into the bag. The chest is yours forever — it rides transfers and snapshots. Returns 1, or -1 bad selection, -2 not at the stash, -3 no room, -4 not a character. |
 | 40 | ReadStash | `max, out` | Read the chest like ReadInventory (same 20-byte record); x/y are −1 (a chest has no grid). Returns the record count, or -4. |
 | 109 | QueryMonsters | `max, out` | ZONE BRAINS ONLY. Live monsters as MONSTER_RECORD_SIZE (24B) records: net id, def NUM, life_pct, x, y (Q16.16), rarity. The boss-director syscall (max clamps at 64): watch a boss's live life and stage add waves / beat lines at thresholds. Buffers: allocate at 0xE800+ — the var allocator owns 0xC000 up, and zone_lib holds 0xD000/0xE000/0xE400. |
 
@@ -676,11 +676,12 @@ Hard-won disciplines the stock templates carry — steal them:
   yo-yo); XP only rises. Fifteen seconds of combat without earning any =
   walk away — with a UNIQUE-rarity exemption, because bosses pay all
   their XP at the end.
-- **Bag discipline, then the vendor.** In the field, shed what upkeep
-  didn't wear (keep maps and one copy of each build gem). In town, the
-  same junk is OBOLS — sell it before you open the map, and only on
-  the tick right after upkeep ran, so a freshly returned winner is worn,
-  never sold.
+- **Bag discipline, then the vendor.** Anything upkeep didn't wear is a
+  loser (keep maps and one copy of each build gem). Where no cart stands,
+  shed it under bag pressure; where one does (every town, plus the
+  shore's tutorial cart), walk it over once the packs are cleared and
+  SELL instead — and only on the tick right after upkeep ran, so a
+  freshly returned winner is worn, never sold.
 - **Hold at nine tenths.** A ranged weapon's whole identity is range: at
   70% of reach a bow trades inside a caster boss's envelope; at 90% the
   answer can't reach back.

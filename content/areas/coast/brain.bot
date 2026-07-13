@@ -1,0 +1,44 @@
+// Area brain: the Broken Coast — the first open road after the shore's
+// classroom. Act 1 teaches STRATEGY here (#185 D-2): the road runs north,
+// pockets pay while they're your level, and a gate that still kills you
+// is a gate you aren't ready for. Doctrine beats, once per character —
+// the same narration idiom as the Saltworks.
+
+include "zone_lib.bot";
+
+const L_ENTER = line "enter";
+const L_TERRACE = line "terrace";
+const L_ROADCALL = line "roadcall";
+
+const F_ENTERED = 1;
+const F_TERRACE = 2;
+const F_ROADCALL = 4;
+
+// The crag ramps split the beach from the upper terrace around y=60;
+// the Saltworks gate sits at the top rows.
+const TERRACE_Y = 60;
+const ROADCALL_Y = 20;
+
+fn main() {
+    var nq = query_characters(ZL_Q, ZL_MAX_CHARS);
+    var i = 0;
+    while (i < nq) {
+        var r = ZL_Q + i * CHAR_RECORD_SIZE;
+        var net = mem[r + QC_NET];
+        if (zl_once(net, F_ENTERED) == 1) {
+            narrate(L_ENTER, net);
+        }
+        var y_u = mem[r + QC_Y] / 65536;
+        if (y_u < TERRACE_Y) {
+            if (zl_once(net, F_TERRACE) == 1) {
+                narrate(L_TERRACE, net);
+            }
+        }
+        if (y_u < ROADCALL_Y) {
+            if (zl_once(net, F_ROADCALL) == 1) {
+                narrate(L_ROADCALL, net);
+            }
+        }
+        i = i + 1;
+    }
+}

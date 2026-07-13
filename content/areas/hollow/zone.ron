@@ -22,6 +22,7 @@ ZoneDef(
     lines: [
         (id: "enter", text: "The Hollow. The tide goes in here and does not come out."),
         (id: "basin", text: "The water ahead is standing up."),
+        (id: "throat", text: "The throat narrows as it drops, and the choir sings your blood thin. The way back up is not shame — it's craft. Leave a fight you cannot win; the Hollow will keep."),
         (id: "chorus", text: "The Mother falters — and the CHORUS ANSWERS. The drowned rise singing."),
         (id: "last_verse", text: "Her last verse. Everything she ever pulled under comes up with it."),
     ],
