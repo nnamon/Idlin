@@ -100,7 +100,10 @@ const SNAP_MAGIC: [u8; 4] = *b"IDLN";
 /// swapped `respawn_timer: u32` for `risen: bool` — layout change.
 /// v24 (#185 B4): `World` gained `spawn_rarity_bp` (the instance rarity
 /// juice as a property; pack defs are immutable again) — layout change.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 25;
+/// v26 (#185 C8): currency counts became TENTHS (0.1-obol denomination) —
+/// same field shape, new semantics; a v25 count read as tenths would
+/// silently divide every wallet by ten.
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 26;
 
 /// Save cadence (ticks): 30 s. Graceful shutdown saves regardless, so
 /// this is only the crash-loss window.
@@ -585,7 +588,7 @@ mod tests {
         // change must bump this ON PURPOSE. `version_mismatch_is_refused` below is relative
         // (`+1`), so it can't catch a forgotten/reverted bump — this exact pin does. Update
         // it together with the layout change and the version-history note above.
-        assert_eq!(SNAPSHOT_FORMAT_VERSION, 25);
+        assert_eq!(SNAPSHOT_FORMAT_VERSION, 26);
     }
 
     #[test]

@@ -30,7 +30,9 @@ use ts_rs::TS;
 /// v47 (tooltip completeness): `GearSlotView`/`InvItemView` gain `unique_mods`
 /// (a signature unique's authored mods — they carry no rolled affixes) + the
 /// new `UniqueModView`.
-pub const PROTO_VERSION: u32 = 47;
+/// v48 (#185 C8): `CurrencyView.count` carries TENTHS of an obol (the 0.1
+/// denomination) — same field, new unit; an old client would show 10× counts.
+pub const PROTO_VERSION: u32 = 48;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Role {
@@ -413,7 +415,8 @@ pub struct InvItemView {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CurrencyView {
     pub name: String,
-    /// Owned count (only nonzero entries ship).
+    /// Owned count in TENTHS of an obol (v48, #185 C8: the 0.1
+    /// denomination) — the client renders count/10 with one decimal.
     pub count: u32,
     /// Display tier 0..3 (panel color).
     pub tier: u8,

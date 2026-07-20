@@ -387,7 +387,8 @@ impl World {
             return -1;
         }
         let cidx = currency_sel as usize;
-        if ch.currency.get(cidx).copied().unwrap_or(0) == 0 {
+        // Crafting consumes a WHOLE obol — ten tenths (#185 C8).
+        if ch.currency.get(cidx).copied().unwrap_or(0) < 10 {
             return -1;
         }
         if inv_sel < 0 || inv_sel as usize >= ch.inventory.len() {
@@ -407,7 +408,7 @@ impl World {
         let item_name = self.item_display(&item);
         let me = self.zone.get_mut(slot).unwrap();
         let ch = me.character.as_mut().unwrap();
-        ch.currency[cidx] -= 1;
+        ch.currency[cidx] -= 10; // one whole obol, in tenths
         ch.inventory[inv].item = BagItem::Gear(item);
         events.push(SimEvent::CurrencyUsed {
             id: net_id,

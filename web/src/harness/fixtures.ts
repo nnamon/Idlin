@@ -273,9 +273,11 @@ const inspectPanel: Fixture = {
           }),
         ],
         currency: [
-          { name: "Transmute Obol", count: 47, tier: 1 },
-          { name: "Alchemy Obol", count: 12, tier: 2 },
-          { name: "Exalted Obol", count: 1, tier: 3 },
+          // Counts are TENTHS (v48, the 0.1 denomination): 473 renders as
+          // 47.3 — a mid-game wallet with a sell-trickle fraction showing.
+          { name: "Transmute Obol", count: 473, tier: 1 },
+          { name: "Alchemy Obol", count: 120, tier: 2 },
+          { name: "Exalted Obol", count: 10, tier: 3 },
         ],
         passive_allocated: 38,
         passive_unspent: 4,
@@ -565,7 +567,7 @@ const skillOverflow: Fixture = {
           skill({ name: "Frost Nova", kind: "spell", shape: "nova", level: 12, damage: [0, 0, 180, 0, 0], dps: 220, mana_cost: 22, radius_cu: 200, debuff_duration_ticks: 30 }),
           skill({ name: "Power Shot", kind: "attack", shape: "projectile", level: 13, damage: [480, 0, 0, 0, 0], dps: 700, use_ticks: 10, range_cu: 800, projectiles: 1, pierce: 1 }),
         ],
-        currency: [{ name: "Transmute Obol", count: 312, tier: 1 }],
+        currency: [{ name: "Transmute Obol", count: 3120, tier: 1 }], // tenths: renders 312
         passive_allocated: 80,
         build_len: 88,
       }),
@@ -715,9 +717,11 @@ const fullShore: Fixture = {
           invItem("Coral Band", 1, 4, 1, 1, 1),
         ],
         currency: [
-          { name: "Transmute Obol", count: 47, tier: 1 },
-          { name: "Alchemy Obol", count: 12, tier: 2 },
-          { name: "Exalted Obol", count: 1, tier: 3 },
+          // Counts are TENTHS (v48, the 0.1 denomination): 473 renders as
+          // 47.3 — a mid-game wallet with a sell-trickle fraction showing.
+          { name: "Transmute Obol", count: 473, tier: 1 },
+          { name: "Alchemy Obol", count: 120, tier: 2 },
+          { name: "Exalted Obol", count: 10, tier: 3 },
         ],
         skills: [
           skill({

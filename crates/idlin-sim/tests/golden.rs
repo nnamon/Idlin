@@ -73,7 +73,11 @@ const GOLDEN_TICKS: u64 = 2_000;
 // full-weight evasion (acc/(acc+eva), was eva/2) + spell PROJECTILES
 // roll the hit check (dodgeable bolts). Combat outcomes moved
 // everywhere; ranger road deaths 126 -> ~30-45, stair 27 -> 2-5.
-const GOLDEN_HASH: u64 = 0x3E0B_2E50_08EB_59A3;
+// Re-pinned for #185 C8 (operator: obols gain a 0.1 denomination):
+// content/economy.ron is new content bytes, and currency counts became
+// TENTHS — pickups pay 10, crafting consumes 10, selling pays 1, so
+// craft timing shifts anywhere a bot was saving for an obol.
+const GOLDEN_HASH: u64 = 0x593C_BED6_C81C_4F85;
 
 #[test]
 fn golden_replay() {

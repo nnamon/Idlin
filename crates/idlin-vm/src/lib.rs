@@ -117,9 +117,11 @@ pub const SYS_UNEQUIP: i32 = 35;
 /// read self/target ailment state (and is the read #109's vs-ailing condition uses).
 pub const SYS_READ_AILMENTS: i32 = 36;
 pub const SYS_OPEN_MAP: i32 = 37;
-/// Sell a bag item at the town vendor (#148 A5): pops inv_sel; pays an obol
-/// by what the item was (normal→transmute, magic→alter, rare→alchemy,
-/// unique→regal, gems/maps→transmute). Returns the obol's NUM, or
+/// Sell a bag item at the town vendor (#148 A5): pops inv_sel; pays TENTHS
+/// of an obol (#185 C8 — the 0.1 denomination; rate + mapping in
+/// content/economy.ron) by what the item was (normal→transmute,
+/// magic→alter, rare→alchemy, unique→regal; gems and MAPS pay the gem/map
+/// obol regardless of rarity). Returns the obol's NUM, or
 /// -1 bad selection / -2 not at a vendor / -4 no character.
 pub const SYS_SELL: i32 = 38;
 /// Move an item between bag and stash at the town stash chest (#148 A5):
