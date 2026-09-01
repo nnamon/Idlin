@@ -8,4 +8,3 @@ decision record.
 ## Notes
 
 <!-- Add dated notes below. Preserve the original wording when possible. -->
-
