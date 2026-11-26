@@ -100,7 +100,8 @@ export class ProgramError extends Error {
  * every jump lands on an instruction, every slot and system call exists.
  */
 export function validateProgram(raw: unknown): Program {
-  if (typeof raw !== "object" || raw === null) throw new ProgramError("a program must be an object");
+  if (typeof raw !== "object" || raw === null)
+    throw new ProgramError("a program must be an object");
   const { version, code, rules } = raw as Record<string, unknown>;
   if (version !== BYTECODE_VERSION) {
     throw new ProgramError(`bytecode version must be ${BYTECODE_VERSION}`);
@@ -137,15 +138,19 @@ export function validateProgram(raw: unknown): Program {
     const op = ints[at] as number;
     const operand = ints[at + 1] as number;
     if (op === OP.JMP || op === OP.JZ || op === OP.JNZ) {
-      if (!starts.has(operand)) throw new ProgramError(`word ${at}: jump to ${operand} is not an instruction`);
+      if (!starts.has(operand))
+        throw new ProgramError(`word ${at}: jump to ${operand} is not an instruction`);
     } else if (op === OP.LOAD || op === OP.STORE) {
-      if (operand < 0 || operand >= MEMORY_SLOTS) throw new ProgramError(`word ${at}: no memory slot ${operand}`);
+      if (operand < 0 || operand >= MEMORY_SLOTS)
+        throw new ProgramError(`word ${at}: no memory slot ${operand}`);
     } else if (op === OP.SENSE || op === OP.ACT) {
       const call = syscall(operand);
       const kind = op === OP.SENSE ? "sensor" : "action";
-      if (!call || call.kind !== kind) throw new ProgramError(`word ${at}: system call ${operand} is not a ${kind}`);
+      if (!call || call.kind !== kind)
+        throw new ProgramError(`word ${at}: system call ${operand} is not a ${kind}`);
     } else if (op === OP.RULE) {
-      if (operand < 0 || operand >= rules.length) throw new ProgramError(`word ${at}: no rule ${operand}`);
+      if (operand < 0 || operand >= rules.length)
+        throw new ProgramError(`word ${at}: no rule ${operand}`);
     }
   }
   return { version, code: ints, rules: rules as string[] };
@@ -161,7 +166,12 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
   let pc = 0;
   let gas = 0;
   let rule = -1;
-  const end = (fault: Fault, action: Decision["action"] = null): Decision => ({ action, rule, fault, gasUsed: gas });
+  const end = (fault: Fault, action: Decision["action"] = null): Decision => ({
+    action,
+    rule,
+    fault,
+    gasUsed: gas,
+  });
 
   while (true) {
     if (pc >= code.length) return end("ran_off_end");
@@ -180,7 +190,8 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
     else if (op === OP.SWAP) [takes, gives] = [2, 2];
     else if (op === OP.NEG || op === OP.ABS || op === OP.NOT) [takes, gives] = [1, 1];
     else if (op >= OP.ADD && op <= OP.OR) [takes, gives] = [2, 1];
-    else if (op === OP.SENSE) [takes, gives] = [(SYSCALLS[operand] as (typeof SYSCALLS)[number]).args, 1];
+    else if (op === OP.SENSE)
+      [takes, gives] = [(SYSCALLS[operand] as (typeof SYSCALLS)[number]).args, 1];
     else if (op === OP.ACT) takes = (SYSCALLS[operand] as (typeof SYSCALLS)[number]).args;
     if (stack.length < takes) return end("stack_underflow");
     if (stack.length - takes + gives > STACK_SIZE) return end("stack_overflow");
