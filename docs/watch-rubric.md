@@ -20,14 +20,14 @@ compared frame by frame.
 
 ## Metrics (computed, not judged)
 
-| Metric | Meaning | Hard fail |
-|---|---|---|
-| flicker index | largest share of the screen whose brightness changes sharply between two consecutive frames | over 5% of the screen |
-| dead air | longest gap, in seconds, with no visible event anywhere | over 20 s |
-| stuck actors | actors that did not move or act for 60 s without a reason | any |
-| action mix | spread of different actions per character per 10 minutes | a character with one action only |
-| trips per hour, deaths per hour, drops by rarity per hour | pacing | none; tracked over time |
-| console errors | errors in the page during the capture | any |
+| Metric                                                    | Meaning                                                                                     | Hard fail                        |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------- |
+| flicker index                                             | largest share of the screen whose brightness changes sharply between two consecutive frames | over 5% of the screen            |
+| dead air                                                  | longest gap, in seconds, with no visible event anywhere                                     | over 20 s                        |
+| stuck actors                                              | actors that did not move or act for 60 s without a reason                                   | any                              |
+| action mix                                                | spread of different actions per character per 10 minutes                                    | a character with one action only |
+| trips per hour, deaths per hour, drops by rarity per hour | pacing                                                                                      | none; tracked over time          |
+| console errors                                            | errors in the page during the capture                                                       | any                              |
 
 ## The rubric (judged, 0 to 5 each)
 
