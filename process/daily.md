@@ -27,8 +27,10 @@ gh run list --branch main --limit 3
 Skip this step if the capture harness does not exist yet. If the lock in
 `$(git rev-parse --git-dir)/idlin.lock` is younger than 150 minutes, a cycle
 is using the checkout: skip the capture, the judging and the `media` push
-today. The digest then says there is no new capture and shows the last one
-pushed to `media`.
+today. The digest then says the watch review was skipped because a cycle held
+the lock, and shows the last capture pushed to `media`. A conductor session
+running this step between cycles ignores its own lock, neither takes nor
+releases one, and goes straight to the commands below.
 
 Otherwise take the lock, then:
 
@@ -75,13 +77,13 @@ issue already covers it.
 Post to the thread, under these headings and in this order, as short as the
 facts allow:
 
-1. **Merged** — pull requests merged since the last digest, one line each.
-2. **Now** — the issue in progress, and the next two in the queue.
-3. **Watch** — the storyboard, embedded, the scores, and the top finding.
-4. **Decisions you can veto** — anything added to `docs/decisions/` since the
+1. **Merged.** Pull requests merged since the last digest, one line each.
+2. **Now.** The issue in progress, and the next two in the queue.
+3. **Watch.** The storyboard, embedded, the scores, and the top finding.
+4. **Decisions you can veto**: anything added to `docs/decisions/` since the
    last digest, one line each with the alternative.
-5. **Stuck or odd** — only if there is something.
-6. **Milestone** — closed and open issue counts.
+5. **Stuck or odd**: only if there is something.
+6. **Milestone.** Closed and open issue counts.
 
 Also post the digest as a comment on the "Operator log" issue, so the history
 is in the tracker. In place of the local image, link the storyboard at a fixed

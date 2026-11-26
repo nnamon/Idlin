@@ -1,7 +1,11 @@
-# 0001 — Founding decisions
+# 0001: Founding decisions
 
 Date: 2026-11-26. Decided by the conductor under the operator's brief. Each can
 be vetoed; see section 8 of [AGENTS.md](../../AGENTS.md).
+
+Rows 8 and 9 (the Kenney art packs and PixiJS) were replaced by
+[0004](0004-ink-map-art.md). The three-hour cadence in row 13 was replaced by
+[0005](0005-one-long-session.md); one issue per cycle still stands.
 
 | #   | Decision                                                                                                                                    | Rejected alternative                                             | Why                                                                                                                |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |

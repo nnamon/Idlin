@@ -1,8 +1,9 @@
 # The work cycle
 
-Run by the conductor each time the "Idlin work cycle" schedule fires. One
-cycle takes one issue as far as it can, ideally to merged. All state is in the
-repo and the tracker; a cycle starts with no memory of the last one.
+One cycle takes one issue as far as it can, ideally to merged. The conductor
+runs cycles back to back in its session; the "Idlin work cycle" schedule runs
+one too, if nobody else holds the lock. All state is in the repo and the
+tracker, so a cycle can start knowing nothing about the last one.
 
 ## 0. Lock
 
@@ -12,10 +13,16 @@ The repo checkout is shared with the daily digest. Before anything else:
 cat "$(git rev-parse --git-dir)/idlin.lock" 2>/dev/null
 ```
 
-- A lock younger than 150 minutes means another run is working. Report "busy"
-  in one line and end.
-- Otherwise write `<UTC time> cycle` to that file. Remove it as the last step,
-  including when the cycle ends early.
+- A lock younger than 150 minutes means another run is working, unless this
+  session wrote it. Report "busy" in one line and end.
+- Otherwise write `<UTC time> cycle` to that file. A scheduled cycle removes
+  it as its last step, including when it ends early.
+- A session takes the lock once and keeps it for as long as it runs, across
+  cycles and issues. It rewrites the time at each step and before each wait
+  for a reviewer, so the lock never looks dead, and removes the file only when
+  the session ends. Between cycles it checks whether the digest said the watch
+  review was skipped because the lock was held, and if so runs step 2 of
+  `process/daily.md` itself.
 
 ## 1. Orient
 
@@ -42,7 +49,8 @@ Link the issue to the thread.
 
 ## 3. Build
 
-- Branch `i<issue>-<slug>` from `main`.
+- Branch `i<issue>-<slug>` from `main`. An issue that needs an unmerged
+  branch waits for it; branches are not stacked.
 - For a `look` issue that is mostly visual design, the conductor may hand the
   build to the artist: one `delegate_task` child on Opus 5.5 (effort `medium`) with
   `isolation: "worktree"`, given the issue text and the docs to read. Otherwise
@@ -65,8 +73,9 @@ show), and anything left out. Link it to the thread. Wait for CI.
 
 ## 5. Review
 
-Start the reviewer (`delegate_task`, role `review`, Codex `gpt-6.2-sol`,
-reasoning effort `high`) with this brief, filled in:
+Start the reviewer (`delegate_task`, role `review`, `isolation: "worktree"`
+so that it never switches the shared checkout, Codex `gpt-6.2-sol`, reasoning
+effort `high`) with this brief, filled in:
 
 > You are reviewing pull request #P in this repository. Your job is to refute
 > the claim that the change is correct, complete and well made. Read
@@ -103,13 +112,49 @@ Which checks apply depends on what exists so far; see "What applies when" in
 
 ## 7. Merge
 
-When every gate in section 5 of `AGENTS.md` holds, squash-merge. GitHub dates
-the merge commit in the time zone it last saw for the account, so say UTC:
+When every gate in section 5 of `AGENTS.md` holds, merge the branch as one
+commit. GitHub's own squash stamps the commit's author date in the time zone
+it last saw for the account, whatever the request says, so the squash is done
+on the branch and GitHub only rebases it:
+
+```sh
+(
+set -e                                            # stop at the first command that fails
+test -z "$(git status --porcelain)"               # nothing uncommitted lying about
+git fetch origin
+test -z "$(git log --oneline origin/<branch>..<branch> 2>/dev/null)"   # no unpushed commits on the branch
+git checkout -B <branch> origin/<branch>
+test "$(git rev-parse HEAD)" = <reviewed head sha>   # the local branch is what was reviewed
+TZ=UTC git merge --no-edit origin/main            # always; it does nothing if main has not moved
+git merge-base --is-ancestor origin/main HEAD     # or the reset below would undo work on main
+git reset --soft origin/main
+TZ=UTC git commit -m "<pull request title> (#<P>)"   # P is the pull request, not the issue
+git diff --stat origin/main HEAD                  # read it: only this pull request's files
+git push --force-with-lease=<branch>:<reviewed head sha> origin <branch>   # the branch, never main
+)
+```
+
+Run it as one block, brackets included; it stops at the first failure.
+Carrying on after a failed merge would commit a change that undoes newer work
+on `main`. If the merge conflicts, run `git merge --abort`, merge `main` into
+the branch as an ordinary commit with the conflict resolved, push it, and take
+it back through `gate` and review. If the push is refused, someone else pushed
+to the branch. Fetch, read the new commits, and send them to review if they
+change code.
+
+The commit carries the pull request's title only; the detail stays in the
+pull request.
+
+Wait for `gate` on the new head, then:
 
 ```sh
 gh api -X PUT repos/nnamon/Idlin/pulls/<P>/merge -H "Time-Zone: Etc/UTC" \
-  -f merge_method=squash -f sha=<head sha>
+  -f merge_method=rebase -f sha=<the commit just pushed>
+git fetch origin && git log -1 --format='%ad | %cd' --date=format:%z origin/main   # both +0000
 ```
+
+If either date is not `+0000`, file a `process` issue. `main` is not
+rewritten to fix it.
 
 Then:
 
@@ -129,7 +174,7 @@ If `main` goes red, fixing it is the next thing this cycle does.
   pull request where possible.
 - Delete the merged branch, local and remote.
 - File follow-up issues for anything found and left out.
-- Remove the lock.
+- A scheduled cycle removes the lock. A session keeps it.
 
 ## 9. Report
 
@@ -139,9 +184,11 @@ next cycle will pick up. If there is a new capture, embed the storyboard.
 
 ## Limits
 
-- One issue per cycle. If it merges with plenty of the cycle left, stop anyway;
-  the next cycle starts fresh.
-- At most one child task alive at a time.
+- One issue per cycle. A scheduled cycle stops when its issue merges. A
+  conductor working in a session starts the next cycle straight away.
+- At most two child tasks at a time, of any role. Capture runs and `pnpm gate`
+  runs are heavy: one at a time. A reviewer runs the gate, so while a reviewer
+  is out the conductor starts no gate or capture run of its own.
 - If the same issue has taken three cycles of building, split it or label it
   `blocked`. Cycles spent only waiting for a reviewer do not count.
 - If something outside the repo is broken (Docker down, GitHub unreachable,

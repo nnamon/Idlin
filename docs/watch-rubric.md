@@ -1,25 +1,28 @@
-# Judging "is this fun to watch"
+# How we judge whether it is worth watching
 
-Tests cannot answer this. It is judged from real captures of the running game,
-by a judge who did not build the change, against the rubric below.
+Tests can't tell you whether a stream is worth watching. So it is judged from
+captures of the running game, by a judge who didn't build the change, using
+the rubric below.
 
 Every duration on this page is stream time: seconds and minutes as a viewer
 experiences them, not game-clock time.
 
 ## The capture
 
-`docker compose run --rm capture` runs the viewer in replay mode from a fixed
-seed with a stepped clock, and writes to `captures/<date>-<sha>/`:
+The capture tool runs the viewer in replay mode from a fixed seed with a
+stepped clock. So far it only saves single frames and a rough flicker figure
+(`docker compose run --rm capture captures/now`); the full set below is #192.
+It will write to a folder under `captures/`:
 
-- **storyboard** — 12 frames, one every 10 seconds, as one image. Shows what a
+- **storyboard**: 12 frames, one every 10 seconds, as one image. Shows what a
   viewer sees over two minutes.
-- **burst** — 12 consecutive rendered frames from the busiest moment. Shows
+- **burst**: 12 consecutive rendered frames from the busiest moment. Shows
   motion, and exposes flicker.
-- **day strip** — 6 frames across a full day. Shows the light changing.
-- **crowd sheets** — the storyboard again with the world filled to 12, 50 and
+- **day strip**: 6 frames across a full day. Shows the light changing.
+- **crowd sheets**: the storyboard again with the world filled to 12, 50 and
   150 characters running the built-in programs. The frames are exactly what a
   viewer would see; nothing is drawn on them for the judge.
-- **metrics.json** — numbers from the same runs (below).
+- **metrics.json**: numbers from the same runs (below).
 
 The same seed is used for the baseline and for a change, so two captures can be
 compared frame by frame.
@@ -39,7 +42,7 @@ character, 45 seconds.
 | action mix                                  | number of different actions per character per 10 minutes                                                                                                                                 | a character with one action only                                                                      |
 | trips, deaths and drops by rarity, per hour | pacing                                                                                                                                                                                   | none; tracked over time                                                                               |
 | console errors                              | errors in the page during the capture                                                                                                                                                    | any                                                                                                   |
-| acknowledgment                              | per character, how often it was named on screen (a ticker line, a caption or the spotlight)                                                                                              | at 50 characters over 60 minutes, a character that finished a trip and was never named                |
+| acknowledgment                              | per character, how often it was named on screen (the news line, a caption or the spotlight)                                                                                              | at 50 characters over 60 minutes, a character that finished a trip and was never named                |
 | spotlight wait                              | per character, its longest stretch without the spotlight, counting from the start of the run and up to its end, over a run three times as long as the population times the minimum dwell | any character over twice the population times the minimum dwell (one never shown fails by definition) |
 
 ## The rubric (judged, 0 to 5 each)
@@ -49,19 +52,19 @@ cannot move the camera or click anything, often with the stream small on a
 second screen. The first six dimensions are that viewer's; the seventh is the
 same viewer once they also own a character.
 
-1. **Legible** — can I tell what each character is doing, and why, in a
+1. **Legible.** Can I tell what each character is doing, and why, in a
    three-second glance? Is the text readable at 640 pixels wide?
-2. **Alive** — does something change every few seconds, calmly? Motion with
+2. **Alive.** Does something change every few seconds, calmly? Motion with
    weight, no strobing, no frozen frame.
-3. **Consequential** — do actions lead to visible results: a haul carried home,
+3. **Consequential.** Do actions lead to visible results: a haul carried home,
    a level, a narrow escape, a death, a drop?
-4. **Varied** — do the frames differ in what is happening, not only in where
+4. **Varied.** Do the frames differ in what is happening, not only in where
    the sprites stand?
-5. **Beautiful** — composition, palette, light, cohesion. Would I leave this on
+5. **Beautiful.** Composition, palette, light, cohesion. Would I leave this on
    a second monitor because it is pleasant to have there?
-6. **Strategic** — can I see different programs making different choices, and
+6. **Strategic.** Can I see different programs making different choices, and
    would I want to change one?
-7. **Mine** — judged from the seat of one player who owns one character and
+7. **Mine.** Judged from the seat of one player who owns one character and
    sees only what every other viewer sees. The harness picks the character
    with the median acknowledgment count, so it is neither the luckiest nor the
    most ignored, and tells the judge its name in text (and its colour, once
@@ -81,7 +84,7 @@ A check applies once the thing it measures exists.
 
 - Before the capture harness exists, frames are captured by hand and there is
   no baseline; the judge scores what it can see and says so.
-- A dimension or metric whose subject is not built yet (no ticker, no
+- A dimension or metric whose subject is not built yet (no news line, no
   spotlight, no programs to tell apart) is recorded as "n/a" with the reason.
   It neither passes nor blocks a pull request.
 - A milestone's closing review allows no "n/a" among the dimensions its

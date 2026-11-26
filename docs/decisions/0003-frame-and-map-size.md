@@ -1,4 +1,4 @@
-# 0003 — Frame and map size
+# 0003: Frame and map size
 
 Date: 2026-11-26. Decided by the conductor; open to veto.
 
@@ -11,5 +11,4 @@ Rejected: 32-pixel tiles (45 by 31 of them). That holds more world, but a
 character is then about 11 pixels tall when the stream sits in a 640-pixel
 window on a second screen, which is too small to read. At 48 it is about 20.
 
-Consequence: one frame is a small place. That is intended (see "One player
-among many" in [design.md](../design.md)): the world grows by regions.
+Consequence: one frame is a small place. That is intended (see "One player on a busy stream" in [design.md](../design.md)): the world grows by regions.
