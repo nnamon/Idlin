@@ -1,6 +1,0 @@
-{
-  "name": "@idlin/sim",
-  "private": true,
-  "type": "module",
-  "exports": "./src/index.ts"
-}
