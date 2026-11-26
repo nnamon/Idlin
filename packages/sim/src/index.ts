@@ -1,3 +1,4 @@
+export { CONFUSED_TICKS, IDLE_TICKS } from "./brain.ts";
 export { hashInts } from "./hash.ts";
 export {
   inBounds,
@@ -15,15 +16,33 @@ export {
 } from "./map.ts";
 export { findPath } from "./path.ts";
 export { chance, createRng, nextInt, nextU32, type Rng } from "./rng.ts";
+export { SYSCALLS, type Syscall, syscall } from "./syscalls.ts";
+export {
+  BYTECODE_VERSION,
+  type Decision,
+  FAULTS,
+  type Fault,
+  GAS_PER_DECISION,
+  MEMORY_SLOTS,
+  OP,
+  type Program,
+  ProgramError,
+  runDecision,
+  STACK_SIZE,
+  validateProgram,
+} from "./vm.ts";
 export {
   type Actor,
   actorAt,
   type Clock,
+  checkPrograms,
   clock,
   createWorld,
   hashMap,
+  hashPrograms,
   hashWorld,
   type Input,
+  type Programs,
   restore,
   SNAPSHOT_VERSION,
   SnapshotError,

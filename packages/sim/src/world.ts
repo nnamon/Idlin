@@ -1,9 +1,11 @@
 // The world and the one function that advances it. Everything here is a pure
 // function of the seed, the map and the inputs: integers only, no clock.
 
+import { think } from "./brain.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
 import { createRng, type Rng } from "./rng.ts";
+import { FAULTS, MEMORY_SLOTS, type Program, ProgramError, validateProgram } from "./vm.ts";
 import { wander } from "./wander.ts";
 
 export const TICKS_PER_SECOND = 10;
@@ -36,10 +38,26 @@ export interface Actor {
   wait: number;
   /** Ticks spent waiting for the next tile on the path to clear. */
   blocked: number;
+  /** Name of the program that decides for this actor, or null for the stand-in behaviour. */
+  readonly program: string | null;
+  /** The program's memory slots, kept between decisions. */
+  memory: number[];
+  /**
+   * Index of the rule that was running when the last decision ended (the rule
+   * that chose the action, or the one that faulted), or -1. For showing why an
+   * actor does what it does.
+   */
+  rule: number;
+  /** Index into FAULTS of how the last decision ended; 0 is no fault. A faulted actor stands confused. */
+  fault: number;
 }
+
+/** Validated programs by name. Like the map, they are content: fixed for the life of a world. */
+export type Programs = Readonly<Record<string, Program>>;
 
 export interface World {
   readonly map: TileMap;
+  readonly programs: Programs;
   tick: number;
   rng: Rng;
   nextActorId: number;
@@ -47,10 +65,46 @@ export interface World {
   actors: Actor[];
 }
 
-export type Input = { readonly type: "spawn"; readonly name: string } & Point;
+export type Input = {
+  readonly type: "spawn";
+  readonly name: string;
+  /** The program to run; must be one of the world's. Left out, the actor uses the stand-in behaviour. */
+  readonly program?: string;
+} & Point;
 
-export function createWorld(map: TileMap, seed: number): World {
-  return { map, tick: 0, rng: createRng(seed), nextActorId: 1, actors: [] };
+/** Program names: a lower-case letter, then letters, digits or underscores. */
+const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * Validates a program table and returns a frozen copy with no prototype, so a
+ * name can never reach a built-in property and nothing can change a program
+ * after it was checked. Throws a ProgramError for a bad name or program.
+ */
+export function checkPrograms(programs: Programs): Programs {
+  const table: Record<string, Program> = Object.create(null);
+  try {
+    for (const name of Object.keys(programs).sort()) {
+      if (!PROGRAM_NAME.test(name)) throw new ProgramError(`"${name}" is not a valid program name`);
+      table[name] = validateProgram(programs[name]);
+    }
+  } catch (error) {
+    // Whatever was passed in, the only thing that comes out is a ProgramError.
+    if (error instanceof ProgramError) throw error;
+    throw new ProgramError("the program table could not be read");
+  }
+  return Object.freeze(table);
+}
+
+/** Throws a ProgramError if `programs` holds a bad name or an invalid program. */
+export function createWorld(map: TileMap, seed: number, programs: Programs = {}): World {
+  return {
+    map,
+    programs: checkPrograms(programs),
+    tick: 0,
+    rng: createRng(seed),
+    nextActorId: 1,
+    actors: [],
+  };
 }
 
 export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
@@ -71,8 +125,8 @@ function applyInput(world: World, input: Input): void {
   let fields: Record<string, unknown>;
   try {
     // Read every field once, before anything changes, so a property that throws changes nothing.
-    const { type, name, x, y } = raw as Record<string, unknown>;
-    fields = { type, name, x, y };
+    const { type, name, x, y, program } = raw as Record<string, unknown>;
+    fields = { type, name, x, y, program };
   } catch {
     return;
   }
@@ -84,6 +138,9 @@ function applyInput(world: World, input: Input): void {
   const x = fields.x | 0;
   const y = fields.y | 0;
   if (!isWalkable(world.map, x, y) || actorAt(world, x, y)) return;
+  const program = fields.program ?? null;
+  if (program !== null && (typeof program !== "string" || !Object.hasOwn(world.programs, program)))
+    return;
   world.actors.push({
     id: world.nextActorId++,
     name,
@@ -95,6 +152,10 @@ function applyInput(world: World, input: Input): void {
     path: [],
     wait: 0,
     blocked: 0,
+    program,
+    memory: new Array<number>(MEMORY_SLOTS).fill(0),
+    rule: -1,
+    fault: 0,
   });
 }
 
@@ -107,7 +168,8 @@ function updateActor(world: World, actor: Actor): void {
   }
   const next = actor.path[0];
   if (!next) {
-    wander(world, actor);
+    if (actor.program === null) wander(world, actor);
+    else think(world, actor);
     return;
   }
   if (actorAt(world, next.x, next.y)) {
@@ -169,6 +231,25 @@ export function clock(world: World): Clock {
   };
 }
 
+/** A fingerprint of the program table: names in order, with each program's code and rule labels. */
+export function hashPrograms(programs: Programs): string {
+  return hashInts(
+    Object.keys(programs)
+      .sort()
+      .flatMap((name) => {
+        const program = programs[name] as Program;
+        return [
+          ...stringInts(name),
+          program.version,
+          program.code.length,
+          ...program.code,
+          program.rules.length,
+          ...program.rules.flatMap(stringInts),
+        ];
+      }),
+  );
+}
+
 export function hashMap(map: TileMap): string {
   return hashInts([
     ...stringInts(map.name),
@@ -184,6 +265,7 @@ export function hashWorld(world: World): string {
   const { rng } = world;
   return hashInts([
     ...stringInts(hashMap(world.map)),
+    ...stringInts(hashPrograms(world.programs)),
     // The tick outgrows 32 bits after some years of uptime, so both halves are hashed.
     world.tick % 0x1_0000_0000,
     (world.tick - (world.tick % 0x1_0000_0000)) / 0x1_0000_0000,
@@ -205,11 +287,16 @@ export function hashWorld(world: World): string {
       a.blocked,
       a.path.length,
       ...a.path.flatMap((p) => [p.x, p.y]),
+      // -1 for no program; a name's length is never negative.
+      ...(a.program === null ? [-1] : stringInts(a.program)),
+      ...a.memory,
+      a.rule,
+      a.fault,
     ]),
   ]);
 }
 
-export const SNAPSHOT_VERSION = 1;
+export const SNAPSHOT_VERSION = 2;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -217,21 +304,24 @@ export class SnapshotError extends Error {
 
 /** The world as text. The map is not stored, only its fingerprint. */
 export function snapshot(world: World): string {
-  const { map, ...state } = world;
+  const { map, programs, ...state } = world;
   return JSON.stringify({
     version: SNAPSHOT_VERSION,
     map: hashMap(map),
+    programs: hashPrograms(programs),
     hash: hashWorld(world),
     state,
   });
 }
 
 /**
- * Rebuilds a world from a snapshot and the map it was taken on. Refuses, with a
- * SnapshotError, anything it cannot be sure it reads correctly: another
- * version, another map, or contents that do not hash to what was saved.
+ * Rebuilds a world from a snapshot and the content it was taken with. Refuses,
+ * with a SnapshotError, anything it cannot be sure it reads correctly: another
+ * version, another map, other programs, or contents that do not hash to what
+ * was saved. Throws a ProgramError instead if the programs passed in are
+ * themselves invalid.
  */
-export function restore(text: string, map: TileMap): World {
+export function restore(text: string, map: TileMap, programs: Programs = {}): World {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -241,12 +331,22 @@ export function restore(text: string, map: TileMap): World {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     throw new SnapshotError("snapshot is not an object");
   }
-  const { version, map: mapHash, hash, state } = data as Record<string, unknown>;
+  const {
+    version,
+    map: mapHash,
+    programs: programsHash,
+    hash,
+    state,
+  } = data as Record<string, unknown>;
   if (version !== SNAPSHOT_VERSION) {
     throw new SnapshotError(`snapshot version ${show(version)} is not ${SNAPSHOT_VERSION}`);
   }
   if (mapHash !== hashMap(map)) throw new SnapshotError("snapshot was taken on a different map");
-  const world = readState(state, map);
+  const table = checkPrograms(programs);
+  if (programsHash !== hashPrograms(table)) {
+    throw new SnapshotError("snapshot was taken with different programs");
+  }
+  const world = readState(state, map, table);
   if (!world || hashWorld(world) !== hash) throw new SnapshotError("snapshot contents are damaged");
   return world;
 }
@@ -258,7 +358,7 @@ const MAX_WAIT_TICKS = 1_000_000;
  * a world could hold. The hash alone is not trusted for this: it folds every
  * value to 32 bits, so it cannot tell a number from a string that reads the same.
  */
-function readState(raw: unknown, map: TileMap): World | null {
+function readState(raw: unknown, map: TileMap, programs: Programs): World | null {
   if (typeof raw !== "object" || raw === null) return null;
   const { tick, rng, nextActorId, actors } = raw as Record<string, unknown>;
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
@@ -268,15 +368,27 @@ function readState(raw: unknown, map: TileMap): World | null {
   const { a, b, c, d } = rng as Record<string, unknown>;
   if (!isInt32(a) || !isInt32(b) || !isInt32(c) || !isInt32(d)) return null;
 
-  const world: World = { map, tick, rng: { a, b, c, d }, nextActorId, actors: [] };
+  const world: World = { map, programs, tick, rng: { a, b, c, d }, nextActorId, actors: [] };
   const adjacent = (p: Point, q: Point): boolean => Math.abs(p.x - q.x) + Math.abs(p.y - q.y) === 1;
   let lastId = 0;
   for (const item of actors as unknown[]) {
     if (typeof item !== "object" || item === null) return null;
-    const { id, name, x, y, fromX, fromY, moveTicksLeft, path, wait, blocked } = item as Record<
-      string,
-      unknown
-    >;
+    const {
+      id,
+      name,
+      x,
+      y,
+      fromX,
+      fromY,
+      moveTicksLeft,
+      path,
+      wait,
+      blocked,
+      program,
+      memory,
+      rule,
+      fault,
+    } = item as Record<string, unknown>;
     if (id !== lastId + 1) return null;
     lastId = id;
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
@@ -303,7 +415,31 @@ function readState(raw: unknown, map: TileMap): World | null {
     }
     // The blocked count only runs while there is a path to wait on.
     if (steps.length === 0 && blocked !== 0) return null;
-    world.actors.push({ id, name, x, y, fromX, fromY, moveTicksLeft, path: steps, wait, blocked });
+    if (program !== null && (typeof program !== "string" || !Object.hasOwn(programs, program)))
+      return null;
+    if (!Array.isArray(memory) || memory.length !== MEMORY_SLOTS || !memory.every(isInt32))
+      return null;
+    const rules = program === null ? 0 : (programs[program] as Program).rules.length;
+    if (!isInt32(rule) || rule < -1 || rule >= rules) return null;
+    if (!isInt32(fault) || fault < 0 || fault >= FAULTS.length) return null;
+    // An actor without a program never runs one, so it has nothing to remember and nothing to fault on.
+    if (program === null && (fault !== 0 || memory.some((value) => value !== 0))) return null;
+    world.actors.push({
+      id,
+      name,
+      x,
+      y,
+      fromX,
+      fromY,
+      moveTicksLeft,
+      path: steps,
+      wait,
+      blocked,
+      program,
+      memory: [...memory],
+      rule,
+      fault,
+    });
   }
   return world;
 }
