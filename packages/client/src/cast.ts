@@ -28,7 +28,9 @@ const TRADE_ORDER = [2, 3, 0, 4] as const; // woodcutting, fishing, melee, cooki
  * For captures only (`?levels`): gives the residents of a world of the
  * viewer's own a spread of levels, so that figures of every kit tier and gait
  * can be seen side by side. The nth resident gets SPREAD[n] in one trade and a
- * third of that in each other skill. The world server never does this.
+ * third of that in each other skill. Hitpoints are left alone: the most a
+ * resident can have is its kind's, whatever its Hitpoints level. The world
+ * server never does this.
  */
 export function spreadLevels(
   actors: readonly { xp: number[] }[],

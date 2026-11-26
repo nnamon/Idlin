@@ -36,8 +36,10 @@ that folder's storyboard above the new one.
   night falling, and smaller copies of the storyboard and day strip.
   `tools/publish-media.sh captures/<folder>` pushes it to the `media` branch.
 - **crowd sheets**: the storyboard again with the world filled to 12, 50 and
-  150 characters running the built-in programs. The frames are exactly what a
-  viewer would see; nothing is drawn on them for the judge.
+  150 characters running the built-in programs, and once more at 50 with the
+  figures sheet's spread of levels (`crowd-50-levels`), so the kit and the
+  hats are seen in a crowd. The frames are exactly what a viewer would see;
+  nothing is drawn on them for the judge.
 - **metrics.json**: numbers from the same runs (below).
 
 The same seed is used for the baseline and for a change, so two captures can be

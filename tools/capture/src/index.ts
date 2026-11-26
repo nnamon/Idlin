@@ -10,7 +10,7 @@
 //
 // `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
 // figures.png and its crops, burst.png, fight.png, fight-burst.png, fight-down.png, daystrip.png,
-// crowd-12/50/150.png, metrics.json, and a
+// crowd-12/50/150.png, crowd-50-levels.png, metrics.json, and a
 // `showcase` folder for the README. With `--baseline`, also compare.png: that
 // folder's storyboard above this one. Everything comes from seed 1, so two
 // runs of the same code give the same files.
@@ -285,6 +285,9 @@ if (review) {
     await open(19.33, residents);
     await save(`crowd-${residents}.png`, encodePng(grid(await run(12, 100, 0.5), 4)));
   }
+  // And 50 with a spread of levels, so the kit and the hats are seen in a crowd.
+  await open(19.33, 50, false, true);
+  await save("crowd-50-levels.png", encodePng(grid(await run(12, 100, 0.5), 4)));
 
   // The README's set: four full frames and a short clip of night falling, at twice the speed.
   for (const [name, hour, ticks] of [

@@ -20,7 +20,15 @@ import {
   type World,
 } from "@idlin/sim";
 import { drawBeast } from "./beasts.ts";
-import { type Effects, glyphAt, leanAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
+import {
+  type Effects,
+  glyphAt,
+  leanAt,
+  NO_EFFECTS,
+  nextEffects,
+  routeAt,
+  walkAt,
+} from "./effects.ts";
 import {
   ARRIVE_TICKS,
   arrivalAt,
@@ -127,6 +135,7 @@ const STANDING: Pose = {
   stride: 0.5,
   breath: 0,
   moving: false,
+  walk: 0,
   resting: false,
   sit: 0,
   lean: 0,
@@ -154,9 +163,14 @@ const NEWS_QUEUE = 3;
 
 const isResident = (actor: Actor): boolean => actor.kind === ADVENTURER;
 
-/** The parts a resident's figure is drawn from; by its id alone if it has left the world. */
-const partsIn = (world: World, id: number): Parts =>
-  partsFor(world.actors.find((actor) => actor.id === id) ?? id);
+/**
+ * The parts each resident's figure is drawn from, by id; by its id alone if it
+ * has left the world. Make one per draw: it looks the actors up once.
+ */
+const partsIn = (world: World): ((id: number) => Parts) => {
+  const byId = new Map(world.actors.map((actor) => [actor.id, actor]));
+  return (id) => partsFor(byId.get(id) ?? id);
+};
 
 interface Walker {
   readonly actor: Actor;
@@ -364,6 +378,7 @@ export class Scene {
         stride: raw.stride * (1 - 0.4 * stoop),
         sit: before + (now - before) * between,
         lean: leanAt(this.effects, actor.id, time),
+        walk: walkAt(this.effects, actor.id, time),
         stoop,
         squash: push.squash,
       };
@@ -939,7 +954,10 @@ export class Scene {
   }
 
   /** Where a figure's name would like to sit: centred, on the line just above the hood. */
-  private wish(actor: Actor, pose: Pose): { id: number; x: number; y: number; width: number } {
+  private wish(
+    actor: Actor,
+    pose: Pose,
+  ): { id: number; x: number; y: number; width: number; feet: number } {
     let width = this.tagWidths.get(actor.name);
     if (width === undefined) {
       this.out.font = TAG_FONT;
@@ -954,6 +972,7 @@ export class Scene {
       x: pose.x * TILE,
       y: feet - (figureTop(parts) - 7 * pose.sit + liftOf(pose, parts.gait)) * FIGURE_SCALE,
       width,
+      feet,
     };
   }
 
@@ -1224,6 +1243,7 @@ export class Scene {
       }
     }
     const still = (squash: number): Pose => ({ ...STANDING, stride: 0, squash });
+    const parts = partsIn(world);
     const sink = (fallen: Fallen, alpha: number, collapse: number): void => {
       const [cx, cy] = feet(fallen.x, fallen.y);
       ctx.globalAlpha = alpha;
@@ -1239,7 +1259,7 @@ export class Scene {
           still(collapse),
           {
             ...identity(fallen.id),
-            ...partsIn(world, fallen.id),
+            ...parts(fallen.id),
             ink,
             paper,
             facing: fallen.facing,
@@ -1286,9 +1306,10 @@ export class Scene {
   private figureStyle(world: World, palette: Palette): (id: number, scale: number) => FigureStyle {
     const ink = css(palette.ink);
     const paper = css(palette.paper);
+    const parts = partsIn(world);
     return (id, scale) => ({
       ...identity(id),
-      ...partsIn(world, id),
+      ...parts(id),
       ink,
       paper,
       facing: this.facing.get(id) ?? 1,

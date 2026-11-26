@@ -30,6 +30,7 @@ import {
   routeAt,
   SNAP_FORWARD,
   SNAP_TICKS,
+  walkAt,
 } from "./effects.ts";
 
 const HOME = { x: 10, y: 10 };
@@ -230,6 +231,30 @@ describe("the three beats", () => {
     expect(leanAt(stop, 1, 3 + LEAN_TICKS)).toBeCloseTo(LEAN_BACK);
     // Walking on with no stop in between is no beat.
     expect(history([east, { x: 6, fromX: 5, moveTicksLeft: 5 }]).beats.has(1)).toBe(false);
+  });
+});
+
+describe("how far into a walk", () => {
+  it("eases in over the beats on setting off and out over them on pulling up", () => {
+    const east = { path: [{ x: 6, y: 5 }] };
+    const start = history([{}, east]);
+    expect(walkAt(start, 1, 2)).toBe(0);
+    expect(walkAt(start, 1, 2 + BEAT_TICKS / 2)).toBeCloseTo(0.5);
+    expect(walkAt(start, 1, 2 + BEAT_TICKS)).toBe(1);
+    let before = 0;
+    for (let t = 2; t <= 2 + BEAT_TICKS; t += 0.25) {
+      expect(walkAt(start, 1, t)).toBeGreaterThanOrEqual(before);
+      before = walkAt(start, 1, t);
+    }
+    // Walking on, long after setting off: all the way in.
+    expect(walkAt(history([east, east, east, east, east, east, east, east, east]), 1, 9.5)).toBe(1);
+    const stop = history([{}, { x: 4, fromX: 5, moveTicksLeft: 1 }, { x: 4, fromX: 4 }]);
+    expect(walkAt(stop, 1, 3)).toBe(1);
+    expect(walkAt(stop, 1, 3 + BEAT_TICKS / 2)).toBeCloseTo(0.5);
+    expect(walkAt(stop, 1, 3 + BEAT_TICKS)).toBe(0);
+    // Standing still, and someone never seen.
+    expect(walkAt(history([{}, {}]), 1, 2.5)).toBe(0);
+    expect(walkAt(start, 99, 2.5)).toBe(0);
   });
 });
 

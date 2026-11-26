@@ -1,7 +1,8 @@
 // What a figure is drawn from, besides its colours: the looks a resident keeps
 // (hood shape, cloak pattern, a mark, how it sits to rest), the kit its best
 // trade has earned, and how it walks. The looks come from the id, the way the
-// colours in identity.ts do; the kit and the gait come from the levels. Pure,
+// colours in identity.ts do; the kit, the gait and the height of the hat come
+// from the levels. Pure,
 // so the choice of parts can be tested without a canvas.
 
 import { type Actor, levelFor, SKILLS, type Skill } from "@idlin/sim";
@@ -92,6 +93,10 @@ export function kitFor(id: number, xp: readonly number[]): Kit {
   return { trade, tier: trade ? tierFor(best) : 0, starter };
 }
 
+/** The total of a resident's levels in every skill: SKILLS.length for a newcomer. */
+export const totalLevel = (xp: readonly number[]): number =>
+  SKILLS.reduce((sum, skill) => sum + levelOf(xp, skill), 0);
+
 /** The total level of all skills at which a resident walks as a veteran. */
 export const VETERAN_TOTAL = 200;
 
@@ -100,20 +105,37 @@ export const VETERAN_TOTAL = 200;
  * 0 bobs along on short steps; 1 strides, lower and longer.
  */
 export function gaitFor(xp: readonly number[]): number {
-  const total = SKILLS.reduce((sum, skill) => sum + levelOf(xp, skill), 0);
   const fresh = SKILLS.length;
-  return Math.min(1, Math.max(0, (total - fresh) / (VETERAN_TOTAL - fresh)));
+  return Math.min(1, Math.max(0, (totalLevel(xp) - fresh) / (VETERAN_TOTAL - fresh)));
+}
+
+/** How much taller than a newcomer's a hat is at the highest total level, in figure units. */
+export const RISE_MAX = 16;
+
+/**
+ * How much taller than a newcomer's the hat is, in figure units, from the
+ * total of all levels: 0 for a newcomer, RISE_MAX with every skill at 99, and
+ * higher for every level gained in between, whatever the skill. It is the one
+ * part of a figure that says how far along a resident is; the kit says what at.
+ * It grows fastest early, so the first levels already show.
+ */
+export function riseFor(xp: readonly number[]): number {
+  const fresh = SKILLS.length;
+  const share = (totalLevel(xp) - fresh) / (SKILLS.length * 99 - fresh);
+  return RISE_MAX * Math.sqrt(Math.min(1, Math.max(0, share)));
 }
 
 export interface Parts {
   readonly looks: Looks;
   readonly kit: Kit;
   readonly gait: number;
+  /** See `riseFor`. */
+  readonly rise: number;
 }
 
 /** Everything a figure is drawn from, besides its colours, for this actor (or just an id). */
 export function partsFor(actor: Pick<Actor, "id" | "xp"> | number): Parts {
   const id = typeof actor === "number" ? actor : actor.id;
   const xp = typeof actor === "number" ? [] : actor.xp;
-  return { looks: looks(id), kit: kitFor(id, xp), gait: gaitFor(xp) };
+  return { looks: looks(id), kit: kitFor(id, xp), gait: gaitFor(xp), rise: riseFor(xp) };
 }

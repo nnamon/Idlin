@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Box, pathBox, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
+import { type Box, bodyBox, pathBox, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
 
 const BOUNDS = { width: 1440, height: 1008 };
 const wish = (id: number, x: number, y: number, width = 80): TagWish => ({ id, x, y, width });
@@ -220,5 +220,23 @@ describe("placeTags", () => {
       expect(crowd.slice(1).some((other) => hit(spot, body(other)))).toBe(true);
     const placed = placeTags(crowd, new Map(), BOUNDS, [label]).get(1) as { box: Box };
     expect(hit(placed.box, label)).toBe(false);
+  });
+});
+
+describe("the room a tall figure takes", () => {
+  it("runs down to its feet, so another name is not put over its legs", () => {
+    // A figure whose hat and tool reach 100 pixels above its feet, and someone
+    // standing just below it whose name would sit over that figure's legs.
+    const tall = { ...wish(1, 500, 400), feet: 500 };
+    const below = wish(2, 500, 495);
+    expect(bodyBox(tall).bottom).toBe(504);
+    // A figure of the usual height keeps its usual room.
+    expect(bodyBox({ ...wish(3, 500, 400), feet: 460 })).toEqual(body(wish(3, 500, 400)));
+    expect(bodyBox(wish(3, 500, 400))).toEqual(body(wish(3, 500, 400)));
+    const placed = placeTags([tall, below], new Map(), BOUNDS).get(2) as { box: Box };
+    expect(hit(placed.box, bodyBox(tall))).toBe(false);
+    // Without its feet the figure looks short, and the name goes straight over its legs.
+    const short = placeTags([wish(1, 500, 400), below], new Map(), BOUNDS).get(2);
+    expect(short?.spot).toBe(0);
   });
 });

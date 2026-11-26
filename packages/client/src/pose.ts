@@ -18,6 +18,12 @@ export interface Pose {
   /** 0 to 1: a slow rise and fall while standing, as of breathing. */
   readonly breath: number;
   readonly moving: boolean;
+  /**
+   * 0 to 1: how far into a walk it is, for a veteran's lean into its stride.
+   * `actorPose` gives 1 while moving and 0 otherwise; the scene eases it in
+   * and out with `walkAt` in effects.ts.
+   */
+  readonly walk: number;
   /** Standing still with a good while yet to wait. */
   readonly resting: boolean;
   /**
@@ -68,6 +74,7 @@ export function actorPose(actor: Actor, fraction: number, time: number): Pose {
     stride: moving ? Math.sin(Math.PI * progress) * side : 0,
     breath: moving ? 0 : (Math.sin(time * 0.12 + actor.id * 1.7) + 1) / 2,
     moving,
+    walk: moving ? 1 : 0,
     resting,
     sit: resting ? 1 : 0,
     lean: 0,

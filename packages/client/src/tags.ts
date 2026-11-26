@@ -17,6 +17,12 @@ export interface TagWish {
   /** Width of the tag's text box in frame pixels. */
   readonly width: number;
   /**
+   * Frame pixels: the line the character's feet stand on. A figure with a
+   * tall hat or a tool held high reaches further above them, so its body
+   * runs down to here. Without it a body is BODY_HEIGHT tall.
+   */
+  readonly feet?: number;
+  /**
    * Where `x` and `y` will be at the next tick, and how far a step lifts the
    * figure on the way. A tag follows its figure between ticks, so it is kept
    * clear along the whole way and not only where it starts.
@@ -34,6 +40,8 @@ export const TAG_HEIGHT = 26;
 // A figure on screen is about this big, with a little room round it.
 const BODY_HALF_WIDTH = 20;
 const BODY_HEIGHT = 62;
+/** How far below the line its feet stand on a figure's shadow reaches. */
+const FEET_ROOM = 4;
 /** The room above a figure's head where its own name sits by default. */
 const HEADROOM = 26;
 /** A tag only returns to its favourite spot once there is this much clear room around it. */
@@ -63,7 +71,7 @@ export function bodyBox(wish: TagWish): Box {
     left: wish.x - BODY_HALF_WIDTH,
     right: wish.x + BODY_HALF_WIDTH,
     top: wish.y + 2,
-    bottom: wish.y + 2 + BODY_HEIGHT,
+    bottom: Math.max(wish.y + 2 + BODY_HEIGHT, (wish.feet ?? Number.NEGATIVE_INFINITY) + FEET_ROOM),
   };
 }
 

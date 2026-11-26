@@ -11,7 +11,10 @@ import {
   PATTERNS,
   partsFor,
   REST_POSES,
+  RISE_MAX,
+  riseFor,
   tierFor,
+  totalLevel,
   VETERAN_TOTAL,
 } from "./looks.ts";
 
@@ -133,6 +136,47 @@ describe("gait by level", () => {
       before = gait;
     }
     expect(VETERAN_TOTAL).toBeGreaterThan(SKILLS.length);
+  });
+});
+
+describe("the hat, by total level", () => {
+  it("rises with every level gained in any skill, from 0 for a newcomer to RISE_MAX", () => {
+    expect(riseFor(noXp())).toBe(0);
+    expect(riseFor(xpAt({}))).toBe(0);
+    expect(riseFor(SKILLS.map(() => XP_TABLE[99] as number))).toBe(RISE_MAX);
+    // One skill after another raised to 99, a level at a time: every level is taller.
+    const levels = SKILLS.map(() => 1);
+    let before = riseFor(xpAt({}));
+    SKILLS.forEach((skill, k) => {
+      for (let level = 2; level <= 99; level++) {
+        levels[k] = level;
+        const xp = SKILLS.map((_, j) => XP_TABLE[levels[j] as number] as number);
+        expect(totalLevel(xp)).toBe(levels.reduce((sum, each) => sum + each, 0));
+        const rise = riseFor(xp);
+        expect(rise, `${skill} at ${level}`).toBeGreaterThan(before);
+        before = rise;
+      }
+    });
+    // The same total gives the same hat, whichever skills it is in.
+    expect(riseFor(xpAt({ fishing: 41 }))).toBeCloseTo(riseFor(xpAt({ melee: 21, cooking: 21 })));
+  });
+
+  it("orders the capture's twelve by their total level, and the figure's top with it", () => {
+    const actors = castOf(12).map(() => ({ xp: noXp() }));
+    spreadLevels(actors, (level) => XP_TABLE[level] as number);
+    const byTotal = [...actors].sort((a, b) => totalLevel(a.xp) - totalLevel(b.xp));
+    for (let i = 1; i < byTotal.length; i++) {
+      const [lower, higher] = [byTotal[i - 1]?.xp ?? [], byTotal[i]?.xp ?? []];
+      expect(riseFor(higher)).toBeGreaterThan(riseFor(lower));
+    }
+    // With the same looks and kit, more levels never make a figure shorter, and
+    // at the top a plain round hood stands taller than any newcomer's hood.
+    const plain = partsFor(2);
+    const tops = byTotal.map((actor) => figureTop({ ...plain, rise: riseFor(actor.xp) }));
+    for (let i = 1; i < tops.length; i++)
+      expect(tops[i]).toBeGreaterThanOrEqual(tops[i - 1] as number);
+    const newcomers = [1, 2, 3, 4].map((id) => figureTop({ ...partsFor(id), kit: plain.kit }));
+    expect(tops[tops.length - 1]).toBeGreaterThan(Math.max(...newcomers));
   });
 });
 

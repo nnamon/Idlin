@@ -239,19 +239,23 @@ const HAFTS: Readonly<Record<string, readonly [number, number, number]>> = {
   cooking2: [-8, -44, 2.2],
 };
 
-/** How far above its feet the top of each hood shape reaches. */
-const HOOD_TOPS: Readonly<Record<HoodShape, number>> = { point: 51, round: 42, brim: 47, cowl: 44 };
+/**
+ * How far above its feet the top of each hood shape reaches on a newcomer.
+ * They are kept within a few units of each other, so that only the rise with
+ * level (`riseFor` in looks.ts) makes one hat stand taller than another.
+ */
+const HOOD_TOPS: Readonly<Record<HoodShape, number>> = { point: 46, round: 42, brim: 44, cowl: 44 };
 
 /**
  * How far above its feet a standing figure reaches, in its own units: at least
  * 46, which leaves the plainest figure room for the ink of its outline, and
- * more for a tall hood or a tool held high.
+ * more for a tall hat or a tool held high.
  */
 export function figureTop(parts: Parts): number {
-  const { kit, looks } = parts;
+  const { kit, looks, rise } = parts;
   const tool =
     kit.trade === null ? 0 : -(HAFTS[`${kit.trade}${Math.min(2, kit.tier)}`]?.[1] ?? 0) + 4;
-  return Math.max(46, HOOD_TOPS[looks.hood] + 1, tool);
+  return Math.max(46, HOOD_TOPS[looks.hood] + rise + 1, tool);
 }
 
 /** How far a figure is lifted off the ground in the middle of a step: a newcomer bobs higher. */
@@ -381,7 +385,7 @@ function drawBack(ctx: Ctx, kit: Kit, style: FigureStyle): void {
     // A pennant tied to the top end: a long swallowtail at the top tier.
     ctx.fillStyle = hood;
     ctx.lineWidth = 1.4;
-    const [px, py] = shape === 1 && kit.trade === "cooking" ? [tx + 6, ty] : [tx, ty];
+    const [px, py] = [tx, ty];
     ctx.beginPath();
     ctx.moveTo(px, py);
     if (kit.tier === 4) {
@@ -399,16 +403,20 @@ function drawBack(ctx: Ctx, kit: Kit, style: FigureStyle): void {
   }
 }
 
-/** The hood over the head, in its shape. */
-function drawHood(ctx: Ctx, looks: Looks, hood: string): void {
+/**
+ * The hood over the head, in its shape, `rise` units taller than a
+ * newcomer's: the cowl's peak, the dome of the round hood, the point and the
+ * crown of the hat all go up by that much.
+ */
+function drawHood(ctx: Ctx, looks: Looks, hood: string, rise: number): void {
   ctx.fillStyle = hood;
   ctx.lineWidth = 2;
   if (looks.hood === "cowl") {
-    // A cowl: wide, falling to the shoulders behind the head.
+    // A cowl: wide, falling to the shoulders behind the head, its peak drawn up and back.
     ctx.beginPath();
     ctx.moveTo(8, -32);
-    ctx.quadraticCurveTo(5, -44, -3, -43);
-    ctx.quadraticCurveTo(-13, -41, -12.5, -26);
+    ctx.quadraticCurveTo(5, -44 - rise, -3 - 0.3 * rise, -43 - rise);
+    ctx.quadraticCurveTo(-13, -41 - 0.5 * rise, -12.5, -26);
     ctx.lineTo(-5, -26);
     ctx.quadraticCurveTo(-7, -34, 0, -38);
     ctx.quadraticCurveTo(5, -38, 8, -32);
@@ -418,17 +426,23 @@ function drawHood(ctx: Ctx, looks: Looks, hood: string): void {
     return;
   }
   ctx.beginPath();
-  ctx.arc(0, -34, 8, 3.3, 6.1);
+  if (looks.hood === "round") {
+    // A dome over the head, drawn up into a taller cap.
+    ctx.moveTo(-7.9, -35.3);
+    ctx.bezierCurveTo(-8.5, -44.3 - (4 / 3) * rise, 8.5, -44.3 - (4 / 3) * rise, 7.9, -35.4);
+  } else {
+    ctx.arc(0, -34, 8, 3.3, 6.1);
+  }
   ctx.lineTo(8, -32);
   ctx.quadraticCurveTo(0, -40, -8, -33);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
   if (looks.hood === "point") {
-    // A tall point, falling back.
+    // A point, falling further back the taller it is.
     ctx.beginPath();
     ctx.moveTo(-7, -38);
-    ctx.lineTo(-11, -50);
+    ctx.lineTo(-10 - 0.35 * rise, -45 - rise);
     ctx.lineTo(2, -41.8);
     ctx.fill();
     ctx.stroke();
@@ -436,8 +450,8 @@ function drawHood(ctx: Ctx, looks: Looks, hood: string): void {
     // A hat: a flat crown and a brim wider than the head.
     ctx.beginPath();
     ctx.moveTo(-6, -38);
-    ctx.lineTo(-5, -46);
-    ctx.lineTo(5, -46);
+    ctx.lineTo(-5, -43 - rise);
+    ctx.lineTo(5, -43 - rise);
     ctx.lineTo(6, -38);
     ctx.fill();
     ctx.stroke();
@@ -485,8 +499,8 @@ export function drawFigure(
   ctx.scale(style.facing, 1);
   // Near death: bent forward over its feet.
   if (pose.stoop > 0) ctx.transform(1, 0, -0.16 * pose.stoop, 1, 0, 0);
-  // A veteran walks leaning into its stride.
-  if (pose.moving && gait > 0) ctx.transform(1, 0, -0.08 * gait, 1, 0, 0);
+  // A veteran walks leaning into its stride, easing into it as it sets off and out as it stops.
+  if (pose.walk > 0 && gait > 0) ctx.transform(1, 0, -0.08 * gait * pose.walk, 1, 0, 0);
   // At rest, each in its own way: leant back, or hunched forward.
   const sitting = pose.sit;
   if (looks.rest === "back" && sitting > 0) ctx.transform(1, 0, 0.2 * sitting, 1, 0, 0);
@@ -572,7 +586,7 @@ export function drawFigure(
   ctx.arc(0, -33, 7.5, 0, 7);
   ctx.fill();
   ctx.stroke();
-  drawHood(ctx, looks, hood);
+  drawHood(ctx, looks, hood, style.rise);
   ctx.fillStyle = style.eye ?? ink;
   ctx.strokeStyle = style.eye ?? ink;
   if (sitting > 0.5) {

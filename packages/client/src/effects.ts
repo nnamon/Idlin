@@ -246,3 +246,15 @@ export function leanAt(effects: Effects, id: number, time: number): number {
   const b = effects.beats.get(id);
   return b ? beat(time - b.since, b.dir) : 0;
 }
+
+/**
+ * 0 to 1: how far into its walk resident `id` is at `time`, for a veteran's
+ * lean into its stride. 1 while it walks and 0 while it stands, easing from
+ * one to the other over BEAT_TICKS as it sets off or pulls up.
+ */
+export function walkAt(effects: Effects, id: number, time: number): number {
+  const walking = (effects.seen.get(id)?.goal ?? "") !== "";
+  const b = effects.beats.get(id);
+  const eased = b ? smooth((time - b.since) / BEAT_TICKS) : 1;
+  return walking ? eased : 1 - eased;
+}
