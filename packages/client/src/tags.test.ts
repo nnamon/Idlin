@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Box, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
+import { type Box, pathBox, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
 
 const BOUNDS = { width: 1440, height: 1008 };
 const wish = (id: number, x: number, y: number, width = 80): TagWish => ({ id, x, y, width });
@@ -180,5 +180,45 @@ describe("placeTags", () => {
     // Every spot is over someone: the tag goes where it would have gone anyway.
     const everywhere = { left: 0, right: BOUNDS.width, top: 0, bottom: BOUNDS.height };
     expect(placeTags([me], new Map(), BOUNDS, [], [everywhere]).get(1)?.spot).toBe(0);
+  });
+
+  it("keeps a name off a place label along the whole way to the next tick", () => {
+    // A figure walking north, its name about to slide up onto a label above it.
+    const label = { left: 400, right: 600, top: 330, bottom: 360 };
+    const walking: TagWish = { ...wish(1, 500, 400), next: { x: 500, y: 380, lift: 3 } };
+    // Placed for where it starts only, the name is clear now and over the label by the next tick.
+    const startOnly = placeTags([wish(1, 500, 400)], new Map(), BOUNDS, [label]).get(1);
+    expect(startOnly?.spot).toBe(0);
+    expect(hit(tagBox({ ...wish(1, 500, 380) }, 0, BOUNDS), label)).toBe(true);
+    // Placed for the whole way, it is clear at both ends and everywhere between.
+    const placed = placeTags([walking], new Map(), BOUNDS, [label]).get(1) as {
+      box: Box;
+      spot: number;
+    };
+    expect(placed.spot).not.toBe(0);
+    for (let t = 0; t <= 10; t++) {
+      const y = 400 - 2 * t;
+      expect(hit(tagBox(wish(1, 500, y), placed.spot, BOUNDS), label), `at ${y}`).toBe(false);
+    }
+    // The box reported covers both ends and the lift.
+    expect(placed.box).toEqual(pathBox(walking, placed.spot, BOUNDS));
+    const now = tagBox(walking, placed.spot, BOUNDS);
+    expect(placed.box.top).toBe(now.top - 20 - 3);
+    expect(placed.box.bottom).toBe(now.bottom);
+  });
+
+  it("puts a name over a figure before it puts it over a place label", () => {
+    const me = wish(1, 400, 300);
+    const label = { left: 300, right: 500, top: 270, bottom: 300 };
+    // Others with names of their own stand all round, so that every spot is over
+    // one of them; the first spot is also over the label.
+    const crowd = [me];
+    for (const y of [200, 260, 330])
+      for (let x = 300; x <= 520; x += 40) crowd.push(wish(crowd.length + 1, x, y));
+    const spots = Array.from({ length: 9 }, (_, k) => tagBox(me, k, BOUNDS));
+    for (const spot of spots)
+      expect(crowd.slice(1).some((other) => hit(spot, body(other)))).toBe(true);
+    const placed = placeTags(crowd, new Map(), BOUNDS, [label]).get(1) as { box: Box };
+    expect(hit(placed.box, label)).toBe(false);
   });
 });

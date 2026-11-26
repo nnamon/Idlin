@@ -194,8 +194,9 @@ a live viewer reconnects, or after the world goes back in time, nothing starts
 from the change across the gap.
 
 A few things move while no one does: the river's ripples drift downstream, a
-thin line of smoke rises from the camp fire and leans east, and the tops of
-the trees lean a little in a slow breeze from the west.
+line of smoke, as heavy as the grass ticks and thinning as it goes, rises
+from the camp fire and leans east, and the tops of the trees lean a little in
+a slow breeze from the west.
 
 At night the same drawing is shown in pale ink on dark blue paper. Day and
 night are two separate drawings, and a frame that is half one and half the
@@ -203,16 +204,26 @@ other looks broken, so the change between them is quick (a bit over half a
 minute). At nightfall the dark closes in on the lantern from the edges of the
 map; at daybreak the light spreads back out from it. For that half minute
 there is a soft band, about 260 pixels wide, where both drawings show. The
-rest of the time the hour shows in the colour of the light, which shifts
-slowly: rose around dawn, a pale cool blue through the morning, amber
-towards dusk.
+rest of the time the hour shows in the colour of the light on the map,
+which shifts slowly: rose around dawn, a cool blue-grey through the
+morning, amber towards dusk. The colour lies on the day drawing only, so
+the night closing in stays blue and the page stays the colour of paper. The
+page names the part of the day, and says night from the moment its ink
+turns.
 
 At night each lamp shows the daytime drawing inside its reach: the lantern, the
-fire, and the small light every character carries. Names and place labels are
+fire, and the small light every character carries. A carried light shows
+only a little of the day drawing over the river, so the water takes the
+lamplight's amber instead of turning pale. Names and place labels are
 drawn last, each wholly in day ink or wholly in night ink depending on the
-light where it sits, so they don't fade out at the edge of a lamp. A name
-that has to move aside for another figure gets a short stroke back to its
-owner.
+light where it sits, so they don't fade out at the edge of a lamp. A name's
+slip is always light paper with dark lettering; at night the paper is the
+pale of the night ink. The residents on the page have pale faces at night, a
+shade darker than their outline, with a dark eye.
+Name slips keep clear of place labels, the fire and the lantern along the
+whole way to the next tick, since a slip follows its figure between ticks. A
+name that has to move aside for another figure gets a short stroke back to
+its owner.
 
 The frame is designed for 16:9, which is what a stream shows. The map is on
 the left. On the right is a page with the clock and the residents, each with
@@ -225,7 +236,8 @@ it and any spare height shared between the rows and the margins. The page and
 the bottom line don't take part in the moving edge: they change between day
 and night ink in one go, over about three seconds, halfway through the turn.
 With the page below the map, the paper either side of the map is part of the
-map for this: it darkens with the map. The typeface is IM Fell English.
+map for this: it darkens with the map. The map's double rule sits on the
+map's own edge in every layout. The typeface is IM Fell English.
 
 ## One player on a busy stream
 

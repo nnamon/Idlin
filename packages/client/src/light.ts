@@ -122,12 +122,12 @@ export function lampStrength(hour: number): number {
 }
 
 const DAWN_CAST: Rgb = [1, 0.62, 0.7];
-const MORNING_CAST: Rgb = [0.86, 0.95, 1];
+const MORNING_CAST: Rgb = [0.78, 0.86, 0.98];
 const DUSK_CAST: Rgb = [1, 0.58, 0.2];
 
 /**
- * The colour the sky lays over everything, and how strongly (0 to 1): rose at
- * dawn, a pale cool blue through the morning (07:00 to 10:00), nothing about
+ * The colour the sky lays over the day drawing of the map, and how strongly (0 to 1): rose at
+ * dawn, a cool blue-grey through the morning (07:00 to 10:00), nothing about
  * noon, amber at dusk. Where dawn hands over to morning the two are mixed by
  * strength, so the colour never jumps.
  */
@@ -135,7 +135,7 @@ export function skyCast(hour: number): { color: Rgb; alpha: number } {
   const bump = (centre: number, width: number): number =>
     smooth(1 - Math.abs(hour - centre) / width);
   const dawn = bump(6, 1.4) * 0.22;
-  const morning = bump(8.5, 2.2) * 0.16;
+  const morning = bump(8.5, 2.2) * 0.24;
   const dusk = bump(19.4, 1.7) * 0.28;
   if (dusk > 0) return { color: DUSK_CAST, alpha: dusk };
   const alpha = dawn + morning;
@@ -153,8 +153,13 @@ export const rgb = (hex: number): Rgb => [
   (hex & 255) / 255,
 ];
 
+/**
+ * The part of the day the page names. It says night for as long as the page
+ * is in night ink, from halfway through nightfall to halfway through daybreak,
+ * so the words agree with the map: never "dusk" over a dark map.
+ */
 export function phaseName(hour: number): string {
-  if (hour < 5) return "night";
+  if (pageDay(hour) < 0.5) return "night";
   if (hour < 6.75) return "dawn";
   if (hour < 11) return "morning";
   if (hour < 14) return "about noon";

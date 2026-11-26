@@ -199,4 +199,17 @@ describe("the light of the day", () => {
       "night",
     ]);
   });
+
+  it("says night exactly while the page is in night ink", () => {
+    // 20:04 is still dusk; by 20:12 the map is dark and the page says so.
+    expect(phaseName(20 + 4 / 60)).toBe("dusk");
+    expect(phaseName(20 + 12 / 60)).toBe("night");
+    // Before daybreak has turned the page, it is still night; just after, dawn.
+    expect(phaseName(5.5)).toBe("night");
+    expect(phaseName(6)).toBe("dawn");
+    for (let minute = 0; minute < 24 * 60; minute++) {
+      const hour = minute / 60;
+      expect(phaseName(hour) === "night", `at ${hour}`).toBe(pageDay(hour) < 0.5);
+    }
+  });
 });

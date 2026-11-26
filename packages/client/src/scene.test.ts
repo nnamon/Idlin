@@ -321,11 +321,14 @@ describe("the scene", () => {
       2200,
       FRAME_HEIGHT,
     ]);
-    // 06:00 has a rose cast over the whole frame.
-    const tint = drawn(out, () => scene.draw(world, world.tick)).findLast(
+    // 06:00 has a rose cast, laid on the day drawing of the map and not on the page.
+    const tint = drawn(day, () => scene.draw(world, world.tick)).findLast(
       (c) => c.op === "fillRect",
     );
-    expect(tint?.args).toEqual([0, 0, 2200, FRAME_HEIGHT]);
+    expect(tint?.args).toEqual([0, 0, map.width * 48, map.height * 48]);
+    expect(drawn(out, () => scene.draw(world, world.tick)).some((c) => c.op === "fillRect")).toBe(
+      false,
+    );
     // Never narrower than the plain frame, nor shorter than the map.
     scene.resize(800, 600);
     expect([out.width, out.height]).toEqual([FRAME_WIDTH, map.height * 48]);

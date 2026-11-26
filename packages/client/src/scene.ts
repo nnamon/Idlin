@@ -15,6 +15,7 @@ import {
   START_HOUR,
   TICKS_PER_GAME_HOUR,
   type TileMap,
+  terrainAt,
   type World,
 } from "@idlin/sim";
 import { type Effects, glyphAt, leanAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
@@ -43,11 +44,13 @@ import {
   lampStrength,
   pageDay,
   phaseName,
+  rgb,
   skyCast,
 } from "./light.ts";
 import { drawGlyph, drawRoute, eat, ROUTE_ROW, routeLine, routePoint } from "./marks.ts";
+import { type Pt, regionLoops, smoothLoop } from "./outline.ts";
 import { DAY, NIGHT, type Palette } from "./palette.ts";
-import { type Ctx, newCanvas } from "./pen.ts";
+import { type Ctx, newCanvas, trace } from "./pen.ts";
 import { actorPose, easeSit, type Pose } from "./pose.ts";
 import { letGo, NO_SLIPS, nextSlips, type Slips, slipAlpha } from "./slips.ts";
 import { drawHp, drawLevels, hpWidth } from "./stats.ts";
@@ -70,6 +73,10 @@ const NEWS_TICKS = 40;
 const LANTERN_REACH = 5.4;
 const FIRE_REACH = 3;
 const CARRIED_REACH = 1.75;
+/** How much of the day drawing a carried light shows over open water, as a share of what it shows on land. */
+const CARRIED_ON_WATER = 0.3;
+/** A face on the page at night: pale, but darker than the night ink of its outline. */
+const NIGHT_FACE = rgb(0xa3aec6);
 /** The least room below the map that the line of news needs. */
 const NEWS_STRIP = 60;
 const STANDING: Pose = {
@@ -102,6 +109,8 @@ interface Light {
   /** Pixels. */
   readonly reach: number;
   readonly strength: number;
+  /** A light someone carries, which shows less of the day drawing over water. */
+  readonly carried?: boolean;
 }
 
 interface Side {
@@ -175,10 +184,31 @@ export class Scene {
   private effects: Effects = NO_EFFECTS;
   /** The camp's tile, which a walk home ends at. */
   private readonly home: { x: number; y: number };
+  /** The river's outline in frame pixels, rounded as its banks are, and whether a point is on water. */
+  private readonly water: Pt[][];
+  private readonly wet: (x: number, y: number) => boolean;
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     const camp = map.places.find((place) => place.name === "camp");
     this.home = camp ? { x: camp.x, y: camp.y } : { x: 0, y: 0 };
+    // Open water only: a bridge's deck takes a carried light as land does. Traced
+    // with the edge tiles repeated outwards, as the banks are, so a river running
+    // off the map is not rounded off at the edge.
+    const open = (x: number, y: number): boolean =>
+      terrainAt(
+        map,
+        Math.min(map.width - 1, Math.max(0, x)),
+        Math.min(map.height - 1, Math.max(0, y)),
+      ) === "water";
+    this.water = regionLoops(map.width + 2, map.height + 2, (x, y) => open(x - 1, y - 1)).map(
+      (loop) => smoothLoop(loop, 3).map(([x, y]) => [(x - 1) * TILE, (y - 1) * TILE] as const),
+    );
+    this.wet = (x, y) =>
+      x >= 0 &&
+      y >= 0 &&
+      x < this.width &&
+      y < this.height &&
+      open(Math.floor(x / TILE), Math.floor(y / TILE));
     this.width = map.width * TILE;
     this.height = map.height * TILE;
     const { canvas, ctx } = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
@@ -293,7 +323,8 @@ export class Scene {
     if (region.kind !== "all") this.drawSide(this.night, world, walkers, time, holes);
     // In full night the day drawing only shows inside the lamps' reach, so only that much of it is drawn.
     if (region.kind !== "none" || lamps > 0) {
-      this.drawSide(this.day, world, walkers, time, holes, region.kind === "none" ? lights : null);
+      const only = region.kind === "none" ? lights : null;
+      this.drawSide(this.day, world, walkers, time, holes, only, skyCast(hour));
     }
     out.drawImage(region.kind === "all" ? this.day.canvas : this.night.canvas, 0, 0);
 
@@ -312,7 +343,7 @@ export class Scene {
         lit.fillStyle = gradient;
         lit.fillRect(0 - mx, 0, this.frameWidth, this.frameHeight);
       }
-      for (const light of lights) {
+      const paint = (light: Light, strength: number): void => {
         const gradient = lit.createRadialGradient(
           light.x,
           light.y,
@@ -321,13 +352,32 @@ export class Scene {
           light.y,
           light.reach,
         );
-        gradient.addColorStop(0, `rgba(255,255,255,${light.strength})`);
-        gradient.addColorStop(LAMP_KNEE, `rgba(255,255,255,${light.strength * LAMP_KNEE_LEVEL})`);
+        gradient.addColorStop(0, `rgba(255,255,255,${strength})`);
+        gradient.addColorStop(LAMP_KNEE, `rgba(255,255,255,${strength * LAMP_KNEE_LEVEL})`);
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
         lit.beginPath();
         lit.arc(light.x, light.y, light.reach, 0, 7);
         lit.fill();
+      };
+      for (const light of lights) if (!light.carried) paint(light, light.strength);
+      // A light someone carries opens only a little of the day drawing over the
+      // river: the pale day water would read as fog on the night river. The
+      // lamplight's amber, laid on below, tints the water instead.
+      const carried = lights.filter((light) => light.carried);
+      if (carried.length > 0) {
+        for (const wet of [false, true]) {
+          lit.save();
+          lit.beginPath();
+          if (!wet) lit.rect(0 - mx, 0, this.frameWidth, this.height);
+          for (const loop of this.water) {
+            trace(lit, loop);
+            lit.closePath();
+          }
+          lit.clip("evenodd");
+          for (const light of carried) paint(light, light.strength * (wet ? CARRIED_ON_WATER : 1));
+          lit.restore();
+        }
       }
       lit.setTransform(1, 0, 0, 1, 0, 0);
       lit.globalCompositeOperation = "source-in";
@@ -393,12 +443,6 @@ export class Scene {
       out.restore();
     }
 
-    const cast = skyCast(hour);
-    if (cast.alpha > 0) {
-      out.fillStyle = css(cast.color, cast.alpha);
-      out.fillRect(0, 0, this.frameWidth, this.frameHeight);
-    }
-
     // Lettering goes on last, each piece wholly in day ink or wholly in night
     // ink according to the light where it sits, so it never fades into a halo.
     // Which ink was settled at the last tick; before the first tick it is worked out here.
@@ -428,6 +472,10 @@ export class Scene {
       out.globalAlpha = alpha;
       // A name sits on a small slip of paper, so it reads over trees, water and other ink.
       const palette = inkOf(this.nameDay.get(tag.id), tag.x, tag.y - 8);
+      // A slip is light paper with dark lettering by day and by night: in the dark it
+      // takes the pale of the night ink, so every name reads the same way at a glance.
+      const slipPaper = palette === DAY ? DAY.paper : NIGHT.ink;
+      const slipInk = palette === DAY ? DAY.ink : NIGHT.paper;
       if (tag.moved) {
         // Moved aside to make room: a short stroke ties the name back to its owner.
         out.strokeStyle = css(palette.ink, 0.7);
@@ -440,12 +488,12 @@ export class Scene {
         out.lineTo(tag.headX, tag.headY);
         out.stroke();
       }
-      out.fillStyle = css(palette.paper, 0.9);
+      out.fillStyle = css(slipPaper, 0.92);
       out.beginPath();
       // The slip reaches 21 pixels above the baseline, a little clear of the capitals' tops.
       out.roundRect(tag.x - tag.width / 2, tag.y - 21, tag.width, TAG_HEIGHT - 1, 4);
       out.fill();
-      out.fillStyle = css(palette.ink);
+      out.fillStyle = css(slipInk);
       out.fillText(tag.name, tag.x, tag.y);
       // What it has just set out to do, on a tab of the same paper to the left
       // of the name. It fades with the slip, and on its own at the end of its life.
@@ -453,18 +501,11 @@ export class Scene {
         out.globalAlpha = alpha * glyph.alpha;
         const right = tag.x - tag.width / 2;
         const middle = tag.y - 21 + (TAG_HEIGHT - 1) / 2;
-        out.fillStyle = css(palette.paper, 0.9);
+        out.fillStyle = css(slipPaper, 0.92);
         out.beginPath();
         out.roundRect(right - GLYPH_ROOM, middle - 17, GLYPH_ROOM, 34, [6, 0, 0, 6]);
         out.fill();
-        drawGlyph(
-          out,
-          glyph.glyph,
-          right - GLYPH_ROOM / 2 + 1,
-          middle,
-          GLYPH_SIZE,
-          css(palette.ink),
-        );
+        drawGlyph(out, glyph.glyph, right - GLYPH_ROOM / 2 + 1, middle, GLYPH_SIZE, css(slipInk));
       }
     }
     out.globalAlpha = 1;
@@ -513,14 +554,18 @@ export class Scene {
           y: walker.y - 22,
           reach: CARRIED_REACH * TILE,
           strength: lamps * 0.85,
+          carried: true,
         });
       }
     }
     /** How much of the day drawing shows at a point, 0 to 1: the same sum the picture is built from. */
     const litAt = (x: number, y: number): number => {
       let dark = 1 - dayAt(region, Math.hypot(x - hx, y - hy));
-      for (const light of lights)
-        dark *= 1 - lampAt(Math.hypot(x - light.x, y - light.y), light.reach, light.strength);
+      const wet = this.wet(x, y);
+      for (const light of lights) {
+        const strength = light.strength * (light.carried && wet ? CARRIED_ON_WATER : 1);
+        dark *= 1 - lampAt(Math.hypot(x - light.x, y - light.y), light.reach, strength);
+      }
       return 1 - dark;
     };
     return { hour, lamps, region, lights, litAt };
@@ -640,10 +685,20 @@ export class Scene {
       if (known) return known;
       const left = [...going].map((id) => ({ id, box: paper(fadingBox(id)) }));
       const placed = placeTags(
-        wishes.filter((wish) => holding.has(wish.id)),
+        // Each slip is placed clear along the whole way to the next tick, not only where it starts.
+        wishes
+          .filter((wish) => holding.has(wish.id))
+          .map((wish) => {
+            const move = moves.get(wish.id) as { start: TagWish; end: TagWish; lift: number };
+            return { ...move.start, next: { x: move.end.x, y: move.end.y, lift: move.lift } };
+          }),
         kept,
         bounds,
-        [...this.avoid, ...left.map(({ box }) => box)],
+        // The paper of a slip reaches 2 pixels above its box, so what it avoids reaches 2 lower.
+        [
+          ...this.avoid.map((box) => ({ ...box, bottom: box.bottom + 2 })),
+          ...left.map(({ box }) => box),
+        ],
         wishes.filter((wish) => !holding.has(wish.id)).map((wish) => sweep(wish.id, bodyBox)),
       );
       const slips = [
@@ -797,6 +852,7 @@ export class Scene {
     time: number,
     holes: readonly Box[],
     only: readonly { x: number; y: number; reach: number }[] | null = null,
+    cast: ReturnType<typeof skyCast> | null = null,
   ): void {
     const { ctx, ground, palette } = side;
     const ink = css(palette.ink);
@@ -918,14 +974,26 @@ export class Scene {
     upTo(Number.POSITIVE_INFINITY);
     for (const spot of ground.fires) this.smoke(ctx, spot, palette, time);
 
-    // A ruled double border, as round a printed map.
+    // A ruled double border round the map, as round a printed map.
     ctx.strokeStyle = ink;
     ctx.lineWidth = 3;
     ctx.strokeRect(6.5, 6.5, this.width - 13, this.height - 13);
     ctx.lineWidth = 1;
     ctx.strokeRect(13.5, 13.5, this.width - 27, this.height - 27);
 
-    this.page(ctx, world, palette, style);
+    // The colour of the sky, laid on the day drawing of the map only. The night
+    // drawing keeps its own blue, so the dark closing in at dusk is not muddied
+    // with amber, and the page stays the colour of paper.
+    if (cast && cast.alpha > 0) {
+      ctx.fillStyle = css(cast.color, cast.alpha);
+      ctx.fillRect(0 - this.mapX, 0, this.pageBelow ? this.frameWidth : this.width, this.height);
+    }
+
+    // On the page at night a figure's face is pale, a shade below the night ink
+    // of its outline, with an eye in the night paper's dark, so the residents
+    // listed there have faces. Its pack keeps the dark paper.
+    const night = palette === NIGHT ? { face: css(NIGHT_FACE), eye: paper } : {};
+    this.page(ctx, world, palette, (id, scale) => ({ ...style(id, scale), ...night }));
     ctx.restore();
   }
 
@@ -1055,9 +1123,9 @@ export class Scene {
   }
 
   /**
-   * Smoke over a fire: a thin wavy line that rises from the flame, leans east
-   * and fades out. The waves travel up it slowly, about one every eight
-   * seconds.
+   * Smoke over a fire: a wavy line that rises from the flame, leans east and
+   * fades out, as heavy as the grass ticks at its foot and thinner as it rises.
+   * The waves travel up it slowly, about one every eight seconds.
    */
   private smoke(ctx: Ctx, [x, y]: readonly [number, number], palette: Palette, time: number): void {
     const at = (t: number): [number, number] => [
@@ -1066,11 +1134,11 @@ export class Scene {
     ];
     ctx.strokeStyle = css(palette.ink);
     ctx.lineCap = "round";
-    ctx.lineWidth = 1.8;
     // In short pieces, each fainter than the one below it.
     const pieces = 12;
     for (let i = 0; i < pieces; i++) {
-      ctx.globalAlpha = 0.55 * (1 - i / pieces);
+      ctx.lineWidth = 2.6 - (1.2 * i) / pieces;
+      ctx.globalAlpha = 0.85 * (1 - i / pieces);
       ctx.beginPath();
       ctx.moveTo(...at(i / pieces));
       ctx.lineTo(...at((i + 0.5) / pieces));

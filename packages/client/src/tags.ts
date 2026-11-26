@@ -16,6 +16,12 @@ export interface TagWish {
   readonly y: number;
   /** Width of the tag's text box in frame pixels. */
   readonly width: number;
+  /**
+   * Where `x` and `y` will be at the next tick, and how far a step lifts the
+   * figure on the way. A tag follows its figure between ticks, so it is kept
+   * clear along the whole way and not only where it starts.
+   */
+  readonly next?: { readonly x: number; readonly y: number; readonly lift: number };
 }
 
 export interface Placement {
@@ -81,6 +87,23 @@ export function tagBox(wish: TagWish, spot: number, bounds: { readonly width: nu
 }
 
 /**
+ * The room a name in a given spot passes over until the next tick: from its
+ * box now to its box then, and up by the lift. Just its box when the wish
+ * has no `next`.
+ */
+export function pathBox(wish: TagWish, spot: number, bounds: { readonly width: number }): Box {
+  const now = tagBox(wish, spot, bounds);
+  if (!wish.next) return now;
+  const then = tagBox({ ...wish, x: wish.next.x, y: wish.next.y }, spot, bounds);
+  return {
+    left: Math.min(now.left, then.left),
+    right: Math.max(now.right, then.right),
+    top: Math.min(now.top, then.top) - wish.next.lift,
+    bottom: Math.max(now.bottom, then.bottom),
+  };
+}
+
+/**
  * Places every tag. `previous` holds the spot each tag had last time; a tag
  * keeps its spot while it stays free, so tags do not hop about as characters
  * pass each other. `avoid` lists things no name should cover: a fire, a
@@ -101,7 +124,7 @@ export function placeTags(
   const result = new Map<number, Placement>();
 
   wishes.forEach((wish, index) => {
-    const at = (spot: number): Box => tagBox(wish, spot, bounds);
+    const at = (spot: number): Box => pathBox(wish, spot, bounds);
     const clear = (others: readonly Box[], box: Box, margin = 0): boolean =>
       box.top >= 0 &&
       box.bottom <= bounds.height &&
@@ -119,6 +142,8 @@ export function placeTags(
     const others = spot < 0 ? bodies : heads;
     const free = (box: Box, margin = 0): boolean => clear(others, box, margin);
     if (spot < 0) spot = SPOTS.findIndex((_, k) => free(at(k)));
+    // Still nowhere: over a figure, but clear of the other names and of what `avoid` lists.
+    if (spot < 0) spot = SPOTS.findIndex((_, k) => clear([], at(k)));
     // Nowhere is free: take the first spot that at least stays inside the world.
     if (spot < 0) {
       spot = Math.max(

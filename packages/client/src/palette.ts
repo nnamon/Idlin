@@ -49,7 +49,8 @@ const NIGHT_WASH: Record<WashName, Rgb> = {
   meadow: rgb(0x212d4a),
   water: rgb(0x25406a),
   waterDeep: rgb(0x1f3860),
-  den: rgb(0x231f38),
+  // Close to the night paper: a stronger colour reads as a stain spilt on the map.
+  den: rgb(0x212741),
   camp: rgb(0x26304c),
   sand: rgb(0x2a3350),
   leaf: rgb(0x1d2e46),

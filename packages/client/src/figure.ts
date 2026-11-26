@@ -9,6 +9,9 @@ export interface FigureStyle {
   readonly hood: string;
   readonly ink: string;
   readonly paper: string;
+  /** The face and the eye, where they are not the paper and the ink. */
+  readonly face?: string;
+  readonly eye?: string;
   /** 1 faces right, -1 faces left. */
   readonly facing: 1 | -1;
   /** What it carries, so that two figures in like colours still differ: 0 a staff, 1 a pack, 2 nothing. */
@@ -95,7 +98,7 @@ export function drawFigure(
   ctx.globalAlpha = 1;
 
   // Head and hood.
-  ctx.fillStyle = paper;
+  ctx.fillStyle = style.face ?? paper;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(0, -33, 7.5, 0, 7);
@@ -109,7 +112,8 @@ export function drawFigure(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = ink;
+  ctx.fillStyle = style.eye ?? ink;
+  ctx.strokeStyle = style.eye ?? ink;
   if (pose.sit > 0.5) {
     // Eyes shut.
     ctx.lineWidth = 1.2;
@@ -122,6 +126,7 @@ export function drawFigure(
     ctx.arc(3, -32, 1.1, 0, 7);
     ctx.fill();
   }
+  ctx.strokeStyle = ink;
 
   if (style.kit === 0) {
     ctx.lineWidth = 1.8;

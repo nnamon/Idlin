@@ -146,11 +146,12 @@ async function save(name: string, bytes: Uint8Array): Promise<void> {
 }
 
 // How much of the frame changes brightness sharply between two rendered
-// frames, at the hours where most changes at once: deep night, daybreak, the
-// lamps going out, noon, the lamps coming on, nightfall, late evening. A
+// frames, at the hours where most changes at once: deep night, daybreak and its
+// page turn, the lamps going out, noon, the lamps coming on, nightfall, its
+// page turn (20:06), late evening. A
 // stream shows about six frames to a tick, so the frames are a sixth of a tick
 // apart.
-const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 22];
+const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 20.1, 22];
 await page.setViewportSize({ width: 1920, height: 1080 });
 let worst = { index: 0, hour: 0 };
 for (const hour of FLICKER_HOURS) {
