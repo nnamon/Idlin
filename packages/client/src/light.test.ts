@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DAYBREAK,
   dayAt,
+  dayInk,
   daylight,
   dayRegion,
   EDGE,
+  LAMP_CORE,
+  LAMP_KNEE,
+  LAMP_KNEE_LEVEL,
   lampAt,
   lampStrength,
   NIGHTFALL,
@@ -131,12 +135,34 @@ describe("the light of the day", () => {
     expect(dayAt(rim, EDGE / 4)).toBeCloseTo(0.5);
     expect(dayAt(rim, EDGE / 2)).toBe(0);
     expect(dayAt({ kind: "circle", radius: -EDGE }, 0)).toBe(0);
+  });
+
+  it("throws lamplight along the same stops the picture's gradient uses", () => {
     expect(lampAt(0, 100, 0.8)).toBe(0.8);
-    expect(lampAt(55, 100, 1)).toBeCloseTo(0.55);
+    expect(lampAt(100 * LAMP_CORE, 100, 0.8)).toBe(0.8);
+    // The knee sits LAMP_KNEE of the way from the core to the rim, as a gradient stop does.
+    const knee = 100 * (LAMP_CORE + LAMP_KNEE * (1 - LAMP_CORE));
+    expect(knee).toBeCloseTo(60.4);
+    expect(lampAt(knee, 100, 1)).toBeCloseTo(LAMP_KNEE_LEVEL);
+    // Halfway from the core to the knee, and from the knee to the rim: straight lines between stops.
+    expect(lampAt((12 + knee) / 2, 100, 1)).toBeCloseTo((1 + LAMP_KNEE_LEVEL) / 2);
+    expect(lampAt((knee + 100) / 2, 100, 1)).toBeCloseTo(LAMP_KNEE_LEVEL / 2);
     expect(lampAt(100, 100, 1)).toBe(0);
     expect(lampAt(150, 100, 1)).toBe(0);
     for (let d = 1; d <= 100; d++)
       expect(lampAt(d, 100, 1)).toBeLessThanOrEqual(lampAt(d - 1, 100, 1));
+  });
+
+  it("keeps lettering in the ink it had until the light is clearly past the middle", () => {
+    expect(dayInk(0.51, undefined)).toBe(true);
+    expect(dayInk(0.49, undefined)).toBe(false);
+    // Light wavering round the middle changes nothing.
+    for (const lit of [0.45, 0.55, 0.48, 0.59, 0.41]) {
+      expect(dayInk(lit, true)).toBe(true);
+      expect(dayInk(lit, false)).toBe(false);
+    }
+    expect(dayInk(0.39, true)).toBe(false);
+    expect(dayInk(0.61, false)).toBe(true);
   });
 
   it("names the parts of the day", () => {

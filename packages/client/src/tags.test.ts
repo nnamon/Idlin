@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Box, bodyBox, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
+import { type Box, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
 
 const BOUNDS = { width: 1440, height: 1008 };
 const wish = (id: number, x: number, y: number, width = 80): TagWish => ({ id, x, y, width });
@@ -14,8 +14,23 @@ const hit = (a: Box, b: Box): boolean =>
   a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 describe("placeTags", () => {
-  it("uses the footprint this test expects", () => {
-    expect(bodyBox(wish(1, 500, 400))).toEqual(body(wish(1, 500, 400)));
+  it("does not hang a name over a neighbour's head while another spot is free", () => {
+    // Three in a row. The middle one's name cannot sit above it (the first name is there),
+    // and the spot to the right would sit right over the third figure's head.
+    const row = [wish(1, 500, 400), wish(2, 560, 400), wish(3, 630, 400)];
+    const placed = placeTags(row, new Map(), BOUNDS);
+    const middle = (placed.get(2) as { box: Box }).box;
+    const overThird = { left: 610, right: 650, top: 376, bottom: 402 };
+    expect(hit(middle, overThird)).toBe(false);
+    expect(hit(middle, (placed.get(1) as { box: Box }).box)).toBe(false);
+    expect(hit(middle, (placed.get(3) as { box: Box }).box)).toBe(false);
+    // Packed too tightly for that, a name still lands somewhere clear of every body.
+    const tight = [wish(1, 500, 400), wish(2, 530, 400), wish(3, 560, 400), wish(4, 590, 400)];
+    const packed = placeTags(tight, new Map(), BOUNDS);
+    for (const w of tight) {
+      const box = (packed.get(w.id) as { box: Box }).box;
+      for (const other of tight) if (other.id !== w.id) expect(hit(box, body(other))).toBe(false);
+    }
   });
 
   it("puts a lone tag centred just above its character", () => {

@@ -1,8 +1,10 @@
 // Draws the frame: the map, the page beside it and the line beneath it, all on
 // one canvas. Everything is drawn twice, once in day ink and once in night ink.
-// The two are never blended evenly, which would leave neither readable: night
-// arrives as an edge that closes in on the lantern, day as one that crosses
-// from the east, and at night every lamp is a window onto the day drawing.
+// The two are never blended across the whole frame, which would leave neither
+// readable: at nightfall the dark closes in on the lantern as a ring, at
+// daybreak the light spreads out from it the same way, and at night every lamp
+// is a window onto the day drawing. Lettering goes on last, in one ink or the
+// other.
 // Everything that moves is a function of sim time, so the same time gives the
 // same frame.
 
@@ -19,8 +21,12 @@ import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
 import {
   css,
   dayAt,
+  dayInk,
   dayRegion,
   EDGE,
+  LAMP_CORE,
+  LAMP_KNEE,
+  LAMP_KNEE_LEVEL,
   lampAt,
   lampStrength,
   pageDay,
@@ -62,6 +68,14 @@ interface Walker {
   readonly y: number;
 }
 
+interface Light {
+  readonly x: number;
+  readonly y: number;
+  /** Pixels. */
+  readonly reach: number;
+  readonly strength: number;
+}
+
 interface Side {
   readonly palette: Palette;
   readonly ground: Ground;
@@ -90,6 +104,9 @@ export class Scene {
   private readonly lastRule = new Map<number, number>();
   /** Things no name should cover: the fire, the lantern's glass, the place names. */
   private readonly avoid: Box[] = [];
+  /** Which ink each name and each place label is in, settled once a tick. */
+  private readonly nameDay = new Map<number, boolean>();
+  private readonly labelDay: boolean[] = [];
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     this.width = map.width * TILE;
@@ -135,52 +152,14 @@ export class Scene {
 
   /** Draws the world as it is at `time` ticks (the world's tick plus a fraction of the next). */
   draw(world: World, time: number): void {
-    const hour = (((time / TICKS_PER_GAME_HOUR + START_HOUR) % 24) + 24) % 24;
-    const lamps = lampStrength(hour);
     const fraction = time - world.tick;
-    const [hx, hy] = this.hearth;
-    // The dark closes in over the map only, from the map's own corners; the page changes separately.
-    const reach = Math.max(
-      Math.hypot(hx, hy),
-      Math.hypot(this.width - hx, hy),
-      Math.hypot(hx, this.height - hy),
-      Math.hypot(this.width - hx, this.height - hy),
-    );
-    const region = dayRegion(hour, reach);
-
     const walkers: Walker[] = world.actors.map((actor) => {
       const pose = actorPose(actor, fraction, time);
       return { actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
-
-    // Every light there is, as a place, a reach in pixels and a strength.
-    const lights: { x: number; y: number; reach: number; strength: number }[] = [];
-    if (lamps > 0) {
-      for (const [x, y] of this.day.ground.lanterns) {
-        lights.push({ x, y: y + 28, reach: LANTERN_REACH * TILE, strength: lamps });
-      }
-      for (const [x, y] of this.day.ground.fires) {
-        // A fire's light breathes slowly; it never jumps.
-        const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
-        lights.push({ x, y, reach: FIRE_REACH * TILE * breath, strength: lamps * 0.95 });
-      }
-      for (const walker of walkers) {
-        lights.push({
-          x: walker.x,
-          y: walker.y - 22,
-          reach: CARRIED_REACH * TILE,
-          strength: lamps * 0.85,
-        });
-      }
-    }
-    /** How much of the day drawing shows at a point, 0 to 1: the same sum the picture is built from. */
-    const litAt = (x: number, y: number): number => {
-      let dark = 1 - dayAt(region, Math.hypot(x - hx, y - hy));
-      for (const light of lights)
-        dark *= 1 - lampAt(Math.hypot(x - light.x, y - light.y), light.reach, light.strength);
-      return 1 - dark;
-    };
+    const { hour, lamps, region, lights, litAt } = this.lighting(walkers, time);
+    const [hx, hy] = this.hearth;
 
     const out = this.out;
     if (region.kind !== "all") this.drawSide(this.night, world, walkers, time);
@@ -208,13 +187,13 @@ export class Scene {
         const gradient = lit.createRadialGradient(
           light.x,
           light.y,
-          light.reach * 0.12,
+          light.reach * LAMP_CORE,
           light.x,
           light.y,
           light.reach,
         );
         gradient.addColorStop(0, `rgba(255,255,255,${light.strength})`);
-        gradient.addColorStop(0.55, `rgba(255,255,255,${light.strength * 0.55})`);
+        gradient.addColorStop(LAMP_KNEE, `rgba(255,255,255,${light.strength * LAMP_KNEE_LEVEL})`);
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
         lit.beginPath();
@@ -289,10 +268,12 @@ export class Scene {
 
     // Lettering goes on last, each piece wholly in day ink or wholly in night
     // ink according to the light where it sits, so it never fades into a halo.
-    const inkFor = (x: number, y: number): Palette => (litAt(x, y) > 0.5 ? DAY : NIGHT);
+    // Which ink was settled at the last tick; before the first tick it is worked out here.
+    const inkOf = (settled: boolean | undefined, x: number, y: number): Palette =>
+      (settled ?? dayInk(litAt(x, y), undefined)) ? DAY : NIGHT;
     out.textAlign = "center";
     out.lineJoin = "round";
-    for (const label of this.labels) {
+    this.labels.forEach((label, index) => {
       const [font, size, spacing] =
         label.style === "region"
           ? ["Fell Italic", 30, 2]
@@ -301,7 +282,7 @@ export class Scene {
             : ["Fell Italic", 22, 0];
       const x = label.x * TILE;
       const y = label.y * TILE;
-      const palette = inkFor(x, y - 8);
+      const palette = inkOf(this.labelDay[index], x, y - 8);
       out.font = `${size}px "${font}"`;
       out.letterSpacing = `${spacing}px`;
       out.lineWidth = 4;
@@ -309,12 +290,12 @@ export class Scene {
       out.fillStyle = css(palette.ink, 0.8);
       out.strokeText(label.text, x, y);
       out.fillText(label.text, x, y);
-    }
+    });
     out.letterSpacing = "0px";
     out.font = TAG_FONT;
     for (const tag of this.placeNames(walkers)) {
       // A name sits on a small slip of paper, so it reads over trees, water and other ink.
-      const palette = inkFor(tag.x, tag.y - 8);
+      const palette = inkOf(this.nameDay.get(tag.id), tag.x, tag.y - 8);
       if (tag.moved) {
         // Moved aside to make room: a short stroke ties the name back to its owner.
         out.strokeStyle = css(palette.ink, 0.7);
@@ -334,6 +315,58 @@ export class Scene {
       out.fillStyle = css(palette.ink);
       out.fillText(tag.name, tag.x, tag.y);
     }
+  }
+
+  /** The light at `time`: the hour, the lamps, and how lit any point of the map is. */
+  private lighting(
+    walkers: readonly Walker[],
+    time: number,
+  ): {
+    hour: number;
+    lamps: number;
+    region: ReturnType<typeof dayRegion>;
+    lights: Light[];
+    litAt: (x: number, y: number) => number;
+  } {
+    const hour = (((time / TICKS_PER_GAME_HOUR + START_HOUR) % 24) + 24) % 24;
+    const lamps = lampStrength(hour);
+    const [hx, hy] = this.hearth;
+    // The dark closes in over the map only, from the map's own corners; the page changes separately.
+    const reach = Math.max(
+      Math.hypot(hx, hy),
+      Math.hypot(this.width - hx, hy),
+      Math.hypot(hx, this.height - hy),
+      Math.hypot(this.width - hx, this.height - hy),
+    );
+    const region = dayRegion(hour, reach);
+    // Every light there is, as a place, a reach in pixels and a strength.
+    const lights: Light[] = [];
+    if (lamps > 0) {
+      for (const [x, y] of this.day.ground.lanterns) {
+        lights.push({ x, y: y + 28, reach: LANTERN_REACH * TILE, strength: lamps });
+      }
+      for (const [x, y] of this.day.ground.fires) {
+        // A fire's light breathes slowly; it never jumps.
+        const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
+        lights.push({ x, y, reach: FIRE_REACH * TILE * breath, strength: lamps * 0.95 });
+      }
+      for (const walker of walkers) {
+        lights.push({
+          x: walker.x,
+          y: walker.y - 22,
+          reach: CARRIED_REACH * TILE,
+          strength: lamps * 0.85,
+        });
+      }
+    }
+    /** How much of the day drawing shows at a point, 0 to 1: the same sum the picture is built from. */
+    const litAt = (x: number, y: number): number => {
+      let dark = 1 - dayAt(region, Math.hypot(x - hx, y - hy));
+      for (const light of lights)
+        dark *= 1 - lampAt(Math.hypot(x - light.x, y - light.y), light.reach, light.strength);
+      return 1 - dark;
+    };
+    return { hour, lamps, region, lights, litAt };
   }
 
   /**
@@ -370,7 +403,25 @@ export class Scene {
       this.avoid,
     );
     for (const [id, { spot }] of placed) this.tagSpots.set(id, spot);
-    for (const known of [this.facing, this.tagSpots, this.lastRule]) {
+    // The ink of each piece of lettering is settled here too, from the light
+    // where it sits. The spot does not move with a figure's step, and the ink
+    // only changes once the light is clearly past the middle.
+    const { litAt } = this.lighting(
+      standing.map(({ actor, pose }) => ({ actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 })),
+      world.tick,
+    );
+    for (const { actor, pose } of standing) {
+      const box = tagBox(this.wish(actor, { ...pose, hop: 0 }), this.tagSpots.get(actor.id) ?? 0, {
+        width: this.width,
+      });
+      const lit = litAt((box.left + box.right) / 2, box.bottom - 15);
+      this.nameDay.set(actor.id, dayInk(lit, this.nameDay.get(actor.id)));
+    }
+    this.labels.forEach((label, index) => {
+      const lit = litAt(label.x * TILE, label.y * TILE - 8);
+      this.labelDay[index] = dayInk(lit, this.labelDay[index]);
+    });
+    for (const known of [this.facing, this.tagSpots, this.lastRule, this.nameDay]) {
       for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
     }
   }
@@ -394,6 +445,7 @@ export class Scene {
 
   /** Where each name is drawn this frame: in the spot chosen for it at the last tick, following its figure. */
   private placeNames(walkers: readonly Walker[]): {
+    id: number;
     name: string;
     x: number;
     y: number;
@@ -407,6 +459,7 @@ export class Scene {
       const spot = this.tagSpots.get(walker.actor.id) ?? 0;
       const box = tagBox(wish, spot, { width: this.width });
       return {
+        id: walker.actor.id,
         name: walker.actor.name,
         x: (box.left + box.right) / 2,
         y: box.top + TAG_HEIGHT - 7,

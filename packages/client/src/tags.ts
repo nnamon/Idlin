@@ -28,6 +28,8 @@ export const TAG_HEIGHT = 26;
 // A figure on screen is about this big, with a little room round it.
 const BODY_HALF_WIDTH = 20;
 const BODY_HEIGHT = 62;
+/** The room above a figure's head where its own name sits by default. */
+const HEADROOM = 26;
 /** A tag only returns to its favourite spot once there is this much clear room around it. */
 const RETURN_MARGIN = 20;
 
@@ -50,7 +52,7 @@ const SPOTS: readonly (readonly [number, number])[] = [
 ];
 
 /** The room a figure takes up on screen, given where its name would like to sit. */
-export function bodyBox(wish: TagWish): Box {
+function bodyBox(wish: TagWish): Box {
   return {
     left: wish.x - BODY_HALF_WIDTH,
     right: wish.x + BODY_HALF_WIDTH,
@@ -90,20 +92,25 @@ export function placeTags(
   avoid: readonly Box[] = [],
 ): Map<number, Placement> {
   const bodies = wishes.map(bodyBox);
+  // A name hung over someone else's head reads as theirs, so that room is kept clear too while anywhere else is free.
+  const heads = bodies.map((body) => ({ ...body, top: body.top - HEADROOM }));
   const placed: Box[] = [];
   const result = new Map<number, Placement>();
 
   wishes.forEach((wish, index) => {
     const at = (spot: number): Box => tagBox(wish, spot, bounds);
-    const free = (box: Box, margin = 0): boolean =>
+    const clear = (others: readonly Box[], box: Box, margin = 0): boolean =>
       box.top >= 0 &&
       box.bottom <= bounds.height &&
       !placed.some((other) => overlaps(box, other, margin)) &&
       !avoid.some((other) => overlaps(box, other)) &&
-      !bodies.some((body, k) => k !== index && overlaps(box, body, margin));
+      !others.some((body, k) => k !== index && overlaps(box, body, margin));
 
     const before = previous.get(wish.id) ?? 0;
-    let spot = SPOTS.findIndex((_, k) => free(at(k)));
+    let spot = SPOTS.findIndex((_, k) => clear(heads, at(k)));
+    // In a tight group there may be no spot clear of every head: then clear of every body will do.
+    const free = (box: Box, margin = 0): boolean => clear(spot < 0 ? bodies : heads, box, margin);
+    if (spot < 0) spot = SPOTS.findIndex((_, k) => free(at(k)));
     // Nowhere is free: take the first spot that at least stays inside the world.
     if (spot < 0) {
       spot = Math.max(

@@ -1,5 +1,5 @@
 // Everything on the map that does not move, drawn once per palette: the paper,
-// the washes, the river, the ground marks and place names, and each thing that
+// the washes, the river, the ground marks, and each thing that
 // stands up (trees, rocks, tents, the lantern post) as its own small drawing so
 // that walkers can pass in front of it or behind it.
 

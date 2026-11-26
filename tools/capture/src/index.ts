@@ -92,7 +92,7 @@ for (const shot of wanted) {
 // that jumps.
 await page.setViewportSize({ width: 1920, height: 1080 });
 let worst = { share: 0, hour: 0 };
-// The hours where most changes at once: deep night, the dawn front, noon, the dusk edge, lamps lit.
+// The hours where most changes at once: deep night, daybreak, lamps going out, noon, lamps coming on, nightfall, late evening.
 for (const hour of [0, 5.9, 6.6, 12, 18.5, 20.05, 22]) {
   await open(hour);
   const share = await page.evaluate(() => {

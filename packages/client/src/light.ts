@@ -86,13 +86,34 @@ export function dayAt(region: DayRegion, distance: number): number {
   return 1 - Math.min(1, Math.max(0, (distance - inner) / (outer - inner)));
 }
 
-/** How much light a lamp of the given reach and strength throws at a distance; the same curve the picture uses. */
+/**
+ * The shape of a lamp's light, as shares of its reach: full strength out to
+ * LAMP_CORE, then down to LAMP_KNEE_LEVEL of it at LAMP_KNEE of the way from
+ * there to the rim, then to nothing at the rim. The picture's gradient is
+ * built from these same numbers, so `lampAt` and the picture agree.
+ */
+export const LAMP_CORE = 0.12;
+export const LAMP_KNEE = 0.55;
+export const LAMP_KNEE_LEVEL = 0.55;
+
+/** How much light a lamp of the given reach and strength throws at a distance. */
 export function lampAt(distance: number, reach: number, strength: number): number {
-  const t = distance / reach;
+  const t = (distance / reach - LAMP_CORE) / (1 - LAMP_CORE);
   if (t >= 1) return 0;
-  if (t <= 0.12) return strength;
-  if (t <= 0.55) return strength * (1 - ((t - 0.12) / 0.43) * 0.45);
-  return strength * 0.55 * (1 - (t - 0.55) / 0.45);
+  if (t <= 0) return strength;
+  if (t <= LAMP_KNEE) return strength * (1 - (t / LAMP_KNEE) * (1 - LAMP_KNEE_LEVEL));
+  return strength * LAMP_KNEE_LEVEL * (1 - (t - LAMP_KNEE) / (1 - LAMP_KNEE));
+}
+
+/**
+ * Whether a piece of lettering is in day ink, given how lit its spot is (0 to
+ * 1) and which ink it was in at the last tick. It changes over only once the
+ * light is clearly past the middle, so a name at the rim of a lamp does not
+ * flip back and forth as the light breathes or its owner steps.
+ */
+export function dayInk(lit: number, wasDay: boolean | undefined): boolean {
+  if (wasDay === undefined) return lit > 0.5;
+  return wasDay ? lit > 0.4 : lit > 0.6;
 }
 
 /** How strongly lamps show: nothing by day, full at night. They come on a little before dark. */
