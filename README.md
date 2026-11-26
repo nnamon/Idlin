@@ -1,44 +1,55 @@
 # Idlin
 
-An idle RPG made to be left running on a stream. A dozen adventurers live in a
-camp at the edge of a dangerous wood. Each one runs a small program: so does
-every monster. You watch them work, fight and come home, and you can write the
-program for one of them.
+Idlin is an idle RPG built to run unattended on a livestream. Nobody plays it
+directly. Each character will be driven by a small script running in a
+sandboxed VM, monsters included, and the plan is that viewers get to write the
+scripts.
 
-![The camp at midnight: the lantern and campfire light the clearing, and each adventurer carries a small light of their own](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
+It's early. There's one map, six characters walking around at random, and a
+day/night cycle. The VM exists but the viewer doesn't use it yet. Combat,
+skills and loot don't exist at all; [docs/roadmap.md](docs/roadmap.md) has the
+order they're planned in.
 
-_Midnight. The lantern and the campfire hold a pool of light; everyone out in
-the dark carries a small one of their own._
+![Screenshot of the game at night](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
 
-|                                                                                 |                                                                                         |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png)         |
-| _Dawn, 06:15. The day starts pink._                                             | _Noon. One game day lasts 24 minutes._                                                  |
-| ![Dusk](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dusk.png) | ![Midnight](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png) |
-| _Dusk, 19:12. The lamps come on as the light goes amber._                       | _Night. The deep wood and the den go dark._                                             |
+More screenshots, at dawn, noon and dusk:
 
-Every picture here is a capture of the running game, refreshed as it changes.
-Today the adventurers only walk and rest: programs, combat, skills and loot are
-the next things on the [roadmap](docs/roadmap.md).
+|                                                                                 |                                                                                 |                                                                                 |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png) | ![Dusk](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dusk.png) |
 
-- **What it is:** [docs/design.md](docs/design.md)
-- **What it is built with:** [docs/stack.md](docs/stack.md)
-- **Where it is going:** [docs/roadmap.md](docs/roadmap.md)
-- **How it is developed:** [AGENTS.md](AGENTS.md). This repo is developed by a
-  small swarm of AI agents working from the issue tracker.
+The screenshots are taken from the running game by `tools/capture` and are
+refreshed from `main`, so they should be close to what you get if you run it.
+The art is going to change.
 
 ## Running it
 
-Everything runs in containers; you need Docker and nothing else.
+You need Docker. Everything else runs in containers.
 
 ```sh
 docker compose run --rm dev pnpm install
-docker compose up client          # then open http://localhost:4310
+docker compose up client          # http://localhost:4310
+```
+
+`?hour=21` in the URL starts at a different time of day and `?seed=7` gives a
+different world.
+
+To run the checks CI runs (lint, typecheck, tests):
+
+```sh
 docker compose run --rm dev pnpm gate
 ```
 
-Add `?hour=21` to the address to start at another time of day, or `?seed=7`
-for another world.
+## Docs
 
-Earlier versions of Idlin are kept on the branch
+- [docs/design.md](docs/design.md): what the game is meant to be
+- [docs/roadmap.md](docs/roadmap.md): what's planned, in order
+- [docs/stack.md](docs/stack.md): what it's built with and how to run things
+- [AGENTS.md](AGENTS.md): most of this repo is written by AI agents working
+  from the issue tracker, and this is the process they follow
+
+The current art and fonts are Kenney's (CC0); see
+[assets/CREDITS.md](assets/CREDITS.md).
+
+An earlier codebase for Idlin is on the branch
 `archive/idlin-pre-2.0-2026-09-02`.
