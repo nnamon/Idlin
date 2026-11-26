@@ -52,7 +52,7 @@ const SPOTS: readonly (readonly [number, number])[] = [
 ];
 
 /** The room a figure takes up on screen, given where its name would like to sit. */
-function bodyBox(wish: TagWish): Box {
+export function bodyBox(wish: TagWish): Box {
   return {
     left: wish.x - BODY_HALF_WIDTH,
     right: wish.x + BODY_HALF_WIDTH,
@@ -61,7 +61,8 @@ function bodyBox(wish: TagWish): Box {
   };
 }
 
-const overlaps = (a: Box, b: Box, margin = 0): boolean =>
+/** Whether two boxes cover each other, or come within `margin` of it. */
+export const overlaps = (a: Box, b: Box, margin = 0): boolean =>
   a.left - margin < b.right &&
   b.left < a.right + margin &&
   a.top - margin < b.bottom &&
@@ -83,13 +84,15 @@ export function tagBox(wish: TagWish, spot: number, bounds: { readonly width: nu
  * Places every tag. `previous` holds the spot each tag had last time; a tag
  * keeps its spot while it stays free, so tags do not hop about as characters
  * pass each other. `avoid` lists things no name should cover: a fire, a
- * place name.
+ * place name. `figures` are the bodies of those without a tag: a tag that has
+ * to find a new spot takes one clear of them too where there is one.
  */
 export function placeTags(
   wishes: readonly TagWish[],
   previous: ReadonlyMap<number, number>,
   bounds: { readonly width: number; readonly height: number },
   avoid: readonly Box[] = [],
+  figures: readonly Box[] = [],
 ): Map<number, Placement> {
   const bodies = wishes.map(bodyBox);
   // A name hung over someone else's head reads as theirs, so that room is kept clear too while anywhere else is free.
@@ -107,7 +110,11 @@ export function placeTags(
       !others.some((body, k) => k !== index && overlaps(box, body, margin));
 
     const before = previous.get(wish.id) ?? 0;
-    let spot = SPOTS.findIndex((_, k) => clear(heads, at(k)));
+    let spot = SPOTS.findIndex(
+      (_, k) => clear(heads, at(k)) && !figures.some((body) => overlaps(at(k), body)),
+    );
+    const aside = spot >= 0;
+    if (spot < 0) spot = SPOTS.findIndex((_, k) => clear(heads, at(k)));
     // In a tight group there may be no spot clear of every head: then clear of every body will do.
     const others = spot < 0 ? bodies : heads;
     const free = (box: Box, margin = 0): boolean => clear(others, box, margin);
@@ -124,7 +131,9 @@ export function placeTags(
       before !== spot &&
       before < SPOTS.length &&
       free(at(before)) &&
-      !(spot === 0 && free(at(0), RETURN_MARGIN))
+      !(spot === 0 && free(at(0), RETURN_MARGIN)) &&
+      // A new tag is not drawn back over a figure when it found a spot clear of them.
+      !(aside && !previous.has(wish.id) && figures.some((body) => overlaps(at(before), body)))
     ) {
       spot = before;
     }

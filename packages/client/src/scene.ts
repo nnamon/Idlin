@@ -26,6 +26,7 @@ import {
   spreadPage,
 } from "./frame.ts";
 import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
+import { identity } from "./identity.ts";
 import {
   css,
   dayAt,
@@ -41,10 +42,19 @@ import {
   phaseName,
   skyCast,
 } from "./light.ts";
-import { cloakColor, DAY, NIGHT, type Palette } from "./palette.ts";
+import { DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas } from "./pen.ts";
 import { actorPose, easeSit, type Pose } from "./pose.ts";
-import { type Box, placeTags, TAG_HEIGHT, tagBox } from "./tags.ts";
+import { letGo, NO_SLIPS, nextSlips, type Slips, slipAlpha } from "./slips.ts";
+import {
+  type Box,
+  bodyBox,
+  overlaps,
+  placeTags,
+  TAG_HEIGHT,
+  type TagWish,
+  tagBox,
+} from "./tags.ts";
 
 const FIGURE_SCALE = 1.3;
 const TAG_FONT = '27px "Fell SC"';
@@ -118,12 +128,20 @@ export class Scene {
   private readonly lit: { canvas: HTMLCanvasElement; ctx: Ctx };
   private readonly facing = new Map<number, 1 | -1>();
   private readonly tagSpots = new Map<number, number>();
+  /** Who has a name slip on the map, and since when; see slips.ts. */
+  private slips: Slips = NO_SLIPS;
+  /** Where each slip fading out stays while it fades: where it was when taken away. */
+  private readonly fading = new Map<number, Box>();
+  /** When each resident was last named in the line of news. */
+  private readonly named = new Map<number, number>();
   private readonly tagWidths = new Map<string, number>();
   /** Where the dark closes in to at dusk: the first lantern, or the middle of the map. */
   private readonly hearth: readonly [number, number];
   private readonly labels: readonly MapLabel[];
   private news = "";
   private newsSince = Number.NEGATIVE_INFINITY;
+  /** The resident the line of news is about, or -1 for none. */
+  private newsWho = -1;
   private readonly lastRule = new Map<number, number>();
   /** Things no name should cover: the fire, the lantern's glass, the place names. */
   private readonly avoid: Box[] = [];
@@ -138,8 +156,6 @@ export class Scene {
   clockShown = true;
   /** How far down into sitting each figure is, at the tick before last and at the last tick. */
   private readonly sitting = new Map<number, readonly [number, number]>();
-  /** The tick `sitting` was last moved on, so that observing a tick twice eases it once. */
-  private sitTick = Number.NaN;
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     this.width = map.width * TILE;
@@ -362,6 +378,9 @@ export class Scene {
     out.letterSpacing = "0px";
     out.font = TAG_FONT;
     for (const tag of this.placeNames(walkers)) {
+      const alpha = slipAlpha(this.slips, tag.id, time);
+      if (alpha <= 0) continue;
+      out.globalAlpha = alpha;
       // A name sits on a small slip of paper, so it reads over trees, water and other ink.
       const palette = inkOf(this.nameDay.get(tag.id), tag.x, tag.y - 8);
       if (tag.moved) {
@@ -384,6 +403,7 @@ export class Scene {
       out.fillStyle = css(palette.ink);
       out.fillText(tag.name, tag.x, tag.y);
     }
+    out.globalAlpha = 1;
     out.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -459,12 +479,25 @@ export class Scene {
    * frames happened to be drawn.
    */
   observe(world: World): void {
+    // Each tick is taken note of once: seeing it again changes nothing.
+    if (world.tick === this.lastTick) return;
     // A world from earlier than the last (a server restarted from a snapshot) has
-    // another history: what was news in the old one says nothing about the new.
+    // another history: what was news in the old one says nothing about the new,
+    // nor who had a slip, where it sat, how far down anyone was sitting, or which
+    // ink the place names were in.
     if (world.tick < this.lastTick) {
       this.news = "";
       this.newsSince = Number.NEGATIVE_INFINITY;
       this.lastRule.clear();
+      this.newsWho = -1;
+      this.named.clear();
+      this.slips = NO_SLIPS;
+      this.tagSpots.clear();
+      this.sitting.clear();
+      this.facing.clear();
+      this.nameDay.clear();
+      this.fading.clear();
+      this.labelDay.length = 0;
     }
     this.lastTick = world.tick;
     const alive = new Set<number>();
@@ -480,29 +513,123 @@ export class Scene {
       if (!label || label === "otherwise") continue;
       this.news = `${actor.name}: ${label}`;
       this.newsSince = world.tick;
+      this.newsWho = actor.id;
     }
-    // Each figure moves a step further into or out of sitting, once a tick
-    // however often the tick is observed.
-    const again = world.tick === this.sitTick;
-    this.sitTick = world.tick;
+    // Each figure moves a step further into or out of sitting, once a tick.
     const standing = world.actors.map((actor) => {
       const pose = actorPose(actor, 0, world.tick);
-      const known = this.sitting.get(actor.id);
-      if (again && known) return { actor, pose: { ...pose, sit: known[1] } };
-      const was = known?.[1] ?? pose.sit;
+      const was = this.sitting.get(actor.id)?.[1] ?? pose.sit;
       const sit = easeSit(was, pose.sit);
       this.sitting.set(actor.id, [was, sit]);
       return { actor, pose: { ...pose, sit } };
     });
+    // Whoever the line of news is about keeps a claim to a slip while the line names them
+    // and for NEWS_HOLD after, so a reader can find them on the map.
+    if (alive.has(this.newsWho)) this.named.set(this.newsWho, world.tick);
+    const bounds = { width: this.width, height: this.height };
+    const wishes = standing.map(({ actor, pose }) => this.wish(actor, pose));
+    // Until the next tick a slip goes where its figure goes, so the room it
+    // takes is all it passes over: from where it is drawn at this tick to where
+    // it will be at the next, and up by as much as a step lifts the figure.
+    const moves = new Map(
+      world.actors.map((actor) => {
+        const [was, sit] = this.sitting.get(actor.id) ?? [0, 0];
+        const start = this.wish(actor, { ...actorPose(actor, 0, world.tick), sit: was });
+        const end = this.wish(actor, { ...actorPose(actor, 1, world.tick + 1), sit });
+        return [actor.id, { start, end, lift: actor.moveTicksLeft > 0 ? 3 : 0 }];
+      }),
+    );
+    const sweep = (id: number, boxOf: (wish: TagWish) => Box): Box => {
+      const move = moves.get(id) as { start: TagWish; end: TagWish; lift: number };
+      const [a, b] = [boxOf(move.start), boxOf(move.end)];
+      return {
+        left: Math.min(a.left, b.left),
+        right: Math.max(a.right, b.right),
+        top: Math.min(a.top, b.top) - move.lift,
+        bottom: Math.max(a.bottom, b.bottom),
+      };
+    };
+    // The paper of a slip reaches 2 pixels above its box.
+    const paper = (box: Box): Box => ({ ...box, top: box.top - 2 });
+    // A slip fading out stays where it was drawn at the tick it was taken away.
+    const fadingBox = (id: number): Box =>
+      this.fading.get(id) ??
+      tagBox((moves.get(id) as { start: TagWish }).start, this.tagSpots.get(id) ?? 0, bounds);
+    // A slip keeps its spot from the last tick; one newly given, or given back
+    // while fading, finds its own.
+    const kept = new Map([...this.tagSpots].filter(([id]) => this.slips.held.has(id)));
+    // Where the slips `held` go when placed together, kept clear of those
+    // `leaving`; and which slips, of either, cover another slip, the figure of
+    // another slip holder, a place name, the fire or the lantern on their way
+    // to the next tick. Figures without a slip are only kept clear of where
+    // there is room: in the knot at camp almost every spot is over someone,
+    // and counting them leaves two names where eight fit clear of each other.
+    const covered = new Map<string, { bad: Set<number>; spots: Map<number, number> }>();
+    const covering = (held: readonly number[], leaving: readonly number[]) => {
+      const holding = new Set(held);
+      const going = new Set(leaving);
+      const byId = (a: number, b: number): number => a - b;
+      const key = `${[...holding].sort(byId)}/${[...going].sort(byId)}`;
+      const known = covered.get(key);
+      if (known) return known;
+      const left = [...going].map((id) => ({ id, box: paper(fadingBox(id)) }));
+      const placed = placeTags(
+        wishes.filter((wish) => holding.has(wish.id)),
+        kept,
+        bounds,
+        [...this.avoid, ...left.map(({ box }) => box)],
+        wishes.filter((wish) => !holding.has(wish.id)).map((wish) => sweep(wish.id, bodyBox)),
+      );
+      const slips = [
+        ...[...placed].map(([id, { spot }]) => ({
+          id,
+          box: paper(sweep(id, (wish) => tagBox(wish, spot, bounds))),
+        })),
+        ...left,
+      ];
+      const bodies = [...holding, ...going].map((id) => ({ id, box: sweep(id, bodyBox) }));
+      const bad = new Set<number>();
+      for (const { id, box } of slips) {
+        if (
+          this.avoid.some((other) => overlaps(box, other)) ||
+          bodies.some((body) => body.id !== id && overlaps(box, body.box)) ||
+          slips.some((other) => other.id !== id && overlaps(box, other.box))
+        )
+          bad.add(id);
+      }
+      const spots = new Map([...placed].map(([id, { spot }]) => [id, spot]));
+      const result = { bad, spots };
+      covered.set(key, result);
+      return result;
+    };
+    // A slip given only because there is room must cover nothing, and must not
+    // push any other slip onto something either.
+    const fits = (id: number, held: readonly number[], leaving: readonly number[]): boolean => {
+      const before = covering(held, leaving).bad;
+      const after = covering([...held, id], leaving).bad;
+      return !after.has(id) && [...after].every((other) => before.has(other));
+    };
+    const people = world.actors.map((actor) => ({ id: actor.id, x: actor.x, y: actor.y }));
+    let slips = nextSlips(this.slips, people, this.named, world.tick, fits);
+    // A slip that is news may still land on one held only for the room, or on
+    // one fading out. The one held for the room starts to fade at once, and one
+    // already fading goes.
+    for (;;) {
+      const { bad } = covering([...slips.held.keys()], [...slips.leaving.keys()]);
+      const fade = [...slips.room].filter((id) => bad.has(id));
+      const drop = [...slips.leaving.keys()].filter((id) => bad.has(id));
+      if (fade.length === 0 && drop.length === 0) break;
+      slips = letGo(slips, fade, drop, world.tick);
+    }
+    this.slips = slips;
     // Names are placed once a tick, here, so that where a name sits depends on
     // the world's history and not on which frames were drawn.
-    const placed = placeTags(
-      standing.map(({ actor, pose }) => this.wish(actor, pose)),
-      this.tagSpots,
-      { width: this.width, height: this.height },
-      this.avoid,
-    );
-    for (const [id, { spot }] of placed) this.tagSpots.set(id, spot);
+    const { spots } = covering([...slips.held.keys()], [...slips.leaving.keys()]);
+    const fading = new Map([...slips.leaving.keys()].map((id) => [id, fadingBox(id)]));
+    this.fading.clear();
+    for (const [id, box] of fading) this.fading.set(id, box);
+    for (const [id, spot] of spots) this.tagSpots.set(id, spot);
+    const slipped = standing.filter(({ actor }) => slips.held.has(actor.id));
     // The ink of each piece of lettering is settled here too, from the light
     // where it sits. The spot does not move with a figure's step, and the ink
     // only changes once the light is clearly past the middle.
@@ -510,7 +637,7 @@ export class Scene {
       standing.map(({ actor, pose }) => ({ actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 })),
       world.tick,
     );
-    for (const { actor, pose } of standing) {
+    for (const { actor, pose } of slipped) {
       const box = tagBox(this.wish(actor, { ...pose, hop: 0 }), this.tagSpots.get(actor.id) ?? 0, {
         width: this.width,
       });
@@ -521,7 +648,14 @@ export class Scene {
       const lit = litAt(label.x * TILE, label.y * TILE - 8);
       this.labelDay[index] = dayInk(lit, this.labelDay[index]);
     });
-    for (const known of [this.facing, this.tagSpots, this.lastRule, this.nameDay, this.sitting]) {
+    for (const known of [
+      this.facing,
+      this.tagSpots,
+      this.lastRule,
+      this.nameDay,
+      this.sitting,
+      this.named,
+    ]) {
       for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
     }
   }
@@ -557,14 +691,16 @@ export class Scene {
     return walkers.map((walker) => {
       const wish = this.wish(walker.actor, walker.pose);
       const spot = this.tagSpots.get(walker.actor.id) ?? 0;
-      const box = tagBox(wish, spot, { width: this.width });
+      // A slip fading out stays where it was taken away, so it is not tied to its figure.
+      const left = this.fading.get(walker.actor.id);
+      const box = left ?? tagBox(wish, spot, { width: this.width });
       return {
         id: walker.actor.id,
         name: walker.actor.name,
         x: (box.left + box.right) / 2,
         y: box.top + TAG_HEIGHT - 7,
         width: box.right - box.left,
-        moved: spot !== 0,
+        moved: !left && spot !== 0,
         headX: wish.x,
         headY: wish.y + 6,
       };
@@ -640,7 +776,7 @@ export class Scene {
       }
     };
     const style = (id: number, scale: number) => ({
-      cloak: cloakColor(id),
+      ...identity(id),
       ink,
       paper,
       facing: this.facing.get(id) ?? (1 as const),

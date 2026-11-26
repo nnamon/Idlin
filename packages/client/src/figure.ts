@@ -1,11 +1,12 @@
-// A small figure in a hooded cloak, drawn with a few strokes. The cloak's
-// colour is the one thing that tells one from another at a glance.
+// A small figure in a hooded cloak, drawn with a few strokes. The colours of
+// its hood and cloak are what tell one from another at a glance.
 
 import type { Ctx } from "./pen.ts";
 import type { Pose } from "./pose.ts";
 
 export interface FigureStyle {
   readonly cloak: string;
+  readonly hood: string;
   readonly ink: string;
   readonly paper: string;
   /** 1 faces right, -1 faces left. */
@@ -24,7 +25,7 @@ export function drawFigure(
   style: FigureStyle,
   time: number,
 ): void {
-  const { cloak, ink, paper } = style;
+  const { cloak, hood, ink, paper } = style;
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(style.scale, style.scale);
@@ -98,7 +99,7 @@ export function drawFigure(
   ctx.arc(0, -33, 7.5, 0, 7);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = cloak;
+  ctx.fillStyle = hood;
   ctx.beginPath();
   ctx.arc(0, -34, 8, 3.3, 6.1);
   ctx.lineTo(8, -32);

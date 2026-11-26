@@ -72,18 +72,3 @@ export const NIGHT: Palette = {
 
   wash: NIGHT_WASH,
 };
-
-/** Cloak colours, picked to be told apart at a glance on cream paper and under lamplight. */
-const CLOAKS = [
-  0xc8442f, 0x2f6fb0, 0xd79a1e, 0x3f8f5a, 0x7d4fa3, 0x2a8f98, 0xb5527e, 0x6b7f2a, 0xd0692b,
-  0x4a55a8, 0x8a5a3a, 0x3a9a7a,
-];
-
-/** The cloak colour of the actor with this id: the first dozen are hand-picked, the rest spread round the wheel. */
-export function cloakColor(id: number): string {
-  const index = Math.max(0, id - 1);
-  if (index < CLOAKS.length) return `#${(CLOAKS[index] as number).toString(16).padStart(6, "0")}`;
-  const hue = Math.round((index * 137.508) % 360);
-  const light = 38 + ((index * 7) % 3) * 8;
-  return `hsl(${hue}, 58%, ${light}%)`;
-}

@@ -159,8 +159,8 @@ assets: the map, the trees, the tents and the characters are drawn by code,
 with lines that wobble slightly. Adding a monster or a place means writing a
 drawing routine for it.
 
-Characters are small hooded figures. The cloak colour is the one thing that
-tells them apart, so it is also how a viewer finds their own. A figure that
+Characters are small hooded figures. The colours of the hood and the cloak are
+what tell them apart, so they are also how a viewer finds their own. A figure that
 has a while to wait sits down, sinking over a few ticks rather than dropping
 at once, and gets up the same way.
 
@@ -204,7 +204,7 @@ Everyone watches the same stream. No viewer has their own camera, and there
 may be many more characters than the six in the first milestone. The game has
 to stay worth watching for someone who owns just one of them. The plan:
 
-1. **Finding your character.** Each player's character has a cloak colour of
+1. **Finding your character.** Each player's character has a hood and cloak pair of
    its own. Typing `!me` in chat will highlight it for a few seconds.
 2. **Getting noticed.** Time in the spotlight is rationed. Notable events earn
    it, but every active character gets a turn within a bounded wait, and the

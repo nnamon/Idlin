@@ -170,4 +170,15 @@ describe("placeTags", () => {
       ...placeTags(crowd, new Map(), BOUNDS),
     ]);
   });
+
+  it("keeps a new tag clear of figures without a tag where there is room, and covers one where there is not", () => {
+    const me = wish(1, 400, 300);
+    const over = { left: 385, right: 415, top: 280, bottom: 300 };
+    const placed = placeTags([me], new Map(), BOUNDS, [], [over]).get(1);
+    expect(placed?.spot).not.toBe(0);
+    expect(hit(placed?.box as Box, over)).toBe(false);
+    // Every spot is over someone: the tag goes where it would have gone anyway.
+    const everywhere = { left: 0, right: BOUNDS.width, top: 0, bottom: BOUNDS.height };
+    expect(placeTags([me], new Map(), BOUNDS, [], [everywhere]).get(1)?.spot).toBe(0);
+  });
 });

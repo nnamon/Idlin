@@ -20,7 +20,8 @@ import { FRAME_HEIGHT, FRAME_WIDTH, ROW_PITCH, spreadPage } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
 import { actorPose } from "./pose.ts";
 import { Scene } from "./scene.ts";
-import type { Box } from "./tags.ts";
+import { FADE, MIN_HOLD, type Slips, slipAlpha } from "./slips.ts";
+import { type Box, bodyBox, type TagWish } from "./tags.ts";
 
 interface Call {
   readonly op: string;
@@ -292,6 +293,281 @@ describe("the scene", () => {
     expect(below?.args[2]).toBeGreaterThan(map.height * 48);
   });
 
+  it("in a crowd writes at most eight names on the map; with six, all of them", async () => {
+    const crowd = newWorld(30);
+    const { scene, out, day } = await newScene();
+    scene.observe(crowd);
+    const mapWidth = map.width * 48;
+    // Thirty residents start out together at camp, so slips come as they are
+    // named in the news or wander apart. Every frame keeps to the budget, and
+    // whoever the line of news names can be found on the map once their slip
+    // has had time to come: a slip held only for standing alone lasts at least
+    // MIN_HOLD before it gives way, then both fade.
+    let most = 0;
+    let found = 0;
+    let line = "";
+    let lineSince = 0;
+    for (let i = 0; i < TO_NIGHTFALL + 1200; i++) {
+      step(crowd);
+      scene.observe(crowd);
+      if (i % 10 !== 9) continue;
+      day.calls = [];
+      const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
+      const onMap = calls
+        .filter(
+          (c) =>
+            c.op === "fillText" &&
+            (c.args[1] as number) < mapWidth &&
+            /^(Ash|Birch|Cedar|Dara|Elm|Fen|Extra\d+)$/.test(String(c.args[0])),
+        )
+        .map((c) => String(c.args[0]));
+      expect(onMap.length).toBeLessThanOrEqual(8);
+      most = Math.max(most, onMap.length);
+      const now = String(
+        [...day.calls, ...calls].findLast(
+          (c) => c.op === "fillText" && /^\w+: /.test(String(c.args[0])),
+        )?.args[0] ?? "",
+      );
+      if (now !== line) [line, lineSince] = [now, crowd.tick];
+      if (line === "" || crowd.tick - lineSince <= MIN_HOLD + 2 * FADE) continue;
+      expect(onMap).toContain(line.split(":")[0]);
+      found++;
+    }
+    expect(most).toBeGreaterThan(0);
+    expect(found).toBeGreaterThan(5);
+    // Six residents or fewer: every one keeps a name.
+    const few = newWorld(6);
+    const small = await newScene();
+    small.scene.observe(few);
+    for (let i = 0; i < 20; i++) {
+      step(few);
+      small.scene.observe(few);
+    }
+    const names = drawn(small.out, () => small.scene.draw(few, few.tick)).filter(
+      (c) =>
+        c.op === "fillText" &&
+        NAMES.includes(String(c.args[0])) &&
+        (c.args[1] as number) < map.width * 48,
+    );
+    expect(new Set(names.map((c) => c.args[0])).size).toBe(6);
+    void day;
+  });
+
+  it("with twelve residents writes eight names, from the first frame on", async () => {
+    const twelve = newWorld(12);
+    const { scene, out } = await newScene();
+    const onMap = (): number =>
+      drawn(out, () => scene.draw(twelve, twelve.tick)).filter(
+        (c) =>
+          c.op === "fillText" &&
+          (c.args[1] as number) < map.width * 48 &&
+          /^(Ash|Birch|Cedar|Dara|Elm|Fen|Extra\d+)$/.test(String(c.args[0])),
+      ).length;
+    scene.observe(twelve);
+    // The first frame of a run is drawn at the tick it starts on: no fade-in, no unnamed second.
+    expect(onMap()).toBe(8);
+    const counts: number[] = [];
+    for (let i = 0; i < 3000; i++) {
+      step(twelve);
+      scene.observe(twelve);
+      if (i % 10 === 9) counts.push(onMap());
+    }
+    expect(Math.max(...counts)).toBe(8);
+    // Slips change hands now and then and fade as they do; most of the time all eight are out.
+    expect(counts.filter((n) => n === 8).length).toBeGreaterThan(counts.length * 0.8);
+  }, 60_000);
+
+  it("puts no slip over another, a place name, the fire or the lantern, in a crowd at camp", async () => {
+    type Inside = { avoid: Box[] };
+    const slipsOf = (calls: Call[]): Box[] =>
+      calls
+        .filter((c) => c.op === "roundRect")
+        .map((c) => {
+          const [x, y, w, h] = c.args as [number, number, number, number];
+          return { left: x, right: x + w, top: y, bottom: y + h } as Box;
+        });
+    const covers = (a: Box, b: Box): boolean =>
+      a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    // Twelve standing together at camp on their first tick.
+    const twelve = newWorld(12);
+    const atCamp = await newScene();
+    atCamp.scene.observe(twelve);
+    const slips = slipsOf(drawn(atCamp.out, () => atCamp.scene.draw(twelve, twelve.tick)));
+    expect(slips).toHaveLength(8);
+    const avoid = (atCamp.scene as unknown as Inside).avoid;
+    slips.forEach((slip, i) => {
+      for (const other of slips.slice(i + 1)) expect(covers(slip, other)).toBe(false);
+      for (const thing of avoid) expect(covers(slip, thing)).toBe(false);
+    });
+    // Twelve standing still in a block around the camp's name, in three shapes and
+    // at every place from six tiles west of it to two east and from a row above it to
+    // a row below. One block, just below the name, stands for longer than a slip is held.
+    const camp = labels.find((label) => label.text === "Lantern Camp") as MapLabel;
+    const shapes: ((i: number) => readonly [number, number])[] = [
+      (i) => [i % 4, Math.floor(i / 4)],
+      (i) => [i % 3, Math.floor(i / 3)],
+      (i) => [i % 2, Math.floor(i / 2)],
+    ];
+    let shown = 0;
+    for (const [s, shape] of shapes.entries())
+      for (let dx = -6; dx <= 2; dx++)
+        for (let dy = -1; dy <= 1; dy++) {
+          const group = newWorld(12);
+          group.actors.forEach((actor, i) => {
+            const [sx, sy] = shape(i);
+            const x = Math.round(camp.x) + dx + sx;
+            const y = Math.round(camp.y) + dy + sy;
+            Object.assign(actor, { x, y, fromX: x, fromY: y, moveTicksLeft: 0 });
+          });
+          const { scene, out } = await newScene();
+          const things = (scene as unknown as Inside).avoid;
+          const ticks = s === 0 && dx === -2 && dy === 1 ? 2 * MIN_HOLD : 1;
+          for (let t = 0; t < ticks; t++) {
+            group.tick = t;
+            scene.observe(group);
+            const drawnSlips = slipsOf(drawn(out, () => scene.draw(group, group.tick)));
+            drawnSlips.forEach((slip, i) => {
+              for (const other of drawnSlips.slice(i + 1)) expect(covers(slip, other)).toBe(false);
+              for (const thing of things) expect(covers(slip, thing)).toBe(false);
+            });
+            shown += drawnSlips.length;
+          }
+        }
+    expect(shown).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("keeps a slip given for the room clear of other slips, their figures, place names, the fire and the lantern between ticks too", async () => {
+    type Inside = {
+      avoid: Box[];
+      slips: Slips;
+      sitting: Map<number, readonly [number, number]>;
+      wish(actor: World["actors"][number], pose: ReturnType<typeof actorPose>): TagWish;
+    };
+    const covers = (a: Box, b: Box): boolean =>
+      a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const twelve = newWorld(12);
+    const { scene, out } = await newScene();
+    const inside = scene as unknown as Inside;
+    scene.observe(twelve);
+    let checked = 0;
+    for (let i = 0; i < 1200; i++) {
+      step(twelve);
+      scene.observe(twelve);
+      const { slips } = inside;
+      for (const fraction of [0, 0.25, 0.5, 0.75, 0.99]) {
+        const time = twelve.tick + fraction;
+        for (const sheet of canvases) sheet.calls = [];
+        const calls = drawn(out, () => scene.draw(twelve, time));
+        // Each slip of paper, and whose it is: the name written on it next.
+        const drawnSlips = calls.flatMap((call, at) => {
+          if (call.op !== "roundRect") return [];
+          const name = calls.slice(at).find((c) => c.op === "fillText")?.args[0];
+          const actor = twelve.actors.find((a) => a.name === name);
+          const [x, y, w, h] = call.args as [number, number, number, number];
+          return actor
+            ? [{ id: actor.id, box: { left: x, right: x + w, top: y, bottom: y + h } }]
+            : [];
+        });
+        // The figures of slip holders as drawn now, eased into sitting part of the way.
+        const figures = twelve.actors
+          .filter((a) => slips.held.has(a.id) || slips.leaving.has(a.id))
+          .map((actor) => {
+            const raw = actorPose(actor, fraction, time);
+            const [before, now] = inside.sitting.get(actor.id) ?? [raw.sit, raw.sit];
+            const pose = { ...raw, sit: before + (now - before) * fraction };
+            return { id: actor.id, box: bodyBox(inside.wish(actor, pose)) };
+          });
+        for (const { id, box } of drawnSlips) {
+          if (!slips.room.has(id) && !slips.leaving.has(id)) continue;
+          checked++;
+          const where = `${id} at ${time}`;
+          for (const other of drawnSlips)
+            if (other.id !== id)
+              expect(covers(box, other.box), `${where} on ${other.id}`).toBe(false);
+          for (const other of figures)
+            if (other.id !== id)
+              expect(covers(box, other.box), `${where} on figure ${other.id}`).toBe(false);
+          for (const thing of inside.avoid) expect(covers(box, thing), where).toBe(false);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
+  }, 120_000);
+
+  it("draws a place name in the same ink whether or not a later tick was seen before a rewind", async () => {
+    const den = labels.findIndex((label) => label.text === "the Den");
+    const inkAt = async (ticks: readonly number[]): Promise<unknown> => {
+      const world = newWorld(6);
+      const { scene, out } = await newScene();
+      for (const tick of ticks) {
+        world.tick = tick;
+        scene.observe(world);
+      }
+      return drawn(out, () => scene.draw(world, world.tick)).find(
+        (c) => c.op === "fillText" && c.args[0] === labels[den]?.text,
+      )?.fill;
+    };
+    const straight = await inkAt([8381]);
+    expect(straight).toBeDefined();
+    expect(await inkAt([9600, 8381])).toEqual(straight);
+  });
+
+  it("takes note of a tick once, however often it is observed", async () => {
+    const once = await newScene();
+    const twice = await newScene();
+    const world = newWorld(30);
+    type Inside = { slips: Slips; tagSpots: Map<number, number> };
+    const state = (scene: Scene) => {
+      const inside = scene as unknown as Inside;
+      return [[...inside.slips.held], [...inside.slips.leaving], [...inside.tagSpots]];
+    };
+    once.scene.observe(world);
+    twice.scene.observe(world);
+    twice.scene.observe(world);
+    for (let i = 0; i < 1500; i++) {
+      step(world);
+      once.scene.observe(world);
+      twice.scene.observe(world);
+      twice.scene.observe(world);
+      expect(state(twice.scene)).toEqual(state(once.scene));
+    }
+  }, 60_000);
+
+  it("names six residents on the very first frame", async () => {
+    const six = newWorld(6);
+    const { scene, out } = await newScene();
+    scene.observe(six);
+    const names = drawn(out, () => scene.draw(six, six.tick)).filter(
+      (c) => c.op === "fillText" && NAMES.includes(String(c.args[0])),
+    );
+    expect(names.map((c) => c.args[0]).sort()).toEqual([...NAMES].sort());
+  });
+
+  it("ties every slip moved off its figure back to it with a stroke, in a crowd too", async () => {
+    const crowd = newWorld(30);
+    const { scene, out } = await newScene();
+    const inside = scene as unknown as { tagSpots: Map<number, number>; slips: Slips };
+    scene.observe(crowd);
+    let moved = 0;
+    for (let i = 0; i < 1500; i++) {
+      step(crowd);
+      scene.observe(crowd);
+      if (i % 10 !== 9) continue;
+      const strokes = drawn(out, () => scene.draw(crowd, crowd.tick)).filter(
+        (c) => c.op === "lineTo",
+      ).length;
+      const aside = crowd.actors.filter(
+        (actor) =>
+          inside.slips.held.has(actor.id) &&
+          slipAlpha(inside.slips, actor.id, crowd.tick) > 0 &&
+          (inside.tagSpots.get(actor.id) ?? 0) !== 0,
+      ).length;
+      expect(strokes).toBe(aside);
+      moved += aside;
+    }
+    expect(moved).toBeGreaterThan(0);
+  }, 60_000);
+
   it("starts the news afresh when the world goes back in time, as after a server restart", async () => {
     const newsOf = (calls: Call[]): unknown =>
       calls.findLast((c) => c.op === "fillText" && /^\w+: /.test(String(c.args[0])))?.args[0];
@@ -307,12 +583,18 @@ describe("the scene", () => {
     const world = newWorld();
     fresh.scene.observe(world);
     restarted.scene.observe(world);
-    // The news each shows, every 20 ticks.
+    // The news each shows, every 20 ticks, and every tick who has a slip and where it sits.
     const lines = { fresh: [] as unknown[], restarted: [] as unknown[] };
+    const slipsOf = (scene: Scene) => {
+      const inside = scene as unknown as { slips: Slips; tagSpots: Map<number, number> };
+      return [[...inside.slips.held], [...inside.tagSpots].sort((a, b) => a[0] - b[0])];
+    };
+    expect(slipsOf(restarted.scene)).toEqual(slipsOf(fresh.scene));
     for (let i = 1; i <= 600; i++) {
       step(world);
       fresh.scene.observe(world);
       restarted.scene.observe(world);
+      expect(slipsOf(restarted.scene)).toEqual(slipsOf(fresh.scene));
       if (i % 20 !== 0) continue;
       lines.fresh.push(newsOf(drawn(fresh.day, () => fresh.scene.draw(world, world.tick))));
       lines.restarted.push(
