@@ -1,0 +1,5 @@
+{
+  "normal": { "weight": 80, "prefixes": 0, "suffixes": 0, "min": 0, "max": 0 },
+  "magic": { "weight": 17, "prefixes": 1, "suffixes": 1, "min": 1, "max": 2 },
+  "rare": { "weight": 3, "prefixes": 3, "suffixes": 3, "min": 3, "max": 4 }
+}

@@ -1,6 +1,29 @@
 export { CONFUSED_TICKS, FLEE_STEPS, IDLE_TICKS, NO_THREAT } from "./brain.ts";
 export { hashInts } from "./hash.ts";
 export {
+  type Affix,
+  type Base,
+  type Item,
+  ItemError,
+  type ItemTable,
+  itemName,
+  itemStats,
+  loadItems,
+  MAX_ITEM_LEVEL,
+  MAX_STAT_VALUE,
+  RARITIES,
+  type Rarity,
+  type RarityRule,
+  type RolledAffix,
+  rollItem,
+  SLOTS,
+  type Slot,
+  STATS,
+  type Stat,
+  type Stats,
+  type Tier,
+} from "./items.ts";
+export {
   inBounds,
   isWalkable,
   MAX_MAP_HEIGHT,

@@ -1,0 +1,17 @@
+{
+  "rusty_sword": { "name": "Rusty Sword", "slot": "weapon", "level": 1, "stats": { "damage": 3 } },
+  "hand_axe": { "name": "Hand Axe", "slot": "weapon", "level": 5, "stats": { "damage": 5 } },
+  "long_sword": { "name": "Long Sword", "slot": "weapon", "level": 12, "stats": { "damage": 8 } },
+  "padded_jacket": {
+    "name": "Padded Jacket",
+    "slot": "body",
+    "level": 1,
+    "stats": { "armour": 4 }
+  },
+  "leather_vest": { "name": "Leather Vest", "slot": "body", "level": 6, "stats": { "armour": 8 } },
+  "chain_shirt": { "name": "Chain Shirt", "slot": "body", "level": 14, "stats": { "armour": 14 } },
+  "cloth_cap": { "name": "Cloth Cap", "slot": "helm", "level": 1, "stats": { "armour": 2 } },
+  "iron_hat": { "name": "Iron Hat", "slot": "helm", "level": 8, "stats": { "armour": 5 } },
+  "copper_ring": { "name": "Copper Ring", "slot": "ring", "level": 1, "stats": { "life": 5 } },
+  "silver_ring": { "name": "Silver Ring", "slot": "ring", "level": 10, "stats": { "accuracy": 10 } }
+}

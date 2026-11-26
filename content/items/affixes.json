@@ -1,0 +1,86 @@
+{
+  "added_damage": {
+    "name": "Sharp",
+    "kind": "prefix",
+    "group": "added_damage",
+    "stat": "damage",
+    "slots": ["weapon", "ring"],
+    "weight": 100,
+    "tiers": [
+      { "level": 1, "min": 1, "max": 2 },
+      { "level": 8, "min": 3, "max": 5 },
+      { "level": 20, "min": 6, "max": 9 }
+    ]
+  },
+  "increased_damage": {
+    "name": "Cruel",
+    "kind": "prefix",
+    "group": "increased_damage",
+    "stat": "damage_pct",
+    "slots": ["weapon"],
+    "weight": 60,
+    "tiers": [{ "level": 10, "min": 10, "max": 19 }, { "level": 25, "min": 20, "max": 34 }]
+  },
+  "added_armour": {
+    "name": "Sturdy",
+    "kind": "prefix",
+    "group": "added_armour",
+    "stat": "armour",
+    "slots": ["body", "helm"],
+    "weight": 100,
+    "tiers": [
+      { "level": 1, "min": 2, "max": 4 },
+      { "level": 10, "min": 5, "max": 9 },
+      { "level": 22, "min": 10, "max": 16 }
+    ]
+  },
+  "increased_armour": {
+    "name": "Reinforced",
+    "kind": "prefix",
+    "group": "increased_armour",
+    "stat": "armour_pct",
+    "slots": ["body", "helm"],
+    "weight": 60,
+    "tiers": [{ "level": 6, "min": 10, "max": 19 }, { "level": 18, "min": 20, "max": 34 }]
+  },
+  "added_life": {
+    "name": "Healthy",
+    "kind": "prefix",
+    "group": "added_life",
+    "stat": "life",
+    "slots": ["body", "helm", "ring"],
+    "weight": 100,
+    "tiers": [
+      { "level": 1, "min": 3, "max": 5 },
+      { "level": 9, "min": 6, "max": 10 },
+      { "level": 20, "min": 11, "max": 16 }
+    ]
+  },
+  "added_accuracy": {
+    "name": "of Aim",
+    "kind": "suffix",
+    "group": "added_accuracy",
+    "stat": "accuracy",
+    "slots": ["weapon", "helm", "ring"],
+    "weight": 100,
+    "tiers": [{ "level": 1, "min": 5, "max": 10 }, { "level": 12, "min": 11, "max": 20 }]
+  },
+  "life_regen": {
+    "name": "of Mending",
+    "kind": "suffix",
+    "group": "life_regen",
+    "stat": "life_regen",
+    "slots": ["body", "helm", "ring"],
+    "weight": 80,
+    "tiers": [{ "level": 1, "min": 1, "max": 1 }, { "level": 15, "min": 2, "max": 3 }]
+  },
+  "attack_speed": {
+    "name": "of Speed",
+    "kind": "suffix",
+    "group": "attack_speed",
+    "stat": "speed",
+    "slots": ["weapon", "ring"],
+    "weight": 60,
+    "tiers": [{ "level": 1, "min": 3, "max": 5 }, { "level": 16, "min": 6, "max": 10 }]
+  }
+}
