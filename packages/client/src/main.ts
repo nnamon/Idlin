@@ -10,6 +10,7 @@ import {
   TICKS_PER_SECOND,
 } from "@idlin/sim";
 import mapJson from "../../../content/maps/first-light.json";
+import { castOf } from "./cast.ts";
 import type { MapLabel } from "./ground.ts";
 import { FRAME_HEIGHT, FRAME_WIDTH, Scene } from "./scene.ts";
 import "./style.css";
@@ -29,20 +30,22 @@ function botSources(): Record<string, string> {
   );
 }
 
-/** Who lives at the camp, and which shipped program each one runs. */
-const CAST = [
-  { name: "Ash", program: "wanderer" },
-  { name: "Birch", program: "homebody" },
-  { name: "Cedar", program: "riverwalker" },
-  { name: "Dara", program: "wanderer" },
-  { name: "Elm", program: "homebody" },
-  { name: "Fen", program: "riverwalker" },
-];
+/** What the page offers a capture tool in capture mode. */
+export interface CaptureApi {
+  /** Moves time on by this many ticks (fractions allowed, for frames between ticks) and draws. */
+  advance(ticks: number): void;
+  /** Mean brightness of the frame, one value per tile-sized block. */
+  brightness(): number[];
+  /** The frame scaled by `scale` (1 is 1920 by 1080), as base64 RGBA, with its size. */
+  pixels(scale: number): { width: number; height: number; rgba: string };
+  /** The world's tick, and who is in it. */
+  state(): { tick: number; actors: { id: number; name: string }[] };
+}
 
 declare global {
   interface Window {
     /** Present in capture mode (`?capture`): the page draws only when told to. */
-    idlin?: { advance(ticks: number): void; brightness(): number[] };
+    idlin?: CaptureApi;
   }
 }
 
@@ -67,7 +70,9 @@ async function main(): Promise<void> {
 
   const map = parseMap(mapJson);
   const world = createWorld(map, seed, compileBots(botSources(), placeConstants(map)));
-  step(world, spawnsNearCamp(world, CAST));
+  // `?crowd=50` fills the camp with that many residents, to see how a crowd reads.
+  const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
+  step(world, spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)));
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
 
@@ -83,15 +88,32 @@ async function main(): Promise<void> {
   await document.fonts.ready;
 
   if (params.has("capture")) {
+    let fraction = 0;
     window.idlin = {
       advance(ticks) {
-        for (let i = 0; i < ticks; i++) tick();
-        draw(0);
+        const total = fraction + Math.max(0, ticks);
+        const whole = Math.floor(total + 1e-9);
+        for (let i = 0; i < whole; i++) tick();
+        fraction = Math.max(0, total - whole);
+        draw(fraction);
       },
       brightness() {
-        draw(0);
+        draw(fraction);
         return scene.brightness();
       },
+      pixels(scale) {
+        draw(fraction);
+        const { width, height, data } = scene.pixels(scale);
+        let binary = "";
+        for (let i = 0; i < data.length; i += 0x8000) {
+          binary += String.fromCharCode(...data.subarray(i, i + 0x8000));
+        }
+        return { width, height, rgba: btoa(binary) };
+      },
+      state: () => ({
+        tick: world.tick,
+        actors: world.actors.map(({ id, name }) => ({ id, name })),
+      }),
     };
     draw(0);
     document.body.dataset.ready = "1";

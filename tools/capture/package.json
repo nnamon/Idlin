@@ -4,6 +4,15 @@
   "type": "module",
   "exports": "./src/index.ts",
   "devDependencies": {
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "@types/pngjs": "6.0.5"
+  },
+  "dependencies": {
+    "@idlin/sim": "workspace:*",
+    "gifenc": "1.0.3",
+    "pngjs": "7.0.0"
+  },
+  "scripts": {
+    "capture": "node src/index.ts"
   }
 }

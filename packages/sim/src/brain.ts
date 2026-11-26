@@ -6,7 +6,7 @@ import { findPath } from "./path.ts";
 import { nextInt } from "./rng.ts";
 import { syscall } from "./syscalls.ts";
 import { FAULTS, type Program, runDecision } from "./vm.ts";
-import { type Actor, clock, type World } from "./world.ts";
+import { type Actor, clock, type World, type WorldEvent } from "./world.ts";
 
 /** Ticks an actor stands still after `idle` or an action that came to nothing; also the shortest `wait`. */
 export const IDLE_TICKS = 5;
@@ -14,7 +14,7 @@ export const IDLE_TICKS = 5;
 export const CONFUSED_TICKS = 30;
 export const MAX_WAIT_ACTION_TICKS = 600;
 
-export function think(world: World, actor: Actor): void {
+export function think(world: World, actor: Actor, events: WorldEvent[]): void {
   if (actor.wait > 0) {
     actor.wait--;
     return;
@@ -25,8 +25,16 @@ export function think(world: World, actor: Actor): void {
   actor.fault = FAULTS.indexOf(decision.fault);
   if (!decision.action) {
     actor.wait = CONFUSED_TICKS;
+    events.push({ type: "fault", tick: world.tick, actor: actor.id, fault: decision.fault });
     return;
   }
+  events.push({
+    type: "decide",
+    tick: world.tick,
+    actor: actor.id,
+    rule: decision.rule,
+    action: syscall(decision.action.id)?.name ?? "",
+  });
   act(world, actor, decision.action.id, decision.action.args);
 }
 

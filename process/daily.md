@@ -24,7 +24,7 @@ gh run list --branch main --limit 3
 
 ## 2. Watch review
 
-Skip this step if the capture harness does not exist yet. If the lock in
+If the lock in
 `$(git rev-parse --git-dir)/idlin.lock` is younger than 150 minutes, a cycle
 is using the checkout: skip the capture, the judging and the `media` push
 today. The digest then says the watch review was skipped because a cycle held
@@ -37,7 +37,8 @@ Otherwise take the lock, then:
 ```sh
 git checkout main && git pull --ff-only origin main
 git rev-parse HEAD            # must equal origin/main; this is the commit judged
-docker compose run --rm capture
+docker compose run --rm dev pnpm --filter @idlin/client build
+docker compose run --rm capture captures/daily --review
 ```
 
 Release the lock as soon as the capture has finished; nothing after this

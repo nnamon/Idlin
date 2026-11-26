@@ -9,6 +9,7 @@
     "*.ts",
     "packages/*/src/**/*.test.ts",
     "packages/*/src/testing.ts",
-    "tools/*/src/**/*.test.ts"
+    "tools/*/src/**/*.test.ts",
+    "tools/*/src/**/*.d.ts"
   ]
 }

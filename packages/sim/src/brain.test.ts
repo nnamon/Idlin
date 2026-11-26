@@ -173,6 +173,36 @@ describe("actors run programs", () => {
     expect(w.tick).toBe(601);
   });
 
+  it("step returns what happened: each decision with its rule and action, each fault with its name", () => {
+    const w = createWorld(firstLight(), 1, PROGRAMS);
+    const first = step(w, [
+      { type: "spawn", name: "Ash", x: 14, y: 9, program: "courier" },
+      { type: "spawn", name: "Broke", x: 13, y: 9, program: "broken" },
+      { type: "spawn", name: "Nap", x: 12, y: 9, program: "napper" },
+    ]);
+    expect(first).toEqual([
+      { type: "decide", tick: 1, actor: 1, rule: 1, action: "walk_to" },
+      { type: "fault", tick: 1, actor: 2, fault: "divide_by_zero" },
+      { type: "decide", tick: 1, actor: 3, rule: -1, action: "wait" },
+    ]);
+    // Nothing is reported on a tick where nobody decides, and events are not kept in the world.
+    expect(step(w)).toEqual([]);
+    const before = hashWorld(w);
+    const log = [];
+    for (let i = 0; i < 300; i++) log.push(...step(w));
+    expect(log.filter((e) => e.type === "fault").every((e) => e.actor === 2)).toBe(true);
+    expect(log.filter((e) => e.type === "decide" && e.actor === 3).length).toBeGreaterThan(40);
+    expect(before).not.toBe(hashWorld(w));
+    expect(Object.keys(w).sort()).toEqual([
+      "actors",
+      "map",
+      "nextActorId",
+      "programs",
+      "rng",
+      "tick",
+    ]);
+  });
+
   it("clamps what actions ask for", () => {
     const w = world([
       ["Sleepy", "sleeper", 14, 9],

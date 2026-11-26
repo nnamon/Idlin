@@ -66,4 +66,5 @@ export {
   TICKS_PER_GAME_HOUR,
   TICKS_PER_SECOND,
   type World,
+  type WorldEvent,
 } from "./world.ts";

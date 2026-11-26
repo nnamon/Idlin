@@ -11,15 +11,25 @@ tell them where to walk and when to go back to camp. The scripting language is
 described in [docs/tactics.md](docs/tactics.md). Combat, skills and loot don't
 exist yet; [docs/roadmap.md](docs/roadmap.md) has the order they're planned in.
 
+![Night falling over the camp, at twice the speed](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/clip.gif)
+
 ![Screenshot of the game at night](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
 
-More screenshots, at dawn, noon and dusk:
+Dawn, noon and dusk:
 
 |                                                                                 |                                                                                 |                                                                                 |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png) | ![Dusk](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dusk.png) |
 
-The screenshots are taken from the running game by `tools/capture` and are
+Two minutes around nightfall, one frame every ten seconds:
+
+![Twelve frames from 19:20 to 21:10](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/storyboard.png)
+
+And six moments across a day:
+
+![Six frames across a game day](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/daystrip.png)
+
+All of these are taken from the running game by `tools/capture` and are
 refreshed from `main`, so they should be close to what you get if you run it.
 
 ## Running it

@@ -369,6 +369,15 @@ export class Scene {
     return { hour, lamps, region, lights, litAt };
   }
 
+  /** The frame as just drawn, scaled by `scale` (1 is full size), as RGBA. */
+  pixels(scale: number): { width: number; height: number; data: Uint8ClampedArray } {
+    const width = Math.round(FRAME_WIDTH * scale);
+    const height = Math.round(FRAME_HEIGHT * scale);
+    const { ctx } = newCanvas(width, height);
+    ctx.drawImage(this.out.canvas, 0, 0, width, height);
+    return { width, height, data: ctx.getImageData(0, 0, width, height).data };
+  }
+
   /**
    * Takes note of the world after a tick: which way each actor now faces,
    * anything worth a line of news, where each name sits and which ink each

@@ -9,16 +9,20 @@ experiences them, not game-clock time.
 
 ## The capture
 
-The capture tool runs the viewer in replay mode from a fixed seed with a
-stepped clock. So far it only saves single frames and a rough flicker figure
-(`docker compose run --rm capture captures/now`); the full set below is #192.
-It will write to a folder under `captures/`:
+`docker compose run --rm capture captures/<folder> --review` runs the built
+viewer in capture mode from seed 1 with a stepped clock, and writes to that
+folder. It takes five or six minutes. Two runs of the same code give the same
+files, byte for byte. With `--baseline <folder>` it also writes `compare.png`,
+that folder's storyboard above the new one.
 
-- **storyboard**: 12 frames, one every 10 seconds, as one image. Shows what a
-  viewer sees over two minutes.
+- **storyboard**: 12 frames, one every 10 seconds, as one image, from 19:20
+  through nightfall. Shows what a viewer sees over two minutes.
 - **burst**: 12 consecutive rendered frames from the busiest moment. Shows
   motion, and exposes flicker.
 - **day strip**: 6 frames across a full day. Shows the light changing.
+- **showcase**: the README's set: four full frames, a short looping clip of
+  night falling, and smaller copies of the storyboard and day strip.
+  `tools/publish-media.sh captures/<folder>` pushes it to the `media` branch.
 - **crowd sheets**: the storyboard again with the world filled to 12, 50 and
   150 characters running the built-in programs. The frames are exactly what a
   viewer would see; nothing is drawn on them for the judge.
@@ -44,6 +48,17 @@ character, 45 seconds.
 | console errors                              | errors in the page during the capture                                                                                                                                                    | any                                                                                                   |
 | acknowledgment                              | per character, how often it was named on screen (the news line, a caption or the spotlight)                                                                                              | at 50 characters over 60 minutes, a character that finished a trip and was never named                |
 | spotlight wait                              | per character, its longest stretch without the spotlight, counting from the start of the run and up to its end, over a run three times as long as the population times the minimum dwell | any character over twice the population times the minimum dwell (one never shown fails by definition) |
+
+How the tool reads these: something visible is a character changing tile or
+the rule in charge of a character changing, since the page shows that rule
+for the characters it lists. A
+character counts as stuck when for 60 seconds it neither changed tile nor
+was resting by choice (`wait`, for as long as the rest lasts); deciding to
+walk and getting nowhere is stuck.
+
+Hard fails are judged on the world as it ships (six residents today). The same
+numbers for the crowd runs are listed in `metrics.json` as `crowdFindings`.
+They say how many characters one frame can hold and block nothing.
 
 ## The rubric (judged, 0 to 5 each)
 

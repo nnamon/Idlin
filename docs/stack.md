@@ -9,7 +9,7 @@ TypeScript throughout, in a pnpm workspace. Everything runs in containers.
 | Simulation      | `packages/sim`, no runtime dependencies | Pure and deterministic: integers, a seeded generator, no clock. Holds the world, the bot VM and the Tactics compiler.                                                         |
 | Server          | `packages/server`, Node + `ws`          | Not built yet; an empty package. It will run the world in real time, snapshot to disk and stream state over a WebSocket.                                                      |
 | Viewer          | `packages/client`, Vite, Canvas 2D      | Draws the whole frame on one canvas with the browser's own drawing calls; no rendering library. It can also drive the sim itself from a seed, which is how captures are made. |
-| Captures        | `tools/capture`, Playwright (Chromium)  | Loads the viewer in replay mode, steps a virtual clock, saves frames.                                                                                                         |
+| Captures        | `tools/capture`, Playwright (Chromium)  | Loads the viewer in capture mode, steps the clock, saves frames, and with `--review` the watch-review set and its metrics.                                                    |
 | Tests           | Vitest                                  | Unit tests beside the code; determinism and snapshot tests in `packages/sim`.                                                                                                 |
 | Lint and format | Biome                                   | One fast tool for both.                                                                                                                                                       |
 | CI              | GitHub Actions                          | One required job, `gate`: install, lint, typecheck, test.                                                                                                                     |
@@ -24,6 +24,7 @@ docker compose run --rm dev pnpm gate                          # lint + typechec
 docker compose up client                                       # the viewer, at http://localhost:4310
 docker compose run --rm dev pnpm --filter @idlin/client build  # build the viewer for captures
 docker compose run --rm capture captures/now                   # frames at dawn, noon, dusk and midnight
+docker compose run --rm capture captures/review --review       # the watch-review set (docs/watch-rubric.md)
 ```
 
 - `dev` is `node:24-slim` with pnpm baked in; the repo is bind-mounted, so

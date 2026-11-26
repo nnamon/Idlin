@@ -113,11 +113,39 @@ export function createWorld(map: TileMap, seed: number, programs: Programs = {})
 export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
   world.actors.find((a) => a.x === x && a.y === y);
 
-/** Advances the world by one tick. This is the only way the world changes. */
-export function step(world: World, inputs: readonly Input[] = []): void {
+/**
+ * Something that happened during a tick, for whoever is watching: the ticker,
+ * the spotlight, the metrics. Events are an output of `step`, not part of the
+ * world's state; nothing in the simulation reads them back.
+ */
+export type WorldEvent =
+  | {
+      readonly type: "decide";
+      readonly tick: number;
+      readonly actor: number;
+      /** Index of the rule that chose the action, into the actor's program's rules. */
+      readonly rule: number;
+      /** Name of the action, as in the system call table. */
+      readonly action: string;
+    }
+  | {
+      readonly type: "fault";
+      readonly tick: number;
+      readonly actor: number;
+      /** Name of the fault, as in FAULTS. */
+      readonly fault: string;
+    };
+
+/**
+ * Advances the world by one tick, and returns what happened in it. This is the
+ * only way the world changes.
+ */
+export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] {
+  const events: WorldEvent[] = [];
   for (const input of inputs) applyInput(world, input);
   world.tick++;
-  for (const actor of world.actors) updateActor(world, actor);
+  for (const actor of world.actors) updateActor(world, actor, events);
+  return events;
 }
 
 function applyInput(world: World, input: Input): void {
@@ -161,7 +189,7 @@ function applyInput(world: World, input: Input): void {
   });
 }
 
-function updateActor(world: World, actor: Actor): void {
+function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
   if (actor.moveTicksLeft > 0) {
     actor.moveTicksLeft--;
     if (actor.moveTicksLeft > 0) return;
@@ -170,7 +198,7 @@ function updateActor(world: World, actor: Actor): void {
   }
   const next = actor.path[0];
   if (!next) {
-    think(world, actor);
+    think(world, actor, events);
     return;
   }
   if (actorAt(world, next.x, next.y)) {

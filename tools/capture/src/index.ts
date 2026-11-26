@@ -2,15 +2,28 @@
 // headless Chromium in capture mode (the page draws only when told to), steps
 // the world to each requested moment and saves a frame.
 //
-//   node tools/capture/src/index.ts <out-dir> [name:hour[:ticks]]...
+//   node tools/capture/src/index.ts <out-dir> [name:hour[:ticks[:width]]]...
+//   node tools/capture/src/index.ts <out-dir> --review [--baseline <dir>]
 //
-// `hour` is the game hour the world is run forward to before the page draws;
-// `ticks` are stepped after that, one frame saved at the end.
+// The first form saves the named frames: `hour` is the game hour the world is
+// run forward to before the page draws, `ticks` are stepped after that.
+//
+// `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
+// burst.png, daystrip.png, crowd-12/50/150.png, metrics.json, and a
+// `showcase` folder for the README. With `--baseline`, also compare.png: that
+// folder's storyboard above this one. Everything comes from seed 1, so two
+// runs of the same code give the same files.
 
-import { mkdir, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { chromium } from "playwright";
+import { parseArgs } from "./args.ts";
+import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
+import { watchMetrics } from "./metrics.ts";
+import { decodePng, encodeGif, encodePng, grid, half, type Image, stack } from "./sheet.ts";
+import { busiest, play } from "./simrun.ts";
 
 const DIST = new URL("../../../packages/client/dist/", import.meta.url).pathname;
 const TYPES: Record<string, string> = {
@@ -22,8 +35,14 @@ const TYPES: Record<string, string> = {
   ".json": "application/json",
 };
 
-const [outDir = "captures/manual", ...shots] = process.argv.slice(2);
-const wanted = shots.length > 0 ? shots : ["dawn:6", "noon:12", "dusk:19", "midnight:0"];
+const args = parseArgs(process.argv.slice(2));
+if (typeof args === "string") {
+  console.error(args);
+  process.exit(2);
+}
+const { outDir, review, baseline, shots: wanted } = args;
+// Read the baseline before anything else, so a wrong folder fails at once and not after the run.
+const before = baseline ? decodePng(await readFile(join(baseline, "storyboard.png"))) : null;
 
 const server = createServer(async (request, response) => {
   // The URL parser resolves any ".." before this point, so the path stays inside the build folder.
@@ -56,11 +75,15 @@ page.on("console", (message) => {
 });
 page.on("pageerror", (error) => problems.push(String(error)));
 
-type Idlin = { advance(ticks: number): void; brightness(): number[] };
+type Idlin = {
+  advance(ticks: number): void;
+  brightness(): number[];
+  pixels(scale: number): { width: number; height: number; rgba: string };
+};
 
 /** Opens the viewer in capture mode at a game hour and waits until it has drawn its first frame. */
-async function open(hour: number | string): Promise<void> {
-  await page.goto(`${origin}/?capture&seed=1&hour=${hour}`);
+async function open(hour: number | string, residents = 6): Promise<void> {
+  await page.goto(`${origin}/?capture&seed=1&hour=${hour}&crowd=${residents}`);
   await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
   const failure = await page.evaluate(() => document.body.dataset.error ?? null);
   if (failure !== null) throw new Error(`the viewer failed to start: ${failure}`);
@@ -82,44 +105,155 @@ for (const shot of wanted) {
   console.log(`saved ${join(outDir, `${name}.png`)}`);
 }
 
-// A first, rough measure of flicker over the whole frame. At seven hours of
-// the day (deep night, daybreak, the lamps going out, noon, the lamps coming
-// on, nightfall, late evening) it steps 12 ticks and reports the largest share
-// of tile-sized blocks whose mean brightness changed by more than 8 (of 255)
-// from one tick to the next. A tick is a tenth of a second, about six frames
-// on a stream, so this over-counts what a viewer sees between two frames, and
-// it counts a character walking with its light as change. It catches a light
-// that jumps.
+const advance = (ticks: number): Promise<void> =>
+  page.evaluate((n) => (window as unknown as { idlin: Idlin }).idlin.advance(n), ticks);
+
+/** The frame as the page has just drawn it, scaled. */
+async function frame(scale: number): Promise<Image> {
+  const { width, height, rgba } = await page.evaluate(
+    (k) => (window as unknown as { idlin: Idlin }).idlin.pixels(k),
+    scale,
+  );
+  return { width, height, data: new Uint8Array(Buffer.from(rgba, "base64")) };
+}
+
+/** Frames `every` ticks apart, starting from where the page is now. */
+async function run(count: number, every: number, scale: number): Promise<Image[]> {
+  const frames: Image[] = [];
+  for (let i = 0; i < count; i++) {
+    if (i > 0) await advance(every);
+    frames.push(await frame(scale));
+  }
+  return frames;
+}
+
+const hashes: Record<string, string> = {};
+async function save(name: string, bytes: Uint8Array): Promise<void> {
+  await mkdir(join(outDir, name, ".."), { recursive: true });
+  await writeFile(join(outDir, name), bytes);
+  hashes[name] = createHash("sha256").update(bytes).digest("hex");
+  console.log(`saved ${join(outDir, name)}`);
+}
+
+// How much of the frame changes brightness sharply between two rendered
+// frames, at the hours where most changes at once: deep night, daybreak, the
+// lamps going out, noon, the lamps coming on, nightfall, late evening. A
+// stream shows about six frames to a tick, so the frames are a sixth of a tick
+// apart.
+const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 22];
 await page.setViewportSize({ width: 1920, height: 1080 });
-let worst = { share: 0, hour: 0 };
-// The hours where most changes at once: deep night, daybreak, lamps going out, noon, lamps coming on, nightfall, late evening.
-for (const hour of [0, 5.9, 6.6, 12, 18.5, 20.05, 22]) {
+let worst = { index: 0, hour: 0 };
+for (const hour of FLICKER_HOURS) {
   await open(hour);
-  const share = await page.evaluate(() => {
+  const grids = await page.evaluate(() => {
     const api = (window as unknown as { idlin: Idlin }).idlin;
-    let most = 0;
-    let before = api.brightness();
+    const seen = [api.brightness()];
     for (let i = 0; i < 12; i++) {
-      api.advance(1);
-      const after = api.brightness();
-      const changed = after.filter(
-        (value, k) => Math.abs(value - (before[k] as number)) > 8,
-      ).length;
-      most = Math.max(most, changed / after.length);
-      before = after;
+      api.advance(1 / 6);
+      seen.push(api.brightness());
     }
-    return most;
+    return seen;
   });
-  if (share > worst.share) worst = { share, hour };
+  const index = flickerIndex(grids);
+  if (index > worst.index) worst = { index, hour };
 }
 console.log(
-  `tick-to-tick change: ${(worst.share * 100).toFixed(2)}% of tiles at the worst hour (${worst.hour}:00)`,
+  `flicker index: ${(worst.index * 100).toFixed(2)}% of the frame at the worst hour (${worst.hour}:00)`,
 );
-if (worst.share > 0.05) problems.push(`tick-to-tick change ${worst.share} is over 5% of tiles`);
+const flickerFail =
+  worst.index > FLICKER_LIMIT
+    ? [`flicker index ${worst.index} is over ${FLICKER_LIMIT} of the frame`]
+    : [];
+
+if (review) {
+  const DAY = 24 * 600;
+  // The world the page shows, run here as well for the numbers the picture cannot give.
+  const sim: Record<string, ReturnType<typeof watchMetrics>> = {};
+  let busiestTick = 0;
+  for (const residents of [6, 12, 50, 150]) {
+    const record = play(1, residents, DAY);
+    sim[residents] = watchMetrics(record);
+    if (residents === 6) busiestTick = busiest(record, 20);
+  }
+
+  // Storyboard: two minutes from 19:20, through the lamps coming on and nightfall.
+  await open(19.33);
+  const storyboard = grid(await run(12, 100, 0.5), 4);
+  await save("storyboard.png", encodePng(storyboard));
+
+  // Burst: twelve rendered frames in a row from the busiest two seconds of the day.
+  await open(6);
+  await advance(busiestTick);
+  await save("burst.png", encodePng(grid(await run(12, 1 / 6, 0.5), 4)));
+
+  // Day strip: six moments across the day.
+  const strip: Image[] = [];
+  for (const hour of [6.3, 9, 12, 16, 19.95, 0]) {
+    await open(hour);
+    await advance(60);
+    strip.push(await frame(1 / 3));
+  }
+  const daystrip = grid(strip, 3);
+  await save("daystrip.png", encodePng(daystrip));
+
+  // Crowd sheets: the storyboard again with more residents.
+  for (const residents of [12, 50, 150]) {
+    await open(19.33, residents);
+    await save(`crowd-${residents}.png`, encodePng(grid(await run(12, 100, 0.5), 4)));
+  }
+
+  // The README's set: four full frames and a short clip of night falling, at twice the speed.
+  for (const [name, hour, ticks] of [
+    ["dawn", 6.3, 0],
+    ["noon", 12, 300],
+    ["dusk", 19.3, 100],
+    ["midnight", 0, 200],
+  ] as const) {
+    await open(hour);
+    await advance(ticks);
+    await save(`showcase/${name}.png`, encodePng(await frame(1)));
+  }
+  await open(19.75);
+  await save("showcase/clip.gif", encodeGif(await run(60, 4, 0.25), 200));
+  // Half size, to keep the README light.
+  await save("showcase/storyboard.png", encodePng(half(storyboard)));
+  await save("showcase/daystrip.png", encodePng(daystrip));
+
+  if (before) await save("compare.png", encodePng(stack([before, storyboard])));
+
+  // Hard fails are judged on the world as it ships, with six residents. What
+  // goes wrong in a crowd is reported beside them: it answers how many
+  // residents one frame can hold, and blocks nothing.
+  const hardFails = [
+    ...flickerFail,
+    ...problems.map((problem) => `page error: ${problem}`),
+    ...(sim[6]?.hardFails ?? []),
+  ];
+  const crowdFindings = [12, 50, 150].flatMap((residents) =>
+    (sim[residents]?.hardFails ?? []).map((fail) => `${residents} residents: ${fail}`),
+  );
+  const metrics = {
+    seed: 1,
+    flicker: { index: worst.index, worstHour: worst.hour, limit: FLICKER_LIMIT },
+    busiestTick,
+    // One game day per population.
+    sim,
+    pacing: "n/a: there are no trips, deaths or drops yet (#195, #196, #197)",
+    acknowledgment: "n/a: there is no ticker or spotlight yet (#198)",
+    spotlightWait: "n/a: there is no spotlight yet (#198)",
+    consoleErrors: problems,
+    hardFails,
+    crowdFindings,
+    images: hashes,
+  };
+  await writeFile(join(outDir, "metrics.json"), `${JSON.stringify(metrics, null, 2)}\n`);
+  console.log(`saved ${join(outDir, "metrics.json")}`);
+  for (const fail of hardFails) console.log(`hard fail: ${fail}`);
+  for (const finding of crowdFindings) console.log(`in a crowd: ${finding}`);
+}
 
 await browser.close();
 server.close();
-if (problems.length > 0) {
-  console.error(`page errors:\n${problems.join("\n")}`);
-  process.exit(1);
-}
+if (problems.length > 0) console.error(`page errors:\n${problems.join("\n")}`);
+for (const fail of flickerFail) console.error(fail);
+if (problems.length > 0 || flickerFail.length > 0) process.exit(1);

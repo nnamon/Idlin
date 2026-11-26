@@ -10,18 +10,18 @@ three built-in programs, two kinds of monster on programs of their own, and a
 day/night cycle. The aim is something you could leave running on a second
 screen and not get bored of in ten minutes.
 
-| Part                                                                     | State       |
-| ------------------------------------------------------------------------ | ----------- |
-| Simulation core: map, movement, clock, replay, snapshots                 | done        |
-| Bot VM                                                                   | done        |
-| Tactics, the scripting language, and its compiler                        | done        |
-| Viewer: the map, the characters, day and night                           | done        |
-| Capture tool and the metrics for judging how it watches                  | part done   |
-| Combat with telegraphed attacks; monsters as scripted content            | not started |
-| Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | not started |
-| Items with rarity and rolled affixes; bots that choose what to wear      | not started |
-| Spotlight panel and a real news line                                     | not started |
-| Server: the world running in real time, snapshots, WebSocket             | not started |
+| Part                                                                     | State                                                      |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Simulation core: map, movement, clock, replay, snapshots                 | done                                                       |
+| Bot VM                                                                   | done                                                       |
+| Tactics, the scripting language, and its compiler                        | done                                                       |
+| Viewer: the map, the characters, day and night                           | done                                                       |
+| Capture tool and the metrics for judging how it watches                  | done, except the metrics that need the spotlight and trips |
+| Combat with telegraphed attacks; monsters as scripted content            | not started                                                |
+| Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | not started                                                |
+| Items with rarity and rolled affixes; bots that choose what to wear      | not started                                                |
+| Spotlight panel and a real news line                                     | not started                                                |
+| Server: the world running in real time, snapshots, WebSocket             | not started                                                |
 
 M1 is finished when all of these hold:
 
