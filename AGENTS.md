@@ -159,9 +159,9 @@ scheduled task in T3 Code.
 ```sh
 docker compose run --rm dev pnpm install   # install dependencies
 docker compose run --rm dev pnpm gate      # lint + typecheck + test, as CI runs it
-docker compose run --rm capture            # captures/<date>-<sha>/
-docker compose up server client            # http://localhost:4310
 ```
+
+[docs/stack.md](docs/stack.md) lists every service.
 
 ## 10. Changing this agreement
 

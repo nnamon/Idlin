@@ -21,15 +21,13 @@ Nothing is installed or run on the host except `git`, `gh` and `docker`.
 ```sh
 docker compose run --rm dev pnpm install     # install dependencies
 docker compose run --rm dev pnpm gate        # lint + typecheck + test (same as CI)
-docker compose run --rm capture              # write a storyboard to captures/
-docker compose up server client              # watch it at http://localhost:4310
 ```
 
-- `dev` is `node:24-slim` with pnpm; the repo is bind-mounted, so
-  `node_modules` (Linux builds) lives in the checkout and is ignored by git.
-- `capture` (the Playwright image), `server` (port 4311) and `client` (port
-  4310) are defined together with the packages they run. Ports bind to
-  127.0.0.1 only.
+- `dev` is `node:24-slim` with pnpm baked in; the repo is bind-mounted, so
+  `node_modules` (Linux builds, and the pnpm store beside them so packages can
+  be hard-linked) lives in the checkout and is ignored by git.
+- Services for the server, the viewer and captures are added to `compose.yaml`
+  together with the packages they run. Ports bind to 127.0.0.1 only.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.
 

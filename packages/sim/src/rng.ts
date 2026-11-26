@@ -50,7 +50,12 @@ export function nextInt(rng: Rng, bound: number): number {
   return x % bound;
 }
 
-/** True with probability `numerator / denominator`. */
+/** True with probability `numerator / denominator`; integers with 0 <= numerator <= denominator. */
 export function chance(rng: Rng, numerator: number, denominator: number): boolean {
+  if (!Number.isInteger(numerator) || numerator < 0 || numerator > denominator) {
+    throw new RangeError(
+      `chance needs an integer numerator in [0, ${denominator}], got ${numerator}`,
+    );
+  }
   return nextInt(rng, denominator) < numerator;
 }

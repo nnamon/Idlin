@@ -62,6 +62,32 @@ describe("rng", () => {
     expect(nextInt(a, 0x1_0000_0000)).toBe(nextU32(b));
   });
 
+  it("nextInt redraws when the first draw falls in the biased tail", () => {
+    // This state makes the next raw output 0xfffffffc, the first value at or
+    // above the limit for a bound of 6 (2^32 - 2^32 % 6). Without the redraw
+    // the result would be 0xfffffffc % 6 = 0.
+    const rng = { a: -4, b: 0, c: 0, d: 0 };
+    const twin = { ...rng };
+    expect(nextU32(twin)).toBe(0xfffffffc);
+    const second = nextU32(twin);
+    expect(second).toBeLessThan(0xfffffffc);
+    expect(nextInt(rng, 6)).toBe(second % 6);
+    expect(rng).toEqual(twin);
+  });
+
+  it("the counter wraps inside the 32-bit signed range", () => {
+    const rng = { a: 1, b: 2, c: 3, d: 0x7fffffff };
+    nextU32(rng);
+    expect(rng.d).toBe(-0x80000000);
+  });
+
+  it("chance rejects numerators that are not a count out of the denominator", () => {
+    const rng = createRng(1);
+    for (const bad of [0.5, -1, 11, Number.NaN]) {
+      expect(() => chance(rng, bad, 10)).toThrow(RangeError);
+    }
+  });
+
   it("nextInt rejects bounds it cannot honour", () => {
     const rng = createRng(1);
     for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 0x1_0000_0001]) {
