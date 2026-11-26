@@ -32,7 +32,9 @@ the lock, and shows the last capture pushed to `media`. A conductor session
 running this step between cycles ignores its own lock, neither takes nor
 releases one, and goes straight to the commands below.
 
-Otherwise take the lock. A builder may be capturing in its own worktree, so
+An older lock is taken only after the activity check in section 0 of
+[cycle.md](cycle.md) finds nothing; if it finds activity, skip the watch review
+as above. Otherwise take the lock. A builder may be capturing in its own worktree, so
 check for a running capture first, by the rule in section 1 of `AGENTS.md`.
 Then:
 
@@ -75,7 +77,9 @@ issue already covers it.
   not a failure; look at the newest run that finished.
 - No merge in 24 hours while `ready` issues exist: find out why (a stale lock,
   a pull request waiting on a reviewer, red CI, a blocked issue) and say what
-  the next cycle should do about it. Clear a lock older than 150 minutes.
+  the next cycle should do about it. Clear a lock older than 150 minutes
+  only if the activity check in section 0 of [cycle.md](cycle.md) finds
+  nothing.
 - An `in-progress` issue with no activity for a day: comment on it with what
   is known.
 - Disk: `docker system df`. Report it if this project's images and volumes

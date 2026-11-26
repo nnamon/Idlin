@@ -51,12 +51,31 @@ cat "$(git rev-parse --git-dir)/idlin.lock" 2>/dev/null
 
 - A lock younger than 150 minutes means another run is working, unless this
   session wrote it. Report "busy" in one line and end.
+- A lock that is older may still belong to a session that forgot to refresh
+  it, or one whose children are still working while it waits. Before taking
+  it, a scheduled run (and the digest, before it takes or clears a lock)
+  checks for activity in the last 150 minutes (9000 seconds): a comment signed
+  with a role tag that is not from a scheduled run, or a push to any branch.
+  If either command prints a number above 0, report "busy" and end.
+
+  ```sh
+  gh api 'repos/nnamon/Idlin/issues/comments?sort=updated&direction=desc&per_page=100' \
+    --jq '[.[] | select(.body | test("^\\[(conductor|builder|reviewer|watch judge)\\]"))
+           | select(.body | startswith("[conductor] (scheduled run)") | not)
+           | select(now - (.created_at | fromdateiso8601) < 9000)] | length'
+  gh api 'repos/nnamon/Idlin/activity?per_page=1' \
+    --jq '[.[] | select(now - (.timestamp | fromdateiso8601) < 9000)] | length'
+  ```
+
 - Otherwise write `<UTC time> cycle` to that file. A scheduled cycle removes
-  it as its last step, including when it ends early.
+  it as its last step, including when it ends early. Everything a scheduled
+  run posts starts with `[conductor] (scheduled run)`, so the check above
+  doesn't count its own posts.
 - A session takes the lock once and keeps it for as long as it runs, across
-  cycles and issues. It rewrites the time at each step and before each wait
-  for a reviewer, so the lock never looks dead, and removes the file only when
-  the session ends. Between cycles it checks whether the digest said the watch
+  cycles and issues, and removes the file only when the session ends. It
+  rewrites the time after each merge, each time it starts a child task, and
+  before it ends a turn to wait on children, so the lock never looks dead
+  while it works. Between cycles it checks whether the digest said the watch
   review was skipped because the lock was held, and if so runs step 2 of
   `process/daily.md` itself.
 
