@@ -14,9 +14,17 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 - Design, stack, implementation, testing and merging are the swarm's to decide.
   Do not ask the operator for approval. Decide, record the decision, move on.
 - No deployment, no hosting, no publishing anywhere beyond this GitHub repo.
-- Everything runs locally and small: one builder and at most two child tasks at
-  once, of any role. Capture runs and `pnpm gate` runs are heavy, so only one
-  of them runs at a time.
+- Everything runs locally: at most three builders at once, and at most three
+  reviewers or judges at once. The design child of a `look` issue and the
+  daily digest's watch judge count among those three.
+- Capture runs are heavy, so only one runs at a time across the whole team.
+  This holds for every capture, whether a builder, the conductor or the digest
+  runs it. Before starting one, run
+  `docker ps --filter label=com.docker.compose.service=capture`; if it lists
+  anything, wait until it is empty. If two captures start at once anyway, the
+  one that notices stops its run and starts again once the other has
+  finished. `pnpm gate` runs may overlap: up to six at once, one per builder
+  and one per reviewer.
 - Every project command runs through Docker Compose. Only `git`, `gh` and
   `docker` run on the host. Never touch containers, images or volumes that
   belong to other projects, and never run a blanket prune.
@@ -37,12 +45,12 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 
 ## 2. Roles
 
-| Role            | Who                                                          | Owns                                                                                                                                                                                                                                              |
-| --------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Conductor**   | Opus 5.5 (effort `medium`), in one long-running session      | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                                                                                               |
-| **Artist**      | Opus 5.5 (effort `medium`), a child task in its own worktree | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                                                                                          |
-| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task  | An adversarial read of each pull request's diff, by a model that did not build it. Codex has tighter usage limits than Claude: when it is out of quota or unreachable, the review goes to Sonnet 5.5. The pull request says which model reviewed. |
-| **Watch judge** | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only. Also the one to ask about art direction and look and feel.                                                                      |
+| Role            | Who                                                          | Owns                                                                                                                                                                                                                                                                     |
+| --------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Conductor**   | Opus 5.5 (effort `medium`), in one long-running session      | The queue and the merge. Splits and orders issues so that builders don't collide, writes each builder's brief, starts the reviewers and judges, triages their findings, merges, and keeps `main` green. Plans the next milestone when the queue empties. Does not build. |
+| **Builder**     | Opus 5.5 (effort `medium`), a child task in its own worktree | One `ready` issue, from branch to an open pull request with the gate green, the fixes the review sends back, the captures for a watch judgement, and the squash to one commit before the merge. Up to three run at once, each on an issue independent of the others.     |
+| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task  | An adversarial read of each pull request's diff, by a model that did not build it. Codex has tighter usage limits than Claude: when it is out of quota or unreachable, the review goes to Sonnet 5.5. The pull request says which model reviewed.                        |
+| **Watch judge** | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only. Also the one to ask about art direction and look and feel.                                                                                             |
 
 Builders run on Opus 5.5. Mythos 5.2 judges how the game looks and plays on
 screen; it does not build or review code. When Mythos cannot be reached, Codex
@@ -54,7 +62,9 @@ unattended cycle cannot answer.
 
 A reviewer never checks code built by its own model: everything is built on
 Opus, so code is reviewed by Codex or Sonnet. The conductor never acts as
-reviewer or watch judge, because it knows what the change was meant to do.
+reviewer or watch judge, because it knows what the change was meant to do. It
+does not build either: its time goes on keeping three builders busy on work
+that won't collide, and on getting their pull requests reviewed and merged.
 
 Child tasks are started with T3 Code's `delegate_task`, so each one appears as
 a thread the operator can open. No fan-out and no `Workflow` runs.
@@ -78,7 +88,7 @@ work (tests, and captures if it is visible), and what it leaves out.
 2. An open `operator` issue, or an operator comment not yet answered.
 3. An `in-progress` issue: resume it. One that waits only on a review which
    could not be had last cycle gets one new attempt; if that fails too, leave
-   it open and take the next item on this list as this cycle's issue.
+   it open and take the next item on this list as that slot's issue.
 4. A `bug`, or a `watch` issue that records a hard fail.
 5. The lowest-numbered `ready` issue in the current milestone whose
    dependencies ("Depends on #N" in the body) are closed.
@@ -87,37 +97,55 @@ work (tests, and captures if it is visible), and what it leaves out.
    the next one as at most twelve `ready` issues, and record the plan in
    `docs/decisions/`. If it fails, file what is missing.
 
+Each free builder slot takes the first item on this list that is independent
+of the running builders' issues: it doesn't depend on their branches and isn't
+likely to change the same files. Item 1 goes to a builder like any other
+fix. When the only work left would collide with a running builder, the slot
+stays empty until that builder's pull request merges.
+
 The conductor may file, split, reorder or close issues at any time, with a
-one-line reason in a comment.
+one-line reason in a comment, and splits an issue when that lets two builders
+work on it without colliding.
 
 ## 4. One work cycle
 
-The conductor normally works in one long session, taking issues one after
-another. While a pull request is with its reviewer, it may start the next
-issue that doesn't depend on it, on its own branch from `main`. A schedule
-also fires every three hours; it runs a cycle only if the lock is free, so
-work carries on if the session has stopped. A session holds the lock for as
-long as it runs.
+The conductor works in one long session and keeps up to three builders
+running at once, each on one independent `ready` issue in its own worktree,
+each opening its own pull request. When a builder finishes, the conductor gives
+its slot to the next independent issue straight away, while that builder's
+pull request goes through review. A schedule also fires every three hours; it
+runs only if the lock is free, so work carries on if the session has stopped.
+A session holds the lock for as long as it runs.
 
-One issue per cycle. The full procedure is
-[process/cycle.md](process/cycle.md); in short:
+A cycle is one issue taken by one builder, ideally to merged. The full
+procedure is [process/cycle.md](process/cycle.md). The steps below summarise
+it, and their numbers are not the procedure's:
 
-1. **Claim.** Label the issue `in-progress` and comment that the cycle started.
-2. **Branch** from fresh `main`: `i<issue>-<slug>`.
-3. **Build** to the issue. Keep the change as small as the issue allows.
-4. **Gate locally:** `docker compose run --rm dev pnpm gate`. For a visible
-   change, also capture and look at the frames yourself.
-5. **Pull request** with "Closes #N", what changed, and the evidence.
-6. **CI** must be green.
-7. **Review.** The reviewer tries to refute the diff. Check every finding
-   against the code: fix the real ones, answer the others in a PR comment with
-   the reason. Re-review after substantial fixes.
-8. **Watch judge**, for `look` changes: baseline and new captures, verdict in
-   a PR comment.
-9. **Merge** as one commit (step 7 of the procedure) once section 5 holds. Confirm the commit is on
-   `origin/main` and that CI on `main` is green.
-10. **Close out.** Comment on the issue with what shipped and the evidence,
-    update any doc the change made stale, delete the branch.
+1. **Claim** (conductor). Label the issue `in-progress` and comment that the
+   cycle started.
+2. **Brief** (conductor). Start a builder with the issue, the files it is
+   likely to touch, and what the other builders are working on.
+3. **Branch** (builder) from fresh `main`: `i<issue>-<slug>`.
+4. **Build** (builder) to the issue. Keep the change as small as the issue
+   allows.
+5. **Gate locally** (builder): `docker compose run --rm dev pnpm gate`. For a
+   visible change, also capture and look at the frames.
+6. **Pull request** (builder) with "Closes #N", what changed, and the
+   evidence. CI must be green.
+7. **Review** (conductor). The reviewer tries to refute the diff. The
+   conductor checks every finding against the code, sends the real ones
+   to a new builder on the branch, and answers the others in a PR
+   comment with the reason. Re-review after substantial fixes.
+8. **Watch judge**, for `look` changes: the builder captures `main` and the
+   branch, the conductor starts the judge on the two folders and posts the
+   verdict in a PR comment.
+9. **Merge** as one commit (step 8 of the procedure) once section 5 holds.
+   A builder squashes the branch to one commit when the conductor says so;
+   the conductor pushes that commit to `main` as a fast-forward, then
+   confirms it is on `origin/main` and that CI on `main` is green.
+10. **Close out** (conductor). Comment on the issue with what shipped and the
+    evidence, update any doc the change made stale, and delete the branch
+    once the builder's worktree is gone.
 
 An issue that is not mergeable after three cycles of building is split into
 smaller issues or labelled `blocked` with the reason, and the cycle moves on.
@@ -134,9 +162,9 @@ A pull request is merged only when all of these hold:
 - docs describe the repo as it now is.
 
 If neither reviewer can be reached, or for a `look` change neither judge, the
-pull request stays open with a comment saying so. The cycle picks other work
-and the next cycle retries. Nothing merges unreviewed or, for a `look` change,
-unjudged.
+pull request stays open with a comment saying so. The conductor gives the
+builder slots other work and retries later. Nothing merges unreviewed or, for
+a `look` change, unjudged.
 
 Never force-push `main` or rewrite its history. A bad merge is undone with a
 revert pull request.

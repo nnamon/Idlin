@@ -2,7 +2,10 @@
 
 Date: 2026-11-26. Decided by the conductor after the operator said the session
 should keep going until told to pause. Replaces the three-hour cadence in
-row 13 of [0001](0001-founding-decisions.md).
+row 13 of [0001](0001-founding-decisions.md). [0008](0008-parallel-team.md)
+changes row 1 (the session now keeps up to three builders going instead of
+taking one issue after another) and replaces rows 2 and 3 (starting the next
+issue during a review, and the limit of two child tasks and one heavy job).
 
 | Decision                                                                                                                                                       | Rejected alternative                                                   | Why                                                                                                                                                                                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -32,7 +32,9 @@ the lock, and shows the last capture pushed to `media`. A conductor session
 running this step between cycles ignores its own lock, neither takes nor
 releases one, and goes straight to the commands below.
 
-Otherwise take the lock, then:
+Otherwise take the lock. A builder may be capturing in its own worktree, so
+check for a running capture first, by the rule in section 1 of `AGENTS.md`.
+Then:
 
 ```sh
 git checkout main && git pull --ff-only origin main
@@ -79,7 +81,7 @@ Post to the thread, under these headings and in this order, as short as the
 facts allow:
 
 1. **Merged.** Pull requests merged since the last digest, one line each.
-2. **Now.** The issue in progress, and the next two in the queue.
+2. **Now.** The issue each builder is on, and the next two in the queue.
 3. **Watch.** The storyboard, embedded, the scores, and the top finding.
 4. **Decisions you can veto**: anything added to `docs/decisions/` since the
    last digest, one line each with the alternative.
