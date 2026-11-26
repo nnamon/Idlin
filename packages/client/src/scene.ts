@@ -374,7 +374,7 @@ export class Scene {
     if (night > 0) {
       for (const lamp of lamps) {
         const sway = lamp.flicker
-          ? 1 + Math.sin(time * 0.23) * 0.025 + Math.sin(time * 0.61 + 1) * 0.012
+          ? 1 + Math.sin(time * 0.23) * 0.012 + Math.sin(time * 0.61 + 1) * 0.006
           : 1;
         const share = (lamp.strength * night) / LIGHT_STEPS.length;
         const color = toHex([LAMP_WARM[0] * share, LAMP_WARM[1] * share, LAMP_WARM[2] * share]);
