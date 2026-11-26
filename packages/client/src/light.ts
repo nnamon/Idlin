@@ -1,90 +1,56 @@
-// The colour of the day. Ambient light multiplies the whole world; lamps add to it.
+// The hour of the day as the picture shows it: how much daylight there is, how
+// strongly the lamps show, and the colour the sky lends the paper at dawn and
+// dusk. All of it changes smoothly; nothing jumps.
 
 export type Rgb = readonly [number, number, number];
 
-/** Ambient light by game hour. Night stays readable: dim and blue, never black. */
-const KEYS: readonly (readonly [number, Rgb])[] = [
-  [0, [0.3, 0.36, 0.62]],
-  [4.5, [0.32, 0.38, 0.64]],
-  [6, [0.96, 0.84, 0.88]],
-  [7.5, [1, 0.97, 0.9]],
-  [9, [1, 1, 1]],
-  [16.5, [1, 1, 1]],
-  [18.5, [1, 0.87, 0.7]],
-  [20, [0.66, 0.56, 0.78]],
-  [21.5, [0.34, 0.39, 0.66]],
-  [24, [0.3, 0.36, 0.62]],
-];
+const smooth = (t: number): number => {
+  const c = Math.min(1, Math.max(0, t));
+  return c * c * (3 - 2 * c);
+};
 
-export function ambientAt(hour: number): Rgb {
-  for (let i = 1; i < KEYS.length; i++) {
-    const [h1, c1] = KEYS[i] as (typeof KEYS)[number];
-    const [h0, c0] = KEYS[i - 1] as (typeof KEYS)[number];
-    if (hour <= h1) {
-      const t = (hour - h0) / (h1 - h0);
-      return [0, 1, 2].map(
-        (k) => (c0[k] as number) + ((c1[k] as number) - (c0[k] as number)) * t,
-      ) as unknown as Rgb;
-    }
-  }
-  return (KEYS[0] as (typeof KEYS)[number])[1];
+const DAWN_START = 4.75;
+const DAWN_END = 7.25;
+const DUSK_START = 17.75;
+const DUSK_END = 20.75;
+
+/** 0 in the dead of night, 1 in full day. */
+export function daylight(hour: number): number {
+  if (hour < DAWN_START || hour >= DUSK_END) return 0;
+  if (hour < DAWN_END) return smooth((hour - DAWN_START) / (DAWN_END - DAWN_START));
+  if (hour < DUSK_START) return 1;
+  return 1 - smooth((hour - DUSK_START) / (DUSK_END - DUSK_START));
 }
 
-/** How strongly lamps show: nothing at noon, full at night. */
+/** How strongly lamps show: nothing by day, full at night. They come on a little before dark. */
 export function lampStrength(hour: number): number {
-  const [r, g, b] = ambientAt(hour);
-  const brightness = (r + g + b) / 3;
-  return Math.min(1, Math.max(0, (0.9 - brightness) / 0.45));
+  return smooth((1 - daylight(hour)) * 1.6);
 }
 
-/**
- * A colour laid thinly over the whole world, so the hour can be read from the
- * map alone: pink at dawn, amber at dusk, violet as night falls. Returns the
- * colour and how strongly to lay it (0 to 1).
- */
-const WASHES: readonly (readonly [number, Rgb, number])[] = [
-  [0, [0.2, 0.25, 0.6], 0.1],
-  [4.8, [0.2, 0.25, 0.6], 0.1],
-  [6.2, [1, 0.56, 0.68], 0.2],
-  [8, [1, 0.8, 0.7], 0],
-  [16.8, [1, 0.7, 0.3], 0],
-  [18.8, [1, 0.55, 0.22], 0.21],
-  [20.2, [0.6, 0.35, 0.75], 0.2],
-  [21.6, [0.2, 0.25, 0.6], 0.1],
-  [24, [0.2, 0.25, 0.6], 0.1],
-];
-
-export function washAt(hour: number): { color: Rgb; alpha: number } {
-  for (let i = 1; i < WASHES.length; i++) {
-    const [h1, c1, a1] = WASHES[i] as (typeof WASHES)[number];
-    const [h0, c0, a0] = WASHES[i - 1] as (typeof WASHES)[number];
-    if (hour <= h1) {
-      const t = (hour - h0) / (h1 - h0);
-      return {
-        color: [
-          c0[0] + (c1[0] - c0[0]) * t,
-          c0[1] + (c1[1] - c0[1]) * t,
-          c0[2] + (c1[2] - c0[2]) * t,
-        ],
-        alpha: a0 + (a1 - a0) * t,
-      };
-    }
-  }
-  return {
-    color: (WASHES[0] as (typeof WASHES)[number])[1],
-    alpha: (WASHES[0] as (typeof WASHES)[number])[2],
-  };
+/** The colour the sky lays over everything, and how strongly (0 to 1): rose at dawn, amber at dusk. */
+export function skyCast(hour: number): { color: Rgb; alpha: number } {
+  const bump = (centre: number, width: number): number => smooth(1 - Math.abs(hour - centre) / width);
+  const dawn = bump(6, 1.4);
+  const dusk = bump(19, 1.6);
+  if (dawn >= dusk) return { color: [1, 0.62, 0.7], alpha: dawn * 0.22 };
+  return { color: [1, 0.58, 0.2], alpha: dusk * 0.26 };
 }
 
-export const toHex = ([r, g, b]: Rgb): number =>
-  (Math.round(Math.min(1, r) * 255) << 16) |
-  (Math.round(Math.min(1, g) * 255) << 8) |
-  Math.round(Math.min(1, b) * 255);
+export function mix(a: Rgb, b: Rgb, t: number): Rgb {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+export const css = ([r, g, b]: Rgb, alpha = 1): string =>
+  `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`;
+
+export const rgb = (hex: number): Rgb => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
 
 export function phaseName(hour: number): string {
-  if (hour < 5) return "Night";
-  if (hour < 7.5) return "Dawn";
-  if (hour < 17) return "Day";
-  if (hour < 20.5) return "Dusk";
-  return "Night";
+  if (hour < 5) return "night";
+  if (hour < 7.5) return "dawn";
+  if (hour < 11) return "morning";
+  if (hour < 14) return "about noon";
+  if (hour < 17.5) return "afternoon";
+  if (hour < 20.5) return "dusk";
+  return "night";
 }

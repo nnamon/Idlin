@@ -18,6 +18,7 @@ export const TERRAINS = [
   "lantern",
   "campfire",
   "bank",
+  "tent",
 ] as const;
 
 export type Terrain = (typeof TERRAINS)[number];
