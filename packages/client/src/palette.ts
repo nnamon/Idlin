@@ -2,7 +2,7 @@
 // watercolour washes. By night: the same drawing in pale ink on dark blue
 // paper.
 
-import { type Rgb, rgb } from "./light.ts";
+import { pageDay, type Rgb, rgb, skyCast } from "./light.ts";
 
 export interface Palette {
   readonly paper: Rgb;
@@ -83,3 +83,39 @@ export const NIGHT: Palette = {
 
   wash: NIGHT_WASH,
 };
+
+/** How strongly the sky's colour lies on the page, as a share of how strongly it lies on the map. */
+export const PAGE_CAST = 0.5;
+
+const mix = (a: Rgb, b: Rgb, t: number): Rgb => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
+/** Relative luminance, 0 to 1, as the WCAG contrast ratio counts it. */
+export function luminance(color: Rgb): number {
+  const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2]);
+}
+
+/** The WCAG contrast ratio of two colours, from 1 (the same) to 21 (black on white). */
+export function contrast(a: Rgb, b: Rgb): number {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (light + 0.05) / (dark + 0.05);
+}
+
+/**
+ * The inks of the page beside the map at this hour. Its paper is the day
+ * paper, with a little of the sky's colour on it, or the night paper, or
+ * partway between the two while the page turns. The ink is whichever of the
+ * day and night inks reads better on that paper, so it changes over in one
+ * step when the paper is halfway, and the lettering never fades into it.
+ */
+export function pagePalette(hour: number): Palette {
+  const cast = skyCast(hour);
+  const dayPaper = mix(DAY.paper, cast.color, cast.alpha * PAGE_CAST);
+  const paper = mix(NIGHT.paper, dayPaper, pageDay(hour));
+  const inks = contrast(paper, DAY.ink) >= contrast(paper, NIGHT.ink) ? DAY : NIGHT;
+  return { ...inks, paper };
+}

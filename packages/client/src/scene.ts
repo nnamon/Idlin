@@ -43,7 +43,7 @@ import {
   shove,
   stoopAt,
 } from "./fight.ts";
-import { drawFigure } from "./figure.ts";
+import { drawFigure, type FigureStyle } from "./figure.ts";
 import {
   FRAME_HEIGHT,
   FRAME_WIDTH,
@@ -87,7 +87,7 @@ import {
   routePoint,
 } from "./marks.ts";
 import { type Pt, regionLoops, smoothLoop } from "./outline.ts";
-import { DAY, NIGHT, type Palette } from "./palette.ts";
+import { DAY, NIGHT, PAGE_CAST, type Palette, pagePalette } from "./palette.ts";
 import { type Ctx, newCanvas, trace } from "./pen.ts";
 import { actorPose, easeSit, type Pose } from "./pose.ts";
 import { letGo, NO_SLIPS, nextSlips, type Slips, slipAlpha } from "./slips.ts";
@@ -113,8 +113,10 @@ const FIRE_REACH = 3;
 const CARRIED_REACH = 1.75;
 /** How much of the day drawing a carried light shows over open water, as a share of what it shows on land. */
 const CARRIED_ON_WATER = 0.3;
-/** A face on the page at night: pale, but darker than the night ink of its outline. */
-const NIGHT_FACE = rgb(0xa3aec6);
+/** A face on the page at night: pale and warm, darker than the night ink of its outline. */
+const NIGHT_FACE = rgb(0xd6c3a2);
+/** Beside the map, the paper outside its rule, in pixels from the map's edge, goes with the page. */
+const RULE_MARGIN = 5;
 /** The least room below the map that the line of news needs. */
 const NEWS_STRIP = 60;
 const STANDING: Pose = {
@@ -450,36 +452,24 @@ export class Scene {
       lit.globalCompositeOperation = "source-in";
       lit.drawImage(this.day.canvas, 0, 0);
       out.drawImage(this.lit.canvas, 0, 0, mapRight, this.height, 0, 0, mapRight, this.height);
-      // The page and the news line change all at once, so that they are never half covered.
+      // The page, the news line and the paper round the map's rule change all
+      // at once, so that they are never half covered. While the page turns it
+      // is drawn afresh on paper partway between day and night, in whichever
+      // ink reads on it.
       const page = pageDay(hour);
-      if (page > 0) {
-        out.globalAlpha = page;
-        if (mapRight < this.frameWidth) {
-          out.drawImage(
-            this.day.canvas,
-            mapRight,
-            0,
-            this.frameWidth - mapRight,
-            this.frameHeight,
-            mapRight,
-            0,
-            this.frameWidth - mapRight,
-            this.frameHeight,
-          );
-        }
-        out.drawImage(
-          this.day.canvas,
-          0,
-          this.height,
-          mapRight,
-          this.frameHeight - this.height,
-          0,
-          this.height,
-          mapRight,
-          this.frameHeight - this.height,
-        );
-        out.globalAlpha = 1;
+      out.save();
+      this.pageArea(out);
+      out.clip("evenodd");
+      if (page >= 1 || page <= 0) {
+        out.drawImage(page >= 1 ? this.day.canvas : this.night.canvas, 0, 0);
+      } else {
+        const palette = pagePalette(hour);
+        out.fillStyle = css(palette.paper);
+        out.fillRect(0, 0, this.frameWidth, this.frameHeight);
+        out.translate(mx, 0);
+        this.page(out, world, palette, this.pageStyle(palette));
       }
+      out.restore();
     }
 
     // Lamplight is warm: a thin amber laid where each lamp falls, by day as well
@@ -1100,14 +1090,7 @@ export class Scene {
         }
       }
     };
-    const style = (id: number, scale: number) => ({
-      ...identity(id),
-      ink,
-      paper,
-      facing: this.facing.get(id) ?? (1 as const),
-      kit: id % 3,
-      scale,
-    });
+    const style = this.figureStyle(palette);
     const beastStyle = (kind: string) => ({
       body: css(kind === "wolf" ? palette.wash.wolf : palette.wash.goblin),
       ink,
@@ -1152,19 +1135,21 @@ export class Scene {
     ctx.lineWidth = 1;
     ctx.strokeRect(13.5, 13.5, this.width - 27, this.height - 27);
 
-    // The colour of the sky, laid on the day drawing of the map only. The night
-    // drawing keeps its own blue, so the dark closing in at dusk is not muddied
-    // with amber, and the page stays the colour of paper.
+    // The colour of the sky, laid on the day drawing only: the night drawing
+    // keeps its own blue, so the dark closing in at dusk is not muddied with
+    // amber. The page takes it more lightly than the map, under its lettering.
     if (cast && cast.alpha > 0) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = css(cast.color, cast.alpha);
-      ctx.fillRect(0 - this.mapX, 0, this.pageBelow ? this.frameWidth : this.width, this.height);
+      ctx.fillRect(...this.mapOnly());
+      this.pageArea(ctx);
+      ctx.fillStyle = css(cast.color, cast.alpha * PAGE_CAST);
+      ctx.fill("evenodd");
+      ctx.restore();
     }
 
-    // On the page at night a figure's face is pale, a shade below the night ink
-    // of its outline, with an eye in the night paper's dark, so the residents
-    // listed there have faces. Its pack keeps the dark paper.
-    const night = palette === NIGHT ? { face: css(NIGHT_FACE), eye: paper } : {};
-    this.page(ctx, world, palette, (id, scale) => ({ ...style(id, scale), ...night }));
+    this.page(ctx, world, palette, this.pageStyle(palette));
     ctx.restore();
   }
 
@@ -1288,6 +1273,49 @@ export class Scene {
       const left = 1 - (time - gone.since) / ARRIVE_TICKS;
       if (left > 0 && left <= 1) sink(gone, left, 0);
     }
+  }
+
+  /** How a figure is drawn in these inks. */
+  private figureStyle(palette: Palette): (id: number, scale: number) => FigureStyle {
+    const ink = css(palette.ink);
+    const paper = css(palette.paper);
+    return (id, scale) => ({
+      ...identity(id),
+      ink,
+      paper,
+      facing: this.facing.get(id) ?? 1,
+      kit: id % 3,
+      scale,
+    });
+  }
+
+  /**
+   * How a resident on the page is drawn. In night ink a figure's face is pale,
+   * a shade below the ink of its outline and warm, as the faces in lamplight
+   * on the map are, with an eye in the paper's dark. Its pack keeps the paper.
+   */
+  private pageStyle(palette: Palette): (id: number, scale: number) => FigureStyle {
+    const style = this.figureStyle(palette);
+    const night =
+      palette.ink === NIGHT.ink ? { face: css(NIGHT_FACE), eye: css(palette.paper) } : {};
+    return (id, scale) => ({ ...style(id, scale), ...night });
+  }
+
+  /**
+   * The part of the frame that is only map, in frame pixels. Beside the map,
+   * the thin margin outside its rule belongs to the page; with the page below,
+   * the paper either side of the map goes with the map.
+   */
+  private mapOnly(): [number, number, number, number] {
+    if (this.pageBelow) return [0, 0, this.frameWidth, this.height];
+    return [RULE_MARGIN, RULE_MARGIN, this.width - 2 * RULE_MARGIN, this.height - 2 * RULE_MARGIN];
+  }
+
+  /** Starts a path round everything that is not only map, to fill or clip "evenodd", in frame pixels. */
+  private pageArea(ctx: Ctx): void {
+    ctx.beginPath();
+    ctx.rect(0, 0, this.frameWidth, this.frameHeight);
+    ctx.rect(...this.mapOnly());
   }
 
   /** The page beside the map and the line beneath it. */

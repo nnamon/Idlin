@@ -30,7 +30,7 @@ import { type Box, bodyBox, type TagWish } from "./tags.ts";
 interface Call {
   readonly op: string;
   readonly args: readonly unknown[];
-  /** For lettering, the fill colour in force when it was drawn. */
+  /** For lettering and filled shapes, the fill colour in force when it was drawn. */
   readonly fill: unknown;
   /** For strokes, the alpha and the stroke colour in force. */
   readonly alpha?: unknown;
@@ -58,7 +58,13 @@ function fakeCanvas(): FakeCanvas {
         canvas.calls.push({
           op: key,
           args: args.map((arg) => (typeof arg === "object" ? "object" : arg)),
-          fill: key === "fillText" ? state.fillStyle : undefined,
+          // A gradient is noted as "object", as arguments are, so two scenes' calls compare equal.
+          fill:
+            key === "fillText" || key === "fillRect" || key === "fill"
+              ? typeof state.fillStyle === "object"
+                ? "object"
+                : state.fillStyle
+              : undefined,
           ...(key === "stroke" ? { alpha: state.globalAlpha ?? 1, ink: state.strokeStyle } : {}),
         });
         // 13 pixels a letter, and the letter spacing in force after each.
@@ -271,13 +277,19 @@ describe("the scene", () => {
   });
 
   it("puts all lettering on the map after everything else, each piece in one ink", () => {
-    for (const { frame } of [nightfall, midnight]) {
+    for (const whole of [nightfall, midnight].map(({ frame }) => frame)) {
+      // While the page turns (as at nightfall) it is drawn on the frame too; the map's lettering starts at the move onto the map.
+      const start = whole.findIndex((call) => call.op === "setTransform");
+      expect(start).toBeGreaterThan(whole.findLastIndex((call) => call.op === "drawImage"));
+      const frame = whole.slice(start);
+      const turning = whole
+        .slice(0, start)
+        .some((c) => c.op === "fillText" && c.args[0] === "Idlin");
+      expect(turning).toBe(whole === nightfall.frame);
       const texts = frame.flatMap((call, at) => (call.op === "fillText" ? [{ call, at }] : []));
       const written = texts.map(({ call }) => call.args[0]);
       for (const name of NAMES) expect(written).toContain(name);
       for (const label of labels) expect(written).toContain(label.text);
-      const lastPicture = frame.findLastIndex((call) => call.op === "drawImage");
-      for (const { at } of texts) expect(at).toBeGreaterThan(lastPicture);
       // Nothing that fades is in force while lettering goes on.
       for (const { call } of texts) expect(String(call.fill)).toMatch(/^rgba\(.*, (1|0\.8)\)$/);
       // Each name's slip of paper reaches 21 pixels above the name's baseline.
@@ -321,11 +333,15 @@ describe("the scene", () => {
       2200,
       FRAME_HEIGHT,
     ]);
-    // 06:00 has a rose cast, laid on the day drawing of the map and not on the page.
-    const tint = drawn(day, () => scene.draw(world, world.tick)).findLast(
-      (c) => c.op === "fillRect",
-    );
-    expect(tint?.args).toEqual([0, 0, map.width * 48, map.height * 48]);
+    // 06:00 has a rose cast, laid on the day drawing of the map inside the paper
+    // round its rule, and more lightly on the page and that paper.
+    const calls = drawn(day, () => scene.draw(world, world.tick));
+    const tint = calls.findLast((c) => c.op === "fillRect");
+    expect(tint?.args).toEqual([5, 5, map.width * 48 - 10, map.height * 48 - 10]);
+    const pageTint = calls.slice(calls.indexOf(tint as Call)).find((c) => c.op === "fill");
+    const alpha = (style: unknown): number => Number(String(style).match(/, ([\d.]+)\)$/)?.[1]);
+    expect(alpha(tint?.fill)).toBeGreaterThan(0);
+    expect(alpha(pageTint?.fill)).toBeCloseTo(alpha(tint?.fill) / 2);
     expect(drawn(out, () => scene.draw(world, world.tick)).some((c) => c.op === "fillRect")).toBe(
       false,
     );

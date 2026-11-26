@@ -239,7 +239,9 @@ there is a soft band, about 260 pixels wide, where both drawings show. The
 rest of the time the hour shows in the colour of the light on the map,
 which shifts slowly: rose around dawn, a cool blue-grey through the
 morning, amber towards dusk. The colour lies on the day drawing only, so
-the night closing in stays blue and the page stays the colour of paper. The
+the night closing in stays blue. The page takes it at half the map's
+strength, under its lettering, so at 08:00 it is a cool cream beside the
+cool map. The
 page names the part of the day, and says night from the moment its ink
 turns.
 
@@ -250,8 +252,9 @@ lamplight's amber instead of turning pale. Names and place labels are
 drawn last, each wholly in day ink or wholly in night ink depending on the
 light where it sits, so they don't fade out at the edge of a lamp. A name's
 slip is always light paper with dark lettering; at night the paper is the
-pale of the night ink. The residents on the page have pale faces at night, a
-shade darker than their outline, with a dark eye.
+pale of the night ink. The residents on the page have pale, warm faces at
+night, a shade darker than their outline, with a dark eye, close to the
+faces in lamplight on the map.
 Name slips keep clear of place labels, the fire and the lantern along the
 whole way to the next tick, since a slip follows its figure between ticks. A
 name that has to move aside for another figure gets a short stroke back to
@@ -266,9 +269,13 @@ page with the line of news on it, and one much taller than 16:9 (about
 6:5 or narrower) gets the page below the map, with the map centred over
 it and any spare height shared between the rows and the margins. The page and
 the bottom line don't take part in the moving edge: they change between day
-and night ink in one go, over about three seconds, halfway through the turn.
-With the page below the map, the paper either side of the map is part of the
-map for this: it darkens with the map. The map's double rule sits on the
+and night in one go, over about three seconds, halfway through the turn. In
+those seconds the paper goes from cream to blue, and the lettering stays in
+whichever of the two inks reads better on it, so it switches once, when the
+paper is halfway, and never drops below 3:1 contrast. Beside the map, the
+5-pixel margin of paper outside the map's rule turns with the page. With the
+page below the map, the paper either side of the map is part of the map for
+this: it darkens with the map. The map's double rule sits on the
 map's own edge in every layout. The typeface is IM Fell English.
 
 ## One player on a busy stream
