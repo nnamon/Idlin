@@ -113,9 +113,10 @@ Which checks apply depends on what exists so far; see "What applies when" in
 ## 7. Merge
 
 When every gate in section 5 of `AGENTS.md` holds, merge the branch as one
-commit. GitHub's own squash stamps the commit's author date in the time zone
-it last saw for the account, whatever the request says, so the squash is done
-on the branch and GitHub only rebases it:
+commit. GitHub's squash and rebase methods rewrite the commit and stamp one of
+its dates in the time zone it last saw for the account, whatever the request
+says. So the squash is done on the branch, and once that commit has passed
+`gate` the same commit is pushed to `main` as a fast-forward:
 
 ```sh
 (
@@ -148,10 +149,22 @@ pull request.
 Wait for `gate` on the new head, then:
 
 ```sh
-gh api -X PUT repos/nnamon/Idlin/pulls/<P>/merge -H "Time-Zone: Etc/UTC" \
-  -f merge_method=rebase -f sha=<the commit just pushed>
+(
+set -e
+git fetch origin
+head=$(git rev-parse origin/<branch>)
+test "$head" = <the commit just pushed>
+test "$(git rev-parse "$head^")" = "$(git rev-parse origin/main)"   # directly on main
+test "$(git rev-list --count origin/main.."$head")" = 1             # and one commit only
+git push origin "$head":main                      # a fast-forward; never with --force
 git fetch origin && git log -1 --format='%ad | %cd' --date=format:%z origin/main   # both +0000
+)
 ```
+
+Run it as one block, brackets included. Branch protection accepts the push because `gate` has passed on that commit,
+and refuses it otherwise. GitHub marks the pull request as merged and closes
+the issues its body names. If `main` moved in the meantime the second test
+fails: run the first block again and wait for `gate` again.
 
 If either date is not `+0000`, file a `process` issue. `main` is not
 rewritten to fix it.
