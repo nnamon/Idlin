@@ -83,10 +83,9 @@ substantial fix, review again. If the same kind of finding keeps returning, fix
 the cause in one place.
 
 If Codex is out of quota or cannot be reached, give the same brief to
-Antigravity `gemini-4-neon`, and if that fails too, to Opus 5.5 (effort
-`medium`), unless Opus built the change: then the conductor reviews it itself.
-Note in the triage comment which model reviewed. If none can be
-reached, follow section 5 of `AGENTS.md`: leave the pull request
+Opus 5.5 (effort `medium`), unless Opus built the change: then the conductor
+reviews it itself. Note in the triage comment which model reviewed. If neither
+can be reached, follow section 5 of `AGENTS.md`: leave the pull request
 open and say why.
 
 ## 6. Watch judge (visible changes)

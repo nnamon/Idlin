@@ -96,7 +96,7 @@ A check applies once the thing it measures exists.
 - For a pull request it gets the baseline capture too, and must say whether the
   change is better, the same or worse, and where.
 - A milestone's closing review adds a second judge from another model family
-  (Antigravity `gemini-4-neon`). For each dimension the lower of the two scores
+  (Codex `gpt-6.2-sol`). For each dimension the lower of the two scores
   stands, and a hard fail from either stands. If the second judge cannot be
   reached, the review goes ahead with one judge and the closing comment says so.
 
