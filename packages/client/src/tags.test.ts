@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Box, bodyBox, placeTags, TAG_HEIGHT, type TagWish } from "./tags.ts";
+import { type Box, bodyBox, placeTags, TAG_HEIGHT, type TagWish, tagBox } from "./tags.ts";
 
 const BOUNDS = { width: 1440, height: 1008 };
 const wish = (id: number, x: number, y: number, width = 80): TagWish => ({ id, x, y, width });
@@ -105,6 +105,30 @@ describe("placeTags", () => {
     );
     for (const { box } of placeTags(crush, new Map(), BOUNDS).values())
       expect(box.top).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps names off things it is told to avoid", () => {
+    const fire = { left: 470, right: 530, top: 370, bottom: 400 };
+    const clear = placeTags([wish(1, 500, 400)], new Map(), BOUNDS);
+    expect(hit((clear.get(1) as { box: Box }).box, fire)).toBe(true);
+    const placed = placeTags([wish(1, 500, 400)], new Map(), BOUNDS, [fire]);
+    expect(hit((placed.get(1) as { box: Box }).box, fire)).toBe(false);
+    expect(placed.get(1)?.spot).not.toBe(0);
+  });
+
+  it("tagBox gives the box of a spot, the same one placeTags reports", () => {
+    const w = wish(1, 500, 400);
+    const placed = placeTags([w, wish(2, 500, 352)], new Map(), BOUNDS).get(1) as {
+      box: Box;
+      spot: number;
+    };
+    expect(tagBox(w, placed.spot, BOUNDS)).toEqual(placed.box);
+    expect(tagBox(w, 0, BOUNDS)).toEqual({
+      left: 460,
+      right: 540,
+      top: 400 - TAG_HEIGHT,
+      bottom: 400,
+    });
   });
 
   it("gives the same answer for the same input", () => {

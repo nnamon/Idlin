@@ -8,6 +8,7 @@ import {
   lampAt,
   lampStrength,
   NIGHTFALL,
+  pageDay,
   phaseName,
   skyCast,
   TURN_HOURS,
@@ -95,6 +96,26 @@ describe("the light of the day", () => {
     expect(TURN_HOURS * 60).toBeLessThan(60);
     expect(lampStrength(NIGHTFALL)).toBe(1);
     expect(lampStrength(DAYBREAK)).toBe(1);
+  });
+
+  it("turns the page beside the map all at once, halfway through, over a few seconds", () => {
+    expect(pageDay(12)).toBe(1);
+    expect(pageDay(1)).toBe(0);
+    expect(pageDay(NIGHTFALL)).toBe(1);
+    expect(pageDay(NIGHTFALL + TURN_HOURS - 0.001)).toBe(0);
+    expect(pageDay(DAYBREAK)).toBe(0);
+    expect(pageDay(DAYBREAK + TURN_HOURS - 0.001)).toBe(1);
+    expect(pageDay(NIGHTFALL + TURN_HOURS / 2)).toBeCloseTo(0.5);
+    let changing = 0;
+    for (let tick = 1; tick <= 24 * 600; tick++) {
+      const step = Math.abs(pageDay(tick * HOURS_PER_TICK) - pageDay((tick - 1) * HOURS_PER_TICK));
+      // Slow enough that no tick changes the page's brightness sharply.
+      expect(step).toBeLessThan(0.06);
+      if (step > 0) changing++;
+    }
+    // Two turns of about thirty ticks each.
+    expect(changing).toBeGreaterThan(50);
+    expect(changing).toBeLessThan(70);
   });
 
   it("says how lit a point is, the way the picture is drawn", () => {

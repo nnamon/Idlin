@@ -16,11 +16,21 @@ import {
 } from "@idlin/sim";
 import { drawFigure } from "./figure.ts";
 import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
-import { css, dayAt, dayRegion, EDGE, lampAt, lampStrength, phaseName, skyCast } from "./light.ts";
+import {
+  css,
+  dayAt,
+  dayRegion,
+  EDGE,
+  lampAt,
+  lampStrength,
+  pageDay,
+  phaseName,
+  skyCast,
+} from "./light.ts";
 import { cloakColor, DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas } from "./pen.ts";
 import { actorPose, type Pose } from "./pose.ts";
-import { placeTags, TAG_HEIGHT } from "./tags.ts";
+import { type Box, placeTags, TAG_HEIGHT, tagBox } from "./tags.ts";
 
 export const FRAME_WIDTH = 1920;
 export const FRAME_HEIGHT = 1080;
@@ -78,6 +88,8 @@ export class Scene {
   private news = "";
   private newsSince = Number.NEGATIVE_INFINITY;
   private readonly lastRule = new Map<number, number>();
+  /** Things no name should cover: the fire, the lantern's glass, the place names. */
+  private readonly avoid: Box[] = [];
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     this.width = map.width * TILE;
@@ -94,6 +106,19 @@ export class Scene {
     this.night = side(NIGHT);
     this.lit = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
     this.labels = labels;
+    for (const [x, y] of this.day.ground.fires)
+      this.avoid.push({ left: x - 16, right: x + 16, top: y - 34, bottom: y + 6 });
+    for (const [x, y] of this.day.ground.lanterns)
+      this.avoid.push({ left: x - 10, right: x + 10, top: y - 12, bottom: y + 14 });
+    for (const label of labels) {
+      const half = label.text.length * (label.style === "region" ? 8 : 7);
+      this.avoid.push({
+        left: label.x * TILE - half,
+        right: label.x * TILE + half,
+        top: label.y * TILE - 24,
+        bottom: label.y * TILE + 6,
+      });
+    }
     const lantern = this.day.ground.lanterns[0];
     this.hearth = lantern ? [lantern[0], lantern[1] + 28] : [this.width / 2, this.height / 2];
   }
@@ -114,11 +139,12 @@ export class Scene {
     const lamps = lampStrength(hour);
     const fraction = time - world.tick;
     const [hx, hy] = this.hearth;
+    // The dark closes in over the map only, from the map's own corners; the page changes separately.
     const reach = Math.max(
       Math.hypot(hx, hy),
-      Math.hypot(FRAME_WIDTH - hx, hy),
-      Math.hypot(hx, FRAME_HEIGHT - hy),
-      Math.hypot(FRAME_WIDTH - hx, FRAME_HEIGHT - hy),
+      Math.hypot(this.width - hx, hy),
+      Math.hypot(hx, this.height - hy),
+      Math.hypot(this.width - hx, this.height - hy),
     );
     const region = dayRegion(hour, reach);
 
@@ -197,12 +223,44 @@ export class Scene {
       }
       lit.globalCompositeOperation = "source-in";
       lit.drawImage(this.day.canvas, 0, 0);
-      out.drawImage(this.lit.canvas, 0, 0);
+      out.drawImage(this.lit.canvas, 0, 0, this.width, this.height, 0, 0, this.width, this.height);
+      // The page and the news line change all at once, so that they are never half covered.
+      const page = pageDay(hour);
+      if (page > 0) {
+        out.globalAlpha = page;
+        out.drawImage(
+          this.day.canvas,
+          this.width,
+          0,
+          FRAME_WIDTH - this.width,
+          FRAME_HEIGHT,
+          this.width,
+          0,
+          FRAME_WIDTH - this.width,
+          FRAME_HEIGHT,
+        );
+        out.drawImage(
+          this.day.canvas,
+          0,
+          this.height,
+          this.width,
+          FRAME_HEIGHT - this.height,
+          0,
+          this.height,
+          this.width,
+          FRAME_HEIGHT - this.height,
+        );
+        out.globalAlpha = 1;
+      }
     }
 
     // Lamplight is warm: a thin amber laid where each lamp falls, by day as well
     // while the lamps are coming on or going out, so that they never switch.
     if (lights.length > 0) {
+      out.save();
+      out.beginPath();
+      out.rect(0, 0, this.width, this.height);
+      out.clip();
       out.globalCompositeOperation = "soft-light";
       for (const light of lights) {
         const gradient = out.createRadialGradient(
@@ -220,7 +278,7 @@ export class Scene {
         out.arc(light.x, light.y, light.reach, 0, 7);
         out.fill();
       }
-      out.globalCompositeOperation = "source-over";
+      out.restore();
     }
 
     const cast = skyCast(hour);
@@ -257,6 +315,18 @@ export class Scene {
     for (const tag of this.placeNames(walkers)) {
       // A name sits on a small slip of paper, so it reads over trees, water and other ink.
       const palette = inkFor(tag.x, tag.y - 8);
+      if (tag.moved) {
+        // Moved aside to make room: a short stroke ties the name back to its owner.
+        out.strokeStyle = css(palette.ink, 0.7);
+        out.lineWidth = 1.5;
+        out.beginPath();
+        out.moveTo(
+          Math.max(tag.x - tag.width / 2 + 6, Math.min(tag.x + tag.width / 2 - 6, tag.headX)),
+          tag.y + 4,
+        );
+        out.lineTo(tag.headX, tag.headY);
+        out.stroke();
+      }
       out.fillStyle = css(palette.paper, 0.9);
       out.beginPath();
       out.roundRect(tag.x - tag.width / 2, tag.y - 19, tag.width, TAG_HEIGHT - 3, 4);
@@ -287,46 +357,63 @@ export class Scene {
       this.news = `${actor.name}: ${label}`;
       this.newsSince = world.tick;
     }
+    // Names are placed once a tick, here, so that where a name sits depends on
+    // the world's history and not on which frames were drawn.
+    const standing = world.actors.map((actor) => ({
+      actor,
+      pose: actorPose(actor, 0, world.tick),
+    }));
+    const placed = placeTags(
+      standing.map(({ actor, pose }) => this.wish(actor, pose)),
+      this.tagSpots,
+      { width: this.width, height: this.height },
+      this.avoid,
+    );
+    for (const [id, { spot }] of placed) this.tagSpots.set(id, spot);
     for (const known of [this.facing, this.tagSpots, this.lastRule]) {
       for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
     }
   }
 
-  /**
-   * Forgets where names were placed in earlier frames. Names normally keep
-   * their spot from frame to frame so they don't hop about; a capture calls
-   * this so that a frame depends only on the world.
-   */
-  forgetNameSpots(): void {
-    this.tagSpots.clear();
+  /** Where a figure's name would like to sit: centred, on the line just above the hood. */
+  private wish(actor: Actor, pose: Pose): { id: number; x: number; y: number; width: number } {
+    let width = this.tagWidths.get(actor.name);
+    if (width === undefined) {
+      this.out.font = TAG_FONT;
+      width = Math.ceil(this.out.measureText(actor.name).width) + 12;
+      this.tagWidths.set(actor.name, width);
+    }
+    const feet = pose.y * TILE - 4;
+    return {
+      id: actor.id,
+      x: pose.x * TILE,
+      y: feet - (pose.resting ? 39 : 46) * FIGURE_SCALE - pose.hop * 3,
+      width,
+    };
   }
 
-  /** Works out where each name goes, so that no name covers a figure or another name. */
-  private placeNames(
-    walkers: readonly Walker[],
-  ): { name: string; x: number; y: number; width: number }[] {
-    const measure = this.out;
-    measure.font = TAG_FONT;
-    const wishes = walkers.map((walker) => {
-      let width = this.tagWidths.get(walker.actor.name);
-      if (width === undefined) {
-        width = Math.ceil(measure.measureText(walker.actor.name).width) + 12;
-        this.tagWidths.set(walker.actor.name, width);
-      }
-      // The line just above the hood.
-      const top = walker.y - (walker.pose.resting ? 39 : 46) * FIGURE_SCALE - walker.pose.hop * 3;
-      return { id: walker.actor.id, x: walker.x, y: top, width };
-    });
-    const placed = placeTags(wishes, this.tagSpots, { width: this.width, height: this.height });
+  /** Where each name is drawn this frame: in the spot chosen for it at the last tick, following its figure. */
+  private placeNames(walkers: readonly Walker[]): {
+    name: string;
+    x: number;
+    y: number;
+    width: number;
+    moved: boolean;
+    headX: number;
+    headY: number;
+  }[] {
     return walkers.map((walker) => {
-      const spot = placed.get(walker.actor.id);
-      this.tagSpots.set(walker.actor.id, spot?.spot ?? 0);
-      const box = spot?.box ?? { left: walker.x, right: walker.x, top: walker.y, bottom: walker.y };
+      const wish = this.wish(walker.actor, walker.pose);
+      const spot = this.tagSpots.get(walker.actor.id) ?? 0;
+      const box = tagBox(wish, spot, { width: this.width });
       return {
         name: walker.actor.name,
         x: (box.left + box.right) / 2,
         y: box.top + TAG_HEIGHT - 7,
         width: box.right - box.left,
+        moved: spot !== 0,
+        headX: wish.x,
+        headY: wish.y + 6,
       };
     });
   }

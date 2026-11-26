@@ -58,6 +58,22 @@ export function dayRegion(hour: number, reach: number): DayRegion {
   return hour >= DAYBREAK && hour < NIGHTFALL ? { kind: "all" } : { kind: "none" };
 }
 
+/** How long the page beside the map takes to change over, in game hours: three seconds of stream time. */
+const PAGE_TURN_HOURS = 0.05;
+
+/**
+ * How much the page beside the map is in day ink, 0 to 1. The page changes
+ * all at once, halfway through nightfall or daybreak, so the clock and the
+ * names on it are never half covered by the moving edge.
+ */
+export function pageDay(hour: number): number {
+  const through = (start: number): number =>
+    smooth((hour - (start + TURN_HOURS / 2 - PAGE_TURN_HOURS / 2)) / PAGE_TURN_HOURS);
+  if (hour >= DAYBREAK && hour < DAYBREAK + TURN_HOURS) return through(DAYBREAK);
+  if (hour >= NIGHTFALL && hour < NIGHTFALL + TURN_HOURS) return 1 - through(NIGHTFALL);
+  return hour >= DAYBREAK && hour < NIGHTFALL ? 1 : 0;
+}
+
 /** How much of full daylight reaches a point at this distance from the lantern: 1 inside the region, 0 outside. */
 export function dayAt(region: DayRegion, distance: number): number {
   if (region.kind === "all") return 1;
@@ -105,7 +121,7 @@ export const rgb = (hex: number): Rgb => [
 
 export function phaseName(hour: number): string {
   if (hour < 5) return "night";
-  if (hour < 7.5) return "dawn";
+  if (hour < 6.75) return "dawn";
   if (hour < 11) return "morning";
   if (hour < 14) return "about noon";
   if (hour < 17.5) return "afternoon";

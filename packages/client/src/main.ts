@@ -86,17 +86,13 @@ async function main(): Promise<void> {
     window.idlin = {
       advance(ticks) {
         for (let i = 0; i < ticks; i++) tick();
-        // A captured frame depends only on the world, not on the frames drawn before it.
-        scene.forgetNameSpots();
         draw(0);
       },
       brightness() {
-        scene.forgetNameSpots();
         draw(0);
         return scene.brightness();
       },
     };
-    scene.forgetNameSpots();
     draw(0);
     document.body.dataset.ready = "1";
     return;

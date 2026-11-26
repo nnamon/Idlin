@@ -65,35 +65,41 @@ const overlaps = (a: Box, b: Box, margin = 0): boolean =>
   a.top - margin < b.bottom &&
   b.top < a.bottom + margin;
 
+/** The box a name takes in a given spot, kept inside `bounds`. */
+export function tagBox(wish: TagWish, spot: number, bounds: { readonly width: number }): Box {
+  const [shift, rise] = SPOTS[spot] ?? (SPOTS[0] as (typeof SPOTS)[number]);
+  const centre = wish.x + shift * wish.width;
+  const left = Math.max(
+    0,
+    Math.min(bounds.width - wish.width, Math.round(centre - wish.width / 2)),
+  );
+  const bottom = Math.round(wish.y) + rise;
+  return { left, right: left + wish.width, top: bottom - TAG_HEIGHT, bottom };
+}
+
 /**
- * Places every tag. `previous` holds the spot each tag had in the last frame; a
- * tag keeps its spot while it stays free, so tags do not hop about as
- * characters pass each other.
+ * Places every tag. `previous` holds the spot each tag had last time; a tag
+ * keeps its spot while it stays free, so tags do not hop about as characters
+ * pass each other. `avoid` lists things no name should cover: a fire, a
+ * place name.
  */
 export function placeTags(
   wishes: readonly TagWish[],
   previous: ReadonlyMap<number, number>,
   bounds: { readonly width: number; readonly height: number },
+  avoid: readonly Box[] = [],
 ): Map<number, Placement> {
   const bodies = wishes.map(bodyBox);
   const placed: Box[] = [];
   const result = new Map<number, Placement>();
 
   wishes.forEach((wish, index) => {
-    const at = (spot: number): Box => {
-      const [shift, rise] = SPOTS[spot] as (typeof SPOTS)[number];
-      const centre = wish.x + shift * wish.width;
-      const left = Math.max(
-        0,
-        Math.min(bounds.width - wish.width, Math.round(centre - wish.width / 2)),
-      );
-      const bottom = Math.round(wish.y) + rise;
-      return { left, right: left + wish.width, top: bottom - TAG_HEIGHT, bottom };
-    };
+    const at = (spot: number): Box => tagBox(wish, spot, bounds);
     const free = (box: Box, margin = 0): boolean =>
       box.top >= 0 &&
       box.bottom <= bounds.height &&
       !placed.some((other) => overlaps(box, other, margin)) &&
+      !avoid.some((other) => overlaps(box, other)) &&
       !bodies.some((body, k) => k !== index && overlaps(box, body, margin));
 
     const before = previous.get(wish.id) ?? 0;
