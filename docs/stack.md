@@ -1,16 +1,16 @@
 # Stack
 
-One language, three small packages, everything in containers.
+TypeScript throughout, in a pnpm workspace. Everything runs in containers.
 
 | Part            | Choice                                  | Why                                                                                                                                                                           |
 | --------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Language        | TypeScript (strict) on Node 24          | The simulation runs unchanged in the server, the browser (replays and captures) and tests. One toolchain keeps the swarm small.                                               |
+| Language        | TypeScript (strict) on Node 24          | The simulation runs unchanged in the server, the browser (replays and captures) and tests. One toolchain is less to maintain.                                                 |
 | Workspace       | pnpm workspace                          | `packages/sim`, `packages/server`, `packages/client`, `tools/capture`.                                                                                                        |
 | Simulation      | `packages/sim`, no runtime dependencies | Pure and deterministic: integers, a seeded generator, no clock. Holds the world, the bot VM and the Tactics compiler.                                                         |
-| Server          | `packages/server`, Node + `ws`          | Runs the world in real time, snapshots to disk, streams state over a WebSocket.                                                                                               |
+| Server          | `packages/server`, Node + `ws`          | Not built yet; an empty package. It will run the world in real time, snapshot to disk and stream state over a WebSocket.                                                      |
 | Viewer          | `packages/client`, Vite, Canvas 2D      | Draws the whole frame on one canvas with the browser's own drawing calls; no rendering library. It can also drive the sim itself from a seed, which is how captures are made. |
 | Captures        | `tools/capture`, Playwright (Chromium)  | Loads the viewer in replay mode, steps a virtual clock, saves frames.                                                                                                         |
-| Tests           | Vitest                                  | Unit tests beside the code; determinism, replay and soak tests in `packages/sim`.                                                                                             |
+| Tests           | Vitest                                  | Unit tests beside the code; determinism and snapshot tests in `packages/sim`.                                                                                                 |
 | Lint and format | Biome                                   | One fast tool for both.                                                                                                                                                       |
 | CI              | GitHub Actions                          | One required job, `gate`: install, lint, typecheck, test.                                                                                                                     |
 

@@ -1,47 +1,54 @@
 # Roadmap
 
-The tracker is the source of truth for what is being worked on. This page says
-what each milestone is for and when it counts as finished.
+The issue tracker is where the actual work is listed. This page says what each
+milestone is for and how to tell when it's finished.
 
-## M1 — First Light
+## M1: First Light
 
-The smallest thing worth leaving on a second screen: one map, a camp with a
-lantern, a wood, a river and a den; six adventurers running three different
-built-in programs; two kinds of monster running their own; day and night.
+One map (a camp with a lantern, a wood, a river, a den), six adventurers on
+three built-in programs, two kinds of monster on programs of their own, and a
+day/night cycle. The aim is something you could leave running on a second
+screen and not get bored of in ten minutes.
 
-It contains:
+| Part                                                                     | State       |
+| ------------------------------------------------------------------------ | ----------- |
+| Simulation core: map, movement, clock, replay, snapshots                 | done        |
+| Bot VM                                                                   | done        |
+| Tactics, the scripting language, and its compiler                        | done        |
+| Viewer: the map, the characters, day and night                           | done        |
+| Capture tool and the metrics for judging how it watches                  | part done   |
+| Combat with telegraphed attacks; monsters as scripted content            | not started |
+| Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | not started |
+| Items with rarity and rolled affixes; bots that choose what to wear      | not started |
+| Spotlight panel and a real news line                                     | not started |
+| Server: the world running in real time, snapshots, WebSocket             | not started |
 
-- the deterministic simulation core (map, movement, clock, replay);
-- the viewer with the art direction, lighting and code-driven animation;
-- the capture harness and watch metrics;
-- the bot VM and the Tactics compiler;
-- combat with telegraphed attacks, and monsters as content bots;
-- four skills that make a trip loop (Melee, Woodcutting, Fishing, Cooking) plus
-  Hitpoints, with banking and the death penalty;
-- items with rarity and rolled affixes, and bots that choose what to wear;
-- the spotlight panel with the live program trace, and the event ticker;
-- the server: real-time world, snapshots, WebSocket.
-
-M1 is finished when:
+M1 is finished when all of these hold:
 
 1. `docker compose up server client` shows the world at `localhost:4310`, and
-   it survives a server restart without losing progress;
-2. a headless soak of 24 simulated hours runs with no error and no actor stuck;
-3. the determinism tests pass (same seed, same hash; snapshot and resume);
-4. the watch review ([watch-rubric.md](watch-rubric.md)) has no hard fail,
-   each of the first six dimensions at 3 or more and their mean at 3.5 or
-   more. "Mine" is scored at 12, 50 and 150 characters and recorded with a
-   written reading of what it means for M3 and M4; it does not gate M1, which
-   has no players yet.
+   restarting the server doesn't lose progress.
+2. A headless run of 24 simulated hours finishes with no error and no actor
+   stuck.
+3. The determinism tests pass: the same seed gives the same hash, and a world
+   restored from a snapshot carries on identically.
+4. The watch review ([watch-rubric.md](watch-rubric.md)) has no hard fail,
+   each of the first six scores is 3 or more, and their mean is 3.5 or more.
+   The "Mine" score is taken at 12, 50 and 150 characters and written up, but
+   it doesn't block M1, because M1 has no players.
 
-## After M1 (order may change; each is planned when the one before closes)
+## After M1
 
-- **M2 — A Day in Idlin.** More skills and a crafting chain (Mining, Smithing),
-  the bank and shared camp stores, night-only monsters and a den boss, uniques.
-- **M3 — Your Bot.** Claim an adventurer and pick its name colour; a companion
-  page with its sheet, its history since the last visit and its Tactics
-  program to edit and submit; safe handling of hostile programs; boards that
-  rank trips across niches; chat commands, starting with `!me`.
-- **M4 — The Long Game.** Regions and the slowly drifting view once one frame
-  is full; balance for weeks of uptime, content depth, world events, and the
-  first talk about hosting.
+The order may change, and each milestone is planned in detail only when the
+one before it closes.
+
+- **M2.** More skills and a crafting chain (Mining, Smithing), shared camp
+  stores, monsters that only come out at night, a boss in the den, unique
+  items.
+- **M3.** Players. Claim an adventurer and pick its cloak colour. A companion
+  page with its stats, what happened since the last visit, and its program to
+  edit and submit. Safe handling of hostile programs. Leaderboards for single
+  trips in several categories. Chat commands, starting with `!me`.
+- **M4.** More regions, with the view moving slowly between them, once one
+  frame is full. Balance for weeks of uptime, more monsters, items and
+  places to go with the regions, and world events. The
+  first conversation about hosting.

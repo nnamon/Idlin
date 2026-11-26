@@ -1,9 +1,9 @@
-# Idlin — how this repo is developed
+# Idlin: how this repo is developed
 
-Idlin 3.0 is developed by a small swarm of AI agents with no human approval
-step. The operator set the direction ([docs/design.md](docs/design.md) opens
-with their four concepts), follows along in T3 Code, and can veto anything
-afterwards. This file is the working agreement every agent follows.
+Idlin is developed by a small group of AI agents, with no human approving each
+change. The operator set the direction ([docs/design.md](docs/design.md)
+starts with their brief), follows the work in T3 Code, and can veto anything
+after the fact. This file is the agreement the agents work to.
 
 Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 [docs/tactics.md](docs/tactics.md) (the language actors are programmed in),
@@ -14,8 +14,9 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 - Design, stack, implementation, testing and merging are the swarm's to decide.
   Do not ask the operator for approval. Decide, record the decision, move on.
 - No deployment, no hosting, no publishing anywhere beyond this GitHub repo.
-- Everything runs locally and small: one builder at a time, at most one
-  reviewer or judge beside it, modest schedules, light containers.
+- Everything runs locally and small: one builder and at most two child tasks at
+  once, of any role. Capture runs and `pnpm gate` runs are heavy, so only one
+  of them runs at a time.
 - Every project command runs through Docker Compose. Only `git`, `gh` and
   `docker` run on the host. Never touch containers, images or volumes that
   belong to other projects, and never run a blanket prune.
@@ -38,7 +39,7 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 
 | Role            | Who                                                                              | Owns                                                                                                                                                                                                                                                                                                                   |
 | --------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Conductor**   | Mythos 5.2, started by the work-cycle schedule                                   | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                                                                                                                                                                    |
+| **Conductor**   | Mythos 5.2, in one long-running session                                          | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                                                                                                                                                                    |
 | **Artist**      | Opus 5.5 (effort `medium`), a child task in its own worktree                     | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                                                                                                                                                               |
 | **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task                      | An adversarial read of each pull request's diff, by a model that did not build it; from a different family whenever Codex is available. Codex has tighter usage limits than Claude: when it is out of quota or unreachable, the review goes to Opus 5.5 (effort `medium`). The pull request says which model reviewed. |
 | **Watch judge** | Opus 5.5 (effort `medium`), a fresh child task; Codex when Opus built the change | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only.                                                                                                                                                                                                      |
@@ -61,11 +62,11 @@ a thread the operator can open. No fan-out and no `Workflow` runs.
 
 Work lives in GitHub issues, grouped by milestone. Labels:
 
-- `ready` — specified well enough to build; `in-progress` — claimed by a cycle;
-  `blocked` — cannot proceed, with the reason in a comment;
-- `operator` — raised by the operator; `bug`; `watch` — a finding from a watch
-  review; `look` — changes what is on screen; `process` — changes this
-  agreement or the tooling around it.
+- `ready`: specified well enough to build. `in-progress`: claimed by a cycle.
+  `blocked`: can't proceed, with the reason in a comment.
+- `operator`: raised by the operator. `bug`. `watch`: a finding from a watch
+  review. `look`: changes what is on screen. `process`: changes this agreement
+  or the tooling around it.
 
 An issue is `ready` only if it states what to build, how it will be shown to
 work (tests, and captures if it is visible), and what it leaves out.
@@ -90,6 +91,13 @@ one-line reason in a comment.
 
 ## 4. One work cycle
 
+The conductor normally works in one long session, taking issues one after
+another. While a pull request is with its reviewer, it may start the next
+issue that doesn't depend on it, on its own branch from `main`. A schedule
+also fires every three hours; it runs a cycle only if the lock is free, so
+work carries on if the session has stopped. A session holds the lock for as
+long as it runs.
+
 One issue per cycle. The full procedure is
 [process/cycle.md](process/cycle.md); in short:
 
@@ -105,7 +113,7 @@ One issue per cycle. The full procedure is
    the reason. Re-review after substantial fixes.
 8. **Watch judge**, for `look` changes: baseline and new captures, verdict in
    a PR comment.
-9. **Merge** (squash) once section 5 holds. Confirm the commit is on
+9. **Merge** as one commit (step 7 of the procedure) once section 5 holds. Confirm the commit is on
    `origin/main` and that CI on `main` is green.
 10. **Close out.** Comment on the issue with what shipped and the evidence,
     update any doc the change made stale, delete the branch.
@@ -178,8 +186,8 @@ Anyone can open an issue, comment or pull request on a public repo.
   issue, the pull request, what merged or why not).
 - **Daily digest thread**, every morning: what merged in the last day, the
   latest storyboard, watch scores, decisions open to veto, anything stuck.
-- **The README showcase:** once the viewer exists, real captures of the game
-  at the top of `README.md`, refreshed by the digest. The images live on the `media` branch
+- **The README showcase:** real captures of the game at the top of
+  `README.md`, refreshed by the digest. The images live on the `media` branch
   so `main` carries no binaries.
 - **The tracker:** milestone progress, with each issue linked to its thread and
   pull request.
@@ -189,8 +197,9 @@ Anyone can open an issue, comment or pull request on a public repo.
 To steer: open an issue labelled `operator`, comment on any issue or pull
 request, or write in any Idlin thread. Operator input is handled before other
 work. To veto a decision, say so anywhere; the conductor reverts it with a pull
-request and records the change. To pause, disable the "Idlin work cycle"
-scheduled task in T3 Code.
+request and records the change. To pause, tell the conductor in its thread, and
+disable the "Idlin work cycle" scheduled task in T3 Code so that it doesn't
+start again.
 
 ## 9. Commands
 
