@@ -1,6 +1,8 @@
 import {
+  compileBots,
   createWorld,
   parseMap,
+  placeConstants,
   START_HOUR,
   spawnsNearCamp,
   step,
@@ -12,7 +14,30 @@ import { createHud } from "./hud.ts";
 import { Scene } from "./scene.ts";
 import "./style.css";
 
-const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
+/** The shipped programs' source, by file name without the extension. */
+function botSources(): Record<string, string> {
+  const files = import.meta.glob("../../../content/bots/*.tac", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  });
+  return Object.fromEntries(
+    Object.entries(files).map(([path, text]) => [
+      path.slice(path.lastIndexOf("/") + 1, -4),
+      text as string,
+    ]),
+  );
+}
+
+/** Who lives at the camp, and which shipped program each one runs. */
+const CAST = [
+  { name: "Ash", program: "wanderer" },
+  { name: "Birch", program: "homebody" },
+  { name: "Cedar", program: "riverwalker" },
+  { name: "Dara", program: "wanderer" },
+  { name: "Elm", program: "homebody" },
+  { name: "Fen", program: "riverwalker" },
+];
 const FRAME_WIDTH = 1920;
 const FRAME_HEIGHT = 1080;
 
@@ -42,8 +67,9 @@ async function main(): Promise<void> {
   fit();
   addEventListener("resize", fit);
 
-  const world = createWorld(parseMap(mapJson), seed);
-  step(world, spawnsNearCamp(world, NAMES));
+  const map = parseMap(mapJson);
+  const world = createWorld(map, seed, compileBots(botSources(), placeConstants(map)));
+  step(world, spawnsNearCamp(world, CAST));
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
   for (let i = 0; i < skip; i++) step(world);

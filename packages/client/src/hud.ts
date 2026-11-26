@@ -79,19 +79,17 @@ export function createHud(
         if (!row) {
           const item = el("li", "roster-row");
           const doing = el("span", "roster-doing");
-          item.append(
-            portrait(ADVENTURERS[(actor.id - 1) % ADVENTURERS.length] as Cell),
-            el("span", "roster-name", actor.name),
-            doing,
-          );
+          const text = el("div", "roster-text");
+          text.append(el("span", "roster-name", actor.name), doing);
+          item.append(portrait(ADVENTURERS[(actor.id - 1) % ADVENTURERS.length] as Cell), text);
           roster.append(item);
           row = { item, doing };
           rows.set(actor.id, row);
         }
-        setText(
-          row.doing,
-          actor.moveTicksLeft > 0 || actor.path.length > 0 ? "walking" : "resting",
-        );
+        // What the actor's program is doing, in the program's own words: the label of the rule that fired.
+        const label = world.programs[actor.program]?.rules[actor.rule];
+        setText(row.doing, actor.fault !== 0 ? "confused" : (label ?? ""));
+        row.doing.classList.toggle("confused", actor.fault !== 0);
       }
 
       // A tag's width never changes, so it is measured once, when the tag is made.

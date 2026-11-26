@@ -6,6 +6,7 @@ with their four concepts), follows along in T3 Code, and can veto anything
 afterwards. This file is the working agreement every agent follows.
 
 Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
+[docs/tactics.md](docs/tactics.md) (the language actors are programmed in),
 [docs/roadmap.md](docs/roadmap.md), [docs/watch-rubric.md](docs/watch-rubric.md).
 
 ## 1. The mandate and its limits

@@ -113,7 +113,7 @@ const PROGRAMS: Programs = {
   ]),
 };
 
-const world = (spawns: [string, string | undefined, number, number][], seed = 1): World => {
+const world = (spawns: [string, string, number, number][], seed = 1): World => {
   const w = createWorld(firstLight(), seed, PROGRAMS);
   step(
     w,
@@ -122,7 +122,7 @@ const world = (spawns: [string, string | undefined, number, number][], seed = 1)
       name,
       x,
       y,
-      ...(program ? { program } : {}),
+      program,
     })),
   );
   return w;
@@ -294,21 +294,18 @@ describe("actors run programs", () => {
       ["Ghost", "no-such-program", 14, 9],
       ["Proto", "constructor", 13, 9],
       ["Ash", "rover", 12, 9],
-      ["Plain", undefined, 11, 8],
     ]);
-    expect(w.actors.map((a) => [a.name, a.program])).toEqual([
-      ["Ash", "rover"],
-      ["Plain", null],
-    ]);
+    step(w, [{ type: "spawn", name: "Plain", x: 11, y: 8 } as never]);
+    expect(w.actors.map((a) => [a.name, a.program])).toEqual([["Ash", "rover"]]);
   });
 });
 
 describe("programs and determinism", () => {
-  const cast: [string, string | undefined, number, number][] = [
+  const cast: [string, string, number, number][] = [
     ["Ash", "courier", 14, 9],
     ["Birch", "rover", 13, 9],
     ["Cedar", "broken", 12, 9],
-    ["Dara", undefined, 11, 8],
+    ["Dara", "rover", 11, 8],
   ];
 
   it("worlds with programs stay identical from one seed and resume from a snapshot", () => {
@@ -349,17 +346,7 @@ describe("programs and determinism", () => {
       ["memory of the wrong size", (a) => (a.memory = [0])],
       ["memory outside 32 bits", (a) => ((a.memory as number[])[0] = 2 ** 32 + 1)],
       ["a rule the program lacks", (a) => (a.rule = 2)],
-      ["a rule on an actor without a program", (a) => Object.assign(a, { program: null, rule: 0 })],
       ["an unknown fault", (a) => (a.fault = 99)],
-      [
-        "memory on an actor without a program",
-        (a) => Object.assign(a, { program: null, rule: -1, memory: [5, ...new Array(15).fill(0)] }),
-      ],
-      [
-        "a fault on an actor without a program",
-        (a) =>
-          Object.assign(a, { program: null, rule: -1, memory: new Array(16).fill(0), fault: 1 }),
-      ],
     ];
     for (const [what, change] of forgeries) {
       for (const rehash of [false, true]) {

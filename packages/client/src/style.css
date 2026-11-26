@@ -159,13 +159,25 @@ body {
   display: flex;
   align-items: center;
   gap: 18px;
-  height: 66px;
+  height: 96px;
   font-size: 48px;
-  line-height: 48px;
+  line-height: 42px;
 }
+.roster-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* The rule the character's program is following, in its own words. */
 .roster-doing {
-  margin-left: auto;
   color: var(--soft);
+  font-size: 32px;
+  line-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.roster-doing.confused {
+  color: var(--gold);
 }
 .portrait {
   width: 48px;
