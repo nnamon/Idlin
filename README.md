@@ -7,8 +7,9 @@ program for one of them.
 
 ![The camp at midnight: the lantern and campfire light the clearing, and each adventurer carries a small light of their own](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
 
-_Midnight. The lantern and the campfire hold a pool of light; everyone out in
-the dark carries a small one of their own._
+_Midnight. Four of the six have gone home to the lantern because their programs
+say so; two wanderers are still out in the dark. The panel shows the rule each
+one is following._
 
 |                                                                                 |                                                                                         |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -18,8 +19,9 @@ the dark carries a small one of their own._
 | _Dusk, 19:12. The lamps come on as the light goes amber._                       | _Night. The deep wood and the den go dark._                                             |
 
 Every picture here is a capture of the running game, refreshed as it changes.
-Today the adventurers only walk and rest: programs, combat, skills and loot are
-the next things on the [roadmap](docs/roadmap.md).
+Today each adventurer runs one of three small programs written in
+[Tactics](docs/tactics.md); combat, skills and loot are the next things on the
+[roadmap](docs/roadmap.md).
 
 - **What it is:** [docs/design.md](docs/design.md)
 - **What it is built with:** [docs/stack.md](docs/stack.md)
