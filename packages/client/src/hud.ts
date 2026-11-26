@@ -32,7 +32,7 @@ export interface Hud {
 }
 
 export function createHud(panel: HTMLElement, ticker: HTMLElement, tagLayer: HTMLElement): Hud {
-  const title = el("h1", "title", "Idlin");
+  const title = el("h1", "title", "IDLIN");
   const time = el("div", "clock");
   const phase = el("div", "phase");
   const dial = el("div", "dial");

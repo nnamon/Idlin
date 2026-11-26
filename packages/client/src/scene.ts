@@ -36,7 +36,6 @@ import {
   GRASS,
   PATH,
   ROCK,
-  SAND,
   SHEET_COLUMNS,
   TILE,
   TREES,
@@ -48,12 +47,15 @@ export const SCALE = 3;
 
 const INK = 0x3e2731;
 const WATER = 0x4a8fd0;
-const WATER_DEEP = 0x3b74b8;
+const WATER_DEEP = 0x2c5a9c;
+const WATER_SHALLOW = 0x6fb1e6;
+const SAND = 0xedc591;
+const SAND_DARK = 0xcf9f6a;
 const WATER_LIGHT = 0x9fd4f2;
 const WOOD = 0xb86f50;
 const WOOD_DARK = 0x8a4836;
 const WOOD_LIGHT = 0xe4a672;
-const DEEP_WOOD_TINT = 0x86b0a2;
+const DEEP_WOOD_TINT = 0x7fa99c;
 const LAMP_WARM: Rgb = [1, 0.74, 0.42];
 /** Light falls off in steps, not smoothly, to stay in keeping with the pixel art. */
 const LIGHT_STEPS = [1, 0.84, 0.68, 0.52, 0.38, 0.24];
@@ -198,22 +200,43 @@ export class Scene {
           const column = !isCamp(x - 1, y) ? 0 : !isCamp(x + 1, y) ? 2 : 1;
           tile((DIRT[row] as (typeof DIRT)[number])[column] as Cell, x, y);
         } else if (terrain === "path") tile(PATH, x, y);
-        else if (terrain === "shore") tile(cellFor(SAND, x, y), x, y);
         else if (terrain === "den") tile(cellFor(DEN_FLOOR, x, y), x, y);
         else if (terrain === "rock") tile(cellFor(ROCK, x, y), x, y);
         else if (terrain === "deep_grass" || terrain === "dark_tree")
           tile(cellFor(GRASS, x, y), x, y, DEEP_WOOD_TINT);
         else if (!WET.has(terrain)) tile(cellFor(GRASS, x, y), x, y);
 
+        if (terrain === "shore") {
+          // A worn sandy patch, rounded, reaching out to any water beside it.
+          water.rect(px + 4, py + 1, 8, 14).fill(SAND);
+          water.rect(px + 2, py + 2, 12, 12).fill(SAND);
+          water.rect(px + 1, py + 4, 14, 8).fill(SAND);
+          if (isWet(x + 1, y)) water.rect(px + 8, py + 2, 8, 12).fill(SAND);
+          if (isWet(x - 1, y)) water.rect(px, py + 2, 8, 12).fill(SAND);
+          if (isWet(x, y + 1)) water.rect(px + 2, py + 8, 12, 8).fill(SAND);
+          if (isWet(x, y - 1)) water.rect(px + 2, py, 12, 8).fill(SAND);
+          water.rect(px + 4, py + 5, 2, 1).fill(SAND_DARK);
+          water.rect(px + 10, py + 9, 2, 1).fill(SAND_DARK);
+          water.rect(px + 7, py + 12, 1, 1).fill(SAND_DARK);
+        }
         if (WET.has(terrain)) {
           water.rect(px, py, TILE, TILE).fill(WATER);
-          if (!isWet(x, y - 1)) water.rect(px, py, TILE, 3).fill(WATER_DEEP);
-          if (!isWet(x - 1, y)) water.rect(px, py, 2, TILE).fill(WATER_DEEP);
-          if (!isWet(x + 1, y)) water.rect(px + TILE - 1, py, 1, TILE).fill(WATER_LIGHT);
-          if (terrain === "water" && cellFor([0, 1, 2], x, y) === 0) {
+          // Banks: a dark line where water meets land, and a paler shallow band inside it.
+          const banks: [boolean, number, number, number, number, number, number, number, number][] =
+            [
+              [!isWet(x, y - 1), px, py + 1, TILE, 2, px, py, TILE, 1],
+              [!isWet(x, y + 1), px, py + TILE - 3, TILE, 2, px, py + TILE - 1, TILE, 1],
+              [!isWet(x - 1, y), px + 1, py, 2, TILE, px, py, 1, TILE],
+              [!isWet(x + 1, y), px + TILE - 3, py, 2, TILE, px + TILE - 1, py, 1, TILE],
+            ];
+          for (const [land, sx, sy, sw, sh] of banks)
+            if (land) water.rect(sx, sy, sw, sh).fill(WATER_SHALLOW);
+          for (const [land, , , , , ex, ey, ew, eh] of banks)
+            if (land) water.rect(ex, ey, ew, eh).fill(WATER_DEEP);
+          if (terrain === "water" && cellFor([0, 1], x, y) === 0) {
             this.rippleSpots.push({
-              x: px + 3 + cellFor([0, 2, 5, 7], y, x),
-              y: py + 4 + cellFor([0, 3, 6, 8], x + 7, y),
+              x: px + 4 + cellFor([0, 2, 4, 6], y, x),
+              y: py + 5 + cellFor([0, 2, 4, 6], x + 7, y),
               length: 3 + cellFor([0, 1, 2], x + 3, y),
               phase: cellFor([0, 1, 2, 3, 4, 5, 6, 7], x, y + 11),
             });
@@ -367,5 +390,29 @@ export class Scene {
     });
     this.app.renderer.render({ container: this.app.stage });
     return tags;
+  }
+
+  /**
+   * Mean brightness (0 to 255) of the frame just drawn, in blocks of one tile.
+   * For measuring flicker: compare the result of two consecutive frames.
+   */
+  brightness(): number[] {
+    const probe = document.createElement("canvas");
+    probe.width = this.map.width;
+    probe.height = this.map.height;
+    const context = probe.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("no 2d context");
+    context.drawImage(this.app.canvas, 0, 0, probe.width, probe.height);
+    const { data } = context.getImageData(0, 0, probe.width, probe.height);
+    const blocks: number[] = [];
+    for (let i = 0; i < data.length; i += 4) {
+      blocks.push(
+        ((data[i] as number) * 299 +
+          (data[i + 1] as number) * 587 +
+          (data[i + 2] as number) * 114) /
+          1000,
+      );
+    }
+    return blocks;
   }
 }

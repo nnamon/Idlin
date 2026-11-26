@@ -11,7 +11,14 @@ export interface Cell {
 const town = (index: number): Cell => ({ sheet: "town", index });
 const dungeon = (index: number): Cell => ({ sheet: "dungeon", index });
 
-export const GRASS = [town(0), town(0), town(0), town(1), town(0), town(2)] as const;
+/** Mostly plain; some tufts; a flower now and then. */
+export const GRASS = [
+  ...Array.from({ length: 12 }, () => town(0)),
+  town(1),
+  town(1),
+  town(1),
+  town(2),
+] as const;
 export const PATH = town(43);
 /** Dirt with a grass edge, as a nine-slice: rows top/middle/bottom, columns left/middle/right. */
 export const DIRT = [
@@ -19,7 +26,6 @@ export const DIRT = [
   [town(24), town(25), town(26)],
   [town(36), town(37), town(38)],
 ] as const;
-export const SAND = [dungeon(48), dungeon(49), dungeon(48), dungeon(51)] as const;
 export const DEN_FLOOR = [
   dungeon(0),
   dungeon(1),
@@ -29,8 +35,9 @@ export const DEN_FLOOR = [
   dungeon(24),
 ] as const;
 export const ROCK = [dungeon(40), dungeon(57), dungeon(58), dungeon(59)] as const;
-export const TREES = [town(16), town(4), town(16), town(28), town(5)] as const;
-export const DARK_TREES = [town(4), town(28), town(4)] as const;
+// Tile 4 (the pale pine) is left out: its fill is the grass colour, so on grass it reads as an outline.
+export const TREES = [town(16), town(28), town(16), town(5), town(28)] as const;
+export const DARK_TREES = [town(28), town(28), town(16)] as const;
 export const BANK_CHEST = dungeon(89);
 export const FIRE_LOG = town(106);
 

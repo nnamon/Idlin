@@ -19,7 +19,7 @@ const FRAME_HEIGHT = 1080;
 declare global {
   interface Window {
     /** Present in capture mode (`?capture`): the page draws only when told to. */
-    idlin?: { advance(ticks: number): void; world: World };
+    idlin?: { advance(ticks: number): void; brightness(): number[]; world: World };
   }
 }
 
@@ -60,6 +60,10 @@ async function main(): Promise<void> {
       advance(ticks) {
         for (let i = 0; i < ticks; i++) step(world);
         draw(0);
+      },
+      brightness() {
+        draw(0);
+        return scene.brightness();
       },
     };
     draw(0);
