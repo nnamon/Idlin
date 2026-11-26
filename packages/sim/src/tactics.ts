@@ -117,14 +117,17 @@ const isWord = (token: Token, text: string): boolean =>
   (token.kind === "symbol" || token.kind === "keyword") && token.text === text;
 
 /**
- * Text that will be shown to viewers (a bot's name, a rule's label): control
- * and invisible characters removed, spaces collapsed, cut to `limit` without
- * splitting a character.
+ * Text that will be shown to viewers (a bot's name, a rule's label). Only
+ * Latin letters, digits and common punctuation are kept: that is what the
+ * stream's typeface can draw, and it leaves no room for invisible, blank or
+ * stacked characters. Spaces are collapsed and the text is cut to `limit`.
  */
 function shown(text: string, limit: number): string {
   const clean = text
-    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}]/gu, "")
-    .replace(/\s+/g, " ")
+    .normalize("NFC")
+    .replace(/[\p{Z}\p{Cc}]+/gu, " ")
+    .replace(/[^\p{Script=Latin}\p{Nd} !-~\u00a1-\u00bf\u2018\u2019\u201c\u201d\u2013\u2014]/gu, "")
+    .replace(/ +/g, " ")
     .trim();
   if (clean.length <= limit) return clean;
   let out = "";
@@ -137,9 +140,16 @@ function shown(text: string, limit: number): string {
   return `${(space > 10 ? out.slice(0, space) : out).trimEnd()}...`;
 }
 
+/** A character as it can be named in an error: itself if it can be shown, its code point if not. */
+function named(character: string): string {
+  const visible = shown(character, 8);
+  if (visible !== "") return `"${visible}"`;
+  return `the character U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
 function tokenize(text: string, errors: TacticsError[]): Token[] {
-  // Every kind of line ending is one line break.
-  const source = text.replace(/\r\n?/g, "\n");
+  // Every kind of line ending is one line break, and every kind of space is a space.
+  const source = text.replace(/\r\n?|[\u0085\u2028\u2029\f\v]/g, "\n").replace(/[^\S\n]/g, " ");
   const tokens: Token[] = [];
   let line = 1;
   let column = 1;
@@ -151,11 +161,14 @@ function tokenize(text: string, errors: TacticsError[]): Token[] {
   while (i < source.length) {
     const ch = source.charAt(i);
     if (ch === "\n") {
-      // An unclosed bracket must not swallow the rest of the program: a line
-      // that starts a new rule always ends the one before it.
-      if (depth > 0 && /^\s*(when|otherwise|bot)\b/.test(source.slice(i + 1, i + 40))) depth = 0;
+      // A line that starts a new rule always ends the one before it, whatever
+      // that one was in the middle of: an unclosed bracket or a dangling
+      // operator must not swallow the rest of the program.
+      const startsRule = /^ *(when|otherwise|bot)\b/.test(source.slice(i + 1, i + 40));
+      if (startsRule) depth = 0;
       const last = tokens[tokens.length - 1];
       const wraps =
+        !startsRule &&
         last !== undefined &&
         (last.kind === "symbol" || last.kind === "keyword") &&
         CONTINUES.has(last.text);
@@ -204,7 +217,7 @@ function tokenize(text: string, errors: TacticsError[]): Token[] {
         errors.push({
           line,
           column,
-          message: `"${shown(character, 8) || "?"}" is not something Tactics understands`,
+          message: `${named(character)} is not something Tactics understands`,
         });
         i += character.length;
         column += character.length;
@@ -836,11 +849,15 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     let name = "Unnamed";
     let sawOtherwise: Token | null = null;
 
+    // Mistakes found while reading rules. Counted apart from the tokenizer's, so
+    // that a line full of stray characters cannot stop the other lines being read.
+    let mistakes = 0;
     const attempt = (work: () => void): void => {
       try {
         work();
       } catch (problem) {
         if (!(problem instanceof Problem)) throw problem;
+        mistakes++;
         errors.push(problem.error);
         if (!problem.lineDone) parser.skipLine();
       }
@@ -852,7 +869,7 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     });
     for (
       parser.skipBlankLines();
-      parser.peek().kind !== "end" && errors.length < MAX_ERRORS;
+      parser.peek().kind !== "end" && rules.length + mistakes < MAX_RULES * 4;
       parser.skipBlankLines()
     ) {
       attempt(() => {
@@ -885,8 +902,13 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     );
     const generator = new Generator(constants, rules, errors);
     const labels: string[] = [];
-    let tooBig: Rule | null = null;
+    // The first rule at which each limit is passed, so the error can point at it.
+    let tooLong: Rule | null = null;
+    let tooDeep: Rule | null = null;
+    let tooManySteps: Rule | null = null;
+    let steps = 0;
     rules.forEach((rule, index) => {
+      const before = generator.code.length;
       try {
         generator.rule(rule, index, sequences);
         labels.push(rule.label);
@@ -894,7 +916,10 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
         if (!(problem instanceof Problem)) throw problem;
         errors.push(problem.error);
       }
-      if (tooBig === null && generator.code.length > MAX_CODE_LENGTH) tooBig = rule;
+      steps += countInstructions(generator.code.slice(before));
+      if (tooLong === null && generator.code.length > MAX_CODE_LENGTH) tooLong = rule;
+      if (tooDeep === null && generator.deepestStack > STACK_SIZE) tooDeep = rule;
+      if (tooManySteps === null && steps > GAS_PER_DECISION) tooManySteps = rule;
     });
     if (errors.length > 0) return fail();
     if (!sawOtherwise) {
@@ -907,12 +932,12 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     const lastRule = rules[rules.length - 1] as Rule;
     if (generator.code.length > MAX_CODE_LENGTH) {
       const size = `it compiles to ${generator.code.length} words and the limit is ${MAX_CODE_LENGTH}`;
-      return refuse(`this program is too long: ${size}`, (tooBig ?? lastRule).at);
+      return refuse(`this program is too long: ${size}`, (tooLong ?? lastRule).at);
     }
     if (generator.deepestStack > STACK_SIZE) {
       return refuse(
-        "an expression in this program needs more room than the machine has",
-        lastRule.at,
+        "an expression in this rule needs more room than the machine has",
+        (tooDeep ?? lastRule).at,
       );
     }
     // Every jump the compiler writes goes forward, so a decision runs each
@@ -921,7 +946,10 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     const instructions = countInstructions(generator.code);
     if (instructions > GAS_PER_DECISION) {
       const size = `it has ${instructions} steps and a decision may take ${GAS_PER_DECISION}`;
-      return refuse(`this program is too long to finish a decision: ${size}`, lastRule.at);
+      return refuse(
+        `this program is too long to finish a decision: ${size}`,
+        (tooManySteps ?? lastRule).at,
+      );
     }
     const program = validateProgram({
       version: BYTECODE_VERSION,
@@ -948,6 +976,10 @@ export function compileBots(
   sources: Readonly<Record<string, string>>,
   constants: Constants = {},
 ): Record<string, Program> {
+  // A constant no program could use is the map's mistake, not any one program's.
+  const unusable = constantsProblem(constants);
+  if (unusable !== null)
+    throw new BotError(`the names given to programs are not usable: ${unusable}`);
   const programs: Record<string, Program> = {};
   for (const file of Object.keys(sources).sort()) {
     if (!PROGRAM_NAME.test(file)) {

@@ -324,6 +324,27 @@ describe("errors", () => {
       "1:24",
       "2:6",
     ]);
+    // Nor does a line that stops in the middle of something: after "(", ",", "->", ";" or an operator.
+    for (const broken of [
+      "when distance(",
+      "when hour > 3 and",
+      "when hour > 3 ->",
+      "otherwise -> walk_to(camp,",
+      "when 1 -> idle;",
+      "when 1 -",
+    ]) {
+      const found = lines(`${broken}\nwhen zork -> idle\nwhen 1 -> nope`);
+      expect(found, broken).toContain("2:6");
+      expect(found, broken).toContain("3:11");
+      expect(found[0], broken).toMatch(/^1:/);
+    }
+    // A line of stray characters does not stop the other lines being read.
+    expect(lines(`when zork -> idle\notherwise -> idle ${"@".repeat(12)}`)[0]).toBe("1:6");
+    // Size errors point at the rule that went over, not at the last rule.
+    const deep = `when ${"1 < 1 + 1 * (".repeat(30)}1${")".repeat(30)} -> idle\n${"when 1 -> idle\n".repeat(5)}`;
+    expect(errorsOf(deep)[0]).toMatch(/^1:1 an expression in this rule needs more room/);
+    const long = `${`when ${Array.from({ length: 290 }, () => "hour").join(" + ")} > 0 -> idle\n`.repeat(4)}${"when hour -> idle\n".repeat(10)}`;
+    expect(errorsOf(long)[0]).toMatch(/^4:1 this program is too long to finish a decision/);
     // Text in quotes is never a reason to join two lines.
     expect(
       compiled('bot "or"\nwhen hour > 1 as "and" -> idle\notherwise as "->" -> wander').rules,
@@ -331,11 +352,16 @@ describe("errors", () => {
   });
 
   it("treats every kind of line ending as a line break", () => {
-    for (const ending of ["\n", "\r\n", "\r"]) {
+    for (const ending of ["\n", "\r\n", "\r", "\u2028", "\u2029", "\u0085", "\f", "\v"]) {
       const program = compiled(`when hour > 1 -> idle${ending}otherwise -> wander${ending}`);
       expect(program.rules).toEqual(["hour > 1", "otherwise"]);
     }
     expect(errorsOf("otherwise -> idle\r\rwhen zork -> idle")[0]).toMatch(/^3:1 /);
+    // A no-break space is a space; a character that cannot be shown is named by its code point.
+    expect(compiled("when\u00a0hour\u00a0>\u00a01 -> idle").rules[0]).toBe("hour > 1");
+    expect(errorsOf("otherwise -> idle \u0007")[0]).toMatch(
+      /^1:19 the character U\+0007 is not something Tactics understands/,
+    );
   });
 
   it("reports several mistakes at once, each on its own line, and stops at ten", () => {
@@ -397,7 +423,7 @@ describe("errors", () => {
     }
   });
 
-  it("a compiled program can never run out of its budget", () => {
+  it("the largest programs it accepts finish their decision", () => {
     // The largest programs the compiler accepts, run with every sensor answering so that all rules are tried.
     const sum = (k: number): string =>
       `when ${Array.from({ length: k }, () => "hour").join(" + ")} > 9999 -> idle\n`;
@@ -462,18 +488,32 @@ describe("names and labels", () => {
     ]);
   });
 
-  it("removes invisible and control characters from what viewers will read, and never splits a character", () => {
+  it("keeps only Latin letters, digits and common punctuation in what viewers will read", () => {
     const result = compileTactics(
-      'bot "\u202ESly\u200B Fox\u0007"\nwhen 1 as "\u202Eevil\u200B  twin" -> idle',
+      'bot "\u202ESly\u200B\tFox\u0007 🦊"\nwhen 1 as "\u202Eévil\u200B  twin — no. 2!" -> idle',
     );
     expect(result).toMatchObject({ ok: true, name: "Sly Fox" });
-    expect(result.ok && result.program.rules[0]).toBe("evil twin");
-    const emoji = compiled(`when 1 as "${"🦊".repeat(40)}" -> idle`).rules[0] as string;
-    expect(emoji.length).toBeLessThanOrEqual(40);
-    expect(emoji).toBe(`${"🦊".repeat(18)}...`);
-    expect(compileTactics(`bot "${"🦉".repeat(40)}"\notherwise -> idle`)).toMatchObject({
-      name: `${"🦉".repeat(14)}...`,
-    });
+    expect(result.ok && result.program.rules[0]).toBe("évil twin — no. 2!");
+    // Blank-looking letters, bare accents, stacked accents, emoji and other scripts leave nothing behind.
+    for (const blank of [
+      "\u3164",
+      "\u2800\u2800",
+      "\uFE0F\uFE0F",
+      "\u0301\u0301",
+      "🇫🇷🇫🇷",
+      "می‌خواهم",
+      "\u200B",
+    ]) {
+      expect(errorsOf(`bot "${blank}"\notherwise -> idle`)[0], blank).toMatch(
+        /after "bot" comes the bot's name/,
+      );
+      expect(errorsOf(`when 1 as "${blank}" -> idle`)[0], blank).toMatch(
+        /after "as" comes a short label/,
+      );
+    }
+    expect(compiled(`when 1 as "a${"\u0301".repeat(31)}b" -> idle`).rules[0]).toBe("áb");
+    const long = compiled(`when 1 as "${"é".repeat(60)}" -> idle`).rules[0] as string;
+    expect(long).toBe(`${"é".repeat(37)}...`);
   });
 
   it("refuses constants a program could not use, with the reason", () => {
@@ -754,6 +794,12 @@ describe("shipped programs", () => {
       "riverwalker: to the river and back",
       "wanderer: stroll, then rest",
     ]);
+  });
+
+  it("a map whose place names no program could use is blamed, not the programs", () => {
+    expect(() => compileBots({ fine: "otherwise -> idle" }, { hour: { x: 1, y: 2 } })).toThrow(
+      /^the names given to programs are not usable: "hour" is already a sensor or an action/,
+    );
   });
 
   it("a content file whose name could not be a program name is refused by name", () => {
