@@ -1,14 +1,12 @@
 // The two inks the map is drawn in. By day: sepia on cream paper with thin
 // watercolour washes. By night: the same drawing in pale ink on dark blue
-// paper. Dusk and dawn are a blend of the two.
+// paper.
 
 import { type Rgb, rgb } from "./light.ts";
 
 export interface Palette {
   readonly paper: Rgb;
   readonly ink: Rgb;
-  /** How strongly the washes show. */
-  readonly washStrength: number;
   readonly wash: Readonly<Record<WashName, Rgb>>;
 }
 
@@ -65,13 +63,13 @@ const NIGHT_WASH: Record<WashName, Rgb> = {
 export const DAY: Palette = {
   paper: rgb(0xf1e6cd),
   ink: rgb(0x2f2621),
-  washStrength: 1,
+
   wash: DAY_WASH,
 };
 export const NIGHT: Palette = {
   paper: rgb(0x1d2742),
   ink: rgb(0xcfd8ea),
-  washStrength: 1,
+
   wash: NIGHT_WASH,
 };
 

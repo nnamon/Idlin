@@ -103,7 +103,15 @@ Which checks apply depends on what exists so far; see "What applies when" in
 
 ## 7. Merge
 
-When every gate in section 5 of `AGENTS.md` holds, squash-merge. Then:
+When every gate in section 5 of `AGENTS.md` holds, squash-merge. GitHub dates
+the merge commit in the time zone it last saw for the account, so say UTC:
+
+```sh
+gh api -X PUT repos/nnamon/Idlin/pulls/<P>/merge -H "Time-Zone: Etc/UTC" \
+  -f merge_method=squash -f sha=<head sha>
+```
+
+Then:
 
 ```sh
 git checkout main && git pull --ff-only origin main

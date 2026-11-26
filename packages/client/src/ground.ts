@@ -44,7 +44,7 @@ const DEEP: ReadonlySet<Terrain> = new Set(["deep_grass", "dark_tree"]);
 const WET: ReadonlySet<Terrain> = new Set(["water", "bridge"]);
 const SPRITE = 132;
 
-export function drawGround(map: TileMap, labels: readonly MapLabel[], palette: Palette): Ground {
+export function drawGround(map: TileMap, palette: Palette): Ground {
   const width = map.width * TILE;
   const height = map.height * TILE;
   const terrain = (x: number, y: number): Terrain | null =>
@@ -83,7 +83,7 @@ export function drawGround(map: TileMap, labels: readonly MapLabel[], palette: P
   // Washes: soft pools of colour under the ink, as thin watercolour would lie.
   const pool = (cx: number, cy: number, r: number, name: WashName, alpha: number): void => {
     const gradient = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
-    gradient.addColorStop(0, wash(name, alpha * palette.washStrength));
+    gradient.addColorStop(0, wash(name, alpha));
     gradient.addColorStop(1, wash(name, 0));
     ctx.fillStyle = gradient;
     ctx.beginPath();
@@ -115,9 +115,13 @@ export function drawGround(map: TileMap, labels: readonly MapLabel[], palette: P
   // The river: the water tiles' outline, rounded into banks.
   const ripples: Pt[] = [];
   const pen = new Pen(11);
-  const banks = regionLoops(map.width, map.height, (x, y) => WET.has(terrainAt(map, x, y))).map(
-    (loop) => smoothLoop(loop, 3).map(([x, y]) => [x * TILE, y * TILE] as const),
-  );
+  // Traced on a grid one tile larger all round, with the map's edge tiles repeated
+  // outwards, so that a river running off the map is not rounded off at the edge.
+  const clampX = (x: number): number => Math.min(map.width - 1, Math.max(0, x));
+  const clampY = (y: number): number => Math.min(map.height - 1, Math.max(0, y));
+  const banks = regionLoops(map.width + 2, map.height + 2, (x, y) =>
+    WET.has(terrainAt(map, clampX(x - 1), clampY(y - 1))),
+  ).map((loop) => smoothLoop(loop, 3).map(([x, y]) => [(x - 1) * TILE, (y - 1) * TILE] as const));
   ctx.beginPath();
   for (const loop of banks) {
     trace(ctx, loop);
@@ -278,22 +282,6 @@ export function drawGround(map: TileMap, labels: readonly MapLabel[], palette: P
       }
     }
   }
-
-  // Place names, lettered as on a map.
-  ctx.fillStyle = css(palette.ink, 0.78);
-  ctx.textAlign = "center";
-  for (const label of labels) {
-    const [font, size, spacing] =
-      label.style === "region"
-        ? ["Fell Italic", 30, 2]
-        : label.style === "town"
-          ? ["Fell SC", 24, 3]
-          : ["Fell Italic", 22, 0];
-    ctx.font = `${size}px "${font}"`;
-    ctx.letterSpacing = `${spacing}px`;
-    ctx.fillText(label.text, label.x * TILE, label.y * TILE);
-  }
-  ctx.letterSpacing = "0px";
 
   // Things that stand up, each on its own small sheet.
   const standing: Standing[] = [];

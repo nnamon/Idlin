@@ -16,7 +16,7 @@ import {
 } from "@idlin/sim";
 import { drawFigure } from "./figure.ts";
 import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
-import { css, dayRegion, EDGE, lampStrength, phaseName, skyCast } from "./light.ts";
+import { css, dayAt, dayRegion, EDGE, lampAt, lampStrength, phaseName, skyCast } from "./light.ts";
 import { cloakColor, DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas } from "./pen.ts";
 import { actorPose, type Pose } from "./pose.ts";
@@ -25,8 +25,10 @@ import { placeTags, TAG_HEIGHT } from "./tags.ts";
 export const FRAME_WIDTH = 1920;
 export const FRAME_HEIGHT = 1080;
 const FIGURE_SCALE = 1.3;
-const TAG_FONT = '22px "Fell SC"';
+const TAG_FONT = '25px "Fell SC"';
 const FONTS = ['22px "Fell"', '22px "Fell Italic"', TAG_FONT];
+/** How long a line of news stays up at least, in ticks, so the line can be read. */
+const NEWS_TICKS = 40;
 /** How far each kind of light reaches, in tiles. */
 const LANTERN_REACH = 5.4;
 const FIRE_REACH = 3;
@@ -72,6 +74,10 @@ export class Scene {
   private readonly tagWidths = new Map<string, number>();
   /** Where the dark closes in to at dusk: the first lantern, or the middle of the map. */
   private readonly hearth: readonly [number, number];
+  private readonly labels: readonly MapLabel[];
+  private news = "";
+  private newsSince = Number.NEGATIVE_INFINITY;
+  private readonly lastRule = new Map<number, number>();
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     this.width = map.width * TILE;
@@ -81,12 +87,13 @@ export class Scene {
     this.out = ctx;
     const side = (palette: Palette): Side => ({
       palette,
-      ground: drawGround(map, labels, palette),
+      ground: drawGround(map, palette),
       ...newCanvas(FRAME_WIDTH, FRAME_HEIGHT),
     });
     this.day = side(DAY);
     this.night = side(NIGHT);
     this.lit = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
+    this.labels = labels;
     const lantern = this.day.ground.lanterns[0];
     this.hearth = lantern ? [lantern[0], lantern[1] + 28] : [this.width / 2, this.height / 2];
   }
@@ -113,23 +120,48 @@ export class Scene {
       Math.hypot(hx, FRAME_HEIGHT - hy),
       Math.hypot(FRAME_WIDTH - hx, FRAME_HEIGHT - hy),
     );
-    const region = dayRegion(hour, reach, FRAME_WIDTH);
+    const region = dayRegion(hour, reach);
 
-    const alive = new Set<number>();
     const walkers: Walker[] = world.actors.map((actor) => {
-      alive.add(actor.id);
-      if (actor.x !== actor.fromX) this.facing.set(actor.id, actor.x > actor.fromX ? 1 : -1);
       const pose = actorPose(actor, fraction, time);
       return { actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
-    for (const id of this.facing.keys()) if (!alive.has(id)) this.facing.delete(id);
-    for (const id of this.tagSpots.keys()) if (!alive.has(id)) this.tagSpots.delete(id);
-    const tags = this.placeNames(walkers);
+
+    // Every light there is, as a place, a reach in pixels and a strength.
+    const lights: { x: number; y: number; reach: number; strength: number }[] = [];
+    if (lamps > 0) {
+      for (const [x, y] of this.day.ground.lanterns) {
+        lights.push({ x, y: y + 28, reach: LANTERN_REACH * TILE, strength: lamps });
+      }
+      for (const [x, y] of this.day.ground.fires) {
+        // A fire's light breathes slowly; it never jumps.
+        const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
+        lights.push({ x, y, reach: FIRE_REACH * TILE * breath, strength: lamps * 0.95 });
+      }
+      for (const walker of walkers) {
+        lights.push({
+          x: walker.x,
+          y: walker.y - 22,
+          reach: CARRIED_REACH * TILE,
+          strength: lamps * 0.85,
+        });
+      }
+    }
+    /** How much of the day drawing shows at a point, 0 to 1: the same sum the picture is built from. */
+    const litAt = (x: number, y: number): number => {
+      let dark = 1 - dayAt(region, Math.hypot(x - hx, y - hy));
+      for (const light of lights)
+        dark *= 1 - lampAt(Math.hypot(x - light.x, y - light.y), light.reach, light.strength);
+      return 1 - dark;
+    };
 
     const out = this.out;
-    if (region.kind !== "all") this.drawSide(this.night, world, walkers, tags, time);
-    if (region.kind !== "none" || lamps > 0) this.drawSide(this.day, world, walkers, tags, time);
+    if (region.kind !== "all") this.drawSide(this.night, world, walkers, time);
+    // In full night the day drawing only shows inside the lamps' reach, so only that much of it is drawn.
+    if (region.kind !== "none" || lamps > 0) {
+      this.drawSide(this.day, world, walkers, time, region.kind === "none" ? lights : null);
+    }
     out.drawImage(region.kind === "all" ? this.day.canvas : this.night.canvas, 0, 0);
 
     if (region.kind !== "all") {
@@ -145,54 +177,50 @@ export class Scene {
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
         lit.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-      } else if (region.kind === "front") {
-        const gradient = lit.createLinearGradient(region.x, 0, region.x + EDGE, 0);
-        gradient.addColorStop(0, "rgba(255,255,255,0)");
-        gradient.addColorStop(1, "rgba(255,255,255,1)");
-        lit.fillStyle = gradient;
-        lit.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
       }
-      const glow = (x: number, y: number, tiles: number, strength: number): void => {
-        const r = tiles * TILE;
-        const gradient = lit.createRadialGradient(x, y, r * 0.12, x, y, r);
-        gradient.addColorStop(0, `rgba(255,255,255,${strength})`);
-        gradient.addColorStop(0.55, `rgba(255,255,255,${strength * 0.55})`);
+      for (const light of lights) {
+        const gradient = lit.createRadialGradient(
+          light.x,
+          light.y,
+          light.reach * 0.12,
+          light.x,
+          light.y,
+          light.reach,
+        );
+        gradient.addColorStop(0, `rgba(255,255,255,${light.strength})`);
+        gradient.addColorStop(0.55, `rgba(255,255,255,${light.strength * 0.55})`);
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
         lit.beginPath();
-        lit.arc(x, y, r, 0, 7);
+        lit.arc(light.x, light.y, light.reach, 0, 7);
         lit.fill();
-      };
-      if (lamps > 0) {
-        for (const [x, y] of this.day.ground.lanterns) glow(x, y + 28, LANTERN_REACH, lamps);
-        for (const [x, y] of this.day.ground.fires) {
-          // A fire's light breathes slowly; it never jumps.
-          const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
-          glow(x, y, FIRE_REACH * breath, lamps * 0.95);
-        }
-        for (const walker of walkers) glow(walker.x, walker.y - 22, CARRIED_REACH, lamps * 0.85);
       }
       lit.globalCompositeOperation = "source-in";
       lit.drawImage(this.day.canvas, 0, 0);
       out.drawImage(this.lit.canvas, 0, 0);
-      if (lamps > 0) {
-        // Lamplight is warm: a thin amber laid where each lamp falls.
-        out.globalCompositeOperation = "soft-light";
-        const warm = (x: number, y: number, tiles: number): void => {
-          const r = tiles * TILE;
-          const gradient = out.createRadialGradient(x, y, 0, x, y, r);
-          gradient.addColorStop(0, `rgba(255,150,40,${0.5 * lamps})`);
-          gradient.addColorStop(1, "rgba(255,150,40,0)");
-          out.fillStyle = gradient;
-          out.beginPath();
-          out.arc(x, y, r, 0, 7);
-          out.fill();
-        };
-        for (const [x, y] of this.day.ground.lanterns) warm(x, y + 28, LANTERN_REACH);
-        for (const [x, y] of this.day.ground.fires) warm(x, y, FIRE_REACH);
-        for (const walker of walkers) warm(walker.x, walker.y - 22, CARRIED_REACH);
-        out.globalCompositeOperation = "source-over";
+    }
+
+    // Lamplight is warm: a thin amber laid where each lamp falls, by day as well
+    // while the lamps are coming on or going out, so that they never switch.
+    if (lights.length > 0) {
+      out.globalCompositeOperation = "soft-light";
+      for (const light of lights) {
+        const gradient = out.createRadialGradient(
+          light.x,
+          light.y,
+          0,
+          light.x,
+          light.y,
+          light.reach,
+        );
+        gradient.addColorStop(0, `rgba(255,160,60,${0.24 * light.strength})`);
+        gradient.addColorStop(1, "rgba(255,160,60,0)");
+        out.fillStyle = gradient;
+        out.beginPath();
+        out.arc(light.x, light.y, light.reach, 0, 7);
+        out.fill();
       }
+      out.globalCompositeOperation = "source-over";
     }
 
     const cast = skyCast(hour);
@@ -200,16 +228,89 @@ export class Scene {
       out.fillStyle = css(cast.color, cast.alpha);
       out.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
     }
+
+    // Lettering goes on last, each piece wholly in day ink or wholly in night
+    // ink according to the light where it sits, so it never fades into a halo.
+    const inkFor = (x: number, y: number): Palette => (litAt(x, y) > 0.5 ? DAY : NIGHT);
+    out.textAlign = "center";
+    out.lineJoin = "round";
+    for (const label of this.labels) {
+      const [font, size, spacing] =
+        label.style === "region"
+          ? ["Fell Italic", 30, 2]
+          : label.style === "town"
+            ? ["Fell SC", 24, 3]
+            : ["Fell Italic", 22, 0];
+      const x = label.x * TILE;
+      const y = label.y * TILE;
+      const palette = inkFor(x, y - 8);
+      out.font = `${size}px "${font}"`;
+      out.letterSpacing = `${spacing}px`;
+      out.lineWidth = 4;
+      out.strokeStyle = css(palette.paper, 0.7);
+      out.fillStyle = css(palette.ink, 0.8);
+      out.strokeText(label.text, x, y);
+      out.fillText(label.text, x, y);
+    }
+    out.letterSpacing = "0px";
+    out.font = TAG_FONT;
+    for (const tag of this.placeNames(walkers)) {
+      // A name sits on a small slip of paper, so it reads over trees, water and other ink.
+      const palette = inkFor(tag.x, tag.y - 8);
+      out.fillStyle = css(palette.paper, 0.9);
+      out.beginPath();
+      out.roundRect(tag.x - tag.width / 2, tag.y - 19, tag.width, TAG_HEIGHT - 3, 4);
+      out.fill();
+      out.fillStyle = css(palette.ink);
+      out.fillText(tag.name, tag.x, tag.y);
+    }
+  }
+
+  /**
+   * Takes note of the world after a tick: which way each actor now faces, and
+   * anything worth a line of news. Call it after every `step`, drawn or not, so
+   * that what a frame shows depends on the world's history and not on which
+   * frames happened to be drawn.
+   */
+  observe(world: World): void {
+    const alive = new Set<number>();
+    for (const actor of world.actors) {
+      alive.add(actor.id);
+      if (actor.x !== actor.fromX) this.facing.set(actor.id, actor.x > actor.fromX ? 1 : -1);
+      const before = this.lastRule.get(actor.id);
+      this.lastRule.set(actor.id, actor.rule);
+      // A line stays up long enough to be read before the next one replaces it.
+      if (before === undefined || before === actor.rule || world.tick - this.newsSince < NEWS_TICKS)
+        continue;
+      const label = world.programs[actor.program]?.rules[actor.rule];
+      if (!label || label === "otherwise") continue;
+      this.news = `${actor.name}: ${label}`;
+      this.newsSince = world.tick;
+    }
+    for (const known of [this.facing, this.tagSpots, this.lastRule]) {
+      for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
+    }
+  }
+
+  /**
+   * Forgets where names were placed in earlier frames. Names normally keep
+   * their spot from frame to frame so they don't hop about; a capture calls
+   * this so that a frame depends only on the world.
+   */
+  forgetNameSpots(): void {
+    this.tagSpots.clear();
   }
 
   /** Works out where each name goes, so that no name covers a figure or another name. */
-  private placeNames(walkers: readonly Walker[]): { name: string; x: number; y: number }[] {
+  private placeNames(
+    walkers: readonly Walker[],
+  ): { name: string; x: number; y: number; width: number }[] {
     const measure = this.out;
     measure.font = TAG_FONT;
     const wishes = walkers.map((walker) => {
       let width = this.tagWidths.get(walker.actor.name);
       if (width === undefined) {
-        width = Math.ceil(measure.measureText(walker.actor.name).width) + 8;
+        width = Math.ceil(measure.measureText(walker.actor.name).width) + 12;
         this.tagWidths.set(walker.actor.name, width);
       }
       // The line just above the hood.
@@ -225,6 +326,7 @@ export class Scene {
         name: walker.actor.name,
         x: (box.left + box.right) / 2,
         y: box.top + TAG_HEIGHT - 7,
+        width: box.right - box.left,
       };
     });
   }
@@ -234,12 +336,21 @@ export class Scene {
     side: Side,
     world: World,
     walkers: readonly Walker[],
-    tags: readonly { name: string; x: number; y: number }[],
     time: number,
+    only: readonly { x: number; y: number; reach: number }[] | null = null,
   ): void {
     const { ctx, ground, palette } = side;
     const ink = css(palette.ink);
     const paper = css(palette.paper);
+    ctx.save();
+    if (only) {
+      ctx.beginPath();
+      for (const spot of only) {
+        ctx.moveTo(spot.x + spot.reach + 2, spot.y);
+        ctx.arc(spot.x, spot.y, spot.reach + 2, 0, 7);
+      }
+      ctx.clip();
+    }
     ctx.globalAlpha = 1;
     ctx.fillStyle = paper;
     ctx.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
@@ -298,18 +409,6 @@ export class Scene {
     }
     upTo(Number.POSITIVE_INFINITY);
 
-    // Names, lettered with a halo of paper so they read over anything.
-    ctx.font = TAG_FONT;
-    ctx.textAlign = "center";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = paper;
-    ctx.fillStyle = ink;
-    for (const tag of tags) {
-      ctx.strokeText(tag.name, tag.x, tag.y);
-      ctx.fillText(tag.name, tag.x, tag.y);
-    }
-
     // A ruled double border, as round a printed map.
     ctx.strokeStyle = ink;
     ctx.lineWidth = 3;
@@ -318,6 +417,7 @@ export class Scene {
     ctx.strokeRect(13.5, 13.5, this.width - 27, this.height - 27);
 
     this.page(ctx, world, palette, style);
+    ctx.restore();
   }
 
   /** The page beside the map and the line beneath it. */
@@ -360,7 +460,7 @@ export class Scene {
       ctx.globalAlpha = 1;
       drawFigure(ctx, left + 34, top + 92, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
       ctx.fillStyle = ink;
-      ctx.font = '40px "Fell SC"';
+      ctx.font = '42px "Fell SC"';
       ctx.fillText(actor.name, left + 86, top + 46);
       // What the actor's program is doing, in the program's own words: the label of the rule that fired.
       const label = world.programs[actor.program]?.rules[actor.rule];
@@ -384,8 +484,14 @@ export class Scene {
       ctx.fillText(`and ${world.actors.length - listed.length} more`, left, below + 40);
     }
 
-    ctx.font = '34px "Fell Italic"';
-    ctx.fillText(`Day ${day + 1}, ${part}.`, 28, this.height + 48);
+    // The line of news: the last thing a program decided, or the hour if nothing has happened yet.
+    ctx.font = '36px "Fell Italic"';
+    ctx.fillText(
+      this.news === "" ? `Day ${day + 1}, ${part}.` : this.news,
+      28,
+      this.height + 49,
+      this.width - 56,
+    );
   }
 
   /** A fire's flame: three tongues that lean and stretch slowly. */

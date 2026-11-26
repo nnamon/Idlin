@@ -145,27 +145,36 @@ have duration and the picture is calm.
 
 ## Look
 
-The stream looks like a map from an old book that happens to be alive. The
-ground is cream paper, the land is drawn in sepia ink with thin watercolour
-washes under it, and place names are lettered on it. Nothing comes from an
-asset pack: the map, the trees, the tents and the characters are all drawn by
-code, with lines that wobble a little the way a pen does. A new monster or
-place is a drawing routine.
+The stream is drawn as a map, in the style of the maps printed in old books.
+The ground is cream paper, the land is drawn in sepia ink with thin watercolour
+washes under it, and place names are lettered on it. There are no image
+assets: the map, the trees, the tents and the characters are drawn by code,
+with lines that wobble slightly. Adding a monster or a place means writing a
+drawing routine for it.
 
 Characters are small hooded figures. The cloak colour is the one thing that
 tells them apart, so it is also how a viewer finds their own.
 
-At night the same drawing is shown in pale ink on dark blue paper. The two are
-never blended evenly, because halfway between them neither can be read. At dusk
-the dark closes in on the lantern from the edges of the frame, and at dawn the
-light comes across from the east. At night each lamp is a window onto the
-daytime drawing: the lantern, the fire, and the small light every character
-carries.
+At night the same drawing is shown in pale ink on dark blue paper. Day and
+night are two separate drawings, and a frame that is half one and half the
+other looks broken, so the change between them is quick (a bit over half a
+minute). At nightfall the dark closes in on the lantern from the edges of the
+frame; at daybreak the light spreads back out from it. For that half minute
+there is a soft band, about 260 pixels wide, where both drawings show. The
+rest of the time the hour shows in the colour of the light, which shifts
+slowly: rose around dawn, amber towards dusk.
 
-The frame is 16:9. The map is on the left; on the right is a page with the
-clock and the residents, each with the rule its program is following; along
-the bottom is a line of news. It is all one sheet, so the page darkens with the
-map. The typeface is IM Fell English.
+At night each lamp shows the daytime drawing inside its reach: the lantern, the
+fire, and the small light every character carries. Names and place labels are
+drawn last, each wholly in day ink or wholly in night ink depending on the
+light where it sits, so they don't fade out at the edge of a lamp.
+
+The frame is 16:9. The map is on the left. On the right is a page with the
+clock and the residents, each with the rule its program is following. Along
+the bottom is one line saying what a program last decided. It is all one
+sheet, so the page changes between day and night along with the map; being
+farthest from the lantern, it goes dark first and light last. The typeface is
+IM Fell English.
 
 ## One player among many
 

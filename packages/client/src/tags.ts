@@ -27,18 +27,25 @@ export interface Placement {
 export const TAG_HEIGHT = 26;
 // A figure on screen is about this big, with a little room round it.
 const BODY_HALF_WIDTH = 20;
-const BODY_HEIGHT = 66;
+const BODY_HEIGHT = 62;
 /** A tag only returns to its favourite spot once there is this much clear room around it. */
 const RETURN_MARGIN = 20;
 
-/** Spots in order of preference: sideways shift as a share of the tag's width, and rise of its bottom edge. */
+/**
+ * Spots in order of preference: sideways shift as a share of the tag's width,
+ * and rise of its bottom edge. A name sits above its figure or beside its head
+ * wherever there is room, so the two are easy to pair up.
+ */
 const SPOTS: readonly (readonly [number, number])[] = [
   [0, 0],
-  [-0.75, 0],
-  [0.75, 0],
-  [0, -32],
-  [-0.75, -32],
-  [0.75, -32],
+  [-0.8, 0],
+  [0.8, 0],
+  [0, -30],
+  [-0.8, -30],
+  [0.8, -30],
+  [-1.5, 0],
+  [1.5, 0],
+  // Last resort, for a figure on the top row with no room above it.
   [0, 94],
 ];
 
@@ -47,8 +54,8 @@ export function bodyBox(wish: TagWish): Box {
   return {
     left: wish.x - BODY_HALF_WIDTH,
     right: wish.x + BODY_HALF_WIDTH,
-    top: wish.y + 6,
-    bottom: wish.y + 6 + BODY_HEIGHT,
+    top: wish.y + 2,
+    bottom: wish.y + 2 + BODY_HEIGHT,
   };
 }
 

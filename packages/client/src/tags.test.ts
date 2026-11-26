@@ -3,11 +3,21 @@ import { type Box, bodyBox, placeTags, TAG_HEIGHT, type TagWish } from "./tags.t
 
 const BOUNDS = { width: 1440, height: 1008 };
 const wish = (id: number, x: number, y: number, width = 80): TagWish => ({ id, x, y, width });
-const body = bodyBox;
+// The room a figure takes up, written out here so the test does not lean on the code it tests.
+const body = (w: TagWish): Box => ({
+  left: w.x - 20,
+  right: w.x + 20,
+  top: w.y + 2,
+  bottom: w.y + 64,
+});
 const hit = (a: Box, b: Box): boolean =>
   a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 describe("placeTags", () => {
+  it("uses the footprint this test expects", () => {
+    expect(bodyBox(wish(1, 500, 400))).toEqual(body(wish(1, 500, 400)));
+  });
+
   it("puts a lone tag centred just above its character", () => {
     const placed = placeTags([wish(1, 500, 400)], new Map(), BOUNDS);
     expect(placed.get(1)).toEqual({

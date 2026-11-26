@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { daylight, dayRegion, EDGE, lampStrength, mix, phaseName, skyCast } from "./light.ts";
+import {
+  DAYBREAK,
+  dayAt,
+  daylight,
+  dayRegion,
+  EDGE,
+  lampAt,
+  lampStrength,
+  NIGHTFALL,
+  phaseName,
+  skyCast,
+  TURN_HOURS,
+} from "./light.ts";
 
 /** Game hours per tick: a tick is a tenth of a second and an hour lasts a minute. */
 const HOURS_PER_TICK = 1 / 600;
@@ -53,40 +65,60 @@ describe("the light of the day", () => {
     }
   });
 
-  it("moves the edge between day and night smoothly, from all of one to all of the other", () => {
+  it("night closes in on the lantern and day spreads out from it, quickly and without a jump", () => {
     const reach = 1700;
-    const width = 1920;
-    expect(dayRegion(12, reach, width)).toEqual({ kind: "all" });
-    expect(dayRegion(1, reach, width)).toEqual({ kind: "none" });
-    // Dawn: the light comes in from the east and ends having crossed the whole frame.
-    const dawn = [5, 5.5, 6, 6.5, 7].map((hour) => dayRegion(hour, reach, width));
-    expect(dawn.every((region) => region.kind === "front")).toBe(true);
-    const fronts = dawn.map((region) => (region.kind === "front" ? region.x : Number.NaN));
-    for (let i = 1; i < fronts.length; i++) expect(fronts[i]).toBeLessThan(fronts[i - 1] as number);
-    expect(fronts[0]).toBeGreaterThan(width - EDGE);
-    expect(fronts.at(-1)).toBeLessThan(0);
-    // Dusk: the dark closes in on the lantern, and ends with nothing left of the day.
-    const dusk = [18, 18.5, 19, 19.5, 20, 20.5].map((hour) => dayRegion(hour, reach, width));
-    expect(dusk.every((region) => region.kind === "circle")).toBe(true);
-    const radii = dusk.map((region) => (region.kind === "circle" ? region.radius : Number.NaN));
-    for (let i = 1; i < radii.length; i++) expect(radii[i]).toBeLessThan(radii[i - 1] as number);
-    expect(radii[0]).toBeGreaterThan(reach - EDGE);
-    expect(radii.at(-1)).toBeLessThan(0);
-    // No jump from one tick to the next, including where the edge starts and stops.
-    const where = (hour: number): number => {
-      const region = dayRegion(hour, reach, width);
-      if (region.kind === "circle") return region.radius;
-      if (region.kind === "front") return region.x;
-      return Number.NaN;
+    expect(dayRegion(12, reach)).toEqual({ kind: "all" });
+    expect(dayRegion(1, reach)).toEqual({ kind: "none" });
+    expect(dayRegion(DAYBREAK - 0.01, reach)).toEqual({ kind: "none" });
+    expect(dayRegion(NIGHTFALL - 0.01, reach)).toEqual({ kind: "all" });
+    const radius = (hour: number): number => {
+      const region = dayRegion(hour, reach);
+      return region.kind === "circle" ? region.radius : region.kind === "all" ? reach : -EDGE;
     };
+    // Nightfall: from all of the frame down to nothing.
+    expect(radius(NIGHTFALL)).toBeCloseTo(reach);
+    expect(radius(NIGHTFALL + TURN_HOURS - 0.0001)).toBeLessThan(-EDGE + 1);
+    for (let h = NIGHTFALL + 0.02; h < NIGHTFALL + TURN_HOURS; h += 0.02)
+      expect(radius(h)).toBeLessThan(radius(h - 0.02));
+    // Daybreak: the other way.
+    expect(radius(DAYBREAK)).toBe(-EDGE);
+    expect(radius(DAYBREAK + TURN_HOURS - 0.0001)).toBeGreaterThan(reach - 1);
+    for (let h = DAYBREAK + 0.02; h < DAYBREAK + TURN_HOURS; h += 0.02)
+      expect(radius(h)).toBeGreaterThan(radius(h - 0.02));
+    // The edge never moves more than a few pixels in a tick, round the whole day.
     for (let tick = 1; tick <= 24 * 600; tick++) {
-      const a = where((tick - 1) * HOURS_PER_TICK);
-      const b = where(tick * HOURS_PER_TICK);
-      if (!Number.isNaN(a) && !Number.isNaN(b)) expect(Math.abs(b - a)).toBeLessThan(8);
+      expect(
+        Math.abs(radius(tick * HOURS_PER_TICK) - radius((tick - 1) * HOURS_PER_TICK)),
+      ).toBeLessThan(9);
     }
+    // It is over in under a minute of stream time, and the lamps are fully lit before it starts.
+    expect(TURN_HOURS * 60).toBeLessThan(60);
+    expect(lampStrength(NIGHTFALL)).toBe(1);
+    expect(lampStrength(DAYBREAK)).toBe(1);
   });
 
-  it("names the parts of the day and blends colours", () => {
+  it("says how lit a point is, the way the picture is drawn", () => {
+    expect(dayAt({ kind: "all" }, 500)).toBe(1);
+    expect(dayAt({ kind: "none" }, 0)).toBe(0);
+    const region = { kind: "circle", radius: 400 } as const;
+    expect(dayAt(region, 100)).toBe(1);
+    expect(dayAt(region, 400 + EDGE / 2)).toBeCloseTo(0.5);
+    expect(dayAt(region, 400 + EDGE)).toBe(0);
+    // A region that has shrunk past nothing: only the fading rim is left at the centre.
+    const rim = { kind: "circle", radius: -EDGE / 2 } as const;
+    expect(dayAt(rim, 0)).toBe(1);
+    expect(dayAt(rim, EDGE / 4)).toBeCloseTo(0.5);
+    expect(dayAt(rim, EDGE / 2)).toBe(0);
+    expect(dayAt({ kind: "circle", radius: -EDGE }, 0)).toBe(0);
+    expect(lampAt(0, 100, 0.8)).toBe(0.8);
+    expect(lampAt(55, 100, 1)).toBeCloseTo(0.55);
+    expect(lampAt(100, 100, 1)).toBe(0);
+    expect(lampAt(150, 100, 1)).toBe(0);
+    for (let d = 1; d <= 100; d++)
+      expect(lampAt(d, 100, 1)).toBeLessThanOrEqual(lampAt(d - 1, 100, 1));
+  });
+
+  it("names the parts of the day", () => {
     expect([2, 6, 9, 12, 15, 19, 22].map(phaseName)).toEqual([
       "night",
       "dawn",
@@ -96,6 +128,5 @@ describe("the light of the day", () => {
       "dusk",
       "night",
     ]);
-    expect(mix([0, 0, 0], [1, 0.5, 0], 0.5)).toEqual([0.5, 0.25, 0]);
   });
 });

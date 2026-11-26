@@ -16,10 +16,12 @@ drawn with Canvas 2D, so the rendering library went too.
 
 **Why this one.**
 
-- It doesn't look like other streams, including at thumbnail size.
-- One strong cloak colour per character reads at a glance, which is also the
-  answer to "which one is mine".
-- It is quiet enough to leave on a second monitor for hours.
+- It is not a look other streams have, as far as we know. Whether it stands out
+  at thumbnail size has not been tested.
+- Each character has one strong cloak colour, which is also how a viewer finds
+  their own.
+- Nothing in it moves fast or flashes, which matters for something left on a
+  second monitor. The watch judge said it would keep the night view on one.
 - New things are drawing code. Nobody has to find or commission sprites.
 
 **Considered and dropped.** Layered cut-paper shapes with drop shadows:
@@ -28,9 +30,11 @@ top-down map. Any other pixel-art pack: same problem as the first one.
 
 **Two things that follow from it.**
 
-- Day and night are two drawings and can't be cross-faded: halfway, dark ink on
-  light paper and light ink on dark paper cancel out. So night arrives as a
-  moving edge (closing on the lantern at dusk, crossing from the east at dawn).
+- Day and night are two drawings and can't be slowly cross-faded: halfway, dark
+  ink on light paper and light ink on dark paper cancel out. So the change is
+  quick and has a shape: the dark closes in on the lantern at nightfall and
+  the light spreads back out at daybreak, each in a bit over half a minute,
+  with a soft band about 260 pixels wide where both show.
 - Names and labels are limited to what the typeface can draw: Latin letters,
   digits and common punctuation.
 

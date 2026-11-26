@@ -70,24 +70,33 @@ async function main(): Promise<void> {
   step(world, spawnsNearCamp(world, CAST));
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
-  for (let i = 0; i < skip; i++) step(world);
 
   const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
   const scene = await Scene.create(frame, world.map, labels);
   const draw = (fraction: number): void => scene.draw(world, world.tick + fraction);
+  const tick = (): void => {
+    step(world);
+    scene.observe(world);
+  };
+  scene.observe(world);
+  for (let i = 0; i < skip; i++) tick();
   await document.fonts.ready;
 
   if (params.has("capture")) {
     window.idlin = {
       advance(ticks) {
-        for (let i = 0; i < ticks; i++) step(world);
+        for (let i = 0; i < ticks; i++) tick();
+        // A captured frame depends only on the world, not on the frames drawn before it.
+        scene.forgetNameSpots();
         draw(0);
       },
       brightness() {
+        scene.forgetNameSpots();
         draw(0);
         return scene.brightness();
       },
     };
+    scene.forgetNameSpots();
     draw(0);
     document.body.dataset.ready = "1";
     return;
@@ -103,7 +112,7 @@ async function main(): Promise<void> {
     owed = Math.min(owed + Math.max(0, now - (last ?? now)), tickMs * 3);
     last = now;
     while (owed >= tickMs) {
-      step(world);
+      tick();
       owed -= tickMs;
     }
     draw(owed / tickMs);

@@ -60,8 +60,9 @@ describe("actorPose", () => {
   });
 
   it("hops and strides mid-step, with the other leg leading on the next tile", () => {
-    const first = actorPose(actor({ x: 6, fromX: 5, moveTicksLeft: 2 }), 0, 0);
-    const second = actorPose(actor({ x: 7, fromX: 6, moveTicksLeft: 2 }), 0, 0);
+    const half = STEP_TICKS / 2;
+    const first = actorPose(actor({ x: 6, fromX: 5, moveTicksLeft: half }), 0, 0);
+    const second = actorPose(actor({ x: 7, fromX: 6, moveTicksLeft: half }), 0, 0);
     expect(first.hop).toBeGreaterThan(0.9);
     expect(Math.abs(first.stride)).toBeGreaterThan(0.9);
     expect(Math.sign(first.stride)).toBe(-Math.sign(second.stride));
