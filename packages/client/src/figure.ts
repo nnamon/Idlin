@@ -44,18 +44,18 @@ export function drawFigure(
   ctx.globalAlpha = 1;
 
   ctx.scale(style.facing, 1);
-  // A resting figure sits: lower, with no legs showing.
-  const sit = pose.resting ? 7 : 0;
+  // A resting figure sits: lower, its legs folding away as it goes down.
+  const sit = pose.sit * 7;
   const lift = pose.hop * 3 + pose.breath * 0.8;
   ctx.translate(0, sit - lift);
 
-  if (!pose.resting) {
+  if (pose.sit < 1) {
     ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.moveTo(-3.5, -10);
-    ctx.lineTo(-4 - pose.stride * 4, lift);
+    ctx.lineTo(-4 - pose.stride * 4, lift - sit);
     ctx.moveTo(3.5, -10);
-    ctx.lineTo(4 + pose.stride * 4, lift);
+    ctx.lineTo(4 + pose.stride * 4, lift - sit);
     ctx.stroke();
   }
 
@@ -107,7 +107,7 @@ export function drawFigure(
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = ink;
-  if (pose.resting) {
+  if (pose.sit > 0.5) {
     // Eyes shut.
     ctx.lineWidth = 1.2;
     ctx.beginPath();
@@ -129,8 +129,8 @@ export function drawFigure(
   }
   ctx.restore();
 
-  if (pose.resting) {
-    // Asleep: two small letters drift up and fade.
+  if (pose.sit > 0) {
+    // Asleep: two small letters drift up and fade, and fade in as it sits down.
     ctx.save();
     ctx.fillStyle = ink;
     ctx.textAlign = "center";
@@ -139,7 +139,7 @@ export function drawFigure(
       [0.5, 11],
     ] as const) {
       const drift = (((time * 0.02 + delay) % 1) + 1) % 1;
-      ctx.globalAlpha = Math.sin(Math.PI * drift) * 0.85;
+      ctx.globalAlpha = Math.sin(Math.PI * drift) * 0.85 * pose.sit;
       ctx.font = `${size}px "Fell Italic"`;
       ctx.fillText("z", x + (13 + drift * 7) * style.scale, y - (34 + drift * 16) * style.scale);
     }

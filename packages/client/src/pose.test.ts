@@ -1,6 +1,6 @@
 import { type Actor, STEP_TICKS } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { actorPose, REST_TICKS } from "./pose.ts";
+import { actorPose, easeSit, REST_TICKS, SIT_STEP } from "./pose.ts";
 
 const actor = (over: Partial<Actor>): Actor =>
   ({
@@ -87,5 +87,43 @@ describe("actorPose", () => {
     expect(actorPose(actor({ wait: 100, x: 6, fromX: 5, moveTicksLeft: 2 }), 0, 0).resting).toBe(
       false,
     );
+  });
+
+  it("gives full sitting depth while resting and none otherwise", () => {
+    expect(actorPose(actor({ wait: REST_TICKS + 1 }), 0, 0).sit).toBe(1);
+    expect(actorPose(actor({ wait: 0 }), 0, 0).sit).toBe(0);
+  });
+});
+
+describe("easeSit", () => {
+  it("goes down into sitting and back up over a few ticks, never more than SIT_STEP a tick", () => {
+    expect(SIT_STEP).toBeLessThanOrEqual(0.25);
+    let sit = 0;
+    const down: number[] = [];
+    while (sit < 1 && down.length < 100) {
+      const next = easeSit(sit, 1);
+      expect(next - sit).toBeGreaterThan(0);
+      expect(next - sit).toBeLessThanOrEqual(SIT_STEP + 1e-9);
+      sit = next;
+      down.push(sit);
+    }
+    expect(down.length).toBeGreaterThanOrEqual(4);
+    expect(sit).toBe(1);
+    // Stays put once there, and comes up the same way.
+    expect(easeSit(1, 1)).toBe(1);
+    let ticks = 0;
+    while (sit > 0 && ticks < 100) {
+      const next = easeSit(sit, 0);
+      expect(sit - next).toBeLessThanOrEqual(SIT_STEP + 1e-9);
+      sit = next;
+      ticks++;
+    }
+    expect([sit, ticks]).toEqual([0, down.length]);
+  });
+
+  it("turns back from part way without a jump", () => {
+    const half = easeSit(easeSit(0, 1), 1);
+    expect(Math.abs(easeSit(half, 0) - half)).toBeLessThanOrEqual(SIT_STEP + 1e-9);
+    expect(easeSit(half, 0)).toBeLessThan(half);
   });
 });

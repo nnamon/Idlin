@@ -17,7 +17,14 @@ import {
   type World,
 } from "@idlin/sim";
 import { drawFigure } from "./figure.ts";
-import { FRAME_HEIGHT, FRAME_WIDTH, PAGE_HEAD, ROSTER_ROWS, ROW_PITCH } from "./frame.ts";
+import {
+  FRAME_HEIGHT,
+  FRAME_WIDTH,
+  PAGE_HEAD,
+  ROSTER_ROWS,
+  ROW_PITCH,
+  spreadPage,
+} from "./frame.ts";
 import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
 import {
   css,
@@ -36,11 +43,11 @@ import {
 } from "./light.ts";
 import { cloakColor, DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas } from "./pen.ts";
-import { actorPose, type Pose } from "./pose.ts";
+import { actorPose, easeSit, type Pose } from "./pose.ts";
 import { type Box, placeTags, TAG_HEIGHT, tagBox } from "./tags.ts";
 
 const FIGURE_SCALE = 1.3;
-const TAG_FONT = '25px "Fell SC"';
+const TAG_FONT = '27px "Fell SC"';
 const FONTS = ['22px "Fell"', '22px "Fell Italic"', TAG_FONT];
 /** How long a line of news stays up at least, in ticks, so the line can be read. */
 const NEWS_TICKS = 40;
@@ -58,6 +65,7 @@ const STANDING: Pose = {
   breath: 0,
   moving: false,
   resting: false,
+  sit: 0,
 };
 
 interface Walker {
@@ -84,6 +92,14 @@ interface Side {
 
 const two = (n: number): string => String(n).padStart(2, "0");
 
+/** The typeface, size and letter spacing of a place label. */
+const labelFont = (label: MapLabel): readonly [string, number, number] =>
+  label.style === "region"
+    ? ["Fell Italic", 30, 2]
+    : label.style === "town"
+      ? ["Fell SC", 26, 3]
+      : ["Fell Italic", 27, 0];
+
 export class Scene {
   /** The map's size in frame pixels; the page and the news line take the rest of the frame. */
   readonly width: number;
@@ -94,6 +110,8 @@ export class Scene {
   /** Whether the page sits below the map, and how many columns its residents are listed in. */
   private pageBelow = false;
   private columns = 1;
+  /** How far right of the frame's edge the map is drawn: centred over the page when that is below it. */
+  private mapX = 0;
   private readonly out: Ctx;
   private readonly day: Side;
   private readonly night: Side;
@@ -112,6 +130,10 @@ export class Scene {
   /** Which ink each name and each place label is in, settled once a tick. */
   private readonly nameDay = new Map<number, boolean>();
   private readonly labelDay: boolean[] = [];
+  /** How far down into sitting each figure is, at the tick before last and at the last tick. */
+  private readonly sitting = new Map<number, readonly [number, number]>();
+  /** The tick `sitting` was last moved on, so that observing a tick twice eases it once. */
+  private sitTick = Number.NaN;
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     this.width = map.width * TILE;
@@ -133,7 +155,12 @@ export class Scene {
     for (const [x, y] of this.day.ground.lanterns)
       this.avoid.push({ left: x - 10, right: x + 10, top: y - 12, bottom: y + 14 });
     for (const label of labels) {
-      const half = label.text.length * (label.style === "region" ? 8 : 7);
+      // At least the lettering's own width, as the context measures it, and a little either side.
+      const [font, size, spacing] = labelFont(label);
+      ctx.font = `${size}px "${font}"`;
+      ctx.letterSpacing = `${spacing}px`;
+      const measured = Math.ceil(ctx.measureText(label.text).width / 2) + 4;
+      const half = Math.max(measured, label.text.length * (label.style === "town" ? 7 : 8));
       this.avoid.push({
         left: label.x * TILE - half,
         right: label.x * TILE + half,
@@ -141,6 +168,7 @@ export class Scene {
         bottom: label.y * TILE + 6,
       });
     }
+    ctx.letterSpacing = "0px";
     const lantern = this.day.ground.lanterns[0];
     this.hearth = lantern ? [lantern[0], lantern[1] + 28] : [this.width / 2, this.height / 2];
   }
@@ -165,6 +193,7 @@ export class Scene {
     this.columns = below ? Math.max(1, Math.min(ROSTER_ROWS, Math.floor(columns))) : 1;
     const wide = Math.max(below ? this.width : FRAME_WIDTH, Math.floor(width) || 0);
     const tall = Math.max(this.height, Math.floor(height) || 0);
+    this.mapX = below ? Math.floor((wide - this.width) / 2) : 0;
     // Setting a canvas's size clears it and takes memory anew, so only when the size changes.
     if (wide === this.frameWidth && tall === this.frameHeight) return;
     this.frameWidth = wide;
@@ -178,13 +207,20 @@ export class Scene {
   /** Draws the world as it is at `time` ticks (the world's tick plus a fraction of the next). */
   draw(world: World, time: number): void {
     const fraction = time - world.tick;
+    const between = Math.min(1, Math.max(0, fraction));
     const walkers: Walker[] = world.actors.map((actor) => {
-      const pose = actorPose(actor, fraction, time);
+      const raw = actorPose(actor, fraction, time);
+      // Between ticks the figure goes on easing down or up, so it never steps.
+      const [before, now] = this.sitting.get(actor.id) ?? [raw.sit, raw.sit];
+      const pose = { ...raw, sit: before + (now - before) * between };
       return { actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
     const { hour, lamps, region, lights, litAt } = this.lighting(walkers, time);
     const [hx, hy] = this.hearth;
+    const mx = this.mapX;
+    // With the page below the map, the paper either side of the map is lit as the map is.
+    const mapRight = this.pageBelow ? this.frameWidth : this.width;
 
     const out = this.out;
     if (region.kind !== "all") this.drawSide(this.night, world, walkers, time);
@@ -200,13 +236,14 @@ export class Scene {
       const lit = this.lit.ctx;
       lit.globalCompositeOperation = "source-over";
       lit.clearRect(0, 0, this.frameWidth, this.frameHeight);
+      lit.setTransform(1, 0, 0, 1, mx, 0);
       if (region.kind === "circle" && region.radius + EDGE > 0) {
         const inner = Math.max(0, region.radius);
         const gradient = lit.createRadialGradient(hx, hy, inner, hx, hy, region.radius + EDGE);
         gradient.addColorStop(0, "rgba(255,255,255,1)");
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
-        lit.fillRect(0, 0, this.frameWidth, this.frameHeight);
+        lit.fillRect(0 - mx, 0, this.frameWidth, this.frameHeight);
       }
       for (const light of lights) {
         const gradient = lit.createRadialGradient(
@@ -225,33 +262,36 @@ export class Scene {
         lit.arc(light.x, light.y, light.reach, 0, 7);
         lit.fill();
       }
+      lit.setTransform(1, 0, 0, 1, 0, 0);
       lit.globalCompositeOperation = "source-in";
       lit.drawImage(this.day.canvas, 0, 0);
-      out.drawImage(this.lit.canvas, 0, 0, this.width, this.height, 0, 0, this.width, this.height);
+      out.drawImage(this.lit.canvas, 0, 0, mapRight, this.height, 0, 0, mapRight, this.height);
       // The page and the news line change all at once, so that they are never half covered.
       const page = pageDay(hour);
       if (page > 0) {
         out.globalAlpha = page;
-        out.drawImage(
-          this.day.canvas,
-          this.width,
-          0,
-          this.frameWidth - this.width,
-          this.frameHeight,
-          this.width,
-          0,
-          this.frameWidth - this.width,
-          this.frameHeight,
-        );
+        if (mapRight < this.frameWidth) {
+          out.drawImage(
+            this.day.canvas,
+            mapRight,
+            0,
+            this.frameWidth - mapRight,
+            this.frameHeight,
+            mapRight,
+            0,
+            this.frameWidth - mapRight,
+            this.frameHeight,
+          );
+        }
         out.drawImage(
           this.day.canvas,
           0,
           this.height,
-          this.width,
+          mapRight,
           this.frameHeight - this.height,
           0,
           this.height,
-          this.width,
+          mapRight,
           this.frameHeight - this.height,
         );
         out.globalAlpha = 1;
@@ -262,6 +302,7 @@ export class Scene {
     // while the lamps are coming on or going out, so that they never switch.
     if (lights.length > 0) {
       out.save();
+      out.translate(mx, 0);
       out.beginPath();
       out.rect(0, 0, this.width, this.height);
       out.clip();
@@ -296,21 +337,17 @@ export class Scene {
     // Which ink was settled at the last tick; before the first tick it is worked out here.
     const inkOf = (settled: boolean | undefined, x: number, y: number): Palette =>
       (settled ?? dayInk(litAt(x, y), undefined)) ? DAY : NIGHT;
+    out.setTransform(1, 0, 0, 1, mx, 0);
     out.textAlign = "center";
     out.lineJoin = "round";
     this.labels.forEach((label, index) => {
-      const [font, size, spacing] =
-        label.style === "region"
-          ? ["Fell Italic", 30, 2]
-          : label.style === "town"
-            ? ["Fell SC", 24, 3]
-            : ["Fell Italic", 22, 0];
+      const [font, size, spacing] = labelFont(label);
       const x = label.x * TILE;
       const y = label.y * TILE;
       const palette = inkOf(this.labelDay[index], x, y - 8);
       out.font = `${size}px "${font}"`;
       out.letterSpacing = `${spacing}px`;
-      out.lineWidth = 4;
+      out.lineWidth = 5;
       out.strokeStyle = css(palette.paper, 0.7);
       out.fillStyle = css(palette.ink, 0.8);
       out.strokeText(label.text, x, y);
@@ -335,11 +372,13 @@ export class Scene {
       }
       out.fillStyle = css(palette.paper, 0.9);
       out.beginPath();
-      out.roundRect(tag.x - tag.width / 2, tag.y - 19, tag.width, TAG_HEIGHT - 3, 4);
+      // The slip reaches 21 pixels above the baseline, a little clear of the capitals' tops.
+      out.roundRect(tag.x - tag.width / 2, tag.y - 21, tag.width, TAG_HEIGHT - 1, 4);
       out.fill();
       out.fillStyle = css(palette.ink);
       out.fillText(tag.name, tag.x, tag.y);
     }
+    out.setTransform(1, 0, 0, 1, 0, 0);
   }
 
   /** The light at `time`: the hour, the lamps, and how lit any point of the map is. */
@@ -357,11 +396,14 @@ export class Scene {
     const lamps = lampStrength(hour);
     const [hx, hy] = this.hearth;
     // The dark closes in over the map only, from the map's own corners; the page changes separately.
+    // With the page below, the paper either side of the map goes dark with it.
+    const left = hx + this.mapX;
+    const right = (this.pageBelow ? this.frameWidth - this.mapX : this.width) - hx;
     const reach = Math.max(
-      Math.hypot(hx, hy),
-      Math.hypot(this.width - hx, hy),
-      Math.hypot(hx, this.height - hy),
-      Math.hypot(this.width - hx, this.height - hy),
+      Math.hypot(left, hy),
+      Math.hypot(right, hy),
+      Math.hypot(left, this.height - hy),
+      Math.hypot(right, this.height - hy),
     );
     const region = dayRegion(hour, reach);
     // Every light there is, as a place, a reach in pixels and a strength.
@@ -425,12 +467,21 @@ export class Scene {
       this.news = `${actor.name}: ${label}`;
       this.newsSince = world.tick;
     }
+    // Each figure moves a step further into or out of sitting, once a tick
+    // however often the tick is observed.
+    const again = world.tick === this.sitTick;
+    this.sitTick = world.tick;
+    const standing = world.actors.map((actor) => {
+      const pose = actorPose(actor, 0, world.tick);
+      const known = this.sitting.get(actor.id);
+      if (again && known) return { actor, pose: { ...pose, sit: known[1] } };
+      const was = known?.[1] ?? pose.sit;
+      const sit = easeSit(was, pose.sit);
+      this.sitting.set(actor.id, [was, sit]);
+      return { actor, pose: { ...pose, sit } };
+    });
     // Names are placed once a tick, here, so that where a name sits depends on
     // the world's history and not on which frames were drawn.
-    const standing = world.actors.map((actor) => ({
-      actor,
-      pose: actorPose(actor, 0, world.tick),
-    }));
     const placed = placeTags(
       standing.map(({ actor, pose }) => this.wish(actor, pose)),
       this.tagSpots,
@@ -456,7 +507,7 @@ export class Scene {
       const lit = litAt(label.x * TILE, label.y * TILE - 8);
       this.labelDay[index] = dayInk(lit, this.labelDay[index]);
     });
-    for (const known of [this.facing, this.tagSpots, this.lastRule, this.nameDay]) {
+    for (const known of [this.facing, this.tagSpots, this.lastRule, this.nameDay, this.sitting]) {
       for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
     }
   }
@@ -473,7 +524,7 @@ export class Scene {
     return {
       id: actor.id,
       x: pose.x * TILE,
-      y: feet - (pose.resting ? 39 : 46) * FIGURE_SCALE - pose.hop * 3,
+      y: feet - (46 - 7 * pose.sit) * FIGURE_SCALE - pose.hop * 3,
       width,
     };
   }
@@ -518,6 +569,7 @@ export class Scene {
     const ink = css(palette.ink);
     const paper = css(palette.paper);
     ctx.save();
+    ctx.translate(this.mapX, 0);
     if (only) {
       ctx.beginPath();
       for (const spot of only) {
@@ -528,7 +580,7 @@ export class Scene {
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = paper;
-    ctx.fillRect(0, 0, this.frameWidth, this.frameHeight);
+    ctx.fillRect(0 - this.mapX, 0, this.frameWidth, this.frameHeight);
     ctx.drawImage(ground.base, 0, 0);
 
     // Water moving: short strokes that drift downstream and fade in and out.
@@ -557,7 +609,17 @@ export class Scene {
     const upTo = (base: number): void => {
       while (next < standing.length && (standing[next] as (typeof standing)[number]).base <= base) {
         const thing = standing[next++] as (typeof standing)[number];
-        ctx.drawImage(thing.canvas, thing.x, thing.y);
+        if (thing.sways) {
+          // Trees lean a little, about their foot, as a slow breeze crosses the map from the west.
+          const foot = thing.x + thing.canvas.width / 2;
+          const lean =
+            Math.sin(time * 0.02 - foot * 0.004) * 0.02 + Math.sin(time * 0.053 + foot) * 0.006;
+          ctx.save();
+          ctx.translate(foot, thing.base);
+          ctx.transform(1, 0, -lean, 1, 0, 0);
+          ctx.drawImage(thing.canvas, thing.x - foot, thing.y - thing.base);
+          ctx.restore();
+        } else ctx.drawImage(thing.canvas, thing.x, thing.y);
         while (fire < fires.length && (fires[fire] as (typeof fires)[number])[1] <= thing.base) {
           this.flame(ctx, fires[fire++] as readonly [number, number], palette, time);
         }
@@ -583,6 +645,7 @@ export class Scene {
       );
     }
     upTo(Number.POSITIVE_INFINITY);
+    for (const spot of ground.fires) this.smoke(ctx, spot, palette, time);
 
     // A ruled double border, as round a printed map.
     ctx.strokeStyle = ink;
@@ -605,9 +668,16 @@ export class Scene {
     const ink = css(palette.ink);
     const below = this.pageBelow;
     // The page's own corner, and the edges its lines run between.
-    const top0 = below ? this.height : 0;
+    // Below the map, the page is as wide as the map and drawn under it (the sheet
+    // is already shifted to where the map is).
     const left = below ? 40 : this.width + 50;
-    const right = this.frameWidth - 40;
+    const right = below ? this.width - 40 : this.frameWidth - 40;
+    const listed = world.actors.slice(0, ROSTER_ROWS);
+    const rows = Math.ceil(listed.length / this.columns);
+    // In a tall window there can be paper to spare under the page: the rows open
+    // out a little and the rest goes above and below what is written.
+    const spread = below ? spreadPage(this.frameHeight - this.height, rows) : { open: 0, shift: 0 };
+    const top0 = below ? this.height + spread.shift : 0;
     const { day, hour, minute } = clock(world);
     const part = phaseName(hour + minute / 60);
     ctx.fillStyle = ink;
@@ -630,11 +700,9 @@ export class Scene {
     // there. In a frame only as tall as the map it goes at the foot of the
     // page, and the rows close up a little to leave it room.
     const strip = !below && this.frameHeight - this.height >= NEWS_STRIP;
-    const pitch = below || strip ? ROW_PITCH : ROW_PITCH - 5;
+    const pitch = (below || strip ? ROW_PITCH : ROW_PITCH - 5) + spread.open;
     const gap = 40;
     const columnWidth = (right - left + gap) / this.columns;
-    const listed = world.actors.slice(0, ROSTER_ROWS);
-    const rows = Math.ceil(listed.length / this.columns);
     listed.forEach((actor, index) => {
       const column = index % this.columns;
       const x0 = left + column * columnWidth;
@@ -653,7 +721,7 @@ export class Scene {
       ctx.fillText(actor.name, x0 + 86, top + 46);
       // What the actor's program is doing, in the program's own words: the label of the rule that fired.
       const label = world.programs[actor.program]?.rules[actor.rule];
-      ctx.font = '27px "Fell Italic"';
+      ctx.font = '31px "Fell Italic"';
       ctx.fillText(actor.fault !== 0 ? "confused" : (label ?? ""), x0 + 86, top + 82, x1 - x0 - 86);
     });
     const foot = top0 + PAGE_HEAD + rows * pitch;
@@ -677,13 +745,39 @@ export class Scene {
       ctx.fillText(line, left, y, right - left - (below && more ? 240 : 0));
     }
     if (more) {
-      ctx.font = '27px "Fell Italic"';
+      ctx.font = '30px "Fell Italic"';
       if (below) {
         ctx.textAlign = "right";
         ctx.fillText(more, right, foot + 62);
         ctx.textAlign = "left";
       } else ctx.fillText(more, left, foot + 40);
     }
+  }
+
+  /**
+   * Smoke over a fire: a thin wavy line that rises from the flame, leans east
+   * and fades out. The waves travel up it slowly, about one every eight
+   * seconds.
+   */
+  private smoke(ctx: Ctx, [x, y]: readonly [number, number], palette: Palette, time: number): void {
+    const at = (t: number): [number, number] => [
+      x + t * t * 30 + Math.sin(t * 8 - time * 0.08) * 5 * t,
+      y - 34 - t * 72,
+    ];
+    ctx.strokeStyle = css(palette.ink);
+    ctx.lineCap = "round";
+    ctx.lineWidth = 1.8;
+    // In short pieces, each fainter than the one below it.
+    const pieces = 12;
+    for (let i = 0; i < pieces; i++) {
+      ctx.globalAlpha = 0.55 * (1 - i / pieces);
+      ctx.beginPath();
+      ctx.moveTo(...at(i / pieces));
+      ctx.lineTo(...at((i + 0.5) / pieces));
+      ctx.lineTo(...at((i + 1) / pieces));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** A fire's flame: three tongues that lean and stretch slowly. */

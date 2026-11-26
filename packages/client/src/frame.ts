@@ -48,6 +48,19 @@ export const pageHeight = (columns: number): number =>
   PAGE_HEAD + Math.ceil(ROSTER_ROWS / columns) * ROW_PITCH + PAGE_FOOT;
 
 /**
+ * How to use paper left over under the page when it sits below the map.
+ * `room` is the height from the map's foot to the frame's foot, `rows` the
+ * rows of residents. Each row opens out by `open` (up to 40 pixels) and the
+ * page's content moves down by `shift`: a third of what is left goes above
+ * it and the rest below.
+ */
+export function spreadPage(room: number, rows: number): { open: number; shift: number } {
+  const spare = Math.max(0, room - (PAGE_HEAD + rows * ROW_PITCH + PAGE_FOOT));
+  const open = Math.min(40, Math.floor(spare / (rows + 1)));
+  return { open, shift: Math.floor((spare - open * rows) / 3) };
+}
+
+/**
  * The layout and frame size for a window, given the map's size in frame
  * pixels. A 16:9 window always gets the plain frame: 1920 by 1080, page beside
  * the map.

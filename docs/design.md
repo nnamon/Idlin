@@ -160,7 +160,13 @@ with lines that wobble slightly. Adding a monster or a place means writing a
 drawing routine for it.
 
 Characters are small hooded figures. The cloak colour is the one thing that
-tells them apart, so it is also how a viewer finds their own.
+tells them apart, so it is also how a viewer finds their own. A figure that
+has a while to wait sits down, sinking over a few ticks rather than dropping
+at once, and gets up the same way.
+
+A few things move while no one does: the river's ripples drift downstream, a
+thin line of smoke rises from the camp fire and leans east, and the tops of
+the trees lean a little in a slow breeze from the west.
 
 At night the same drawing is shown in pale ink on dark blue paper. Day and
 night are two separate drawings, and a frame that is half one and half the
@@ -169,7 +175,8 @@ minute). At nightfall the dark closes in on the lantern from the edges of the
 map; at daybreak the light spreads back out from it. For that half minute
 there is a soft band, about 260 pixels wide, where both drawings show. The
 rest of the time the hour shows in the colour of the light, which shifts
-slowly: rose around dawn, amber towards dusk.
+slowly: rose around dawn, a pale cool blue through the morning, amber
+towards dusk.
 
 At night each lamp shows the daytime drawing inside its reach: the lantern, the
 fire, and the small light every character carries. Names and place labels are
@@ -184,10 +191,12 @@ the rule its program is following. Along the bottom is one line saying what a
 program last decided. In a window of another shape the frame fills the window
 instead of leaving a bar: a wider one gets the map at full height and a wider
 page with the line of news on it, and one much taller than 16:9 (about
-6:5 or narrower) gets the page below the map. The page and the
-bottom line don't take part in the moving edge: they change between day and
-night ink in one go, over about three seconds, halfway through the turn. The
-typeface is IM Fell English.
+6:5 or narrower) gets the page below the map, with the map centred over
+it and any spare height shared between the rows and the margins. The page and
+the bottom line don't take part in the moving edge: they change between day
+and night ink in one go, over about three seconds, halfway through the turn.
+With the page below the map, the paper either side of the map is part of the
+map for this: it darkens with the map. The typeface is IM Fell English.
 
 ## One player on a busy stream
 

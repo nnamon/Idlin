@@ -70,6 +70,26 @@ describe("the light of the day", () => {
     }
   });
 
+  it("gives the morning a cool light of its own, unlike noon or dawn, and fades it in and out smoothly", () => {
+    for (const hour of [7.5, 8, 9, 9.5]) {
+      const morning = skyCast(hour);
+      expect(morning.alpha).toBeGreaterThan(0.05);
+      // Cool: more blue than red.
+      expect(morning.color[2]).toBeGreaterThan(morning.color[0]);
+    }
+    expect(skyCast(11).alpha).toBe(0);
+    // What the cast adds to the picture (colour times strength) never jumps between ticks,
+    // including where dawn hands over to morning.
+    let before = skyCast(4).color.map((c) => c * skyCast(4).alpha);
+    for (let tick = 1; tick <= 8 * 600; tick++) {
+      const cast = skyCast(4 + tick * HOURS_PER_TICK);
+      const now = cast.color.map((c) => c * cast.alpha);
+      for (let i = 0; i < 3; i++)
+        expect(Math.abs((now[i] as number) - (before[i] as number))).toBeLessThan(0.001);
+      before = now;
+    }
+  });
+
   it("night closes in on the lantern and day spreads out from it, quickly and without a jump", () => {
     const reach = 1700;
     expect(dayRegion(12, reach)).toEqual({ kind: "all" });

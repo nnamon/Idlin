@@ -20,6 +20,20 @@ export interface Pose {
   readonly moving: boolean;
   /** Standing still with a good while yet to wait. */
   readonly resting: boolean;
+  /**
+   * 0 to 1: how far down into sitting. `actorPose` gives 1 while resting and 0
+   * otherwise; the scene eases it over a few ticks with `easeSit`.
+   */
+  readonly sit: number;
+}
+
+/** How much of the way into or out of sitting a figure moves in one tick. */
+export const SIT_STEP = 0.25;
+
+/** The next tick's sitting depth, moving at most SIT_STEP towards the pose's own (0 or 1). */
+export function easeSit(before: number, target: number): number {
+  if (target > before) return Math.min(target, before + SIT_STEP);
+  return Math.max(target, before - SIT_STEP);
 }
 
 /**
@@ -35,6 +49,7 @@ export function actorPose(actor: Actor, fraction: number, time: number): Pose {
   const eased = progress * progress * (3 - 2 * progress);
   // Steps alternate legs: tiles whose coordinates sum to an even number lead with the left.
   const side = (actor.x + actor.y) % 2 === 0 ? 1 : -1;
+  const resting = !moving && actor.path.length === 0 && actor.wait > REST_TICKS;
   return {
     x: actor.fromX + (actor.x - actor.fromX) * eased + 0.5,
     y: actor.fromY + (actor.y - actor.fromY) * eased + 1,
@@ -42,6 +57,7 @@ export function actorPose(actor: Actor, fraction: number, time: number): Pose {
     stride: moving ? Math.sin(Math.PI * progress) * side : 0,
     breath: moving ? 0 : (Math.sin(time * 0.12 + actor.id * 1.7) + 1) / 2,
     moving,
-    resting: !moving && actor.path.length === 0 && actor.wait > REST_TICKS,
+    resting,
+    sit: resting ? 1 : 0,
   };
 }

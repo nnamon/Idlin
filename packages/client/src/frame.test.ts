@@ -5,7 +5,11 @@ import {
   fitFrame,
   MAX_FRAME_HEIGHT,
   MAX_FRAME_WIDTH,
+  PAGE_FOOT,
+  PAGE_HEAD,
   pageHeight,
+  ROW_PITCH,
+  spreadPage,
 } from "./frame.ts";
 
 // The shipped map: 30 by 21 tiles of 48 pixels.
@@ -103,5 +107,38 @@ describe("fitting the frame to a window", () => {
     expect(fit(Number.NaN, 500)).toEqual({ ...PLAIN, scale: 1 });
     expect(fitFrame(1920, 1080, 0, 0)).toEqual({ ...PLAIN, scale: 1 });
     expect(fitFrame(1920, 1080)).toMatchObject({ width: FRAME_WIDTH, height: FRAME_HEIGHT });
+  });
+});
+
+describe("spreading the page into spare room below the map", () => {
+  const used = (rows: number): number => PAGE_HEAD + rows * ROW_PITCH + PAGE_FOOT;
+
+  it("leaves the page as it is when there is no room to spare", () => {
+    expect(spreadPage(used(3), 3)).toEqual({ open: 0, shift: 0 });
+    expect(spreadPage(used(3) - 50, 3)).toEqual({ open: 0, shift: 0 });
+  });
+
+  it("opens the rows out, at most 40 pixels each, and moves the rest of the spare room a third above", () => {
+    // A 1000 by 1400 window: the frame is 2016 tall and the map 1008, with two columns of three rows.
+    const tall = fit(1000, 1400);
+    const room = tall.height - MAP[1];
+    const { open, shift } = spreadPage(room, 3);
+    expect(open).toBe(40);
+    const left = room - used(3) - open * 3;
+    expect(shift).toBe(Math.floor(left / 3));
+    expect(shift).toBeGreaterThan(0);
+    // A little spare room is shared out between the rows and the gaps above and below.
+    expect(spreadPage(used(3) + 40, 3)).toEqual({ open: 10, shift: 3 });
+  });
+
+  it("never pushes the page past the foot of the frame", () => {
+    for (let room = 0; room < 3000; room += 37) {
+      for (const rows of [1, 2, 3, 6]) {
+        const { open, shift } = spreadPage(room, rows);
+        expect(open).toBeGreaterThanOrEqual(0);
+        expect(shift).toBeGreaterThanOrEqual(0);
+        if (room >= used(rows)) expect(used(rows) + open * rows + shift).toBeLessThanOrEqual(room);
+      }
+    }
   });
 });

@@ -27,6 +27,8 @@ export interface Standing {
   readonly y: number;
   /** The line its foot stands on; things with a smaller base are drawn first. */
   readonly base: number;
+  /** A tree, which leans a little in the breeze. */
+  readonly sways: boolean;
 }
 
 export interface Ground {
@@ -296,10 +298,9 @@ export function drawGround(map: TileMap, palette: Palette): Ground {
     c.strokeStyle = ink;
     c.fillStyle = ink;
     // The foot of the thing sits near the bottom of the sheet, in the middle.
-    const jx =
-      terrain(x, y) === "tree" || terrain(x, y) === "dark_tree" ? (hash(x, y, 150) - 0.5) * 14 : 0;
-    const jy =
-      terrain(x, y) === "tree" || terrain(x, y) === "dark_tree" ? (hash(x, y, 160) - 0.5) * 8 : 0;
+    const tree = terrain(x, y) === "tree" || terrain(x, y) === "dark_tree";
+    const jx = tree ? (hash(x, y, 150) - 0.5) * 14 : 0;
+    const jy = tree ? (hash(x, y, 160) - 0.5) * 8 : 0;
     draw(c, new Pen(1000 + x * 131 + y * 17), SPRITE / 2, SPRITE - 12);
     const foot = y * TILE + TILE - 4 + jy;
     standing.push({
@@ -307,6 +308,7 @@ export function drawGround(map: TileMap, palette: Palette): Ground {
       x: Math.round(x * TILE + TILE / 2 + jx - SPRITE / 2),
       y: Math.round(foot - (SPRITE - 12)),
       base: foot,
+      sways: tree,
     });
   };
 

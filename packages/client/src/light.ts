@@ -121,14 +121,27 @@ export function lampStrength(hour: number): number {
   return smooth((1 - daylight(hour)) * 1.6);
 }
 
-/** The colour the sky lays over everything, and how strongly (0 to 1): rose at dawn, amber at dusk. */
+const DAWN_CAST: Rgb = [1, 0.62, 0.7];
+const MORNING_CAST: Rgb = [0.86, 0.95, 1];
+const DUSK_CAST: Rgb = [1, 0.58, 0.2];
+
+/**
+ * The colour the sky lays over everything, and how strongly (0 to 1): rose at
+ * dawn, a pale cool blue through the morning (07:00 to 10:00), nothing about
+ * noon, amber at dusk. Where dawn hands over to morning the two are mixed by
+ * strength, so the colour never jumps.
+ */
 export function skyCast(hour: number): { color: Rgb; alpha: number } {
   const bump = (centre: number, width: number): number =>
     smooth(1 - Math.abs(hour - centre) / width);
-  const dawn = bump(6, 1.4);
-  const dusk = bump(19.4, 1.7);
-  if (dawn >= dusk) return { color: [1, 0.62, 0.7], alpha: dawn * 0.22 };
-  return { color: [1, 0.58, 0.2], alpha: dusk * 0.28 };
+  const dawn = bump(6, 1.4) * 0.22;
+  const morning = bump(8.5, 2.2) * 0.16;
+  const dusk = bump(19.4, 1.7) * 0.28;
+  if (dusk > 0) return { color: DUSK_CAST, alpha: dusk };
+  const alpha = dawn + morning;
+  if (alpha === 0) return { color: DAWN_CAST, alpha: 0 };
+  const mix = (i: 0 | 1 | 2): number => (DAWN_CAST[i] * dawn + MORNING_CAST[i] * morning) / alpha;
+  return { color: [mix(0), mix(1), mix(2)], alpha };
 }
 
 export const css = ([r, g, b]: Rgb, alpha = 1): string =>
