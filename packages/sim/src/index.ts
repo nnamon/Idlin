@@ -35,6 +35,7 @@ export {
   type Actor,
   actorAt,
   type Clock,
+  checkPrograms,
   clock,
   createWorld,
   hashMap,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONFUSED_TICKS, IDLE_TICKS } from "./brain.ts";
 import { firstLight } from "./testing.ts";
-import { BYTECODE_VERSION, FAULTS, OP, type Program, validateProgram } from "./vm.ts";
+import { BYTECODE_VERSION, FAULTS, OP, type Program, ProgramError, validateProgram } from "./vm.ts";
 import {
   createWorld,
   hashWorld,
@@ -29,6 +29,7 @@ const PROGRAMS: Programs = {
   // Walk between the bridge and the bank for ever, counting trips in slot 0.
   courier: assemble(
     [
+      // Rule 0 (words 0-25): at the bank? then count the trip and go to the bridge.
       OP.RULE,
       0,
       OP.PUSH,
@@ -41,7 +42,7 @@ const PROGRAMS: Programs = {
       0,
       OP.EQ,
       OP.JZ,
-      24,
+      26,
       OP.LOAD,
       0,
       OP.PUSH,
@@ -55,6 +56,7 @@ const PROGRAMS: Programs = {
       8,
       OP.ACT,
       WALK_TO,
+      // Rule 1 (word 26 on): otherwise go to the bank.
       OP.RULE,
       1,
       OP.PUSH,
@@ -63,13 +65,15 @@ const PROGRAMS: Programs = {
       10,
       OP.ACT,
       WALK_TO,
-    ].flatMap((word, index, all) => (index === 12 ? [26] : [word]).slice(0, all.length)),
+    ],
     ["at the bank: go to the bridge", "go to the bank"],
   ),
   rover: assemble([OP.RULE, 0, OP.ACT, WANDER], ["wander"]),
   broken: assemble([OP.PUSH, 1, OP.PUSH, 0, OP.DIV, OP.ACT, IDLE]),
   spinner: assemble([OP.JMP, 0]),
   sleeper: assemble([OP.PUSH, 100000, OP.ACT, WAIT]),
+  napper: assemble([OP.PUSH, 1, OP.ACT, WAIT]),
+  scribbler: assemble([OP.PUSH, 7, OP.STORE, 0, OP.PUSH, 1, OP.PUSH, 0, OP.DIV]),
   lost: assemble([OP.PUSH, -5, OP.PUSH, 9999, OP.ACT, WALK_TO]),
   probe: assemble([
     OP.SENSE,
@@ -180,6 +184,47 @@ describe("actors run programs", () => {
     expect(w.actors[1]?.fault).toBe(0);
   });
 
+  it("a standing actor decides at most once every IDLE_TICKS ticks, whatever it asks for", () => {
+    const w = world([["Nap", "napper", 14, 9]]);
+    const nap = w.actors[0];
+    if (!nap) throw new Error("no actor");
+    expect(nap.wait).toBe(IDLE_TICKS);
+    let decisions = 0;
+    for (let i = 0; i < 100; i++) {
+      const before = nap.wait;
+      step(w);
+      if (nap.wait > before) decisions++;
+    }
+    expect(decisions).toBeLessThanOrEqual(Math.ceil(100 / (IDLE_TICKS + 1)));
+    expect(decisions).toBeGreaterThan(10);
+  });
+
+  it("a faulting decision leaves the actor's memory untouched", () => {
+    const w = run(world([["Scrib", "scribbler", 14, 9]]), 100);
+    expect(FAULTS[w.actors[0]?.fault ?? 0]).toBe("divide_by_zero");
+    expect(w.actors[0]?.memory.every((value) => value === 0)).toBe(true);
+  });
+
+  it("checks the program table when a world is made, and keeps its own frozen copy", () => {
+    const map = firstLight();
+    const unchecked = { version: BYTECODE_VERSION, code: [OP.SENSE, 77, OP.ACT, IDLE], rules: [] };
+    expect(() => createWorld(map, 1, { bad: unchecked })).toThrow(ProgramError);
+    for (const name of ["", "Rover", "9lives", "__proto__", "a b", "x".repeat(33)]) {
+      const table = Object.fromEntries([[name, PROGRAMS.rover]]) as Programs;
+      expect(() => createWorld(map, 1, table), name).toThrow(/not a valid program name/);
+    }
+    const code = [OP.ACT, IDLE];
+    const mine = { walker: { version: BYTECODE_VERSION, code, rules: [] } };
+    const w = createWorld(map, 1, mine);
+    code[1] = 999;
+    mine.walker.code = [OP.JMP, 0];
+    step(w, [{ type: "spawn", name: "Ash", x: 14, y: 9, program: "walker" }]);
+    expect(() => run(w, 50)).not.toThrow();
+    expect(w.actors[0]?.fault).toBe(0);
+    expect(Object.isFrozen(w.programs)).toBe(true);
+    expect(Object.getPrototypeOf(w.programs)).toBeNull();
+  });
+
   it("drops a spawn that names a program the world does not have", () => {
     const w = world([
       ["Ghost", "no-such-program", 14, 9],
@@ -242,6 +287,15 @@ describe("programs and determinism", () => {
       ["a rule the program lacks", (a) => (a.rule = 2)],
       ["a rule on an actor without a program", (a) => Object.assign(a, { program: null, rule: 0 })],
       ["an unknown fault", (a) => (a.fault = 99)],
+      [
+        "memory on an actor without a program",
+        (a) => Object.assign(a, { program: null, rule: -1, memory: [5, ...new Array(15).fill(0)] }),
+      ],
+      [
+        "a fault on an actor without a program",
+        (a) =>
+          Object.assign(a, { program: null, rule: -1, memory: new Array(16).fill(0), fault: 1 }),
+      ],
     ];
     for (const [what, change] of forgeries) {
       for (const rehash of [false, true]) {

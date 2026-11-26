@@ -235,6 +235,90 @@ describe("faults", () => {
     }
   });
 
+  it("checks the stack before every instruction, at both ends", () => {
+    // How many values each instruction takes, and whether it leaves more than it took.
+    const table: [string, number[], number, boolean][] = [
+      ["PUSH", [OP.PUSH, 1], 0, true],
+      ["POP", [OP.POP], 1, false],
+      ["DUP", [OP.DUP], 1, true],
+      ["SWAP", [OP.SWAP], 2, false],
+      ["NEG", [OP.NEG], 1, false],
+      ["ABS", [OP.ABS], 1, false],
+      ["NOT", [OP.NOT], 1, false],
+      ["LOAD", [OP.LOAD, 0], 0, true],
+      ["STORE", [OP.STORE, 0], 1, false],
+      ["SENSE self_x", [OP.SENSE, SELF_X], 0, true],
+      ["SENSE distance", [OP.SENSE, DISTANCE], 2, false],
+      ["ACT wait", [OP.ACT, WAIT], 1, false],
+      ["ACT walk_to", [OP.ACT, WALK_TO], 2, false],
+      ...[
+        OP.ADD,
+        OP.SUB,
+        OP.MUL,
+        OP.DIV,
+        OP.MOD,
+        OP.MIN,
+        OP.MAX,
+        OP.EQ,
+        OP.NE,
+        OP.LT,
+        OP.LE,
+        OP.GT,
+        OP.GE,
+        OP.AND,
+        OP.OR,
+      ].map((op): [string, number[], number, boolean] => [`binary ${op}`, [op], 2, false]),
+    ];
+    const pushes = (n: number): number[] => Array.from({ length: n }, () => [OP.PUSH, 3]).flat();
+    for (const [name, instruction, takes, grows] of table) {
+      if (takes > 0) {
+        expect(
+          run([...pushes(takes - 1), ...instruction, OP.ACT, IDLE]).fault,
+          `${name} one short`,
+        ).toBe("stack_underflow");
+      }
+      expect(
+        run([...pushes(takes), ...instruction, OP.HALT]).fault,
+        `${name} with enough`,
+      ).not.toBe("stack_underflow");
+      const full = run([...pushes(STACK_SIZE), ...instruction, OP.HALT]).fault;
+      // An action ends the decision; everything else runs on to the HALT.
+      const settled = name.startsWith("ACT") ? "none" : "no_action";
+      expect(full, `${name} on a full stack`).toBe(grows ? "stack_overflow" : settled);
+      if (grows) {
+        expect(
+          run([...pushes(STACK_SIZE - 1), ...instruction, OP.HALT]).fault,
+          `${name} one below full`,
+        ).toBe("no_action");
+      }
+    }
+    // JZ and JNZ take one value; a jump to the next instruction keeps the test simple.
+    for (const op of [OP.JZ, OP.JNZ]) {
+      expect(run([op, 2, OP.HALT]).fault).toBe("stack_underflow");
+      expect(run([OP.PUSH, 1, op, 4, OP.HALT]).fault).toBe("no_action");
+    }
+    // A loop that grows the stack without PUSH must overflow, not run out of gas.
+    expect(run([OP.PUSH, 1, OP.DUP, OP.JMP, 2]).fault).toBe("stack_overflow");
+    expect(run([OP.LOAD, 0, OP.JMP, 0]).fault).toBe("stack_overflow");
+    expect(run([OP.SENSE, SELF_X, OP.JMP, 0]).fault).toBe("stack_overflow");
+  });
+
+  it("a decision that faults leaves memory as it was", () => {
+    const memory = new Array<number>(MEMORY_SLOTS).fill(0);
+    memory[2] = 44;
+    const faulted = run([OP.PUSH, 9, OP.STORE, 2, OP.PUSH, 9, OP.STORE, 5, OP.JMP, 8], memory);
+    expect(faulted.fault).toBe("out_of_gas");
+    expect(memory[2]).toBe(44);
+    expect(memory[5]).toBe(0);
+    expect(run([OP.PUSH, 9, OP.STORE, 2, OP.PUSH, 1, OP.PUSH, 0, OP.DIV], memory).fault).toBe(
+      "divide_by_zero",
+    );
+    expect(memory[2]).toBe(44);
+    // The same writes are kept when the decision commits an action.
+    expect(run([OP.PUSH, 9, OP.STORE, 2, OP.ACT, IDLE], memory).fault).toBe("none");
+    expect(memory[2]).toBe(9);
+  });
+
   it("never runs more than its budget, and allows exactly the full stack", () => {
     expect(run([OP.JMP, 0]).gasUsed).toBe(GAS_PER_DECISION);
     const fill = (n: number): number[] => [
@@ -285,6 +369,69 @@ describe("validateProgram", () => {
     bad(withCode([OP.RULE, 0]), /no rule 0/);
   });
 
+  it("returns a frozen copy, so nothing done to the original can change what was checked", () => {
+    const code = [OP.SENSE, SELF_X, OP.ACT, WAIT];
+    const rules = ["only"];
+    const checked = validateProgram({ version: BYTECODE_VERSION, code, rules });
+    code[1] = 99;
+    rules[0] = "changed";
+    expect(checked.code).toEqual([OP.SENSE, SELF_X, OP.ACT, WAIT]);
+    expect(checked.rules).toEqual(["only"]);
+    expect(
+      Object.isFrozen(checked) && Object.isFrozen(checked.code) && Object.isFrozen(checked.rules),
+    ).toBe(true);
+    expect(runDecision(checked, [], () => 3).action).toEqual({ id: WAIT, args: [3] });
+  });
+
+  it("reads each value once: an object that answers differently later is checked as it will run", () => {
+    // Says 0 (a sensor) the first time word 1 is read, and 1234 (no such call) after that.
+    let reads = 0;
+    const shifty = new Proxy([OP.SENSE, 0, OP.ACT, IDLE], {
+      get: (target, key, receiver) =>
+        key === "1" && reads++ > 0 ? 1234 : Reflect.get(target, key, receiver),
+    });
+    const checked = validateProgram({ version: BYTECODE_VERSION, code: shifty, rules: [] });
+    expect(checked.code).toEqual([OP.SENSE, 0, OP.ACT, IDLE]);
+    expect(() => runDecision(checked, [], () => 0)).not.toThrow();
+
+    // Rule labels that iterate as strings but index as objects.
+    const labels: unknown[] = [{}];
+    Object.defineProperty(labels, Symbol.iterator, { value: () => ["fine"][Symbol.iterator]() });
+    bad(withCode([OP.HALT], labels), /rule label/);
+  });
+
+  it("turns anything thrown while reading a program into a ProgramError", () => {
+    const throwing = {
+      get version(): number {
+        throw new TypeError("no");
+      },
+      code: [0],
+      rules: [],
+    };
+    bad(throwing, /could not be read/);
+    bad(
+      new Proxy(
+        {},
+        {
+          get: () => {
+            throw new RangeError("no");
+          },
+        },
+      ),
+      /could not be read/,
+    );
+    bad(
+      withCode(
+        new Proxy([0], {
+          get: () => {
+            throw new Error("no");
+          },
+        }),
+      ),
+      /could not be read/,
+    );
+  });
+
   it("accepts a well-formed program and returns it", () => {
     const ok = validateProgram(withCode([OP.RULE, 0, OP.ACT, IDLE], ["rest"]));
     expect(ok).toEqual({ version: 1, code: [OP.RULE, 0, OP.ACT, IDLE], rules: ["rest"] });
@@ -298,7 +445,7 @@ describe("hostile programs", () => {
   it("random words: every one is refused or runs to a clean end", () => {
     const rng = createRng(1234);
     let accepted = 0;
-    for (let i = 0; i < 6000; i++) {
+    for (let i = 0; i < 10_000; i++) {
       const code = Array.from({ length: 1 + nextInt(rng, 24) }, () => nextInt(rng, 40) - 4);
       let checked: Program;
       try {
@@ -316,13 +463,13 @@ describe("hostile programs", () => {
       expect(decision.gasUsed).toBeLessThanOrEqual(GAS_PER_DECISION);
       expect(decision.action === null).toBe(decision.fault !== "none");
     }
-    expect(accepted).toBeGreaterThan(50);
+    expect(accepted).toBeGreaterThan(100);
   });
 
   it("random well-formed programs: none throws, none exceeds its budget, memory stays 32-bit", () => {
     const rng = createRng(99);
     const faults = new Set<string>();
-    for (let i = 0; i < 6000; i++) {
+    for (let i = 0; i < 10_000; i++) {
       const ops: number[] = [];
       const starts: number[] = [];
       const length = 2 + nextInt(rng, 30);

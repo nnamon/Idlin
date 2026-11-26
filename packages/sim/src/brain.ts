@@ -3,12 +3,12 @@
 
 import { isWalkable } from "./map.ts";
 import { findPath } from "./path.ts";
-import { nextInt } from "./rng.ts";
 import { syscall } from "./syscalls.ts";
 import { FAULTS, type Program, runDecision } from "./vm.ts";
+import { randomWalkableTile } from "./wander.ts";
 import { type Actor, clock, type World } from "./world.ts";
 
-/** Ticks an actor stands still after `idle`, or after an action that came to nothing. */
+/** Ticks an actor stands still after `idle` or an action that came to nothing; also the shortest `wait`. */
 export const IDLE_TICKS = 5;
 /** Ticks an actor stands confused after its program faults, before it tries again. */
 export const CONFUSED_TICKS = 30;
@@ -55,25 +55,20 @@ function act(world: World, actor: Actor, id: number, args: readonly number[]): v
   const [a = 0, b = 0] = args;
   switch (syscall(id)?.name) {
     case "wait":
-      actor.wait = Math.max(1, Math.min(MAX_WAIT_ACTION_TICKS, a));
+      actor.wait = Math.max(IDLE_TICKS, Math.min(MAX_WAIT_ACTION_TICKS, a));
       return;
     case "walk_to":
       actor.path = findPath(world.map, actor, { x: a, y: b }) ?? [];
       break;
-    case "wander": {
-      const { map } = world;
-      const walkable: { x: number; y: number }[] = [];
-      for (let y = 0; y < map.height; y++) {
-        for (let x = 0; x < map.width; x++) if (isWalkable(map, x, y)) walkable.push({ x, y });
-      }
-      const target = walkable[nextInt(world.rng, walkable.length)] as { x: number; y: number };
-      actor.path = findPath(map, actor, target) ?? [];
+    case "wander":
+      actor.path = findPath(world.map, actor, randomWalkableTile(world)) ?? [];
       break;
-    }
     default:
       // `idle`, and any action this build does not know.
       break;
   }
-  // An action that leaves nothing to do costs a short pause, so a program cannot spin every tick.
+  // An action that leaves nothing to do costs a short pause. Together with the
+  // floor on `wait`, this means a standing actor decides at most once every
+  // IDLE_TICKS ticks, however its program is written.
   if (actor.path.length === 0) actor.wait = IDLE_TICKS;
 }

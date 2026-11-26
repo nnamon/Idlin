@@ -5,7 +5,7 @@ import { think } from "./brain.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
 import { createRng, type Rng } from "./rng.ts";
-import { FAULTS, MEMORY_SLOTS, type Program } from "./vm.ts";
+import { FAULTS, MEMORY_SLOTS, type Program, ProgramError, validateProgram } from "./vm.ts";
 import { wander } from "./wander.ts";
 
 export const TICKS_PER_SECOND = 10;
@@ -68,8 +68,33 @@ export type Input = {
   readonly program?: string;
 } & Point;
 
+/** Program names: a lower-case letter, then letters, digits or underscores. */
+const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * Validates a program table and returns a frozen copy with no prototype, so a
+ * name can never reach a built-in property and nothing can change a program
+ * after it was checked. Throws a ProgramError for a bad name or program.
+ */
+export function checkPrograms(programs: Programs): Programs {
+  const table: Record<string, Program> = Object.create(null);
+  for (const name of Object.keys(programs).sort()) {
+    if (!PROGRAM_NAME.test(name)) throw new ProgramError(`"${name}" is not a valid program name`);
+    table[name] = validateProgram(programs[name]);
+  }
+  return Object.freeze(table);
+}
+
+/** Throws a ProgramError if `programs` holds a bad name or an invalid program. */
 export function createWorld(map: TileMap, seed: number, programs: Programs = {}): World {
-  return { map, programs, tick: 0, rng: createRng(seed), nextActorId: 1, actors: [] };
+  return {
+    map,
+    programs: checkPrograms(programs),
+    tick: 0,
+    rng: createRng(seed),
+    nextActorId: 1,
+    actors: [],
+  };
 }
 
 export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
@@ -252,7 +277,8 @@ export function hashWorld(world: World): string {
       a.blocked,
       a.path.length,
       ...a.path.flatMap((p) => [p.x, p.y]),
-      ...stringInts(a.program ?? ""),
+      // -1 for no program; a name's length is never negative.
+      ...(a.program === null ? [-1] : stringInts(a.program)),
       ...a.memory,
       a.rule,
       a.fault,
@@ -282,7 +308,8 @@ export function snapshot(world: World): string {
  * Rebuilds a world from a snapshot and the content it was taken with. Refuses,
  * with a SnapshotError, anything it cannot be sure it reads correctly: another
  * version, another map, other programs, or contents that do not hash to what
- * was saved.
+ * was saved. Throws a ProgramError instead if the programs passed in are
+ * themselves invalid.
  */
 export function restore(text: string, map: TileMap, programs: Programs = {}): World {
   let data: unknown;
@@ -305,10 +332,11 @@ export function restore(text: string, map: TileMap, programs: Programs = {}): Wo
     throw new SnapshotError(`snapshot version ${show(version)} is not ${SNAPSHOT_VERSION}`);
   }
   if (mapHash !== hashMap(map)) throw new SnapshotError("snapshot was taken on a different map");
-  if (programsHash !== hashPrograms(programs)) {
+  const table = checkPrograms(programs);
+  if (programsHash !== hashPrograms(table)) {
     throw new SnapshotError("snapshot was taken with different programs");
   }
-  const world = readState(state, map, programs);
+  const world = readState(state, map, table);
   if (!world || hashWorld(world) !== hash) throw new SnapshotError("snapshot contents are damaged");
   return world;
 }
@@ -384,6 +412,8 @@ function readState(raw: unknown, map: TileMap, programs: Programs): World | null
     const rules = program === null ? 0 : (programs[program] as Program).rules.length;
     if (!isInt32(rule) || rule < -1 || rule >= rules) return null;
     if (!isInt32(fault) || fault < 0 || fault >= FAULTS.length) return null;
+    // An actor without a program never runs one, so it has nothing to remember and nothing to fault on.
+    if (program === null && (fault !== 0 || memory.some((value) => value !== 0))) return null;
     world.actors.push({
       id,
       name,

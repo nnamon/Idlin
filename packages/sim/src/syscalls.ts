@@ -42,7 +42,7 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "wait",
     kind: "action",
     args: 1,
-    about: "Do nothing for the given number of ticks (1 to 600).",
+    about: "Do nothing for the given number of ticks (5 to 600).",
   },
   {
     id: 8,

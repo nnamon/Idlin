@@ -94,41 +94,35 @@ export class ProgramError extends Error {
 }
 
 /**
- * Checks a program before it is ever run, and returns it typed. Throws a
- * ProgramError naming the first problem. After this, running the program can
- * fault but cannot misbehave: every opcode is known, every operand is present,
- * every jump lands on an instruction, every slot and system call exists.
+ * Checks a program before it is ever run, and returns a frozen copy of it.
+ * Throws a ProgramError naming the first problem. After this, running the
+ * program can fault but cannot misbehave: every opcode is known, every operand
+ * is present, every jump lands on an instruction, every slot and system call
+ * exists. The copy is what makes that hold: nothing the caller does to its own
+ * object afterwards can change what was checked.
  */
 export function validateProgram(raw: unknown): Program {
-  if (typeof raw !== "object" || raw === null)
-    throw new ProgramError("a program must be an object");
-  const { version, code, rules } = raw as Record<string, unknown>;
+  let version: unknown;
+  let ints: number[];
+  let rules: string[];
+  try {
+    // Each value is read exactly once, so an object that answers differently
+    // on a second read cannot show the checks one thing and the machine another.
+    [version, ints, rules] = readProgram(raw);
+  } catch (error) {
+    if (error instanceof ProgramError) throw error;
+    throw new ProgramError("a program could not be read");
+  }
   if (version !== BYTECODE_VERSION) {
     throw new ProgramError(`bytecode version must be ${BYTECODE_VERSION}`);
   }
-  if (!Array.isArray(code) || code.length === 0 || code.length > MAX_CODE_LENGTH) {
-    throw new ProgramError(`code must hold 1 to ${MAX_CODE_LENGTH} words`);
-  }
-  if (!Array.isArray(rules) || rules.length > MAX_RULES) {
-    throw new ProgramError(`rules must be a list of at most ${MAX_RULES} labels`);
-  }
-  for (const label of rules as unknown[]) {
-    if (typeof label !== "string" || label.length < 1 || label.length > MAX_RULE_LABEL_LENGTH) {
-      throw new ProgramError(`a rule label must be 1 to ${MAX_RULE_LABEL_LENGTH} characters`);
-    }
-  }
-  const words = code as unknown[];
-  for (let i = 0; i < words.length; i++) {
-    if (!isInt32(words[i])) throw new ProgramError(`word ${i} is not a 32-bit integer`);
-  }
-  const ints = words as number[];
 
   const starts = new Set<number>();
   for (let at = 0; at < ints.length; ) {
     const op = ints[at] as number;
     const operands = OPERANDS[op];
     if (operands === undefined) throw new ProgramError(`word ${at}: unknown opcode ${op}`);
-    if (at + operands >= ints.length + (operands === 0 ? 1 : 0)) {
+    if (at + operands >= ints.length) {
       throw new ProgramError(`word ${at}: instruction is cut short`);
     }
     starts.add(at);
@@ -153,15 +147,52 @@ export function validateProgram(raw: unknown): Program {
         throw new ProgramError(`word ${at}: no rule ${operand}`);
     }
   }
-  return { version, code: ints, rules: rules as string[] };
+  return Object.freeze({ version, code: Object.freeze(ints), rules: Object.freeze(rules) });
+}
+
+/** Copies a would-be program out of whatever was passed in, checking types and sizes on the way. */
+function readProgram(raw: unknown): [unknown, number[], string[]] {
+  if (typeof raw !== "object" || raw === null)
+    throw new ProgramError("a program must be an object");
+  const { version, code, rules } = raw as Record<string, unknown>;
+  if (!Array.isArray(code)) throw new ProgramError(`code must hold 1 to ${MAX_CODE_LENGTH} words`);
+  const codeLength: unknown = code.length;
+  if (!isInt32(codeLength) || codeLength < 1 || codeLength > MAX_CODE_LENGTH) {
+    throw new ProgramError(`code must hold 1 to ${MAX_CODE_LENGTH} words`);
+  }
+  const ints: number[] = [];
+  for (let i = 0; i < codeLength; i++) {
+    const word: unknown = code[i];
+    if (!isInt32(word)) throw new ProgramError(`word ${i} is not a 32-bit integer`);
+    // `| 0` stores a negative zero as zero.
+    ints.push(word | 0);
+  }
+  if (!Array.isArray(rules))
+    throw new ProgramError(`rules must be a list of at most ${MAX_RULES} labels`);
+  const ruleCount: unknown = rules.length;
+  if (!isInt32(ruleCount) || ruleCount < 0 || ruleCount > MAX_RULES) {
+    throw new ProgramError(`rules must be a list of at most ${MAX_RULES} labels`);
+  }
+  const labels: string[] = [];
+  for (let i = 0; i < ruleCount; i++) {
+    const label: unknown = rules[i];
+    if (typeof label !== "string" || label.length < 1 || label.length > MAX_RULE_LABEL_LENGTH) {
+      throw new ProgramError(`a rule label must be 1 to ${MAX_RULE_LABEL_LENGTH} characters`);
+    }
+    labels.push(label);
+  }
+  return [version, ints, labels];
 }
 
 /**
  * Runs one decision. `program` must have passed validateProgram. `memory` is
- * the actor's persistent slots and is changed in place. Never throws.
+ * the actor's persistent slots: it is changed only when the decision commits
+ * an action. A decision that faults leaves memory exactly as it was, so a
+ * fault has no effect beyond costing the actor its turn. Never throws.
  */
 export function runDecision(program: Program, memory: number[], sense: Sense): Decision {
   const { code } = program;
+  const slots = memory.slice(0, MEMORY_SLOTS);
   const stack: number[] = [];
   let pc = 0;
   let gas = 0;
@@ -235,10 +266,10 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
         if ((stack.pop() as number) !== 0) pc = operand;
         break;
       case OP.LOAD:
-        stack.push(memory[operand] as number);
+        stack.push((slots[operand] ?? 0) | 0);
         break;
       case OP.STORE:
-        memory[operand] = stack.pop() as number;
+        slots[operand] = stack.pop() as number;
         break;
       case OP.RULE:
         rule = operand;
@@ -249,6 +280,7 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
         break;
       }
       case OP.ACT:
+        for (let slot = 0; slot < MEMORY_SLOTS; slot++) memory[slot] = (slots[slot] ?? 0) | 0;
         return end("none", { id: operand, args: stack.splice(stack.length - takes, takes) });
       default: {
         // Every remaining opcode takes two values and leaves one.
@@ -258,6 +290,9 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
         stack.push(binary(op, a, b));
       }
     }
+    // Belt and braces: whatever the table above says an instruction leaves, the
+    // stack is never allowed past its size.
+    if (stack.length > STACK_SIZE) return end("stack_overflow");
   }
 }
 
@@ -275,9 +310,9 @@ function binary(op: number, a: number, b: number): number {
     case OP.MOD:
       return (a % b) | 0;
     case OP.MIN:
-      return a < b ? a : b;
+      return Math.min(a, b);
     case OP.MAX:
-      return a > b ? a : b;
+      return Math.max(a, b);
     case OP.EQ:
       return a === b ? 1 : 0;
     case OP.NE:
