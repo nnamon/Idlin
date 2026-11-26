@@ -21,10 +21,14 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 - This repo is public. Commit no secrets, no personal details, and no asset
   whose licence forbids redistribution.
 - Nothing about the machine or environment the swarm runs on reaches GitHub:
-  not in files, commit messages, issue or pull request text, comments or CI
-  logs. That covers paths, user and host names, hardware, operating system,
-  time zone, other software or projects on the machine, and the state of its
-  Docker or disks. Explain a decision by what it does for the project.
+  not in files, commit messages, issue or pull request text, or comments. That
+  covers paths, user and host names, hardware, operating system, time zone,
+  other software or projects on the machine, and the state of its Docker or
+  disks. Check each text before it is pushed or posted, not after. Explain a
+  decision by what it does for the project. CI runs on GitHub's runners and
+  prints only what the repo's own commands print, so it has nothing of the
+  machine to show; keep it that way by never passing local values into a
+  workflow.
 
 ## 2. Roles
 
@@ -37,6 +41,10 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 
 Only the conductor runs on a Mythos- or Fable-tier model. Every Claude child
 task is Opus 5.5 at effort `medium`.
+
+A reviewer or judge never checks work built by its own model. When the artist
+(Opus) built a change and only Opus is left as reviewer, the conductor reviews
+that change itself.
 
 Child tasks are started with T3 Code's `delegate_task`, so each one appears as
 a thread the operator can open. No fan-out and no `Workflow` runs.
@@ -58,7 +66,9 @@ work (tests, and captures if it is visible), and what it leaves out.
 
 1. `main` is red in CI: fix that.
 2. An open `operator` issue, or an operator comment not yet answered.
-3. An `in-progress` issue: resume it.
+3. An `in-progress` issue: resume it. One that waits only on a review which
+   could not be had last cycle gets one new attempt; if that fails too, leave
+   it and go on down this list.
 4. A `bug`, or a `watch` issue that records a hard fail.
 5. The lowest-numbered `ready` issue in the current milestone whose
    dependencies ("Depends on #N" in the body) are closed.

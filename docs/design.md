@@ -170,7 +170,7 @@ commitments follow.
 2. **The stream notices you.** Spotlight time is rationed, not won by the
    loudest: notable events earn it, and every active character gets a turn
    within a bounded wait. The ticker names names. How much of the stream each
-   character got is measured (the "screen share" metric), so a crowd cannot
+   character got is measured (acknowledgment and spotlight wait), so a crowd cannot
    quietly starve someone.
 3. **Your choices show and compare.** The spotlight shows your rules firing.
    Boards rank trips, not totals, across many niches (best haul today, longest
@@ -188,7 +188,10 @@ commitments follow.
 Whether this holds is an open question, tested with captures at 12, 50 and 150
 characters from one marked player's seat (the "Mine" score in
 [watch-rubric.md](watch-rubric.md)). The first milestone builds the frame and
-the spotlight; commitments 1, 3 and 4 need players and arrive with them.
+the spotlight and measures how many characters one frame can hold.
+Commitments 1, 3 and 4 need players and arrive with them in M3; regions and
+the drifting view arrive when the population calls for them, in M4. The
+[roadmap](roadmap.md) carries each.
 
 ## What a watcher can do
 
@@ -197,7 +200,6 @@ adventurer, read its program, edit it in the browser, and compare how it does
 against the others. That is the optimisation game, and it gets its own
 milestone.
 
-## Not now
+## Not planned yet
 
-Deployment and hosting, accounts, chat integration, sound, mobile layouts,
-trading between characters, and any world bigger than one frame.
+Deployment and hosting, sound, mobile layouts and trading between characters.

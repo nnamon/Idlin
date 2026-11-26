@@ -17,21 +17,33 @@ gh run list --branch main --limit 3
 
 ## 2. Watch review
 
-Skip this step if the capture harness does not exist yet, or if the lock in
-`$(git rev-parse --git-dir)/idlin.lock` is younger than 150 minutes (a cycle
-is using the checkout; use the newest folder in `captures/` instead).
+Skip this step if the capture harness does not exist yet. If the lock in
+`$(git rev-parse --git-dir)/idlin.lock` is younger than 150 minutes, a cycle
+is using the checkout: skip the capture and the judging today, and show the
+newest finished capture in `captures/` whose commit is on `origin/main`,
+saying which commit it is.
 
-Otherwise take the lock, check out `main`, run
-`docker compose run --rm capture`, and start the watch judge as described in
-[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline. Then:
+Otherwise take the lock, then:
 
-- append the scores to `docs/watch-log.md` (date, commit, seven scores, hard
-  fails) through a small pull request that follows the normal gates;
-- file each finding as an issue labelled `watch` and `ready`, unless an open
-  issue already covers it;
-- push the showcase set from the new capture to the `media` branch (stable
-  file names under `showcase/`), so the README shows the game as it is today;
-- release the lock.
+```sh
+git checkout main && git pull --ff-only origin main
+git rev-parse HEAD            # must equal origin/main; this is the commit judged
+docker compose run --rm capture
+```
+
+Release the lock as soon as the capture has finished; nothing after this needs
+the checkout. Start the watch judge as described in
+[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline. Then, in
+one commit pushed straight to the `media` branch (it holds no code and is not
+protected):
+
+- the showcase set from the new capture, under stable file names in
+  `showcase/`, so the README shows the game as it is today;
+- one line appended to `watch-log.md`: date, the commit judged, the scores,
+  hard fails.
+
+File each finding as an issue labelled `watch` and `ready`, unless an open
+issue already covers it.
 
 ## 3. Health
 
@@ -57,7 +69,11 @@ facts allow:
 5. **Stuck or odd** — only if there is something.
 6. **Milestone** — closed and open issue counts.
 
-Also post the same text as a comment on the "Operator log" issue, so the
-history is in the tracker. Link the storyboard on the `media` branch in place
-of the local image, and leave out section 5's machine details (disk use, Docker
-state, local paths): those go to the thread only.
+Also post the digest as a comment on the "Operator log" issue, so the history
+is in the tracker. In place of the local image, link the storyboard at the
+`media` commit just pushed (a link with the commit id, so an old digest keeps
+showing the picture it described).
+
+Section 1 of `AGENTS.md` applies to everything this run posts to GitHub: the
+comment, watch findings and issue comments carry nothing about the machine.
+Disk use, Docker state and local paths go to the thread only.

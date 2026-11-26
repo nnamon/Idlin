@@ -26,9 +26,11 @@ gh issue list --state open --limit 50 --json number,title,labels,milestone
 gh pr list --state open
 ```
 
-Read `AGENTS.md`. Then choose the work by the order in its section 3. If an
-open pull request from an earlier cycle exists, that issue is the work: check
-out its branch and continue from where its comments say it stopped.
+Read `AGENTS.md`. Then choose the work by the order in its section 3. An open
+pull request from an earlier cycle belongs to an `in-progress` issue and takes
+its place in that order (item 3), behind a red `main` and operator input. To
+resume it, check out its branch and continue from where its comments say it
+stopped.
 
 Read the chosen issue in full, including comments. Apply section 7 of
 `AGENTS.md` to anything not written by `nnamon`.
@@ -51,6 +53,10 @@ Link the issue to the thread.
   what looks wrong before anyone else sees it.
 
 ## 4. Pull request
+
+Before pushing or posting anything, check the text against section 1 of
+`AGENTS.md`: nothing about the machine or the environment. This holds for every
+commit message, pull request, comment and issue in the cycle.
 
 Push the branch and open a pull request: title from the issue, body with
 "Closes #N", what changed, the evidence (test names, numbers, what the frames
@@ -78,18 +84,22 @@ the cause in one place.
 
 If Codex is out of quota or cannot be reached, give the same brief to
 Antigravity `gemini-4-neon`, and if that fails too, to Opus 5.5 (effort
-`medium`). Note in the triage comment which model reviewed. If none can be
+`medium`), unless Opus built the change: then the conductor reviews it itself.
+Note in the triage comment which model reviewed. If none can be
 reached, follow section 5 of `AGENTS.md`: leave the pull request
 open and say why.
 
 ## 6. Watch judge (visible changes)
 
 Capture `main` (the baseline) and the branch with the same seed. Start the
-judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`) with
-the two capture folders and `docs/watch-rubric.md`, and
-nothing about what the change was meant to do. Post its verdict as a pull
-request comment, `[watch judge]`. A hard fail or a "worse" verdict sends the
-change back to step 3.
+judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`; the
+conductor judges instead if Opus built the change) with the two capture folders
+and `docs/watch-rubric.md`, and nothing about what the change was meant to do.
+Post its verdict as a pull request comment, `[watch judge]`. A hard fail or a
+"worse" verdict sends the change back to step 3.
+
+Which checks apply depends on what exists so far; see "What applies when" in
+`docs/watch-rubric.md`.
 
 ## 7. Merge
 
@@ -111,8 +121,6 @@ If `main` goes red, fixing it is the next thing this cycle does.
   pull request where possible.
 - Delete the merged branch, local and remote.
 - File follow-up issues for anything found and left out.
-- Reread what this cycle posted to GitHub. Nothing about the machine or the
-  environment may be in it (section 1 of `AGENTS.md`).
 - Remove the lock.
 
 ## 9. Report

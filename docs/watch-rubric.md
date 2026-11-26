@@ -3,35 +3,43 @@
 Tests cannot answer this. It is judged from real captures of the running game,
 by a judge who did not build the change, against the rubric below.
 
+Every duration on this page is stream time: seconds and minutes as a viewer
+experiences them, not game-clock time.
+
 ## The capture
 
 `docker compose run --rm capture` runs the viewer in replay mode from a fixed
 seed with a stepped clock, and writes to `captures/<date>-<sha>/`:
 
-- **storyboard** — 12 frames, one every 10 seconds of game time, as one image.
-  Shows what a viewer sees over two minutes.
+- **storyboard** — 12 frames, one every 10 seconds, as one image. Shows what a
+  viewer sees over two minutes.
 - **burst** — 12 consecutive rendered frames from the busiest moment. Shows
   motion, and exposes flicker.
 - **day strip** — 6 frames across a full day. Shows the light changing.
-- **crowd sheets** — the storyboard again at 50 and at 150 characters, each
-  with one character marked as "mine". Shows what one player gets from a busy
-  stream.
-- **metrics.json** — numbers from the same run (below).
+- **crowd sheets** — the storyboard again with the world filled to 12, 50 and
+  150 characters running the built-in programs. The frames are exactly what a
+  viewer would see; nothing is drawn on them for the judge.
+- **metrics.json** — numbers from the same runs (below).
 
 The same seed is used for the baseline and for a change, so two captures can be
 compared frame by frame.
 
 ## Metrics (computed, not judged)
 
-| Metric                                                    | Meaning                                                                                               | Hard fail                                                      |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| flicker index                                             | largest share of the screen whose brightness changes sharply between two consecutive frames           | over 5% of the screen                                          |
-| dead air                                                  | longest gap, in seconds, with no visible event anywhere                                               | over 20 s                                                      |
-| stuck actors                                              | actors that did not move or act for 60 s without a reason                                             | any                                                            |
-| action mix                                                | spread of different actions per character per 10 minutes                                              | a character with one action only                               |
-| trips per hour, deaths per hour, drops by rarity per hour | pacing                                                                                                | none; tracked over time                                        |
-| console errors                                            | errors in the page during the capture                                                                 | any                                                            |
-| screen share                                              | for each character, the share of time it was named or shown in the ticker, a caption or the spotlight | at 50 characters, any active character with none in 30 minutes |
+Frame metrics come from the rendered capture. The others come from the sim's
+event log over a headless run of the same seed, long enough for the window
+each one names.
+
+| Metric                                      | Meaning                                                                                     | Hard fail                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| flicker index                               | largest share of the screen whose brightness changes sharply between two consecutive frames | over 5% of the screen                                                                  |
+| dead air                                    | longest gap with no visible event anywhere                                                  | over 20 s                                                                              |
+| stuck actors                                | actors that did not move or act for 60 s without a reason                                   | any                                                                                    |
+| action mix                                  | number of different actions per character per 10 minutes                                    | a character with one action only                                                       |
+| trips, deaths and drops by rarity, per hour | pacing                                                                                      | none; tracked over time                                                                |
+| console errors                              | errors in the page during the capture                                                       | any                                                                                    |
+| acknowledgment                              | per character, how often it was named on screen (a ticker line, a caption or the spotlight) | at 50 characters over 60 minutes, a character that finished a trip and was never named |
+| spotlight wait                              | per character, the longest time between two turns in the spotlight                          | longer than twice the population times the minimum dwell                               |
 
 ## The rubric (judged, 0 to 5 each)
 
@@ -52,30 +60,45 @@ same viewer once they also own a character.
    a second monitor because it is pleasant to have there?
 6. **Strategic** — can I see different programs making different choices, and
    would I want to change one?
-7. **Mine** — judged from the seat of one player on a busy stream, who owns
-   exactly one character (the capture marks which) and sees only what every
-   other viewer sees. Can I find my character within three seconds? In the
-   two minutes shown, did the stream acknowledge it at all: its name, its
-   rule, a result? Is there a reason to keep watching when it is not my turn
-   in the spotlight? Scored separately at each population the capture was
-   run at (12, 50 and 150 characters); the lowest score is the one recorded.
+7. **Mine** — judged from the seat of one player who owns one character and
+   sees only what every other viewer sees. The harness picks the character
+   with the median acknowledgment count, so it is neither the luckiest nor the
+   most ignored, and tells the judge its name and colour in text. Knowing only
+   that: can I find my character in a single frame? Across the sheet and that
+   character's acknowledgment and spotlight numbers, did the stream notice it?
+   Is there a reason to keep watching when it is not my turn? Scored once per
+   crowd sheet (12, 50 and 150 characters) and recorded as three scores.
 
 Hard fails, whatever the scores: any metric hard fail above, a camera cut,
 placeholder shapes standing in for art, unreadable text.
 
+## What applies when
+
+A check applies once the thing it measures exists.
+
+- Before the capture harness exists, frames are captured by hand and there is
+  no baseline; the judge scores what it can see and says so.
+- A dimension or metric whose subject is not built yet (no ticker, no
+  spotlight, no programs to tell apart) is recorded as "n/a" with the reason.
+  It neither passes nor blocks a pull request.
+- A milestone's closing review allows no "n/a" among the dimensions its
+  roadmap entry names.
+
 ## The judge
 
-- A fresh agent with no knowledge of the change, which did not build it (Opus
-  5.5 at effort `medium`). A milestone's closing review adds a second judge
-  from another model family (Antigravity `gemini-4-neon`); where the two
-  disagree by two points or more, the lower score stands. It gets the captures, the metrics and this page, nothing
-  else.
+- A fresh agent with no knowledge of the change, which did not build it: Opus
+  5.5 at effort `medium`. It gets the captures, the metrics and this page,
+  nothing else.
 - Every claim must point at a frame ("storyboard frame 7: three characters
-  overlap the lantern and none can be read").
-- It returns the seven scores, any hard fail, and at most three findings ranked
-  by how much they hurt the watching experience.
+  overlap the lantern and none can be read") or at a metric.
+- It returns the scores, any hard fail, and at most three findings ranked by
+  how much they hurt the watching experience.
 - For a pull request it gets the baseline capture too, and must say whether the
   change is better, the same or worse, and where.
+- A milestone's closing review adds a second judge from another model family
+  (Antigravity `gemini-4-neon`). For each dimension the lower of the two scores
+  stands, and a hard fail from either stands. If the second judge cannot be
+  reached, the review goes ahead with one judge and the closing comment says so.
 
 ## How the verdict is used
 
@@ -83,6 +106,7 @@ placeholder shapes standing in for art, unreadable text.
   and no "worse" verdict.
 - Findings become issues labelled `watch`. They are ordinary work, ahead of new
   features when they are a hard fail.
-- Scores are appended to `docs/watch-log.md` so the trend is visible.
+- Scores are appended to `watch-log.md` on the `media` branch, next to the
+  showcase images, so the trend is visible without a pull request per entry.
 - The operator's own reaction outranks any score. The daily digest shows the
   latest storyboard for that reason.
