@@ -23,6 +23,11 @@ export interface TickRecord {
   readonly actors: readonly ActorSample[];
 }
 
+export interface ActionMix {
+  readonly name: string;
+  readonly actions: number;
+}
+
 export interface WatchMetrics {
   readonly seconds: number;
   readonly actors: number;
@@ -30,9 +35,13 @@ export interface WatchMetrics {
   readonly deadAirSeconds: number;
   /** Actors that at some point neither changed tile nor chose to rest (`wait`) for longer than the limit. */
   readonly stuckActors: readonly string[];
-  /** Per actor, the fewest different actions it used in any ten-minute window. */
-  readonly actionMix: Readonly<Record<string, number>>;
-  /** Actors that used a single action throughout some ten-minute window. */
+  /** By actor id, the fewest different actions the actor used in any ten-minute window. */
+  readonly actionMix: Readonly<Record<string, ActionMix>>;
+  /**
+   * Actors that used a single action throughout some ten-minute window. In
+   * this list and in `stuckActors`, a name more than one actor had is
+   * followed by the id.
+   */
   readonly singleActionActors: readonly string[];
   readonly decisionsPerMinute: number;
   readonly faults: number;
@@ -42,9 +51,11 @@ export interface WatchMetrics {
 export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   const seconds = run.length / TICKS_PER_SECOND;
   const names = new Map<number, string>();
+  /** The first and last tick each actor was in the run. */
+  const seen = new Map<number, { first: number; last: number }>();
   const lastAlive = new Map<number, number>();
   const lastSpot = new Map<number, string>();
-  const stuck = new Set<string>();
+  const stuck = new Set<number>();
   const actions = new Map<number, { tick: number; action: string }[]>();
   const lastRule = new Map<number, number>();
   const resting = new Set<number>();
@@ -80,6 +91,9 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
     }
     for (const actor of record.actors) {
       names.set(actor.id, actor.name);
+      const span = seen.get(actor.id);
+      if (span) span.last = tick;
+      else seen.set(actor.id, { first: tick, last: tick });
       const spot = `${actor.x},${actor.y}`;
       if (lastSpot.get(actor.id) !== spot) {
         // Appearing in the world is not a move.
@@ -89,7 +103,7 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
       }
       if (resting.has(actor.id)) lastAlive.set(actor.id, tick);
       if (tick - (lastAlive.get(actor.id) ?? 0) > STUCK_LIMIT_SECONDS * TICKS_PER_SECOND)
-        stuck.add(actor.name);
+        stuck.add(actor.id);
     }
     if (visible) {
       deadAirTicks = Math.max(deadAirTicks, tick - lastVisible);
@@ -98,24 +112,37 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   });
   deadAirTicks = Math.max(deadAirTicks, run.length - lastVisible);
 
-  const actionMix: Record<string, number> = {};
+  const actionMix: Record<string, ActionMix> = {};
   const window = ACTION_MIX_WINDOW_SECONDS * TICKS_PER_SECOND;
+  const named = [...names.values()];
+  // Monsters of a kind share a name, so in a list those are told apart by id.
+  const label = (id: number): string => {
+    const name = names.get(id) as string;
+    return named.indexOf(name) === named.lastIndexOf(name) ? name : `${name} (${id})`;
+  };
   for (const [id, name] of names) {
     const list = actions.get(id) ?? [];
+    const { first, last } = seen.get(id) as { first: number; last: number };
+    const end = last + 1;
+    // Whole windows only, counted from when the actor appeared. Someone there for
+    // the whole of a run shorter than one window is judged on the run as a single
+    // window; a monster that came and went before a window was up is not judged.
+    const whole = first === 0 && end === run.length;
     let fewest = Number.POSITIVE_INFINITY;
-    // Whole windows only: a run shorter than one window is judged as a single window.
-    for (let start = 0; start === 0 || start + window <= run.length; start += window) {
+    for (let start = first; (whole && start === 0) || start + window <= end; start += window) {
       const used = new Set(
         list.filter((a) => a.tick >= start && a.tick < start + window).map((a) => a.action),
       );
       fewest = Math.min(fewest, used.size);
     }
-    actionMix[name] = fewest;
+    if (fewest === Number.POSITIVE_INFINITY) continue;
+    actionMix[id] = { name, actions: fewest };
   }
   const singleActionActors = Object.keys(actionMix)
-    .filter((name) => (actionMix[name] as number) <= 1)
+    .filter((id) => (actionMix[id] as ActionMix).actions <= 1)
+    .map((id) => label(Number(id)))
     .sort();
-  const stuckActors = [...stuck].sort();
+  const stuckActors = [...stuck].map(label).sort();
   const deadAirSeconds = deadAirTicks / TICKS_PER_SECOND;
 
   const hardFails: string[] = [];

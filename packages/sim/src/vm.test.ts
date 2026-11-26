@@ -64,6 +64,9 @@ describe("the system call table", () => {
       "18 attack action 2",
       "19 step_clear action 0",
       "20 flee action 2",
+      "21 threat_recovering sensor 0",
+      "22 step_to action 2",
+      "23 stalled sensor 0",
     ]);
   });
 

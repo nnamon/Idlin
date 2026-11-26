@@ -17,7 +17,7 @@ screen and not get bored of in ten minutes.
 | Tactics, the scripting language, and its compiler                        | done                                                        |
 | Viewer: the map, the characters, day and night                           | done                                                        |
 | Capture tool and the metrics for judging how it watches                  | done, except acknowledgment and the metrics that need trips |
-| Combat with telegraphed attacks; monsters as scripted content            | not started                                                 |
+| Combat with telegraphed attacks; monsters as scripted content            | done in the simulation; the viewer does not draw them yet   |
 | Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | not started                                                 |
 | Items with rarity and rolled affixes; bots that choose what to wear      | not started                                                 |
 | Spotlight panel and a real news line                                     | the director that picks the subject is done; nothing drawn  |

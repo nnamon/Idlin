@@ -199,8 +199,10 @@ describe("actors run programs", () => {
       "map",
       "marks",
       "nextActorId",
+      "nextSpawn",
       "programs",
       "rng",
+      "spawns",
       "tick",
     ]);
   });
@@ -386,7 +388,13 @@ describe("programs and determinism", () => {
         change(data.state.actors[0] as Record<string, unknown>);
         if (rehash) {
           try {
-            data.hash = hashWorld({ ...(data.state as unknown as World), map, programs: PROGRAMS });
+            data.hash = hashWorld({
+              ...(data.state as unknown as World),
+              map,
+              programs: PROGRAMS,
+              kinds: {},
+              spawns: [],
+            });
           } catch {
             // Not hashable; the saved hash stays.
           }

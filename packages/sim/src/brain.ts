@@ -16,6 +16,7 @@ import {
   lineOfAttack,
   type World,
   type WorldEvent,
+  walkableFor,
 } from "./world.ts";
 
 /** Ticks an actor stands still after `idle` or an action that came to nothing; also the shortest `wait`. */
@@ -29,6 +30,8 @@ export const NO_THREAT = 9999;
 export const FLEE_STEPS = 3;
 /** How many steps ahead `flee` looks for somewhere farther away. */
 export const FLEE_SIGHT = 8;
+/** Where `stalled` stops counting. */
+export const MAX_STALLED = 1000;
 
 export function think(world: World, actor: Actor, events: WorldEvent[]): void {
   if (actor.wait > 0) {
@@ -101,7 +104,7 @@ function wayClear(world: World, actor: Actor): Point[] {
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;
       const y = at.y + dy;
-      if (!isWalkable(map, x, y) || blockerAt(world, x, y, actor)) continue;
+      if (!walkableFor(world, actor, x, y) || blockerAt(world, x, y, actor)) continue;
       const index = tileIndex(map, x, y);
       if (cameFrom.has(index)) continue;
       cameFrom.set(index, tileIndex(map, at.x, at.y));
@@ -127,7 +130,8 @@ function wayFrom(world: World, actor: Actor, from: Point): Point[] {
     for (const at of frontier) {
       for (const [dx, dy] of NEIGHBOURS) {
         const tile = { x: at.x + dx, y: at.y + dy };
-        if (!isWalkable(map, tile.x, tile.y) || blockerAt(world, tile.x, tile.y, actor)) continue;
+        if (!walkableFor(world, actor, tile.x, tile.y) || blockerAt(world, tile.x, tile.y, actor))
+          continue;
         const index = tileIndex(map, tile.x, tile.y);
         if (cameFrom.has(index)) continue;
         cameFrom.set(index, tileIndex(map, at.x, at.y));
@@ -201,7 +205,7 @@ export function wayTo(world: World, actor: Actor, to: Point): Point[] {
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;
       const y = at.y + dy;
-      if (!isWalkable(map, x, y)) continue;
+      if (!walkableFor(world, actor, x, y)) continue;
       const index = tileIndex(map, x, y);
       if (cameFrom.has(index) || barred.has(index)) continue;
       cameFrom.set(index, tileIndex(map, at.x, at.y));
@@ -243,12 +247,13 @@ export function wayTo(world: World, actor: Actor, to: Point): Point[] {
   return path.reverse();
 }
 
-/** A walkable tile chosen at random with the world's generator. */
-function randomWalkableTile(world: World): Point {
+/** A tile `actor` can stand on, chosen at random with the world's generator. */
+function randomWalkableTile(world: World, actor: Actor): Point {
   const { map } = world;
   const walkable: Point[] = [];
   for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) if (isWalkable(map, x, y)) walkable.push({ x, y });
+    for (let x = 0; x < map.width; x++)
+      if (walkableFor(world, actor, x, y)) walkable.push({ x, y });
   }
   return walkable[nextInt(world.rng, walkable.length)] as Point;
 }
@@ -283,10 +288,20 @@ function sense(world: World, actor: Actor, id: number, args: readonly number[]):
     }
     case "threat_hp":
       return threat(world, actor)?.hp ?? 0;
+    case "threat_recovering": {
+      // What the enemy has left once this tick is over. One that comes later in
+      // the update order has not counted this tick off yet, so it is counted here.
+      const enemy = threat(world, actor);
+      if (!enemy) return 0;
+      const counted = world.actors.indexOf(enemy) < world.actors.indexOf(actor);
+      return counted ? enemy.recover : Math.max(0, enemy.recover - 1);
+    }
     case "danger":
       return danger(world, actor, a, b);
     case "danger_here":
       return danger(world, actor, actor.x, actor.y);
+    case "stalled":
+      return actor.stalled;
     default:
       return 0;
   }
@@ -302,7 +317,11 @@ function act(
   // Every decision starts a fresh walk, which may be re-routed once.
   actor.blocked = 0;
   const [a = 0, b = 0] = args;
-  switch (syscall(id)?.name) {
+  const name = syscall(id)?.name ?? "";
+  // Counts up while the program keeps choosing to move and getting nowhere.
+  const stalled = actor.stalled;
+  actor.stalled = 0;
+  switch (name) {
     case "wait":
       actor.wait = Math.max(IDLE_TICKS, Math.min(MAX_WAIT_ACTION_TICKS, a));
       return;
@@ -310,7 +329,10 @@ function act(
       actor.path = wayTo(world, actor, { x: a, y: b });
       break;
     case "wander":
-      actor.path = findPath(world.map, actor, randomWalkableTile(world)) ?? [];
+      actor.path =
+        findPath(world.map, actor, randomWalkableTile(world, actor), (x, y) =>
+          walkableFor(world, actor, x, y),
+        ) ?? [];
       break;
     case "attack": {
       const tiles = attackTiles(world, actor, a, b);
@@ -332,6 +354,10 @@ function act(
     case "flee":
       actor.path = wayFrom(world, actor, { x: a, y: b });
       break;
+    case "step_to":
+      // The first step of the way walk_to would take.
+      actor.path = wayTo(world, actor, { x: a, y: b }).slice(0, 1);
+      break;
     default:
       // `idle`, and any action this build does not know.
       break;
@@ -340,4 +366,9 @@ function act(
   // floor on `wait`, this means a standing actor decides at most once every
   // IDLE_TICKS ticks, however its program is written.
   if (actor.path.length === 0) actor.wait = IDLE_TICKS;
+  if (actor.path.length === 0 && MOVES.has(name))
+    actor.stalled = Math.min(MAX_STALLED, stalled + 1);
 }
+
+/** The actions that walk somewhere, which `stalled` counts when they find nowhere to go. */
+const MOVES = new Set(["walk_to", "wander", "step_clear", "flee", "step_to"]);

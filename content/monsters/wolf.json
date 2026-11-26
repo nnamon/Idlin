@@ -1,0 +1,12 @@
+{
+  "name": "Wolf",
+  "hp": 24,
+  "damage": 8,
+  "windup": 8,
+  "recovery": 20,
+  "reach": 2,
+  "program": "wolf",
+  "group": 1,
+  "day": ["deep_wood"],
+  "night": ["near_wood"]
+}

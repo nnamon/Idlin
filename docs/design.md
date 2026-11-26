@@ -96,7 +96,7 @@ up to the character's program, so judging items is part of writing a good one.
 
 Adventurers and monsters run on the same virtual machine with the same
 interface. What differs is the body: which actions it has and what its numbers
-are. Monster programs will live in the content folder next to their stats.
+are. Monster programs live in `content/monsters/` next to their stats.
 
 ## Programs
 

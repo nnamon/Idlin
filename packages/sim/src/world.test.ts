@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isWalkable } from "./map.ts";
+import { compileBots } from "./tactics.ts";
 import { firstLight, shippedPrograms } from "./testing.ts";
 import {
   clock,
@@ -18,6 +19,9 @@ import {
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
 const PROGRAMS = shippedPrograms();
 const KINDS = { wolf: { hp: 10, damage: 1, windup: 5, recovery: 5, reach: 1 } };
+// For walking tests with a monster in them: the shipped programs fight when an
+// enemy is near, so here everyone runs one that only stands.
+const STILL = compileBots({ still: 'otherwise as "stand" -> wait(100)' });
 
 const newWorld = (seed: number): World => {
   const world = createWorld(firstLight(), seed, PROGRAMS);
@@ -40,7 +44,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("038a5a7577349870");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("3ed6b1a9fa436f2c");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -136,6 +140,7 @@ describe("world", () => {
             map,
             programs: PROGRAMS,
             kinds: {},
+            spawns: [],
           });
         } catch {
           // Not even hashable; the saved hash stays.
@@ -244,17 +249,17 @@ describe("world", () => {
   });
 
   it("an adventurer held up by a monster waits, then gives up its walk", () => {
-    const world = createWorld(firstLight(), 1, PROGRAMS, KINDS);
+    const world = createWorld(firstLight(), 1, STILL, KINDS);
     step(world, [
-      { type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" },
-      { type: "spawn", name: "Birch", x: 12, y: 8, program: "wanderer", kind: "wolf" },
+      { type: "spawn", name: "Ash", x: 11, y: 13, program: "still" },
+      { type: "spawn", name: "Birch", x: 12, y: 13, program: "still", kind: "wolf" },
     ]);
     const [ash, birch] = world.actors;
     if (!ash || !birch) throw new Error("no actors");
     birch.wait = 1000;
     birch.path = [];
     ash.wait = 1000;
-    ash.path = [{ x: 12, y: 8 }];
+    ash.path = [{ x: 12, y: 13 }];
     run(world, 9);
     expect([ash.x, ash.path.length]).toEqual([11, 1]);
     run(world, 1);
@@ -262,10 +267,10 @@ describe("world", () => {
   });
 
   it("of two walkers head to head, only the later one turns aside", () => {
-    const world = createWorld(firstLight(), 1, PROGRAMS, KINDS);
+    const world = createWorld(firstLight(), 1, STILL, KINDS);
     step(world, [
-      { type: "spawn", name: "Ash", x: 11, y: 11, program: "wanderer" },
-      { type: "spawn", name: "Birch", x: 12, y: 11, program: "wanderer", kind: "wolf" },
+      { type: "spawn", name: "Ash", x: 11, y: 11, program: "still" },
+      { type: "spawn", name: "Birch", x: 12, y: 11, program: "still", kind: "wolf" },
     ]);
     const [ash, birch] = world.actors;
     if (!ash || !birch) throw new Error("no actors");

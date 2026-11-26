@@ -6,10 +6,16 @@ import { isWalkable, NEIGHBOURS, type Point, type TileMap, tileIndex } from "./m
  * list when already there and null when there is no way. Among equally short
  * walks the result is always the same one: breadth-first search with a fixed
  * neighbour order. Other actors are not obstacles here; they are handled when
- * a step is taken.
+ * a step is taken. `walkable` says which tiles may be stepped on; by default
+ * every walkable tile.
  */
-export function findPath(map: TileMap, from: Point, to: Point): Point[] | null {
-  if (!isWalkable(map, from.x, from.y) || !isWalkable(map, to.x, to.y)) return null;
+export function findPath(
+  map: TileMap,
+  from: Point,
+  to: Point,
+  walkable = (x: number, y: number): boolean => isWalkable(map, x, y),
+): Point[] | null {
+  if (!walkable(from.x, from.y) || !walkable(to.x, to.y)) return null;
   const start = tileIndex(map, from.x, from.y);
   const goal = tileIndex(map, to.x, to.y);
   if (start === goal) return [];
@@ -24,7 +30,7 @@ export function findPath(map: TileMap, from: Point, to: Point): Point[] | null {
     for (const [dx, dy] of NEIGHBOURS) {
       const x = cx + dx;
       const y = cy + dy;
-      if (!isWalkable(map, x, y)) continue;
+      if (!walkable(x, y)) continue;
       const next = tileIndex(map, x, y);
       if (cameFrom.has(next)) continue;
       cameFrom.set(next, current);

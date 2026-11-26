@@ -1,13 +1,17 @@
 import {
   compileBots,
   createWorld,
+  type Monsters,
   parseMap,
   placeConstants,
   spawnsNearCamp,
   step,
+  TICKS_PER_DAY,
+  type WorldEvent,
 } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { botSources, rawFirstLight } from "../../../packages/sim/src/testing.ts";
+import { castOf } from "../../../packages/client/src/cast.ts";
+import { botSources, rawFirstLight, shippedMonsters } from "../../../packages/sim/src/testing.ts";
 import { brightnessGrid, FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
 import { type TickRecord, watchMetrics } from "./metrics.ts";
 
@@ -24,9 +28,16 @@ const play = (
   cast: { name: string; program: string }[],
   seconds: number,
   sources = botSources(),
+  monsters?: Monsters,
 ): TickRecord[] => {
   const map = parseMap(rawFirstLight());
-  const world = createWorld(map, 1, compileBots(sources, placeConstants(map)));
+  const world = createWorld(
+    map,
+    1,
+    { ...compileBots(sources, placeConstants(map)), ...monsters?.programs },
+    monsters?.kinds,
+    monsters?.spawns,
+  );
   const run: TickRecord[] = [];
   let events = step(world, spawnsNearCamp(world, cast));
   for (let tick = 0; tick < seconds * 10; tick++) {
@@ -56,8 +67,21 @@ describe("watchMetrics", () => {
     expect(metrics.seconds).toBe(1200);
     expect(metrics.deadAirSeconds).toBeLessThan(20);
     expect(metrics.decisionsPerMinute).toBeGreaterThan(3);
-    expect(Object.values(metrics.actionMix).every((kinds) => kinds >= 2)).toBe(true);
+    expect(Object.values(metrics.actionMix).every((mix) => mix.actions >= 2)).toBe(true);
     expect(metrics.faults).toBe(0);
+  });
+
+  it("passes a full game day with monsters at six residents", () => {
+    const run = play(castOf(6), TICKS_PER_DAY / 10, botSources(), shippedMonsters());
+    const metrics = watchMetrics(run);
+    expect(metrics.hardFails).toEqual([]);
+    expect(metrics.faults).toBe(0);
+    // Monsters came, fought and were replaced: more actors than residents, and blows on both sides.
+    const events = run.flatMap((r) => r.events);
+    const downs = events.filter((e) => e.type === "down");
+    expect(downs.filter((e) => e.kind !== "adventurer").length).toBeGreaterThan(3);
+    expect(downs.filter((e) => e.kind === "adventurer").length).toBeGreaterThan(0);
+    expect(metrics.actors).toBeGreaterThan(6 + 6);
   });
 
   it("a frozen world trips dead air and stuck actors", () => {
@@ -95,7 +119,10 @@ describe("watchMetrics", () => {
       ),
     );
     expect(metrics.singleActionActors).toEqual(["Ash"]);
-    expect(metrics.actionMix).toEqual({ Ash: 1, Birch: 2 });
+    expect(metrics.actionMix).toEqual({
+      1: { name: "Ash", actions: 1 },
+      2: { name: "Birch", actions: 2 },
+    });
     expect(metrics.hardFails).toEqual(["a single action for ten minutes: Ash"]);
   });
 
@@ -188,7 +215,7 @@ describe("watchMetrics", () => {
     // Nothing to see before the blow at 100 or after it: the longer gap is the 200 ticks after.
     expect(metrics.deadAirSeconds).toBe(20);
     expect(metrics.decisionsPerMinute).toBe(0);
-    expect(metrics.actionMix).toEqual({ Ash: 0 });
+    expect(metrics.actionMix).toEqual({ 1: { name: "Ash", actions: 0 } });
   });
 
   it("judges the action mix on whole ten-minute windows only", () => {
@@ -202,8 +229,81 @@ describe("watchMetrics", () => {
         ]),
       );
     }
-    expect(watchMetrics(run).actionMix).toEqual({ Ash: 2 });
+    expect(watchMetrics(run).actionMix).toEqual({ 1: { name: "Ash", actions: 2 } });
     expect(watchMetrics(run).singleActionActors).toEqual([]);
+  });
+
+  it("judges actors that come and go on the whole windows they were there for, and tells shared names apart", () => {
+    // Ash is there throughout. Wolf 2 arrives at 1000 and stays for 7000 ticks, with
+    // two actions in its first window and one in the rest. Wolf 3 is there for
+    // less than a window and is not judged.
+    const run: TickRecord[] = [];
+    for (let tick = 0; tick < 12000; tick++) {
+      const events: WorldEvent[] = [];
+      if (tick % 100 === 0) {
+        events.push({
+          type: "decide",
+          tick,
+          actor: 1,
+          rule: 0,
+          action: tick % 200 ? "wait" : "wander",
+        });
+        if (tick >= 1000 && tick < 8000) {
+          const action = tick < 7000 && tick % 300 === 0 ? "wait" : "attack";
+          events.push({ type: "decide", tick, actor: 2, rule: 0, action });
+        }
+        if (tick >= 9000)
+          events.push({ type: "decide", tick, actor: 3, rule: 0, action: "attack" });
+      }
+      const actors: [number, string, number, number][] = [[1, "Ash", tick % 9, 0]];
+      if (tick >= 1000 && tick < 8000) actors.push([2, "Wolf", 5, tick % 7]);
+      if (tick >= 9000) actors.push([3, "Wolf", 6, tick % 7]);
+      run.push(record(events, actors));
+    }
+    const metrics = watchMetrics(run);
+    expect(metrics.actionMix).toEqual({
+      1: { name: "Ash", actions: 2 },
+      2: { name: "Wolf", actions: 2 },
+    });
+    expect(metrics.singleActionActors).toEqual([]);
+    expect(metrics.actors).toBe(3);
+  });
+
+  it("keeps actors apart by id, whatever they are called", () => {
+    // Two called "Wolf" and one called "Wolf 2", each with a different number of
+    // actions, and all three standing still for two minutes.
+    const run: TickRecord[] = [];
+    for (let tick = 0; tick < 1200; tick++) {
+      const events: WorldEvent[] =
+        tick % 100 === 0
+          ? [
+              { type: "decide", tick, actor: 2, rule: 0, action: "attack" },
+              { type: "decide", tick, actor: 3, rule: 0, action: tick % 200 ? "attack" : "flee" },
+              {
+                type: "decide",
+                tick,
+                actor: 4,
+                rule: 0,
+                action: ["attack", "flee", "idle"][tick % 3] as string,
+              },
+            ]
+          : [];
+      run.push(
+        record(events, [
+          [2, "Wolf", 1, 1],
+          [3, "Wolf", 2, 2],
+          [4, "Wolf 2", 3, 3],
+        ]),
+      );
+    }
+    const metrics = watchMetrics(run);
+    expect(metrics.actionMix).toEqual({
+      2: { name: "Wolf", actions: 1 },
+      3: { name: "Wolf", actions: 2 },
+      4: { name: "Wolf 2", actions: 3 },
+    });
+    expect(metrics.singleActionActors).toEqual(["Wolf (2)"]);
+    expect(metrics.stuckActors).toEqual(["Wolf (2)", "Wolf (3)", "Wolf 2"]);
   });
 });
 

@@ -132,6 +132,29 @@ export const SYSCALLS: readonly Syscall[] = [
     about:
       "Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster).",
   },
+  {
+    id: 21,
+    name: "threat_recovering",
+    kind: "sensor",
+    args: 0,
+    about:
+      "Ticks after this one that the nearest enemy still needs to get its balance back after its last blow: 0 if it can act on the next tick, or if there is no enemy.",
+  },
+  {
+    id: 22,
+    name: "step_to",
+    kind: "action",
+    args: 2,
+    about: "Take the first step of the way `walk_to` would go to tile (x, y).",
+  },
+  {
+    id: 23,
+    name: "stalled",
+    kind: "sensor",
+    args: 0,
+    about:
+      "How many decisions in a row, up to 1000, chose to move (`walk_to`, `wander`, `step_clear`, `flee` or `step_to`) and found nowhere to go. 0 after any other decision.",
+  },
 ];
 
 export const syscall = (id: number): Syscall | undefined => SYSCALLS[id];

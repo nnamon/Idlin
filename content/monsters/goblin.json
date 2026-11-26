@@ -1,0 +1,12 @@
+{
+  "name": "Goblin",
+  "hp": 8,
+  "damage": 3,
+  "windup": 8,
+  "recovery": 10,
+  "reach": 1,
+  "program": "goblin",
+  "group": 3,
+  "day": ["den"],
+  "night": ["deep_wood"]
+}

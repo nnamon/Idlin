@@ -49,6 +49,9 @@ otherwise as "company" -> idle`,
     wild: "otherwise -> attack(2147483647, 0 - 2147483647)",
     self: "otherwise -> attack(self_x, self_y)",
     far: "otherwise -> flee(2147483647, 2147483647)",
+    gauge: "otherwise -> set seen = threat_recovering; wait(5)",
+    stepper: "otherwise -> step_to(20, 11)",
+    stepwild: "otherwise -> step_to(2147483647, 0 - 2147483647)",
   },
   placeConstants(MAP),
 );
@@ -269,10 +272,11 @@ describe("fights", () => {
   });
 
   it("struck down at camp on a tile shared with a living ally, it wakes on a tile of its own", () => {
-    // Ash rests on the camp tile; Birch walks onto it, and a thug's blow lands on both.
+    // Ash rests on the camp tile; Birch walks onto it, and a wolf's blow from just
+    // outside the camp lands on both.
     // Ash, low on hitpoints, goes down; Birch lives and keeps the tile.
     const world = fight([
-      at("Thug", "biter", 13, 9, "thug"),
+      at("Wolf", "biter", 14, 11, "wolf"),
       at("Ash", "stander", 14, 9),
       at("Birch", "stander", 14, 8),
     ]);
@@ -282,7 +286,7 @@ describe("fights", () => {
     Object.assign(birch, { x: 14, y: 9, fromX: 14, fromY: 9, path: [] });
     const log = run(world, 12);
     expect(log.some((e) => e.type === "down" && e.actor === ash.id)).toBe(true);
-    expect(birch).toMatchObject({ x: 14, y: 9, hp: ADVENTURER_KIND.hp - 12 });
+    expect(birch).toMatchObject({ x: 14, y: 9, hp: ADVENTURER_KIND.hp - 5 });
     expect([ash.x, ash.y]).not.toEqual([14, 9]);
     expect(Math.abs(ash.x - 14) + Math.abs(ash.y - 9)).toBe(1);
   });
@@ -333,14 +337,14 @@ describe("fights", () => {
   });
 
   it("an attack stops at whatever cannot be walked on", () => {
-    // East of (15, 9) is the camp chest. A wolf reaches two tiles; here only one is open.
+    // East of (12, 3) is a tree. A wolf reaches two tiles; here only one is open.
     const world = createWorld(MAP, 1, PROGRAMS, KINDS);
-    const began = step(world, [at("Wolf", "biter", 14, 9, "wolf"), at("Ash", "stander", 17, 9)]);
-    expect(began.find((e) => e.type === "attack")).toMatchObject({ tiles: [{ x: 15, y: 9 }] });
-    expect(world.marks).toEqual([{ x: 15, y: 9, by: 1 }]);
+    const began = step(world, [at("Wolf", "biter", 11, 3, "wolf"), at("Ash", "stander", 14, 3)]);
+    expect(began.find((e) => e.type === "attack")).toMatchObject({ tiles: [{ x: 12, y: 3 }] });
+    expect(world.marks).toEqual([{ x: 12, y: 3, by: 1 }]);
     // Right against it there is nothing to strike, so no attack begins at all.
     const blocked = createWorld(MAP, 1, PROGRAMS, KINDS);
-    step(blocked, [at("Wolf", "biter", 15, 9, "wolf"), at("Ash", "stander", 17, 9)]);
+    step(blocked, [at("Wolf", "biter", 12, 3, "wolf"), at("Ash", "stander", 14, 3)]);
     expect(run(blocked, 50).some((e) => e.type === "attack")).toBe(false);
   });
 
@@ -439,6 +443,79 @@ describe("fights", () => {
     run(world, 200);
     const ash = named(world, "Ash");
     expect(Math.abs((ash?.x ?? 0) - 14) + Math.abs((ash?.y ?? 0) - 11)).toBeGreaterThanOrEqual(6);
+  });
+
+  it("threat_recovering says how long the nearest enemy needs after its blow", () => {
+    // The wolf strikes at Birch; Ash watches from out of reach.
+    const world = fight([
+      at("Wolf", "biter", 14, 11, "wolf"),
+      at("Birch", "stander", 15, 11),
+      at("Ash", "gauge", 14, 14),
+    ]);
+    const ash = named(world, "Ash");
+    const seen: number[] = [];
+    for (let i = 0; i < 40; i++) {
+      step(world);
+      // Ash decides every five ticks, after the wolf has been updated in the same tick.
+      if (world.tick % 5 === 1) seen.push(ash?.memory[0] ?? -1);
+      if (ash?.memory[0]) expect(ash.memory[0]).toBeLessThanOrEqual(KINDS.wolf?.recovery as number);
+    }
+    // Read every five ticks, the highest is within five of the wolf's whole recovery.
+    expect(Math.max(...seen)).toBeGreaterThan((KINDS.wolf?.recovery as number) - 5);
+    expect(seen.some((v) => v === 0)).toBe(true);
+    // With no enemy anywhere, it is 0.
+    const alone = fight([at("Ash", "gauge", 14, 14)]);
+    run(alone, 20);
+    expect(named(alone, "Ash")?.memory[0]).toBe(0);
+  });
+
+  it("threat_recovering reads the same whether the enemy is updated before or after the one asking", () => {
+    const recovery = KINDS.wolf?.recovery as number;
+    for (const wolfFirst of [true, false]) {
+      const wolf = at("Wolf", "biter", 14, 11, "wolf");
+      const ash = at("Ash", "gauge", 14, 14);
+      const world = fight([
+        ...(wolfFirst ? [wolf] : [ash]),
+        at("Birch", "stander", 15, 11),
+        ...(wolfFirst ? [ash] : [wolf]),
+      ]);
+      const wolfId = named(world, "Wolf")?.id;
+      const ashActor = named(world, "Ash");
+      let landed = -1;
+      const readings: [number, number][] = [];
+      for (let i = 0; i < 120; i++) {
+        for (const event of step(world)) {
+          if ((event.type === "hit" || event.type === "miss") && event.actor === wolfId)
+            landed = event.tick;
+          if (event.type === "decide" && event.actor === ashActor?.id && landed >= 0)
+            readings.push([event.tick - landed, ashActor.memory[0] as number]);
+        }
+      }
+      // Read `ticks` after the blow landed, it says the wolf needs `recovery - 1 - ticks`
+      // more after this one, and then 0.
+      const recovering = readings.filter(([ticks]) => ticks < recovery);
+      expect(recovering.length, `wolf first: ${wolfFirst}`).toBeGreaterThan(2);
+      for (const [ticks, value] of readings) {
+        expect(value, `wolf first: ${wolfFirst}, ${ticks} ticks after`).toBe(
+          Math.max(0, recovery - 1 - ticks),
+        );
+      }
+    }
+  });
+
+  it("step_to takes one step along the way, and none towards somewhere it cannot go", () => {
+    const world = fight([at("Ash", "stepper", 14, 11), at("Wild", "stepwild", 14, 13)]);
+    const ash = named(world, "Ash");
+    // Six tiles from where it is going, it takes one step and is asked again after each.
+    expect(ash?.path).toEqual([{ x: 15, y: 11 }]);
+    for (let i = 0; i < 60 && ash?.x !== 20; i++) {
+      step(world);
+      expect(ash?.path.length).toBeLessThanOrEqual(1);
+    }
+    expect([ash?.x, ash?.y]).toEqual([20, 11]);
+    // Somewhere off the map gives no step at all.
+    run(world, 100);
+    expect([named(world, "Wild")?.x, named(world, "Wild")?.y]).toEqual([14, 13]);
   });
 
   it("flee walks away from a point, a few tiles at a time", () => {
@@ -564,7 +641,13 @@ describe("fights and determinism", () => {
       change(copy.state);
       if (rehash) {
         try {
-          copy.hash = hashWorld({ ...copy.state, map: MAP, programs: PROGRAMS, kinds: KINDS });
+          copy.hash = hashWorld({
+            ...copy.state,
+            map: MAP,
+            programs: PROGRAMS,
+            kinds: KINDS,
+            spawns: [],
+          });
         } catch {
           // Not even hashable; the saved hash stays.
         }
@@ -641,7 +724,13 @@ describe("fights and determinism", () => {
     const shuffled = JSON.parse(snapshot(two));
     const [a0, a1, b0, b1] = shuffled.state.marks;
     shuffled.state.marks = [a0, b0, a1, b1];
-    shuffled.hash = hashWorld({ ...shuffled.state, map: MAP, programs: PROGRAMS, kinds: KINDS });
+    shuffled.hash = hashWorld({
+      ...shuffled.state,
+      map: MAP,
+      programs: PROGRAMS,
+      kinds: KINDS,
+      spawns: [],
+    });
     expect(() => restore(JSON.stringify(shuffled), MAP, PROGRAMS, KINDS)).toThrow(SnapshotError);
     expect(restore(snapshot(two), MAP, PROGRAMS, KINDS)).toEqual(two);
 
@@ -655,7 +744,13 @@ describe("fights and determinism", () => {
       const copy = JSON.parse(snapshot(calm));
       const who = copy.state.actors.find((a: { name: string }) => a.name === name);
       Object.assign(who, { x: 15, y: 11, fromX: 15, fromY: 11 });
-      copy.hash = hashWorld({ ...copy.state, map: MAP, programs: PROGRAMS, kinds: KINDS });
+      copy.hash = hashWorld({
+        ...copy.state,
+        map: MAP,
+        programs: PROGRAMS,
+        kinds: KINDS,
+        spawns: [],
+      });
       return JSON.stringify(copy);
     };
     expect(restore(onto("Birch"), MAP, PROGRAMS, KINDS).actors[2]).toMatchObject({ x: 15, y: 11 });
@@ -665,7 +760,13 @@ describe("fights and determinism", () => {
     const empty = JSON.parse(snapshot(createWorld(MAP, 1, PROGRAMS, KINDS)));
     for (const next of [0, -5]) {
       empty.state.nextActorId = next;
-      empty.hash = hashWorld({ ...empty.state, map: MAP, programs: PROGRAMS, kinds: KINDS });
+      empty.hash = hashWorld({
+        ...empty.state,
+        map: MAP,
+        programs: PROGRAMS,
+        kinds: KINDS,
+        spawns: [],
+      });
       expect(() => restore(JSON.stringify(empty), MAP, PROGRAMS, KINDS)).toThrow(SnapshotError);
     }
     // Other monster numbers than the ones it was taken with.
