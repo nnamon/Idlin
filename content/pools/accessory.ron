@@ -1,5 +1,0 @@
-// The accessory affix pool — rings/amulets/belts.
-AffixPool(
-    id: "accessory",
-    affixes: ["bold", "hardy", "of_acumen", "of_finesse"],
-)

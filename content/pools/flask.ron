@@ -1,5 +1,0 @@
-// The flask affix pool — flask-only mods (life/mana flasks subscribe).
-AffixPool(
-    id: "flask",
-    affixes: ["of_sating"],
-)

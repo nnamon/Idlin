@@ -1,8 +1,0 @@
-CurrencyDef(
-    id: "regal_obol",
-    public: true,
-    name: "Regal Obol",
-    op: to_rare,
-    weight: 35,
-    tier: 2,
-)

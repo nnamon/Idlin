@@ -1,5 +1,0 @@
-// Saltmere starts bare: a walled square and the bonfire. Set
-// pieces return one deliberate placement at a time.
-PropsDef(
-    props: [],
-)
