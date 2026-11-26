@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# Runtime state (world snapshots)
+/data/
+
+# Captures are looked at locally and uploaded as CI artifacts, never committed
+/captures/
+
+# Art packs whose licence forbids redistribution must never be committed
+/assets/private/
+
+.DS_Store
+*.swp
+.env
