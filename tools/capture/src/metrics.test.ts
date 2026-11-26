@@ -174,6 +174,23 @@ describe("watchMetrics", () => {
     expect(watchMetrics(faulted).stuckActors).toEqual(["Sleeper"]);
   });
 
+  it("a blow can be seen but is not a decision", () => {
+    const run: TickRecord[] = [];
+    for (let tick = 0; tick < 300; tick++) {
+      run.push(
+        record(
+          tick === 100 ? [{ type: "hit", tick, actor: 2, target: 1, damage: 4, hp: 16 }] : [],
+          [[1, "Ash", 4, 0]],
+        ),
+      );
+    }
+    const metrics = watchMetrics(run);
+    // Nothing to see before the blow at 100 or after it: the longer gap is the 200 ticks after.
+    expect(metrics.deadAirSeconds).toBe(20);
+    expect(metrics.decisionsPerMinute).toBe(0);
+    expect(metrics.actionMix).toEqual({ Ash: 0 });
+  });
+
   it("judges the action mix on whole ten-minute windows only", () => {
     // Two actions in each of the first two windows, then a part window with one: the part does not count.
     const run: TickRecord[] = [];

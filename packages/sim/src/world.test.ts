@@ -39,7 +39,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("3dffead181590694");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("909514bf1d44d262");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -130,7 +130,12 @@ describe("world", () => {
       change(data);
       if (rehash) {
         try {
-          data.hash = hashWorld({ ...(data.state as unknown as World), map, programs: PROGRAMS });
+          data.hash = hashWorld({
+            ...(data.state as unknown as World),
+            map,
+            programs: PROGRAMS,
+            kinds: {},
+          });
         } catch {
           // Not even hashable; the saved hash stays.
         }
@@ -168,8 +173,8 @@ describe("world", () => {
       ],
       ["a missing name", (d) => delete actor(d).name],
       ["a blocked count with no path", (d) => Object.assign(actor(d), { path: [], blocked: 3 })],
-      ["a gap in the ids", (d) => (actor(d).id = 2)],
-      ["a next id that skips ahead", (d) => (d.state.nextActorId = 9)],
+      ["two actors with one id", (d) => (actor(d).id = 2)],
+      ["a next id that is already in use", (d) => (d.state.nextActorId = 1)],
       ["a negative tick", (d) => (d.state.tick = -1)],
       ["an actor that is not an object", (d) => d.state.actors.push(null as never)],
     ];

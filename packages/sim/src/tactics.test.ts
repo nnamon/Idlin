@@ -251,8 +251,8 @@ describe("errors", () => {
       ["otherwise wander", /^1:11 I expected "->" after "otherwise"/],
       ["hour > 5 -> wander", /^1:1 a rule starts with "when" or "otherwise"/],
       [
-        "when hp < 40 -> wander",
-        /^1:6 I do not know what "hp" is\. Sensors: self_x, .* set hp = 0/,
+        "when mana < 40 -> wander",
+        /^1:6 I do not know what "mana" is\. Sensors: self_x, .* set mana = 0/,
       ],
       [
         "otherwise -> chop",

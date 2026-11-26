@@ -1,4 +1,4 @@
-export { CONFUSED_TICKS, IDLE_TICKS } from "./brain.ts";
+export { CONFUSED_TICKS, FLEE_STEPS, IDLE_TICKS, NO_THREAT } from "./brain.ts";
 export { hashInts } from "./hash.ts";
 export {
   inBounds,
@@ -44,15 +44,29 @@ export {
 } from "./vm.ts";
 export {
   type Actor,
+  ADVENTURER,
+  ADVENTURER_KIND,
   actorAt,
   type Clock,
+  checkKinds,
   checkPrograms,
   clock,
   createWorld,
+  DOWN_TICKS,
+  enemies,
+  freeTileNear,
+  hashKinds,
   hashMap,
   hashPrograms,
   hashWorld,
   type Input,
+  type Kind,
+  KindError,
+  type Kinds,
+  kindOf,
+  lineOfAttack,
+  MAX_ACTOR_ID,
+  type Mark,
   type Programs,
   restore,
   SNAPSHOT_VERSION,

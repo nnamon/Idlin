@@ -26,6 +26,86 @@ export const STEP_TICKS = 6;
 /** Ticks an actor waits for a blocked tile to clear before giving up its path. */
 export const BLOCKED_PATIENCE_TICKS = 10;
 export const MAX_NAME_LENGTH = 16;
+/** No actor's id reaches this; a world stops taking spawns first. */
+export const MAX_ACTOR_ID = 0x7fffffff;
+/** Ticks an adventurer rests at camp after being struck down, before its program runs again. */
+export const DOWN_TICKS = 150;
+
+/** What a kind of actor can take and deal in a fight. Content, like programs: fixed for the life of a world. */
+export interface Kind {
+  /** Hitpoints at full health. */
+  readonly hp: number;
+  /** Hitpoints one of its hits takes off. */
+  readonly damage: number;
+  /** Ticks between starting an attack and the hit landing. The marked tiles show for this long. */
+  readonly windup: number;
+  /** Ticks after the hit before it can do anything else. */
+  readonly recovery: number;
+  /** How many tiles in a line its attack reaches, 1 to 3. */
+  readonly reach: number;
+}
+export type Kinds = Readonly<Record<string, Kind>>;
+
+/** The kind every adventurer is. Any other kind is a monster, and the two are enemies. */
+export const ADVENTURER = "adventurer";
+export const ADVENTURER_KIND: Kind = Object.freeze({
+  hp: 20,
+  damage: 4,
+  windup: 6,
+  recovery: 6,
+  reach: 1,
+});
+const KIND_LIMITS: Readonly<Record<keyof Kind, readonly [number, number]>> = {
+  hp: [1, 100_000],
+  damage: [0, 100_000],
+  windup: [1, 100],
+  recovery: [0, 100],
+  reach: [1, 3],
+};
+
+export class KindError extends Error {
+  override name = "KindError";
+}
+
+/**
+ * Validates a table of monster kinds and returns a frozen copy with no
+ * prototype. Throws a KindError for a bad name or a number out of range.
+ */
+export function checkKinds(kinds: Kinds): Kinds {
+  const table: Record<string, Kind> = Object.create(null);
+  try {
+    for (const name of Object.keys(kinds).sort()) {
+      if (!PROGRAM_NAME.test(name) || name === ADVENTURER)
+        throw new KindError(`"${name}" is not a valid kind name`);
+      const raw: unknown = kinds[name];
+      if (typeof raw !== "object" || raw === null)
+        throw new KindError(`kind "${name}" is not an object`);
+      const kind: Record<string, number> = {};
+      for (const field of Object.keys(KIND_LIMITS) as (keyof Kind)[]) {
+        const value: unknown = (raw as Record<string, unknown>)[field];
+        const [low, high] = KIND_LIMITS[field];
+        if (!isInt32(value) || value < low || value > high)
+          throw new KindError(
+            `kind "${name}": ${field} must be a whole number from ${low} to ${high}`,
+          );
+        kind[field] = value;
+      }
+      table[name] = Object.freeze(kind as unknown as Kind);
+    }
+  } catch (error) {
+    if (error instanceof KindError) throw error;
+    throw new KindError("the kind table could not be read");
+  }
+  return Object.freeze(table);
+}
+
+/** A tile an attack is about to land on. It lands when its attacker's wind-up runs out. */
+export interface Mark {
+  readonly x: number;
+  readonly y: number;
+  /** Id of the attacker. */
+  readonly by: number;
+}
 
 export interface Actor {
   readonly id: number;
@@ -56,6 +136,13 @@ export interface Actor {
   rule: number;
   /** Index into FAULTS of how the last decision ended; 0 is no fault. A faulted actor stands confused. */
   fault: number;
+  /** ADVENTURER, or the name of one of the world's monster kinds. */
+  readonly kind: string;
+  hp: number;
+  /** Ticks until this actor's attack lands; 0 when it is not attacking. It cannot act meanwhile. */
+  windup: number;
+  /** Ticks left before it can act again after a hit. */
+  recover: number;
 }
 
 /** Validated programs by name. Like the map, they are content: fixed for the life of a world. */
@@ -64,11 +151,14 @@ export type Programs = Readonly<Record<string, Program>>;
 export interface World {
   readonly map: TileMap;
   readonly programs: Programs;
+  readonly kinds: Kinds;
   tick: number;
   rng: Rng;
   nextActorId: number;
   /** In id order, which is also update order. */
   actors: Actor[];
+  /** Tiles that attacks in wind-up are about to land on, in the order the attacks began. */
+  marks: Mark[];
 }
 
 export type Input = {
@@ -76,6 +166,8 @@ export type Input = {
   readonly name: string;
   /** The program to run; must be one of the world's. */
   readonly program: string;
+  /** A monster kind from the world's table. Left out, the actor is an adventurer. */
+  readonly kind?: string;
 } & Point;
 
 /**
@@ -98,17 +190,49 @@ export function checkPrograms(programs: Programs): Programs {
   return Object.freeze(table);
 }
 
-/** Throws a ProgramError if `programs` holds a bad name or an invalid program. */
-export function createWorld(map: TileMap, seed: number, programs: Programs = {}): World {
+/**
+ * Throws a ProgramError if `programs` holds a bad name or an invalid program,
+ * and a KindError if `kinds` holds a bad monster kind.
+ */
+export function createWorld(
+  map: TileMap,
+  seed: number,
+  programs: Programs = {},
+  kinds: Kinds = {},
+): World {
   return {
     map,
     programs: checkPrograms(programs),
+    kinds: checkKinds(kinds),
     tick: 0,
     rng: createRng(seed),
     nextActorId: 1,
     actors: [],
+    marks: [],
   };
 }
+
+/** The numbers an actor fights with. */
+export const kindOf = (world: World, actor: Actor): Kind =>
+  actor.kind === ADVENTURER ? ADVENTURER_KIND : (world.kinds[actor.kind] as Kind);
+
+/**
+ * The tiles an actor's attack lands on in one direction: a line out from it,
+ * as long as its reach, cut short by anything that cannot be walked on.
+ */
+export function lineOfAttack(world: World, actor: Actor, sx: number, sy: number): Point[] {
+  const tiles: Point[] = [];
+  for (let k = 1; k <= kindOf(world, actor).reach; k++) {
+    const tile = { x: actor.x + sx * k, y: actor.y + sy * k };
+    if (!isWalkable(world.map, tile.x, tile.y)) break;
+    tiles.push(tile);
+  }
+  return tiles;
+}
+
+/** Adventurers and monsters are enemies; nobody else is. */
+export const enemies = (a: Actor, b: Actor): boolean =>
+  (a.kind === ADVENTURER) !== (b.kind === ADVENTURER);
 
 export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
   world.actors.find((a) => a.x === x && a.y === y);
@@ -134,6 +258,45 @@ export type WorldEvent =
       readonly actor: number;
       /** Name of the fault, as in FAULTS. */
       readonly fault: string;
+    }
+  | {
+      /** An attack began: these tiles are marked until it lands. */
+      readonly type: "attack";
+      readonly tick: number;
+      readonly actor: number;
+      readonly tiles: readonly Point[];
+      /** Ticks until it lands. */
+      readonly lands: number;
+    }
+  | {
+      readonly type: "hit";
+      readonly tick: number;
+      readonly actor: number;
+      readonly target: number;
+      readonly damage: number;
+      /** The target's hitpoints afterwards; 0 or less means it is out. */
+      readonly hp: number;
+    }
+  | {
+      /** An attack landed on a tile with no enemy on it. */
+      readonly type: "miss";
+      readonly tick: number;
+      readonly actor: number;
+      readonly x: number;
+      readonly y: number;
+    }
+  | {
+      /** An actor ran out of hitpoints. A monster is gone; an adventurer wakes at camp. */
+      readonly type: "down";
+      readonly tick: number;
+      readonly actor: number;
+      readonly name: string;
+      readonly kind: string;
+      /** Id of whoever struck the last blow. */
+      readonly by: number;
+      /** Where it fell. */
+      readonly x: number;
+      readonly y: number;
     };
 
 /**
@@ -144,8 +307,93 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
   const events: WorldEvent[] = [];
   for (const input of inputs) applyInput(world, input);
   world.tick++;
+  landAttacks(world, events);
   for (const actor of world.actors) updateActor(world, actor, events);
   return events;
+}
+
+/** Counts every wind-up down, lands the attacks that are due, and takes out whoever has no hitpoints left. */
+function landAttacks(world: World, events: WorldEvent[]): void {
+  const struck = new Map<number, number>();
+  for (const attacker of world.actors) {
+    if (attacker.windup === 0) continue;
+    attacker.windup--;
+    // Someone struck down earlier this tick does not get its own blow in.
+    if (attacker.windup > 0 || attacker.hp <= 0) continue;
+    const kind = kindOf(world, attacker);
+    attacker.recover = kind.recovery;
+    for (const mark of world.marks) {
+      if (mark.by !== attacker.id) continue;
+      const target = world.actors.find(
+        (a) => a.x === mark.x && a.y === mark.y && a.hp > 0 && enemies(a, attacker),
+      );
+      if (!target) {
+        events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
+        continue;
+      }
+      target.hp -= kind.damage;
+      struck.set(target.id, attacker.id);
+      events.push({
+        type: "hit",
+        tick: world.tick,
+        actor: attacker.id,
+        target: target.id,
+        damage: kind.damage,
+        hp: target.hp,
+      });
+    }
+    world.marks = world.marks.filter((mark) => mark.by !== attacker.id);
+  }
+  const out = world.actors.filter((actor) => actor.hp <= 0);
+  if (out.length === 0) return;
+  const gone = new Set(out.map((actor) => actor.id));
+  world.marks = world.marks.filter((mark) => !gone.has(mark.by));
+  world.actors = world.actors.filter((actor) => actor.hp > 0 || actor.kind === ADVENTURER);
+  for (const actor of out) {
+    events.push({
+      type: "down",
+      tick: world.tick,
+      actor: actor.id,
+      name: actor.name,
+      kind: actor.kind,
+      by: struck.get(actor.id) ?? 0,
+      x: actor.x,
+      y: actor.y,
+    });
+    if (actor.kind !== ADVENTURER) continue;
+    // An adventurer is carried back to camp and rests there. What it loses by this is not decided here.
+    const bed = freeTileNear(world, place(world.map, "camp"), actor) ?? actor;
+    actor.x = actor.fromX = bed.x;
+    actor.y = actor.fromY = bed.y;
+    actor.moveTicksLeft = 0;
+    actor.path = [];
+    actor.blocked = 0;
+    actor.windup = 0;
+    actor.recover = 0;
+    actor.wait = DOWN_TICKS;
+    actor.hp = ADVENTURER_KIND.hp;
+  }
+}
+
+/** The walkable tile nearest `from` that nobody but `self` stands on, or null if there is none. */
+export function freeTileNear(world: World, from: Point, self?: Actor): Point | null {
+  const { map } = world;
+  if (!isWalkable(map, from.x, from.y)) return null;
+  const seen = new Set<number>([tileIndex(map, from.x, from.y)]);
+  const queue: Point[] = [{ x: from.x, y: from.y }];
+  for (let head = 0; head < queue.length; head++) {
+    const at = queue[head] as Point;
+    const there = actorAt(world, at.x, at.y);
+    if (!there || there === self) return at;
+    for (const [dx, dy] of NEIGHBOURS) {
+      const x = at.x + dx;
+      const y = at.y + dy;
+      if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
+      seen.add(tileIndex(map, x, y));
+      queue.push({ x, y });
+    }
+  }
+  return null;
 }
 
 function applyInput(world: World, input: Input): void {
@@ -156,8 +404,8 @@ function applyInput(world: World, input: Input): void {
   let fields: Record<string, unknown>;
   try {
     // Read every field once, before anything changes, so a property that throws changes nothing.
-    const { type, name, x, y, program } = raw as Record<string, unknown>;
-    fields = { type, name, x, y, program };
+    const { type, name, x, y, program, kind } = raw as Record<string, unknown>;
+    fields = { type, name, x, y, program, kind };
   } catch {
     return;
   }
@@ -171,6 +419,11 @@ function applyInput(world: World, input: Input): void {
   if (!isWalkable(world.map, x, y) || actorAt(world, x, y)) return;
   const { program } = fields;
   if (typeof program !== "string" || !Object.hasOwn(world.programs, program)) return;
+  // Ids stay within 32 bits, so a world that has handed out every one takes no more actors.
+  if (world.nextActorId >= MAX_ACTOR_ID) return;
+  const kind = fields.kind ?? ADVENTURER;
+  if (typeof kind !== "string") return;
+  if (kind !== ADVENTURER && !Object.hasOwn(world.kinds, kind)) return;
   world.actors.push({
     id: world.nextActorId++,
     name,
@@ -186,10 +439,20 @@ function applyInput(world: World, input: Input): void {
     memory: new Array<number>(MEMORY_SLOTS).fill(0),
     rule: -1,
     fault: 0,
+    kind,
+    hp: (kind === ADVENTURER ? ADVENTURER_KIND : (world.kinds[kind] as Kind)).hp,
+    windup: 0,
+    recover: 0,
   });
 }
 
 function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
+  // Committed to an attack, or getting its balance back after one.
+  if (actor.windup > 0) return;
+  if (actor.recover > 0) {
+    actor.recover--;
+    return;
+  }
   if (actor.moveTicksLeft > 0) {
     actor.moveTicksLeft--;
     if (actor.moveTicksLeft > 0) return;
@@ -283,6 +546,18 @@ export function hashPrograms(programs: Programs): string {
   );
 }
 
+/** A fingerprint of the monster kinds: names in order, with each one's numbers. */
+export function hashKinds(kinds: Kinds): string {
+  return hashInts(
+    Object.keys(kinds)
+      .sort()
+      .flatMap((name) => {
+        const kind = kinds[name] as Kind;
+        return [...stringInts(name), kind.hp, kind.damage, kind.windup, kind.recovery, kind.reach];
+      }),
+  );
+}
+
 export function hashMap(map: TileMap): string {
   return hashInts([
     ...stringInts(map.name),
@@ -299,6 +574,7 @@ export function hashWorld(world: World): string {
   return hashInts([
     ...stringInts(hashMap(world.map)),
     ...stringInts(hashPrograms(world.programs)),
+    ...stringInts(hashKinds(world.kinds)),
     // The tick outgrows 32 bits after some years of uptime, so both halves are hashed.
     world.tick % 0x1_0000_0000,
     (world.tick - (world.tick % 0x1_0000_0000)) / 0x1_0000_0000,
@@ -324,11 +600,17 @@ export function hashWorld(world: World): string {
       ...a.memory,
       a.rule,
       a.fault,
+      ...stringInts(a.kind),
+      a.hp,
+      a.windup,
+      a.recover,
     ]),
+    world.marks.length,
+    ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
   ]);
 }
 
-export const SNAPSHOT_VERSION = 3;
+export const SNAPSHOT_VERSION = 4;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -336,11 +618,12 @@ export class SnapshotError extends Error {
 
 /** The world as text. The map is not stored, only its fingerprint. */
 export function snapshot(world: World): string {
-  const { map, programs, ...state } = world;
+  const { map, programs, kinds, ...state } = world;
   return JSON.stringify({
     version: SNAPSHOT_VERSION,
     map: hashMap(map),
     programs: hashPrograms(programs),
+    kinds: hashKinds(kinds),
     hash: hashWorld(world),
     state,
   });
@@ -349,11 +632,16 @@ export function snapshot(world: World): string {
 /**
  * Rebuilds a world from a snapshot and the content it was taken with. Refuses,
  * with a SnapshotError, anything it cannot be sure it reads correctly: another
- * version, another map, other programs, or contents that do not hash to what
- * was saved. Throws a ProgramError instead if the programs passed in are
- * themselves invalid.
+ * version, another map, other programs or monster kinds, or contents that do
+ * not hash to what was saved. Throws a ProgramError or a KindError instead if
+ * the programs or kinds passed in are themselves invalid.
  */
-export function restore(text: string, map: TileMap, programs: Programs = {}): World {
+export function restore(
+  text: string,
+  map: TileMap,
+  programs: Programs = {},
+  kinds: Kinds = {},
+): World {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -367,6 +655,7 @@ export function restore(text: string, map: TileMap, programs: Programs = {}): Wo
     version,
     map: mapHash,
     programs: programsHash,
+    kinds: kindsHash,
     hash,
     state,
   } = data as Record<string, unknown>;
@@ -378,7 +667,11 @@ export function restore(text: string, map: TileMap, programs: Programs = {}): Wo
   if (programsHash !== hashPrograms(table)) {
     throw new SnapshotError("snapshot was taken with different programs");
   }
-  const world = readState(state, map, table);
+  const kindTable = checkKinds(kinds);
+  if (kindsHash !== hashKinds(kindTable)) {
+    throw new SnapshotError("snapshot was taken with different monster kinds");
+  }
+  const world = readState(state, map, table, kindTable);
   if (!world || hashWorld(world) !== hash) throw new SnapshotError("snapshot contents are damaged");
   return world;
 }
@@ -390,17 +683,27 @@ const MAX_WAIT_TICKS = 1_000_000;
  * a world could hold. The hash alone is not trusted for this: it folds every
  * value to 32 bits, so it cannot tell a number from a string that reads the same.
  */
-function readState(raw: unknown, map: TileMap, programs: Programs): World | null {
+function readState(raw: unknown, map: TileMap, programs: Programs, kinds: Kinds): World | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { tick, rng, nextActorId, actors } = raw as Record<string, unknown>;
+  const { tick, rng, nextActorId, actors, marks } = raw as Record<string, unknown>;
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
-  // Actors are never removed, so ids are exactly 1..n and the next id is n + 1.
-  if (!Array.isArray(actors) || nextActorId !== actors.length + 1) return null;
+  // Ids are handed out in order and monsters leave, so ids rise and stay below the next one.
+  if (!Array.isArray(actors) || !Array.isArray(marks)) return null;
+  if (!isInt32(nextActorId) || nextActorId < 1) return null;
   if (typeof rng !== "object" || rng === null) return null;
   const { a, b, c, d } = rng as Record<string, unknown>;
   if (!isInt32(a) || !isInt32(b) || !isInt32(c) || !isInt32(d)) return null;
 
-  const world: World = { map, programs, tick, rng: { a, b, c, d }, nextActorId, actors: [] };
+  const world: World = {
+    map,
+    programs,
+    kinds,
+    tick,
+    rng: { a, b, c, d },
+    nextActorId,
+    actors: [],
+    marks: [],
+  };
   const adjacent = (p: Point, q: Point): boolean => Math.abs(p.x - q.x) + Math.abs(p.y - q.y) === 1;
   let lastId = 0;
   for (const item of actors as unknown[]) {
@@ -420,9 +723,20 @@ function readState(raw: unknown, map: TileMap, programs: Programs): World | null
       memory,
       rule,
       fault,
+      kind,
+      hp,
+      windup,
+      recover,
     } = item as Record<string, unknown>;
-    if (id !== lastId + 1) return null;
+    if (!isInt32(id) || id <= lastId || id >= nextActorId) return null;
     lastId = id;
+    if (typeof kind !== "string") return null;
+    if (kind !== ADVENTURER && !Object.hasOwn(kinds, kind)) return null;
+    const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
+    if (!isInt32(hp) || hp < 1 || hp > numbers.hp) return null;
+    if (!isInt32(windup) || windup < 0 || windup > numbers.windup) return null;
+    if (!isInt32(recover) || recover < 0 || recover > numbers.recovery) return null;
+    if (windup > 0 && recover > 0) return null;
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
     if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
     if (!isWalkable(map, x, y) || !isWalkable(map, fromX, fromY) || actorAt(world, x, y))
@@ -447,6 +761,8 @@ function readState(raw: unknown, map: TileMap, programs: Programs): World | null
     }
     // The blocked count only runs while there is a path to wait on.
     if (steps.length === 0 && blocked !== 0) return null;
+    // An attack is only begun standing still with nowhere to go.
+    if (windup > 0 && (steps.length > 0 || moveTicksLeft > 0)) return null;
     if (typeof program !== "string" || !Object.hasOwn(programs, program)) return null;
     if (!Array.isArray(memory) || memory.length !== MEMORY_SLOTS || !memory.every(isInt32))
       return null;
@@ -469,7 +785,34 @@ function readState(raw: unknown, map: TileMap, programs: Programs): World | null
       memory: [...memory],
       rule,
       fault,
+      kind,
+      hp,
+      windup,
+      recover,
     });
+  }
+  // Every mark belongs to an actor in wind-up, and an actor in wind-up has
+  // exactly the marks of one attack: its line in one of the four directions.
+  const marksOf = new Map<number, Point[]>();
+  for (const item of marks as unknown[]) {
+    if (typeof item !== "object" || item === null) return null;
+    const { x, y, by } = item as Record<string, unknown>;
+    if (!isInt32(x) || !isInt32(y) || !isInt32(by)) return null;
+    const attacker = world.actors.find((actor) => actor.id === by);
+    if (!attacker || attacker.windup === 0) return null;
+    // One attack's marks are stored together.
+    const last = world.marks.at(-1);
+    if (marksOf.has(by) && last?.by !== by) return null;
+    marksOf.set(by, [...(marksOf.get(by) ?? []), { x, y }]);
+    world.marks.push({ x, y, by });
+  }
+  const same = (a: readonly Point[], b: readonly Point[]): boolean =>
+    a.length === b.length && a.every((p, i) => p.x === b[i]?.x && p.y === b[i]?.y);
+  for (const actor of world.actors) {
+    if (actor.windup === 0) continue;
+    const own = marksOf.get(actor.id);
+    if (!own || own.length === 0) return null;
+    if (!NEIGHBOURS.some(([sx, sy]) => same(own, lineOfAttack(world, actor, sx, sy)))) return null;
   }
   return world;
 }

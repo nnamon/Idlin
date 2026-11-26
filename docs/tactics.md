@@ -78,22 +78,63 @@ Sensors read the world; they go in conditions and values. Actions do something;
 they go after `->`. A sensor that takes no values is written without brackets.
 
 <!-- generated: system calls -->
-| Name       | Kind   | Takes | What it does                                         |
-| ---------- | ------ | ----- | ---------------------------------------------------- |
-| `self_x`   | sensor | 0     | The tile column this actor stands on.                |
-| `self_y`   | sensor | 0     | The tile row this actor stands on.                   |
-| `hour`     | sensor | 0     | The game hour, 0 to 23.                              |
-| `minute`   | sensor | 0     | The game minute, 0 to 59.                            |
-| `walkable` | sensor | 2     | 1 if tile (x, y) can be walked on, else 0.           |
-| `distance` | sensor | 2     | Steps in a straight grid line from here to (x, y).   |
-| `idle`     | action | 0     | Do nothing for a moment.                             |
-| `wait`     | action | 1     | Do nothing for the given number of ticks (5 to 600). |
-| `walk_to`  | action | 2     | Walk to tile (x, y) by the shortest way.             |
-| `wander`   | action | 0     | Walk to a walkable tile chosen at random.            |
+| Name              | Kind   | Takes | What it does                                                                  |
+| ----------------- | ------ | ----- | ----------------------------------------------------------------------------- |
+| `self_x`          | sensor | 0     | The tile column this actor stands on.                                         |
+| `self_y`          | sensor | 0     | The tile row this actor stands on.                                            |
+| `hour`            | sensor | 0     | The game hour, 0 to 23.                                                       |
+| `minute`          | sensor | 0     | The game minute, 0 to 59.                                                     |
+| `walkable`        | sensor | 2     | 1 if tile (x, y) can be walked on, else 0.                                    |
+| `distance`        | sensor | 2     | Steps in a straight grid line from here to (x, y).                            |
+| `idle`            | action | 0     | Do nothing for a moment.                                                      |
+| `wait`            | action | 1     | Do nothing for the given number of ticks (5 to 600).                          |
+| `walk_to`         | action | 2     | Walk to tile (x, y) by the shortest way.                                      |
+| `wander`          | action | 0     | Walk to a walkable tile chosen at random.                                     |
+| `hp`              | sensor | 0     | This actor's hitpoints.                                                       |
+| `max_hp`          | sensor | 0     | The most hitpoints this actor can have.                                       |
+| `threat_x`        | sensor | 0     | The column of the nearest enemy, or this actor's own if there is none.        |
+| `threat_y`        | sensor | 0     | The row of the nearest enemy, or this actor's own if there is none.           |
+| `threat_distance` | sensor | 0     | Steps in a straight grid line to the nearest enemy, or 9999 if there is none. |
+| `threat_hp`       | sensor | 0     | The nearest enemy's hitpoints, or 0 if there is none.                         |
+| `danger`          | sensor | 2     | Ticks until an enemy's attack lands on tile (x, y), or 0 if none is coming.   |
+| `danger_here`     | sensor | 0     | Ticks until an enemy's attack lands where this actor stands, or 0.            |
+| `attack`          | action | 2     | Wind up and strike in a line out from this actor, in the direction of (x, y). |
+| `step_clear`      | action | 0     | Walk to the nearest free tile that no enemy attack is about to land on.       |
+| `flee`            | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y).         |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
 minute.
+
+## Fighting
+
+Adventurers and monsters are enemies; nobody else is. Each kind of actor has
+hitpoints and one attack. No monsters ship yet, so today these calls only
+matter in tests.
+
+`attack(x, y)` strikes in the direction of (x, y): up, down, left or right,
+whichever is nearer to it. It does not land at once. The tiles it will hit are
+marked for the length of the wind-up (six ticks for an adventurer), then the
+blow lands on any enemy standing on them, and the attacker needs a moment to
+recover. It cannot move or decide anything from the start of the wind-up to the
+end of the recovery.
+
+`danger(x, y)` and `danger_here` say how many ticks are left before an enemy's
+blow lands on a tile, so a program can get out of the way:
+
+```
+when danger_here > 0 as "step out" -> step_clear
+when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)
+otherwise -> walk_to(camp)
+```
+
+An actor that is walking already counts as standing on the tile it is stepping
+onto. A monster with no hitpoints left is gone. An adventurer wakes at camp
+with full hitpoints and rests there for fifteen seconds.
+
+When two blows land on the same tick, the one from whoever has been in the
+world longer lands first, and someone it takes out does not get their own blow
+in.
 
 ## Limits
 

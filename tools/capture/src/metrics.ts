@@ -60,6 +60,11 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
         resting.delete(event.actor);
         continue;
       }
+      if (event.type !== "decide") {
+        // A blow starting, landing or missing, and someone going down, can all be seen.
+        visible = true;
+        continue;
+      }
       decisions++;
       // The page shows the rule in charge, so a change of rule can be seen. The same rule firing again cannot.
       if (lastRule.get(event.actor) !== event.rule) visible = true;

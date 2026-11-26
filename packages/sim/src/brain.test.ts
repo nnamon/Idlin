@@ -195,7 +195,9 @@ describe("actors run programs", () => {
     expect(before).not.toBe(hashWorld(w));
     expect(Object.keys(w).sort()).toEqual([
       "actors",
+      "kinds",
       "map",
+      "marks",
       "nextActorId",
       "programs",
       "rng",

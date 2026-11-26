@@ -53,6 +53,17 @@ describe("the system call table", () => {
       "7 wait action 1",
       "8 walk_to action 2",
       "9 wander action 0",
+      "10 hp sensor 0",
+      "11 max_hp sensor 0",
+      "12 threat_x sensor 0",
+      "13 threat_y sensor 0",
+      "14 threat_distance sensor 0",
+      "15 threat_hp sensor 0",
+      "16 danger sensor 2",
+      "17 danger_here sensor 0",
+      "18 attack action 2",
+      "19 step_clear action 0",
+      "20 flee action 2",
     ]);
   });
 
