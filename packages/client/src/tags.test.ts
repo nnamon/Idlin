@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type Box, placeTags, TAG_HEIGHT, type TagWish } from "./tags.ts";
+import { type Box, bodyBox, placeTags, TAG_HEIGHT, type TagWish } from "./tags.ts";
 
 const BOUNDS = { width: 1440, height: 1008 };
 const wish = (id: number, x: number, y: number, width = 80): TagWish => ({ id, x, y, width });
-const body = (w: TagWish): Box => ({
-  left: w.x - 24,
-  right: w.x + 24,
-  top: w.y + 6,
-  bottom: w.y + 60,
-});
+const body = bodyBox;
 const hit = (a: Box, b: Box): boolean =>
   a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 

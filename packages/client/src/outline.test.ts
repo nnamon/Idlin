@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { type Pt, regionLoops, smoothLoop } from "./outline.ts";
 
-const grid = (rows: string[]) => (x: number, y: number): boolean => rows[y]?.[x] === "#";
+const grid =
+  (rows: string[]) =>
+  (x: number, y: number): boolean =>
+    rows[y]?.[x] === "#";
 /** Twice the signed area of a loop: positive when it runs clockwise on screen (y down). */
 const area2 = (loop: readonly Pt[]): number =>
   loop.reduce((sum, [x, y], i) => {

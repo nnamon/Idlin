@@ -7,7 +7,9 @@ export type Pt = readonly [number, number];
 
 /** A value from 0 up to 1 that depends only on its arguments. */
 export function hash(x: number, y: number, k = 0): number {
-  let h = (Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul((k | 0) + 1, 83492791)) >>> 0;
+  let h =
+    (Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul((k | 0) + 1, 83492791)) >>>
+    0;
   h ^= h >>> 13;
   h = Math.imul(h, 0x5bd1e995);
   h ^= h >>> 15;
@@ -63,4 +65,12 @@ export function newCanvas(width: number, height: number): { canvas: HTMLCanvasEl
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("no 2d context");
   return { canvas, ctx };
+}
+
+/** Lays a path through the points, without stroking it. */
+export function trace(ctx: Ctx, points: readonly Pt[]): void {
+  points.forEach(([x, y], i) => {
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
 }

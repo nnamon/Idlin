@@ -24,10 +24,10 @@ export interface Placement {
   readonly spot: number;
 }
 
-export const TAG_HEIGHT = 28;
-// A character on screen: a 16-pixel sprite drawn at 3x, so 48 frame pixels wide, with a little room above.
-const BODY_HALF_WIDTH = 24;
-const BODY_HEIGHT = 54;
+export const TAG_HEIGHT = 26;
+// A figure on screen is about this big, with a little room round it.
+const BODY_HALF_WIDTH = 20;
+const BODY_HEIGHT = 66;
 /** A tag only returns to its favourite spot once there is this much clear room around it. */
 const RETURN_MARGIN = 20;
 
@@ -41,6 +41,16 @@ const SPOTS: readonly (readonly [number, number])[] = [
   [0.75, -32],
   [0, 94],
 ];
+
+/** The room a figure takes up on screen, given where its name would like to sit. */
+export function bodyBox(wish: TagWish): Box {
+  return {
+    left: wish.x - BODY_HALF_WIDTH,
+    right: wish.x + BODY_HALF_WIDTH,
+    top: wish.y + 6,
+    bottom: wish.y + 6 + BODY_HEIGHT,
+  };
+}
 
 const overlaps = (a: Box, b: Box, margin = 0): boolean =>
   a.left - margin < b.right &&
@@ -58,12 +68,7 @@ export function placeTags(
   previous: ReadonlyMap<number, number>,
   bounds: { readonly width: number; readonly height: number },
 ): Map<number, Placement> {
-  const bodies = wishes.map((w) => ({
-    left: w.x - BODY_HALF_WIDTH,
-    right: w.x + BODY_HALF_WIDTH,
-    top: w.y + 6,
-    bottom: w.y + 6 + BODY_HEIGHT,
-  }));
+  const bodies = wishes.map(bodyBox);
   const placed: Box[] = [];
   const result = new Map<number, Placement>();
 

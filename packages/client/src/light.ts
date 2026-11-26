@@ -22,6 +22,34 @@ export function daylight(hour: number): number {
   return 1 - smooth((hour - DUSK_START) / (DUSK_END - DUSK_START));
 }
 
+/** How wide the soft edge between day and night is, in frame pixels. */
+export const EDGE = 320;
+
+/**
+ * Which part of the frame is in daylight. Day and night are two different
+ * drawings, and blending them evenly would leave both unreadable, so the
+ * change is a moving edge: at dusk the dark closes in on a point (the lantern)
+ * from all round, and at dawn the light comes across from the east.
+ *
+ * `reach` is the distance from that point to the farthest corner of the
+ * frame, and `width` the frame's width.
+ */
+export type DayRegion =
+  | { readonly kind: "all" }
+  | { readonly kind: "none" }
+  /** Day inside this distance of the lantern, fading to night over EDGE beyond it. */
+  | { readonly kind: "circle"; readonly radius: number }
+  /** Day to the right of this x, fading to night over EDGE to its left. */
+  | { readonly kind: "front"; readonly x: number };
+
+export function dayRegion(hour: number, reach: number, width: number): DayRegion {
+  const light = daylight(hour);
+  if (light >= 1) return { kind: "all" };
+  if (light <= 0) return { kind: "none" };
+  if (hour < 12) return { kind: "front", x: width - light * (width + EDGE) };
+  return { kind: "circle", radius: light * reach - (1 - light) * EDGE };
+}
+
 /** How strongly lamps show: nothing by day, full at night. They come on a little before dark. */
 export function lampStrength(hour: number): number {
   return smooth((1 - daylight(hour)) * 1.6);
@@ -29,7 +57,8 @@ export function lampStrength(hour: number): number {
 
 /** The colour the sky lays over everything, and how strongly (0 to 1): rose at dawn, amber at dusk. */
 export function skyCast(hour: number): { color: Rgb; alpha: number } {
-  const bump = (centre: number, width: number): number => smooth(1 - Math.abs(hour - centre) / width);
+  const bump = (centre: number, width: number): number =>
+    smooth(1 - Math.abs(hour - centre) / width);
   const dawn = bump(6, 1.4);
   const dusk = bump(19, 1.6);
   if (dawn >= dusk) return { color: [1, 0.62, 0.7], alpha: dawn * 0.22 };
@@ -43,7 +72,11 @@ export function mix(a: Rgb, b: Rgb, t: number): Rgb {
 export const css = ([r, g, b]: Rgb, alpha = 1): string =>
   `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`;
 
-export const rgb = (hex: number): Rgb => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+export const rgb = (hex: number): Rgb => [
+  ((hex >> 16) & 255) / 255,
+  ((hex >> 8) & 255) / 255,
+  (hex & 255) / 255,
+];
 
 export function phaseName(hour: number): string {
   if (hour < 5) return "night";

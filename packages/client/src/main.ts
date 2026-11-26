@@ -10,8 +10,8 @@ import {
   TICKS_PER_SECOND,
 } from "@idlin/sim";
 import mapJson from "../../../content/maps/first-light.json";
-import { createHud } from "./hud.ts";
-import { Scene } from "./scene.ts";
+import type { MapLabel } from "./ground.ts";
+import { FRAME_HEIGHT, FRAME_WIDTH, Scene } from "./scene.ts";
 import "./style.css";
 
 /** The shipped programs' source, by file name without the extension. */
@@ -38,8 +38,6 @@ const CAST = [
   { name: "Elm", program: "homebody" },
   { name: "Fen", program: "riverwalker" },
 ];
-const FRAME_WIDTH = 1920;
-const FRAME_HEIGHT = 1080;
 
 declare global {
   interface Window {
@@ -74,13 +72,9 @@ async function main(): Promise<void> {
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
   for (let i = 0; i < skip; i++) step(world);
 
-  const scene = await Scene.create(must("world"), world.map);
-  const hud = createHud(must("panel"), must("ticker"), must("tags"), {
-    width: scene.width,
-    height: scene.height,
-  });
-  const draw = (fraction: number): void =>
-    hud.update(world, scene.draw(world, world.tick + fraction));
+  const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
+  const scene = await Scene.create(frame, world.map, labels);
+  const draw = (fraction: number): void => scene.draw(world, world.tick + fraction);
   await document.fonts.ready;
 
   if (params.has("capture")) {

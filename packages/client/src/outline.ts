@@ -8,8 +8,13 @@ export type Pt = readonly [number, number];
  * `width` by `height`. Returns closed loops of corner points in tile units,
  * each with the region on its right-hand side as it is walked.
  */
-export function regionLoops(width: number, height: number, inside: (x: number, y: number) => boolean): Pt[][] {
-  const at = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < width && y < height && inside(x, y);
+export function regionLoops(
+  width: number,
+  height: number,
+  inside: (x: number, y: number) => boolean,
+): Pt[][] {
+  const at = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < width && y < height && inside(x, y);
   // One directed edge per tile side that has the region on one side only, keyed by where it starts.
   const from = new Map<string, Pt[]>();
   const add = (a: Pt, b: Pt): void => {
@@ -40,8 +45,12 @@ export function regionLoops(width: number, height: number, inside: (x: number, y
         // Where two parts of the region touch at a corner, keep to the right so each loop stays simple.
         let pick = 0;
         if (options.length > 1) {
-          const turn = (to: Pt): number => heading[0] * (to[1] - here[1]) - heading[1] * (to[0] - here[0]);
-          pick = options.reduce((best, to, i) => (turn(to) > turn(options[best] as Pt) ? i : best), 0);
+          const turn = (to: Pt): number =>
+            heading[0] * (to[1] - here[1]) - heading[1] * (to[0] - here[0]);
+          pick = options.reduce(
+            (best, to, i) => (turn(to) > turn(options[best] as Pt) ? i : best),
+            0,
+          );
         }
         const next = options.splice(pick, 1)[0] as Pt;
         heading = [next[0] - here[0], next[1] - here[1]];
@@ -63,7 +72,10 @@ export function smoothLoop(loop: readonly Pt[], rounds = 2): Pt[] {
     for (let i = 0; i < points.length; i++) {
       const a = points[i] as Pt;
       const b = points[(i + 1) % points.length] as Pt;
-      next.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+      next.push(
+        [a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25],
+        [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75],
+      );
     }
     points = next;
   }

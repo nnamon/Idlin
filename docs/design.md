@@ -73,9 +73,8 @@ slowly, with a fade, and prefers someone to whom something is happening.
 
 Feedback is small, local and eased: a hop, a lunge, a number that floats and
 fades, a light that swells. No full-screen flashes, no blinking, nothing that
-changes brightness fast over a large area. Text uses a crisp pixel font at
-integer scale. The frame must stay readable when the stream is shrunk to a
-640-pixel-wide window on a second monitor.
+changes brightness fast over a large area. The frame must stay readable when
+the stream is shrunk to a 640-pixel-wide window on a second monitor.
 
 ### 5. Skills are the slow game, loot is the lottery
 
@@ -146,17 +145,27 @@ have duration and the picture is calm.
 
 ## Look
 
-Top-down pixel art at 16-pixel tiles and integer scale, with a lighting layer:
-warm light pools from the lantern and campfires, a palette that shifts through
-the day, soft shadows at night. Sprites come only from packs whose licence
-allows redistribution in a public repo (the starting point is Kenney's CC0
-Tiny Town and Tiny Dungeon), with the licence and credit committed beside
-them. Single-frame sprites are animated in code (hops, squash, lunges, lean),
-which keeps motion consistent across every pack and every monster.
+The stream looks like a map from an old book that happens to be alive. The
+ground is cream paper, the land is drawn in sepia ink with thin watercolour
+washes under it, and place names are lettered on it. Nothing comes from an
+asset pack: the map, the trees, the tents and the characters are all drawn by
+code, with lines that wobble a little the way a pen does. A new monster or
+place is a drawing routine.
 
-The screen is 16:9: the world on the left, a side panel on the right with the
-spotlighted character (portrait, skills, gear, its program with the firing rule
-lit), and an event ticker along the bottom.
+Characters are small hooded figures. The cloak colour is the one thing that
+tells them apart, so it is also how a viewer finds their own.
+
+At night the same drawing is shown in pale ink on dark blue paper. The two are
+never blended evenly, because halfway between them neither can be read. At dusk
+the dark closes in on the lantern from the edges of the frame, and at dawn the
+light comes across from the east. At night each lamp is a window onto the
+daytime drawing: the lantern, the fire, and the small light every character
+carries.
+
+The frame is 16:9. The map is on the left; on the right is a page with the
+clock and the residents, each with the rule its program is following; along
+the bottom is a line of news. It is all one sheet, so the page darkens with the
+map. The typeface is IM Fell English.
 
 ## One player among many
 

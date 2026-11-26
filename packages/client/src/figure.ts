@@ -16,7 +16,14 @@ export interface FigureStyle {
 }
 
 /** Draws a figure with its feet at (x, y). `time` only drives the small "z" of a resting figure. */
-export function drawFigure(ctx: Ctx, x: number, y: number, pose: Pose, style: FigureStyle, time: number): void {
+export function drawFigure(
+  ctx: Ctx,
+  x: number,
+  y: number,
+  pose: Pose,
+  style: FigureStyle,
+  time: number,
+): void {
   const { cloak, ink, paper } = style;
   ctx.save();
   ctx.translate(x, y);

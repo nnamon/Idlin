@@ -12,7 +12,21 @@ export interface Palette {
   readonly wash: Readonly<Record<WashName, Rgb>>;
 }
 
-export type WashName = "deepWood" | "wood" | "meadow" | "water" | "waterDeep" | "den" | "camp" | "sand" | "leaf" | "pine" | "canvas" | "timber" | "glass" | "flame";
+export type WashName =
+  | "deepWood"
+  | "wood"
+  | "meadow"
+  | "water"
+  | "waterDeep"
+  | "den"
+  | "camp"
+  | "sand"
+  | "leaf"
+  | "pine"
+  | "canvas"
+  | "timber"
+  | "glass"
+  | "flame";
 
 const DAY_WASH: Record<WashName, Rgb> = {
   deepWood: rgb(0x93aa8c),
@@ -48,11 +62,24 @@ const NIGHT_WASH: Record<WashName, Rgb> = {
   flame: rgb(0xf2a24a),
 };
 
-export const DAY: Palette = { paper: rgb(0xf1e6cd), ink: rgb(0x2f2621), washStrength: 1, wash: DAY_WASH };
-export const NIGHT: Palette = { paper: rgb(0x1d2742), ink: rgb(0xcfd8ea), washStrength: 1, wash: NIGHT_WASH };
+export const DAY: Palette = {
+  paper: rgb(0xf1e6cd),
+  ink: rgb(0x2f2621),
+  washStrength: 1,
+  wash: DAY_WASH,
+};
+export const NIGHT: Palette = {
+  paper: rgb(0x1d2742),
+  ink: rgb(0xcfd8ea),
+  washStrength: 1,
+  wash: NIGHT_WASH,
+};
 
 /** Cloak colours, picked to be told apart at a glance on cream paper and under lamplight. */
-const CLOAKS = [0xc8442f, 0x2f6fb0, 0xd79a1e, 0x3f8f5a, 0x7d4fa3, 0x2a8f98, 0xb5527e, 0x6b7f2a, 0xd0692b, 0x4a55a8, 0x8a5a3a, 0x3a9a7a];
+const CLOAKS = [
+  0xc8442f, 0x2f6fb0, 0xd79a1e, 0x3f8f5a, 0x7d4fa3, 0x2a8f98, 0xb5527e, 0x6b7f2a, 0xd0692b,
+  0x4a55a8, 0x8a5a3a, 0x3a9a7a,
+];
 
 /** The cloak colour of the actor with this id: the first dozen are hand-picked, the rest spread round the wheel. */
 export function cloakColor(id: number): string {
