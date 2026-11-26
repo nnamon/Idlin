@@ -107,9 +107,9 @@ A check applies once the thing it measures exists.
 
 ## The judge
 
-- A fresh agent with no knowledge of the change, which did not build it: Opus
-  5.5 at effort `medium`, or Codex `gpt-6.2-sol` when Opus built the change. It gets the captures, the metrics and this page,
-  nothing else.
+- A fresh Mythos 5.2 agent (Codex `gpt-6.2-sol` if Mythos cannot be
+  reached) with no knowledge of the change, which did not build it. It gets
+  the captures, the metrics and this page, nothing else.
 - Every claim must point at a frame ("storyboard frame 7: three characters
   overlap the lantern and none can be read") or at a metric.
 - It returns the scores, any hard fail, and at most three findings ranked by
@@ -118,8 +118,9 @@ A check applies once the thing it measures exists.
   change is better, the same or worse, and where.
 - A milestone's closing review adds a second judge from another model family
   (Codex `gpt-6.2-sol`). For each dimension the lower of the two scores
-  stands, and a hard fail from either stands. If the second judge cannot be
-  reached, the review goes ahead with one judge and the closing comment says so.
+  stands, and a hard fail from either stands. If Codex already judged because
+  Mythos was out, or the second judge cannot be reached, the review goes ahead
+  with one judge and the closing comment says so.
 
 ## How the verdict is used
 

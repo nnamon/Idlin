@@ -55,6 +55,11 @@ Link the issue to the thread.
   build to the artist: one `delegate_task` child on Opus 5.5 (effort `medium`) with
   `isolation: "worktree"`, given the issue text and the docs to read. Otherwise
   build it directly.
+- For a `look` issue whose design is still open, ask a Mythos 5.2 child
+  (`delegate_task`, role `design`, effort `medium`, no worktree: it only reads)
+  for direction before building: the issue, current captures, and what the
+  options are. It counts towards the two child tasks. If Mythos cannot be
+  reached, the conductor decides and says so on the issue.
 - Run `docker compose run --rm dev pnpm gate` until it passes. Read the new
   tests and confirm each would fail without the change.
 - For a visible change, run the capture, open the frames and look at them. Fix
@@ -93,16 +98,17 @@ substantial fix, review again. If the same kind of finding keeps returning, fix
 the cause in one place.
 
 If Codex is out of quota or cannot be reached, give the same brief to
-Opus 5.5 (effort `medium`), unless Opus built the change: then the conductor
-reviews it itself. Note in the triage comment which model reviewed. If neither
-can be reached, follow section 5 of `AGENTS.md`: leave the pull request
-open and say why.
+Sonnet 5.5 (effort `medium`, `isolation: "worktree"`, since it runs the gate).
+Note in the triage comment which model reviewed. If neither can be
+reached, follow section 5 of `AGENTS.md`: leave the pull request open and say
+why.
 
 ## 6. Watch judge (visible changes)
 
 Capture `main` (the baseline) and the branch with the same seed. Start the
-judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`; Codex
-`gpt-6.2-sol` instead if Opus built the change) with the two capture folders
+judge (`delegate_task`, role `review`, Mythos 5.2 at effort `medium`; Codex
+`gpt-6.2-sol` if Mythos cannot be reached; no worktree, since it reads the
+capture folders, which are not committed) with the two capture folders
 and `docs/watch-rubric.md`, and nothing about what the change was meant to do.
 Post its verdict as a pull request comment, `[watch judge]`. A hard fail or a
 "worse" verdict sends the change back to step 3.

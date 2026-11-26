@@ -1,0 +1,13 @@
+# 0006: Which model does what, with the conductor on Opus 5.5
+
+Date: 2026-11-26. The operator moved the conductor to Opus 5.5 (effort
+`medium`) to save quota, and asked for a Mythos 5.2 child to judge design and
+look and feel. Replaces the model parts of rows 2 and 3 of (the Antigravity ban stands)
+[0002](0002-operator-rulings-2026-11-26.md) and the reviewer part of row 11 of
+[0001](0001-founding-decisions.md).
+
+| Decision                                                                                                   | Rejected alternative                                                          | Why                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Watch judge, and questions of art direction, go to Mythos 5.2; Codex judges when Mythos cannot be reached. | Opus 5.5 as before.                                                           | The operator asked for it. Codex is the fallback because Opus built the change.                                                                                                                                                                                   |
+| Code review: Codex first, Sonnet 5.5 when Codex is out.                                                    | Opus 5.5 reviewing (it now builds everything); Mythos 5.2 reviewing code too. | A reviewer should not be the model that wrote the code. When Codex is out the reviewer is another Claude model, not another family; that is accepted because Sonnet did not write the code. Mythos was granted for taste, and quota is the reason for the switch. |
+| The conductor no longer reviews its own code when no reviewer is free.                                     | Keeping that fallback.                                                        | It knows what the change was meant to do, which is the reason a separate reviewer exists. If no other model is available the pull request waits (section 5 of `AGENTS.md`).                                                                                       |

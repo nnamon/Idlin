@@ -37,23 +37,24 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 
 ## 2. Roles
 
-| Role            | Who                                                                              | Owns                                                                                                                                                                                                                                                                                                                   |
-| --------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Conductor**   | Mythos 5.2, in one long-running session                                          | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                                                                                                                                                                    |
-| **Artist**      | Opus 5.5 (effort `medium`), a child task in its own worktree                     | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                                                                                                                                                               |
-| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task                      | An adversarial read of each pull request's diff, by a model that did not build it; from a different family whenever Codex is available. Codex has tighter usage limits than Claude: when it is out of quota or unreachable, the review goes to Opus 5.5 (effort `medium`). The pull request says which model reviewed. |
-| **Watch judge** | Opus 5.5 (effort `medium`), a fresh child task; Codex when Opus built the change | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only.                                                                                                                                                                                                      |
+| Role            | Who                                                          | Owns                                                                                                                                                                                                                                              |
+| --------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Conductor**   | Opus 5.5 (effort `medium`), in one long-running session      | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                                                                                               |
+| **Artist**      | Opus 5.5 (effort `medium`), a child task in its own worktree | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                                                                                          |
+| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task  | An adversarial read of each pull request's diff, by a model that did not build it. Codex has tighter usage limits than Claude: when it is out of quota or unreachable, the review goes to Sonnet 5.5. The pull request says which model reviewed. |
+| **Watch judge** | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only. Also the one to ask about art direction and look and feel.                                                                      |
 
-Only the conductor runs on a Mythos- or Fable-tier model. Every Claude child
-task is Opus 5.5 at effort `medium`.
+Builders run on Opus 5.5. Mythos 5.2 judges how the game looks and plays on
+screen; it does not build or review code. When Mythos cannot be reached, Codex
+judges. Every child task named here runs at effort `medium` unless the table
+says otherwise.
 
 Antigravity is not used: its children can stall on approval prompts, which an
 unattended cycle cannot answer.
 
-A reviewer or judge never checks work built by its own model. When the artist
-(Opus) built a change, Codex judges its captures; if Codex cannot review its
-code either, the conductor reviews the code itself. The conductor never acts
-as watch judge, because it knows what the change was meant to do.
+A reviewer never checks code built by its own model: everything is built on
+Opus, so code is reviewed by Codex or Sonnet. The conductor never acts as
+reviewer or watch judge, because it knows what the change was meant to do.
 
 Child tasks are started with T3 Code's `delegate_task`, so each one appears as
 a thread the operator can open. No fan-out and no `Workflow` runs.
@@ -132,9 +133,10 @@ A pull request is merged only when all of these hold:
 - for a `look` change: a capture with no hard fail and no "worse" verdict;
 - docs describe the repo as it now is.
 
-If neither reviewer can be reached, the pull request stays
-open with a comment saying so. The cycle picks other work and the next cycle retries the review.
-Nothing merges unreviewed.
+If neither reviewer can be reached, or for a `look` change neither judge, the
+pull request stays open with a comment saying so. The cycle picks other work
+and the next cycle retries. Nothing merges unreviewed or, for a `look` change,
+unjudged.
 
 Never force-push `main` or rewrite its history. A bad merge is undone with a
 revert pull request.

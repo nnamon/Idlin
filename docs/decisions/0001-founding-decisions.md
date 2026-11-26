@@ -5,7 +5,8 @@ be vetoed; see section 8 of [AGENTS.md](../../AGENTS.md).
 
 Rows 8 and 9 (the Kenney art packs and PixiJS) were replaced by
 [0004](0004-ink-map-art.md). The three-hour cadence in row 13 was replaced by
-[0005](0005-one-long-session.md); one issue per cycle still stands.
+[0005](0005-one-long-session.md); one issue per cycle still stands. Which
+models review, in row 11, is now set by [0006](0006-models-after-the-switch.md).
 
 | #   | Decision                                                                                                                                    | Rejected alternative                                             | Why                                                                                                                |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |

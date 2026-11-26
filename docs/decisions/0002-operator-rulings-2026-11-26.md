@@ -1,7 +1,8 @@
 # 0002: Operator rulings, first day
 
 Date: 2026-11-26. Instructions from the operator after the founding decisions,
-and what was changed to follow them.
+and what was changed to follow them. The model parts of rows 2 and 3 were replaced by
+[0006](0006-models-after-the-switch.md) when the conductor moved to Opus 5.5.
 
 | #   | Ruling                                                                                                                                                                                                | Effect                                                                                                                                                                              |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
