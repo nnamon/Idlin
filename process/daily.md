@@ -63,7 +63,7 @@ facts allow:
 
 1. **Merged** — pull requests merged since the last digest, one line each.
 2. **Now** — the issue in progress, and the next two in the queue.
-3. **Watch** — the storyboard, embedded, the seven scores, and the top finding.
+3. **Watch** — the storyboard, embedded, the scores, and the top finding.
 4. **Decisions you can veto** — anything added to `docs/decisions/` since the
    last digest, one line each with the alternative.
 5. **Stuck or odd** — only if there is something.
