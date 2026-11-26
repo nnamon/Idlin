@@ -4,6 +4,13 @@ Run once a day by the "Idlin daily digest" schedule. It tells the operator
 where things stand, runs the day's watch review, and checks the swarm is not
 stuck. It builds nothing.
 
+## 0. Before anything is posted
+
+Section 1 of `AGENTS.md` applies to everything this run sends to GitHub: the
+commit to the `media` branch (images and the watch log), watch findings, issue
+comments and the digest comment. Check each one before it is pushed or posted.
+Disk use, Docker state and local paths go to the thread only.
+
 ## 1. Gather
 
 ```sh
@@ -19,9 +26,9 @@ gh run list --branch main --limit 3
 
 Skip this step if the capture harness does not exist yet. If the lock in
 `$(git rev-parse --git-dir)/idlin.lock` is younger than 150 minutes, a cycle
-is using the checkout: skip the capture and the judging today, and show the
-newest finished capture in `captures/` whose commit is on `origin/main`,
-saying which commit it is.
+is using the checkout: skip the capture, the judging and the `media` push
+today. The digest then says there is no new capture and shows the last one
+pushed to `media`.
 
 Otherwise take the lock, then:
 
@@ -31,16 +38,23 @@ git rev-parse HEAD            # must equal origin/main; this is the commit judge
 docker compose run --rm capture
 ```
 
-Release the lock as soon as the capture has finished; nothing after this needs
-the checkout. Start the watch judge as described in
-[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline. Then, in
-one commit pushed straight to the `media` branch (it holds no code and is not
-protected):
+Release the lock as soon as the capture has finished; nothing after this
+touches the shared checkout. Start the watch judge as described in
+[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline.
 
-- the showcase set from the new capture, under stable file names in
-  `showcase/`, so the README shows the game as it is today;
-- one line appended to `watch-log.md`: date, the commit judged, the scores,
-  hard fails.
+Then publish to the `media` branch (it holds no code and is not protected)
+from a separate worktree, so the shared checkout stays as it is:
+
+```sh
+git fetch origin media
+git worktree add "$TMP/media" origin/media --detach   # TMP: a fresh temporary directory
+# copy the showcase set into showcase/ under its stable file names;
+# append one line to watch-log.md: date, commit judged, scores, hard fails
+git -C "$TMP/media" add -A && git -C "$TMP/media" commit -m "Showcase and watch log for <sha>"
+git -C "$TMP/media" push origin HEAD:media
+git -C "$TMP/media" rev-parse HEAD                    # the media commit to link
+git worktree remove "$TMP/media"
+```
 
 File each finding as an issue labelled `watch` and `ready`, unless an open
 issue already covers it.
@@ -70,10 +84,8 @@ facts allow:
 6. **Milestone** — closed and open issue counts.
 
 Also post the digest as a comment on the "Operator log" issue, so the history
-is in the tracker. In place of the local image, link the storyboard at the
-`media` commit just pushed (a link with the commit id, so an old digest keeps
-showing the picture it described).
-
-Section 1 of `AGENTS.md` applies to everything this run posts to GitHub: the
-comment, watch findings and issue comments carry nothing about the machine.
-Disk use, Docker state and local paths go to the thread only.
+is in the tracker. In place of the local image, link the storyboard at a fixed
+`media` commit (a link with the commit id, so an old digest keeps showing the
+picture it described): the commit pushed in step 2, or on a day without a new
+capture the current tip of `media` (`git ls-remote origin media`). If `media`
+does not exist yet, say there is no capture yet.

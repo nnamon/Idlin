@@ -27,19 +27,20 @@ compared frame by frame.
 ## Metrics (computed, not judged)
 
 Frame metrics come from the rendered capture. The others come from the sim's
-event log over a headless run of the same seed, long enough for the window
-each one names.
+event log over a headless run of the same seed, as long as the window each one
+names. The minimum dwell is the shortest time the spotlight stays on one
+character, 45 seconds.
 
-| Metric                                      | Meaning                                                                                     | Hard fail                                                                              |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| flicker index                               | largest share of the screen whose brightness changes sharply between two consecutive frames | over 5% of the screen                                                                  |
-| dead air                                    | longest gap with no visible event anywhere                                                  | over 20 s                                                                              |
-| stuck actors                                | actors that did not move or act for 60 s without a reason                                   | any                                                                                    |
-| action mix                                  | number of different actions per character per 10 minutes                                    | a character with one action only                                                       |
-| trips, deaths and drops by rarity, per hour | pacing                                                                                      | none; tracked over time                                                                |
-| console errors                              | errors in the page during the capture                                                       | any                                                                                    |
-| acknowledgment                              | per character, how often it was named on screen (a ticker line, a caption or the spotlight) | at 50 characters over 60 minutes, a character that finished a trip and was never named |
-| spotlight wait                              | per character, the longest time between two turns in the spotlight                          | longer than twice the population times the minimum dwell                               |
+| Metric                                      | Meaning                                                                                                                                                                                  | Hard fail                                                                                             |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| flicker index                               | largest share of the screen whose brightness changes sharply between two consecutive frames                                                                                              | over 5% of the screen                                                                                 |
+| dead air                                    | longest gap with no visible event anywhere                                                                                                                                               | over 20 s                                                                                             |
+| stuck actors                                | actors that did not move or act for 60 s without a reason                                                                                                                                | any                                                                                                   |
+| action mix                                  | number of different actions per character per 10 minutes                                                                                                                                 | a character with one action only                                                                      |
+| trips, deaths and drops by rarity, per hour | pacing                                                                                                                                                                                   | none; tracked over time                                                                               |
+| console errors                              | errors in the page during the capture                                                                                                                                                    | any                                                                                                   |
+| acknowledgment                              | per character, how often it was named on screen (a ticker line, a caption or the spotlight)                                                                                              | at 50 characters over 60 minutes, a character that finished a trip and was never named                |
+| spotlight wait                              | per character, its longest stretch without the spotlight, counting from the start of the run and up to its end, over a run three times as long as the population times the minimum dwell | any character over twice the population times the minimum dwell (one never shown fails by definition) |
 
 ## The rubric (judged, 0 to 5 each)
 
@@ -63,11 +64,13 @@ same viewer once they also own a character.
 7. **Mine** — judged from the seat of one player who owns one character and
    sees only what every other viewer sees. The harness picks the character
    with the median acknowledgment count, so it is neither the luckiest nor the
-   most ignored, and tells the judge its name and colour in text. Knowing only
+   most ignored, and tells the judge its name in text (and its colour, once
+   players can pick one). Knowing only
    that: can I find my character in a single frame? Across the sheet and that
    character's acknowledgment and spotlight numbers, did the stream notice it?
    Is there a reason to keep watching when it is not my turn? Scored once per
-   crowd sheet (12, 50 and 150 characters) and recorded as three scores.
+   crowd sheet (12, 50 and 150 characters) and recorded as three scores. Until characters belong to players this is a
+   reading of how the stream would treat one, and no milestone gates on it.
 
 Hard fails, whatever the scores: any metric hard fail above, a camera cut,
 placeholder shapes standing in for art, unreadable text.
@@ -87,7 +90,7 @@ A check applies once the thing it measures exists.
 ## The judge
 
 - A fresh agent with no knowledge of the change, which did not build it: Opus
-  5.5 at effort `medium`. It gets the captures, the metrics and this page,
+  5.5 at effort `medium`, or Codex `gpt-6.2-sol` when Opus built the change. It gets the captures, the metrics and this page,
   nothing else.
 - Every claim must point at a frame ("storyboard frame 7: three characters
   overlap the lantern and none can be read") or at a metric.

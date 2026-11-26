@@ -161,7 +161,7 @@ lit), and an event ticker along the bottom.
 ## One player among many
 
 The audience is on a shared stream. No viewer has a camera of their own, and
-on a good day there are far more characters than the dozen the first milestone
+on a good day there are far more characters than the handful the first milestone
 shows. The design has to stay fun for one person who owns one of them. Five
 commitments follow.
 
@@ -186,7 +186,7 @@ commitments follow.
    carry on and reach the stream through the ticker and their companion page.
 
 Whether this holds is an open question, tested with captures at 12, 50 and 150
-characters from one marked player's seat (the "Mine" score in
+characters from one player's seat (the "Mine" score in
 [watch-rubric.md](watch-rubric.md)). The first milestone builds the frame and
 the spotlight and measures how many characters one frame can hold.
 Commitments 1, 3 and 4 need players and arrive with them in M3; regions and

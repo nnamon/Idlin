@@ -91,8 +91,8 @@ open and say why.
 ## 6. Watch judge (visible changes)
 
 Capture `main` (the baseline) and the branch with the same seed. Start the
-judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`; the
-conductor judges instead if Opus built the change) with the two capture folders
+judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`; Codex
+`gpt-6.2-sol` instead if Opus built the change) with the two capture folders
 and `docs/watch-rubric.md`, and nothing about what the change was meant to do.
 Post its verdict as a pull request comment, `[watch judge]`. A hard fail or a
 "worse" verdict sends the change back to step 3.
@@ -133,6 +133,7 @@ next cycle will pick up. If there is a new capture, embed the storyboard.
 - One issue per cycle. If it merges with plenty of the cycle left, stop anyway;
   the next cycle starts fresh.
 - At most one child task alive at a time.
-- If the same issue has taken three cycles, split it or label it `blocked`.
+- If the same issue has taken three cycles of building, split it or label it
+  `blocked`. Cycles spent only waiting for a reviewer do not count.
 - If something outside the repo is broken (Docker down, GitHub unreachable,
   no reviewer on any provider), say so plainly, remove the lock and end.
