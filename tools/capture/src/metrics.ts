@@ -3,6 +3,7 @@
 // of stream time. Thresholds follow docs/watch-rubric.md.
 
 import type { WorldEvent } from "@idlin/sim";
+import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 
 export const TICKS_PER_SECOND = 10;
 export const DEAD_AIR_LIMIT_SECONDS = 20;
@@ -135,4 +136,50 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
     faults,
     hardFails,
   };
+}
+
+export interface SpotlightWait {
+  /** Per actor, its longest stretch out of the spotlight, from the start of the run to its end. */
+  readonly perActor: Readonly<Record<string, number>>;
+  readonly longestSeconds: number;
+  /** Twice the population times the minimum dwell. */
+  readonly limitSeconds: number;
+  readonly hardFails: readonly string[];
+}
+
+/**
+ * How long each actor went without the spotlight, given who held it on each
+ * tick of a run and the actors in it. One never shown waited the whole run.
+ *
+ * Assumes the population is fixed for the run: every actor in `names` is
+ * counted from tick 0 to the end, and the limit uses `names.size`. Once
+ * residents can leave or arrive mid-run (despawn), each wait has to count
+ * only the ticks that actor was present, against the population at the time.
+ */
+export function spotlightWait(
+  subjects: readonly (number | null)[],
+  names: ReadonlyMap<number, string>,
+): SpotlightWait {
+  const gapStart = new Map([...names.keys()].map((id) => [id, 0]));
+  const longest = new Map([...names.keys()].map((id) => [id, 0]));
+  const close = (id: number, tick: number) => {
+    longest.set(id, Math.max(longest.get(id) as number, tick - (gapStart.get(id) as number)));
+  };
+  subjects.forEach((subject, tick) => {
+    if (subject === null || !gapStart.has(subject)) return;
+    close(subject, tick);
+    gapStart.set(subject, tick + 1);
+  });
+  for (const id of names.keys()) close(id, subjects.length);
+
+  const perActor: Record<string, number> = {};
+  for (const [id, name] of names) perActor[name] = (longest.get(id) as number) / TICKS_PER_SECOND;
+  const longestSeconds = Math.max(0, ...Object.values(perActor));
+  const limitSeconds = (2 * names.size * DWELL_TICKS) / TICKS_PER_SECOND;
+  const over = Object.keys(perActor)
+    .filter((name) => (perActor[name] as number) > limitSeconds)
+    .sort();
+  const hardFails =
+    over.length > 0 ? [`spotlight wait over ${limitSeconds} s: ${over.join(", ")}`] : [];
+  return { perActor, longestSeconds, limitSeconds, hardFails };
 }

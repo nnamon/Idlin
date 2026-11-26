@@ -2,6 +2,7 @@
 // and a cast, and records every tick for the metrics.
 
 import {
+  ADVENTURER,
   compileBots,
   createWorld,
   parseMap,
@@ -10,6 +11,7 @@ import {
   step,
 } from "@idlin/sim";
 import { castOf } from "../../../packages/client/src/cast.ts";
+import { createDirector, direct } from "../../../packages/client/src/director.ts";
 import { botSources, rawFirstLight } from "../../../packages/sim/src/testing.ts";
 import type { TickRecord } from "./metrics.ts";
 
@@ -53,4 +55,29 @@ export function busiest(run: readonly TickRecord[], window: number): number {
     if (start >= 0 && sum > best.sum) best = { start, sum };
   }
   return best.start;
+}
+
+/**
+ * Runs the same world as `play` with the spotlight director watching, and
+ * returns who held the spotlight on each tick and the residents' names. Keeps
+ * nothing else, so it can run for hours of stream time with a crowd.
+ */
+export function spotlightRun(
+  seed: number,
+  residents: number,
+  ticks: number,
+): { subjects: (number | null)[]; names: Map<number, string> } {
+  const map = parseMap(rawFirstLight());
+  const world = createWorld(map, seed, compileBots(botSources(), placeConstants(map)));
+  const director = createDirector();
+  const subjects: (number | null)[] = [];
+  let events = step(world, spawnsNearCamp(world, castOf(residents)));
+  const cast = world.actors.filter((a) => a.kind === ADVENTURER);
+  const names = new Map(cast.map((a) => [a.id, a.name]));
+  for (let tick = 0; tick < ticks; tick++) {
+    const present = world.actors.filter((a) => a.kind === ADVENTURER).map((a) => a.id);
+    subjects.push(direct(director, world.tick, events, present));
+    events = step(world);
+  }
+  return { subjects, names };
 }

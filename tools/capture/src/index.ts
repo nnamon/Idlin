@@ -19,11 +19,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { chromium } from "playwright";
+import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 import { parseArgs } from "./args.ts";
 import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
-import { watchMetrics } from "./metrics.ts";
+import { spotlightWait, watchMetrics } from "./metrics.ts";
 import { decodePng, encodeGif, encodePng, grid, half, type Image, stack } from "./sheet.ts";
-import { busiest, play } from "./simrun.ts";
+import { busiest, play, spotlightRun } from "./simrun.ts";
 
 const DIST = new URL("../../../packages/client/dist/", import.meta.url).pathname;
 const TYPES: Record<string, string> = {
@@ -178,11 +179,15 @@ if (review) {
   const DAY = 24 * 600;
   // The world the page shows, run here as well for the numbers the picture cannot give.
   const sim: Record<string, ReturnType<typeof watchMetrics>> = {};
+  const spotlight: Record<string, ReturnType<typeof spotlightWait>> = {};
   let busiestTick = 0;
   for (const residents of [6, 12, 50, 150]) {
     const record = play(1, residents, DAY);
     sim[residents] = watchMetrics(record);
     if (residents === 6) busiestTick = busiest(record, 20);
+    // Three times the population times the dwell, as the rubric asks for this one.
+    const watched = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
+    spotlight[residents] = spotlightWait(watched.subjects, watched.names);
   }
 
   // Storyboard: two minutes from 19:20, through the lamps coming on and nightfall.
@@ -237,9 +242,12 @@ if (review) {
     ...flickerFail,
     ...problems.map((problem) => `page error: ${problem}`),
     ...(sim[6]?.hardFails ?? []),
+    ...(spotlight[6]?.hardFails ?? []),
   ];
   const crowdFindings = [12, 50, 150].flatMap((residents) =>
-    (sim[residents]?.hardFails ?? []).map((fail) => `${residents} residents: ${fail}`),
+    [...(sim[residents]?.hardFails ?? []), ...(spotlight[residents]?.hardFails ?? [])].map(
+      (fail) => `${residents} residents: ${fail}`,
+    ),
   );
   const metrics = {
     seed: 1,
@@ -248,8 +256,9 @@ if (review) {
     // One game day per population.
     sim,
     pacing: "n/a: there are no trips, deaths or drops yet (#195, #196, #197)",
-    acknowledgment: "n/a: there is no ticker or spotlight yet (#198)",
-    spotlightWait: "n/a: there is no spotlight yet (#198)",
+    acknowledgment: "n/a: no ticker, caption or spotlight names anyone on screen yet (#198)",
+    // The director picks the subject; nothing draws it yet. Per population, a run of three times the population times the dwell.
+    spotlightWait: spotlight,
     consoleErrors: problems,
     hardFails,
     crowdFindings,
