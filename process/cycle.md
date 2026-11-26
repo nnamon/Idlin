@@ -42,7 +42,7 @@ Link the issue to the thread.
 
 - Branch `i<issue>-<slug>` from `main`.
 - For a `look` issue that is mostly visual design, the conductor may hand the
-  build to the artist: one `delegate_task` child on Fable 5.2 with
+  build to the artist: one `delegate_task` child on Opus 5.5 (effort `medium`) with
   `isolation: "worktree"`, given the issue text and the docs to read. Otherwise
   build it directly.
 - Run `docker compose run --rm dev pnpm gate` until it passes. Read the new
@@ -76,14 +76,17 @@ pull request comment, `[conductor] review triage`, finding by finding. After a
 substantial fix, review again. If the same kind of finding keeps returning, fix
 the cause in one place.
 
-If Codex cannot be reached, use Antigravity `gemini-4-neon`. If neither can,
-follow section 5 of `AGENTS.md`: leave the pull request open and say why.
+If Codex is out of quota or cannot be reached, give the same brief to
+Antigravity `gemini-4-neon`, and if that fails too, to Opus 5.5 (effort
+`medium`). Note in the triage comment which model reviewed. If none can be
+reached, follow section 5 of `AGENTS.md`: leave the pull request
+open and say why.
 
 ## 6. Watch judge (visible changes)
 
 Capture `main` (the baseline) and the branch with the same seed. Start the
-judge (`delegate_task`, role `review`, Fable 5.2, or Mythos 5.2 if Fable built
-the change) with the two capture folders and `docs/watch-rubric.md`, and
+judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`) with
+the two capture folders and `docs/watch-rubric.md`, and
 nothing about what the change was meant to do. Post its verdict as a pull
 request comment, `[watch judge]`. A hard fail or a "worse" verdict sends the
 change back to step 3.
@@ -108,6 +111,8 @@ If `main` goes red, fixing it is the next thing this cycle does.
   pull request where possible.
 - Delete the merged branch, local and remote.
 - File follow-up issues for anything found and left out.
+- Reread what this cycle posted to GitHub. Nothing about the machine or the
+  environment may be in it (section 1 of `AGENTS.md`).
 - Remove the lock.
 
 ## 9. Report

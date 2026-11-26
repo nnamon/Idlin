@@ -25,10 +25,12 @@ Otherwise take the lock, check out `main`, run
 `docker compose run --rm capture`, and start the watch judge as described in
 [docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline. Then:
 
-- append the scores to `docs/watch-log.md` (date, commit, six scores, hard
+- append the scores to `docs/watch-log.md` (date, commit, seven scores, hard
   fails) through a small pull request that follows the normal gates;
 - file each finding as an issue labelled `watch` and `ready`, unless an open
   issue already covers it;
+- push the showcase set from the new capture to the `media` branch (stable
+  file names under `showcase/`), so the README shows the game as it is today;
 - release the lock.
 
 ## 3. Health
@@ -49,11 +51,13 @@ facts allow:
 
 1. **Merged** — pull requests merged since the last digest, one line each.
 2. **Now** — the issue in progress, and the next two in the queue.
-3. **Watch** — the storyboard, embedded, the six scores, and the top finding.
+3. **Watch** — the storyboard, embedded, the seven scores, and the top finding.
 4. **Decisions you can veto** — anything added to `docs/decisions/` since the
    last digest, one line each with the alternative.
 5. **Stuck or odd** — only if there is something.
 6. **Milestone** — closed and open issue counts.
 
-Also post the same text, without the image, as a comment on the pinned
-"Operator log" issue, so the history is in the tracker.
+Also post the same text as a comment on the "Operator log" issue, so the
+history is in the tracker. Link the storyboard on the `media` branch in place
+of the local image, and leave out section 5's machine details (disk use, Docker
+state, local paths): those go to the thread only.
