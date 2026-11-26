@@ -1,11 +1,11 @@
 // Where a program meets the world: answers its sensors and carries out the one
 // action it commits. Called when an actor has nothing left to do.
 
-import { isWalkable } from "./map.ts";
+import { isWalkable, type Point } from "./map.ts";
 import { findPath } from "./path.ts";
+import { nextInt } from "./rng.ts";
 import { syscall } from "./syscalls.ts";
 import { FAULTS, type Program, runDecision } from "./vm.ts";
-import { randomWalkableTile } from "./wander.ts";
 import { type Actor, clock, type World } from "./world.ts";
 
 /** Ticks an actor stands still after `idle` or an action that came to nothing; also the shortest `wait`. */
@@ -19,7 +19,7 @@ export function think(world: World, actor: Actor): void {
     actor.wait--;
     return;
   }
-  const program = world.programs[actor.program ?? ""] as Program;
+  const program = world.programs[actor.program] as Program;
   const decision = runDecision(program, actor.memory, (id, args) => sense(world, actor, id, args));
   actor.rule = decision.rule;
   actor.fault = FAULTS.indexOf(decision.fault);
@@ -28,6 +28,16 @@ export function think(world: World, actor: Actor): void {
     return;
   }
   act(world, actor, decision.action.id, decision.action.args);
+}
+
+/** A walkable tile chosen at random with the world's generator. */
+function randomWalkableTile(world: World): Point {
+  const { map } = world;
+  const walkable: Point[] = [];
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) if (isWalkable(map, x, y)) walkable.push({ x, y });
+  }
+  return walkable[nextInt(world.rng, walkable.length)] as Point;
 }
 
 function sense(world: World, actor: Actor, id: number, args: readonly number[]): number {

@@ -6,7 +6,6 @@ import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
 import { createRng, type Rng } from "./rng.ts";
 import { FAULTS, MEMORY_SLOTS, type Program, ProgramError, validateProgram } from "./vm.ts";
-import { wander } from "./wander.ts";
 
 export const TICKS_PER_SECOND = 10;
 /** A game hour lasts one minute of stream time, so a game day lasts 24 minutes. */
@@ -34,12 +33,12 @@ export interface Actor {
   moveTicksLeft: number;
   /** Tiles still to step onto, in order. */
   path: Point[];
-  /** Ticks left to pause before the stand-in behaviour picks a new target. */
+  /** Ticks left to stand still before the program is asked again. */
   wait: number;
   /** Ticks spent waiting for the next tile on the path to clear. */
   blocked: number;
-  /** Name of the program that decides for this actor, or null for the stand-in behaviour. */
-  readonly program: string | null;
+  /** Name of the program that decides for this actor; one of the world's. */
+  readonly program: string;
   /** The program's memory slots, kept between decisions. */
   memory: number[];
   /** Index of the rule that chose the last action, or -1. For showing why an actor does what it does. */
@@ -64,8 +63,8 @@ export interface World {
 export type Input = {
   readonly type: "spawn";
   readonly name: string;
-  /** The program to run; must be one of the world's. Left out, the actor uses the stand-in behaviour. */
-  readonly program?: string;
+  /** The program to run; must be one of the world's. */
+  readonly program: string;
 } & Point;
 
 /** Program names: a lower-case letter, then letters, digits or underscores. */
@@ -128,9 +127,8 @@ function applyInput(world: World, input: Input): void {
   const x = fields.x | 0;
   const y = fields.y | 0;
   if (!isWalkable(world.map, x, y) || actorAt(world, x, y)) return;
-  const program = fields.program ?? null;
-  if (program !== null && (typeof program !== "string" || !Object.hasOwn(world.programs, program)))
-    return;
+  const { program } = fields;
+  if (typeof program !== "string" || !Object.hasOwn(world.programs, program)) return;
   world.actors.push({
     id: world.nextActorId++,
     name,
@@ -158,8 +156,7 @@ function updateActor(world: World, actor: Actor): void {
   }
   const next = actor.path[0];
   if (!next) {
-    if (actor.program === null) wander(world, actor);
-    else think(world, actor);
+    think(world, actor);
     return;
   }
   if (actorAt(world, next.x, next.y)) {
@@ -180,8 +177,8 @@ function updateActor(world: World, actor: Actor): void {
   actor.moveTicksLeft = STEP_TICKS;
 }
 
-/** Spawn inputs that put the named actors on the free walkable tiles nearest the camp. */
-export function spawnsNearCamp(world: World, names: readonly string[]): Input[] {
+/** Spawn inputs that put the named actors, all running `program`, on the free walkable tiles nearest the camp. */
+export function spawnsNearCamp(world: World, names: readonly string[], program: string): Input[] {
   const { map } = world;
   const camp = place(map, "camp");
   const seen = new Set<number>([tileIndex(map, camp.x, camp.y)]);
@@ -190,7 +187,13 @@ export function spawnsNearCamp(world: World, names: readonly string[]): Input[] 
   for (let head = 0; head < queue.length && inputs.length < names.length; head++) {
     const at = queue[head] as Point;
     if (!actorAt(world, at.x, at.y)) {
-      inputs.push({ type: "spawn", name: names[inputs.length] as string, x: at.x, y: at.y });
+      inputs.push({
+        type: "spawn",
+        name: names[inputs.length] as string,
+        x: at.x,
+        y: at.y,
+        program,
+      });
     }
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;
@@ -277,8 +280,7 @@ export function hashWorld(world: World): string {
       a.blocked,
       a.path.length,
       ...a.path.flatMap((p) => [p.x, p.y]),
-      // -1 for no program; a name's length is never negative.
-      ...(a.program === null ? [-1] : stringInts(a.program)),
+      ...stringInts(a.program),
       ...a.memory,
       a.rule,
       a.fault,
@@ -286,7 +288,7 @@ export function hashWorld(world: World): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -405,15 +407,13 @@ function readState(raw: unknown, map: TileMap, programs: Programs): World | null
     }
     // The blocked count only runs while there is a path to wait on.
     if (steps.length === 0 && blocked !== 0) return null;
-    if (program !== null && (typeof program !== "string" || !Object.hasOwn(programs, program)))
-      return null;
+    if (typeof program !== "string" || !Object.hasOwn(programs, program)) return null;
     if (!Array.isArray(memory) || memory.length !== MEMORY_SLOTS || !memory.every(isInt32))
       return null;
-    const rules = program === null ? 0 : (programs[program] as Program).rules.length;
-    if (!isInt32(rule) || rule < -1 || rule >= rules) return null;
+    if (!isInt32(rule) || rule < -1 || rule >= (programs[program] as Program).rules.length) {
+      return null;
+    }
     if (!isInt32(fault) || fault < 0 || fault >= FAULTS.length) return null;
-    // An actor without a program never runs one, so it has nothing to remember and nothing to fault on.
-    if (program === null && (fault !== 0 || memory.some((value) => value !== 0))) return null;
     world.actors.push({
       id,
       name,

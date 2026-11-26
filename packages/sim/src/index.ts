@@ -9,6 +9,7 @@ export {
   type Point,
   parseMap,
   place,
+  placeConstants,
   TERRAINS,
   type Terrain,
   type TileMap,
@@ -17,6 +18,14 @@ export {
 export { findPath } from "./path.ts";
 export { chance, createRng, nextInt, nextU32, type Rng } from "./rng.ts";
 export { SYSCALLS, type Syscall, syscall } from "./syscalls.ts";
+export {
+  BotError,
+  type Compiled,
+  type Constants,
+  compileBots,
+  compileTactics,
+  type TacticsError,
+} from "./tactics.ts";
 export {
   BYTECODE_VERSION,
   type Decision,

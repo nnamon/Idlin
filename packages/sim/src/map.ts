@@ -179,3 +179,8 @@ export const NEIGHBOURS: readonly (readonly [number, number])[] = [
   [0, 1],
   [-1, 0],
 ];
+
+/** The map's places as names a program can use: each stands for its x and y. */
+export function placeConstants(map: TileMap): Record<string, Point> {
+  return Object.fromEntries(map.places.map((p) => [p.name, { x: p.x, y: p.y }]));
+}
