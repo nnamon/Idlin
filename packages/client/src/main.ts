@@ -5,7 +5,6 @@ import {
   step,
   TICKS_PER_GAME_HOUR,
   TICKS_PER_SECOND,
-  type World,
 } from "@idlin/sim";
 import mapJson from "../../../content/maps/first-light.json";
 import { createHud } from "./hud.ts";
@@ -19,7 +18,7 @@ const FRAME_HEIGHT = 1080;
 declare global {
   interface Window {
     /** Present in capture mode (`?capture`): the page draws only when told to. */
-    idlin?: { advance(ticks: number): void; brightness(): number[]; world: World };
+    idlin?: { advance(ticks: number): void; brightness(): number[] };
   }
 }
 
@@ -49,14 +48,16 @@ async function main(): Promise<void> {
   for (let i = 0; i < skip; i++) step(world);
 
   const scene = await Scene.create(must("world"), world.map);
-  const hud = createHud(must("panel"), must("ticker"), must("tags"));
+  const hud = createHud(must("panel"), must("ticker"), must("tags"), {
+    width: scene.width,
+    height: scene.height,
+  });
   const draw = (fraction: number): void =>
     hud.update(world, scene.draw(world, world.tick + fraction));
   await document.fonts.ready;
 
   if (params.has("capture")) {
     window.idlin = {
-      world,
       advance(ticks) {
         for (let i = 0; i < ticks; i++) step(world);
         draw(0);
@@ -72,11 +73,13 @@ async function main(): Promise<void> {
   }
 
   const tickMs = 1000 / TICKS_PER_SECOND;
-  let last = performance.now();
+  let last: number | null = null;
   let owed = 0;
   const loop = (now: number): void => {
-    // After a long pause (a hidden tab), catch up a little, not all at once.
-    owed = Math.min(owed + (now - last), tickMs * 20);
+    // Time since the last frame, never negative. After a long pause (a hidden
+    // tab) the world does not race to catch up: at most three ticks are owed, so
+    // nothing visibly jumps and the picture carries on from where it was.
+    owed = Math.min(owed + Math.max(0, now - (last ?? now)), tickMs * 3);
     last = now;
     while (owed >= tickMs) {
       step(world);

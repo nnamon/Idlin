@@ -1,7 +1,8 @@
+import { TICKS_PER_GAME_HOUR } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
 import { ambientAt, lampStrength, phaseName, washAt } from "./light.ts";
 
-const TICKS_PER_HOUR = 600;
+const TICKS_PER_HOUR = TICKS_PER_GAME_HOUR;
 
 describe("the light of the day", () => {
   it("never jumps: from one tick to the next the ambient light barely moves", () => {

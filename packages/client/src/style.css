@@ -82,7 +82,7 @@ body {
   padding: 0 30px;
   font-size: 48px;
   line-height: 48px;
-  color: var(--dim);
+  color: var(--soft);
 }
 
 #panel {

@@ -24,7 +24,9 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
   not in files, commit messages, issue or pull request text, or comments. That
   covers paths, user and host names, hardware, operating system, time zone,
   other software or projects on the machine, and the state of its Docker or
-  disks. Check each text before it is pushed or posted, not after. Naming the
+  disks. Commit dates carry a time zone, so every commit is made with
+  `TZ=UTC` (`TZ=UTC git commit …`). Check each text before it is pushed or
+  posted, not after. Naming the
   process's own tools and models, as these documents do, is fine. Explain a
   decision by what it does for the project. CI runs on GitHub's runners and
   prints only what the repo's own commands print, so it has nothing of the

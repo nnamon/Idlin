@@ -9,7 +9,7 @@
 
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { extname, join } from "node:path";
 import { chromium } from "playwright";
 
 const DIST = new URL("../../../packages/client/dist/", import.meta.url).pathname;
@@ -26,10 +26,8 @@ const [outDir = "captures/manual", ...shots] = process.argv.slice(2);
 const wanted = shots.length > 0 ? shots : ["dawn:6", "noon:12", "dusk:19", "midnight:0"];
 
 const server = createServer(async (request, response) => {
-  const path = normalize(new URL(request.url ?? "/", "http://x").pathname).replace(
-    /^(\.\.[/\\])+/,
-    "",
-  );
+  // The URL parser resolves any ".." before this point, so the path stays inside the build folder.
+  const path = new URL(request.url ?? "/", "http://x").pathname;
   const file = join(DIST, path === "/" ? "index.html" : path);
   try {
     const body = await readFile(file);
@@ -60,6 +58,14 @@ page.on("pageerror", (error) => problems.push(String(error)));
 
 type Idlin = { advance(ticks: number): void; brightness(): number[] };
 
+/** Opens the viewer in capture mode at a game hour and waits until it has drawn its first frame. */
+async function open(hour: number | string): Promise<void> {
+  await page.goto(`${origin}/?capture&seed=1&hour=${hour}`);
+  await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
+  const failure = await page.evaluate(() => document.body.dataset.error ?? null);
+  if (failure !== null) throw new Error(`the viewer failed to start: ${failure}`);
+}
+
 for (const shot of wanted) {
   // name:hour[:ticks[:width]] — a width other than 1920 shows the frame as a smaller window would.
   const [name = "shot", hour = "6", ticks = "0", width = "1920"] = shot.split(":");
@@ -67,8 +73,7 @@ for (const shot of wanted) {
     width: Number(width),
     height: Math.round((Number(width) * 9) / 16),
   });
-  await page.goto(`${origin}/?capture&seed=1&hour=${hour}`);
-  await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
+  await open(hour);
   await page.evaluate(
     (n) => (window as unknown as { idlin: Idlin }).idlin.advance(n),
     Number(ticks),
@@ -77,17 +82,18 @@ for (const shot of wanted) {
   console.log(`saved ${join(outDir, `${name}.png`)}`);
 }
 
-// Flicker: for every game hour, the largest share of the world whose brightness
-// changes by more than 8 (of 255) between two consecutive ticks.
+// A first, rough flicker measure, for the world canvas only (not the text over
+// it). For every game hour it steps 40 ticks and reports the largest share of
+// tiles whose mean brightness changed by more than 8 (of 255) from one tick to
+// the next. A tick is a tenth of a second, about six frames on a stream, so
+// this over-counts what a viewer sees between two frames, and it counts a
+// character walking with its light as change. It catches a light that jumps.
 await page.setViewportSize({ width: 1920, height: 1080 });
 let worst = { share: 0, hour: 0 };
 for (let hour = 0; hour < 24; hour++) {
-  await page.goto(`${origin}/?capture&seed=1&hour=${hour}`);
-  await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
+  await open(hour);
   const share = await page.evaluate(() => {
-    const api = (
-      window as unknown as { idlin: { advance(ticks: number): void; brightness(): number[] } }
-    ).idlin;
+    const api = (window as unknown as { idlin: Idlin }).idlin;
     let most = 0;
     let before = api.brightness();
     for (let i = 0; i < 40; i++) {
@@ -104,9 +110,9 @@ for (let hour = 0; hour < 24; hour++) {
   if (share > worst.share) worst = { share, hour };
 }
 console.log(
-  `flicker index ${(worst.share * 100).toFixed(2)}% of the world (worst at hour ${worst.hour})`,
+  `tick-to-tick change: ${(worst.share * 100).toFixed(2)}% of tiles at the worst hour (${worst.hour}:00)`,
 );
-if (worst.share > 0.05) problems.push(`flicker index ${worst.share} is over 5%`);
+if (worst.share > 0.05) problems.push(`tick-to-tick change ${worst.share} is over 5% of tiles`);
 
 await browser.close();
 server.close();

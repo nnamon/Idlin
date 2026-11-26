@@ -4,7 +4,7 @@
 
 import {
   type Actor,
-  STEP_TICKS,
+  START_HOUR,
   type Terrain,
   TICKS_PER_GAME_HOUR,
   type TileMap,
@@ -41,6 +41,7 @@ import {
   TREES,
 } from "./atlas.ts";
 import { ambientAt, lampStrength, toHex, washAt } from "./light.ts";
+import { actorPose, sunShadow } from "./pose.ts";
 
 /** Screen pixels per art pixel. */
 export const SCALE = 3;
@@ -57,9 +58,11 @@ const WOOD_DARK = 0x8a4836;
 const WOOD_LIGHT = 0xe4a672;
 const DEEP_WOOD_TINT = 0x7fa99c;
 /** What a lamp adds to the ambient light, and the amber it lays over what it lights. */
-const LAMP_LIGHT = 0xffc890;
-const LAMP_GLOW = 0xff8a2a;
-const GLOW_STRENGTH = 0.3;
+const LAMP_LIGHT = 0xffdca8;
+const LAMP_GLOW = 0xff7a1a;
+const GLOW_STRENGTH = 0.2;
+/** Ticks an actor must have left to wait before it is shown as resting. */
+const REST_CUE_TICKS = 12;
 
 const CAMP_GROUND: ReadonlySet<Terrain> = new Set(["camp", "lantern", "campfire", "bank"]);
 const WET: ReadonlySet<Terrain> = new Set(["water", "bridge"]);
@@ -114,6 +117,10 @@ export class Scene {
   private readonly things = new Container();
   private readonly ripples = new Graphics();
   private readonly flames = new Graphics();
+  private readonly sunShadows = new Graphics();
+  private readonly marks = new Graphics();
+  /** Things that stand up and so cast a shadow: trees, the lantern, the chest. Art pixels. */
+  private readonly standing: { x: number; base: number; halfWidth: number }[] = [];
   private readonly lightFill = new Graphics();
   private readonly lightLamps = new Container();
   private readonly glow = new Container();
@@ -154,7 +161,17 @@ export class Scene {
     light.blendMode = "multiply";
 
     this.lampTexture = lampTexture();
-    view.addChild(ground, water, this.ripples, this.things, light, this.glow, this.wash);
+    view.addChild(
+      ground,
+      water,
+      this.ripples,
+      this.sunShadows,
+      this.things,
+      light,
+      this.glow,
+      this.wash,
+      this.marks,
+    );
     this.things.addChild(this.flames);
     this.flames.zIndex = 100000;
   }
@@ -209,6 +226,7 @@ export class Scene {
       sprite.tint = tint;
       sprite.zIndex = sprite.y;
       this.things.addChild(sprite);
+      this.standing.push({ x: sprite.x, base: sprite.y, halfWidth: 5 });
     };
     const isCamp = (x: number, y: number): boolean =>
       CAMP_GROUND.has(this.terrain(x, y) ?? "grass");
@@ -290,6 +308,7 @@ export class Scene {
         }
         if (terrain === "lantern") {
           this.things.addChild(this.lantern(px, py));
+          this.standing.push({ x: px + TILE / 2, base: py + TILE, halfWidth: 3 });
           this.staticLamps.push({
             x: px + TILE / 2,
             y: py - 4,
@@ -340,35 +359,61 @@ export class Scene {
   /** Draws the world as it is at `time` ticks (the world's tick plus a fraction of the next). */
   draw(world: World, time: number): Tag[] {
     const fraction = time - world.tick;
-    const hour = (((time / TICKS_PER_GAME_HOUR + 6) % 24) + 24) % 24;
+    const hour = (((time / TICKS_PER_GAME_HOUR + START_HOUR) % 24) + 24) % 24;
     const lamps: Lamp[] = [...this.staticLamps];
     const tags: Tag[] = [];
     const night = lampStrength(hour);
 
+    const sun = sunShadow(hour);
+    this.sunShadows.clear();
+    const castShadow = (x: number, base: number, halfWidth: number): void => {
+      if (sun.alpha <= 0) return;
+      this.sunShadows
+        .ellipse(x + (sun.direction * sun.length) / 2, base - 1, halfWidth + sun.length / 2, 2.5)
+        .fill({ color: 0x1b1420, alpha: sun.alpha });
+    };
+    for (const thing of this.standing) castShadow(thing.x, thing.base, thing.halfWidth);
+
+    this.marks.clear();
+    const alive = new Set<number>();
     for (const actor of world.actors) {
+      alive.add(actor.id);
       const view = this.actorView(actor);
-      const moving = actor.moveTicksLeft > 0;
-      const progress = moving
-        ? Math.min(1, (STEP_TICKS - actor.moveTicksLeft + fraction) / STEP_TICKS)
-        : 1;
-      // Ease in and out of each step, with a small hop and a squash on landing.
-      const eased = progress * progress * (3 - 2 * progress);
-      const x = (actor.fromX + (actor.x - actor.fromX) * eased) * TILE + TILE / 2;
-      const y = (actor.fromY + (actor.y - actor.fromY) * eased) * TILE + TILE;
-      const hop = moving ? Math.sin(Math.PI * progress) * 2.2 : 0;
-      const breath = moving ? 0 : Math.sin(time * 0.16 + actor.id * 1.7) * 0.03;
+      const pose = actorPose(actor, fraction, time);
+      const { x, y, hop } = pose;
       if (actor.x !== actor.fromX) view.facing = actor.x > actor.fromX ? 1 : -1;
       view.root.position.set(x, y);
       view.root.zIndex = y;
-      view.sprite.y = -hop;
-      view.sprite.scale.set(
-        view.facing * (1 - breath * 0.5),
-        1 + breath + (moving ? Math.sin(Math.PI * progress) * 0.06 : 0),
-      );
+      view.sprite.y = -hop - pose.bob;
+      view.sprite.scale.x = view.facing;
       view.shadow.scale.set(1 - hop * 0.08);
       view.shadow.y = -1;
+      castShadow(x, y, 4);
       tags.push({ id: actor.id, name: actor.name, x: x * SCALE, y: (y - TILE - 3 - hop) * SCALE });
       if (night > 0) lamps.push({ x, y: y - 6, radius: 2.1 * TILE, strength: 0.55, flicker: 0 });
+      if (!pose.moving && actor.path.length === 0 && actor.wait > REST_CUE_TICKS) {
+        // Resting: a small "z" drifts up beside the head, then a second one.
+        for (const [delay, size] of [
+          [0, 3],
+          [0.5, 2],
+        ] as const) {
+          const drift = (((time * 0.035 + actor.id * 0.37 + delay) % 1) + 1) % 1;
+          const zx = Math.round(x + 5 + drift * 3);
+          const zy = Math.round(y - TILE - 2 - drift * 7);
+          const alpha = Math.sin(Math.PI * drift) * 0.9;
+          this.marks.rect(zx, zy, size, 1).fill({ color: 0xf4e6cf, alpha });
+          this.marks
+            .rect(zx + (size > 2 ? 1 : 0), zy + 1, 1, size - 2)
+            .fill({ color: 0xf4e6cf, alpha });
+          this.marks.rect(zx, zy + size - 1, size, 1).fill({ color: 0xf4e6cf, alpha });
+        }
+      }
+    }
+    // Actors that have left the world take their sprites with them.
+    for (const [id, view] of this.actors) {
+      if (alive.has(id)) continue;
+      view.root.destroy({ children: true });
+      this.actors.delete(id);
     }
 
     this.ripples.clear();
@@ -397,14 +442,16 @@ export class Scene {
     // Each lamp is drawn twice with the same soft disc: once into the light map,
     // where it lifts the ambient light, and once over the world as an amber glow.
     const shown = night > 0 ? lamps : [];
-    for (const [layer, tint, gain] of [
-      [this.lightLamps, LAMP_LIGHT, 1],
-      [this.glow, LAMP_GLOW, GLOW_STRENGTH],
+    // In the light map a lamp replaces the cold ambient light with its own warm
+    // colour, strongest at its centre, so lit grass turns gold, not daylight green.
+    for (const [layer, tint, gain, blend] of [
+      [this.lightLamps, LAMP_LIGHT, 1, "normal"],
+      [this.glow, LAMP_GLOW, GLOW_STRENGTH, "add"],
     ] as const) {
       while (layer.children.length < shown.length) {
         const disc = new Sprite(this.lampTexture);
         disc.anchor.set(0.5);
-        disc.blendMode = "add";
+        disc.blendMode = blend;
         disc.tint = tint;
         layer.addChild(disc);
       }
@@ -435,26 +482,34 @@ export class Scene {
   }
 
   /**
-   * Mean brightness (0 to 255) of the frame just drawn, in blocks of one tile.
-   * For measuring flicker: compare the result of two consecutive frames.
+   * Mean brightness (0 to 255) of the world canvas as just drawn, one value per
+   * tile, averaged over every pixel of the tile. For measuring flicker: compare
+   * the results of two draws.
    */
   brightness(): number[] {
+    const { width, height } = this.app.canvas;
     const probe = document.createElement("canvas");
-    probe.width = this.map.width;
-    probe.height = this.map.height;
+    probe.width = width;
+    probe.height = height;
     const context = probe.getContext("2d", { willReadFrequently: true });
     if (!context) throw new Error("no 2d context");
-    context.drawImage(this.app.canvas, 0, 0, probe.width, probe.height);
-    const { data } = context.getImageData(0, 0, probe.width, probe.height);
-    const blocks: number[] = [];
-    for (let i = 0; i < data.length; i += 4) {
-      blocks.push(
-        ((data[i] as number) * 299 +
-          (data[i + 1] as number) * 587 +
-          (data[i + 2] as number) * 114) /
-          1000,
-      );
+    context.drawImage(this.app.canvas, 0, 0);
+    const { data } = context.getImageData(0, 0, width, height);
+    const block = TILE * SCALE;
+    const columns = this.map.width;
+    const sums = new Array<number>(columns * this.map.height).fill(0);
+    for (let y = 0; y < height; y++) {
+      const row = Math.floor(y / block) * columns;
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        sums[row + Math.floor(x / block)] =
+          (sums[row + Math.floor(x / block)] as number) +
+          ((data[i] as number) * 299 +
+            (data[i + 1] as number) * 587 +
+            (data[i + 2] as number) * 114) /
+            1000;
+      }
     }
-    return blocks;
+    return sums.map((sum) => sum / (block * block));
   }
 }

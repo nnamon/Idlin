@@ -5,6 +5,7 @@ import { clock, type World } from "@idlin/sim";
 import { ADVENTURERS, type Cell, SHEET_COLUMNS, TILE } from "./atlas.ts";
 import { phaseName } from "./light.ts";
 import type { Tag } from "./scene.ts";
+import { placeTags } from "./tags.ts";
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -19,6 +20,11 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 
 const two = (n: number): string => String(n).padStart(2, "0");
 
+/** Writes text only when it changes, so an unchanged frame costs the page nothing. */
+const setText = (node: HTMLElement, text: string): void => {
+  if (node.textContent !== text) node.textContent = text;
+};
+
 function portrait(cell: Cell): HTMLElement {
   const node = el("span", `portrait sheet-${cell.sheet}`);
   const x = (cell.index % SHEET_COLUMNS) * TILE * 3;
@@ -27,24 +33,17 @@ function portrait(cell: Cell): HTMLElement {
   return node;
 }
 
-interface Box {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-const overlaps = (a: Box, b: Box): boolean =>
-  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-const WORLD_WIDTH = 1440;
-const TAG_HEIGHT = 28;
-/** Where a tag may sit, as the height of its bottom edge above the head: just above, below the feet, higher up. */
-const TAG_RISES = [0, 94, -32, -64];
-
 export interface Hud {
   update(world: World, tags: readonly Tag[]): void;
 }
 
-export function createHud(panel: HTMLElement, ticker: HTMLElement, tagLayer: HTMLElement): Hud {
+/** `bounds` is the size of the world view in frame pixels; name tags stay inside it. */
+export function createHud(
+  panel: HTMLElement,
+  ticker: HTMLElement,
+  tagLayer: HTMLElement,
+  bounds: { readonly width: number; readonly height: number },
+): Hud {
   const title = el("h1", "title", "IDLIN");
   const time = el("div", "clock");
   const phase = el("div", "phase");
@@ -57,21 +56,24 @@ export function createHud(panel: HTMLElement, ticker: HTMLElement, tagLayer: HTM
   const line = el("span", "ticker-line");
   ticker.append(line);
 
-  const rows = new Map<number, { doing: HTMLElement }>();
-  const tagNodes = new Map<number, HTMLElement>();
+  const rows = new Map<number, { item: HTMLElement; doing: HTMLElement }>();
+  const tagNodes = new Map<number, { node: HTMLElement; width: number; transform: string }>();
+  const tagSpots = new Map<number, number>();
 
   return {
     update(world, tags) {
       const { day, hour, minute } = clock(world);
       const name = phaseName(hour + minute / 60);
-      time.textContent = `${two(hour)}:${two(minute)}`;
-      phase.textContent = `Day ${day + 1} · ${name}`;
+      setText(time, `${two(hour)}:${two(minute)}`);
+      setText(phase, `Day ${day + 1} · ${name}`);
       // The mark travels left to right across the dial once a day; noon is the middle.
       sun.style.left = `${(((hour + minute / 60 + 18) % 24) / 24) * 100}%`;
       dial.dataset.phase = name.toLowerCase();
-      line.textContent = `Day ${day + 1} · ${name} over Idlin`;
+      setText(line, `Day ${day + 1} · ${name} over Idlin`);
 
+      const present = new Set<number>();
       for (const actor of world.actors) {
+        present.add(actor.id);
         let row = rows.get(actor.id);
         if (!row) {
           const item = el("li", "roster-row");
@@ -82,43 +84,47 @@ export function createHud(panel: HTMLElement, ticker: HTMLElement, tagLayer: HTM
             doing,
           );
           roster.append(item);
-          row = { doing };
+          row = { item, doing };
           rows.set(actor.id, row);
         }
-        row.doing.textContent =
-          actor.moveTicksLeft > 0 || actor.path.length > 0 ? "walking" : "resting";
+        setText(
+          row.doing,
+          actor.moveTicksLeft > 0 || actor.path.length > 0 ? "walking" : "resting",
+        );
       }
 
-      // Name tags never cover a character or each other: each takes the first free
-      // spot among a few around its own character.
-      const bodies = tags.map((tag) => ({
-        left: tag.x - 24,
-        right: tag.x + 24,
-        top: tag.y + 6,
-        bottom: tag.y + 60,
+      // A tag's width never changes, so it is measured once, when the tag is made.
+      for (const tag of tags) {
+        if (tagNodes.has(tag.id)) continue;
+        const node = el("span", "tag", tag.name);
+        tagLayer.append(node);
+        tagNodes.set(tag.id, { node, width: node.offsetWidth, transform: "" });
+      }
+      const wishes = tags.map((tag) => ({
+        id: tag.id,
+        x: tag.x,
+        y: tag.y,
+        width: tagNodes.get(tag.id)?.width ?? 0,
       }));
-      const placed: Box[] = [];
-      tags.forEach((tag, index) => {
-        let node = tagNodes.get(tag.id);
-        if (!node) {
-          node = el("span", "tag", tag.name);
-          tagLayer.append(node);
-          tagNodes.set(tag.id, node);
+      for (const [id, { box, spot }] of placeTags(wishes, tagSpots, bounds)) {
+        tagSpots.set(id, spot);
+        const entry = tagNodes.get(id);
+        const transform = `translate(${box.left}px, ${box.top}px)`;
+        if (entry && entry.transform !== transform) {
+          entry.node.style.transform = transform;
+          entry.transform = transform;
         }
-        const width = node.offsetWidth;
-        const left = Math.max(2, Math.min(WORLD_WIDTH - width - 2, Math.round(tag.x - width / 2)));
-        const spot = (rise: number): Box => {
-          const bottom = Math.round(tag.y) + rise;
-          return { left, right: left + width, top: bottom - TAG_HEIGHT, bottom };
-        };
-        const free = (box: Box): boolean =>
-          box.top >= 0 &&
-          !placed.some((other) => overlaps(box, other)) &&
-          !bodies.some((body, k) => k !== index && overlaps(box, body));
-        const box = TAG_RISES.map(spot).find(free) ?? spot(0);
-        placed.push(box);
-        node.style.transform = `translate(${box.left}px, ${box.top}px)`;
-      });
+      }
+
+      // Whoever has left the world leaves the page too.
+      for (const [id, row] of rows) {
+        if (present.has(id)) continue;
+        row.item.remove();
+        rows.delete(id);
+        tagNodes.get(id)?.node.remove();
+        tagNodes.delete(id);
+        tagSpots.delete(id);
+      }
     },
   };
 }
