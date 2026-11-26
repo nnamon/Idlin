@@ -23,12 +23,12 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 
 ## 2. Roles
 
-| Role | Who | Owns |
-|---|---|---|
-| **Conductor** | Mythos 5.2, started by the work-cycle schedule | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties. |
-| **Artist** | Fable 5.2, a child task in its own worktree | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design. |
-| **Reviewer** | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task | An adversarial read of each pull request's diff. If Codex is unavailable, Antigravity `gemini-4-neon`. Never a Claude model: the point is a different family from the builder. |
-| **Watch judge** | Fable 5.2 as a fresh child task (Mythos 5.2 if Fable built the change) | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only. |
+| Role            | Who                                                                    | Owns                                                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Conductor**   | Mythos 5.2, started by the work-cycle schedule                         | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                            |
+| **Artist**      | Fable 5.2, a child task in its own worktree                            | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                       |
+| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task            | An adversarial read of each pull request's diff. If Codex is unavailable, Antigravity `gemini-4-neon`. Never a Claude model: the point is a different family from the builder. |
+| **Watch judge** | Fable 5.2 as a fresh child task (Mythos 5.2 if Fable built the change) | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only.                                                              |
 
 Child tasks are started with T3 Code's `delegate_task`, so each one appears as
 a thread the operator can open. No fan-out and no `Workflow` runs.
