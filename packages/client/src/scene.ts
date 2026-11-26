@@ -17,6 +17,7 @@ import {
   type World,
 } from "@idlin/sim";
 import { drawFigure } from "./figure.ts";
+import { FRAME_HEIGHT, FRAME_WIDTH, PAGE_HEAD, ROSTER_ROWS, ROW_PITCH } from "./frame.ts";
 import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
 import {
   css,
@@ -38,8 +39,6 @@ import { type Ctx, newCanvas } from "./pen.ts";
 import { actorPose, type Pose } from "./pose.ts";
 import { type Box, placeTags, TAG_HEIGHT, tagBox } from "./tags.ts";
 
-export const FRAME_WIDTH = 1920;
-export const FRAME_HEIGHT = 1080;
 const FIGURE_SCALE = 1.3;
 const TAG_FONT = '25px "Fell SC"';
 const FONTS = ['22px "Fell"', '22px "Fell Italic"', TAG_FONT];
@@ -49,8 +48,8 @@ const NEWS_TICKS = 40;
 const LANTERN_REACH = 5.4;
 const FIRE_REACH = 3;
 const CARRIED_REACH = 1.75;
-/** How many residents the page lists by name. */
-const ROSTER_ROWS = 6;
+/** The least room below the map that the line of news needs. */
+const NEWS_STRIP = 60;
 const STANDING: Pose = {
   x: 0,
   y: 0,
@@ -89,6 +88,12 @@ export class Scene {
   /** The map's size in frame pixels; the page and the news line take the rest of the frame. */
   readonly width: number;
   readonly height: number;
+  /** The whole frame's size. 1920 by 1080 unless the window has another shape. */
+  private frameWidth = FRAME_WIDTH;
+  private frameHeight = FRAME_HEIGHT;
+  /** Whether the page sits below the map, and how many columns its residents are listed in. */
+  private pageBelow = false;
+  private columns = 1;
   private readonly out: Ctx;
   private readonly day: Side;
   private readonly night: Side;
@@ -150,6 +155,26 @@ export class Scene {
     return new Scene(host, map, labels);
   }
 
+  /**
+   * Sets the size of the whole frame and where the page goes. The map stays
+   * where it is; the page is beside it, or below it with its residents in
+   * `columns` columns.
+   */
+  resize(width: number, height: number, below = false, columns = 1): void {
+    this.pageBelow = below;
+    this.columns = below ? Math.max(1, Math.min(ROSTER_ROWS, Math.floor(columns))) : 1;
+    const wide = Math.max(below ? this.width : FRAME_WIDTH, Math.floor(width) || 0);
+    const tall = Math.max(this.height, Math.floor(height) || 0);
+    // Setting a canvas's size clears it and takes memory anew, so only when the size changes.
+    if (wide === this.frameWidth && tall === this.frameHeight) return;
+    this.frameWidth = wide;
+    this.frameHeight = tall;
+    for (const sheet of [this.out.canvas, this.day.canvas, this.night.canvas, this.lit.canvas]) {
+      sheet.width = this.frameWidth;
+      sheet.height = this.frameHeight;
+    }
+  }
+
   /** Draws the world as it is at `time` ticks (the world's tick plus a fraction of the next). */
   draw(world: World, time: number): void {
     const fraction = time - world.tick;
@@ -174,14 +199,14 @@ export class Scene {
       // left, and the reach of each lamp. Then show the day drawing through it.
       const lit = this.lit.ctx;
       lit.globalCompositeOperation = "source-over";
-      lit.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+      lit.clearRect(0, 0, this.frameWidth, this.frameHeight);
       if (region.kind === "circle" && region.radius + EDGE > 0) {
         const inner = Math.max(0, region.radius);
         const gradient = lit.createRadialGradient(hx, hy, inner, hx, hy, region.radius + EDGE);
         gradient.addColorStop(0, "rgba(255,255,255,1)");
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
-        lit.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+        lit.fillRect(0, 0, this.frameWidth, this.frameHeight);
       }
       for (const light of lights) {
         const gradient = lit.createRadialGradient(
@@ -211,23 +236,23 @@ export class Scene {
           this.day.canvas,
           this.width,
           0,
-          FRAME_WIDTH - this.width,
-          FRAME_HEIGHT,
+          this.frameWidth - this.width,
+          this.frameHeight,
           this.width,
           0,
-          FRAME_WIDTH - this.width,
-          FRAME_HEIGHT,
+          this.frameWidth - this.width,
+          this.frameHeight,
         );
         out.drawImage(
           this.day.canvas,
           0,
           this.height,
           this.width,
-          FRAME_HEIGHT - this.height,
+          this.frameHeight - this.height,
           0,
           this.height,
           this.width,
-          FRAME_HEIGHT - this.height,
+          this.frameHeight - this.height,
         );
         out.globalAlpha = 1;
       }
@@ -263,7 +288,7 @@ export class Scene {
     const cast = skyCast(hour);
     if (cast.alpha > 0) {
       out.fillStyle = css(cast.color, cast.alpha);
-      out.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+      out.fillRect(0, 0, this.frameWidth, this.frameHeight);
     }
 
     // Lettering goes on last, each piece wholly in day ink or wholly in night
@@ -371,8 +396,8 @@ export class Scene {
 
   /** The frame as just drawn, scaled by `scale` (1 is full size), as RGBA. */
   pixels(scale: number): { width: number; height: number; data: Uint8ClampedArray } {
-    const width = Math.round(FRAME_WIDTH * scale);
-    const height = Math.round(FRAME_HEIGHT * scale);
+    const width = Math.round(this.frameWidth * scale);
+    const height = Math.round(this.frameHeight * scale);
     const { ctx } = newCanvas(width, height);
     ctx.drawImage(this.out.canvas, 0, 0, width, height);
     return { width, height, data: ctx.getImageData(0, 0, width, height).data };
@@ -503,7 +528,7 @@ export class Scene {
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = paper;
-    ctx.fillRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
+    ctx.fillRect(0, 0, this.frameWidth, this.frameHeight);
     ctx.drawImage(ground.base, 0, 0);
 
     // Water moving: short strokes that drift downstream and fade in and out.
@@ -578,8 +603,11 @@ export class Scene {
     style: (id: number, scale: number) => Parameters<typeof drawFigure>[4],
   ): void {
     const ink = css(palette.ink);
-    const left = this.width + 50;
-    const right = FRAME_WIDTH - 40;
+    const below = this.pageBelow;
+    // The page's own corner, and the edges its lines run between.
+    const top0 = below ? this.height : 0;
+    const left = below ? 40 : this.width + 50;
+    const right = this.frameWidth - 40;
     const { day, hour, minute } = clock(world);
     const part = phaseName(hour + minute / 60);
     ctx.fillStyle = ink;
@@ -587,61 +615,75 @@ export class Scene {
     ctx.textAlign = "left";
 
     ctx.font = '76px "Fell SC"';
-    ctx.fillText("Idlin", left, 100);
+    ctx.fillText("Idlin", left, top0 + 100);
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(left, 124);
-    ctx.lineTo(right, 124);
+    ctx.moveTo(left, top0 + 124);
+    ctx.lineTo(right, top0 + 124);
     ctx.stroke();
     ctx.font = '72px "Fell"';
-    ctx.fillText(`${two(hour)}:${two(minute)}`, left, 208);
+    ctx.fillText(`${two(hour)}:${two(minute)}`, left, top0 + 208);
     ctx.font = '30px "Fell Italic"';
-    ctx.fillText(`Day ${day + 1}, ${part}`, left + 2, 252);
+    ctx.fillText(`Day ${day + 1}, ${part}`, left + 2, top0 + 252);
 
+    // Beside the map, the line of news goes below the map if there is room
+    // there. In a frame only as tall as the map it goes at the foot of the
+    // page, and the rows close up a little to leave it room.
+    const strip = !below && this.frameHeight - this.height >= NEWS_STRIP;
+    const pitch = below || strip ? ROW_PITCH : ROW_PITCH - 5;
+    const gap = 40;
+    const columnWidth = (right - left + gap) / this.columns;
     const listed = world.actors.slice(0, ROSTER_ROWS);
-    listed.forEach((actor, row) => {
-      const top = 294 + row * 105;
+    const rows = Math.ceil(listed.length / this.columns);
+    listed.forEach((actor, index) => {
+      const column = index % this.columns;
+      const x0 = left + column * columnWidth;
+      const x1 = x0 + columnWidth - gap;
+      const top = top0 + PAGE_HEAD + Math.floor(index / this.columns) * pitch;
       ctx.globalAlpha = 0.45;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(left, top + 0.5);
-      ctx.lineTo(right, top + 0.5);
+      ctx.moveTo(x0, top + 0.5);
+      ctx.lineTo(x1, top + 0.5);
       ctx.stroke();
       ctx.globalAlpha = 1;
-      drawFigure(ctx, left + 34, top + 92, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
+      drawFigure(ctx, x0 + 34, top + 92, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
       ctx.fillStyle = ink;
       ctx.font = '42px "Fell SC"';
-      ctx.fillText(actor.name, left + 86, top + 46);
+      ctx.fillText(actor.name, x0 + 86, top + 46);
       // What the actor's program is doing, in the program's own words: the label of the rule that fired.
       const label = world.programs[actor.program]?.rules[actor.rule];
       ctx.font = '27px "Fell Italic"';
-      ctx.fillText(
-        actor.fault !== 0 ? "confused" : (label ?? ""),
-        left + 86,
-        top + 82,
-        right - left - 86,
-      );
+      ctx.fillText(actor.fault !== 0 ? "confused" : (label ?? ""), x0 + 86, top + 82, x1 - x0 - 86);
     });
-    const below = 294 + listed.length * 105;
+    const foot = top0 + PAGE_HEAD + rows * pitch;
     ctx.globalAlpha = 0.45;
     ctx.beginPath();
-    ctx.moveTo(left, below + 0.5);
-    ctx.lineTo(right, below + 0.5);
+    ctx.moveTo(left, foot + 0.5);
+    ctx.lineTo(right, foot + 0.5);
     ctx.stroke();
     ctx.globalAlpha = 1;
-    if (world.actors.length > listed.length) {
-      ctx.font = '27px "Fell Italic"';
-      ctx.fillText(`and ${world.actors.length - listed.length} more`, left, below + 40);
-    }
+    const more =
+      world.actors.length > listed.length ? `and ${world.actors.length - listed.length} more` : "";
 
     // The line of news: the last thing a program decided, or the hour if nothing has happened yet.
-    ctx.font = '36px "Fell Italic"';
-    ctx.fillText(
-      this.news === "" ? `Day ${day + 1}, ${part}.` : this.news,
-      28,
-      this.height + 49,
-      this.width - 56,
-    );
+    const line = this.news === "" ? `Day ${day + 1}, ${part}.` : this.news;
+    if (strip) {
+      ctx.font = '36px "Fell Italic"';
+      ctx.fillText(line, 28, this.height + 49, this.width - 56);
+    } else {
+      ctx.font = '30px "Fell Italic"';
+      const y = below ? foot + 62 : this.frameHeight - 26;
+      ctx.fillText(line, left, y, right - left - (below && more ? 240 : 0));
+    }
+    if (more) {
+      ctx.font = '27px "Fell Italic"';
+      if (below) {
+        ctx.textAlign = "right";
+        ctx.fillText(more, right, foot + 62);
+        ctx.textAlign = "left";
+      } else ctx.fillText(more, left, foot + 40);
+    }
   }
 
   /** A fire's flame: three tongues that lean and stretch slowly. */
@@ -677,15 +719,15 @@ export class Scene {
    * flicker: compare the results of two draws.
    */
   brightness(): number[] {
-    const { data } = this.out.getImageData(0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-    const columns = Math.ceil(FRAME_WIDTH / TILE);
-    const rows = Math.ceil(FRAME_HEIGHT / TILE);
+    const { data } = this.out.getImageData(0, 0, this.frameWidth, this.frameHeight);
+    const columns = Math.ceil(this.frameWidth / TILE);
+    const rows = Math.ceil(this.frameHeight / TILE);
     const sums = new Array<number>(columns * rows).fill(0);
     const counts = new Array<number>(columns * rows).fill(0);
-    for (let y = 0; y < FRAME_HEIGHT; y++) {
+    for (let y = 0; y < this.frameHeight; y++) {
       const row = Math.floor(y / TILE) * columns;
-      for (let x = 0; x < FRAME_WIDTH; x++) {
-        const i = (y * FRAME_WIDTH + x) * 4;
+      for (let x = 0; x < this.frameWidth; x++) {
+        const i = (y * this.frameWidth + x) * 4;
         const cell = row + Math.floor(x / TILE);
         sums[cell] =
           (sums[cell] as number) +

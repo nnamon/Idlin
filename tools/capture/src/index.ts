@@ -2,7 +2,7 @@
 // headless Chromium in capture mode (the page draws only when told to), steps
 // the world to each requested moment and saves a frame.
 //
-//   node tools/capture/src/index.ts <out-dir> [name:hour[:ticks[:width]]]...
+//   node tools/capture/src/index.ts <out-dir> [name:hour[:ticks[:width[:height]]]]...
 //   node tools/capture/src/index.ts <out-dir> --review [--baseline <dir>]
 //
 // The first form saves the named frames: `hour` is the game hour the world is
@@ -90,12 +90,21 @@ async function open(hour: number | string, residents = 6): Promise<void> {
 }
 
 for (const shot of wanted) {
-  // name:hour[:ticks[:width]] — a width other than 1920 shows the frame as a smaller window would.
-  const [name = "shot", hour = "6", ticks = "0", width = "1920"] = shot.split(":");
-  await page.setViewportSize({
+  // name:hour[:ticks[:width[:height]]]. A width other than 1920 shows the frame as a smaller
+  // window would; a height that is not 9/16 of it shows how the frame fills another shape.
+  const [name = "shot", hour = "6", ticks = "0", width = "1920", height] = shot.split(":");
+  const size = {
     width: Number(width),
-    height: Math.round((Number(width) * 9) / 16),
-  });
+    height: height === undefined ? Math.round((Number(width) * 9) / 16) : Number(height),
+  };
+  const whole = (n: number): boolean => Number.isInteger(n) && n >= 1 && n <= 8000;
+  if (!whole(size.width) || !whole(size.height) || !(Number(ticks) >= 0)) {
+    console.error(`"${shot}" is not name:hour[:ticks[:width[:height]]] with sizes from 1 to 8000`);
+    await browser.close();
+    server.close();
+    process.exit(2);
+  }
+  await page.setViewportSize(size);
   await open(hour);
   await page.evaluate(
     (n) => (window as unknown as { idlin: Idlin }).idlin.advance(n),

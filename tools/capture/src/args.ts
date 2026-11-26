@@ -2,7 +2,7 @@
 
 export interface Args {
   readonly outDir: string;
-  /** Named single frames, as `name:hour[:ticks[:width]]`. */
+  /** Named single frames, as `name:hour[:ticks[:width[:height]]]`. */
   readonly shots: readonly string[];
   readonly review: boolean;
   /** A folder holding an earlier review's storyboard to compare with. */

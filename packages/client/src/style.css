@@ -19,7 +19,9 @@ body {
   overflow: hidden;
 }
 
-/* The stream frame is drawn at 1920x1080 and scaled as a whole to fit the window. */
+/* The frame is laid out for 1920x1080 and scaled as a whole; main.ts widens or
+   lengthens it where the window is not 16:9, so it fills the window. Past the
+   cap in frame.ts (windows of extreme shape) it stops and this background shows. */
 #frame {
   position: absolute;
   left: 0;

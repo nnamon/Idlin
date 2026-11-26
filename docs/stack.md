@@ -36,7 +36,7 @@ docker compose run --rm capture captures/review --review       # the watch-revie
 - `capture` is the Playwright image. It serves the built viewer, opens it in
   capture mode (`?capture`: the page draws only when told to, so a frame is a
   pure function of seed and tick) and saves frames. Arguments after the output
-  folder are `name:hour[:ticks[:width]]`. It also prints a flicker index.
+  folder are `name:hour[:ticks[:width[:height]]]`. It also prints a flicker index.
 - The service for the server is added together with its package.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.

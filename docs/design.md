@@ -178,9 +178,13 @@ light where it sits, so they don't fade out at the edge of a lamp. A name
 that has to move aside for another figure gets a short stroke back to its
 owner.
 
-The frame is 16:9. The map is on the left. On the right is a page with the
-clock and the residents, each with the rule its program is following. Along
-the bottom is one line saying what a program last decided. The page and the
+The frame is designed for 16:9, which is what a stream shows. The map is on
+the left. On the right is a page with the clock and the residents, each with
+the rule its program is following. Along the bottom is one line saying what a
+program last decided. In a window of another shape the frame fills the window
+instead of leaving a bar: a wider one gets the map at full height and a wider
+page with the line of news on it, and one much taller than 16:9 (about
+6:5 or narrower) gets the page below the map. The page and the
 bottom line don't take part in the moving edge: they change between day and
 night ink in one go, over about three seconds, halfway through the turn. The
 typeface is IM Fell English.

@@ -15,8 +15,9 @@ import {
 } from "@idlin/sim";
 import { beforeAll, describe, expect, it } from "vitest";
 import mapJson from "../../../content/maps/first-light.json";
+import { FRAME_HEIGHT, FRAME_WIDTH } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
-import { FRAME_HEIGHT, FRAME_WIDTH, Scene } from "./scene.ts";
+import { Scene } from "./scene.ts";
 
 interface Call {
   readonly op: string;
@@ -60,6 +61,8 @@ function fakeCanvas(): FakeCanvas {
       return true;
     },
   });
+  // A real context knows its canvas.
+  state.canvas = canvas;
   canvases.push(canvas);
   return canvas;
 }
@@ -77,7 +80,7 @@ const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
 const PROGRAMS = ["wanderer", "homebody", "riverwalker"];
 
-function newWorld(): World {
+function newWorld(residents = 6): World {
   const dir = new URL("../../../content/bots/", import.meta.url);
   const sources = Object.fromEntries(
     readdirSync(dir)
@@ -89,7 +92,10 @@ function newWorld(): World {
     world,
     spawnsNearCamp(
       world,
-      NAMES.map((name, i) => ({ name, program: PROGRAMS[i % 3] as string })),
+      Array.from({ length: residents }, (_, i) => ({
+        name: NAMES[i] ?? `Extra${i}`,
+        program: PROGRAMS[i % 3] as string,
+      })),
     ),
   );
   return world;
@@ -197,6 +203,68 @@ describe("the scene", () => {
     // While the dark is still closing in, all of it is drawn.
     expect(nightfall.daySheet.some((call) => call.op === "clip")).toBe(false);
     expect(nightfall.daySheet.length).toBeGreaterThan(50);
+  });
+
+  it("fills a wider frame: the sheets grow and the page's rules run to the new edge", async () => {
+    const { scene, out, day } = await newScene();
+    const world = newWorld();
+    scene.observe(world);
+    const reach = (calls: Call[]): number =>
+      Math.max(...calls.filter((c) => c.op === "lineTo").map((c) => c.args[0] as number));
+    const plain = reach(drawn(day, () => scene.draw(world, world.tick)));
+    expect(plain).toBe(FRAME_WIDTH - 40);
+    scene.resize(2200, FRAME_HEIGHT);
+    expect([out.width, out.height, day.width]).toEqual([2200, FRAME_HEIGHT, 2200]);
+    expect(reach(drawn(day, () => scene.draw(world, world.tick)))).toBe(2200 - 40);
+    // Everything that paints or copies the whole frame follows its new size.
+    const paper = (calls: Call[]): Call | undefined => calls.find((c) => c.op === "fillRect");
+    expect(paper(drawn(day, () => scene.draw(world, world.tick)))?.args).toEqual([
+      0,
+      0,
+      2200,
+      FRAME_HEIGHT,
+    ]);
+    // 06:00 has a rose cast over the whole frame.
+    const tint = drawn(out, () => scene.draw(world, world.tick)).findLast(
+      (c) => c.op === "fillRect",
+    );
+    expect(tint?.args).toEqual([0, 0, 2200, FRAME_HEIGHT]);
+    // Never narrower than the plain frame, nor shorter than the map.
+    scene.resize(800, 600);
+    expect([out.width, out.height]).toEqual([FRAME_WIDTH, map.height * 48]);
+    // In a frame only as tall as the map, the line of news is written on the page, not below the map.
+    const news = (calls: Call[]): Call | undefined =>
+      calls.findLast((c) => c.op === "fillText" && String(c.args[0]).startsWith("Day 1"));
+    scene.resize(2200, map.height * 48);
+    const onPage = news(drawn(day, () => scene.draw(world, world.tick)));
+    expect(onPage?.args[1]).toBeGreaterThan(map.width * 48);
+    expect(onPage?.args[2]).toBeLessThan(map.height * 48);
+    // With the page below the map, everything on it is drawn under the map, in columns.
+    scene.resize(map.width * 48, 2000, true, 3);
+    const under = drawn(day, () => scene.draw(world, world.tick));
+    const names = under.filter((c) => c.op === "fillText" && NAMES.includes(String(c.args[0])));
+    expect(names).toHaveLength(6);
+    for (const name of names) expect(name.args[2]).toBeGreaterThan(map.height * 48);
+    expect(new Set(names.map((c) => c.args[1])).size).toBe(3);
+    // Every column is inside the frame, with room for a name.
+    for (const name of names) expect(name.args[1]).toBeLessThan(map.width * 48 - 300);
+    expect(new Set(names.map((c) => c.args[2])).size).toBe(2);
+    expect(news(under)?.args[2]).toBeGreaterThan(map.height * 48);
+    scene.resize(FRAME_WIDTH, FRAME_HEIGHT);
+    const below = news(drawn(day, () => scene.draw(world, world.tick)));
+    // In a map-high frame with more residents than the page lists, the rows close up so
+    // that "and N more" and the line of news, written one under the other, do not touch.
+    const crowd = newWorld(12);
+    const crowded = await newScene();
+    crowded.scene.observe(crowd);
+    crowded.scene.resize(2200, map.height * 48);
+    const foot = drawn(crowded.day, () => crowded.scene.draw(crowd, crowd.tick));
+    const more = foot.find((c) => c.op === "fillText" && c.args[0] === "and 6 more");
+    const line = news(foot);
+    // A 30-pixel line of italic needs about 40 pixels clear above its baseline.
+    expect((line?.args[2] as number) - (more?.args[2] as number)).toBeGreaterThanOrEqual(40);
+    expect(below?.args[1]).toBeLessThan(map.width * 48);
+    expect(below?.args[2]).toBeGreaterThan(map.height * 48);
   });
 
   it("carries the river's banks past the edge of the map instead of rounding them off", async () => {

@@ -11,8 +11,9 @@ import {
 } from "@idlin/sim";
 import mapJson from "../../../content/maps/first-light.json";
 import { castOf } from "./cast.ts";
+import { fitFrame } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
-import { FRAME_HEIGHT, FRAME_WIDTH, Scene } from "./scene.ts";
+import { Scene } from "./scene.ts";
 import "./style.css";
 
 /** The shipped programs' source, by file name without the extension. */
@@ -36,7 +37,7 @@ export interface CaptureApi {
   advance(ticks: number): void;
   /** Mean brightness of the frame, one value per tile-sized block. */
   brightness(): number[];
-  /** The frame scaled by `scale` (1 is 1920 by 1080), as base64 RGBA, with its size. */
+  /** The frame scaled by `scale` (1 is the frame's own size, 1920 by 1080 in a 16:9 window), as base64 RGBA, with its size. */
   pixels(scale: number): { width: number; height: number; rgba: string };
   /** The world's tick, and who is in it. */
   state(): { tick: number; actors: { id: number; name: string }[] };
@@ -61,12 +62,6 @@ async function main(): Promise<void> {
   const startHour = Number.parseFloat(params.get("hour") ?? String(START_HOUR));
 
   const frame = must("frame");
-  const fit = (): void => {
-    const scale = Math.min(innerWidth / FRAME_WIDTH, innerHeight / FRAME_HEIGHT);
-    frame.style.transform = `scale(${scale})`;
-  };
-  fit();
-  addEventListener("resize", fit);
 
   const map = parseMap(mapJson);
   const world = createWorld(map, seed, compileBots(botSources(), placeConstants(map)));
@@ -78,6 +73,25 @@ async function main(): Promise<void> {
 
   const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
   const scene = await Scene.create(frame, world.map, labels);
+  // The frame fills the window: scaled as a whole, and wider or taller than 16:9 where the window is.
+  const fit = (): void => {
+    const { width, height, scale, below, columns } = fitFrame(
+      innerWidth,
+      innerHeight,
+      scene.width,
+      scene.height,
+    );
+    scene.resize(width, height, below, columns);
+    frame.style.width = `${width}px`;
+    frame.style.height = `${height}px`;
+    frame.style.transform = `scale(${scale})`;
+  };
+  fit();
+  addEventListener("resize", () => {
+    fit();
+    // In capture mode nothing else would redraw.
+    if (params.has("capture")) scene.draw(world, world.tick);
+  });
   const draw = (fraction: number): void => scene.draw(world, world.tick + fraction);
   const tick = (): void => {
     step(world);
