@@ -44,6 +44,8 @@ export function drawFigure(
   }
   ctx.globalAlpha = 1;
 
+  // Leaning: the body slants about its feet, which stay where they are.
+  if (pose.lean !== 0) ctx.transform(1, 0, -pose.lean, 1, 0, 0);
   ctx.scale(style.facing, 1);
   // A resting figure sits: lower, its legs folding away as it goes down.
   const sit = pose.sit * 7;

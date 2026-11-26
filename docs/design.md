@@ -164,6 +164,32 @@ what tell them apart, so they are also how a viewer finds their own. A figure th
 has a while to wait sits down, sinking over a few ticks rather than dropping
 at once, and gets up the same way.
 
+Small effects show what the residents are doing. Each is read off the world
+once a tick, from how an actor changed since the last one, and drawn from that
+and the time alone, with no randomness of its own; they are pen strokes,
+never fills, and come in and go out over at least three ticks
+(`packages/client/src/effects.ts`, drawn by `marks.ts`). A figure setting off
+or pulling up leans back over three ticks, snaps forward in one and settles
+upright over three. For residents with a name slip there are two more, and
+both fade with the slip. When the rule in charge changes, a glyph about 28
+pixels across appears on a tab of the slip's paper to the left of the name: two
+footprints for a walk, a tent for a walk that ends within five steps of camp, a
+new moon for a rest, a question mark when the program faulted. It comes in
+over one tick, stays at full ink and fades over the last four of its 16 ticks.
+When a walk starts, a dashed line in the walker's cloak colour runs from its
+feet along the whole of what is left of its path, through the middle of each
+tile (so over a bridge's deck), to a small cross where the walk ends. The route
+goes all the way to the destination so a viewer can see where a resident is
+going, not only which way it set off. It wobbles like the map's own lines,
+seeded by the resident and the destination so it holds still from frame to
+frame, and routes drawn at the same time each take their own lane, a few
+pixels apart, so two on one path stay two lines. It breaks around place names
+and slips. The walker uses it up as it goes; after 14 ticks what is left is
+taken up from the walker's end over 10 more, and once the line is gone, or the
+walk ends, the cross fades over three ticks. After a gap in the ticks, as when
+a live viewer reconnects, or after the world goes back in time, nothing starts
+from the change across the gap.
+
 A few things move while no one does: the river's ripples drift downstream, a
 thin line of smoke rises from the camp fire and leans east, and the tops of
 the trees lean a little in a slow breeze from the west.

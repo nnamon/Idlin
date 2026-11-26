@@ -16,8 +16,10 @@ import {
 } from "@idlin/sim";
 import { beforeAll, describe, expect, it } from "vitest";
 import mapJson from "../../../content/maps/first-light.json";
+import { type Effects, glyphAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
 import { FRAME_HEIGHT, FRAME_WIDTH, ROW_PITCH, spreadPage } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
+import { identity } from "./identity.ts";
 import { css } from "./light.ts";
 import { DAY, NIGHT } from "./palette.ts";
 import { actorPose } from "./pose.ts";
@@ -30,6 +32,9 @@ interface Call {
   readonly args: readonly unknown[];
   /** For lettering, the fill colour in force when it was drawn. */
   readonly fill: unknown;
+  /** For strokes, the alpha and the stroke colour in force. */
+  readonly alpha?: unknown;
+  readonly ink?: unknown;
 }
 
 interface FakeCanvas {
@@ -54,6 +59,7 @@ function fakeCanvas(): FakeCanvas {
           op: key,
           args: args.map((arg) => (typeof arg === "object" ? "object" : arg)),
           fill: key === "fillText" ? state.fillStyle : undefined,
+          ...(key === "stroke" ? { alpha: state.globalAlpha ?? 1, ink: state.strokeStyle } : {}),
         });
         // 13 pixels a letter, and the letter spacing in force after each.
         if (key === "measureText")
@@ -91,14 +97,14 @@ const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
 const PROGRAMS = ["wanderer", "homebody", "riverwalker"];
 
-function newWorld(residents = 6): World {
+function newWorld(residents = 6, seed = 1): World {
   const dir = new URL("../../../content/bots/", import.meta.url);
   const sources = Object.fromEntries(
     readdirSync(dir)
       .filter((file) => file.endsWith(".tac"))
       .map((file) => [file.slice(0, -4), readFileSync(new URL(file, dir), "utf8")]),
   );
-  const world = createWorld(map, 1, compileBots(sources, placeConstants(map)));
+  const world = createWorld(map, seed, compileBots(sources, placeConstants(map)));
   step(
     world,
     spawnsNearCamp(
@@ -118,6 +124,7 @@ async function newScene(): Promise<{
   out: FakeCanvas;
   day: FakeCanvas;
   lit: FakeCanvas;
+  night: FakeCanvas;
 }> {
   install();
   const scene = await Scene.create(
@@ -132,6 +139,7 @@ async function newScene(): Promise<{
     out: sheets[0] as FakeCanvas,
     day: sheets[1] as FakeCanvas,
     lit: sheets[3] as FakeCanvas,
+    night: sheets[2] as FakeCanvas,
   };
 }
 
@@ -145,12 +153,44 @@ function drawn(sheet: FakeCanvas, draw: () => void): Call[] {
 // Ticks from the 06:00 start to a little into nightfall, and on to midnight.
 const TO_NIGHTFALL = Math.round((20.1 - 6) * 600);
 const TO_MIDNIGHT = 18 * 600;
+/** Ticks from the start to 19:00. */
+const EVENING = 13 * 600;
+
+/** Routes drawn in a draw's calls on a sheet: where each ends, at the walker's feet. */
+function routes(calls: readonly Call[]): [number, number][] {
+  const dashes = calls.flatMap((call, at) => (call.op === "setLineDash" ? [at] : []));
+  const ends: [number, number][] = [];
+  for (let i = 0; i + 1 < dashes.length; i += 2) {
+    const end = calls
+      .slice(dashes[i], dashes[i + 1])
+      .findLast((call) => call.op === "lineTo") as Call;
+    ends.push([end.args[0] as number, end.args[1] as number]);
+  }
+  return ends;
+}
+
+/** A name's slip of paper. The tab a glyph sits on beside it is rounded on one side only. */
+const isSlip = (call: Call): boolean => call.op === "roundRect" && typeof call.args[4] === "number";
+
+/** The clip that keeps the day sheet to the lamps' reach; a route's clip around lettering is even-odd. */
+const lampClip = (call: Call): boolean => call.op === "clip" && call.args.length === 0;
+
+/** Glyphs drawn on slips: each is drawn moved into place, among the lettering. */
+function glyphs(calls: readonly Call[]): number {
+  const lettering = calls.findIndex((call) => call.op === "fillText");
+  return calls.slice(lettering).filter((call) => call.op === "translate").length;
+}
 
 describe("the scene", () => {
   let nightfall: { frame: Call[]; daySheet: Call[] };
   let midnight: { frame: Call[]; daySheet: Call[] };
   /** The same moments drawn by a scene that had drawn before and by one that had not. */
-  const pairs: { watched: Call[]; unwatched: Call[] }[] = [];
+  const pairs: {
+    watched: Call[];
+    unwatched: Call[];
+    watchedSheets: Call[];
+    unwatchedSheets: Call[];
+  }[] = [];
 
   beforeAll(async () => {
     // Two scenes follow the same world. One draws often, at whole ticks and
@@ -173,13 +213,27 @@ describe("the scene", () => {
       watched.scene.observe(world);
       unwatched.scene.observe(world);
       // The first minute, when all six leave camp in a knot and names have to make room,
-      // and the last one, when they are back round the fire.
-      if (tick <= 600 || tick > TO_MIDNIGHT - 600) {
+      // and the last one, when they are back round the fire. And the minutes
+      // after 19:00, when the homebodies turn for camp and the rule in charge
+      // changes: compared more often there, since a glyph is up for 10 ticks.
+      const evening = tick > EVENING && tick <= EVENING + 300;
+      if (tick <= 600 || tick > TO_MIDNIGHT - 600 || evening) {
         watched.scene.draw(world, world.tick + 0.4);
-        if (tick % 50 === 0) {
+        if (tick % 50 === 0 || (evening && tick % 5 === 0)) {
+          // The frame, and the day and night drawings it is made from, where the figures are.
+          const all = (s: typeof watched) => {
+            s.day.calls = [];
+            s.night.calls = [];
+            const frame = [...drawn(s.out, () => s.scene.draw(world, world.tick))];
+            return { frame, sheets: [...s.day.calls, ...s.night.calls] };
+          };
+          const a = all(watched);
+          const b = all(unwatched);
           pairs.push({
-            watched: [...drawn(watched.out, () => watched.scene.draw(world, world.tick))],
-            unwatched: [...drawn(unwatched.out, () => unwatched.scene.draw(world, world.tick))],
+            watched: a.frame,
+            unwatched: b.frame,
+            watchedSheets: a.sheets,
+            unwatchedSheets: b.sheets,
           });
         }
       }
@@ -189,14 +243,29 @@ describe("the scene", () => {
   }, 120_000);
 
   it("draws the same frame whether or not earlier frames were drawn", () => {
-    expect(pairs).toHaveLength(24);
+    expect(pairs).toHaveLength(24 + 60);
     for (const pair of pairs) {
       expect(pair.watched.length).toBeGreaterThan(50);
       expect(pair.unwatched).toEqual(pair.watched);
+      expect(pair.unwatchedSheets).toEqual(pair.watchedSheets);
     }
-    // The comparison means something only if names did have to move aside at some point.
+    // Glyphs, routes and beats were among what was compared. A beat slants a
+    // figure just before it is turned to face its way.
+    expect(pairs.filter(({ watched }) => glyphs(watched) > 0).length).toBeGreaterThan(0);
+    expect(
+      pairs.filter(({ watchedSheets }) => routes(watchedSheets).length > 0).length,
+    ).toBeGreaterThan(0);
+    const leaning = (calls: Call[]) =>
+      calls.some(
+        (call, at) =>
+          call.op === "transform" && call.args[2] !== 0 && calls[at + 1]?.op === "scale",
+      );
+    expect(pairs.filter(({ watchedSheets }) => leaning(watchedSheets)).length).toBeGreaterThan(0);
+    // The comparison means something only if names did have to move aside at
+    // some point. Glyphs are drawn moved into place, so their strokes are near 0.
     const leaders = pairs.map(
-      ({ watched }) => watched.filter((call) => call.op === "lineTo").length,
+      ({ watched }) =>
+        watched.filter((call) => call.op === "lineTo" && (call.args[0] as number) > 20).length,
     );
     expect(Math.max(...leaders)).toBeGreaterThan(0);
   });
@@ -212,7 +281,7 @@ describe("the scene", () => {
       // Nothing that fades is in force while lettering goes on.
       for (const { call } of texts) expect(String(call.fill)).toMatch(/^rgba\(.*, (1|0\.8)\)$/);
       // Each name's slip of paper reaches 21 pixels above the name's baseline.
-      const slips = frame.flatMap((call, at) => (call.op === "roundRect" ? [at] : []));
+      const slips = frame.flatMap((call, at) => (isSlip(call) ? [at] : []));
       expect(slips).toHaveLength(NAMES.length);
       for (const at of slips) {
         const name = frame.slice(at).find((call) => call.op === "fillText") as Call;
@@ -222,14 +291,14 @@ describe("the scene", () => {
   });
 
   it("at full night draws the day sheet only where a lamp reaches", () => {
-    const clips = midnight.daySheet.filter((call) => call.op === "clip");
+    const clips = midnight.daySheet.filter(lampClip);
     expect(clips).toHaveLength(1);
     const before = midnight.daySheet.slice(0, midnight.daySheet.indexOf(clips[0] as Call));
     // One circle per light: the lantern, the fire and one carried by each resident.
     expect(before.filter((call) => call.op === "arc")).toHaveLength(2 + NAMES.length);
     expect(before.some((call) => call.op === "fillRect" || call.op === "drawImage")).toBe(false);
     // While the dark is still closing in, all of it is drawn.
-    expect(nightfall.daySheet.some((call) => call.op === "clip")).toBe(false);
+    expect(nightfall.daySheet.some(lampClip)).toBe(false);
     expect(nightfall.daySheet.length).toBeGreaterThan(50);
   });
 
@@ -379,15 +448,136 @@ describe("the scene", () => {
     expect(counts.filter((n) => n === 8).length).toBeGreaterThan(counts.length * 0.8);
   }, 60_000);
 
+  it("draws glyphs and routes only for residents with a name slip", async () => {
+    // Twelve residents and eight slips: four go without. A second record of the
+    // effects, kept here, says who had a glyph or a route under way.
+    const twelve = newWorld(12);
+    const { scene, out, day } = await newScene();
+    const camp = placeConstants(map).camp as { x: number; y: number };
+    let effects = NO_EFFECTS;
+    scene.observe(twelve);
+    effects = nextEffects(effects, twelve.actors, twelve.tick, camp);
+    let routesDrawn = 0;
+    let glyphsDrawn = 0;
+    let routesWithout = 0;
+    let glyphsWithout = 0;
+    let fading = 0;
+    for (let tick = 1; tick <= EVENING + 300; tick++) {
+      step(twelve);
+      scene.observe(twelve);
+      effects = nextEffects(effects, twelve.actors, twelve.tick, camp);
+      if (tick % 5 !== 0 || (tick > 900 && tick <= EVENING)) continue;
+      day.calls = [];
+      const frame = drawn(out, () => scene.draw(twelve, twelve.tick));
+      const named = new Set(
+        frame
+          .filter((c) => c.op === "fillText" && (c.args[1] as number) < map.width * 48)
+          .map((c) => String(c.args[0])),
+      );
+      const time = twelve.tick;
+      const slips = (scene as unknown as { slips: Slips }).slips;
+      const walking = (a: Actor) => a.path.length > 0 || a.moveTicksLeft > 0;
+      const withRoute = twelve.actors.filter(
+        (a) => walking(a) && (routeAt(effects, a.id, time)?.line ?? 0) > 0,
+      );
+      const withGlyph = twelve.actors.filter((a) => glyphAt(effects, a.id, time));
+      routesWithout += withRoute.filter((a) => !named.has(a.name)).length;
+      glyphsWithout += withGlyph.filter((a) => !named.has(a.name)).length;
+      // A route not yet being taken up starts at the feet of a walker whose name
+      // is on the map, on the line routes run along. Residents walk through each
+      // other, so two may stand on the one spot.
+      const ends = routes(day.calls);
+      for (const a of withRoute.filter(
+        (a) => named.has(a.name) && routeAt(effects, a.id, time)?.eaten === 0,
+      )) {
+        const pose = actorPose(a, 0, time);
+        const feet = ends.some(
+          ([x, y]) => Math.abs(pose.x * 48 - x) < 0.01 && Math.abs(pose.y * 48 - 19.2 - y) < 0.01,
+        );
+        expect(feet).toBe(true);
+      }
+      expect(ends).toHaveLength(withRoute.filter((a) => named.has(a.name)).length);
+      expect(glyphs(frame)).toBe(withGlyph.filter((a) => named.has(a.name)).length);
+      routesDrawn += ends.length;
+      glyphsDrawn += glyphs(frame);
+      // Both fade with the slip: the alpha each is stroked at carries the slip's.
+      frame.forEach((call, at) => {
+        if (call.op !== "translate" || at < frame.findIndex((c) => c.op === "fillText")) return;
+        const name = frame.slice(0, at).findLast((c) => c.op === "fillText")?.args[0];
+        const who = twelve.actors.find((a) => a.name === name) as Actor;
+        const stroke = frame.slice(at).find((c) => c.op === "stroke") as Call;
+        const slip = slipAlpha(slips, who.id, time);
+        expect(stroke.alpha).toBeCloseTo(slip * (glyphAt(effects, who.id, time)?.alpha ?? 0));
+        if (slip < 1) fading++;
+      });
+      const dashed = day.calls.flatMap((call, at) =>
+        call.op === "setLineDash" && day.calls[at + 1]?.op === "beginPath"
+          ? [day.calls.slice(at).find((c) => c.op === "stroke") as Call]
+          : [],
+      );
+      for (const stroke of dashed) {
+        // A route is in its walker's cloak colour, at 0.75 of the slip's alpha at most.
+        const owners = withRoute.filter((a) => identity(a.id).cloak === stroke.ink);
+        const expected = owners.map(
+          (a) => 0.75 * slipAlpha(slips, a.id, time) * (routeAt(effects, a.id, time)?.line ?? 0),
+        );
+        expect(expected.some((e) => Math.abs(e - (stroke.alpha as number)) < 1e-9)).toBe(true);
+        if (owners.some((a) => slipAlpha(slips, a.id, time) < 1)) fading++;
+      }
+    }
+    // Both were drawn, and both were also under way for someone with no slip and left out.
+    expect([routesDrawn, glyphsDrawn].every((n) => n > 0)).toBe(true);
+    expect([routesWithout, glyphsWithout].every((n) => n > 0)).toBe(true);
+    // Some were drawn while their slip was fading.
+    expect(fading).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("shows no effect from before a rewind", async () => {
+    // One scene follows a world into the evening, then is handed a different
+    // world from earlier, as a server restarted from a snapshot would. From then
+    // on it must draw what a scene that only ever saw the second world draws.
+    const first = newWorld();
+    const rewound = await newScene();
+    rewound.scene.observe(first);
+    // On into the evening, until a glyph has just come up on someone's slip.
+    const inside = rewound.scene as unknown as { effects: Effects; slips: Slips };
+    const justBegun = () =>
+      [...inside.effects.glyphs].some(
+        ([id, { since }]) => since === first.tick && inside.slips.held.has(id),
+      );
+    while (first.tick < EVENING || !justBegun()) {
+      step(first);
+      rewound.scene.observe(first);
+    }
+    expect(first.tick).toBeLessThan(EVENING + 600);
+    // Back eight ticks, to a world with another seed that goes its own way: the
+    // glyph would come due again there if it were kept.
+    const second = newWorld(6, 2);
+    while (second.tick < first.tick - 8) step(second);
+    const fresh = await newScene();
+    for (let tick = 0; tick < 40; tick++) {
+      step(second);
+      rewound.scene.observe(second);
+      fresh.scene.observe(second);
+      for (const time of [second.tick, second.tick + 0.5]) {
+        // The frame, and the day drawing, where routes go.
+        const both = (s: typeof fresh) => {
+          s.day.calls = [];
+          const frame = drawn(s.out, () => s.scene.draw(second, time));
+          return [...frame, ...s.day.calls];
+        };
+        expect(both(rewound)).toEqual(both(fresh));
+      }
+    }
+  }, 60_000);
+
   it("puts no slip over another, a place name, the fire or the lantern, in a crowd at camp", async () => {
     type Inside = { avoid: Box[] };
     const slipsOf = (calls: Call[]): Box[] =>
-      calls
-        .filter((c) => c.op === "roundRect")
-        .map((c) => {
-          const [x, y, w, h] = c.args as [number, number, number, number];
-          return { left: x, right: x + w, top: y, bottom: y + h } as Box;
-        });
+      calls.filter(isSlip).map((c) => {
+        const [x, y, w, h] = c.args as [number, number, number, number];
+        return { left: x, right: x + w, top: y, bottom: y + h } as Box;
+      });
     const covers = (a: Box, b: Box): boolean =>
       a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
     // Twelve standing together at camp on their first tick.
@@ -465,7 +655,7 @@ describe("the scene", () => {
         const calls = drawn(out, () => scene.draw(twelve, time));
         // Each slip of paper, and whose it is: the name written on it next.
         const drawnSlips = calls.flatMap((call, at) => {
-          if (call.op !== "roundRect") return [];
+          if (!isSlip(call)) return [];
           const name = calls.slice(at).find((c) => c.op === "fillText")?.args[0];
           const actor = twelve.actors.find((a) => a.name === name);
           const [x, y, w, h] = call.args as [number, number, number, number];
@@ -620,7 +810,7 @@ describe("the scene", () => {
       scene.observe(crowd);
       if (i % 10 !== 9) continue;
       const strokes = drawn(out, () => scene.draw(crowd, crowd.tick)).filter(
-        (c) => c.op === "lineTo",
+        (c) => c.op === "lineTo" && (c.args[0] as number) > 20,
       ).length;
       const aside = crowd.actors.filter(
         (actor) =>

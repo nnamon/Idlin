@@ -25,6 +25,11 @@ export interface Pose {
    * otherwise; the scene eases it over a few ticks with `easeSit`.
    */
   readonly sit: number;
+  /**
+   * The slant of the body about its feet, as a shear: positive leans the top
+   * east. `actorPose` gives 0; the scene sets it from the beats in effects.ts.
+   */
+  readonly lean: number;
 }
 
 /** How much of the way into or out of sitting a figure moves in one tick. */
@@ -59,5 +64,6 @@ export function actorPose(actor: Actor, fraction: number, time: number): Pose {
     moving,
     resting,
     sit: resting ? 1 : 0,
+    lean: 0,
   };
 }

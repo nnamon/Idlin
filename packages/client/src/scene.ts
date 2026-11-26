@@ -16,6 +16,7 @@ import {
   type TileMap,
   type World,
 } from "@idlin/sim";
+import { type Effects, glyphAt, leanAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
 import { drawFigure } from "./figure.ts";
 import {
   FRAME_HEIGHT,
@@ -42,6 +43,7 @@ import {
   phaseName,
   skyCast,
 } from "./light.ts";
+import { drawGlyph, drawRoute, eat, ROUTE_ROW, routeLine, routePoint } from "./marks.ts";
 import { DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas } from "./pen.ts";
 import { actorPose, easeSit, type Pose } from "./pose.ts";
@@ -76,7 +78,13 @@ const STANDING: Pose = {
   moving: false,
   resting: false,
   sit: 0,
+  lean: 0,
 };
+/** How strong a route's dashes are at their strongest. */
+const ROUTE_ALPHA = 0.75;
+/** How big a glyph is on its slip, and how wide the paper beside the name it sits on. */
+const GLYPH_SIZE = 28;
+const GLYPH_ROOM = 36;
 
 interface Walker {
   readonly actor: Actor;
@@ -150,6 +158,8 @@ export class Scene {
   private readonly labelDay: boolean[] = [];
   /** Half the width of each place label, as kept clear of names. */
   private readonly labelHalf: number[] = [];
+  /** Where each place label's lettering is, which a route breaks around. */
+  private readonly labelBoxes: Box[] = [];
   /** The tick of the world last observed, to notice when time goes back. */
   private lastTick = Number.NEGATIVE_INFINITY;
   /** A short line on the page beside the clock, such as "waiting for the world"; empty for none. */
@@ -158,8 +168,14 @@ export class Scene {
   clockShown = true;
   /** How far down into sitting each figure is, at the tick before last and at the last tick. */
   private readonly sitting = new Map<number, readonly [number, number]>();
+  /** Glyphs, routes and beats under way; see effects.ts. */
+  private effects: Effects = NO_EFFECTS;
+  /** The camp's tile, which a walk home ends at. */
+  private readonly home: { x: number; y: number };
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
+    const camp = map.places.find((place) => place.name === "camp");
+    this.home = camp ? { x: camp.x, y: camp.y } : { x: 0, y: 0 };
     this.width = map.width * TILE;
     this.height = map.height * TILE;
     const { canvas, ctx } = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
@@ -186,12 +202,14 @@ export class Scene {
       const measured = Math.ceil(ctx.measureText(label.text).width / 2) + 4;
       const half = Math.max(measured, label.text.length * (label.style === "town" ? 7 : 8));
       this.labelHalf.push(half);
-      this.avoid.push({
+      const box = {
         left: label.x * TILE - half,
         right: label.x * TILE + half,
         top: label.y * TILE - 24,
         bottom: label.y * TILE + 6,
-      });
+      };
+      this.avoid.push(box);
+      this.labelBoxes.push(box);
     }
     ctx.letterSpacing = "0px";
     const lantern = this.day.ground.lanterns[0];
@@ -237,7 +255,11 @@ export class Scene {
       const raw = actorPose(actor, fraction, time);
       // Between ticks the figure goes on easing down or up, so it never steps.
       const [before, now] = this.sitting.get(actor.id) ?? [raw.sit, raw.sit];
-      const pose = { ...raw, sit: before + (now - before) * between };
+      const pose = {
+        ...raw,
+        sit: before + (now - before) * between,
+        lean: leanAt(this.effects, actor.id, time),
+      };
       return { actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
@@ -248,10 +270,27 @@ export class Scene {
     const mapRight = this.pageBelow ? this.frameWidth : this.width;
 
     const out = this.out;
-    if (region.kind !== "all") this.drawSide(this.night, world, walkers, time);
+    // The names on the map this frame, and what a route breaks around: the
+    // place names, and each slip with the glyph beside it.
+    const tags = this.placeNames(walkers).flatMap((tag) => {
+      const alpha = slipAlpha(this.slips, tag.id, time);
+      if (alpha <= 0) return [];
+      const glyph = glyphAt(this.effects, tag.id, time);
+      const top = tag.y - 21;
+      const left = tag.x - tag.width / 2 - (glyph ? GLYPH_ROOM : 0);
+      const box = {
+        left,
+        right: tag.x + tag.width / 2,
+        top: top - 4,
+        bottom: top + TAG_HEIGHT + 3,
+      };
+      return [{ ...tag, alpha, glyph, box }];
+    });
+    const holes = [...this.labelBoxes, ...tags.map((tag) => tag.box)];
+    if (region.kind !== "all") this.drawSide(this.night, world, walkers, time, holes);
     // In full night the day drawing only shows inside the lamps' reach, so only that much of it is drawn.
     if (region.kind !== "none" || lamps > 0) {
-      this.drawSide(this.day, world, walkers, time, region.kind === "none" ? lights : null);
+      this.drawSide(this.day, world, walkers, time, holes, region.kind === "none" ? lights : null);
     }
     out.drawImage(region.kind === "all" ? this.day.canvas : this.night.canvas, 0, 0);
 
@@ -381,9 +420,8 @@ export class Scene {
     });
     out.letterSpacing = "0px";
     out.font = TAG_FONT;
-    for (const tag of this.placeNames(walkers)) {
-      const alpha = slipAlpha(this.slips, tag.id, time);
-      if (alpha <= 0) continue;
+    for (const tag of tags) {
+      const { alpha, glyph } = tag;
       out.globalAlpha = alpha;
       // A name sits on a small slip of paper, so it reads over trees, water and other ink.
       const palette = inkOf(this.nameDay.get(tag.id), tag.x, tag.y - 8);
@@ -406,6 +444,25 @@ export class Scene {
       out.fill();
       out.fillStyle = css(palette.ink);
       out.fillText(tag.name, tag.x, tag.y);
+      // What it has just set out to do, on a tab of the same paper to the left
+      // of the name. It fades with the slip, and on its own at the end of its life.
+      if (glyph) {
+        out.globalAlpha = alpha * glyph.alpha;
+        const right = tag.x - tag.width / 2;
+        const middle = tag.y - 21 + (TAG_HEIGHT - 1) / 2;
+        out.fillStyle = css(palette.paper, 0.9);
+        out.beginPath();
+        out.roundRect(right - GLYPH_ROOM, middle - 17, GLYPH_ROOM, 34, [6, 0, 0, 6]);
+        out.fill();
+        drawGlyph(
+          out,
+          glyph.glyph,
+          right - GLYPH_ROOM / 2 + 1,
+          middle,
+          GLYPH_SIZE,
+          css(palette.ink),
+        );
+      }
     }
     out.globalAlpha = 1;
     out.setTransform(1, 0, 0, 1, 0, 0);
@@ -502,8 +559,10 @@ export class Scene {
       this.nameDay.clear();
       this.fading.clear();
       this.labelDay.length = 0;
+      this.effects = NO_EFFECTS;
     }
     this.lastTick = world.tick;
+    this.effects = nextEffects(this.effects, world.actors, world.tick, this.home);
     const alive = new Set<number>();
     for (const actor of world.actors) {
       alive.add(actor.id);
@@ -733,6 +792,7 @@ export class Scene {
     world: World,
     walkers: readonly Walker[],
     time: number,
+    holes: readonly Box[],
     only: readonly { x: number; y: number; reach: number }[] | null = null,
   ): void {
     const { ctx, ground, palette } = side;
@@ -769,6 +829,44 @@ export class Scene {
       ctx.quadraticCurveTo(sx + 6, sy + 3, sx + 12, sy);
       ctx.stroke();
     });
+    ctx.globalAlpha = 1;
+
+    // The route of a walk just begun, on the ground under everything that
+    // stands, in its walker's cloak colour: from the walker along what is left
+    // of its path, through the middle of each tile and so over a bridge's
+    // deck. Only for those with a slip. It breaks around the place names and
+    // the slips, so it never runs through lettering.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, this.width, this.height);
+    for (const hole of holes)
+      ctx.rect(hole.left, hole.top, hole.right - hole.left, hole.bottom - hole.top);
+    ctx.clip("evenodd");
+    for (const walker of walkers) {
+      const { actor } = walker;
+      const route = routeAt(this.effects, actor.id, time);
+      const strength = slipAlpha(this.slips, actor.id, time);
+      if (!route || strength <= 0) continue;
+      const ahead = actor.moveTicksLeft > 0 ? [{ x: actor.x, y: actor.y }] : [];
+      // Once the walk is over only the cross is left, where the walk was going.
+      const line =
+        route.line > 0
+          ? eat(
+              routeLine(
+                [walker.x, walker.y + 4 - (1 - ROUTE_ROW) * TILE],
+                [...ahead, ...actor.path],
+                TILE,
+                actor.id,
+                route.lane,
+                route.goal,
+              ),
+              route.eaten,
+            )
+          : [routePoint(route.goal, TILE)];
+      ctx.globalAlpha = ROUTE_ALPHA * strength;
+      drawRoute(ctx, line, identity(actor.id).cloak, route.line, route.cross);
+    }
+    ctx.restore();
     ctx.globalAlpha = 1;
 
     // Standing things and walkers together, farthest first, so each overlaps what is behind it.
