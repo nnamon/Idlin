@@ -11,6 +11,36 @@ cycle" schedule does the conductor's job too, if nobody else holds the lock.
 All state is in the repo and the tracker, so a cycle can start knowing nothing
 about the last one.
 
+## Posting on GitHub, and the board
+
+The agents talk to each other on the issue and the pull request, where the
+operator can follow along. Every post is signed with its role tag
+(`[conductor]`, `[builder]`, `[reviewer]`, `[watch judge]`) and is checked
+against section 1 of `AGENTS.md` before it goes up.
+
+Issues are tracked on the project board
+(https://github.com/users/nnamon/projects/5). Its Status field takes Todo, In
+progress, In review, Blocked and Done; its Area field takes sim, viewer,
+server, content, capture and process. The conductor adds each new issue with
+its Area. The builder sets In progress when it starts and In review when its
+pull request is up. The conductor sets Blocked, and Done after the merge if
+the board has not already moved it.
+
+```sh
+# the issue's item id on the board
+gh project item-list 5 --owner nnamon --format json --limit 500 \
+  --jq '.items[] | select(.content.number == <N>) | .id'
+# set Status: In progress 3bbd9161, In review d95d5a8c, Blocked ce22604a, Done 887b74a8
+gh project item-edit --project-id PVT_kwHOAA_bz84BtYOR --id <item id> \
+  --field-id PVTSSF_lAHOAA_bz84BtYORzhrh-0o --single-select-option-id <option>
+# conductor: add a new issue, then set its Area
+gh project item-add 5 --owner nnamon --url <issue url> --format json --jq .id
+gh project item-edit --project-id PVT_kwHOAA_bz84BtYOR --id <item id> \
+  --field-id PVTSSF_lAHOAA_bz84BtYORzhrh-9k --single-select-option-id <option>
+# Area: sim 2b43c094, viewer a3cae329, server 4d2ab61e, content b02564d9,
+#       capture 211176d4, process e8508346
+```
+
 ## 0. Lock
 
 The repo checkout is shared with the daily digest. Before anything else:
@@ -58,7 +88,8 @@ split it first.
 ## 2. Claim
 
 Add `in-progress`, remove `ready`, and comment `[conductor] cycle started`.
-Link the issue to the thread.
+Link the issue to the thread. If the issue is not on the board yet, add it
+with its Area.
 
 ## 3. Brief
 
@@ -118,6 +149,12 @@ builder: on the existing branch if it has commits, or from a clean
 
 ## 4. Build (builder)
 
+- Read the issue and all its comments (`gh issue view <N> --comments`), since
+  scope often changes there. Comment `[builder] starting: ` and the plan in
+  two lines, and set the board Status to In progress.
+- While building, comment on the issue when you make a decision the next
+  person would want to know: a choice between two designs, something left
+  out, a surprise in the code.
 - Branch `i<issue>-<slug>` from fresh `origin/main`. An issue that needs an
   unmerged branch waits for it; branches are not stacked.
 - Run `docker compose run --rm dev pnpm gate` until it passes. Tests go where
@@ -137,8 +174,9 @@ commit message, pull request, comment and issue in the cycle. Commit with
 
 Push the branch and open a pull request: title from the issue, body with
 "Closes #N", what changed, the evidence (test names, numbers, what the frames
-show), and anything left out. The conductor links it to the thread. Wait for
-CI.
+show), and anything left out. Comment `[builder] pull request up: #P` on the
+issue and set the board Status to In review. The conductor links the pull
+request to the thread. Wait for CI.
 
 When the builder reports, its task ends and its slot is free: the conductor
 starts the next cycle's builder (step 1) before going on to review this pull
@@ -174,14 +212,64 @@ conductor picks Mythos 5.2 and says so in the brief.
 > real defect: a crash, lost data, wrong behaviour a viewer would see, broken
 > determinism or snapshots, or a security hole. List missing tests, style and
 > design points (duplication, needless abstraction) as non-blocking, except
-> missing tests of determinism or saving, which block. Do not edit files. End
-> with MERGE or DO-NOT-MERGE and a one-line reason.
+> missing tests of determinism or saving, which block. Do not edit files or
+> push. Post the review on the pull request yourself, as described under
+> "Posting the review" in step 6 of `process/cycle.md`: a summary signed
+> `[reviewer] <model>`, and one inline comment per finding on the line it is
+> about, with a `suggestion` block where the fix is a few lines. The
+> summary's last line is MERGE-OK or DO-NOT-MERGE and a one-line reason.
+> Report the review's URL.
+
+### Posting the review
+
+Every agent posts as the same account, and GitHub refuses an approve or a
+request-changes review on one's own pull request, so the review uses the
+`COMMENT` event and the verdict goes in the summary's last line. Inline
+comments go on lines of the diff, on the new side; a line outside the diff
+goes in the summary instead.
+
+````sh
+gh api repos/{owner}/{repo}/pulls/<P>/reviews --input - <<'EOF'
+{
+  "commit_id": "<head sha reviewed>",
+  "event": "COMMENT",
+  "body": "[reviewer] <model>\n\n<summary of findings>\n\nDO-NOT-MERGE: <reason>",
+  "comments": [
+    {
+      "path": "packages/sim/src/world.ts",
+      "line": 42,
+      "side": "RIGHT",
+      "body": "BLOCKING: <what breaks and how to trigger it>\n\n```suggestion\n<replacement for line 42>\n```"
+    }
+  ]
+}
+EOF
+````
+
+For a suggestion over several lines, add `"start_line"` and `"start_side":
+"RIGHT"`; the suggestion replaces lines `start_line` to `line`.
 
 Each pull request gets one review. Check each finding against the code. Send
 the real blocking ones to a builder on the branch, as step 3 says, to fix
 once on the same branch. Answer the rest in one pull request comment,
-`[conductor] review triage`, finding by finding, and file an issue for any
-worth doing later. After the fix the pull request goes on to merge without
+`[conductor] review triage`, which links to the review and gives each finding
+a line (fix, follow-up #N, or why not) without restating it. File an issue
+for any worth doing later.
+
+The builder fixing findings replies to each inline comment it was sent, with
+the commit that fixed it or why it did not, and resolves that thread:
+
+```sh
+gh api repos/{owner}/{repo}/pulls/<P>/comments/<comment id>/replies \
+  -f body='[builder] fixed in <sha>'
+gh api graphql -f query='query { repository(owner: "nnamon", name: "Idlin") {
+  pullRequest(number: <P>) { reviewThreads(first: 100) { nodes {
+    id isResolved comments(first: 1) { nodes { databaseId path line } } } } } } }'
+gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread id>"}) {
+  thread { isResolved } } }'
+```
+
+The comment id is the `databaseId` of the thread's first comment. After the fix the pull request goes on to merge without
 another full review, unless the fix itself was large or risky; then start a
 new review of the fix. If the same kind of finding keeps returning, have the
 cause fixed in one place.
@@ -225,11 +313,15 @@ The conductor starts the judge (`delegate_task`, role `review`, Mythos 5.2 at
 effort `medium`; if Mythos cannot be reached, Codex `gpt-6.2-sol` or a fresh
 Opus 5.5 child at effort `high`; no worktree, since it reads the capture
 folders, which are not committed) with the two capture folders and
-`docs/watch-rubric.md`, and nothing about what the change was meant to do. A
+`docs/watch-rubric.md`, the number of the pull request to post on, and nothing about
+what the change was meant to do. The judge does not open that pull request, its
+diff or its issue; it only posts its verdict there. A
 judge with no activity for 60 minutes is stopped with `task_cancel` and the
 judgement goes to the next of those with the same folders; when all three
 have stalled or are out, no judge is reachable.
-Post its verdict as a pull request comment, `[watch judge]`. The judge looks
+The judge posts its verdict on the pull request itself, as a comment signed
+`[watch judge] <model>` (`gh pr comment <P> -R nnamon/Idlin --body-file -`), and reports the
+comment's URL. The judge looks
 once per pull request. A hard fail or a "worse" verdict sends the change back
 to a builder (step 4), and the judge looks again only at the fixed capture.
 Anything else it finds becomes a follow-up issue and does not hold the
@@ -349,7 +441,8 @@ anything else in the queue.
 ## 9. Close out
 
 - Comment on the issue: `[conductor] shipped in #P` with the evidence. It
-  closes with the merge; check that it did.
+  closes with the merge; check that it did, and that its board Status is
+  Done (set it if not).
 - A decision of consequence gets a short file in `docs/decisions/`, in the same
   pull request where possible.
 - Remove every worktree a builder of this branch left, that is each one whose

@@ -50,7 +50,7 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 | **Conductor**   | Opus 5.5 (effort `medium`), in one long-running session      | The queue and the merge. Splits and orders issues so that builders don't collide, writes each builder's brief, starts the reviewers and judges, triages their findings, merges, and keeps `main` green. Plans the next milestone when the queue empties. Does not build.             |
 | **Builder**     | Opus 5.5 (effort `medium`), a child task in its own worktree | One `ready` issue, from branch to an open pull request with the gate green, the fixes the review sends back, the captures for a watch judgement, and the squash to one commit before the merge. Up to three run at once, each on an issue independent of the others.                 |
 | **Reviewer**    | Opus 5.5 (effort `medium`), a fresh child task               | An adversarial read of each pull request's diff, by a child that did not build it. Codex `gpt-6.2-sol` (reasoning effort `high`) may review instead while its usage limits allow. Mythos 5.2 reviews changes that are hard to get right. The pull request says which model reviewed. |
-| **Watch judge** | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only. Also the one to ask about art direction and look and feel.                                                                                                         |
+| **Watch judge** | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures, the rubric and the number of the pull request to post on, which it does not read. Also the one to ask about art direction and look and feel.                                           |
 
 Every Claude child runs on Opus 5.5 at effort `medium` or higher; Sonnet and
 Haiku are not used. Mythos 5.2 judges how the game looks and plays on screen,
@@ -135,13 +135,14 @@ it, and their numbers are not the procedure's:
    visible change, also capture and look at the frames.
 6. **Pull request** (builder) with "Closes #N", what changed, and the
    evidence. CI must be green.
-7. **Review** (conductor). One reviewer tries to refute the diff. The
-   conductor checks every finding against the code, sends the blocking ones
-   to a new builder on the branch, and answers the others in a PR
-   comment with the reason. Re-review only when a fix was large or risky.
+7. **Review** (conductor). One reviewer tries to refute the diff and posts
+   its review on the pull request. The conductor checks every finding
+   against the code, sends the blocking ones to a new builder on the
+   branch, and answers the others in a PR comment that links to the
+   review. Re-review only when a fix was large or risky.
 8. **Watch judge**, for `look` changes: the builder captures `main` and the
-   branch, the conductor starts the judge on the two folders and posts the
-   verdict in a PR comment.
+   branch, the conductor starts the judge on the two folders, and the judge
+   posts its verdict on the pull request.
 9. **Merge** as one commit (step 8 of the procedure) once section 5 holds.
    A builder squashes the branch to one commit when the conductor says so;
    if `main` moves after that, the conductor re-squashes it itself. The
@@ -150,6 +151,26 @@ it, and their numbers are not the procedure's:
 10. **Close out** (conductor). Comment on the issue with what shipped and the
     evidence, update any doc the change made stale, and delete the branch
     once the builder's worktree is gone.
+
+The agents work in the open on GitHub, as a team would, so the operator can
+follow a change from its issue:
+
+- A builder reads the issue and all its comments before starting, and
+  comments on the issue when it starts (its plan in two lines), when it makes
+  a decision worth knowing, and when the pull request is up. It moves the
+  issue on the project board to In progress, then In review.
+- A reviewer posts its review on the pull request as a GitHub review: a
+  summary, and inline comments on the lines concerned, with `suggestion`
+  blocks where the fix is small. All agents post as one account, and GitHub
+  refuses an approve or request-changes review on one's own pull request, so
+  reviews use the `COMMENT` event and the summary's last line says MERGE-OK
+  or DO-NOT-MERGE.
+- A builder fixing findings replies to each inline comment (fixed, or why
+  not) and resolves the thread.
+- The watch judge posts its verdict on the pull request.
+
+Every post is signed with its role tag (section 7) and follows section 1.
+[process/cycle.md](process/cycle.md) has the commands.
 
 An issue that is not mergeable after three cycles of building is split into
 smaller issues or labelled `blocked` with the reason, and the cycle moves on.
@@ -243,7 +264,12 @@ Anyone can open an issue, comment or pull request on a public repo.
   `README.md`, refreshed by the digest. The images live on the `media` branch
   so `main` carries no binaries.
 - **The tracker:** milestone progress, with each issue linked to its thread and
-  pull request.
+  pull request, and the project board
+  (https://github.com/users/nnamon/projects/5), where each issue's Status
+  shows whether it waits, is being built, is in review, is blocked or is done.
+- **Issues and pull requests:** each issue's comments say who took it and
+  what they decided; each pull request carries its review and, for a `look`
+  change, the watch judge's verdict.
 - **`docs/decisions/`:** each decision of consequence, short, with the
   alternative that was rejected.
 

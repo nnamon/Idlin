@@ -66,6 +66,13 @@ issue already covers it.
 
 ## 3. Health
 
+- The `capture` workflow runs only on pushes to `main` and is not required,
+  so nothing else looks at it. Check its last run and its two jobs, `capture`
+  and `long-tests`
+  (`gh run list --workflow capture.yml --branch main --limit 1`, then
+  `gh run view <run id>`). The conductor files a `bug` for each failing job,
+  unless an open issue already covers it. A run cancelled by a newer push is
+  not a failure; look at the newest run that finished.
 - No merge in 24 hours while `ready` issues exist: find out why (a stale lock,
   a pull request waiting on a reviewer, red CI, a blocked issue) and say what
   the next cycle should do about it. Clear a lock older than 150 minutes.

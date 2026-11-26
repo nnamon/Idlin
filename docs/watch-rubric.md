@@ -109,14 +109,17 @@ A check applies once the thing it measures exists.
 
 - A fresh Mythos 5.2 agent (if Mythos cannot be reached, Codex `gpt-6.2-sol`
   or a fresh Opus 5.5 at effort `high`) with no knowledge of the change, which
-  did not build it. It gets the captures, the metrics and this page, nothing
-  else.
+  did not build it. It gets the captures, the metrics, this page and the
+  number of the pull request to post its verdict on, nothing else; it does not
+  read that pull request or its issue.
 - Every claim must point at a frame ("storyboard frame 7: three characters
   overlap the lantern and none can be read") or at a metric.
 - It returns the scores, any hard fail, and at most three findings ranked by
   how much they hurt the watching experience.
 - For a pull request it gets the baseline capture too, and must say whether the
-  change is better, the same or worse, and where.
+  change is better, the same or worse, and where. It posts that verdict on the
+  pull request itself, signed `[watch judge] <model>`, without reading the pull
+  request or its issue.
 - A milestone's closing review adds a second judge from another model family
   (Codex `gpt-6.2-sol`). For each dimension the lower of the two scores
   stands, and a hard fail from either stands. If Codex already judged because
