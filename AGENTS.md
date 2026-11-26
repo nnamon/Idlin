@@ -28,6 +28,9 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 - Every project command runs through Docker Compose. Only `git`, `gh` and
   `docker` run on the host. Never touch containers, images or volumes that
   belong to other projects, and never run a blanket prune.
+  `.claude/settings.json` enforces this for agent sessions: it denies python,
+  perl, node, ruby, `sed -i`, awk and jq on the host. Inside
+  `docker compose run` they work as usual.
 - This repo is public. Commit no secrets, no personal details, and no asset
   whose licence forbids redistribution.
 - Nothing about the machine or environment the swarm runs on reaches GitHub:
