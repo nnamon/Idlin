@@ -130,6 +130,12 @@ export class Scene {
   /** Which ink each name and each place label is in, settled once a tick. */
   private readonly nameDay = new Map<number, boolean>();
   private readonly labelDay: boolean[] = [];
+  /** The tick of the world last observed, to notice when time goes back. */
+  private lastTick = Number.NEGATIVE_INFINITY;
+  /** A short line on the page beside the clock, such as "waiting for the world"; empty for none. */
+  notice = "";
+  /** False to draw a dash for the time and no day line, as when there is no world to tell it from yet. */
+  clockShown = true;
   /** How far down into sitting each figure is, at the tick before last and at the last tick. */
   private readonly sitting = new Map<number, readonly [number, number]>();
   /** The tick `sitting` was last moved on, so that observing a tick twice eases it once. */
@@ -453,6 +459,14 @@ export class Scene {
    * frames happened to be drawn.
    */
   observe(world: World): void {
+    // A world from earlier than the last (a server restarted from a snapshot) has
+    // another history: what was news in the old one says nothing about the new.
+    if (world.tick < this.lastTick) {
+      this.news = "";
+      this.newsSince = Number.NEGATIVE_INFINITY;
+      this.lastRule.clear();
+    }
+    this.lastTick = world.tick;
     const alive = new Set<number>();
     for (const actor of world.actors) {
       alive.add(actor.id);
@@ -692,9 +706,19 @@ export class Scene {
     ctx.lineTo(right, top0 + 124);
     ctx.stroke();
     ctx.font = '72px "Fell"';
-    ctx.fillText(`${two(hour)}:${two(minute)}`, left, top0 + 208);
-    ctx.font = '30px "Fell Italic"';
-    ctx.fillText(`Day ${day + 1}, ${part}`, left + 2, top0 + 252);
+    ctx.fillText(this.clockShown ? `${two(hour)}:${two(minute)}` : "—", left, top0 + 208);
+    if (this.clockShown) {
+      ctx.font = '30px "Fell Italic"';
+      ctx.fillText(`Day ${day + 1}, ${part}`, left + 2, top0 + 252);
+    }
+    if (this.notice !== "") {
+      ctx.font = '27px "Fell Italic"';
+      ctx.textAlign = "right";
+      ctx.globalAlpha = 0.7;
+      ctx.fillText(this.notice, right, top0 + 208);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = "left";
+    }
 
     // Beside the map, the line of news goes below the map if there is room
     // there. In a frame only as tall as the map it goes at the foot of the
@@ -734,8 +758,9 @@ export class Scene {
     const more =
       world.actors.length > listed.length ? `and ${world.actors.length - listed.length} more` : "";
 
-    // The line of news: the last thing a program decided, or the hour if nothing has happened yet.
-    const line = this.news === "" ? `Day ${day + 1}, ${part}.` : this.news;
+    // The line of news: the last thing a program decided, or the day if nothing
+    // has happened yet and the clock is shown.
+    const line = this.news !== "" ? this.news : this.clockShown ? `Day ${day + 1}, ${part}.` : "";
     if (strip) {
       ctx.font = '36px "Fell Italic"';
       ctx.fillText(line, 28, this.height + 49, this.width - 56);

@@ -38,11 +38,12 @@ You need Docker. Everything else runs in containers.
 
 ```sh
 docker compose run --rm dev pnpm install
-docker compose up client          # http://localhost:4310
+docker compose up server client   # http://localhost:4310
 ```
 
-`?hour=21` in the URL starts at a different time of day and `?seed=7` gives a
-different world.
+The viewer shows the world the server is running; the server keeps it in
+`data/` across restarts. `?seed=7` in the URL instead runs a world of seed 7 in
+the page, and `?hour=21` starts that one at a different time of day.
 
 To run the checks CI runs (lint, typecheck, tests):
 

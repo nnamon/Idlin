@@ -13,6 +13,7 @@ import mapJson from "../../../content/maps/first-light.json";
 import { castOf } from "./cast.ts";
 import { fitFrame } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
+import { follow } from "./live.ts";
 import { Scene } from "./scene.ts";
 import "./style.css";
 
@@ -92,6 +93,16 @@ async function main(): Promise<void> {
     // In capture mode nothing else would redraw.
     if (params.has("capture")) scene.draw(world, world.tick);
   });
+  // By default the page follows the world server (`?server=ws://host:port` for another
+  // address). It runs a world of its own for captures, or when the URL asks for one with
+  // `?local` or any of the settings only a world of its own can take.
+  if (!["capture", "local", "seed", "hour", "crowd"].some((name) => params.has(name))) {
+    await document.fonts.ready;
+    const server = params.get("server") || `ws://${location.hostname}:4311`;
+    follow(scene, world.map, world.programs, server);
+    return;
+  }
+
   const draw = (fraction: number): void => scene.draw(world, world.tick + fraction);
   const tick = (): void => {
     step(world);

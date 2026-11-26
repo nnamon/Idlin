@@ -292,6 +292,67 @@ describe("the scene", () => {
     expect(below?.args[2]).toBeGreaterThan(map.height * 48);
   });
 
+  it("starts the news afresh when the world goes back in time, as after a server restart", async () => {
+    const newsOf = (calls: Call[]): unknown =>
+      calls.findLast((c) => c.op === "fillText" && /^\w+: /.test(String(c.args[0])))?.args[0];
+    const fresh = await newScene();
+    const restarted = await newScene();
+    // The restarted scene first followed a world far ahead of the one it now sees.
+    const ahead = newWorld();
+    restarted.scene.observe(ahead);
+    for (let i = 0; i < 2000; i++) {
+      step(ahead);
+      restarted.scene.observe(ahead);
+    }
+    const world = newWorld();
+    fresh.scene.observe(world);
+    restarted.scene.observe(world);
+    // The news each shows, every 20 ticks.
+    const lines = { fresh: [] as unknown[], restarted: [] as unknown[] };
+    for (let i = 1; i <= 600; i++) {
+      step(world);
+      fresh.scene.observe(world);
+      restarted.scene.observe(world);
+      if (i % 20 !== 0) continue;
+      lines.fresh.push(newsOf(drawn(fresh.day, () => fresh.scene.draw(world, world.tick))));
+      lines.restarted.push(
+        newsOf(drawn(restarted.day, () => restarted.scene.draw(world, world.tick))),
+      );
+    }
+    // Something happened worth a line, more than once.
+    expect(new Set(lines.fresh.filter(Boolean)).size).toBeGreaterThan(1);
+    expect(lines.restarted).toEqual(lines.fresh);
+  }, 60_000);
+
+  it("writes a notice on the page beside the map, not over it", async () => {
+    const { scene, day } = await newScene();
+    const world = newWorld();
+    scene.observe(world);
+    const notice = (calls: Call[]) =>
+      calls.find((c) => c.op === "fillText" && c.args[0] === "waiting for the world");
+    expect(notice(drawn(day, () => scene.draw(world, world.tick)))).toBeUndefined();
+    scene.notice = "waiting for the world";
+    const written = notice(drawn(day, () => scene.draw(world, world.tick)));
+    expect(written?.args[1]).toBe(FRAME_WIDTH - 40);
+    expect(written?.args[2]).toBeLessThan(map.height * 48);
+  });
+
+  it("shows a dash for the time, and no day, while the clock is hidden", async () => {
+    const { scene, day } = await newScene();
+    const world = newWorld();
+    scene.observe(world);
+    const texts = () =>
+      drawn(day, () => scene.draw(world, world.tick))
+        .filter((c) => c.op === "fillText")
+        .map((c) => c.args[0]);
+    expect(texts()).toContain("06:00");
+    scene.clockShown = false;
+    const hidden = texts();
+    expect(hidden).toContain("\u2014");
+    expect(hidden).not.toContain("06:00");
+    expect(hidden.filter((t) => String(t).startsWith("Day "))).toEqual([]);
+  });
+
   it("eases a figure into sitting and out of it: its name moves a little each tick, not 9 pixels at once", async () => {
     const { scene, out } = await newScene();
     const world = newWorld();

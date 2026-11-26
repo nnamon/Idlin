@@ -236,7 +236,7 @@ start again.
 ```sh
 docker compose run --rm dev pnpm install                       # install dependencies
 docker compose run --rm dev pnpm gate                          # lint + typecheck + test, as CI runs it
-docker compose up client                                       # the viewer, at http://localhost:4310
+docker compose up server client                                # the world server and the viewer, at http://localhost:4310
 docker compose run --rm dev pnpm --filter @idlin/client build  # build the viewer for captures
 docker compose run --rm capture captures/now                   # frames to look at
 ```

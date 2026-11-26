@@ -144,9 +144,9 @@ every tick, so actions take time and the picture stays calm.
   possible.
 - The world is a grid of tiles. Actors stand on tiles and move from one to the
   next; the viewer smooths the movement.
-- A server will run the world in real time, save snapshots so it survives
-  restarts, and stream state to viewers. The viewer only draws. (The server
-  isn't built; for now the viewer runs the simulation itself.)
+- A server runs the world in real time, saves snapshots so it survives
+  restarts, and streams the world to viewers. The viewer only draws. (For
+  captures it still runs the simulation itself, from a seed.)
 - Content (maps, monsters, items, affixes, skills, programs) is data in the
   repo and is validated when loaded.
 

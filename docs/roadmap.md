@@ -21,7 +21,7 @@ screen and not get bored of in ten minutes.
 | Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | not started                                                 |
 | Items with rarity and rolled affixes; bots that choose what to wear      | not started                                                 |
 | Spotlight panel and a real news line                                     | the director that picks the subject is done; nothing drawn  |
-| Server: the world running in real time, snapshots, WebSocket             | not started                                                 |
+| Server: the world running in real time, snapshots, WebSocket             | done                                                        |
 
 M1 is finished when all of these hold:
 

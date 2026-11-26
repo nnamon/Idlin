@@ -28,6 +28,26 @@ services:
     mem_limit: 1g
     cpus: 2
 
+  # The world server: runs the world in real time, keeps snapshots in data/, and
+  # streams it over a WebSocket at ws://localhost:4311. `docker compose up server
+  # client` starts both; the viewer at http://localhost:4310 follows the server.
+  # Stopping the service saves a snapshot.
+  server:
+    build:
+      context: docker
+      dockerfile: dev.Dockerfile
+    working_dir: /repo
+    network_mode: bridge
+    volumes:
+      - .:/repo
+    ports:
+      - "127.0.0.1:4311:4311"
+    environment:
+      IDLIN_HOST: 0.0.0.0
+    command: node packages/server/src/main.ts
+    mem_limit: 256m
+    cpus: 1
+
   # Headless Chromium for pictures of the viewer. Build the client first.
   capture:
     image: mcr.microsoft.com/playwright:v1.63.0-noble

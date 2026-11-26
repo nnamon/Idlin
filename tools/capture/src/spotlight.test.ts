@@ -17,9 +17,15 @@ const holds = (subjects: readonly (number | null)[]): number[] => {
   return out;
 };
 
+// A run of 50 residents takes several seconds, more on a shared CI runner than
+// vitest's default 5 s allows.
+const RUN_TIMEOUT_MS = 120_000;
+
 describe("the spotlight over a headless run", () => {
   for (const residents of [6, 50]) {
-    it(`gives each of ${residents} residents a turn within the bound`, () => {
+    it(`gives each of ${residents} residents a turn within the bound`, {
+      timeout: RUN_TIMEOUT_MS,
+    }, () => {
       const { subjects, names } = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
       expect(names.size).toBe(residents);
       const wait = spotlightWait(subjects, names);
@@ -32,7 +38,7 @@ describe("the spotlight over a headless run", () => {
     });
   }
 
-  it("is the same for the same seed, run twice in one process", () => {
+  it("is the same for the same seed, run twice in one process", { timeout: RUN_TIMEOUT_MS }, () => {
     const first = spotlightRun(3, 12, 6000);
     // A different run in between must leave nothing behind that changes the next.
     spotlightRun(7, 50, 3000);

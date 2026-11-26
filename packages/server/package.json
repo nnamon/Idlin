@@ -2,5 +2,15 @@
   "name": "@idlin/server",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts"
+  "exports": "./src/index.ts",
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@idlin/sim": "workspace:*",
+    "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2"
+  }
 }
