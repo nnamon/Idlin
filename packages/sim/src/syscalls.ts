@@ -155,6 +155,74 @@ export const SYSCALLS: readonly Syscall[] = [
     about:
       "How many decisions in a row, up to 1000, chose to move (`walk_to`, `wander`, `step_clear`, `flee` or `step_to`) and found nowhere to go. 0 after any other decision.",
   },
+  {
+    id: 24,
+    name: "level",
+    kind: "sensor",
+    args: 1,
+    about:
+      "This adventurer's level, 1 to 99, in a skill: `melee`, `hitpoints`, `woodcutting`, `fishing` or `cooking`. 0 for anything else, and for a monster.",
+  },
+  {
+    id: 25,
+    name: "xp",
+    kind: "sensor",
+    args: 1,
+    about: "This adventurer's experience in a skill, as for `level`; 0 for anything else.",
+  },
+  {
+    id: 26,
+    name: "bag_free",
+    kind: "sensor",
+    args: 0,
+    about: "How many of the bag's 12 slots are empty.",
+  },
+  {
+    id: 27,
+    name: "carrying",
+    kind: "sensor",
+    args: 1,
+    about:
+      "How many of a good (`logs`, `raw_fish` or `cooked_fish`) are in the bag; 0 for anything else.",
+  },
+  {
+    id: 28,
+    name: "banked",
+    kind: "sensor",
+    args: 1,
+    about: "How many of a good are in this adventurer's bank, as for `carrying`.",
+  },
+  {
+    id: 29,
+    name: "at_bank",
+    kind: "sensor",
+    args: 0,
+    about:
+      "1 if this actor stands next to the bank chest, where it can deposit and withdraw, else 0.",
+  },
+  {
+    id: 30,
+    name: "deposit",
+    kind: "action",
+    args: 2,
+    about:
+      "At the bank, put up to the given number of a good from the bag into the bank: deposit(logs, 5). Away from it, nothing happens.",
+  },
+  {
+    id: 31,
+    name: "withdraw",
+    kind: "action",
+    args: 2,
+    about:
+      "At the bank, take up to the given number of a good out of the bank, as many as there are empty slots for.",
+  },
+  {
+    id: 32,
+    name: "bank_all",
+    kind: "action",
+    args: 0,
+    about: "At the bank, put everything in the bag into the bank.",
+  },
 ];
 
 export const syscall = (id: number): Syscall | undefined => SYSCALLS[id];

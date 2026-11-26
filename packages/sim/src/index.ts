@@ -1,3 +1,16 @@
+export {
+  atBank,
+  BAG_SLOTS,
+  banked,
+  carrying,
+  deposit,
+  freeSlots,
+  GOODS,
+  type Good,
+  goodId,
+  MAX_BANKED,
+  withdraw,
+} from "./bag.ts";
 export { CONFUSED_TICKS, FLEE_STEPS, IDLE_TICKS, NO_THREAT } from "./brain.ts";
 export { hashInts } from "./hash.ts";
 export {
@@ -41,6 +54,16 @@ export {
 export { loadMonsters, type Monsters } from "./monsters.ts";
 export { findPath } from "./path.ts";
 export { chance, createRng, nextInt, nextU32, type Rng } from "./rng.ts";
+export {
+  gainXp,
+  levelFor,
+  MAX_LEVEL,
+  MAX_XP,
+  SKILLS,
+  type Skill,
+  XP_PER_DAMAGE,
+  XP_TABLE,
+} from "./skills.ts";
 export { SYSCALLS, type Syscall, syscall } from "./syscalls.ts";
 export {
   BotError,

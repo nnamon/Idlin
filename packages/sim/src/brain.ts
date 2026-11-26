@@ -1,13 +1,16 @@
 // Where a program meets the world: answers its sensors and carries out the one
 // action it commits. Called when an actor has nothing left to do.
 
+import { atBank, BAG_SLOTS, banked, carrying, deposit, freeSlots, GOODS, withdraw } from "./bag.ts";
 import { isWalkable, NEIGHBOURS, type Point, tileIndex } from "./map.ts";
 import { findPath } from "./path.ts";
 import { nextInt } from "./rng.ts";
+import { levelFor, SKILLS } from "./skills.ts";
 import { syscall } from "./syscalls.ts";
 import { FAULTS, type Program, runDecision } from "./vm.ts";
 import {
   type Actor,
+  ADVENTURER,
   blockerAt,
   blocks,
   clock,
@@ -260,7 +263,8 @@ function randomWalkableTile(world: World, actor: Actor): Point {
 
 function sense(world: World, actor: Actor, id: number, args: readonly number[]): number {
   const [a = 0, b = 0] = args;
-  switch (syscall(id)?.name) {
+  const name = syscall(id)?.name;
+  switch (name) {
     case "self_x":
       return actor.x;
     case "self_y":
@@ -302,6 +306,21 @@ function sense(world: World, actor: Actor, id: number, args: readonly number[]):
       return danger(world, actor, actor.x, actor.y);
     case "stalled":
       return actor.stalled;
+    case "level":
+    case "xp": {
+      // A skill is named by its position in SKILLS; a monster has none.
+      const xp = actor.kind === ADVENTURER && a >= 0 && a < SKILLS.length ? actor.xp[a] : undefined;
+      if (xp === undefined) return 0;
+      return name === "level" ? levelFor(xp) : xp;
+    }
+    case "bag_free":
+      return freeSlots(actor);
+    case "carrying":
+      return carrying(actor, a);
+    case "banked":
+      return banked(actor, a);
+    case "at_bank":
+      return atBank(world, actor) ? 1 : 0;
     default:
       return 0;
   }
@@ -357,6 +376,32 @@ function act(
     case "step_to":
       // The first step of the way walk_to would take.
       actor.path = wayTo(world, actor, { x: a, y: b }).slice(0, 1);
+      break;
+    case "deposit":
+    case "withdraw": {
+      const moved = (name === "deposit" ? deposit : withdraw)(world, actor, a, b);
+      if (moved > 0)
+        events.push({
+          type: name,
+          tick: world.tick,
+          actor: actor.id,
+          good: GOODS[a - 1] as string,
+          count: moved,
+        });
+      break;
+    }
+    case "bank_all":
+      for (let id = 1; id <= GOODS.length; id++) {
+        const moved = deposit(world, actor, id, BAG_SLOTS);
+        if (moved > 0)
+          events.push({
+            type: "deposit",
+            tick: world.tick,
+            actor: actor.id,
+            good: GOODS[id - 1] as string,
+            count: moved,
+          });
+      }
       break;
     default:
       // `idle`, and any action this build does not know.

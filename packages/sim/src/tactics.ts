@@ -4,7 +4,9 @@
 // It never throws: whatever it is given, it returns a program or a list of
 // errors with line and column.
 
+import { GOODS, goodId } from "./bag.ts";
 import { isInt32 } from "./hash.ts";
+import { SKILLS } from "./skills.ts";
 import { SYSCALLS, type Syscall } from "./syscalls.ts";
 import {
   BYTECODE_VERSION,
@@ -794,6 +796,17 @@ class Generator {
   }
 }
 
+/**
+ * Names every program knows: each skill stands for its position in SKILLS,
+ * for `level` and `xp`, and each good for its id, for the bag and bank calls.
+ */
+const BUILT_IN: Constants = Object.freeze(
+  Object.fromEntries([
+    ...SKILLS.map((skill, index) => [skill, index] as const),
+    ...GOODS.map((good) => [good, goodId(good)] as const),
+  ]),
+);
+
 /** Says what is wrong with the constants a caller passed, or returns null if they are usable. */
 function constantsProblem(constants: Constants): string | null {
   for (const name of Object.keys(constants)) {
@@ -803,6 +816,9 @@ function constantsProblem(constants: Constants): string | null {
     }
     if (SYSCALLS.some((c) => c.name === name)) {
       return `"${name}" is already a sensor or an action, so nothing else can have that name`;
+    }
+    if (Object.hasOwn(BUILT_IN, name)) {
+      return `"${name}" is already a skill or a good, so nothing else can have that name`;
     }
     const numbers = typeof value === "number" ? [value] : [value?.x, value?.y];
     if (!numbers.every(isInt32))
@@ -900,7 +916,7 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     const sequences = rules.some(
       (rule) => rule.steps.filter((step) => step.type === "act").length > 1,
     );
-    const generator = new Generator(constants, rules, errors);
+    const generator = new Generator({ ...BUILT_IN, ...constants }, rules, errors);
     const labels: string[] = [];
     // The first rule at which each limit is passed, so the error can point at it.
     let tooLong: Rule | null = null;

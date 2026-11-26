@@ -17,8 +17,10 @@ export const FRAME_HEIGHT = 1080;
 export const PAGE_WIDTH = 480;
 /** From the top of the page to the first resident's row. */
 export const PAGE_HEAD = 294;
-/** The height of a resident's row. */
-export const ROW_PITCH = 105;
+/** The height of a resident's row: its name and hitpoints, what it is doing, its levels. */
+export const ROW_PITCH = 120;
+/** A row closed up, beside the map in a frame only as tall as the map, where the news goes under the rows. */
+export const TIGHT_PITCH = 100;
 /** Room under the residents for the line of news. */
 export const PAGE_FOOT = 96;
 /**

@@ -10,7 +10,9 @@ characters run one of three scripts from `content/bots/`, which tell them where
 to walk, when to go back to camp, and how to fight. Wolves and goblins
 (`content/monsters/`) fight them in the simulation and its tests, but the viewer
 doesn't show monsters or fights yet. The scripting language is described in
-[docs/tactics.md](docs/tactics.md). Skills and loot don't exist yet;
+[docs/tactics.md](docs/tactics.md). Fighting earns Melee and Hitpoints
+experience, each character has a bag and a bank, and the page beside the map
+shows hitpoints and skill levels. Gathering, cooking and loot don't exist yet;
 [docs/roadmap.md](docs/roadmap.md) has the order they're planned in.
 
 ![Night falling over the camp, at twice the speed](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/clip.gif)

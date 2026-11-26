@@ -11,6 +11,7 @@
 import {
   type Actor,
   clock,
+  kindOf,
   START_HOUR,
   TICKS_PER_GAME_HOUR,
   type TileMap,
@@ -25,6 +26,7 @@ import {
   ROSTER_ROWS,
   ROW_PITCH,
   spreadPage,
+  TIGHT_PITCH,
 } from "./frame.ts";
 import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
 import { identity } from "./identity.ts";
@@ -48,6 +50,7 @@ import { DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas } from "./pen.ts";
 import { actorPose, easeSit, type Pose } from "./pose.ts";
 import { letGo, NO_SLIPS, nextSlips, type Slips, slipAlpha } from "./slips.ts";
+import { drawHp, drawLevels, hpWidth } from "./stats.ts";
 import {
   type Box,
   bodyBox,
@@ -976,9 +979,15 @@ export class Scene {
 
     // Beside the map, the line of news goes below the map if there is room
     // there. In a frame only as tall as the map it goes at the foot of the
-    // page, and the rows close up a little to leave it room.
+    // page, and the rows close up to leave it room.
     const strip = !below && this.frameHeight - this.height >= NEWS_STRIP;
-    const pitch = (below || strip ? ROW_PITCH : ROW_PITCH - 5) + spread.open;
+    const pitch = (below || strip ? ROW_PITCH : TIGHT_PITCH) + spread.open;
+    // A row's three lines sit closest in a tight row, and spread apart as it gets taller.
+    const air = Math.min(20, pitch - TIGHT_PITCH);
+    // The rule line sits nearer the name than the levels, so its descenders keep clear of the marks.
+    const nameLine = 36 + Math.round(air * 0.3);
+    const ruleLine = 62 + Math.round(air * 0.7);
+    const levelLine = 95 + Math.round(air * 0.95);
     const gap = 40;
     const columnWidth = (right - left + gap) / this.columns;
     listed.forEach((actor, index) => {
@@ -993,17 +1002,29 @@ export class Scene {
       ctx.lineTo(x1, top + 0.5);
       ctx.stroke();
       ctx.globalAlpha = 1;
-      drawFigure(ctx, x0 + 34, top + 92, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
+      const feet = top + 90 + Math.round(air * 0.5);
+      drawFigure(ctx, x0 + 34, feet, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
       ctx.fillStyle = ink;
+      // Hitpoints at the end of the name's line; the name keeps clear of them.
+      const max = kindOf(world, actor).hp;
+      const hpRoom = hpWidth(ctx, actor.hp, max) + 16;
+      drawHp(ctx, actor.hp, max, x1, top + nameLine);
       ctx.font = '42px "Fell SC"';
-      ctx.fillText(actor.name, x0 + 86, top + 46);
+      ctx.fillText(actor.name, x0 + 86, top + nameLine, Math.max(40, x1 - x0 - 86 - hpRoom));
       // What the actor's program is doing, in the program's own words: the label of the rule that fired.
       const label = world.programs[actor.program]?.rules[actor.rule];
       ctx.font = '31px "Fell Italic"';
-      ctx.fillText(actor.fault !== 0 ? "confused" : (label ?? ""), x0 + 86, top + 82, x1 - x0 - 86);
+      ctx.fillText(
+        actor.fault !== 0 ? "confused" : (label ?? ""),
+        x0 + 86,
+        top + ruleLine,
+        x1 - x0 - 86,
+      );
+      drawLevels(ctx, actor, x0 + 86, x1, top + levelLine);
     });
     const foot = top0 + PAGE_HEAD + rows * pitch;
     ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(left, foot + 0.5);
     ctx.lineTo(right, foot + 0.5);

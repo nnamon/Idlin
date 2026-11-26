@@ -799,6 +799,30 @@ describe("the scene", () => {
     expect(names.map((c) => c.args[0]).sort()).toEqual([...NAMES].sort());
   });
 
+  it("writes each listed resident's hitpoints and its level in every skill on the page", async () => {
+    const six = newWorld(6);
+    const [ash, birch] = six.actors as [Actor, Actor];
+    ash.hp = 7;
+    // Melee 10 and Cooking 99; Birch is untouched, level 1 in everything.
+    ash.xp = [1_154, 0, 0, 0, 13_034_431];
+    const { scene, day } = await newScene();
+    scene.observe(six);
+    const texts = drawn(day, () => scene.draw(six, six.tick)).filter((c) => c.op === "fillText");
+    const words = texts.map((c) => String(c.args[0]));
+    expect(words.filter((w) => w === "20/20")).toHaveLength(5);
+    expect(words).toContain("7/20");
+    // The levels follow the name and its rule.
+    const after = (name: string): string[] => {
+      const at = words.lastIndexOf(name);
+      return words.slice(at + 2, at + 2 + 5);
+    };
+    expect(after(ash.name)).toEqual(["10", "1", "1", "1", "99"]);
+    expect(after(birch.name)).toEqual(["1", "1", "1", "1", "1"]);
+    // The page is beside the map, to the right of it.
+    const ashAt = texts.find((c) => c.args[0] === ash.name);
+    expect(ashAt?.args[1] as number).toBeGreaterThan(FRAME_WIDTH - 480);
+  });
+
   it("ties every slip moved off its figure back to it with a stroke, in a crowd too", async () => {
     const crowd = newWorld(30);
     const { scene, out } = await newScene();
@@ -904,6 +928,8 @@ describe("the scene", () => {
     for (let tick = 1; tick <= 2400; tick++) {
       step(world);
       scene.observe(world);
+      // Only the frame's calls are read; the other sheets' would pile up over 2,400 draws.
+      for (const canvas of canvases) canvas.calls = [];
       const calls = drawn(out, () => scene.draw(world, world.tick));
       for (const actor of world.actors) {
         const name = calls.findLast((c) => c.op === "fillText" && c.args[0] === actor.name);

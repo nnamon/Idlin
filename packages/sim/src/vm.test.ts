@@ -67,6 +67,15 @@ describe("the system call table", () => {
       "21 threat_recovering sensor 0",
       "22 step_to action 2",
       "23 stalled sensor 0",
+      "24 level sensor 1",
+      "25 xp sensor 1",
+      "26 bag_free sensor 0",
+      "27 carrying sensor 1",
+      "28 banked sensor 1",
+      "29 at_bank sensor 0",
+      "30 deposit action 2",
+      "31 withdraw action 2",
+      "32 bank_all action 0",
     ]);
   });
 

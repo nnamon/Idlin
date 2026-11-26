@@ -1,6 +1,7 @@
 // The world and the one function that advances it. Everything here is a pure
 // function of the seed, the map and the inputs: integers only, no clock.
 
+import { BAG_SLOTS, emptyBag, emptyBank, GOODS, MAX_BANKED } from "./bag.ts";
 import { MAX_STALLED, think, wayTo } from "./brain.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import {
@@ -13,6 +14,7 @@ import {
   tileIndex,
 } from "./map.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
+import { gainXp, MAX_XP, noXp, SKILLS, type Skill, XP_PER_DAMAGE } from "./skills.ts";
 import {
   FAULTS,
   MEMORY_SLOTS,
@@ -301,6 +303,12 @@ export interface Actor {
    * to MAX_STALLED. Programs read it as `stalled`.
    */
   stalled: number;
+  /** Experience in each skill, in SKILLS order. All 0 for a monster, which has no skills. */
+  xp: number[];
+  /** BAG_SLOTS slots, each 0 for empty or a good's id (see GOODS). Always empty for a monster. */
+  bag: number[];
+  /** How many of each good this actor has banked, in GOODS order. Always 0 for a monster. */
+  bank: number[];
 }
 
 export type Shift = "" | "day" | "night";
@@ -489,6 +497,23 @@ export type WorldEvent =
       /** Where it was last. */
       readonly x: number;
       readonly y: number;
+    }
+  | {
+      /** An adventurer's experience in a skill reached a new level. */
+      readonly type: "level";
+      readonly tick: number;
+      readonly actor: number;
+      readonly skill: Skill;
+      readonly level: number;
+    }
+  | {
+      /** Goods went from an adventurer's bag into its bank, or out of the bank into the bag. */
+      readonly type: "deposit" | "withdraw";
+      readonly tick: number;
+      readonly actor: number;
+      /** A name from GOODS. */
+      readonly good: string;
+      readonly count: number;
     };
 
 /**
@@ -527,6 +552,8 @@ function landAttacks(world: World, events: WorldEvent[]): void {
         continue;
       }
       for (const target of targets) {
+        // Experience counts the hitpoints a blow actually took, not what it would have.
+        const taken = Math.min(kind.damage, target.hp);
         target.hp -= kind.damage;
         struck.set(target.id, attacker.id);
         events.push({
@@ -537,6 +564,11 @@ function landAttacks(world: World, events: WorldEvent[]): void {
           damage: kind.damage,
           hp: target.hp,
         });
+        const learner = attacker.kind === ADVENTURER ? attacker : target;
+        const skill: Skill = learner === attacker ? "melee" : "hitpoints";
+        const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
+        if (level > 0)
+          events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
       }
     }
     world.marks = world.marks.filter((mark) => mark.by !== attacker.id);
@@ -802,6 +834,9 @@ function addActor(
     recover: 0,
     shift,
     stalled: 0,
+    xp: noXp(),
+    bag: emptyBag(),
+    bank: emptyBank(),
   });
 }
 
@@ -957,10 +992,12 @@ export function hashWorld(world: World): string {
 /**
  * The hash a snapshot of `version` stored. Version 4 had no spawn table, no
  * `nextSpawn`, and no `shift` or `stalled` on actors, so those are left out.
+ * Versions 4 and 5 had no experience, bag or bank either.
  */
 function hashWorldAs(world: World, version: number): string {
   const { rng } = world;
   const v4 = version === 4;
+  const before6 = version < 6;
   return hashInts([
     ...stringInts(hashMap(world.map)),
     ...stringInts(hashPrograms(world.programs)),
@@ -995,6 +1032,7 @@ function hashWorldAs(world: World, version: number): string {
       a.windup,
       a.recover,
       ...(v4 ? [] : [SHIFTS.indexOf(a.shift), a.stalled]),
+      ...(before6 ? [] : [...a.xp, ...a.bag, ...a.bank]),
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
@@ -1025,7 +1063,7 @@ export function hashSpawns(spawns: Spawns): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 5;
+export const SNAPSHOT_VERSION = 6;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -1052,7 +1090,9 @@ export function snapshot(world: World): string {
  * that do not hash to what was saved. Throws a ProgramError or a KindError
  * instead if the content passed in is itself invalid. A version 4 snapshot,
  * from before monsters spawned on their own, is read too: it has no spawn
- * table to compare, and takes on the spawns passed in.
+ * table to compare, and takes on the spawns passed in. So is a version 5
+ * snapshot, from before skills and the bank: everyone starts with no
+ * experience, an empty bag and an empty bank.
  */
 export function restore(
   text: string,
@@ -1079,8 +1119,8 @@ export function restore(
     hash,
     state,
   } = data as Record<string, unknown>;
-  if (version !== SNAPSHOT_VERSION && version !== 4) {
-    throw new SnapshotError(`snapshot version ${show(version)} is not 4 or ${SNAPSHOT_VERSION}`);
+  if (version !== SNAPSHOT_VERSION && version !== 4 && version !== 5) {
+    throw new SnapshotError(`snapshot version ${show(version)} is not 4, 5 or ${SNAPSHOT_VERSION}`);
   }
   if (mapHash !== hashMap(map)) throw new SnapshotError("snapshot was taken on a different map");
   const table = checkPrograms(programs);
@@ -1097,13 +1137,9 @@ export function restore(
     throw new SnapshotError("snapshot was taken with different spawns");
   }
   if (version === 4) refuseOldMonsters(state, map);
-  const world = readState(
-    version === 4 ? fromVersion4(state) : state,
-    map,
-    table,
-    kindTable,
-    spawnTable,
-  );
+  const current =
+    version === 4 ? fromVersion5(fromVersion4(state)) : version === 5 ? fromVersion5(state) : state;
+  const world = readState(current, map, table, kindTable, spawnTable);
   if (!world || hashWorldAs(world, version) !== hash)
     throw new SnapshotError("snapshot contents are damaged");
   return world;
@@ -1159,6 +1195,32 @@ function fromVersion4(state: unknown): unknown {
       typeof actor === "object" && actor !== null ? { ...actor, shift: "", stalled: 0 } : actor,
     ),
   };
+}
+
+/**
+ * A version 5 world's state with the fields version 6 added: nobody has any
+ * experience yet, and every bag and bank is empty.
+ */
+function fromVersion5(state: unknown): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return state;
+  return {
+    ...state,
+    actors: actors.map((actor: unknown) =>
+      typeof actor === "object" && actor !== null
+        ? { ...actor, xp: noXp(), bag: emptyBag(), bank: emptyBank() }
+        : actor,
+    ),
+  };
+}
+
+/** A copy of `value` if it is a list of `length` whole numbers from 0 to `most`, else null. */
+function counts(value: unknown, length: number, most: number): number[] | null {
+  const list = plainList(value, length);
+  if (!list || list.length !== length) return null;
+  if (!list.every((n) => isInt32(n) && n >= 0 && n <= most)) return null;
+  return (list as number[]).map((n) => n | 0);
 }
 
 const MAX_WAIT_TICKS = 1_000_000;
@@ -1227,7 +1289,16 @@ function readState(
       recover,
       shift,
       stalled,
+      xp: rawXp,
+      bag: rawBag,
+      bank: rawBank,
     } = item as Record<string, unknown>;
+    const xp = counts(rawXp, SKILLS.length, MAX_XP);
+    const bag = counts(rawBag, BAG_SLOTS, GOODS.length);
+    const bank = counts(rawBank, GOODS.length, MAX_BANKED);
+    if (!xp || !bag || !bank) return null;
+    // A monster has no skills and carries and keeps nothing.
+    if (kind !== ADVENTURER && [...xp, ...bag, ...bank].some((n) => n !== 0)) return null;
     if (!isInt32(id) || id <= lastId || id >= nextActorId) return null;
     lastId = id;
     if (typeof kind !== "string") return null;
@@ -1295,6 +1366,9 @@ function readState(
       recover,
       shift: shift as Shift,
       stalled,
+      xp,
+      bag,
+      bank,
     });
   }
   // Only adventurers share a tile.

@@ -104,6 +104,15 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `threat_recovering` | sensor | 0     | Ticks after this one that the nearest enemy still needs to get its balance back after its last blow: 0 if it can act on the next tick, or if there is no enemy.                                              |
 | `step_to`           | action | 2     | Take the first step of the way `walk_to` would go to tile (x, y).                                                                                                                                            |
 | `stalled`           | sensor | 0     | How many decisions in a row, up to 1000, chose to move (`walk_to`, `wander`, `step_clear`, `flee` or `step_to`) and found nowhere to go. 0 after any other decision.                                         |
+| `level`             | sensor | 1     | This adventurer's level, 1 to 99, in a skill: `melee`, `hitpoints`, `woodcutting`, `fishing` or `cooking`. 0 for anything else, and for a monster.                                                           |
+| `xp`                | sensor | 1     | This adventurer's experience in a skill, as for `level`; 0 for anything else.                                                                                                                                |
+| `bag_free`          | sensor | 0     | How many of the bag's 12 slots are empty.                                                                                                                                                                    |
+| `carrying`          | sensor | 1     | How many of a good (`logs`, `raw_fish` or `cooked_fish`) are in the bag; 0 for anything else.                                                                                                                |
+| `banked`            | sensor | 1     | How many of a good are in this adventurer's bank, as for `carrying`.                                                                                                                                         |
+| `at_bank`           | sensor | 0     | 1 if this actor stands next to the bank chest, where it can deposit and withdraw, else 0.                                                                                                                    |
+| `deposit`           | action | 2     | At the bank, put up to the given number of a good from the bag into the bank: deposit(logs, 5). Away from it, nothing happens.                                                                               |
+| `withdraw`          | action | 2     | At the bank, take up to the given number of a good out of the bank, as many as there are empty slots for.                                                                                                    |
+| `bank_all`          | action | 0     | At the bank, put everything in the bag into the bank.                                                                                                                                                        |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
@@ -162,6 +171,38 @@ The three resident programs fight in different ways. `wanderer` walks up to an
 enemy and trades blows. `riverwalker` steps out of every blow it sees coming and
 hits back in between. `homebody` keeps out of reach and only goes in while the
 monster is recovering.
+
+## Skills and the bank
+
+An adventurer has five skills: `melee`, `hitpoints`, `woodcutting`, `fishing`
+and `cooking`. Each has its own experience and a level from 1 to 99 that comes
+from it. Level 2 takes 83 experience, level 10 takes 1,154, and each level
+after that takes about a tenth more than the one before, so level 99 is at
+13,034,431. Experience stops at 200,000,000.
+
+Experience only comes from doing the thing. Every hitpoint an adventurer's
+blow takes off a monster is 4 Melee experience, and every hitpoint a
+monster's blow takes off an adventurer is 4 Hitpoints experience. A blow that
+finishes a monster with 2 hitpoints left counts 2, whatever it would have
+done. Nothing gives Woodcutting, Fishing or Cooking experience yet. Levels do
+not change anything else yet either.
+
+Skill and good names are known to every program, so they can be passed to the
+sensors and actions above: `level(melee)`, `carrying(logs)`.
+
+The bag has 12 slots, and each slot holds one good. Each adventurer also has
+its own bank, which holds any number of each good. Banking is done standing
+next to the bank chest at camp (`at_bank` says whether this actor is). There,
+`deposit(logs, 5)` moves up to five logs from the bag into the bank, and
+`withdraw(cooked_fish, 3)` takes up to three out, as many as there are empty
+slots for. `bank_all` deposits everything. A count larger than there is moves
+what there is; away from the chest, or with a count below 1 or a name that is
+not a good, nothing happens. Either way the actor then stands for five ticks.
+
+```
+when bag_free == 0 and at_bank == 0 as "bag full" -> walk_to(bank)
+when at_bank and bag_free < 12 as "banking" -> bank_all
+```
 
 ## Monsters
 

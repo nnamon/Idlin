@@ -35,6 +35,9 @@ character is doing, and roughly why.
 
 - A character's program is a short list of rules. The rule currently in charge
   is shown on the page beside the map, under the character's name. This part is built.
+  So are its hitpoints, at the end of the name's line, and a line under the rule
+  with its level in each skill, each behind a small mark (sword, heart, hatchet,
+  fish, pot).
 - Monster attacks will be telegraphed: the monster winds up, and the tiles it
   is about to hit are marked for a moment. Whether the adventurer steps out of
   the way depends on its program, so a fight is a series of small decisions
