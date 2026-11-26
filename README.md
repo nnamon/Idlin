@@ -1,28 +1,30 @@
 # Idlin
 
 Idlin is an idle RPG built to run unattended on a livestream. Nobody plays it
-directly. Each character is driven by a small script running in a sandboxed VM,
-and monsters will work the same way. The plan is that viewers get to write the
+directly. Each character will be driven by a small script running in a
+sandboxed VM, monsters included, and the plan is that viewers get to write the
 scripts.
 
-It's early. There's one map, six characters walking around, and a day/night
-cycle. Combat, skills and loot don't exist yet; [docs/roadmap.md](docs/roadmap.md)
-has the order they're planned in.
+It's early. There's one map, six characters walking around at random, and a
+day/night cycle. The VM exists but the viewer doesn't use it yet. Combat,
+skills and loot don't exist at all; [docs/roadmap.md](docs/roadmap.md) has the
+order they're planned in.
 
 ![Screenshot of the game at night](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
 
-More screenshots, at 06:15, 12:30 and 19:12 game time:
+More screenshots, at dawn, noon and dusk:
 
 |                                                                                 |                                                                                 |                                                                                 |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png) | ![Dusk](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dusk.png) |
 
-The screenshots are taken from the running game by `tools/capture` and get
-replaced when the game changes, so they should match what's on `main`.
+The screenshots are taken from the running game by `tools/capture` and are
+refreshed from `main`, so they should be close to what you get if you run it.
+The art is going to change.
 
 ## Running it
 
-You need Docker. Nothing else gets installed on your machine.
+You need Docker. Everything else runs in containers.
 
 ```sh
 docker compose run --rm dev pnpm install
@@ -46,8 +48,8 @@ docker compose run --rm dev pnpm gate
 - [AGENTS.md](AGENTS.md): most of this repo is written by AI agents working
   from the issue tracker, and this is the process they follow
 
-The art is Kenney's Tiny Town and Tiny Dungeon packs (CC0); see
+The current art and fonts are Kenney's (CC0); see
 [assets/CREDITS.md](assets/CREDITS.md).
 
-An older, unrelated version of the game is on the branch
+An earlier codebase for Idlin is on the branch
 `archive/idlin-pre-2.0-2026-09-02`.
