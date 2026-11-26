@@ -95,6 +95,40 @@ export function half(image: Image): Image {
   return { width, height, data };
 }
 
+/** The part of the image from (left, top), `width` by `height`, kept inside the image. */
+export function crop(
+  image: Image,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): Image {
+  const x0 = Math.max(0, Math.min(image.width - 1, Math.floor(left)));
+  const y0 = Math.max(0, Math.min(image.height - 1, Math.floor(top)));
+  const w = Math.max(1, Math.min(image.width - x0, Math.floor(width)));
+  const h = Math.max(1, Math.min(image.height - y0, Math.floor(height)));
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const from = ((y0 + y) * image.width + x0) * 4;
+    data.set(image.data.subarray(from, from + w * 4), y * w * 4);
+  }
+  return { width: w, height: h, data };
+}
+
+/** The image `k` times larger, each pixel a k by k square, so small detail can be looked at. */
+export function enlarge(image: Image, k: number): Image {
+  const width = image.width * k;
+  const height = image.height * k;
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const from = (Math.floor(y / k) * image.width + Math.floor(x / k)) * 4;
+      data.set(image.data.subarray(from, from + 4), (y * width + x) * 4);
+    }
+  }
+  return { width, height, data };
+}
+
 export function encodePng(image: Image): Buffer {
   const png = new PNG({ width: image.width, height: image.height });
   png.data.set(image.data);

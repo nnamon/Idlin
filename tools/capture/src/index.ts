@@ -9,7 +9,8 @@
 // run forward to before the page draws, `ticks` are stepped after that.
 //
 // `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
-// burst.png, fight.png, fight-burst.png, fight-down.png, daystrip.png, crowd-12/50/150.png, metrics.json, and a
+// figures.png and its crops, burst.png, fight.png, fight-burst.png, fight-down.png, daystrip.png,
+// crowd-12/50/150.png, metrics.json, and a
 // `showcase` folder for the README. With `--baseline`, also compare.png: that
 // folder's storyboard above this one. Everything comes from seed 1, so two
 // runs of the same code give the same files.
@@ -23,7 +24,17 @@ import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 import { parseArgs } from "./args.ts";
 import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
 import { spotlightWait, watchMetrics } from "./metrics.ts";
-import { decodePng, encodeGif, encodePng, grid, half, type Image, stack } from "./sheet.ts";
+import {
+  crop,
+  decodePng,
+  encodeGif,
+  encodePng,
+  enlarge,
+  grid,
+  half,
+  type Image,
+  stack,
+} from "./sheet.ts";
 import { busiest, play, spotlightRun } from "./simrun.ts";
 
 const DIST = new URL("../../../packages/client/dist/", import.meta.url).pathname;
@@ -85,10 +96,16 @@ type Idlin = {
 /**
  * Opens the viewer in capture mode at a game hour and waits until it has
  * drawn its first frame. With `monsters`, the world has the shipped monsters
- * in it, as it does not yet by default.
+ * in it, as it does not yet by default. With `levels`, the residents are given
+ * a spread of levels (a viewer from before `?levels` ignores it).
  */
-async function open(hour: number | string, residents = 6, monsters = false): Promise<void> {
-  const fight = monsters ? "&monsters" : "";
+async function open(
+  hour: number | string,
+  residents = 6,
+  monsters = false,
+  levels = false,
+): Promise<void> {
+  const fight = `${monsters ? "&monsters" : ""}${levels ? "&levels" : ""}`;
   await page.goto(`${origin}/?capture&seed=1&hour=${hour}&crowd=${residents}${fight}`);
   await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
   const failure = await page.evaluate(() => document.body.dataset.error ?? null);
@@ -161,6 +178,10 @@ async function save(name: string, bytes: Uint8Array): Promise<void> {
 const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 20.1, 22];
 const FIGHT_HOUR = 9.475;
 const FLICKER_FIGHTS = [9.488, 22.52];
+// The figures sheet: when, and the part of the 1920 by 1080 frame round the camp.
+const FIGURES_HOUR = 7;
+const FIGURES_TICKS = 0;
+const FIGURES_CROP = [480, 300, 720, 405] as const;
 await page.setViewportSize({ width: 1920, height: 1080 });
 let worst = { index: 0, hour: 0 };
 for (const [hour, monsters] of [
@@ -189,6 +210,28 @@ const flickerFail =
     : [];
 
 if (review) {
+  // Figures: twelve residents with a spread of levels, in the morning: the
+  // whole frame, a close crop of the camp twice as large, and the same as a
+  // 640-wide window shows it, with its crop four times as large.
+  await open(FIGURES_HOUR, 12, false, true);
+  await advance(FIGURES_TICKS);
+  const figures = await frame(1);
+  await save("figures.png", encodePng(figures));
+  await save("figures-crop.png", encodePng(enlarge(crop(figures, ...FIGURES_CROP), 2)));
+  await page.setViewportSize({ width: 640, height: 360 });
+  await open(FIGURES_HOUR, 12, false, true);
+  await advance(FIGURES_TICKS);
+  const small = decodePng(await page.screenshot());
+  await save("figures-640.png", encodePng(small));
+  const [left, top, width, height] = FIGURES_CROP.map((n) => n / 3) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  await save("figures-640-crop.png", encodePng(enlarge(crop(small, left, top, width, height), 4)));
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
   const DAY = 24 * 600;
   // The world the page shows, run here as well for the numbers the picture cannot give.
   const sim: Record<string, ReturnType<typeof watchMetrics>> = {};

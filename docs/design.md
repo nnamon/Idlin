@@ -167,6 +167,24 @@ what tell them apart, so they are also how a viewer finds their own. A figure th
 has a while to wait sits down, sinking over a few ticks rather than dropping
 at once, and gets up the same way.
 
+Each figure is drawn from a sheet of parts (`packages/client/src/looks.ts`,
+drawn by `figure.ts`). From its id a resident gets a hood shape (point, round,
+brim or cowl), a cloak pattern in its hood colour (plain, band, stripe or
+check), one of 24 marks, shown on its cloak and after its name on the page,
+and a way of sitting to rest (upright, leaning back, hunched, or knees drawn
+up). The first 16 residents have all 16 pairs of hood and pattern. From its
+levels it gets its kit and its walk. The trade at its highest level (Melee,
+Woodcutting, Fishing or Cooking) puts a tool over its back shoulder, with a
+tier at levels 1, 20, 40, 60 and 80: hatchet, felling axe, double-bit; a rod
+that gets longer, with a float on the longest; cudgel, sword, sword and shield;
+ladle, pan, pot. At 60 a pennant is tied to the tool, and at 80 it becomes a
+long swallowtail. Someone with every trade still at level 1 carries a staff, a
+pack or nothing, by id. A newcomer bobs on short steps; as the total of its
+levels nears 200 it walks lower, leaning into a longer stride. What differs
+sits above or outside the outline so that it still reads on a figure about 13
+pixels tall in a 640-wide window, and a name slip sits above the figure's own
+top. Stitched patches for deaths wait for the world to count deaths (#279).
+
 Small effects show what the residents are doing. Each is read off the world
 once a tick, from how an actor changed since the last one, and drawn from that
 and the time alone, with no randomness of its own; they are pen strokes,

@@ -43,7 +43,7 @@ import {
   shove,
   stoopAt,
 } from "./fight.ts";
-import { drawFigure, type FigureStyle } from "./figure.ts";
+import { drawFigure, drawMarkGlyph, type FigureStyle, figureTop, liftOf } from "./figure.ts";
 import {
   FRAME_HEIGHT,
   FRAME_WIDTH,
@@ -71,6 +71,7 @@ import {
   rgb,
   skyCast,
 } from "./light.ts";
+import { looks, type Parts, partsFor } from "./looks.ts";
 import {
   drawBlot,
   drawDust,
@@ -152,6 +153,10 @@ const BLOT_SIZE: Readonly<Record<string, number>> = { wolf: 50, goblin: 36, [ADV
 const NEWS_QUEUE = 3;
 
 const isResident = (actor: Actor): boolean => actor.kind === ADVENTURER;
+
+/** The parts a resident's figure is drawn from; by its id alone if it has left the world. */
+const partsIn = (world: World, id: number): Parts =>
+  partsFor(world.actors.find((actor) => actor.id === id) ?? id);
 
 interface Walker {
   readonly actor: Actor;
@@ -467,7 +472,7 @@ export class Scene {
         out.fillStyle = css(palette.paper);
         out.fillRect(0, 0, this.frameWidth, this.frameHeight);
         out.translate(mx, 0);
-        this.page(out, world, palette, this.pageStyle(palette));
+        this.page(out, world, palette, this.pageStyle(world, palette));
       }
       out.restore();
     }
@@ -942,10 +947,12 @@ export class Scene {
       this.tagWidths.set(actor.name, width);
     }
     const feet = pose.y * TILE - 4;
+    // Over the top of the figure, which a tall hood or a tool held high raises.
+    const parts = partsFor(actor);
     return {
       id: actor.id,
       x: pose.x * TILE,
-      y: feet - (46 - 7 * pose.sit) * FIGURE_SCALE - pose.hop * 3,
+      y: feet - (figureTop(parts) - 7 * pose.sit + liftOf(pose, parts.gait)) * FIGURE_SCALE,
       width,
     };
   }
@@ -1090,7 +1097,7 @@ export class Scene {
         }
       }
     };
-    const style = this.figureStyle(palette);
+    const style = this.figureStyle(world, palette);
     const beastStyle = (kind: string) => ({
       body: css(kind === "wolf" ? palette.wash.wolf : palette.wash.goblin),
       ink,
@@ -1149,7 +1156,7 @@ export class Scene {
       ctx.restore();
     }
 
-    this.page(ctx, world, palette, this.pageStyle(palette));
+    this.page(ctx, world, palette, this.pageStyle(world, palette));
     ctx.restore();
   }
 
@@ -1232,10 +1239,10 @@ export class Scene {
           still(collapse),
           {
             ...identity(fallen.id),
+            ...partsIn(world, fallen.id),
             ink,
             paper,
             facing: fallen.facing,
-            kit: fallen.id % 3,
             scale: FIGURE_SCALE,
           },
           0,
@@ -1276,15 +1283,15 @@ export class Scene {
   }
 
   /** How a figure is drawn in these inks. */
-  private figureStyle(palette: Palette): (id: number, scale: number) => FigureStyle {
+  private figureStyle(world: World, palette: Palette): (id: number, scale: number) => FigureStyle {
     const ink = css(palette.ink);
     const paper = css(palette.paper);
     return (id, scale) => ({
       ...identity(id),
+      ...partsIn(world, id),
       ink,
       paper,
       facing: this.facing.get(id) ?? 1,
-      kit: id % 3,
       scale,
     });
   }
@@ -1294,8 +1301,8 @@ export class Scene {
    * a shade below the ink of its outline and warm, as the faces in lamplight
    * on the map are, with an eye in the paper's dark. Its pack keeps the paper.
    */
-  private pageStyle(palette: Palette): (id: number, scale: number) => FigureStyle {
-    const style = this.figureStyle(palette);
+  private pageStyle(world: World, palette: Palette): (id: number, scale: number) => FigureStyle {
+    const style = this.figureStyle(world, palette);
     const night =
       palette.ink === NIGHT.ink ? { face: css(NIGHT_FACE), eye: css(palette.paper) } : {};
     return (id, scale) => ({ ...style(id, scale), ...night });
@@ -1400,7 +1407,20 @@ export class Scene {
       const hpRoom = hpWidth(ctx, actor.hp, max) + 16;
       drawHp(ctx, actor.hp, max, x1, top + nameLine);
       ctx.font = '42px "Fell SC"';
-      ctx.fillText(actor.name, x0 + 86, top + nameLine, Math.max(40, x1 - x0 - 86 - hpRoom));
+      const nameRoom = Math.max(40, x1 - x0 - 86 - hpRoom);
+      ctx.fillText(actor.name, x0 + 86, top + nameLine, nameRoom);
+      // The resident's mark after its name, where there is room for it.
+      const nameEnd = Math.min(ctx.measureText(actor.name).width, nameRoom);
+      if (nameEnd + 40 <= nameRoom)
+        drawMarkGlyph(
+          ctx,
+          looks(actor.id).mark,
+          x0 + 86 + nameEnd + 22,
+          top + nameLine - 14,
+          22,
+          ink,
+          2.4,
+        );
       // What the actor's program is doing, in the program's own words: the label of the rule that fired.
       // One downed and resting at camp runs no program, so its last rule is not what it is doing.
       const label = world.programs[actor.program]?.rules[actor.rule];

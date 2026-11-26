@@ -1,4 +1,5 @@
 import {
+  ADVENTURER,
   compileBots,
   createWorld,
   loadMonsters,
@@ -9,9 +10,10 @@ import {
   step,
   TICKS_PER_GAME_HOUR,
   TICKS_PER_SECOND,
+  XP_TABLE,
 } from "@idlin/sim";
 import mapJson from "../../../content/maps/first-light.json";
-import { castOf } from "./cast.ts";
+import { castOf, spreadLevels } from "./cast.ts";
 import { fitFrame } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
 import { follow } from "./live.ts";
@@ -95,6 +97,12 @@ async function main(): Promise<void> {
   // `?crowd=50` fills the camp with that many residents, to see how a crowd reads.
   const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
   step(world, spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)));
+  // `?levels` gives the residents a spread of levels, so a capture can show every kit tier.
+  if (params.has("levels"))
+    spreadLevels(
+      world.actors.filter((actor) => actor.kind === ADVENTURER),
+      (level) => XP_TABLE[level] ?? 0,
+    );
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
 
@@ -122,7 +130,11 @@ async function main(): Promise<void> {
   // By default the page follows the world server (`?server=ws://host:port` for another
   // address). It runs a world of its own for captures, or when the URL asks for one with
   // `?local` or any of the settings only a world of its own can take.
-  if (!["capture", "local", "seed", "hour", "crowd", "monsters"].some((name) => params.has(name))) {
+  if (
+    !["capture", "local", "seed", "hour", "crowd", "monsters", "levels"].some((name) =>
+      params.has(name),
+    )
+  ) {
     await document.fonts.ready;
     const server = params.get("server") || `ws://${location.hostname}:4311`;
     follow(scene, world.map, world.programs, server);

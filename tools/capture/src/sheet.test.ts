@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { decodePng, encodeGif, encodePng, grid, half, type Image, stack } from "./sheet.ts";
+import {
+  crop,
+  decodePng,
+  encodeGif,
+  encodePng,
+  enlarge,
+  grid,
+  half,
+  type Image,
+  stack,
+} from "./sheet.ts";
 import { busiest, play } from "./simrun.ts";
 
 const flat = (width: number, height: number, grey: number): Image => {
@@ -9,6 +19,21 @@ const flat = (width: number, height: number, grey: number): Image => {
 };
 const at = (image: Image, x: number, y: number): number =>
   image.data[(y * image.width + x) * 4] as number;
+
+describe("crops", () => {
+  it("cuts out a part of an image, kept inside it, and enlarges it pixel for pixel", () => {
+    const data = new Uint8Array(4 * 3 * 4);
+    for (let i = 0; i < 12; i++) data[i * 4] = i;
+    const image: Image = { width: 4, height: 3, data };
+    const part = crop(image, 1, 1, 2, 2);
+    expect([part.width, part.height]).toEqual([2, 2]);
+    expect([at(part, 0, 0), at(part, 1, 0), at(part, 0, 1), at(part, 1, 1)]).toEqual([5, 6, 9, 10]);
+    expect([crop(image, 3, 2, 10, 10).width, crop(image, -5, 0, 2, 9).height]).toEqual([1, 3]);
+    const big = enlarge(part, 3);
+    expect([big.width, big.height]).toEqual([6, 6]);
+    expect([at(big, 2, 2), at(big, 3, 2), at(big, 5, 5)]).toEqual([5, 6, 10]);
+  });
+});
 
 describe("sheets", () => {
   it("lays frames out in reading order with a gap round each", () => {

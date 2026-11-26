@@ -20,6 +20,11 @@ that folder's storyboard above the new one.
 - **burst**: 12 consecutive rendered frames from the busiest moment. Shows
   motion, and exposes flicker.
 - **day strip**: 6 frames across a full day. Shows the light changing.
+- **figures**: 12 residents at 07:00 with a spread of levels (`?levels`, which
+  only a capture's own world takes), so every kit tier and walk can be seen:
+  the full frame, a crop round the camp at twice the size, the same frame as a
+  640-wide window shows it, and that crop at four times the size. Shows
+  whether residents can be told apart and ranked at a glance.
 - **fight**, **fight burst** and **fight down**: the same seed with the
   shipped monsters let in (`?monsters`), which the world does not have by
   default yet. The fight sheet is 12 frames a second apart from 09:28, over a
