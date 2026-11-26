@@ -71,7 +71,11 @@ describe("placeTags", () => {
     expect(spot).toBeGreaterThan(0);
     const memory = new Map([[1, spot]]);
     // The other character has only just stepped clear: the tag stays.
-    const nearby = placeTags([wish(1, 500, 400), wish(2, 560, 352)], memory, BOUNDS);
+    // Its body ends 6 pixels from where the tag would sit: free, but without room to spare.
+    const nearby = placeTags([wish(1, 500, 400), wish(2, 570, 352)], memory, BOUNDS);
+    expect(placeTags([wish(1, 500, 400), wish(2, 570, 352)], new Map(), BOUNDS).get(1)?.spot).toBe(
+      0,
+    );
     expect(nearby.get(1)?.spot).toBe(spot);
     // It has walked well away: the tag goes home.
     const gone = placeTags([wish(1, 500, 400), wish(2, 900, 352)], memory, BOUNDS);
@@ -84,7 +88,18 @@ describe("placeTags", () => {
       expect(box.left).toBeGreaterThanOrEqual(0);
       expect(box.right).toBeLessThanOrEqual(BOUNDS.width);
       expect(box.bottom).toBeLessThanOrEqual(BOUNDS.height);
+      expect(box.top).toBeGreaterThanOrEqual(0);
     }
+    // On the top row the favourite spot would stick out above the world, so another is taken.
+    const top = placeTags([wish(1, 500, 10)], new Map(), BOUNDS).get(1);
+    expect(top?.spot).not.toBe(0);
+    expect(top?.box.top).toBeGreaterThanOrEqual(0);
+    // Even when every spot is taken, a tag is not pushed off the top.
+    const crush = Array.from({ length: 9 }, (_, i) =>
+      wish(i + 1, 500 + (i % 3) * 20, 10 + Math.floor(i / 3) * 12),
+    );
+    for (const { box } of placeTags(crush, new Map(), BOUNDS).values())
+      expect(box.top).toBeGreaterThanOrEqual(0);
   });
 
   it("gives the same answer for the same input", () => {

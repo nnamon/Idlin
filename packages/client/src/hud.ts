@@ -67,8 +67,9 @@ export function createHud(
       setText(time, `${two(hour)}:${two(minute)}`);
       setText(phase, `Day ${day + 1} · ${name}`);
       // The mark travels left to right across the dial once a day; noon is the middle.
-      sun.style.left = `${(((hour + minute / 60 + 18) % 24) / 24) * 100}%`;
-      dial.dataset.phase = name.toLowerCase();
+      const left = `${(((hour + minute / 60 + 18) % 24) / 24) * 100}%`;
+      if (sun.style.left !== left) sun.style.left = left;
+      if (dial.dataset.phase !== name.toLowerCase()) dial.dataset.phase = name.toLowerCase();
       setText(line, `Day ${day + 1} · ${name} over Idlin`);
 
       const present = new Set<number>();

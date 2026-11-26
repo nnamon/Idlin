@@ -38,6 +38,10 @@ describe("actorPose", () => {
     // The largest move between two samples a quarter of a tick apart is a small part of a tile.
     const jumps = xs.slice(1).map((x, i) => x - (xs[i] as number));
     expect(Math.max(...jumps)).toBeLessThan(2);
+    // Eased: it sets off and arrives slowly, and is fastest in the middle of the step.
+    const middle = jumps[Math.floor(jumps.length / 2)] as number;
+    expect(jumps[0]).toBeLessThan(middle / 2);
+    expect(jumps.at(-1)).toBeLessThan(middle / 2);
   });
 
   it("joins one step to the next without a jump", () => {

@@ -1,6 +1,7 @@
 import {
   createWorld,
   parseMap,
+  START_HOUR,
   spawnsNearCamp,
   step,
   TICKS_PER_GAME_HOUR,
@@ -31,7 +32,7 @@ const must = (id: string): HTMLElement => {
 async function main(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const seed = Number.parseInt(params.get("seed") ?? "1", 10) | 0;
-  const startHour = Number.parseFloat(params.get("hour") ?? "6");
+  const startHour = Number.parseFloat(params.get("hour") ?? String(START_HOUR));
 
   const frame = must("frame");
   const fit = (): void => {
@@ -44,7 +45,7 @@ async function main(): Promise<void> {
   const world = createWorld(parseMap(mapJson), seed);
   step(world, spawnsNearCamp(world, NAMES));
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
-  const skip = Math.round(((((startHour - 6) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
+  const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
   for (let i = 0; i < skip; i++) step(world);
 
   const scene = await Scene.create(must("world"), world.map);
@@ -78,7 +79,7 @@ async function main(): Promise<void> {
   const loop = (now: number): void => {
     // Time since the last frame, never negative. After a long pause (a hidden
     // tab) the world does not race to catch up: at most three ticks are owed, so
-    // nothing visibly jumps and the picture carries on from where it was.
+    // the worst a returning viewer sees is one step of under a tile.
     owed = Math.min(owed + Math.max(0, now - (last ?? now)), tickMs * 3);
     last = now;
     while (owed >= tickMs) {

@@ -25,6 +25,7 @@ export interface Placement {
 }
 
 export const TAG_HEIGHT = 28;
+// A character on screen: a 16-pixel sprite drawn at 3x, so 48 frame pixels wide, with a little room above.
 const BODY_HALF_WIDTH = 24;
 const BODY_HEIGHT = 54;
 /** A tag only returns to its favourite spot once there is this much clear room around it. */
@@ -85,7 +86,13 @@ export function placeTags(
 
     const before = previous.get(wish.id) ?? 0;
     let spot = SPOTS.findIndex((_, k) => free(at(k)));
-    if (spot < 0) spot = 0;
+    // Nowhere is free: take the first spot that at least stays inside the world.
+    if (spot < 0) {
+      spot = Math.max(
+        0,
+        SPOTS.findIndex((_, k) => at(k).top >= 0 && at(k).bottom <= bounds.height),
+      );
+    }
     // Stay put if the old spot still works, unless the favourite spot has plenty of room again.
     if (
       before !== spot &&

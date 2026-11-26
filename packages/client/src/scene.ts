@@ -398,8 +398,9 @@ export class Scene {
           [0.5, 2],
         ] as const) {
           const drift = (((time * 0.035 + actor.id * 0.37 + delay) % 1) + 1) % 1;
-          const zx = Math.round(x + 5 + drift * 3);
-          const zy = Math.round(y - TILE - 2 - drift * 7);
+          // Beside the head, to the right, and never as high as the name tag above it.
+          const zx = Math.round(x + 9 + drift * 3);
+          const zy = Math.round(y - 9 - drift * 6);
           const alpha = Math.sin(Math.PI * drift) * 0.9;
           this.marks.rect(zx, zy, size, 1).fill({ color: 0xf4e6cf, alpha });
           this.marks
