@@ -13,7 +13,7 @@ const FORBIDDEN: [RegExp, string][] = [
 
 describe("simulation purity", () => {
   const dir = new URL(".", import.meta.url);
-  const sources = readdirSync(dir).filter(
+  const sources = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter(
     (f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && f !== "testing.ts",
   );
 

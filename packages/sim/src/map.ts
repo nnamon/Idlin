@@ -1,5 +1,7 @@
 // The tile map: loaded from content, validated once, then read-only.
 
+import { show } from "./hash.ts";
+
 /** Every terrain a map may use. The order is part of the world hash; append only. */
 export const TERRAINS = [
   "grass",
@@ -56,7 +58,7 @@ export class MapError extends Error {
 export const tileIndex = (map: TileMap, x: number, y: number): number => y * map.width + x;
 
 export const inBounds = (map: TileMap, x: number, y: number): boolean =>
-  x >= 0 && y >= 0 && x < map.width && y < map.height;
+  Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < map.width && y < map.height;
 
 export function terrainAt(map: TileMap, x: number, y: number): Terrain {
   const terrain = TERRAINS[map.tiles[tileIndex(map, x, y)] ?? -1];
@@ -105,7 +107,7 @@ export function parseMap(raw: unknown): TileMap {
   for (const [symbol, terrain] of Object.entries(legend)) {
     const index = TERRAINS.indexOf(terrain as Terrain);
     if (symbol.length !== 1) return fail(`legend key "${symbol}" must be a single character`);
-    if (index < 0) return fail(`legend maps "${symbol}" to unknown terrain "${String(terrain)}"`);
+    if (index < 0) return fail(`legend maps "${symbol}" to unknown terrain ${show(terrain)}`);
     terrainOf.set(symbol, index);
   }
 

@@ -1,7 +1,7 @@
 // The world and the one function that advances it. Everything here is a pure
 // function of the seed, the map and the inputs: integers only, no clock.
 
-import { hashInts, stringInts } from "./hash.ts";
+import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
 import { createRng, type Rng } from "./rng.ts";
 import { wander } from "./wander.ts";
@@ -65,9 +65,13 @@ export function step(world: World, inputs: readonly Input[] = []): void {
 
 function applyInput(world: World, input: Input): void {
   // An input that cannot be honoured is dropped; it never throws and never half-applies.
-  const { name, x, y } = input;
-  const nameOk = typeof name === "string" && name.length >= 1 && name.length <= MAX_NAME_LENGTH;
-  if (!nameOk || !Number.isInteger(x) || !Number.isInteger(y)) return;
+  // Inputs come from outside the simulation, so nothing about their shape is assumed.
+  const raw: unknown = input;
+  if (typeof raw !== "object" || raw === null) return;
+  const { type, name, x, y } = raw as Record<string, unknown>;
+  if (type !== "spawn") return;
+  if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return;
+  if (!isInt32(x) || !isInt32(y)) return;
   if (!isWalkable(world.map, x, y) || actorAt(world, x, y)) return;
   world.actors.push({
     id: world.nextActorId++,
@@ -215,25 +219,74 @@ export function snapshot(world: World): string {
  * version, another map, or contents that do not hash to what was saved.
  */
 export function restore(text: string, map: TileMap): World {
-  let parsed: unknown;
+  let data: unknown;
   try {
-    parsed = JSON.parse(text);
+    data = JSON.parse(text);
   } catch {
     throw new SnapshotError("snapshot is not valid JSON");
   }
-  const data = parsed as { version?: unknown; map?: unknown; hash?: unknown; state?: unknown };
-  if (typeof data !== "object" || data === null)
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
     throw new SnapshotError("snapshot is not an object");
-  if (data.version !== SNAPSHOT_VERSION) {
-    throw new SnapshotError(`snapshot version ${String(data.version)} is not ${SNAPSHOT_VERSION}`);
   }
-  if (data.map !== hashMap(map)) throw new SnapshotError("snapshot was taken on a different map");
-  let world: World;
-  try {
-    world = { ...(data.state as Omit<World, "map">), map };
-    if (hashWorld(world) !== data.hash) throw new Error("hash mismatch");
-  } catch {
-    throw new SnapshotError("snapshot contents are damaged");
+  const { version, map: mapHash, hash, state } = data as Record<string, unknown>;
+  if (version !== SNAPSHOT_VERSION) {
+    throw new SnapshotError(`snapshot version ${show(version)} is not ${SNAPSHOT_VERSION}`);
+  }
+  if (mapHash !== hashMap(map)) throw new SnapshotError("snapshot was taken on a different map");
+  const world = readState(state, map);
+  if (!world || hashWorld(world) !== hash) throw new SnapshotError("snapshot contents are damaged");
+  return world;
+}
+
+const MAX_WAIT_TICKS = 1_000_000;
+
+/**
+ * Rebuilds world state field by field, or returns null if anything is not what
+ * a world could hold. The hash alone is not trusted for this: it folds every
+ * value to 32 bits, so it cannot tell a number from a string that reads the same.
+ */
+function readState(raw: unknown, map: TileMap): World | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { tick, rng, nextActorId, actors } = raw as Record<string, unknown>;
+  if (!isInt32(tick) || tick < 0 || !isInt32(nextActorId) || nextActorId < 1) return null;
+  if (typeof rng !== "object" || rng === null || !Array.isArray(actors)) return null;
+  const { a, b, c, d } = rng as Record<string, unknown>;
+  if (!isInt32(a) || !isInt32(b) || !isInt32(c) || !isInt32(d)) return null;
+
+  const world: World = { map, tick, rng: { a, b, c, d }, nextActorId, actors: [] };
+  const adjacent = (p: Point, q: Point): boolean => Math.abs(p.x - q.x) + Math.abs(p.y - q.y) === 1;
+  let lastId = 0;
+  for (const item of actors as unknown[]) {
+    if (typeof item !== "object" || item === null) return null;
+    const { id, name, x, y, fromX, fromY, moveTicksLeft, path, wait, blocked } = item as Record<
+      string,
+      unknown
+    >;
+    if (!isInt32(id) || id <= lastId || id >= nextActorId) return null;
+    lastId = id;
+    if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
+    if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
+    if (!isWalkable(map, x, y) || !isWalkable(map, fromX, fromY) || actorAt(world, x, y))
+      return null;
+    if (!isInt32(moveTicksLeft) || moveTicksLeft < 0 || moveTicksLeft > STEP_TICKS) return null;
+    const here = { x, y };
+    const from = { x: fromX, y: fromY };
+    if (moveTicksLeft === 0 ? fromX !== x || fromY !== y : !adjacent(here, from)) return null;
+    if (!isInt32(wait) || wait < 0 || wait > MAX_WAIT_TICKS) return null;
+    if (!isInt32(blocked) || blocked < 0 || blocked >= BLOCKED_PATIENCE_TICKS) return null;
+    if (!Array.isArray(path) || path.length > map.tiles.length) return null;
+    const steps: Point[] = [];
+    let at: Point = here;
+    for (const stepTo of path as unknown[]) {
+      if (typeof stepTo !== "object" || stepTo === null) return null;
+      const { x: sx, y: sy } = stepTo as Record<string, unknown>;
+      if (!isInt32(sx) || !isInt32(sy) || !isWalkable(map, sx, sy)) return null;
+      const next = { x: sx, y: sy };
+      if (!adjacent(at, next)) return null;
+      steps.push(next);
+      at = next;
+    }
+    world.actors.push({ id, name, x, y, fromX, fromY, moveTicksLeft, path: steps, wait, blocked });
   }
   return world;
 }

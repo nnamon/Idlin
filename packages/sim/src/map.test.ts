@@ -52,6 +52,11 @@ describe("parseMap", () => {
       tiny({ legend: { ".": "lava", "#": "rock" } }),
       /unknown terrain "lava"/,
     ],
+    [
+      "a terrain that cannot be printed",
+      tiny({ legend: { ".": { toString: null }, "#": "rock" } }),
+      /unknown terrain a value of type object/,
+    ],
     ["a legend key of two characters", tiny({ legend: { "..": "grass" } }), /single character/],
     ["a missing row", tiny({ rows: ["..#"] }), /expected 2 rows, found 1/],
     ["a short row", tiny({ rows: ["..#", ".."] }), /row 1 must be 3 characters/],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWalkable, parseMap, place } from "./map.ts";
+import { isWalkable, parseMap, place, type TileMap } from "./map.ts";
 import { findPath } from "./path.ts";
 import { firstLight } from "./testing.ts";
 
@@ -49,6 +49,16 @@ describe("findPath", () => {
     expect(findPath(map, { x: 2, y: 0 }, { x: 0, y: 0 })).toBeNull();
     expect(findPath(map, { x: 0, y: 0 }, { x: 9, y: 9 })).toBeNull();
     expect(findPath(map, { x: -1, y: 0 }, { x: 0, y: 0 })).toBeNull();
+  });
+
+  it("returns null after searching everything it can reach, and for positions between tiles", () => {
+    // Built by hand: the loader would refuse a map with a pocket cut off from camp.
+    const split: TileMap = { name: "split", width: 3, height: 1, tiles: [0, 10, 0], places: [] };
+    expect(findPath(split, { x: 0, y: 0 }, { x: 2, y: 0 })).toBeNull();
+    const map = grid(["..", ".."]);
+    expect(findPath(map, { x: 0, y: 0 }, { x: 0.5, y: 0 })).toBeNull();
+    expect(findPath(map, { x: 0, y: 0 }, { x: 0, y: 0.5 })).toBeNull();
+    expect(findPath(map, { x: 0.5, y: 0 }, { x: 1, y: 1 })).toBeNull();
   });
 
   it("crosses the river on the shipped map only by the bridge", () => {

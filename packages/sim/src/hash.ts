@@ -20,7 +20,23 @@ export function hashInts(values: readonly number[]): string {
 }
 
 /** A string as integers: its length, then its UTF-16 code units. */
-export const stringInts = (text: string): number[] => [
-  text.length,
-  ...Array.from(text, (_, i) => text.charCodeAt(i)),
-];
+export function stringInts(text: string): number[] {
+  const ints = [text.length];
+  for (let i = 0; i < text.length; i++) ints.push(text.charCodeAt(i));
+  return ints;
+}
+
+/** A value as short text for an error message. Never throws, whatever it is given. */
+export function show(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return `${value}`;
+  return value === null
+    ? "null"
+    : Array.isArray(value)
+      ? "a list"
+      : `a value of type ${typeof value}`;
+}
+
+/** True for a whole number that fits in 32 bits, signed. */
+export const isInt32 = (value: unknown): value is number =>
+  typeof value === "number" && (value | 0) === value;

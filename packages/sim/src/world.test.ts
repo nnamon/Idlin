@@ -90,6 +90,57 @@ describe("world", () => {
       ),
     ).toThrow(/damaged/);
     expect(hashWorld(restore(saved, map))).toBe(JSON.parse(saved).hash);
+    expect(() => restore('{"version":{"toString":null}}', map)).toThrow(SnapshotError);
+    expect(() => restore("[]", map)).toThrow(SnapshotError);
+  });
+
+  it("refuses snapshots whose contents hash the same but are not a possible world", () => {
+    const map = firstLight();
+    const world = createWorld(map, 3);
+    step(world, [{ type: "spawn", name: "Ash", x: 11, y: 8 }]);
+    const ash = world.actors[0];
+    if (!ash) throw new Error("no actor");
+    ash.wait = 0;
+    ash.path = [{ x: 12, y: 8 }];
+    const saved = snapshot(world);
+    expect(hashWorld(restore(saved, map))).toBe(hashWorld(world));
+    type Saved = {
+      state: { tick: unknown; rng: { a: unknown }; actors: Record<string, unknown>[] };
+    };
+    const forged = (change: (data: Saved) => void): string => {
+      const data = JSON.parse(saved) as Saved;
+      change(data);
+      return JSON.stringify(data);
+    };
+    const actor = (data: Saved): Record<string, unknown> =>
+      data.state.actors[0] as Record<string, unknown>;
+    const forgeries: [string, (data: Saved) => void][] = [
+      // The hash folds values to 32 bits, so each of these keeps the saved hash.
+      [
+        "a step 2^32 tiles away",
+        (d) => (((actor(d).path as { x: number }[])[0] as { x: number }).x += 2 ** 32),
+      ],
+      ["a position stored as text", (d) => (actor(d).x = "11")],
+      ["a tick stored as text", (d) => (d.state.tick = String(d.state.tick))],
+      [
+        "a generator word outside 32 bits",
+        (d) => (d.state.rng.a = (d.state.rng.a as number) + 2 ** 32),
+      ],
+      // These change the hash too; they are refused for what they are.
+      [
+        "an actor inside the lantern",
+        (d) => Object.assign(actor(d), { x: 15, y: 8, fromX: 15, fromY: 8 }),
+      ],
+      ["a path that jumps", (d) => (actor(d).path = [{ x: 14, y: 8 }])],
+      ["a step longer than a step", (d) => (actor(d).moveTicksLeft = 99)],
+      ["a standing actor that came from elsewhere", (d) => (actor(d).fromX = 12)],
+      ["two actors on one tile", (d) => d.state.actors.push({ ...actor(d), id: 2 })],
+      ["a missing name", (d) => delete actor(d).name],
+      ["an actor that is not an object", (d) => d.state.actors.push(null as never)],
+    ];
+    for (const [what, change] of forgeries) {
+      expect(() => restore(forged(change), map), what).toThrow(/damaged/);
+    }
   });
 
   it("keeps every actor on its own walkable tile, and moves them", () => {
@@ -124,7 +175,8 @@ describe("world", () => {
       step(world);
       if (actor.x !== before) arrivals.push(world.tick);
     }
-    expect(arrivals).toEqual([2, 2 + STEP_TICKS, 2 + 2 * STEP_TICKS]);
+    expect(STEP_TICKS).toBe(4);
+    expect(arrivals).toEqual([2, 6, 10]);
     expect(actor.moveTicksLeft).toBe(0);
     expect([actor.x, actor.fromX]).toEqual([14, 14]);
   });
@@ -157,8 +209,14 @@ describe("world", () => {
       { type: "spawn", name: "", x: 13, y: 9 },
       { type: "spawn", name: "x".repeat(17), x: 13, y: 9 },
       { type: "spawn", name: "Half", x: 13.5, y: 9 },
+      null as never,
+      "spawn" as never,
+      { type: "move", name: "Mover", x: 12, y: 9 } as never,
+      { type: "spawn", name: 7, x: 12, y: 9 } as never,
+      { type: "spawn", name: "Texty", x: "12", y: 9 } as never,
       { type: "spawn", name: "Birch", x: 13, y: 9 },
     ]);
+    expect(world.tick).toBe(1);
     expect(world.actors.map((a) => [a.id, a.name])).toEqual([
       [1, "Ash"],
       [2, "Birch"],
