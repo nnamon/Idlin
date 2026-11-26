@@ -106,13 +106,15 @@ minute.
 - An actor standing still is asked for a decision at most once every five
   ticks.
 
-Bot names and rule labels are shown to viewers, so invisible and control
-characters are removed from them and long ones are cut short.
+Bot names and rule labels are shown to viewers in the stream's typeface, so
+only Latin letters, digits and common punctuation are kept in them, and long
+ones are cut short.
 
 ## When something is wrong
 
-The compiler never guesses. It reports every mistake it can find in one go,
-each with its line and column and a sentence saying what it expected:
+The compiler never guesses. It reports the mistakes it finds in one go (the
+first ten), each with its line and column and a sentence saying what it
+expected:
 
 ```
 line 3, column 15: I expected "->" after the condition, but found "wander"
