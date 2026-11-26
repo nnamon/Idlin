@@ -1,0 +1,239 @@
+// The world and the one function that advances it. Everything here is a pure
+// function of the seed, the map and the inputs: integers only, no clock.
+
+import { hashInts, stringInts } from "./hash.ts";
+import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
+import { createRng, type Rng } from "./rng.ts";
+import { wander } from "./wander.ts";
+
+export const TICKS_PER_SECOND = 10;
+/** A game hour lasts one minute of stream time, so a game day lasts 24 minutes. */
+export const TICKS_PER_GAME_HOUR = 60 * TICKS_PER_SECOND;
+export const TICKS_PER_GAME_MINUTE = TICKS_PER_GAME_HOUR / 60;
+export const TICKS_PER_DAY = 24 * TICKS_PER_GAME_HOUR;
+/** The world begins at dawn. */
+export const START_HOUR = 6;
+/** Ticks an actor takes to walk from one tile to the next. */
+export const STEP_TICKS = 4;
+/** Ticks an actor waits for a blocked tile to clear before giving up its path. */
+export const BLOCKED_PATIENCE_TICKS = 10;
+export const MAX_NAME_LENGTH = 16;
+
+export interface Actor {
+  readonly id: number;
+  readonly name: string;
+  /** The tile the actor occupies. While it walks, this is already the tile it is stepping onto. */
+  x: number;
+  y: number;
+  /** The tile it is stepping from; equal to (x, y) when standing. For drawing only. */
+  fromX: number;
+  fromY: number;
+  /** Ticks left in the current step; 0 when standing. */
+  moveTicksLeft: number;
+  /** Tiles still to step onto, in order. */
+  path: Point[];
+  /** Ticks left to pause before the stand-in behaviour picks a new target. */
+  wait: number;
+  /** Ticks spent waiting for the next tile on the path to clear. */
+  blocked: number;
+}
+
+export interface World {
+  readonly map: TileMap;
+  tick: number;
+  rng: Rng;
+  nextActorId: number;
+  /** In id order, which is also update order. */
+  actors: Actor[];
+}
+
+export type Input = { readonly type: "spawn"; readonly name: string } & Point;
+
+export function createWorld(map: TileMap, seed: number): World {
+  return { map, tick: 0, rng: createRng(seed), nextActorId: 1, actors: [] };
+}
+
+export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
+  world.actors.find((a) => a.x === x && a.y === y);
+
+/** Advances the world by one tick. This is the only way the world changes. */
+export function step(world: World, inputs: readonly Input[] = []): void {
+  for (const input of inputs) applyInput(world, input);
+  world.tick++;
+  for (const actor of world.actors) updateActor(world, actor);
+}
+
+function applyInput(world: World, input: Input): void {
+  // An input that cannot be honoured is dropped; it never throws and never half-applies.
+  const { name, x, y } = input;
+  const nameOk = typeof name === "string" && name.length >= 1 && name.length <= MAX_NAME_LENGTH;
+  if (!nameOk || !Number.isInteger(x) || !Number.isInteger(y)) return;
+  if (!isWalkable(world.map, x, y) || actorAt(world, x, y)) return;
+  world.actors.push({
+    id: world.nextActorId++,
+    name,
+    x,
+    y,
+    fromX: x,
+    fromY: y,
+    moveTicksLeft: 0,
+    path: [],
+    wait: 0,
+    blocked: 0,
+  });
+}
+
+function updateActor(world: World, actor: Actor): void {
+  if (actor.moveTicksLeft > 0) {
+    actor.moveTicksLeft--;
+    if (actor.moveTicksLeft > 0) return;
+    actor.fromX = actor.x;
+    actor.fromY = actor.y;
+  }
+  const next = actor.path[0];
+  if (!next) {
+    wander(world, actor);
+    return;
+  }
+  if (actorAt(world, next.x, next.y)) {
+    // Someone stands where this actor wants to step. Wait a little, then give up the path.
+    actor.blocked++;
+    if (actor.blocked >= BLOCKED_PATIENCE_TICKS) {
+      actor.path = [];
+      actor.blocked = 0;
+    }
+    return;
+  }
+  actor.path.shift();
+  actor.blocked = 0;
+  actor.fromX = actor.x;
+  actor.fromY = actor.y;
+  actor.x = next.x;
+  actor.y = next.y;
+  actor.moveTicksLeft = STEP_TICKS;
+}
+
+/** Spawn inputs that put the named actors on the free walkable tiles nearest the camp. */
+export function spawnsNearCamp(world: World, names: readonly string[]): Input[] {
+  const { map } = world;
+  const camp = place(map, "camp");
+  const seen = new Set<number>([tileIndex(map, camp.x, camp.y)]);
+  const queue: Point[] = [camp];
+  const inputs: Input[] = [];
+  for (let head = 0; head < queue.length && inputs.length < names.length; head++) {
+    const at = queue[head] as Point;
+    if (!actorAt(world, at.x, at.y)) {
+      inputs.push({ type: "spawn", name: names[inputs.length] as string, x: at.x, y: at.y });
+    }
+    for (const [dx, dy] of NEIGHBOURS) {
+      const x = at.x + dx;
+      const y = at.y + dy;
+      if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
+      seen.add(tileIndex(map, x, y));
+      queue.push({ x, y });
+    }
+  }
+  return inputs;
+}
+
+export interface Clock {
+  /** Days since the world began, starting at 0. */
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+export function clock(world: World): Clock {
+  const ticks = world.tick + START_HOUR * TICKS_PER_GAME_HOUR;
+  const ofDay = ticks % TICKS_PER_DAY;
+  const ofHour = ofDay % TICKS_PER_GAME_HOUR;
+  return {
+    day: (ticks - ofDay) / TICKS_PER_DAY,
+    hour: (ofDay - ofHour) / TICKS_PER_GAME_HOUR,
+    minute: (ofHour - (ofHour % TICKS_PER_GAME_MINUTE)) / TICKS_PER_GAME_MINUTE,
+  };
+}
+
+export function hashMap(map: TileMap): string {
+  return hashInts([
+    ...stringInts(map.name),
+    map.width,
+    map.height,
+    ...map.tiles,
+    ...map.places.flatMap((p) => [...stringInts(p.name), p.x, p.y]),
+  ]);
+}
+
+/** A fingerprint of everything that decides the world's future. */
+export function hashWorld(world: World): string {
+  const { rng } = world;
+  return hashInts([
+    ...stringInts(hashMap(world.map)),
+    world.tick,
+    rng.a,
+    rng.b,
+    rng.c,
+    rng.d,
+    world.nextActorId,
+    world.actors.length,
+    ...world.actors.flatMap((a) => [
+      a.id,
+      ...stringInts(a.name),
+      a.x,
+      a.y,
+      a.fromX,
+      a.fromY,
+      a.moveTicksLeft,
+      a.wait,
+      a.blocked,
+      a.path.length,
+      ...a.path.flatMap((p) => [p.x, p.y]),
+    ]),
+  ]);
+}
+
+export const SNAPSHOT_VERSION = 1;
+
+export class SnapshotError extends Error {
+  override name = "SnapshotError";
+}
+
+/** The world as text. The map is not stored, only its fingerprint. */
+export function snapshot(world: World): string {
+  const { map, ...state } = world;
+  return JSON.stringify({
+    version: SNAPSHOT_VERSION,
+    map: hashMap(map),
+    hash: hashWorld(world),
+    state,
+  });
+}
+
+/**
+ * Rebuilds a world from a snapshot and the map it was taken on. Refuses, with a
+ * SnapshotError, anything it cannot be sure it reads correctly: another
+ * version, another map, or contents that do not hash to what was saved.
+ */
+export function restore(text: string, map: TileMap): World {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new SnapshotError("snapshot is not valid JSON");
+  }
+  const data = parsed as { version?: unknown; map?: unknown; hash?: unknown; state?: unknown };
+  if (typeof data !== "object" || data === null)
+    throw new SnapshotError("snapshot is not an object");
+  if (data.version !== SNAPSHOT_VERSION) {
+    throw new SnapshotError(`snapshot version ${String(data.version)} is not ${SNAPSHOT_VERSION}`);
+  }
+  if (data.map !== hashMap(map)) throw new SnapshotError("snapshot was taken on a different map");
+  let world: World;
+  try {
+    world = { ...(data.state as Omit<World, "map">), map };
+    if (hashWorld(world) !== data.hash) throw new Error("hash mismatch");
+  } catch {
+    throw new SnapshotError("snapshot contents are damaged");
+  }
+  return world;
+}
