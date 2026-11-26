@@ -107,9 +107,10 @@ A check applies once the thing it measures exists.
 
 ## The judge
 
-- A fresh Mythos 5.2 agent (Codex `gpt-6.2-sol` if Mythos cannot be
-  reached) with no knowledge of the change, which did not build it. It gets
-  the captures, the metrics and this page, nothing else.
+- A fresh Mythos 5.2 agent (if Mythos cannot be reached, Codex `gpt-6.2-sol`
+  or a fresh Opus 5.5 at effort `high`) with no knowledge of the change, which
+  did not build it. It gets the captures, the metrics and this page, nothing
+  else.
 - Every claim must point at a frame ("storyboard frame 7: three characters
   overlap the lantern and none can be read") or at a metric.
 - It returns the scores, any hard fail, and at most three findings ranked by

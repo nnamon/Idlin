@@ -1,5 +1,8 @@
 # 0006: Which model does what, with the conductor on Opus 5.5
 
+[0010](0010-models-again.md) replaces the code review row and the reason given
+for Codex as watch judge fallback in the first row. The rest stands.
+
 Date: 2026-11-26. The operator moved the conductor to Opus 5.5 (effort
 `medium`) to save quota, and asked for a Mythos 5.2 child to judge design and
 look and feel. Replaces the model parts of rows 2 and 3 of (the Antigravity ban stands)

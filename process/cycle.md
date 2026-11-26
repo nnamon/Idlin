@@ -156,8 +156,12 @@ left alone; if `main` moves under it, step 8 says what happens.
 ## 6. Review
 
 Start the reviewer (`delegate_task`, role `review`, `isolation: "worktree"`
-so that it never switches the shared checkout, Codex `gpt-6.2-sol`, reasoning
-effort `high`) with this brief, filled in:
+so that it never switches the shared checkout) with this brief, filled in. The
+reviewer is a fresh Opus 5.5 child (effort `medium` or higher) that did not
+build the change by default, or Codex `gpt-6.2-sol` (reasoning effort `high`)
+while its usage limits allow. For a change that is hard to get right
+(concurrency, data safety, the simulation's determinism, a large change) the
+conductor picks Mythos 5.2 and says so in the brief.
 
 > You are reviewing pull request #P in this repository. Your job is to refute
 > the claim that the change is correct, complete and well made. Read
@@ -175,16 +179,15 @@ rest in one pull request comment, `[conductor] review triage`, finding by
 finding. After a substantial fix, start a new review. If the same kind of
 finding keeps returning, have the cause fixed in one place.
 
-If Codex is out of quota or cannot be reached, give the same brief to
-Sonnet 5.5 (effort `medium`, `isolation: "worktree"`, since it runs the gate).
-Note in the triage comment which model reviewed. If neither can be
-reached, follow section 5 of `AGENTS.md`: leave the pull request open and say
-why.
+If the chosen reviewer is out of quota or cannot be reached, give the same
+brief to another of the three (a fresh Opus 5.5 child, Codex or Mythos). Note
+in the triage comment which model reviewed. If none of them can be reached,
+follow section 5 of `AGENTS.md`: leave the pull request open and say why.
 
 A reviewer with no activity for 90 minutes (no comment, and nothing visible
-happening in its thread: no message, no command run) is stopped with `task_cancel`, and the review goes to the fallback
-model with the same brief: Sonnet 5.5 after Codex. A Sonnet reviewer that
-stalls counts as neither being reachable.
+happening in its thread: no message, no command run) is stopped with
+`task_cancel`, and the review goes to another of the three with the same
+brief. When all three have stalled or are out, no reviewer is reachable.
 
 ## 7. Watch judge (visible changes)
 
@@ -212,12 +215,13 @@ The builder reports the two capture folders, `captures/base` and
 the judge's verdict is posted (step 3).
 
 The conductor starts the judge (`delegate_task`, role `review`, Mythos 5.2 at
-effort `medium`; Codex `gpt-6.2-sol` if Mythos cannot be reached; no worktree,
-since it reads the capture folders, which are not committed) with the two
-capture folders and `docs/watch-rubric.md`, and nothing about what the change
-was meant to do. A judge with no activity for 60 minutes is stopped with
-`task_cancel` and the judgement goes to Codex with the same folders; a Codex
-judge that stalls counts as no judge being reachable.
+effort `medium`; if Mythos cannot be reached, Codex `gpt-6.2-sol` or a fresh
+Opus 5.5 child at effort `high`; no worktree, since it reads the capture
+folders, which are not committed) with the two capture folders and
+`docs/watch-rubric.md`, and nothing about what the change was meant to do. A
+judge with no activity for 60 minutes is stopped with `task_cancel` and the
+judgement goes to the next of those with the same folders; when all three
+have stalled or are out, no judge is reachable.
 Post its verdict as a pull request comment, `[watch judge]`. A hard fail or a
 "worse" verdict sends the change back to a builder (step 4). The conductor
 takes no captures for a judgement; it only runs the daily one in
