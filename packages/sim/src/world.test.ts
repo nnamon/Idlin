@@ -112,9 +112,18 @@ describe("world", () => {
         actors: Record<string, unknown>[];
       };
     };
-    const forged = (change: (data: Saved) => void): string => {
-      const data = JSON.parse(saved) as Saved;
+    // A hostile snapshot can carry a correct hash for an impossible world, so
+    // each forgery is tried twice: with the saved hash, and with its own.
+    const forged = (change: (data: Saved) => void, rehash: boolean): string => {
+      const data = JSON.parse(saved) as Saved & { hash: string };
       change(data);
+      if (rehash) {
+        try {
+          data.hash = hashWorld({ ...(data.state as unknown as World), map });
+        } catch {
+          // Not even hashable; the saved hash stays.
+        }
+      }
       return JSON.stringify(data);
     };
     const actor = (data: Saved): Record<string, unknown> =>
@@ -150,7 +159,8 @@ describe("world", () => {
       ["an actor that is not an object", (d) => d.state.actors.push(null as never)],
     ];
     for (const [what, change] of forgeries) {
-      expect(() => restore(forged(change), map), what).toThrow(/damaged/);
+      expect(() => restore(forged(change, false), map), what).toThrow(/damaged/);
+      expect(() => restore(forged(change, true), map), `${what}, rehashed`).toThrow(/damaged/);
     }
   });
 
