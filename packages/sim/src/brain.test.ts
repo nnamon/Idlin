@@ -225,6 +225,70 @@ describe("actors run programs", () => {
     expect(Object.getPrototypeOf(w.programs)).toBeNull();
   });
 
+  it("a program table that cannot be read is refused with a ProgramError, nothing else", () => {
+    const map = firstLight();
+    const saved = snapshot(run(world([["Ash", "rover", 14, 9]]), 20));
+    const { proxy: revoked, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const hostile: [string, unknown][] = [
+      [
+        "a getter that throws",
+        Object.defineProperty({}, "rover", {
+          enumerable: true,
+          get: () => {
+            throw new TypeError("no");
+          },
+        }),
+      ],
+      [
+        "keys that throw",
+        new Proxy(
+          {},
+          {
+            ownKeys: () => {
+              throw new RangeError("no");
+            },
+          },
+        ),
+      ],
+      [
+        "descriptors that throw",
+        new Proxy(
+          { rover: 1 },
+          {
+            getOwnPropertyDescriptor: () => {
+              throw new SyntaxError("no");
+            },
+          },
+        ),
+      ],
+      ["a revoked proxy", revoked],
+      ["null", null],
+    ];
+    for (const [what, table] of hostile) {
+      expect(() => createWorld(map, 1, table as Programs), what).toThrow(ProgramError);
+      expect(() => restore(saved, map, table as Programs), what).toThrow(ProgramError);
+    }
+  });
+
+  it("restore checks the program table it is given and keeps its own copy", () => {
+    const map = firstLight();
+    const saved = snapshot(run(world([["Ash", "rover", 14, 9]]), 20));
+    // An invalid program in the table is refused before any state is read.
+    const unchecked = { version: BYTECODE_VERSION, code: [OP.SENSE, 77, OP.ACT, IDLE], rules: [] };
+    expect(() => restore(saved, map, { ...PROGRAMS, rover: unchecked })).toThrow(ProgramError);
+    // A table changed after the restore does not change the restored world.
+    const table: Record<string, Program> = { ...PROGRAMS };
+    const resumed = restore(saved, map, table);
+    table.rover = { version: BYTECODE_VERSION, code: [OP.SENSE, 77, OP.ACT, IDLE], rules: [] };
+    expect(resumed.programs).not.toBe(table);
+    expect(Object.isFrozen(resumed.programs)).toBe(true);
+    expect(() => run(resumed, 200)).not.toThrow();
+    expect(resumed.actors[0]?.fault).toBe(0);
+    const straight = run(world([["Ash", "rover", 14, 9]]), 220);
+    expect(hashWorld(resumed)).toBe(hashWorld(straight));
+  });
+
   it("drops a spawn that names a program the world does not have", () => {
     const w = world([
       ["Ghost", "no-such-program", 14, 9],

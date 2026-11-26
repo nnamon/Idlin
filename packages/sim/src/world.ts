@@ -42,7 +42,11 @@ export interface Actor {
   readonly program: string | null;
   /** The program's memory slots, kept between decisions. */
   memory: number[];
-  /** Index of the rule that chose the last action, or -1. For showing why an actor does what it does. */
+  /**
+   * Index of the rule that was running when the last decision ended (the rule
+   * that chose the action, or the one that faulted), or -1. For showing why an
+   * actor does what it does.
+   */
   rule: number;
   /** Index into FAULTS of how the last decision ended; 0 is no fault. A faulted actor stands confused. */
   fault: number;
@@ -78,9 +82,15 @@ const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
  */
 export function checkPrograms(programs: Programs): Programs {
   const table: Record<string, Program> = Object.create(null);
-  for (const name of Object.keys(programs).sort()) {
-    if (!PROGRAM_NAME.test(name)) throw new ProgramError(`"${name}" is not a valid program name`);
-    table[name] = validateProgram(programs[name]);
+  try {
+    for (const name of Object.keys(programs).sort()) {
+      if (!PROGRAM_NAME.test(name)) throw new ProgramError(`"${name}" is not a valid program name`);
+      table[name] = validateProgram(programs[name]);
+    }
+  } catch (error) {
+    // Whatever was passed in, the only thing that comes out is a ProgramError.
+    if (error instanceof ProgramError) throw error;
+    throw new ProgramError("the program table could not be read");
   }
   return Object.freeze(table);
 }
