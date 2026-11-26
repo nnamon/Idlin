@@ -28,7 +28,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { castOf } from "../../client/src/cast.ts";
 import { loadContent } from "./content.ts";
-import { CLOSE_DEADLINE_MS, MAX_VIEWERS, type ServerOptions, WorldServer } from "./server.ts";
+import {
+  CLOSE_DEADLINE_MS,
+  MAX_VIEWERS,
+  type ServerOptions,
+  VIEWER_ORIGINS,
+  viewerOrigins,
+  WorldServer,
+} from "./server.ts";
 import { listSnapshots, saveSnapshot, snapshotName } from "./store.ts";
 
 const CONTENT = loadContent();
@@ -448,6 +455,17 @@ describe("world server", () => {
   }, 120_000);
 });
 
+describe("viewerOrigins", () => {
+  it("adds the trimmed, non-empty entries of IDLIN_ORIGINS to the defaults", () => {
+    expect(viewerOrigins()).toEqual(VIEWER_ORIGINS);
+    expect(viewerOrigins("")).toEqual(VIEWER_ORIGINS);
+    expect(viewerOrigins(" , ,")).toEqual(VIEWER_ORIGINS);
+    expect(
+      viewerOrigins(" http://a.example:4310 ,, http://b.example ,http://localhost:4310"),
+    ).toEqual([...VIEWER_ORIGINS, "http://a.example:4310", "http://b.example"]);
+  });
+});
+
 describe("server process", () => {
   const MAIN = new URL("./main.ts", import.meta.url).pathname;
   const children: ChildProcess[] = [];
@@ -457,7 +475,7 @@ describe("server process", () => {
   });
 
   /** Starts the server as a process; resolves with it and its port once it listens. */
-  const launch = (dataDir: string) => {
+  const launch = (dataDir: string, env: Record<string, string> = {}) => {
     const child = spawn(process.execPath, [MAIN], {
       env: {
         ...process.env,
@@ -465,6 +483,7 @@ describe("server process", () => {
         IDLIN_PORT: "0",
         IDLIN_SEED: String(SEED),
         IDLIN_SNAPSHOT_TICKS: "5",
+        ...env,
       },
       stdio: ["ignore", "pipe", "inherit"],
     });
@@ -490,6 +509,29 @@ describe("server process", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   };
+
+  it("lets in a page from an Origin listed in IDLIN_ORIGINS and refuses one not listed", async () => {
+    const server = launch(tempDir(), {
+      IDLIN_ORIGINS: " http://viewer.example:4310,,http://other.example:4310 ",
+    });
+    const port = await server.listening;
+    const outcome = (origin: string): Promise<number | "open"> =>
+      new Promise((resolve) => {
+        const socket = new WebSocket(`ws://127.0.0.1:${port}`, { origin });
+        socket.once("unexpected-response", (_, response) => resolve(response.statusCode ?? 0));
+        socket.once("open", () => {
+          socket.close();
+          resolve("open");
+        });
+      });
+    expect(await outcome("http://viewer.example:4310")).toBe("open");
+    expect(await outcome("http://other.example:4310")).toBe("open");
+    expect(await outcome("http://localhost:4310")).toBe("open");
+    expect(await outcome("http://unlisted.example:4310")).toBe(403);
+    expect(await outcome("http://viewer.example:4311")).toBe(403);
+    server.child.kill("SIGTERM");
+    expect(await server.exited).toBe(0);
+  }, 30_000);
 
   it("killed outright, comes back from its last snapshot; stopped politely, saves first", async () => {
     const dir = tempDir();

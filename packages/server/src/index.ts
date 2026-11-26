@@ -8,6 +8,7 @@ export {
   type ServerOptions,
   TICK_MS,
   VIEWER_ORIGINS,
+  viewerOrigins,
   WorldServer,
 } from "./server.ts";
 export { KEEP_SNAPSHOTS, listSnapshots, loadNewest, saveSnapshot, snapshotName } from "./store.ts";

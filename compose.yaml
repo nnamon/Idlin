@@ -31,7 +31,9 @@ services:
   # The world server: runs the world in real time, keeps snapshots in data/, and
   # streams it over a WebSocket at ws://localhost:4311. `docker compose up server
   # client` starts both; the viewer at http://localhost:4310 follows the server.
-  # Stopping the service saves a snapshot.
+  # Stopping the service saves a snapshot. To let the viewer connect from a page
+  # under another host name, set IDLIN_ORIGINS (see main.ts) in a local
+  # compose.override.yaml.
   server:
     build:
       context: docker

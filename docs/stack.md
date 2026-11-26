@@ -42,7 +42,9 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   deleted is logged and left.
   Settings are environment variables, listed at the top of `main.ts`. Memory is capped at 256 MB. It takes up to 16
   viewers, only from the viewer's own page (`http://localhost:4310` or
-  `http://127.0.0.1:4310`) (a client that sends no
+  `http://127.0.0.1:4310`, plus any listed in `IDLIN_ORIGINS`, a
+  comma-separated list of exact Origins such as `http://viewer.example:4310` for a
+  page served under another host name) (a client that sends no
   Origin header, such as a test, is let in), and drops one more than 1 MiB
   behind on reading. On SIGTERM or SIGINT it saves, closes every connection
   (waiting at most a second) and exits; a snapshot on the way down that cannot

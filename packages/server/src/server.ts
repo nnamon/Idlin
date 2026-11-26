@@ -41,6 +41,15 @@ export const CLOSE_DEADLINE_MS = 1000;
 /** Pages allowed to connect: the viewer as `docker compose up client` serves it. */
 export const VIEWER_ORIGINS: readonly string[] = ["http://localhost:4310", "http://127.0.0.1:4310"];
 
+/**
+ * VIEWER_ORIGINS plus the comma-separated Origins in `extra` (IDLIN_ORIGINS), each
+ * trimmed and matched exactly; empty entries are ignored.
+ */
+export const viewerOrigins = (extra = ""): readonly string[] => {
+  const listed = extra.split(",").map((each) => each.trim());
+  return [...new Set([...VIEWER_ORIGINS, ...listed.filter((each) => each !== "")])];
+};
+
 export interface ServerOptions {
   /** Where snapshots are kept; created if missing. */
   readonly dataDir: string;

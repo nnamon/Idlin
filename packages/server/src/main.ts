@@ -5,8 +5,11 @@
 //   IDLIN_SEED            seed for a new world (default: 1)
 //   IDLIN_RESIDENTS       residents of a new world (default: 6)
 //   IDLIN_SNAPSHOT_TICKS  ticks between snapshots (default: 600, one minute)
+//   IDLIN_ORIGINS         comma-separated page Origins allowed to connect, on top of
+//                         http://localhost:4310 and http://127.0.0.1:4310, matched
+//                         exactly (e.g. http://viewer.example:4310)
 // SIGTERM or SIGINT saves a snapshot and exits: 0 if it was saved, 1 if not.
-import { WorldServer } from "./server.ts";
+import { viewerOrigins, WorldServer } from "./server.ts";
 
 const int = (name: string, fallback: number): number => {
   const text = process.env[name];
@@ -26,6 +29,7 @@ const server = await WorldServer.start({
   seed: int("IDLIN_SEED", 1),
   residents: int("IDLIN_RESIDENTS", 6),
   snapshotTicks: Math.max(1, int("IDLIN_SNAPSHOT_TICKS", 600)),
+  origins: viewerOrigins(process.env.IDLIN_ORIGINS),
   log,
 });
 
