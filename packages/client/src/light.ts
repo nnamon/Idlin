@@ -37,6 +37,45 @@ export function lampStrength(hour: number): number {
   return Math.min(1, Math.max(0, (0.9 - brightness) / 0.45));
 }
 
+/**
+ * A colour laid thinly over the whole world, so the hour can be read from the
+ * map alone: pink at dawn, amber at dusk, violet as night falls. Returns the
+ * colour and how strongly to lay it (0 to 1).
+ */
+const WASHES: readonly (readonly [number, Rgb, number])[] = [
+  [0, [0.2, 0.25, 0.6], 0.1],
+  [4.8, [0.2, 0.25, 0.6], 0.1],
+  [6.2, [1, 0.56, 0.68], 0.2],
+  [8, [1, 0.8, 0.7], 0],
+  [16.8, [1, 0.7, 0.3], 0],
+  [18.8, [1, 0.55, 0.22], 0.21],
+  [20.2, [0.6, 0.35, 0.75], 0.2],
+  [21.6, [0.2, 0.25, 0.6], 0.1],
+  [24, [0.2, 0.25, 0.6], 0.1],
+];
+
+export function washAt(hour: number): { color: Rgb; alpha: number } {
+  for (let i = 1; i < WASHES.length; i++) {
+    const [h1, c1, a1] = WASHES[i] as (typeof WASHES)[number];
+    const [h0, c0, a0] = WASHES[i - 1] as (typeof WASHES)[number];
+    if (hour <= h1) {
+      const t = (hour - h0) / (h1 - h0);
+      return {
+        color: [
+          c0[0] + (c1[0] - c0[0]) * t,
+          c0[1] + (c1[1] - c0[1]) * t,
+          c0[2] + (c1[2] - c0[2]) * t,
+        ],
+        alpha: a0 + (a1 - a0) * t,
+      };
+    }
+  }
+  return {
+    color: (WASHES[0] as (typeof WASHES)[number])[1],
+    alpha: (WASHES[0] as (typeof WASHES)[number])[2],
+  };
+}
+
 export const toHex = ([r, g, b]: Rgb): number =>
   (Math.round(Math.min(1, r) * 255) << 16) |
   (Math.round(Math.min(1, g) * 255) << 8) |

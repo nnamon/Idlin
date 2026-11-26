@@ -40,7 +40,7 @@ import {
   TILE,
   TREES,
 } from "./atlas.ts";
-import { ambientAt, lampStrength, type Rgb, toHex } from "./light.ts";
+import { ambientAt, lampStrength, toHex, washAt } from "./light.ts";
 
 /** Screen pixels per art pixel. */
 export const SCALE = 3;
@@ -56,9 +56,10 @@ const WOOD = 0xb86f50;
 const WOOD_DARK = 0x8a4836;
 const WOOD_LIGHT = 0xe4a672;
 const DEEP_WOOD_TINT = 0x7fa99c;
-const LAMP_WARM: Rgb = [1, 0.74, 0.42];
-/** Light falls off in steps, not smoothly, to stay in keeping with the pixel art. */
-const LIGHT_STEPS = [1, 0.84, 0.68, 0.52, 0.38, 0.24];
+/** What a lamp adds to the ambient light, and the amber it lays over what it lights. */
+const LAMP_LIGHT = 0xffc890;
+const LAMP_GLOW = 0xff8a2a;
+const GLOW_STRENGTH = 0.3;
 
 const CAMP_GROUND: ReadonlySet<Terrain> = new Set(["camp", "lantern", "campfire", "bank"]);
 const WET: ReadonlySet<Terrain> = new Set(["water", "bridge"]);
@@ -79,6 +80,26 @@ interface ActorView {
   facing: 1 | -1;
 }
 
+const LAMP_TEXTURE_SIZE = 128;
+
+/** A soft white disc, bright in the middle and fading to nothing at the rim. */
+function lampTexture(): Texture {
+  const canvas = document.createElement("canvas");
+  canvas.width = LAMP_TEXTURE_SIZE;
+  canvas.height = LAMP_TEXTURE_SIZE;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("no 2d context");
+  const half = LAMP_TEXTURE_SIZE / 2;
+  const gradient = context.createRadialGradient(half, half, 0, half, half, half);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.35, "rgba(255,255,255,0.62)");
+  gradient.addColorStop(0.7, "rgba(255,255,255,0.2)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, LAMP_TEXTURE_SIZE, LAMP_TEXTURE_SIZE);
+  return Texture.from(canvas);
+}
+
 export interface Tag {
   readonly id: number;
   readonly name: string;
@@ -94,7 +115,10 @@ export class Scene {
   private readonly ripples = new Graphics();
   private readonly flames = new Graphics();
   private readonly lightFill = new Graphics();
-  private readonly lightLamps = new Graphics();
+  private readonly lightLamps = new Container();
+  private readonly glow = new Container();
+  private readonly wash = new Graphics();
+  private readonly lampTexture: Texture;
   private readonly lightScene = new Container();
   private readonly lightTexture: RenderTexture;
   private readonly actors = new Map<number, ActorView>();
@@ -125,12 +149,12 @@ export class Scene {
       width: map.width * TILE,
       height: map.height * TILE,
     });
-    this.lightLamps.blendMode = "add";
     this.lightScene.addChild(this.lightFill, this.lightLamps);
     const light = new Sprite(this.lightTexture);
     light.blendMode = "multiply";
 
-    view.addChild(ground, water, this.ripples, this.things, light);
+    this.lampTexture = lampTexture();
+    view.addChild(ground, water, this.ripples, this.things, light, this.glow, this.wash);
     this.things.addChild(this.flames);
     this.flames.zIndex = 100000;
   }
@@ -358,8 +382,8 @@ export class Scene {
 
     this.flames.clear();
     for (const fire of this.fires) {
-      const a = Math.sin(time * 0.31) * 0.5 + 0.5;
-      const b = Math.sin(time * 0.47 + 2) * 0.5 + 0.5;
+      const a = Math.sin(time * 0.9) * 0.5 + 0.5;
+      const b = Math.sin(time * 1.3 + 2) * 0.5 + 0.5;
       this.flames.rect(fire.x - 4, fire.y - 5 - a, 8, 6 + a).fill(0xe8590c);
       this.flames.rect(fire.x - 3, fire.y - 8 - b * 2, 6, 6 + b * 2).fill(0xf59f00);
       this.flames.rect(fire.x - 1, fire.y - 10 - a * 2, 3, 5 + a * 2).fill(0xffe066);
@@ -370,19 +394,37 @@ export class Scene {
       .clear()
       .rect(0, 0, this.map.width * TILE, this.map.height * TILE)
       .fill(toHex(ambientAt(hour)));
-    this.lightLamps.clear();
-    if (night > 0) {
-      for (const lamp of lamps) {
+    // Each lamp is drawn twice with the same soft disc: once into the light map,
+    // where it lifts the ambient light, and once over the world as an amber glow.
+    const shown = night > 0 ? lamps : [];
+    for (const [layer, tint, gain] of [
+      [this.lightLamps, LAMP_LIGHT, 1],
+      [this.glow, LAMP_GLOW, GLOW_STRENGTH],
+    ] as const) {
+      while (layer.children.length < shown.length) {
+        const disc = new Sprite(this.lampTexture);
+        disc.anchor.set(0.5);
+        disc.blendMode = "add";
+        disc.tint = tint;
+        layer.addChild(disc);
+      }
+      layer.children.forEach((child, i) => {
+        const lamp = shown[i];
+        child.visible = lamp !== undefined;
+        if (!lamp) return;
         const sway = lamp.flicker
           ? 1 + Math.sin(time * 0.23) * 0.012 + Math.sin(time * 0.61 + 1) * 0.006
           : 1;
-        const share = (lamp.strength * night) / LIGHT_STEPS.length;
-        const color = toHex([LAMP_WARM[0] * share, LAMP_WARM[1] * share, LAMP_WARM[2] * share]);
-        for (const stepSize of LIGHT_STEPS) {
-          this.lightLamps.circle(lamp.x, lamp.y, lamp.radius * stepSize * sway).fill(color);
-        }
-      }
+        child.position.set(lamp.x, lamp.y);
+        child.scale.set((lamp.radius * 2 * sway) / LAMP_TEXTURE_SIZE);
+        child.alpha = lamp.strength * night * gain;
+      });
     }
+    const { color, alpha } = washAt(hour);
+    this.wash
+      .clear()
+      .rect(0, 0, this.map.width * TILE, this.map.height * TILE)
+      .fill({ color: toHex(color), alpha });
     this.app.renderer.render({
       container: this.lightScene,
       target: this.lightTexture,

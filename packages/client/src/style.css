@@ -14,6 +14,7 @@
   --edge: #5a3b47;
   --cream: #f4e6cf;
   --dim: #b59f97;
+  --soft: #dccabb;
   --gold: #ffd166;
 }
 
@@ -164,8 +165,7 @@ body {
 }
 .roster-doing {
   margin-left: auto;
-  color: var(--dim);
-  font-size: 32px;
+  color: var(--soft);
 }
 .portrait {
   width: 48px;

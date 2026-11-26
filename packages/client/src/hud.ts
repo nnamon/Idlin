@@ -27,6 +27,19 @@ function portrait(cell: Cell): HTMLElement {
   return node;
 }
 
+interface Box {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+const overlaps = (a: Box, b: Box): boolean =>
+  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+const WORLD_WIDTH = 1440;
+const TAG_HEIGHT = 28;
+/** Where a tag may sit, as the height of its bottom edge above the head: just above, below the feet, higher up. */
+const TAG_RISES = [0, 94, -32, -64];
+
 export interface Hud {
   update(world: World, tags: readonly Tag[]): void;
 }
@@ -38,7 +51,7 @@ export function createHud(panel: HTMLElement, ticker: HTMLElement, tagLayer: HTM
   const dial = el("div", "dial");
   const sun = el("span", "dial-mark");
   dial.append(sun);
-  const heading = el("h2", "heading", "At the camp");
+  const heading = el("h2", "heading", "Adventurers");
   const roster = el("ul", "roster");
   panel.append(title, dial, time, phase, heading, roster);
   const line = el("span", "ticker-line");
@@ -76,15 +89,36 @@ export function createHud(panel: HTMLElement, ticker: HTMLElement, tagLayer: HTM
           actor.moveTicksLeft > 0 || actor.path.length > 0 ? "walking" : "resting";
       }
 
-      for (const tag of tags) {
+      // Name tags never cover a character or each other: each takes the first free
+      // spot among a few around its own character.
+      const bodies = tags.map((tag) => ({
+        left: tag.x - 24,
+        right: tag.x + 24,
+        top: tag.y + 6,
+        bottom: tag.y + 60,
+      }));
+      const placed: Box[] = [];
+      tags.forEach((tag, index) => {
         let node = tagNodes.get(tag.id);
         if (!node) {
           node = el("span", "tag", tag.name);
           tagLayer.append(node);
           tagNodes.set(tag.id, node);
         }
-        node.style.transform = `translate(${Math.round(tag.x)}px, ${Math.round(tag.y)}px) translate(-50%, -100%)`;
-      }
+        const width = node.offsetWidth;
+        const left = Math.max(2, Math.min(WORLD_WIDTH - width - 2, Math.round(tag.x - width / 2)));
+        const spot = (rise: number): Box => {
+          const bottom = Math.round(tag.y) + rise;
+          return { left, right: left + width, top: bottom - TAG_HEIGHT, bottom };
+        };
+        const free = (box: Box): boolean =>
+          box.top >= 0 &&
+          !placed.some((other) => overlaps(box, other)) &&
+          !bodies.some((body, k) => k !== index && overlaps(box, body));
+        const box = TAG_RISES.map(spot).find(free) ?? spot(0);
+        placed.push(box);
+        node.style.transform = `translate(${box.left}px, ${box.top}px)`;
+      });
     },
   };
 }
