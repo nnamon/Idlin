@@ -370,8 +370,9 @@ export class Scene {
   }
 
   /**
-   * Takes note of the world after a tick: which way each actor now faces, and
-   * anything worth a line of news. Call it after every `step`, drawn or not, so
+   * Takes note of the world after a tick: which way each actor now faces,
+   * anything worth a line of news, where each name sits and which ink each
+   * piece of lettering is in. Call it after every `step`, drawn or not, so
    * that what a frame shows depends on the world's history and not on which
    * frames happened to be drawn.
    */

@@ -166,6 +166,9 @@ describe("the light of the day", () => {
   });
 
   it("names the parts of the day", () => {
+    // Dawn ends once the light is nearly full, not an hour after.
+    expect(phaseName(6.7)).toBe("dawn");
+    expect(phaseName(6.8)).toBe("morning");
     expect([2, 6, 9, 12, 15, 19, 22].map(phaseName)).toEqual([
       "night",
       "dawn",

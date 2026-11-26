@@ -109,7 +109,8 @@ export function placeTags(
     const before = previous.get(wish.id) ?? 0;
     let spot = SPOTS.findIndex((_, k) => clear(heads, at(k)));
     // In a tight group there may be no spot clear of every head: then clear of every body will do.
-    const free = (box: Box, margin = 0): boolean => clear(spot < 0 ? bodies : heads, box, margin);
+    const others = spot < 0 ? bodies : heads;
+    const free = (box: Box, margin = 0): boolean => clear(others, box, margin);
     if (spot < 0) spot = SPOTS.findIndex((_, k) => free(at(k)));
     // Nowhere is free: take the first spot that at least stays inside the world.
     if (spot < 0) {

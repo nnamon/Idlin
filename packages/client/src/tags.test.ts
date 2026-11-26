@@ -14,6 +14,22 @@ const hit = (a: Box, b: Box): boolean =>
   a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 describe("placeTags", () => {
+  it("keeps a name where it was in a tight knot, while that spot is clear of every body", () => {
+    // Eight figures packed so that no spot is clear of everyone's head room.
+    const knot = [
+      wish(1, 627, 449),
+      wish(2, 507, 426),
+      wish(3, 607, 483),
+      wish(4, 572, 474),
+      wish(5, 537, 435),
+      wish(6, 502, 505),
+      wish(7, 650, 412),
+      wish(8, 563, 440),
+    ];
+    expect(placeTags(knot, new Map(), BOUNDS).get(5)?.spot).toBe(3);
+    expect(placeTags(knot, new Map([[5, 5]]), BOUNDS).get(5)?.spot).toBe(5);
+  });
+
   it("does not hang a name over a neighbour's head while another spot is free", () => {
     // Three in a row. The middle one's name cannot sit above it (the first name is there),
     // and the spot to the right would sit right over the third figure's head.
