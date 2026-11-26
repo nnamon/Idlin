@@ -9,7 +9,7 @@ One language, three small packages, everything in containers.
 | Simulation      | `packages/sim`, no runtime dependencies | Pure and deterministic: integers, a seeded generator, no clock. Holds the world, the bot VM and the Tactics compiler.                                                        |
 | Server          | `packages/server`, Node + `ws`          | Runs the world in real time, snapshots to disk, streams state over a WebSocket.                                                                                              |
 | Viewer          | `packages/client`, Vite + PixiJS 8      | A renderer without a game framework: sprites, a lighting layer and particles on WebGL. The viewer can also drive the sim itself from a seed, which is how captures are made. |
-| Captures        | `tools/capture`, Playwright (Chromium)  | Loads the viewer in replay mode, steps a virtual clock, saves frames and metrics.                                                                                            |
+| Captures        | `tools/capture`, Playwright (Chromium)  | Loads the viewer in replay mode, steps a virtual clock, saves frames.                                                                                                        |
 | Tests           | Vitest                                  | Unit tests beside the code; determinism, replay and soak tests in `packages/sim`.                                                                                            |
 | Lint and format | Biome                                   | One fast tool for both.                                                                                                                                                      |
 | CI              | GitHub Actions                          | One required job, `gate`: install, lint, typecheck, test.                                                                                                                    |
@@ -19,15 +19,24 @@ One language, three small packages, everything in containers.
 Nothing is installed or run on the host except `git`, `gh` and `docker`.
 
 ```sh
-docker compose run --rm dev pnpm install     # install dependencies
-docker compose run --rm dev pnpm gate        # lint + typecheck + test (same as CI)
+docker compose run --rm dev pnpm install                       # install dependencies
+docker compose run --rm dev pnpm gate                          # lint + typecheck + test (same as CI)
+docker compose up client                                       # the viewer, at http://localhost:4310
+docker compose run --rm dev pnpm --filter @idlin/client build  # build the viewer for captures
+docker compose run --rm capture captures/now                   # frames at dawn, noon, dusk and midnight
 ```
 
 - `dev` is `node:24-slim` with pnpm baked in; the repo is bind-mounted, so
   `node_modules` (Linux builds, and the pnpm store beside them so packages can
   be hard-linked) lives in the checkout and is ignored by git.
-- Services for the server, the viewer and captures are added to `compose.yaml`
-  together with the packages they run. Ports bind to 127.0.0.1 only.
+- `client` runs the viewer with hot reload. It drives the simulation itself
+  from a seed (`?seed=3`) and can start at any game hour (`?hour=19`). Ports
+  bind to 127.0.0.1 only.
+- `capture` is the Playwright image. It serves the built viewer, opens it in
+  capture mode (`?capture`: the page draws only when told to, so a frame is a
+  pure function of seed and tick) and saves frames. Arguments after the output
+  folder are `name:hour[:ticks[:width]]`. It also prints a flicker index.
+- The service for the server is added together with its package.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.
 

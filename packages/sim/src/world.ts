@@ -41,7 +41,11 @@ export interface Actor {
   readonly program: string;
   /** The program's memory slots, kept between decisions. */
   memory: number[];
-  /** Index of the rule that chose the last action, or -1. For showing why an actor does what it does. */
+  /**
+   * Index of the rule that was running when the last decision ended (the rule
+   * that chose the action, or the one that faulted), or -1. For showing why an
+   * actor does what it does.
+   */
   rule: number;
   /** Index into FAULTS of how the last decision ended; 0 is no fault. A faulted actor stands confused. */
   fault: number;
@@ -77,9 +81,15 @@ const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
  */
 export function checkPrograms(programs: Programs): Programs {
   const table: Record<string, Program> = Object.create(null);
-  for (const name of Object.keys(programs).sort()) {
-    if (!PROGRAM_NAME.test(name)) throw new ProgramError(`"${name}" is not a valid program name`);
-    table[name] = validateProgram(programs[name]);
+  try {
+    for (const name of Object.keys(programs).sort()) {
+      if (!PROGRAM_NAME.test(name)) throw new ProgramError(`"${name}" is not a valid program name`);
+      table[name] = validateProgram(programs[name]);
+    }
+  } catch (error) {
+    // Whatever was passed in, the only thing that comes out is a ProgramError.
+    if (error instanceof ProgramError) throw error;
+    throw new ProgramError("the program table could not be read");
   }
   return Object.freeze(table);
 }
@@ -177,23 +187,21 @@ function updateActor(world: World, actor: Actor): void {
   actor.moveTicksLeft = STEP_TICKS;
 }
 
-/** Spawn inputs that put the named actors, all running `program`, on the free walkable tiles nearest the camp. */
-export function spawnsNearCamp(world: World, names: readonly string[], program: string): Input[] {
+/** Spawn inputs that put the given actors on the free walkable tiles nearest the camp, in order. */
+export function spawnsNearCamp(
+  world: World,
+  cast: readonly { readonly name: string; readonly program: string }[],
+): Input[] {
   const { map } = world;
   const camp = place(map, "camp");
   const seen = new Set<number>([tileIndex(map, camp.x, camp.y)]);
   const queue: Point[] = [camp];
   const inputs: Input[] = [];
-  for (let head = 0; head < queue.length && inputs.length < names.length; head++) {
+  for (let head = 0; head < queue.length && inputs.length < cast.length; head++) {
     const at = queue[head] as Point;
     if (!actorAt(world, at.x, at.y)) {
-      inputs.push({
-        type: "spawn",
-        name: names[inputs.length] as string,
-        x: at.x,
-        y: at.y,
-        program,
-      });
+      const { name, program } = cast[inputs.length] as (typeof cast)[number];
+      inputs.push({ type: "spawn", name, x: at.x, y: at.y, program });
     }
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;

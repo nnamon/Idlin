@@ -55,6 +55,7 @@ export {
   restore,
   SNAPSHOT_VERSION,
   SnapshotError,
+  START_HOUR,
   STEP_TICKS,
   snapshot,
   spawnsNearCamp,

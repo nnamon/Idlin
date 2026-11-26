@@ -321,8 +321,12 @@ class Parser {
         ? this.sourceBetween(start, conditionEnd).replace(/^when\s+/, "")
         : "otherwise";
     }
-    if (label.length > MAX_RULE_LABEL_LENGTH)
-      label = `${label.slice(0, MAX_RULE_LABEL_LENGTH - 3).trimEnd()}...`;
+    if (label.length > MAX_RULE_LABEL_LENGTH) {
+      // Shorten at a word boundary where there is one.
+      const cut = label.slice(0, MAX_RULE_LABEL_LENGTH - 2);
+      const space = cut.lastIndexOf(" ");
+      label = `${cut.slice(0, space > 10 ? space : MAX_RULE_LABEL_LENGTH - 3).trimEnd()}...`;
+    }
     return { condition, label, steps, at: start };
   }
 
@@ -705,8 +709,6 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
         message: `a program can have at most ${MAX_RULES - 1} rules`,
       });
     }
-    if (errors.length > 0) return fail();
-
     const sequences = rules.some(
       (rule) => rule.steps.filter((step) => step.type === "act").length > 1,
     );
@@ -728,7 +730,11 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
         errors.push(problem.error);
       }
     });
-    if (errors.length > 0) return fail();
+    if (errors.length > 0) {
+      // Rules that parsed are still checked, so one run reports every mistake it can, in source order.
+      errors.sort((a, b) => a.line - b.line || a.column - b.column);
+      return fail();
+    }
     if (!sawOtherwise) {
       // Nothing matched: stand still. Without this a program could run off its end.
       labels.push("otherwise");

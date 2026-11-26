@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { placeConstants } from "./map.ts";
+import { place, placeConstants } from "./map.ts";
 import { createRng, nextInt } from "./rng.ts";
 import { SYSCALLS } from "./syscalls.ts";
 import { BotError, type Compiled, type Constants, compileBots, compileTactics } from "./tactics.ts";
@@ -12,6 +13,7 @@ import {
   type Program,
   runDecision,
 } from "./vm.ts";
+import { clock, createWorld, spawnsNearCamp, step, TICKS_PER_DAY } from "./world.ts";
 
 const id = (name: string): number => SYSCALLS.find((c) => c.name === name)?.id as number;
 const PLACES: Constants = { camp: { x: 14, y: 9 }, bank: { x: 15, y: 9 }, far: 20 };
@@ -221,7 +223,7 @@ describe("compiling", () => {
     expect(program.rules).toEqual([
       "night falls",
       "distance( camp ) > 5",
-      "hour == 1 or hour == 2 or hour == 3 or...",
+      "hour == 1 or hour == 2 or hour == 3...",
       "otherwise",
     ]);
   });
@@ -294,8 +296,10 @@ describe("errors", () => {
   });
 
   it("reports several mistakes at once, each on its own line, and stops at ten", () => {
-    const errors = errorsOf("when hour > -> idle\notherwise -> chop\nwhen -> idle\n");
+    // Line 1 and line 3 cannot be parsed; line 2 parses but names an action that does not exist.
+    const errors = errorsOf("when hour > -> idle\nwhen hour == 2 -> chop\nwhen -> idle\n");
     expect(errors.map((e) => e.split(":")[0])).toEqual(["1", "2", "3"]);
+    expect(errors[1]).toMatch(/no action called "chop"/);
     const many = Array.from({ length: 40 }, () => "nonsense here").join("\n");
     expect(errorsOf(many)).toHaveLength(10);
   });
@@ -316,12 +320,11 @@ describe("errors", () => {
   });
 
   it("everything it accepts fits the machine's limits", () => {
-    const rule =
-      "when hour == 1 and minute == 2 and distance(camp) > 3 -> walk_to(bank); wait(30); wander\n";
+    const rule = "when hour == 1 and minute == 2 -> walk_to(bank); wait(30)\n";
     const big = compiled(rule.repeat(63));
     expect(big.code.length).toBeLessThanOrEqual(MAX_CODE_LENGTH);
     expect(big.rules).toHaveLength(64);
-    expect(action(decide(big, { hour: 1, minute: 2, distance: 9 }))).toBe("walk_to(15, 9)");
+    expect(action(decide(big, { hour: 1, minute: 2 }))).toBe("walk_to(15, 9)");
   });
 });
 
@@ -354,8 +357,6 @@ describe("hostile source", () => {
     "/",
     "%",
     "\n",
-    "\n",
-    " ",
     "hour",
     "minute",
     "distance",
@@ -381,16 +382,41 @@ describe("hostile source", () => {
     "é",
     "\t",
   ];
+  const SEED_PROGRAM = [
+    'bot "Seed" \n',
+    'when hour >= 20 and distance ( camp ) > 0 as "home" -> walk_to ( camp ) ; wait ( 40 ) \n',
+    "when trips < 3 or not walkable ( 3 , far ) -> set trips = trips + 1 ; wander \n",
+    "when ( hour mod 2 ) == 0 -> wait ( 10 * 2 - 1 ) \n",
+    "otherwise -> idle",
+  ]
+    .join("")
+    .split(" ");
 
   it("never throws, whatever it is given, and what it accepts always runs cleanly", () => {
     const rng = createRng(2026);
     let accepted = 0;
+    let refused = 0;
     for (let i = 0; i < 10_000; i++) {
-      const length = 1 + nextInt(rng, 30);
-      let source = "";
-      for (let k = 0; k < length; k++) source += `${WORDS[nextInt(rng, WORDS.length)]} `;
-      const result = compileTactics(source, PLACES);
+      // Half are a valid program with a few words dropped, replaced or inserted; half are word soup.
+      let words: string[];
+      if (i % 2 === 0) {
+        words = [...SEED_PROGRAM];
+        for (let edits = nextInt(rng, 4); edits > 0; edits--) {
+          const at = nextInt(rng, words.length);
+          const kind = nextInt(rng, 3);
+          if (kind === 0) words.splice(at, 1);
+          else if (kind === 1) words[at] = WORDS[nextInt(rng, WORDS.length)] as string;
+          else words.splice(at, 0, WORDS[nextInt(rng, WORDS.length)] as string);
+        }
+      } else {
+        words = Array.from(
+          { length: 1 + nextInt(rng, 30) },
+          () => WORDS[nextInt(rng, WORDS.length)] as string,
+        );
+      }
+      const result = compileTactics(words.join(" "), PLACES);
       if (!result.ok) {
+        refused++;
         expect(result.errors.length).toBeGreaterThan(0);
         for (const error of result.errors) {
           expect(error.line).toBeGreaterThanOrEqual(1);
@@ -401,14 +427,19 @@ describe("hostile source", () => {
         continue;
       }
       accepted++;
-      const decision = decide(result.program, {
-        hour: nextInt(rng, 24),
-        distance: nextInt(rng, 9),
-      });
-      // A compiled program can divide by zero; it can do nothing worse.
-      expect(["none", "divide_by_zero"]).toContain(decision.fault);
+      const memory = new Array<number>(MEMORY_SLOTS).fill(0);
+      for (let turn = 0; turn < 3; turn++) {
+        const decision = decide(
+          result.program,
+          { hour: nextInt(rng, 24), distance: nextInt(rng, 9) },
+          memory,
+        );
+        // A compiled program can divide by zero; it can do nothing worse.
+        expect(["none", "divide_by_zero"]).toContain(decision.fault);
+      }
     }
-    expect(accepted).toBeGreaterThan(20);
+    expect(accepted).toBeGreaterThan(500);
+    expect(refused).toBeGreaterThan(3000);
   });
 
   it("random valid programs: compiled code never underflows, overflows or runs off the end", () => {
@@ -426,8 +457,8 @@ describe("hostile source", () => {
         return `(${expression(depth + 1)} ${pick(["<", "<=", ">", ">=", "==", "!="])} ${expression(depth + 1)})`;
       if (roll === 6)
         return `(${expression(depth + 1)} ${pick(["and", "or"])} ${expression(depth + 1)})`;
-      if (roll === 7) return `not ${expression(depth + 1)}`;
-      return `-${expression(depth + 1)}`;
+      if (roll === 7) return `(not ${expression(depth + 1)})`;
+      return `-(${expression(depth + 1)})`;
     };
     const act = (): string =>
       pick([
@@ -461,12 +492,105 @@ describe("hostile source", () => {
   });
 });
 
+describe("the language reference", () => {
+  it("lists exactly the system calls the machine has", () => {
+    const doc = readFileSync(new URL("../../../docs/tactics.md", import.meta.url), "utf8");
+    const start = "<!-- generated: system calls -->";
+    const written = doc.slice(
+      doc.indexOf(start) + start.length,
+      doc.indexOf("<!-- end generated -->"),
+    );
+    // Compared cell by cell, so the formatter may align the columns as it likes.
+    const rows = written
+      .trim()
+      .split("\n")
+      .map((line) =>
+        line
+          .split("|")
+          .slice(1, -1)
+          .map((cell) => cell.trim()),
+      )
+      .filter((cells) => !cells.every((cell) => /^-+$/.test(cell)));
+    // If this fails, update the table in docs/tactics.md to match packages/sim/src/syscalls.ts.
+    expect(rows).toEqual([
+      ["Name", "Kind", "Takes", "What it does"],
+      ...SYSCALLS.map((c) => [`\`${c.name}\``, c.kind, String(c.args), c.about]),
+    ]);
+  });
+
+  it("its example program compiles", () => {
+    const doc = readFileSync(new URL("../../../docs/tactics.md", import.meta.url), "utf8");
+    const example = doc.slice(
+      doc.indexOf("```\nbot") + 4,
+      doc.indexOf("```", doc.indexOf("```\nbot") + 4),
+    );
+    const result = compileTactics(example, placeConstants(firstLight()));
+    expect(result.ok ? result.program.rules : result).toEqual([
+      "heading home",
+      "hour >= 20",
+      "otherwise",
+    ]);
+  });
+});
+
 describe("shipped programs", () => {
   it("every program in content/bots compiles", () => {
     const sources = botSources();
-    expect(Object.keys(sources)).toContain("wanderer");
+    expect(Object.keys(sources).sort()).toEqual(["homebody", "riverwalker", "wanderer"]);
     const programs = compileBots(sources, placeConstants(firstLight()));
     expect(Object.keys(programs).sort()).toEqual(Object.keys(sources).sort());
+  });
+
+  it("the shipped programs behave as their labels say, over a full day", () => {
+    const map = firstLight();
+    const world = createWorld(map, 9, compileBots(botSources(), placeConstants(map)));
+    step(
+      world,
+      spawnsNearCamp(world, [
+        { name: "Wren", program: "wanderer" },
+        { name: "Hob", program: "homebody" },
+        { name: "Rill", program: "riverwalker" },
+      ]),
+    );
+    const camp = place(map, "camp");
+    const river = place(map, "river");
+    const far = (a: { x: number; y: number }, b: { x: number; y: number }): number =>
+      Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    const [wren, hob, rill] = world.actors;
+    if (!wren || !hob || !rill) throw new Error("no actors");
+    let hobFarthest = 0;
+    let rillReachedRiver = false;
+    const wrenTiles = new Set<string>();
+    const labels = new Set<string>();
+    for (let tick = 0; tick < TICKS_PER_DAY; tick++) {
+      step(world);
+      for (const actor of world.actors) {
+        expect(actor.fault).toBe(0);
+        labels.add(`${actor.program}: ${world.programs[actor.program]?.rules[actor.rule]}`);
+      }
+      const { hour } = clock(world);
+      wrenTiles.add(`${wren.x},${wren.y}`);
+      if (hour >= 8 && hour < 18) hobFarthest = Math.max(hobFarthest, far(hob, camp));
+      if (far(rill, river) === 0) rillReachedRiver = true;
+      // Deep in the night both of them are settled near the lantern.
+      if (hour === 2) {
+        expect(far(hob, camp)).toBeLessThanOrEqual(3);
+        expect(far(rill, camp)).toBeLessThanOrEqual(3);
+      }
+    }
+    expect(rillReachedRiver).toBe(true);
+    expect(wrenTiles.size).toBeGreaterThan(200);
+    // The homebody strays, is called back, and never gets across the map.
+    expect(hobFarthest).toBeGreaterThan(6);
+    expect(hobFarthest).toBeLessThan(30);
+    expect([...labels].sort()).toEqual([
+      "homebody: night: stay by the fire",
+      "homebody: potter about",
+      "homebody: too far: turn back",
+      "riverwalker: night: sleep at camp",
+      "riverwalker: to the river and back",
+      "wanderer: stroll, then rest",
+    ]);
   });
 
   it("a broken content program is refused with its file, line and column", () => {

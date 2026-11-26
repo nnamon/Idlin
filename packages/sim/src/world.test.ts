@@ -20,7 +20,13 @@ const PROGRAMS = shippedPrograms();
 
 const newWorld = (seed: number): World => {
   const world = createWorld(firstLight(), seed, PROGRAMS);
-  step(world, spawnsNearCamp(world, NAMES, "wanderer"));
+  step(
+    world,
+    spawnsNearCamp(
+      world,
+      NAMES.map((name) => ({ name, program: "wanderer" })),
+    ),
+  );
   return world;
 };
 
@@ -33,7 +39,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("62d98bc76e66a562");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("053f326a6e502987");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {

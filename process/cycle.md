@@ -56,7 +56,8 @@ Link the issue to the thread.
 
 Before pushing or posting anything, check the text against section 1 of
 `AGENTS.md`: nothing about the machine or the environment. This holds for every
-commit message, pull request, comment and issue in the cycle.
+commit message, pull request, comment and issue in the cycle. Commit with
+`TZ=UTC git commit …`, so the commit date does not carry the local time zone.
 
 Push the branch and open a pull request: title from the issue, body with
 "Closes #N", what changed, the evidence (test names, numbers, what the frames
