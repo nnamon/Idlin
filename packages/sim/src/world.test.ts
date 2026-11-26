@@ -105,7 +105,12 @@ describe("world", () => {
     const saved = snapshot(world);
     expect(hashWorld(restore(saved, map))).toBe(hashWorld(world));
     type Saved = {
-      state: { tick: unknown; rng: { a: unknown }; actors: Record<string, unknown>[] };
+      state: {
+        tick: unknown;
+        nextActorId: unknown;
+        rng: { a: unknown };
+        actors: Record<string, unknown>[];
+      };
     };
     const forged = (change: (data: Saved) => void): string => {
       const data = JSON.parse(saved) as Saved;
@@ -134,7 +139,13 @@ describe("world", () => {
       ["a path that jumps", (d) => (actor(d).path = [{ x: 14, y: 8 }])],
       ["a step longer than a step", (d) => (actor(d).moveTicksLeft = 99)],
       ["a standing actor that came from elsewhere", (d) => (actor(d).fromX = 12)],
-      ["two actors on one tile", (d) => d.state.actors.push({ ...actor(d), id: 2 })],
+      [
+        "two actors on one tile",
+        (d) => {
+          d.state.actors.push({ ...actor(d), id: 2 });
+          d.state.nextActorId = 3;
+        },
+      ],
       ["a missing name", (d) => delete actor(d).name],
       ["an actor that is not an object", (d) => d.state.actors.push(null as never)],
     ];
