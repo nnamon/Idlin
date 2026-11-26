@@ -18,17 +18,38 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 - Every project command runs through Docker Compose. Only `git`, `gh` and
   `docker` run on the host. Never touch containers, images or volumes that
   belong to other projects, and never run a blanket prune.
-- This repo is public. Commit no secrets, no machine paths, no personal
-  details, and no asset whose licence forbids redistribution.
+- This repo is public. Commit no secrets, no personal details, and no asset
+  whose licence forbids redistribution.
+- Nothing about the machine or environment the swarm runs on reaches GitHub:
+  not in files, commit messages, issue or pull request text, or comments. That
+  covers paths, user and host names, hardware, operating system, time zone,
+  other software or projects on the machine, and the state of its Docker or
+  disks. Check each text before it is pushed or posted, not after. Naming the
+  process's own tools and models, as these documents do, is fine. Explain a
+  decision by what it does for the project. CI runs on GitHub's runners and
+  prints only what the repo's own commands print, so it has nothing of the
+  machine to show; keep it that way by never passing local values into a
+  workflow.
 
 ## 2. Roles
 
-| Role            | Who                                                                    | Owns                                                                                                                                                                           |
-| --------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Conductor**   | Mythos 5.2, started by the work-cycle schedule                         | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                            |
-| **Artist**      | Fable 5.2, a child task in its own worktree                            | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                       |
-| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task            | An adversarial read of each pull request's diff. If Codex is unavailable, Antigravity `gemini-4-neon`. Never a Claude model: the point is a different family from the builder. |
-| **Watch judge** | Fable 5.2 as a fresh child task (Mythos 5.2 if Fable built the change) | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only.                                                              |
+| Role            | Who                                                                              | Owns                                                                                                                                                                                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Conductor**   | Mythos 5.2, started by the work-cycle schedule                                   | The queue, the build, the merge. Picks one issue per cycle and takes it to merged. Plans the next milestone when the queue empties.                                                                                                                                                                                    |
+| **Artist**      | Opus 5.5 (effort `medium`), a child task in its own worktree                     | Optional builder for issues labelled `look`, when the conductor judges the work is mostly visual design.                                                                                                                                                                                                               |
+| **Reviewer**    | Codex `gpt-6.2-sol` (reasoning effort `high`), a child task                      | An adversarial read of each pull request's diff, by a model that did not build it; from a different family whenever Codex is available. Codex has tighter usage limits than Claude: when it is out of quota or unreachable, the review goes to Opus 5.5 (effort `medium`). The pull request says which model reviewed. |
+| **Watch judge** | Opus 5.5 (effort `medium`), a fresh child task; Codex when Opus built the change | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures and the rubric only.                                                                                                                                                                                                      |
+
+Only the conductor runs on a Mythos- or Fable-tier model. Every Claude child
+task is Opus 5.5 at effort `medium`.
+
+Antigravity is not used: its children can stall on approval prompts, which an
+unattended cycle cannot answer.
+
+A reviewer or judge never checks work built by its own model. When the artist
+(Opus) built a change, Codex judges its captures; if Codex cannot review its
+code either, the conductor reviews the code itself. The conductor never acts
+as watch judge, because it knows what the change was meant to do.
 
 Child tasks are started with T3 Code's `delegate_task`, so each one appears as
 a thread the operator can open. No fan-out and no `Workflow` runs.
@@ -50,7 +71,9 @@ work (tests, and captures if it is visible), and what it leaves out.
 
 1. `main` is red in CI: fix that.
 2. An open `operator` issue, or an operator comment not yet answered.
-3. An `in-progress` issue: resume it.
+3. An `in-progress` issue: resume it. One that waits only on a review which
+   could not be had last cycle gets one new attempt; if that fails too, leave
+   it open and take the next item on this list as this cycle's issue.
 4. A `bug`, or a `watch` issue that records a hard fail.
 5. The lowest-numbered `ready` issue in the current milestone whose
    dependencies ("Depends on #N" in the body) are closed.
@@ -84,8 +107,9 @@ One issue per cycle. The full procedure is
 10. **Close out.** Comment on the issue with what shipped and the evidence,
     update any doc the change made stale, delete the branch.
 
-An issue that is not mergeable after three cycles is split into smaller issues
-or labelled `blocked` with the reason, and the cycle moves on.
+An issue that is not mergeable after three cycles of building is split into
+smaller issues or labelled `blocked` with the reason, and the cycle moves on.
+Cycles spent only waiting for a reviewer do not count.
 
 ## 5. Merge gates
 
@@ -97,8 +121,8 @@ A pull request is merged only when all of these hold:
 - for a `look` change: a capture with no hard fail and no "worse" verdict;
 - docs describe the repo as it now is.
 
-If no reviewer can be reached, the pull request stays open with a comment
-saying so. The cycle picks other work and the next cycle retries the review.
+If neither reviewer can be reached, the pull request stays
+open with a comment saying so. The cycle picks other work and the next cycle retries the review.
 Nothing merges unreviewed.
 
 Never force-push `main` or rewrite its history. A bad merge is undone with a
@@ -141,8 +165,11 @@ Anyone can open an issue, comment or pull request on a public repo.
 
 - **Work-cycle thread** in T3 Code: every cycle ends with a short report (the
   issue, the pull request, what merged or why not).
-- **Daily digest thread**, 09:00 local: what merged in the last day, the latest
-  storyboard, watch scores, decisions open to veto, anything stuck.
+- **Daily digest thread**, every morning: what merged in the last day, the
+  latest storyboard, watch scores, decisions open to veto, anything stuck.
+- **The README showcase:** once the viewer exists, real captures of the game
+  at the top of `README.md`, refreshed by the digest. The images live on the `media` branch
+  so `main` carries no binaries.
 - **The tracker:** milestone progress, with each issue linked to its thread and
   pull request.
 - **`docs/decisions/`:** each decision of consequence, short, with the

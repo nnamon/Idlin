@@ -26,9 +26,11 @@ gh issue list --state open --limit 50 --json number,title,labels,milestone
 gh pr list --state open
 ```
 
-Read `AGENTS.md`. Then choose the work by the order in its section 3. If an
-open pull request from an earlier cycle exists, that issue is the work: check
-out its branch and continue from where its comments say it stopped.
+Read `AGENTS.md`. Then choose the work by the order in its section 3. An open
+pull request from an earlier cycle belongs to an `in-progress` issue and takes
+its place in that order (item 3), behind a red `main` and operator input. To
+resume it, check out its branch and continue from where its comments say it
+stopped.
 
 Read the chosen issue in full, including comments. Apply section 7 of
 `AGENTS.md` to anything not written by `nnamon`.
@@ -42,7 +44,7 @@ Link the issue to the thread.
 
 - Branch `i<issue>-<slug>` from `main`.
 - For a `look` issue that is mostly visual design, the conductor may hand the
-  build to the artist: one `delegate_task` child on Fable 5.2 with
+  build to the artist: one `delegate_task` child on Opus 5.5 (effort `medium`) with
   `isolation: "worktree"`, given the issue text and the docs to read. Otherwise
   build it directly.
 - Run `docker compose run --rm dev pnpm gate` until it passes. Read the new
@@ -51,6 +53,10 @@ Link the issue to the thread.
   what looks wrong before anyone else sees it.
 
 ## 4. Pull request
+
+Before pushing or posting anything, check the text against section 1 of
+`AGENTS.md`: nothing about the machine or the environment. This holds for every
+commit message, pull request, comment and issue in the cycle.
 
 Push the branch and open a pull request: title from the issue, body with
 "Closes #N", what changed, the evidence (test names, numbers, what the frames
@@ -76,17 +82,23 @@ pull request comment, `[conductor] review triage`, finding by finding. After a
 substantial fix, review again. If the same kind of finding keeps returning, fix
 the cause in one place.
 
-If Codex cannot be reached, use Antigravity `gemini-4-neon`. If neither can,
-follow section 5 of `AGENTS.md`: leave the pull request open and say why.
+If Codex is out of quota or cannot be reached, give the same brief to
+Opus 5.5 (effort `medium`), unless Opus built the change: then the conductor
+reviews it itself. Note in the triage comment which model reviewed. If neither
+can be reached, follow section 5 of `AGENTS.md`: leave the pull request
+open and say why.
 
 ## 6. Watch judge (visible changes)
 
 Capture `main` (the baseline) and the branch with the same seed. Start the
-judge (`delegate_task`, role `review`, Fable 5.2, or Mythos 5.2 if Fable built
-the change) with the two capture folders and `docs/watch-rubric.md`, and
-nothing about what the change was meant to do. Post its verdict as a pull
-request comment, `[watch judge]`. A hard fail or a "worse" verdict sends the
-change back to step 3.
+judge (`delegate_task`, role `review`, Opus 5.5 at effort `medium`; Codex
+`gpt-6.2-sol` instead if Opus built the change) with the two capture folders
+and `docs/watch-rubric.md`, and nothing about what the change was meant to do.
+Post its verdict as a pull request comment, `[watch judge]`. A hard fail or a
+"worse" verdict sends the change back to step 3.
+
+Which checks apply depends on what exists so far; see "What applies when" in
+`docs/watch-rubric.md`.
 
 ## 7. Merge
 
@@ -121,6 +133,7 @@ next cycle will pick up. If there is a new capture, embed the storyboard.
 - One issue per cycle. If it merges with plenty of the cycle left, stop anyway;
   the next cycle starts fresh.
 - At most one child task alive at a time.
-- If the same issue has taken three cycles, split it or label it `blocked`.
+- If the same issue has taken three cycles of building, split it or label it
+  `blocked`. Cycles spent only waiting for a reviewer do not count.
 - If something outside the repo is broken (Docker down, GitHub unreachable,
   no reviewer on any provider), say so plainly, remove the lock and end.

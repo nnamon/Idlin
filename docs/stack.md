@@ -42,5 +42,6 @@ to protect the development machine, and a throwaway runner needs no protection.
   none.
 - Art and fonts are committed only when their licence allows redistribution;
   each pack gets an entry in `assets/CREDITS.md` and its licence file.
-- Captures and other generated images are not committed. They live in
-  `captures/` (ignored) and as CI artifacts.
+- Captures and other generated images are never committed to `main`. They live
+  in `captures/` (ignored) and as CI artifacts; the curated set shown in the
+  README lives on the orphan `media` branch.

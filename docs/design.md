@@ -66,8 +66,9 @@ that matters: go home at dusk, or stay out and risk the haul.
 
 ### 4. One frame, no cuts, no strobing
 
-The whole world fits one fixed frame. The camera does not cut between
-characters. A side panel spotlights one character at a time; it changes subject
+The whole world fits one fixed frame (and when it outgrows one, the view
+drifts between regions; see "One player among many"). The camera never cuts
+between characters. A side panel spotlights one character at a time; it changes subject
 slowly, with a fade, and prefers someone to whom something is happening.
 
 Feedback is small, local and eased: a hop, a lunge, a number that floats and
@@ -157,6 +158,41 @@ The screen is 16:9: the world on the left, a side panel on the right with the
 spotlighted character (portrait, skills, gear, its program with the firing rule
 lit), and an event ticker along the bottom.
 
+## One player among many
+
+The audience is on a shared stream. No viewer has a camera of their own, and
+on a good day there are far more characters than the handful the first milestone
+shows. The design has to stay fun for one person who owns one of them. Five
+commitments follow.
+
+1. **You can find yours.** Each player's character carries a name tag in a
+   colour they pick. `!me` in chat rings it softly for a few seconds.
+2. **The stream notices you.** Spotlight time is rationed, not won by the
+   loudest: notable events earn it, and every active character gets a turn
+   within a bounded wait. The ticker names names. How much of the stream each
+   character got is measured (acknowledgment and spotlight wait), so a crowd cannot
+   quietly starve someone.
+3. **Your choices show and compare.** The spotlight shows your rules firing.
+   Boards rank trips, not totals, across many niches (best haul today, longest
+   night survived, fastest to a level), so a newcomer with a clever program
+   can top one on day one while veterans keep their levels.
+4. **You have somewhere of your own.** A companion page per character: its
+   sheet, what happened since you last looked, and its program to edit. The
+   stream is the shared show; the page is the private seat.
+5. **The world grows by places, not by density.** A frame holds only as many
+   characters as can be read (the limit is found by capture, not assumed).
+   Beyond that the world gains regions; the stream stays with one region at a
+   time and drifts to the next slowly, never cutting. Characters elsewhere
+   carry on and reach the stream through the ticker and their companion page.
+
+Whether this holds is an open question, tested with captures at 12, 50 and 150
+characters from one player's seat (the "Mine" score in
+[watch-rubric.md](watch-rubric.md)). The first milestone builds the frame and
+the spotlight and measures how many characters one frame can hold.
+Commitments 1, 3 and 4 need players and arrive with them in M3; regions and
+the drifting view arrive when the population calls for them, in M4. The
+[roadmap](roadmap.md) carries each.
+
 ## What a watcher can do
 
 In the first milestone, only watch; programs are built in. After that: claim an
@@ -164,7 +200,6 @@ adventurer, read its program, edit it in the browser, and compare how it does
 against the others. That is the optimisation game, and it gets its own
 milestone.
 
-## Not now
+## Not planned yet
 
-Deployment and hosting, accounts, chat integration, sound, mobile layouts,
-trading between characters, and any world bigger than one frame.
+Deployment and hosting, sound, mobile layouts and trading between characters.
