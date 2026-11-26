@@ -134,6 +134,12 @@ export function parseMap(raw: unknown): TileMap {
     .sort()
     .map((placeName) => {
       const at = places[placeName];
+      // Programs refer to places by name, so a place name has to be a plain word.
+      if (!/^[a-z][a-z0-9_]{0,31}$/.test(placeName)) {
+        return fail(
+          `place name "${placeName.slice(0, 40)}" must be a lower-case letter followed by letters, digits or underscores`,
+        );
+      }
       if (!isRecord(at) || !Number.isInteger(at.x) || !Number.isInteger(at.y)) {
         return fail(`place "${placeName}" needs whole-number x and y`);
       }

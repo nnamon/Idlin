@@ -222,7 +222,7 @@ describe("compiling", () => {
     `);
     expect(program.rules).toEqual([
       "night falls",
-      "distance( camp ) > 5",
+      "distance(camp) > 5",
       "hour == 1 or hour == 2 or hour == 3...",
       "otherwise",
     ]);
@@ -259,7 +259,19 @@ describe("errors", () => {
         /^1:14 there is no action called "chop"\. Actions: idle, wait, walk_to, wander/,
       ],
       ["otherwise -> hour", /"hour" is a sensor: it reads, it does not act/],
-      ["when wander -> idle", /I do not know what "wander" is/],
+      ["when wander -> idle", /^1:6 "wander" is an action: it can only come after ->/],
+      ["otherwise -> wait(camp)", /was given 2 \(a place counts as two: its x and its y\)/],
+      ["when hour % 2 == 0 -> idle", /^1:11 for a remainder write "mod", not "%"/],
+      [
+        "otherwise -> wait(10 % 3)",
+        /"%" after a number only marks a percentage; for a remainder write "mod", like: 10 mod 3/,
+      ],
+      [
+        "when 1 < 2 < 3 -> idle",
+        /^1:12 comparisons cannot be chained; join two of them with "and"/,
+      ],
+      ['when hour > 1 as "\u200B" -> idle', /after "as" comes a short label in quotes/],
+      ['bot "\u202E"\notherwise -> idle', /after "bot" comes the bot's name in quotes/],
       ["when idle() -> idle", /there is no sensor called "idle" \("idle" is an action/],
       ["otherwise -> walk_to(3)", /^1:14 "walk_to" takes 2 values, but was given 1/],
       ["otherwise -> wait(camp)", /"wait" takes 1 value, but was given 2/],
@@ -295,6 +307,37 @@ describe("errors", () => {
     }
   });
 
+  it("one mistake never hides the next line's", () => {
+    const lines = (source: string): string[] =>
+      errorsOf(source).map((e) => e.split(" ")[0] as string);
+    // An error found after the whole line was read must not swallow the next line.
+    expect(lines("when 1 -> set x = 1\nwhen bogus -> idle\nwhen 1 -> nope")).toEqual([
+      "1:11",
+      "2:6",
+      "3:11",
+    ]);
+    expect(lines("otherwise -> idle\nwhen 1 -> idle\nwhen bogus -> idle")).toEqual(["2:1", "3:1"]);
+    // A bad slot name is one error among the others.
+    expect(lines("when 1 -> set hour = 1; idle\nwhen zork -> idle")).toEqual(["1:11", "2:6"]);
+    // An unclosed bracket ends at the next rule.
+    expect(lines("when distance(camp > 3 -> idle\nwhen foo -> idle\nwhen 1 -> idle")).toEqual([
+      "1:24",
+      "2:6",
+    ]);
+    // Text in quotes is never a reason to join two lines.
+    expect(
+      compiled('bot "or"\nwhen hour > 1 as "and" -> idle\notherwise as "->" -> wander').rules,
+    ).toEqual(["and", "->"]);
+  });
+
+  it("treats every kind of line ending as a line break", () => {
+    for (const ending of ["\n", "\r\n", "\r"]) {
+      const program = compiled(`when hour > 1 -> idle${ending}otherwise -> wander${ending}`);
+      expect(program.rules).toEqual(["hour > 1", "otherwise"]);
+    }
+    expect(errorsOf("otherwise -> idle\r\rwhen zork -> idle")[0]).toMatch(/^3:1 /);
+  });
+
   it("reports several mistakes at once, each on its own line, and stops at ten", () => {
     // Line 1 and line 3 cannot be parsed; line 2 parses but names an action that does not exist.
     const errors = errorsOf("when hour > -> idle\nwhen hour == 2 -> chop\nwhen -> idle\n");
@@ -304,19 +347,98 @@ describe("errors", () => {
     expect(errorsOf(many)).toHaveLength(10);
   });
 
-  it("refuses programs that are too big, with the reason", () => {
+  it("refuses programs that are too big, with the reason and the place", () => {
     const rule =
       "when hour == 1 and minute == 2 and distance(camp) > 3 -> walk_to(bank); wait(30); wander\n";
-    expect(errorsOf(rule.repeat(70))[0]).toMatch(/at most 63 rules/);
-    const wide = `otherwise -> wait(${Array.from({ length: 1500 }, (_, i) => i).join(" + ")})`;
-    expect(errorsOf(wide)[0]).toMatch(/too long: it compiles to \d+ words and the limit is 4096/);
+    expect(errorsOf(rule.repeat(70))[0]).toMatch(/^64:1 a program can have at most 63 rules/);
     expect(errorsOf("x".repeat(20_001))[0]).toMatch(/at most 20000 characters/);
-    const deep = `otherwise -> wait(${"(1 + ".repeat(70)}1${")".repeat(70)})`;
-    expect(errorsOf(deep)[0]).toMatch(/nested too deeply/);
     const slots = Array.from({ length: 16 }, (_, i) => `set s${i} = 1`).join("; ");
     expect(errorsOf(`otherwise -> ${slots}; idle`)[0]).toMatch(/remember at most 15 things/);
     expect(errorsOf(42)[0]).toMatch(/must be text/);
     expect(errorsOf(null)[0]).toMatch(/must be text/);
+
+    // One rule too long to follow.
+    const wide = `otherwise -> wait(${Array.from({ length: 700 }, () => 1).join(" + ")})`;
+    expect(errorsOf(wide)[0]).toMatch(/^1:\d+ this rule is too long; a rule can hold at most 600/);
+
+    // Many rules that are fine one by one. With k sensor reads a rule compiles to 3k + 8 words and 2k + 4 steps.
+    const sum = (k: number): string =>
+      `when ${Array.from({ length: k }, () => "hour").join(" + ")} > 0 -> idle\n`;
+    expect(errorsOf(sum(20).repeat(63))[0]).toMatch(
+      /^6[0-3]:1 this program is too long: it compiles to 42\d\d words and the limit is 4096/,
+    );
+    expect(errorsOf(sum(14).repeat(63))[0]).toMatch(
+      /^63:1 this program is too long to finish a decision: it has 20\d\d steps and a decision may take 2000/,
+    );
+    expect(compileTactics(sum(13).repeat(63)).ok).toBe(true);
+  });
+
+  it("deep nesting and long chains are refused where they go too far, never with the generic message", () => {
+    const brackets = (n: number): string => `when ${"(".repeat(n)}1${")".repeat(n)} -> idle`;
+    expect(compileTactics(brackets(48)).ok).toBe(true);
+    expect(errorsOf(brackets(49))).toEqual([
+      '1:54 this is nested too deeply; brackets, "not" and minus signs can go 48 deep',
+    ]);
+    for (const source of [
+      brackets(1000),
+      brackets(9000),
+      `when ${"- ".repeat(9000)}1 -> idle`,
+      `when ${"not ".repeat(4000)}1 -> idle`,
+      `otherwise -> wait(${"(1 + ".repeat(70)}1${")".repeat(70)})`,
+      `otherwise -> wait(${"1 + ".repeat(4000)}1)`,
+      `otherwise -> wait(${"distance(".repeat(500)}1, 1${")".repeat(500)})`,
+    ]) {
+      const errors = errorsOf(source);
+      expect(errors.length).toBeGreaterThan(0);
+      for (const error of errors) {
+        expect(error).not.toMatch(/could not be compiled/);
+        expect(error).toMatch(/nested too deeply|this rule is too long|at most 20000 characters/);
+      }
+    }
+  });
+
+  it("a compiled program can never run out of its budget", () => {
+    // The largest programs the compiler accepts, run with every sensor answering so that all rules are tried.
+    const sum = (k: number): string =>
+      `when ${Array.from({ length: k }, () => "hour").join(" + ")} > 9999 -> idle\n`;
+    for (const source of [sum(13).repeat(63), sum(190).repeat(3), sum(40).repeat(20)]) {
+      const result = compileTactics(source);
+      if (!result.ok) {
+        expect(result.errors[0]?.message).toMatch(/too long/);
+        continue;
+      }
+      const decision = decide(result.program, { hour: 0 });
+      expect(decision.fault).toBe("none");
+      expect(decision.gasUsed).toBeLessThanOrEqual(2000);
+    }
+    // And the long chains from the review are refused, not compiled into something that cannot finish.
+    expect(errorsOf(`when ${"not ".repeat(2100)}1 -> idle`)[0]).toMatch(/nested too deeply/);
+    expect(errorsOf(`when hour${"+hour".repeat(1300)} > 0 -> idle`)[0]).toMatch(
+      /this rule is too long/,
+    );
+  });
+
+  it("a rule may do up to 32 actions in sequence, and its marks never meet another rule's", () => {
+    const waits = (n: number): string =>
+      Array.from({ length: n }, (_, i) => `wait(${100 + i})`).join("; ");
+    const tooMany = errorsOf(`otherwise -> ${waits(33)}`);
+    expect(tooMany[0]).toMatch(/a rule can do at most 32 actions in sequence/);
+    const program = compiled(
+      `when hour < 12 -> ${waits(32)}\nwhen 1 -> wait(1); wait(2); wait(3)\n`,
+    );
+    const memory = new Array<number>(MEMORY_SLOTS).fill(0);
+    const next = (hour: number): string => action(decide(program, { hour }, memory));
+    const first: string[] = [];
+    for (let i = 0; i < 34; i++) first.push(next(1));
+    expect(first.slice(0, 3)).toEqual(["wait(100)", "wait(101)", "wait(102)"]);
+    expect(first.slice(31)).toEqual(["wait(131)", "wait(100)", "wait(101)"]);
+    // The other rule takes over part-way through and starts at its own first action.
+    expect([next(20), next(20), next(20), next(20)]).toEqual([
+      "wait(1)",
+      "wait(2)",
+      "wait(3)",
+      "wait(1)",
+    ]);
   });
 
   it("everything it accepts fits the machine's limits", () => {
@@ -325,6 +447,47 @@ describe("errors", () => {
     expect(big.code.length).toBeLessThanOrEqual(MAX_CODE_LENGTH);
     expect(big.rules).toHaveLength(64);
     expect(action(decide(big, { hour: 1, minute: 2 }))).toBe("walk_to(15, 9)");
+  });
+});
+
+describe("names and labels", () => {
+  it("keeps comments out of labels and tidies the spacing", () => {
+    const program = compiled(
+      "when hour > 1 and # late\n  hour <   5 -> idle\nwhen distance( camp )>3 or -hour < - 2 -> idle",
+    );
+    expect(program.rules).toEqual([
+      "hour > 1 and hour < 5",
+      "distance(camp) > 3 or - hour < - 2",
+      "otherwise",
+    ]);
+  });
+
+  it("removes invisible and control characters from what viewers will read, and never splits a character", () => {
+    const result = compileTactics(
+      'bot "\u202ESly\u200B Fox\u0007"\nwhen 1 as "\u202Eevil\u200B  twin" -> idle',
+    );
+    expect(result).toMatchObject({ ok: true, name: "Sly Fox" });
+    expect(result.ok && result.program.rules[0]).toBe("evil twin");
+    const emoji = compiled(`when 1 as "${"🦊".repeat(40)}" -> idle`).rules[0] as string;
+    expect(emoji.length).toBeLessThanOrEqual(40);
+    expect(emoji).toBe(`${"🦊".repeat(18)}...`);
+    expect(compileTactics(`bot "${"🦉".repeat(40)}"\notherwise -> idle`)).toMatchObject({
+      name: `${"🦉".repeat(14)}...`,
+    });
+  });
+
+  it("refuses constants a program could not use, with the reason", () => {
+    const refused: [Constants, RegExp][] = [
+      [{ hour: { x: 1, y: 2 } }, /"hour" is already a sensor or an action/],
+      [{ wander: 3 }, /"wander" is already a sensor or an action/],
+      [{ when: 3 }, /"when" cannot be used as a name/],
+      [{ "old mill": { x: 1, y: 2 } }, /"old mill" cannot be used as a name/],
+      [{ far: 1.5 }, /"far" must be a whole number/],
+      [{ camp: { x: 1, y: Number.NaN } }, /"camp" must be a whole number, or a place/],
+      [{ camp: null as never }, /"camp" must be a whole number, or a place/],
+    ];
+    for (const [constants, message] of refused)
+      expect(errorsOf("otherwise -> idle", constants)[0]).toMatch(message);
   });
 });
 
@@ -591,6 +754,13 @@ describe("shipped programs", () => {
       "riverwalker: to the river and back",
       "wanderer: stroll, then rest",
     ]);
+  });
+
+  it("a content file whose name could not be a program name is refused by name", () => {
+    expect(() => compileBots({ "Night Owl": "otherwise -> idle" })).toThrow(BotError);
+    expect(() => compileBots({ "Night Owl": "otherwise -> idle" })).toThrow(
+      /^Night Owl\.tac: a program file's name must be/,
+    );
   });
 
   it("a broken content program is refused with its file, line and column", () => {

@@ -50,9 +50,10 @@ After `->` comes an action, or several separated by `;`.
 
 - Whole numbers, from -2147483647 to 2147483647. Arithmetic wraps around at
   those limits. A `%` after a number is only for reading: `40%` is 40.
-- `+ - * /` and `mod`. Division drops the remainder. Dividing by zero stops the
+- `+ - * /` and `mod` for the remainder (there is no `%` operator). Division drops the remainder. Dividing by zero stops the
   decision: the actor stands confused for a moment, then tries again.
-- Comparisons `< <= > >= == !=` give 1 or 0.
+- Comparisons `< <= > >= == !=` give 1 or 0. They don't chain: write
+  `a < b and b < c`, not `a < b < c`.
 - `and`, `or`, `not`. The right side of `and` and `or` is only worked out when
   the left side has not already settled the answer.
 - Brackets group. `*`, `/` and `mod` bind tighter than `+` and `-`, which bind
@@ -96,10 +97,17 @@ minute.
 
 ## Limits
 
-A program may be at most 20,000 characters and 63 rules, and its compiled form
-at most 4,096 words. Each decision may run 2,000 instructions; a program that
-uses them all is stopped for that turn. An actor standing still is asked for a
-decision at most once every five ticks.
+- Source: at most 20,000 characters and 63 rules.
+- One rule: at most 600 numbers, names and operators, at most 32 actions in
+  sequence, and brackets, `not` and minus signs nested at most 48 deep.
+- Compiled: at most 4,096 words, and at most 2,000 steps in total. A decision
+  never runs a step twice, so a program that compiles always finishes its
+  decision; the only thing that can stop one is dividing by zero.
+- An actor standing still is asked for a decision at most once every five
+  ticks.
+
+Bot names and rule labels are shown to viewers, so invisible and control
+characters are removed from them and long ones are cut short.
 
 ## When something is wrong
 

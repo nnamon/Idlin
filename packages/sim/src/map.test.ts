@@ -61,6 +61,11 @@ describe("parseMap", () => {
     ["a missing row", tiny({ rows: ["..#"] }), /expected 2 rows, found 1/],
     ["a short row", tiny({ rows: ["..#", ".."] }), /row 1 must be 3 characters/],
     ["a symbol outside the legend", tiny({ rows: ["..#", ".?."] }), /row 1, column 1: "\?"/],
+    [
+      "a place name that is not a plain word",
+      tiny({ places: { camp: { x: 0, y: 0 }, "Old Mill": { x: 1, y: 0 } } }),
+      /place name "Old Mill" must be a lower-case letter/,
+    ],
     ["no camp", tiny({ places: { den: { x: 0, y: 0 } } }), /"camp" is required/],
     ["a place on a rock", tiny({ places: { camp: { x: 2, y: 0 } } }), /not on a walkable tile/],
     ["a place off the map", tiny({ places: { camp: { x: 9, y: 9 } } }), /not on a walkable tile/],

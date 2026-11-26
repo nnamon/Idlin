@@ -5,7 +5,14 @@ import { think } from "./brain.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
 import { createRng, type Rng } from "./rng.ts";
-import { FAULTS, MEMORY_SLOTS, type Program, ProgramError, validateProgram } from "./vm.ts";
+import {
+  FAULTS,
+  MEMORY_SLOTS,
+  PROGRAM_NAME,
+  type Program,
+  ProgramError,
+  validateProgram,
+} from "./vm.ts";
 
 export const TICKS_PER_SECOND = 10;
 /** A game hour lasts one minute of stream time, so a game day lasts 24 minutes. */
@@ -70,9 +77,6 @@ export type Input = {
   /** The program to run; must be one of the world's. */
   readonly program: string;
 } & Point;
-
-/** Program names: a lower-case letter, then letters, digits or underscores. */
-const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
 
 /**
  * Validates a program table and returns a frozen copy with no prototype, so a

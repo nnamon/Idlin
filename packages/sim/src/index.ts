@@ -28,12 +28,14 @@ export {
 } from "./tactics.ts";
 export {
   BYTECODE_VERSION,
+  countInstructions,
   type Decision,
   FAULTS,
   type Fault,
   GAS_PER_DECISION,
   MEMORY_SLOTS,
   OP,
+  PROGRAM_NAME,
   type Program,
   ProgramError,
   runDecision,

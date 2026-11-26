@@ -58,6 +58,16 @@ const OPERANDS: readonly number[] = [
   0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
+/** Program names: a lower-case letter, then letters, digits or underscores. */
+export const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+
+/** How many instructions a word list holds, given that it is well formed. */
+export function countInstructions(code: readonly number[]): number {
+  let count = 0;
+  for (let at = 0; at < code.length; at += 1 + (OPERANDS[code[at] as number] ?? 0)) count++;
+  return count;
+}
+
 export interface Program {
   readonly version: number;
   /** Opcodes and their operands, one 32-bit integer per word. */
