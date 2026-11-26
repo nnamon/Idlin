@@ -7,15 +7,15 @@ program for one of them.
 
 ![The camp at midnight: the lantern and campfire light the clearing, and each adventurer carries a small light of their own](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
 
-*Midnight. The lantern and the campfire hold a pool of light; everyone out in
-the dark carries a small one of their own.*
+_Midnight. The lantern and the campfire hold a pool of light; everyone out in
+the dark carries a small one of their own._
 
-| | |
-|---|---|
-| ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png) |
-| *Dawn, 06:15. The day starts pink.* | *Noon. One game day lasts 24 minutes.* |
+|                                                                                 |                                                                                         |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png)         |
+| _Dawn, 06:15. The day starts pink._                                             | _Noon. One game day lasts 24 minutes._                                                  |
 | ![Dusk](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dusk.png) | ![Midnight](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png) |
-| *Dusk, 19:12. The lamps come on as the light goes amber.* | *Night. The deep wood and the den go dark.* |
+| _Dusk, 19:12. The lamps come on as the light goes amber._                       | _Night. The deep wood and the den go dark._                                             |
 
 Every picture here is a capture of the running game, refreshed as it changes.
 Today the adventurers only walk and rest: programs, combat, skills and loot are
