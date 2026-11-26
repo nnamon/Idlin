@@ -148,6 +148,8 @@ export class Scene {
   /** Which ink each name and each place label is in, settled once a tick. */
   private readonly nameDay = new Map<number, boolean>();
   private readonly labelDay: boolean[] = [];
+  /** Half the width of each place label, as kept clear of names. */
+  private readonly labelHalf: number[] = [];
   /** The tick of the world last observed, to notice when time goes back. */
   private lastTick = Number.NEGATIVE_INFINITY;
   /** A short line on the page beside the clock, such as "waiting for the world"; empty for none. */
@@ -183,6 +185,7 @@ export class Scene {
       ctx.letterSpacing = `${spacing}px`;
       const measured = Math.ceil(ctx.measureText(label.text).width / 2) + 4;
       const half = Math.max(measured, label.text.length * (label.style === "town" ? 7 : 8));
+      this.labelHalf.push(half);
       this.avoid.push({
         left: label.x * TILE - half,
         right: label.x * TILE + half,
@@ -366,7 +369,8 @@ export class Scene {
       const [font, size, spacing] = labelFont(label);
       const x = label.x * TILE;
       const y = label.y * TILE;
-      const palette = inkOf(this.labelDay[index], x, y - 8);
+      const settled = this.labelDay[index] ?? dayInk(this.labelLit(index, litAt), undefined);
+      const palette = settled ? DAY : NIGHT;
       out.font = `${size}px "${font}"`;
       out.letterSpacing = `${spacing}px`;
       out.lineWidth = 5;
@@ -644,9 +648,8 @@ export class Scene {
       const lit = litAt((box.left + box.right) / 2, box.bottom - 15);
       this.nameDay.set(actor.id, dayInk(lit, this.nameDay.get(actor.id)));
     }
-    this.labels.forEach((label, index) => {
-      const lit = litAt(label.x * TILE, label.y * TILE - 8);
-      this.labelDay[index] = dayInk(lit, this.labelDay[index]);
+    this.labels.forEach((_, index) => {
+      this.labelDay[index] = dayInk(this.labelLit(index, litAt), this.labelDay[index]);
     });
     for (const known of [
       this.facing,
@@ -658,6 +661,23 @@ export class Scene {
     ]) {
       for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
     }
+  }
+
+  /**
+   * How lit a place label is: the average of nine points evenly spaced from
+   * one end to the other. A label is far wider than the light a resident
+   * carries, so taken at its middle alone a resident walking under it would
+   * turn the whole label to day ink, its pale halo spread over the night map
+   * either side of the light.
+   */
+  private labelLit(index: number, litAt: (x: number, y: number) => number): number {
+    const label = this.labels[index] as MapLabel;
+    const half = this.labelHalf[index] ?? 0;
+    const x = label.x * TILE;
+    const y = label.y * TILE - 8;
+    let sum = 0;
+    for (let at = -4; at <= 4; at++) sum += litAt(x + (at / 4) * half, y);
+    return sum / 9;
   }
 
   /** Where a figure's name would like to sit: centred, on the line just above the hood. */

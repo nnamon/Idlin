@@ -18,6 +18,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import mapJson from "../../../content/maps/first-light.json";
 import { FRAME_HEIGHT, FRAME_WIDTH, ROW_PITCH, spreadPage } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
+import { css } from "./light.ts";
+import { DAY, NIGHT } from "./palette.ts";
 import { actorPose } from "./pose.ts";
 import { Scene } from "./scene.ts";
 import { FADE, MIN_HOLD, type Slips, slipAlpha } from "./slips.ts";
@@ -510,6 +512,67 @@ describe("the scene", () => {
     const straight = await inkAt([8381]);
     expect(straight).toBeDefined();
     expect(await inkAt([9600, 8381])).toEqual(straight);
+  });
+
+  it("writes each place name once a frame, only on the frame itself, through a day and a night in a crowd", async () => {
+    for (const residents of [12, 50]) {
+      const world = newWorld(residents);
+      install();
+      const scene = await Scene.create(
+        { appendChild: () => {} } as unknown as HTMLElement,
+        map,
+        labels,
+      );
+      const sheets = canvases.filter((c) => c.width === FRAME_WIDTH && c.height === FRAME_HEIGHT);
+      const [out, ...others] = sheets as [FakeCanvas, ...FakeCanvas[]];
+      scene.observe(world);
+      // Every 50 ticks (five game minutes) from 06:00 round to 06:00 the next day.
+      for (let tick = 1; tick <= 24 * 600; tick++) {
+        step(world);
+        scene.observe(world);
+        if (tick % 50 !== 0) continue;
+        for (const sheet of sheets) sheet.calls = [];
+        scene.draw(world, world.tick + 0.5);
+        for (const label of labels) {
+          const on = (sheet: FakeCanvas, op: string) =>
+            sheet.calls.filter((c) => c.op === op && c.args[0] === label.text).length;
+          expect([on(out, "fillText"), on(out, "strokeText")], `${label.text} at ${tick}`).toEqual([
+            1, 1,
+          ]);
+          for (const sheet of others) expect(on(sheet, "fillText")).toBe(0);
+        }
+      }
+    }
+  }, 120_000);
+
+  it("at night puts a place name in day ink only when lit along its width, not by one resident under its middle", async () => {
+    const wood = labels.find((label) => label.text === "The Deep Wood") as MapLabel;
+    const world = newWorld(6);
+    const { scene, out } = await newScene();
+    // Midnight, far from the lantern and the fire. The resident stands right
+    // under the middle of the name, where the light it carries is strongest.
+    world.tick = TO_MIDNIGHT;
+    const actor = world.actors[0] as Actor;
+    actor.x = actor.fromX = Math.floor(wood.x);
+    actor.y = actor.fromY = Math.floor(wood.y);
+    actor.moveTicksLeft = 0;
+    actor.path.length = 0;
+    const ink = (): unknown => {
+      scene.observe(world);
+      return drawn(out, () => scene.draw(world, world.tick)).find(
+        (c) => c.op === "fillText" && c.args[0] === wood.text,
+      )?.fill;
+    };
+    expect(ink()).toBe(css(NIGHT.ink, 0.8));
+    // Five standing in a row under the whole name light all of it: then it goes to day ink.
+    world.actors.slice(0, 5).forEach((each, i) => {
+      each.x = each.fromX = 2 + i;
+      each.y = each.fromY = Math.floor(wood.y);
+      each.moveTicksLeft = 0;
+      each.path.length = 0;
+    });
+    world.tick += 1;
+    expect(ink()).toBe(css(DAY.ink, 0.8));
   });
 
   it("takes note of a tick once, however often it is observed", async () => {
