@@ -39,7 +39,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("053f326a6e502987");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("3dffead181590694");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -213,8 +213,8 @@ describe("world", () => {
       step(world);
       if (actor.x !== before) arrivals.push(world.tick);
     }
-    expect(STEP_TICKS).toBe(4);
-    expect(arrivals).toEqual([2, 6, 10]);
+    expect(STEP_TICKS).toBe(6);
+    expect(arrivals).toEqual([2, 8, 14]);
     expect(actor.moveTicksLeft).toBe(0);
     expect([actor.x, actor.fromX]).toEqual([14, 14]);
   });

@@ -21,7 +21,6 @@ More screenshots, at dawn, noon and dusk:
 
 The screenshots are taken from the running game by `tools/capture` and are
 refreshed from `main`, so they should be close to what you get if you run it.
-The art is going to change.
 
 ## Running it
 
@@ -50,7 +49,8 @@ docker compose run --rm dev pnpm gate
 - [AGENTS.md](AGENTS.md): most of this repo is written by AI agents working
   from the issue tracker, and this is the process they follow
 
-The current art and fonts are Kenney's (CC0); see
+The map and characters are drawn in code; there are no art assets. The
+typeface is IM Fell English (SIL Open Font License); see
 [assets/CREDITS.md](assets/CREDITS.md).
 
 An earlier codebase for Idlin is on the branch

@@ -10,8 +10,8 @@ import {
   TICKS_PER_SECOND,
 } from "@idlin/sim";
 import mapJson from "../../../content/maps/first-light.json";
-import { createHud } from "./hud.ts";
-import { Scene } from "./scene.ts";
+import type { MapLabel } from "./ground.ts";
+import { FRAME_HEIGHT, FRAME_WIDTH, Scene } from "./scene.ts";
 import "./style.css";
 
 /** The shipped programs' source, by file name without the extension. */
@@ -38,8 +38,6 @@ const CAST = [
   { name: "Elm", program: "homebody" },
   { name: "Fen", program: "riverwalker" },
 ];
-const FRAME_WIDTH = 1920;
-const FRAME_HEIGHT = 1080;
 
 declare global {
   interface Window {
@@ -72,21 +70,22 @@ async function main(): Promise<void> {
   step(world, spawnsNearCamp(world, CAST));
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
-  for (let i = 0; i < skip; i++) step(world);
 
-  const scene = await Scene.create(must("world"), world.map);
-  const hud = createHud(must("panel"), must("ticker"), must("tags"), {
-    width: scene.width,
-    height: scene.height,
-  });
-  const draw = (fraction: number): void =>
-    hud.update(world, scene.draw(world, world.tick + fraction));
+  const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
+  const scene = await Scene.create(frame, world.map, labels);
+  const draw = (fraction: number): void => scene.draw(world, world.tick + fraction);
+  const tick = (): void => {
+    step(world);
+    scene.observe(world);
+  };
+  scene.observe(world);
+  for (let i = 0; i < skip; i++) tick();
   await document.fonts.ready;
 
   if (params.has("capture")) {
     window.idlin = {
       advance(ticks) {
-        for (let i = 0; i < ticks; i++) step(world);
+        for (let i = 0; i < ticks; i++) tick();
         draw(0);
       },
       brightness() {
@@ -109,7 +108,7 @@ async function main(): Promise<void> {
     owed = Math.min(owed + Math.max(0, now - (last ?? now)), tickMs * 3);
     last = now;
     while (owed >= tickMs) {
-      step(world);
+      tick();
       owed -= tickMs;
     }
     draw(owed / tickMs);

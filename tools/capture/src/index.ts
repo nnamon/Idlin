@@ -82,21 +82,24 @@ for (const shot of wanted) {
   console.log(`saved ${join(outDir, `${name}.png`)}`);
 }
 
-// A first, rough flicker measure, for the world canvas only (not the text over
-// it). For every game hour it steps 40 ticks and reports the largest share of
-// tiles whose mean brightness changed by more than 8 (of 255) from one tick to
-// the next. A tick is a tenth of a second, about six frames on a stream, so
-// this over-counts what a viewer sees between two frames, and it counts a
-// character walking with its light as change. It catches a light that jumps.
+// A first, rough measure of flicker over the whole frame. At seven hours of
+// the day (deep night, daybreak, the lamps going out, noon, the lamps coming
+// on, nightfall, late evening) it steps 12 ticks and reports the largest share
+// of tile-sized blocks whose mean brightness changed by more than 8 (of 255)
+// from one tick to the next. A tick is a tenth of a second, about six frames
+// on a stream, so this over-counts what a viewer sees between two frames, and
+// it counts a character walking with its light as change. It catches a light
+// that jumps.
 await page.setViewportSize({ width: 1920, height: 1080 });
 let worst = { share: 0, hour: 0 };
-for (let hour = 0; hour < 24; hour++) {
+// The hours where most changes at once: deep night, daybreak, lamps going out, noon, lamps coming on, nightfall, late evening.
+for (const hour of [0, 5.9, 6.6, 12, 18.5, 20.05, 22]) {
   await open(hour);
   const share = await page.evaluate(() => {
     const api = (window as unknown as { idlin: Idlin }).idlin;
     let most = 0;
     let before = api.brightness();
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 12; i++) {
       api.advance(1);
       const after = api.brightness();
       const changed = after.filter(

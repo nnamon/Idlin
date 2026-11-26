@@ -73,9 +73,8 @@ slowly, with a fade, and prefers someone to whom something is happening.
 
 Feedback is small, local and eased: a hop, a lunge, a number that floats and
 fades, a light that swells. No full-screen flashes, no blinking, nothing that
-changes brightness fast over a large area. Text uses a crisp pixel font at
-integer scale. The frame must stay readable when the stream is shrunk to a
-640-pixel-wide window on a second monitor.
+changes brightness fast over a large area. The frame must stay readable when
+the stream is shrunk to a 640-pixel-wide window on a second monitor.
 
 ### 5. Skills are the slow game, loot is the lottery
 
@@ -146,17 +145,38 @@ have duration and the picture is calm.
 
 ## Look
 
-Top-down pixel art at 16-pixel tiles and integer scale, with a lighting layer:
-warm light pools from the lantern and campfires, a palette that shifts through
-the day, soft shadows at night. Sprites come only from packs whose licence
-allows redistribution in a public repo (the starting point is Kenney's CC0
-Tiny Town and Tiny Dungeon), with the licence and credit committed beside
-them. Single-frame sprites are animated in code (hops, squash, lunges, lean),
-which keeps motion consistent across every pack and every monster.
+The stream is drawn as a map, in the style of the maps printed in old books.
+The ground is cream paper, the land is drawn in sepia ink with thin watercolour
+washes under it, and place names are lettered on it. There are no image
+assets: the map, the trees, the tents and the characters are drawn by code,
+with lines that wobble slightly. Adding a monster or a place means writing a
+drawing routine for it.
 
-The screen is 16:9: the world on the left, a side panel on the right with the
-spotlighted character (portrait, skills, gear, its program with the firing rule
-lit), and an event ticker along the bottom.
+Characters are small hooded figures. The cloak colour is the one thing that
+tells them apart, so it is also how a viewer finds their own.
+
+At night the same drawing is shown in pale ink on dark blue paper. Day and
+night are two separate drawings, and a frame that is half one and half the
+other looks broken, so the change between them is quick (a bit over half a
+minute). At nightfall the dark closes in on the lantern from the edges of the
+map; at daybreak the light spreads back out from it. For that half minute
+there is a soft band, about 260 pixels wide, where both drawings show. The
+rest of the time the hour shows in the colour of the light, which shifts
+slowly: rose around dawn, amber towards dusk.
+
+At night each lamp shows the daytime drawing inside its reach: the lantern, the
+fire, and the small light every character carries. Names and place labels are
+drawn last, each wholly in day ink or wholly in night ink depending on the
+light where it sits, so they don't fade out at the edge of a lamp. A name
+that has to move aside for another figure gets a short stroke back to its
+owner.
+
+The frame is 16:9. The map is on the left. On the right is a page with the
+clock and the residents, each with the rule its program is following. Along
+the bottom is one line saying what a program last decided. The page and the
+bottom line don't take part in the moving edge: they change between day and
+night ink in one go, over about three seconds, halfway through the turn. The
+typeface is IM Fell English.
 
 ## One player among many
 

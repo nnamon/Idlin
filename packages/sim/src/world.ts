@@ -22,7 +22,7 @@ export const TICKS_PER_DAY = 24 * TICKS_PER_GAME_HOUR;
 /** The world begins at dawn. */
 export const START_HOUR = 6;
 /** Ticks an actor takes to walk from one tile to the next. */
-export const STEP_TICKS = 4;
+export const STEP_TICKS = 6;
 /** Ticks an actor waits for a blocked tile to clear before giving up its path. */
 export const BLOCKED_PATIENCE_TICKS = 10;
 export const MAX_NAME_LENGTH = 16;
