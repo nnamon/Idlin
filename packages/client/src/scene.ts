@@ -10,6 +10,7 @@
 
 import {
   type Actor,
+  ADVENTURER,
   clock,
   kindOf,
   START_HOUR,
@@ -18,7 +19,30 @@ import {
   terrainAt,
   type World,
 } from "@idlin/sim";
+import { drawBeast } from "./beasts.ts";
 import { type Effects, glyphAt, leanAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
+import {
+  ARRIVE_TICKS,
+  arrivalAt,
+  DODGE_TICKS,
+  type Fallen,
+  type Fight,
+  fadeAt,
+  fallenAt,
+  floatAt,
+  HATCH_STROKES,
+  hatchAt,
+  LANDED_FADE,
+  lyingAt,
+  type News,
+  NO_FIGHT,
+  nextFight,
+  ringShare,
+  ringStrength,
+  SCRATCH_TICKS,
+  shove,
+  stoopAt,
+} from "./fight.ts";
 import { drawFigure } from "./figure.ts";
 import {
   FRAME_HEIGHT,
@@ -47,7 +71,21 @@ import {
   rgb,
   skyCast,
 } from "./light.ts";
-import { drawGlyph, drawRoute, eat, ROUTE_ROW, routeLine, routePoint } from "./marks.ts";
+import {
+  drawBlot,
+  drawDust,
+  drawFlecks,
+  drawGlyph,
+  drawHatch,
+  drawLaid,
+  drawRing,
+  drawRoute,
+  drawScratch,
+  eat,
+  ROUTE_ROW,
+  routeLine,
+  routePoint,
+} from "./marks.ts";
 import { type Pt, regionLoops, smoothLoop } from "./outline.ts";
 import { DAY, NIGHT, type Palette } from "./palette.ts";
 import { type Ctx, newCanvas, trace } from "./pen.ts";
@@ -89,12 +127,29 @@ const STANDING: Pose = {
   resting: false,
   sit: 0,
   lean: 0,
+  stoop: 0,
+  squash: 0,
 };
 /** How strong a route's dashes are at their strongest. */
 const ROUTE_ALPHA = 0.75;
 /** How big a glyph is on its slip, and how wide the paper beside the name it sits on. */
 const GLYPH_SIZE = 28;
 const GLYPH_ROOM = 36;
+/**
+ * How a floating number is lettered, and where it starts: beside the figure at
+ * chest height, clear of the figure and of the name slip over its head.
+ */
+const FLOAT_FONT = '30px "Fell"';
+const FLOAT_ABOVE = 22;
+const FLOAT_ASIDE = 19;
+/** How much higher each further pair of numbers on one spot starts. */
+const FLOAT_ROW = 24;
+/** How wide the stain a fallen monster or resident leaves is, in pixels. */
+const BLOT_SIZE: Readonly<Record<string, number>> = { wolf: 50, goblin: 36, [ADVENTURER]: 30 };
+/** The most lines of fight news waiting their turn; older ones give way to newer. */
+const NEWS_QUEUE = 3;
+
+const isResident = (actor: Actor): boolean => actor.kind === ADVENTURER;
 
 interface Walker {
   readonly actor: Actor;
@@ -187,6 +242,12 @@ export class Scene {
   /** The river's outline in frame pixels, rounded as its banks are, and whether a point is on water. */
   private readonly water: Pt[][];
   private readonly wet: (x: number, y: number) => boolean;
+  /** Blows, hurts and the fallen; see fight.ts. */
+  private fight: Fight = NO_FIGHT;
+  /** Lines of fight news waiting for the line, and whether the line now up is one. */
+  private newsQueue: News[] = [];
+  private newsFight = false;
+  private newsUrgent = false;
 
   private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
     const camp = map.places.find((place) => place.name === "camp");
@@ -288,12 +349,18 @@ export class Scene {
       const raw = actorPose(actor, fraction, time);
       // Between ticks the figure goes on easing down or up, so it never steps.
       const [before, now] = this.sitting.get(actor.id) ?? [raw.sit, raw.sit];
+      const stoop = stoopAt(this.fight, actor.id, time);
+      const push = shove(this.fight, actor.id, time);
       const pose = {
         ...raw,
+        // Near death the step is shorter.
+        stride: raw.stride * (1 - 0.4 * stoop),
         sit: before + (now - before) * between,
         lean: leanAt(this.effects, actor.id, time),
+        stoop,
+        squash: push.squash,
       };
-      return { actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 };
+      return { actor, pose, x: pose.x * TILE + push.x, y: pose.y * TILE - 4 + push.y };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
     const { hour, lamps, region, lights, litAt } = this.lighting(walkers, time);
@@ -306,7 +373,7 @@ export class Scene {
     // The names on the map this frame, and what a route breaks around: the
     // place names, and each slip with the glyph beside it.
     const tags = this.placeNames(walkers).flatMap((tag) => {
-      const alpha = slipAlpha(this.slips, tag.id, time);
+      const alpha = slipAlpha(this.slips, tag.id, time) * arrivalAt(this.fight, tag.id, time);
       if (alpha <= 0) return [];
       const glyph = glyphAt(this.effects, tag.id, time);
       const top = tag.y - 21;
@@ -508,6 +575,26 @@ export class Scene {
         drawGlyph(out, glyph.glyph, right - GLYPH_ROOM / 2 + 1, middle, GLYPH_SIZE, css(slipInk));
       }
     }
+    // The hitpoints a blow took, rising from where it struck and fading.
+    out.font = FLOAT_FONT;
+    out.lineWidth = 5;
+    out.textAlign = "left";
+    for (const floater of this.fight.floaters) {
+      const at = floatAt(floater, time);
+      if (!at) continue;
+      // A stack of numbers on one spot goes right, left, then a row higher, and so on.
+      const side = floater.order % 2 === 0 ? 1 : -1;
+      const row = Math.floor(floater.order / 2);
+      const x = (floater.x + 0.5) * TILE + side * FLOAT_ASIDE;
+      const y = (floater.y + 1) * TILE - 4 - FLOAT_ABOVE - row * FLOAT_ROW - at.rise;
+      const palette = inkOf(undefined, x, y);
+      out.textAlign = side > 0 ? "left" : "right";
+      out.globalAlpha = at.alpha;
+      out.strokeStyle = css(palette.paper, 0.85);
+      out.fillStyle = css(palette.ink);
+      out.strokeText(`-${floater.damage}`, x, y);
+      out.fillText(`-${floater.damage}`, x, y);
+    }
     out.globalAlpha = 1;
     out.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -548,12 +635,14 @@ export class Scene {
         const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
         lights.push({ x, y, reach: FIRE_REACH * TILE * breath, strength: lamps * 0.95 });
       }
+      // Residents carry a light; monsters go in the dark.
       for (const walker of walkers) {
+        if (!isResident(walker.actor)) continue;
         lights.push({
           x: walker.x,
           y: walker.y - 22,
           reach: CARRIED_REACH * TILE,
-          strength: lamps * 0.85,
+          strength: lamps * 0.85 * arrivalAt(this.fight, walker.actor.id, time),
           carried: true,
         });
       }
@@ -595,6 +684,10 @@ export class Scene {
     // nor who had a slip, where it sat, how far down anyone was sitting, or which
     // ink the place names were in.
     if (world.tick < this.lastTick) {
+      this.fight = NO_FIGHT;
+      this.newsQueue = [];
+      this.newsFight = false;
+      this.newsUrgent = false;
       this.news = "";
       this.newsSince = Number.NEGATIVE_INFINITY;
       this.lastRule.clear();
@@ -611,20 +704,64 @@ export class Scene {
     }
     this.lastTick = world.tick;
     this.effects = nextEffects(this.effects, world.actors, world.tick, this.home);
+    this.fight = nextFight(this.fight, world);
+    // Kills, downs and close calls go before what anyone decided. Each stays up
+    // long enough to be read; one waiting goes up once the last has had its time.
+    // A resident downed goes ahead of the rest, and up at once unless the line
+    // already tells of another one downed.
+    // A close call still waiting is dropped once that resident is downed.
+    const lines = [...this.newsQueue, ...this.fight.news];
+    const urgent = lines.filter((line) => line.urgent);
+    const downed = new Set(urgent.map((line) => line.who));
+    const rest = lines.filter((line) => !line.urgent && !(line.close && downed.has(line.who)));
+    rest.splice(0, Math.max(0, urgent.length + rest.length - NEWS_QUEUE));
+    this.newsQueue = [...urgent, ...rest];
+    const next = this.newsQueue[0];
+    if (
+      next &&
+      (!this.newsFight ||
+        world.tick - this.newsSince >= NEWS_TICKS ||
+        (next.urgent === true && !this.newsUrgent))
+    ) {
+      this.newsQueue.shift();
+      this.news = next.text;
+      this.newsSince = world.tick;
+      this.newsWho = next.who;
+      this.newsFight = true;
+      this.newsUrgent = next.urgent === true;
+    }
+    // A line of fight news holds off what anyone decided for twice as long.
+    const hold = (): number =>
+      this.newsQueue.length > 0
+        ? Number.POSITIVE_INFINITY
+        : this.newsFight
+          ? 2 * NEWS_TICKS
+          : NEWS_TICKS;
     const alive = new Set<number>();
     for (const actor of world.actors) {
       alive.add(actor.id);
       if (actor.x !== actor.fromX) this.facing.set(actor.id, actor.x > actor.fromX ? 1 : -1);
+      // Winding up a blow to one side, it turns to face it.
+      const mark = actor.windup > 0 ? world.marks.find((m) => m.by === actor.id) : undefined;
+      if (mark && mark.x !== actor.x) this.facing.set(actor.id, mark.x > actor.x ? 1 : -1);
       const before = this.lastRule.get(actor.id);
       this.lastRule.set(actor.id, actor.rule);
       // A line stays up long enough to be read before the next one replaces it.
-      if (before === undefined || before === actor.rule || world.tick - this.newsSince < NEWS_TICKS)
+      // What the monsters decide is not news.
+      if (
+        before === undefined ||
+        before === actor.rule ||
+        !isResident(actor) ||
+        world.tick - this.newsSince < hold()
+      )
         continue;
       const label = world.programs[actor.program]?.rules[actor.rule];
       if (!label || label === "otherwise") continue;
       this.news = `${actor.name}: ${label}`;
       this.newsSince = world.tick;
       this.newsWho = actor.id;
+      this.newsFight = false;
+      this.newsUrgent = false;
     }
     // Each figure moves a step further into or out of sitting, once a tick.
     const standing = world.actors.map((actor) => {
@@ -675,6 +812,12 @@ export class Scene {
     // to the next tick. Figures without a slip are only kept clear of where
     // there is room: in the knot at camp almost every spot is over someone,
     // and counting them leaves two names where eight fit clear of each other.
+    // Monsters are kept clear of as the fire is: a name over one hides who is
+    // doing the hitting.
+    const beasts = world.actors
+      .filter((actor) => !isResident(actor))
+      .map((actor) => sweep(actor.id, bodyBox));
+    const avoid = [...this.avoid, ...beasts];
     const covered = new Map<string, { bad: Set<number>; spots: Map<number, number> }>();
     const covering = (held: readonly number[], leaving: readonly number[]) => {
       const holding = new Set(held);
@@ -696,7 +839,7 @@ export class Scene {
         bounds,
         // The paper of a slip reaches 2 pixels above its box, so what it avoids reaches 2 lower.
         [
-          ...this.avoid.map((box) => ({ ...box, bottom: box.bottom + 2 })),
+          ...avoid.map((box) => ({ ...box, bottom: box.bottom + 2 })),
           ...left.map(({ box }) => box),
         ],
         wishes.filter((wish) => !holding.has(wish.id)).map((wish) => sweep(wish.id, bodyBox)),
@@ -712,7 +855,7 @@ export class Scene {
       const bad = new Set<number>();
       for (const { id, box } of slips) {
         if (
-          this.avoid.some((other) => overlaps(box, other)) ||
+          avoid.some((other) => overlaps(box, other)) ||
           bodies.some((body) => body.id !== id && overlaps(box, body.box)) ||
           slips.some((other) => other.id !== id && overlaps(box, other.box))
         )
@@ -730,7 +873,10 @@ export class Scene {
       const after = covering([...held, id], leaving).bad;
       return !after.has(id) && [...after].every((other) => before.has(other));
     };
-    const people = world.actors.map((actor) => ({ id: actor.id, x: actor.x, y: actor.y }));
+    // Only residents have names on the map; a monster is told by its drawing.
+    const people = world.actors
+      .filter(isResident)
+      .map((actor) => ({ id: actor.id, x: actor.x, y: actor.y }));
     let slips = nextSlips(this.slips, people, this.named, world.tick, fits);
     // A slip that is news may still land on one held only for the room, or on
     // one fading out. The one held for the room starts to fade at once, and one
@@ -904,7 +1050,8 @@ export class Scene {
     for (const walker of walkers) {
       const { actor } = walker;
       const route = routeAt(this.effects, actor.id, time);
-      const strength = slipAlpha(this.slips, actor.id, time);
+      const strength =
+        slipAlpha(this.slips, actor.id, time) * arrivalAt(this.fight, actor.id, time);
       if (!route || strength <= 0) continue;
       const ahead = actor.moveTicksLeft > 0 ? [{ x: actor.x, y: actor.y }] : [];
       // Once the walk is over only the cross is left, where the walk was going.
@@ -927,6 +1074,7 @@ export class Scene {
     }
     ctx.restore();
     ctx.globalAlpha = 1;
+    this.drawFightGround(ctx, world, walkers, palette, time);
 
     // Standing things and walkers together, farthest first, so each overlaps what is behind it.
     let next = 0;
@@ -960,18 +1108,41 @@ export class Scene {
       kit: id % 3,
       scale,
     });
+    const beastStyle = (kind: string) => ({
+      body: css(kind === "wolf" ? palette.wash.wolf : palette.wash.goblin),
+      ink,
+      paper,
+      scale: FIGURE_SCALE,
+    });
     for (const walker of walkers) {
       upTo(walker.y);
-      drawFigure(
-        ctx,
-        walker.x,
-        walker.y,
-        walker.pose,
-        style(walker.actor.id, FIGURE_SCALE),
-        time + walker.actor.id * 13,
-      );
+      // Someone new comes in, and a resident carried back to camp wakes there, fading in.
+      ctx.globalAlpha = arrivalAt(this.fight, walker.actor.id, time);
+      if (isResident(walker.actor)) {
+        drawFigure(
+          ctx,
+          walker.x,
+          walker.y,
+          walker.pose,
+          style(walker.actor.id, FIGURE_SCALE),
+          time + walker.actor.id * 13,
+        );
+      } else {
+        drawBeast(ctx, walker.actor.kind, walker.x, walker.y, walker.pose, {
+          ...beastStyle(walker.actor.kind),
+          facing: this.facing.get(walker.actor.id) ?? 1,
+        });
+      }
+      ctx.globalAlpha = 1;
     }
     upTo(Number.POSITIVE_INFINITY);
+    // Flecks of ink off whoever was struck, over everything that stands.
+    for (const walker of walkers) {
+      const recoil = this.fight.recoils.get(walker.actor.id);
+      if (!recoil) continue;
+      const t = (time - recoil.since) / 4;
+      drawFlecks(ctx, walker.x, walker.y - 22, recoil.dx, recoil.dy, t, ink);
+    }
     for (const spot of ground.fires) this.smoke(ctx, spot, palette, time);
 
     // A ruled double border round the map, as round a printed map.
@@ -997,6 +1168,128 @@ export class Scene {
     ctx.restore();
   }
 
+  /**
+   * The fight's marks on the ground, under everything that stands: the stains
+   * of the fallen, the scratches of missed blows, the hatching of blows about
+   * to land, the rings of hitpoints and the dust of a dodge. Then whatever is
+   * falling or going home, sinking or fading where it was.
+   */
+  private drawFightGround(
+    ctx: Ctx,
+    world: World,
+    walkers: readonly Walker[],
+    palette: Palette,
+    time: number,
+  ): void {
+    const fight = this.fight;
+    const ink = css(palette.ink);
+    const paper = css(palette.paper);
+    const hatch = css(palette.wash.hatch);
+    const feet = (x: number, y: number): [number, number] => [(x + 0.5) * TILE, (y + 1) * TILE - 4];
+    // A monster leaves a dark stain; a resident the open shape of where it lay.
+    for (const fallen of fight.fallen) {
+      const [cx, cy] = feet(fallen.x, fallen.y);
+      if (fallen.kind === ADVENTURER) {
+        const at = lyingAt(fallen, time);
+        if (!at) continue;
+        const cloak = identity(fallen.id).cloak;
+        drawLaid(ctx, cx, cy, fallen.facing, at.scuff, cloak, ink);
+        continue;
+      }
+      const at = fallenAt(fallen, time);
+      if (!at) continue;
+      drawBlot(ctx, cx, cy, BLOT_SIZE[fallen.kind] ?? 36, at.blot, ink, fallen.id);
+    }
+    for (const scratch of fight.scratches) {
+      const [cx] = feet(scratch.x, scratch.y);
+      const strength = fadeAt(scratch.since, SCRATCH_TICKS, time);
+      drawScratch(ctx, cx, (scratch.y + 0.55) * TILE, scratch.dx, scratch.dy, strength, ink);
+    }
+    for (const mark of world.marks) {
+      const strokes = hatchAt(fight, mark.by, time);
+      drawHatch(ctx, mark.x * TILE, mark.y * TILE, TILE, strokes, HATCH_STROKES, hatch);
+    }
+    for (const landed of fight.landed) {
+      const strength = fadeAt(landed.since, LANDED_FADE, time);
+      if (strength <= 0) continue;
+      ctx.globalAlpha = strength;
+      drawHatch(ctx, landed.x * TILE, landed.y * TILE, TILE, HATCH_STROKES, HATCH_STROKES, hatch);
+      ctx.globalAlpha = 1;
+    }
+    for (const walker of walkers) {
+      const id = walker.actor.id;
+      const ring = fight.rings.get(id);
+      const shown = arrivalAt(fight, id, time);
+      if (ring) {
+        ctx.globalAlpha = shown;
+        drawRing(ctx, walker.x, walker.y, ringShare(ring, time), ringStrength(ring, time), ink);
+        ctx.globalAlpha = 1;
+      }
+      const dodge = fight.dodges.get(id);
+      if (dodge) {
+        const [cx, cy] = feet(walker.actor.fromX, walker.actor.fromY);
+        drawDust(ctx, cx, cy, (time - dodge.since) / DODGE_TICKS, ink);
+      }
+    }
+    const still = (squash: number): Pose => ({ ...STANDING, stride: 0, squash });
+    const sink = (fallen: Fallen, alpha: number, collapse: number): void => {
+      const [cx, cy] = feet(fallen.x, fallen.y);
+      ctx.globalAlpha = alpha;
+      if (fallen.kind === ADVENTURER) {
+        // A resident topples over the way it faced, about its feet, and lies there.
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(fallen.facing * collapse * Math.PI * 0.47);
+        drawFigure(
+          ctx,
+          0,
+          0,
+          still(collapse),
+          {
+            ...identity(fallen.id),
+            ink,
+            paper,
+            facing: fallen.facing,
+            kit: fallen.id % 3,
+            scale: FIGURE_SCALE,
+          },
+          0,
+        );
+        ctx.restore();
+      } else {
+        drawBeast(
+          ctx,
+          fallen.kind,
+          cx,
+          cy,
+          still(0),
+          {
+            body: css(fallen.kind === "wolf" ? palette.wash.wolf : palette.wash.goblin),
+            ink,
+            paper,
+            facing: fallen.facing,
+            scale: FIGURE_SCALE,
+          },
+          collapse,
+        );
+      }
+      ctx.globalAlpha = 1;
+    };
+    for (const fallen of fight.fallen) {
+      if (fallen.kind === ADVENTURER) {
+        const at = lyingAt(fallen, time);
+        if (at && at.alpha > 0) sink(fallen, at.alpha, at.tip);
+        continue;
+      }
+      const at = fallenAt(fallen, time);
+      if (at && at.collapse < 1) sink(fallen, 1 - at.collapse, at.collapse);
+    }
+    for (const gone of fight.gone) {
+      const left = 1 - (time - gone.since) / ARRIVE_TICKS;
+      if (left > 0 && left <= 1) sink(gone, left, 0);
+    }
+  }
+
   /** The page beside the map and the line beneath it. */
   private page(
     ctx: Ctx,
@@ -1011,7 +1304,8 @@ export class Scene {
     // is already shifted to where the map is).
     const left = below ? 40 : this.width + 50;
     const right = below ? this.width - 40 : this.frameWidth - 40;
-    const listed = world.actors.slice(0, ROSTER_ROWS);
+    const residents = world.actors.filter(isResident);
+    const listed = residents.slice(0, ROSTER_ROWS);
     const rows = Math.ceil(listed.length / this.columns);
     // In a tall window there can be paper to spare under the page: the rows open
     // out a little and the rest goes above and below what is written.
@@ -1080,10 +1374,12 @@ export class Scene {
       ctx.font = '42px "Fell SC"';
       ctx.fillText(actor.name, x0 + 86, top + nameLine, Math.max(40, x1 - x0 - 86 - hpRoom));
       // What the actor's program is doing, in the program's own words: the label of the rule that fired.
+      // One downed and resting at camp runs no program, so its last rule is not what it is doing.
       const label = world.programs[actor.program]?.rules[actor.rule];
+      const downed = this.fight.downs.has(actor.id) && actor.wait > 0;
       ctx.font = '31px "Fell Italic"';
       ctx.fillText(
-        actor.fault !== 0 ? "confused" : (label ?? ""),
+        downed ? "downed" : actor.fault !== 0 ? "confused" : (label ?? ""),
         x0 + 86,
         top + ruleLine,
         x1 - x0 - 86,
@@ -1099,7 +1395,7 @@ export class Scene {
     ctx.stroke();
     ctx.globalAlpha = 1;
     const more =
-      world.actors.length > listed.length ? `and ${world.actors.length - listed.length} more` : "";
+      residents.length > listed.length ? `and ${residents.length - listed.length} more` : "";
 
     // The line of news: the last thing a program decided, or the day if nothing
     // has happened yet and the clock is shown.

@@ -193,6 +193,38 @@ walk ends, the cross fades over three ticks. After a gap in the ticks, as when
 a live viewer reconnects, or after the world goes back in time, nothing starts
 from the change across the gap.
 
+Fights are drawn the same way, read off the world once a tick
+(`packages/client/src/fight.ts`, drawn by `marks.ts` and `beasts.ts`). The
+viewer is sent no events, so a blow is worked out from the marked tiles: it
+lands at the tick its attacker's wind-up runs out, on every enemy that stood on
+one of its tiles. Wolves and goblins are drawn in ink over a grey or olive
+wash, and carry no light at night. They have no name slip and are not listed
+on the page. A tile about to be struck fills with diagonal hatching in a
+red-brown used for nothing else, a stroke at a time, so how full it is says how
+soon the blow lands; once it lands the hatching fades over three ticks. The
+attacker leans back 3 pixels over the wind-up, lunges 6 pixels forward in one
+tick, holds a moment and comes back over four. A figure hit slides 4 pixels
+away from the blow and squashes for as long, three ink flecks fly off it, and
+the hitpoints it lost rise 16 pixels as a number beside it, clear of its name
+slip, and fade within two seconds. Each blow has its own number; a number on
+a spot where another is still rising goes on the other side of the figure,
+and a third and fourth a row higher. A figure that hops off a marked tile kicks up dust, and a blow that
+lands on nobody leaves a scratch on the tile for three seconds. Under a figure
+or monster that is hurt, or has fought in the last five seconds, a ring on the
+ground shows its hitpoints: a faint whole ring, and a firm stroke from the
+front round both sides for the share left, easing to each new value. Below 30%
+of its hitpoints a figure stoops, its step shortens and the hem of its cloak
+is torn. A monster killed sinks into a blot of ink over half a second, and the
+blot stays a minute. A resident downed topples over where it stood and lies
+there for three seconds, then fades, and fades in at camp as it does; where it
+lay, a pale wash of its cloak inside a broken outline stays a minute. On the
+page it is listed as "downed" while it rests. A monster going home fades where
+it was. Kills, downs and blows that leave a resident under 30% go on the news
+line before what anyone decided, each for at least four seconds; a resident
+downed goes up at once. The kill goes to the last blow that landed, as in the
+simulation. What monsters decide is not news. Name slips keep clear of
+monsters, as they do of the fire.
+
 A few things move while no one does: the river's ripples drift downstream, a
 line of smoke, as heavy as the grass ticks and thinning as it goes, rises
 from the camp fire and leans east, and the tops of the trees lean a little in

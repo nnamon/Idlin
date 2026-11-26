@@ -29,6 +29,8 @@ export function drawFigure(
   time: number,
 ): void {
   const { cloak, hood, ink, paper } = style;
+  // The whole figure is drawn at the alpha it was called with, as when it fades in.
+  const base = ctx.globalAlpha;
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(style.scale, style.scale);
@@ -37,7 +39,7 @@ export function drawFigure(
   ctx.strokeStyle = ink;
 
   // The shadow it stands on: a few hatch strokes, drawn before it lifts off the ground.
-  ctx.globalAlpha = 0.45;
+  ctx.globalAlpha = base * 0.45;
   ctx.lineWidth = 1.2;
   for (let i = 0; i < 5; i++) {
     ctx.beginPath();
@@ -45,11 +47,15 @@ export function drawFigure(
     ctx.lineTo(-5 + i * 4.5, -1.5);
     ctx.stroke();
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = base;
 
   // Leaning: the body slants about its feet, which stay where they are.
   if (pose.lean !== 0) ctx.transform(1, 0, -pose.lean, 1, 0, 0);
+  // Struck: pressed down and out a little about its feet.
+  if (pose.squash > 0) ctx.scale(1 + 0.12 * pose.squash, 1 - 0.16 * pose.squash);
   ctx.scale(style.facing, 1);
+  // Near death: bent forward over its feet.
+  if (pose.stoop > 0) ctx.transform(1, 0, -0.16 * pose.stoop, 1, 0, 0);
   // A resting figure sits: lower, its legs folding away as it goes down.
   const sit = pose.sit * 7;
   const lift = pose.hop * 3 + pose.breath * 0.8;
@@ -88,14 +94,32 @@ export function drawFigure(
   ctx.fill();
   ctx.stroke();
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.55;
+  ctx.globalAlpha = base * 0.55;
   ctx.beginPath();
   ctx.moveTo(2, -24);
   ctx.lineTo(4 - sway, -9);
   ctx.moveTo(6, -22);
   ctx.lineTo(8 - sway, -9);
   ctx.stroke();
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = base;
+  if (pose.stoop > 0) {
+    // Ragged: the hem torn in three places, and the head hung low.
+    ctx.globalAlpha = base * pose.stoop;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (const [x, down] of [
+      [-7, 4],
+      [-1, 3],
+      [6, 4.5],
+    ] as const) {
+      ctx.moveTo(x - 2 - sway, -7);
+      ctx.lineTo(x - sway, -7 + down);
+      ctx.lineTo(x + 2 - sway, -7);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = base;
+    ctx.translate(1.5 * pose.stoop, 3 * pose.stoop);
+  }
 
   // Head and hood.
   ctx.fillStyle = style.face ?? paper;
@@ -147,7 +171,7 @@ export function drawFigure(
       [0.5, 11],
     ] as const) {
       const drift = (((time * 0.02 + delay) % 1) + 1) % 1;
-      ctx.globalAlpha = Math.sin(Math.PI * drift) * 0.85 * pose.sit;
+      ctx.globalAlpha = base * Math.sin(Math.PI * drift) * 0.85 * pose.sit;
       ctx.font = `${size}px "Fell Italic"`;
       ctx.fillText("z", x + (13 + drift * 7) * style.scale, y - (34 + drift * 16) * style.scale);
     }

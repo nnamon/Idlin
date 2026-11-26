@@ -1,6 +1,7 @@
 import {
   compileBots,
   createWorld,
+  loadMonsters,
   parseMap,
   placeConstants,
   START_HOUR,
@@ -17,20 +18,38 @@ import { follow } from "./live.ts";
 import { Scene } from "./scene.ts";
 import "./style.css";
 
-/** The shipped programs' source, by file name without the extension. */
-function botSources(): Record<string, string> {
-  const files = import.meta.glob("../../../content/bots/*.tac", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  });
-  return Object.fromEntries(
-    Object.entries(files).map(([path, text]) => [
-      path.slice(path.lastIndexOf("/") + 1, -4),
-      text as string,
+/** Files by their name without the folder or the extension. */
+const byName = <T>(files: Record<string, unknown>): Record<string, T> =>
+  Object.fromEntries(
+    Object.entries(files).map(([path, value]) => [
+      path.slice(path.lastIndexOf("/") + 1, path.lastIndexOf(".")),
+      value as T,
     ]),
   );
-}
+
+/** The shipped programs' source, by file name without the extension. */
+const botSources = (): Record<string, string> =>
+  byName(
+    import.meta.glob("../../../content/bots/*.tac", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  );
+
+/** The shipped monsters: each one's numbers, and its program's source. */
+const monsterFiles = (): { stats: Record<string, unknown>; sources: Record<string, string> } => ({
+  stats: byName(
+    import.meta.glob("../../../content/monsters/*.json", { import: "default", eager: true }),
+  ),
+  sources: byName(
+    import.meta.glob("../../../content/monsters/*.tac", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ),
+});
 
 /** What the page offers a capture tool in capture mode. */
 export interface CaptureApi {
@@ -65,7 +84,14 @@ async function main(): Promise<void> {
   const frame = must("frame");
 
   const map = parseMap(mapJson);
-  const world = createWorld(map, seed, compileBots(botSources(), placeConstants(map)));
+  const programs = compileBots(botSources(), placeConstants(map));
+  // `?monsters` lets the shipped monsters into the world, by their spawn table,
+  // so that a capture can show fights. The world server does not run them yet.
+  const files = params.has("monsters") ? monsterFiles() : null;
+  const monsters = files ? loadMonsters(files.stats, files.sources, map) : null;
+  const world = monsters
+    ? createWorld(map, seed, { ...programs, ...monsters.programs }, monsters.kinds, monsters.spawns)
+    : createWorld(map, seed, programs);
   // `?crowd=50` fills the camp with that many residents, to see how a crowd reads.
   const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
   step(world, spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)));
@@ -96,7 +122,7 @@ async function main(): Promise<void> {
   // By default the page follows the world server (`?server=ws://host:port` for another
   // address). It runs a world of its own for captures, or when the URL asks for one with
   // `?local` or any of the settings only a world of its own can take.
-  if (!["capture", "local", "seed", "hour", "crowd"].some((name) => params.has(name))) {
+  if (!["capture", "local", "seed", "hour", "crowd", "monsters"].some((name) => params.has(name))) {
     await document.fonts.ready;
     const server = params.get("server") || `ws://${location.hostname}:4311`;
     follow(scene, world.map, world.programs, server);

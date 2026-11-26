@@ -30,6 +30,12 @@ export interface Pose {
    * east. `actorPose` gives 0; the scene sets it from the beats in effects.ts.
    */
   readonly lean: number;
+  /**
+   * 0 to 1: how far bent over it is, near death, and how flat it is pressed by
+   * a blow. `actorPose` gives 0 for both; the scene sets them from fight.ts.
+   */
+  readonly stoop: number;
+  readonly squash: number;
 }
 
 /** How much of the way into or out of sitting a figure moves in one tick. */
@@ -65,5 +71,7 @@ export function actorPose(actor: Actor, fraction: number, time: number): Pose {
     resting,
     sit: resting ? 1 : 0,
     lean: 0,
+    stoop: 0,
+    squash: 0,
   };
 }

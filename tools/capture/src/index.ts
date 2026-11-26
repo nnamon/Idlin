@@ -9,7 +9,7 @@
 // run forward to before the page draws, `ticks` are stepped after that.
 //
 // `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
-// burst.png, daystrip.png, crowd-12/50/150.png, metrics.json, and a
+// burst.png, fight.png, fight-burst.png, fight-down.png, daystrip.png, crowd-12/50/150.png, metrics.json, and a
 // `showcase` folder for the README. With `--baseline`, also compare.png: that
 // folder's storyboard above this one. Everything comes from seed 1, so two
 // runs of the same code give the same files.
@@ -82,9 +82,14 @@ type Idlin = {
   pixels(scale: number): { width: number; height: number; rgba: string };
 };
 
-/** Opens the viewer in capture mode at a game hour and waits until it has drawn its first frame. */
-async function open(hour: number | string, residents = 6): Promise<void> {
-  await page.goto(`${origin}/?capture&seed=1&hour=${hour}&crowd=${residents}`);
+/**
+ * Opens the viewer in capture mode at a game hour and waits until it has
+ * drawn its first frame. With `monsters`, the world has the shipped monsters
+ * in it, as it does not yet by default.
+ */
+async function open(hour: number | string, residents = 6, monsters = false): Promise<void> {
+  const fight = monsters ? "&monsters" : "";
+  await page.goto(`${origin}/?capture&seed=1&hour=${hour}&crowd=${residents}${fight}`);
   await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
   const failure = await page.evaluate(() => document.body.dataset.error ?? null);
   if (failure !== null) throw new Error(`the viewer failed to start: ${failure}`);
@@ -151,11 +156,18 @@ async function save(name: string, bytes: Uint8Array): Promise<void> {
 // page turn (20:06), late evening. A
 // stream shows about six frames to a tick, so the frames are a sixth of a tick
 // apart.
+// With monsters, the same at the fight the fight sheet shows (FIGHT_HOUR), a
+// few ticks before a blow lands, and at a fight at night.
 const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 20.1, 22];
+const FIGHT_HOUR = 9.475;
+const FLICKER_FIGHTS = [9.488, 22.52];
 await page.setViewportSize({ width: 1920, height: 1080 });
 let worst = { index: 0, hour: 0 };
-for (const hour of FLICKER_HOURS) {
-  await open(hour);
+for (const [hour, monsters] of [
+  ...FLICKER_HOURS.map((hour) => [hour, false] as const),
+  ...FLICKER_FIGHTS.map((hour) => [hour, true] as const),
+]) {
+  await open(hour, 6, monsters);
   const grids = await page.evaluate(() => {
     const api = (window as unknown as { idlin: Idlin }).idlin;
     const seen = [api.brightness()];
@@ -200,6 +212,20 @@ if (review) {
   await open(6);
   await advance(busiestTick);
   await save("burst.png", encodePng(grid(await run(12, 1 / 6, 0.5), 4)));
+
+  // Fight: the world with its monsters, over twelve seconds of a fight in the
+  // morning with a kill and a resident downed in it; then twelve frames half a
+  // tick apart round a blow landing.
+  await open(FIGHT_HOUR, 6, true);
+  await save("fight.png", encodePng(grid(await run(12, 10, 0.5), 4)));
+  await open(FIGHT_HOUR, 6, true);
+  await advance(6);
+  await save("fight-burst.png", encodePng(grid(await run(12, 1 / 2, 0.5), 4)));
+  // The resident downed in that fight, half a second apart: the fall, the
+  // body lying there, and the fade-in at camp.
+  await open(FIGHT_HOUR, 6, true);
+  await advance(96);
+  await save("fight-down.png", encodePng(grid(await run(12, 5, 0.5), 4)));
 
   // Day strip: six moments across the day.
   const strip: Image[] = [];

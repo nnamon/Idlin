@@ -20,6 +20,13 @@ that folder's storyboard above the new one.
 - **burst**: 12 consecutive rendered frames from the busiest moment. Shows
   motion, and exposes flicker.
 - **day strip**: 6 frames across a full day. Shows the light changing.
+- **fight**, **fight burst** and **fight down**: the same seed with the
+  shipped monsters let in (`?monsters`), which the world does not have by
+  default yet. The fight sheet is 12 frames a second apart from 09:28, over a
+  fight with a kill and a resident downed in it; the burst is 12 frames half a
+  tick apart round a blow landing; the down sheet is 12 frames half a second
+  apart round the resident going down and waking at camp. The flicker index is
+  also taken over that fight and one at night.
 - **showcase**: the README's set: four full frames, a short looping clip of
   night falling, and smaller copies of the storyboard and day strip.
   `tools/publish-media.sh captures/<folder>` pushes it to the `media` branch.

@@ -24,7 +24,11 @@ export type WashName =
   | "canvas"
   | "timber"
   | "glass"
-  | "flame";
+  | "flame"
+  /** The hatching of a blow about to land: a red-brown used for nothing else. */
+  | "hatch"
+  | "wolf"
+  | "goblin";
 
 const DAY_WASH: Record<WashName, Rgb> = {
   deepWood: rgb(0x93aa8c),
@@ -41,6 +45,9 @@ const DAY_WASH: Record<WashName, Rgb> = {
   timber: rgb(0xc9a36b),
   glass: rgb(0xf6cf6a),
   flame: rgb(0xf2a24a),
+  hatch: rgb(0x9c3b22),
+  wolf: rgb(0xa8a196),
+  goblin: rgb(0x98a067),
 };
 
 const NIGHT_WASH: Record<WashName, Rgb> = {
@@ -59,6 +66,9 @@ const NIGHT_WASH: Record<WashName, Rgb> = {
   timber: rgb(0x2f3450),
   glass: rgb(0xf6cf6a),
   flame: rgb(0xf2a24a),
+  hatch: rgb(0xe08a6c),
+  wolf: rgb(0x343d5c),
+  goblin: rgb(0x2c3d3f),
 };
 
 export const DAY: Palette = {

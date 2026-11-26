@@ -8,8 +8,9 @@ the scripts.
 It's early. There's one map, six characters, and a day/night cycle. The
 characters run one of three scripts from `content/bots/`, which tell them where
 to walk, when to go back to camp, and how to fight. Wolves and goblins
-(`content/monsters/`) fight them in the simulation and its tests, but the viewer
-doesn't show monsters or fights yet. The scripting language is described in
+(`content/monsters/`) fight them in the simulation. The viewer draws the fights,
+but only in a world of its own opened with `?monsters`; the world server
+doesn't run monsters yet. The scripting language is described in
 [docs/tactics.md](docs/tactics.md). Fighting earns Melee and Hitpoints
 experience, each character has a bag and a bank, and the page beside the map
 shows hitpoints and skill levels. Gathering, cooking and loot don't exist yet;
