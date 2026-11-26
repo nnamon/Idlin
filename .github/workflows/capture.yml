@@ -1,7 +1,8 @@
 name: capture
 
 # Takes the watch-review captures of whatever is on main and keeps them for two
-# weeks. Nothing requires this to pass; it is there to be looked at.
+# weeks, and runs the long test sweeps at full size. Nothing requires this to
+# pass; a failure here is filed as a bug.
 on:
   push:
     branches: [main]
@@ -32,3 +33,22 @@ jobs:
           name: captures-${{ github.sha }}
           path: captures/review
           retention-days: 14
+
+  # The gate runs a sample of each long sweep (many seeds, a whole game day);
+  # this runs them at full size.
+  long-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+        env:
+          IDLIN_LONG: "1"

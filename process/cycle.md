@@ -120,8 +120,10 @@ builder: on the existing branch if it has commits, or from a clean
 
 - Branch `i<issue>-<slug>` from fresh `origin/main`. An issue that needs an
   unmerged branch waits for it; branches are not stacked.
-- Run `docker compose run --rm dev pnpm gate` until it passes. Read the new
-  tests and confirm each would fail without the change.
+- Run `docker compose run --rm dev pnpm gate` until it passes. Tests go where
+  section 5 of `AGENTS.md` asks for them; there is no need to prove each one
+  fails on revert. A new long sweep runs a sample in the gate and its full
+  size under `IDLIN_LONG=1`, as section 6 says.
 - For a visible change, run the capture, open the frames and look at them. Fix
   what looks wrong before anyone else sees it. Check for a running capture
   first, as section 1 of `AGENTS.md` says.
@@ -168,16 +170,21 @@ conductor picks Mythos 5.2 and says so in the brief.
 > `AGENTS.md` and the issue #N, then the diff (`gh pr diff P`). Check out the
 > branch and run `docker compose run --rm dev pnpm gate`. For each defect give
 > file and line, a concrete way to trigger it, and how serious it is. Look
-> hardest at: <the risks of this change>. Also judge the design: flag
-> duplication of something that exists, needless abstraction, and tests that
-> would still pass with the change reverted. Do not edit files. End with
-> MERGE or DO-NOT-MERGE and a one-line reason.
+> hardest at: <the risks of this change>. Mark a finding BLOCKING only for a
+> real defect: a crash, lost data, wrong behaviour a viewer would see, broken
+> determinism or snapshots, or a security hole. List missing tests, style and
+> design points (duplication, needless abstraction) as non-blocking, except
+> missing tests of determinism or saving, which block. Do not edit files. End
+> with MERGE or DO-NOT-MERGE and a one-line reason.
 
-Check each finding against the code. Send the real ones to a builder on the
-branch, as step 3 says, to fix on the same branch. Answer the
-rest in one pull request comment, `[conductor] review triage`, finding by
-finding. After a substantial fix, start a new review. If the same kind of
-finding keeps returning, have the cause fixed in one place.
+Each pull request gets one review. Check each finding against the code. Send
+the real blocking ones to a builder on the branch, as step 3 says, to fix
+once on the same branch. Answer the rest in one pull request comment,
+`[conductor] review triage`, finding by finding, and file an issue for any
+worth doing later. After the fix the pull request goes on to merge without
+another full review, unless the fix itself was large or risky; then start a
+new review of the fix. If the same kind of finding keeps returning, have the
+cause fixed in one place.
 
 If the chosen reviewer is out of quota or cannot be reached, give the same
 brief to another of the three (a fresh Opus 5.5 child, Codex or Mythos). Note
@@ -222,10 +229,12 @@ folders, which are not committed) with the two capture folders and
 judge with no activity for 60 minutes is stopped with `task_cancel` and the
 judgement goes to the next of those with the same folders; when all three
 have stalled or are out, no judge is reachable.
-Post its verdict as a pull request comment, `[watch judge]`. A hard fail or a
-"worse" verdict sends the change back to a builder (step 4). The conductor
-takes no captures for a judgement; it only runs the daily one in
-`process/daily.md`.
+Post its verdict as a pull request comment, `[watch judge]`. The judge looks
+once per pull request. A hard fail or a "worse" verdict sends the change back
+to a builder (step 4), and the judge looks again only at the fixed capture.
+Anything else it finds becomes a follow-up issue and does not hold the
+merge. The conductor takes no captures for a judgement; it only runs the
+daily one in `process/daily.md`.
 
 Which checks apply depends on what exists so far; see "What applies when" in
 `docs/watch-rubric.md`.
@@ -237,8 +246,10 @@ commit. GitHub's squash and rebase methods rewrite the commit and stamp one of
 its dates in the time zone it last saw for the account, whatever the request
 says. So the squash is done on the branch, and once that commit has passed
 `gate` the same commit is pushed to `main` as a fast-forward. The squash is a
-builder's, in its own worktree, so the shared checkout stays on `main`. The
-push to `main` is the conductor's, and needs no checkout of the branch.
+builder's, in its own worktree, so the shared checkout stays on `main`; a
+re-squash after `main` moves is the conductor's, in a worktree of its own (see
+below). The push to `main` is the conductor's, and needs no checkout of the
+branch.
 
 When the review is clean, the conductor starts a builder on the branch (step
 3) to squash it, giving it the reviewed head and the pull request's title and
@@ -313,9 +324,13 @@ passed on that commit. GitHub marks the pull request as merged and closes the
 issues its body names.
 
 If `main` moved in the meantime the "directly on main" test fails, and if it
-moves between the tests and the push, the push is rejected. Either way a
-builder runs the first block again, with the squashed commit as the reviewed
-head, and the conductor waits for `gate` again.
+moves between the tests and the push, the push is rejected. Either way the
+conductor re-squashes the branch itself, without waiting for a builder: it
+adds a worktree of its own for the purpose (`git worktree add "$TMP/squash"
+origin/<branch> --detach`, never the shared checkout), runs the first block
+there with the squashed commit as the reviewed head, removes the worktree and
+waits for `gate` again. If that merge conflicts, it aborts the merge, removes
+the worktree and sends the conflict to a builder as above.
 
 If either date is not `+0000`, file a `process` issue. `main` is not
 rewritten to fix it.

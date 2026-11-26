@@ -422,7 +422,9 @@ describe("world server", () => {
     expect(server.world.tick - from).toBeLessThanOrEqual(13);
   });
 
-  it("runs a game day at speed with a viewer attached and memory stays flat", async () => {
+  // The capture workflow runs the whole day; the gate runs six hours of it.
+  const hours = process.env.IDLIN_LONG === "1" ? 24 : 6;
+  it(`runs ${hours} game hours at speed with a viewer attached and memory stays flat`, async () => {
     setFlagsFromString("--expose-gc");
     const gc = runInNewContext("gc") as () => void;
     const heap = (): number => {
@@ -436,14 +438,14 @@ describe("world server", () => {
     watcher.socket.on("message", () => watcher.worlds.splice(0, watcher.worlds.length - 1));
     const samples: number[] = [];
     const hour = TICKS_PER_DAY / 24;
-    for (let h = 0; h < 24; h++) {
+    for (let h = 0; h < hours; h++) {
       for (let i = 0; i < hour; i += 50) {
         server.advance(50);
         await watcher.reach(server.world.tick);
       }
       samples.push(heap());
     }
-    expect(server.world.tick).toBe(1 + TICKS_PER_DAY);
+    expect(server.world.tick).toBe(1 + hours * hour);
     // Measured from the end of the first hour, once everything is warm.
     const [base, ...rest] = samples as [number, ...number[]];
     const growth = Math.max(...rest) - base;

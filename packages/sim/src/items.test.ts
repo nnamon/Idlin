@@ -17,6 +17,8 @@ import { rawItems, shippedItems } from "./testing.ts";
 
 const ITEMS = shippedItems();
 const LEVELS = [1, 5, 10, 20, 50, MAX_ITEM_LEVEL];
+// The full sweeps run in the capture workflow; the gate runs a sample of each.
+const LONG = process.env.IDLIN_LONG === "1";
 
 const affixOf = (table: ItemTable, id: string): Affix => {
   const affix = table.affixes.find((a) => a.id === id);
@@ -374,7 +376,8 @@ describe("loadItems", () => {
     ];
     const rng = createRng(99);
     let loaded = 0;
-    for (let n = 0; n < 500; n++) {
+    const runs = LONG ? 500 : 100;
+    for (let n = 0; n < runs; n++) {
       const content: Record<string, unknown> = structuredClone(rawItems());
       // Replace one value, at any depth, with something hostile.
       let node: Record<string, unknown> = content;
@@ -406,7 +409,7 @@ describe("loadItems", () => {
     }
     // Some mutations are harmless (a weight of 0 on a rarity, say), so both paths ran.
     expect(loaded).toBeGreaterThan(0);
-    expect(loaded).toBeLessThan(500);
+    expect(loaded).toBeLessThan(runs);
   });
 });
 
@@ -446,7 +449,7 @@ describe("rollItem", () => {
   it("rolls only affixes from the pool for the base's slot, in the right list, with values in range", () => {
     for (const base of Object.values(ITEMS.bases)) {
       for (const level of LEVELS.filter((l) => l >= base.level)) {
-        for (const item of rollMany(ITEMS, base.id, level, 1000)) {
+        for (const item of rollMany(ITEMS, base.id, level, LONG ? 1000 : 200)) {
           const rule = ITEMS.rarities[item.rarity];
           expect(item.prefixes.length).toBeLessThanOrEqual(rule.prefixes);
           expect(item.suffixes.length).toBeLessThanOrEqual(rule.suffixes);

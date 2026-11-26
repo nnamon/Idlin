@@ -135,16 +135,17 @@ it, and their numbers are not the procedure's:
    visible change, also capture and look at the frames.
 6. **Pull request** (builder) with "Closes #N", what changed, and the
    evidence. CI must be green.
-7. **Review** (conductor). The reviewer tries to refute the diff. The
-   conductor checks every finding against the code, sends the real ones
+7. **Review** (conductor). One reviewer tries to refute the diff. The
+   conductor checks every finding against the code, sends the blocking ones
    to a new builder on the branch, and answers the others in a PR
-   comment with the reason. Re-review after substantial fixes.
+   comment with the reason. Re-review only when a fix was large or risky.
 8. **Watch judge**, for `look` changes: the builder captures `main` and the
    branch, the conductor starts the judge on the two folders and posts the
    verdict in a PR comment.
 9. **Merge** as one commit (step 8 of the procedure) once section 5 holds.
    A builder squashes the branch to one commit when the conductor says so;
-   the conductor pushes that commit to `main` as a fast-forward, then
+   if `main` moves after that, the conductor re-squashes it itself. The
+   conductor pushes that commit to `main` as a fast-forward, then
    confirms it is on `origin/main` and that CI on `main` is green.
 10. **Close out** (conductor). Comment on the issue with what shipped and the
     evidence, update any doc the change made stale, and delete the branch
@@ -159,10 +160,22 @@ Cycles spent only waiting for a reviewer do not count.
 A pull request is merged only when all of these hold:
 
 - the `gate` check is green (branch protection enforces this for everyone);
-- the reviewer's findings are each fixed or answered in writing;
-- new behaviour has a test that would fail without the change;
+- the reviewer's blocking findings are fixed, and the others answered in
+  writing;
+- new core logic (simulation rules, saving, the server) has a test that would
+  fail without it; viewer code has a test where there is something to compute,
+  not for every visual detail;
 - for a `look` change: a capture with no hard fail and no "worse" verdict;
 - docs describe the repo as it now is.
+
+Each pull request gets one code review. A finding blocks only if it is a real
+defect: a crash, lost data, wrong behaviour a viewer would see, broken
+determinism or snapshots, or a security hole. Missing tests and style are
+listed and do not block, except for determinism and saving. Blocking findings
+are fixed once and the pull request merges without another full review,
+unless the fix itself was large or risky. The watch judge looks once per
+`look` pull request; anything short of a hard fail or a "worse" verdict
+becomes a follow-up issue.
 
 If no reviewer can be reached, or for a `look` change no judge, the pull
 request stays open with a comment saying so. The conductor gives the builder
@@ -181,8 +194,15 @@ revert pull request.
   hash) run in every gate. A hash that changes without an intended reason is a
   bug to find, not a constant to update.
 - **Tests must be able to fail.** A test that passes with the change reverted
-  proves nothing. Bot VM and compiler tests include hostile input: endless
-  loops, stack overflow, bad opcodes, garbage source. None may crash the world.
+  proves nothing, so write it to check the behaviour, not that the code ran;
+  builders don't have to prove each one fails on revert. Bot VM and compiler
+  tests include hostile input: endless loops, stack overflow, bad opcodes,
+  garbage source. None may crash the world.
+- **A fast gate.** `pnpm gate` aims to finish in about a minute on CI. A long
+  sweep (many seeds, many game days, thousands of rolls) runs a small sample
+  in the gate and its full size only when `IDLIN_LONG=1` is set, which the
+  capture workflow does on every push to `main`. That workflow is not
+  required; a failure there is filed as a bug.
 - **Evidence.** Say what was run and what it showed. "Works" without a test
   name, a number or a frame is not a claim.
 - **Look at it.** A visible change is not done until a capture has been

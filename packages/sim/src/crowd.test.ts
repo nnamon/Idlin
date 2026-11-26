@@ -14,6 +14,8 @@ import {
 } from "./world.ts";
 
 const MAP = firstLight();
+// The full sweep runs in the capture workflow; the gate runs a few of its seeds.
+const LONG = process.env.IDLIN_LONG === "1";
 // Something that stands in the way and never moves.
 const KINDS = { boulder: { hp: 100, damage: 0, windup: 1, recovery: 0, reach: 1 } };
 const PROGRAMS = compileBots(
@@ -150,8 +152,8 @@ describe("crowds", () => {
   it("on the shipped programs nobody goes a minute without deciding, and the sleepers settle", () => {
     const names = ["wanderer", "homebody", "riverwalker"];
     for (const [residents, seeds] of [
-      [6, [1, 2, 3, 4, 5]],
-      [50, [1, 2, 3]],
+      [6, LONG ? [1, 2, 3, 4, 5] : [1, 2]],
+      [50, LONG ? [1, 2, 3] : [1]],
     ] as const) {
       for (const seed of seeds) {
         const world = createWorld(MAP, seed, shippedPrograms());

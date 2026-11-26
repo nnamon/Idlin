@@ -1,6 +1,6 @@
 // Whole game days with monsters at six residents, over many seeds, judged by
-// the same metrics as a capture. Slow (about half a minute), so it has a file
-// of its own and runs alongside the rest.
+// the same metrics as a capture. The full 60 seeds take about half a minute, so
+// the gate runs five of them and the capture workflow all 60 (IDLIN_LONG=1).
 
 import {
   ADVENTURER,
@@ -19,7 +19,7 @@ import { castOf } from "../../../packages/client/src/cast.ts";
 import { botSources, rawFirstLight, shippedMonsters } from "../../../packages/sim/src/testing.ts";
 import { type TickRecord, watchMetrics } from "./metrics.ts";
 
-const SEEDS = Array.from({ length: 60 }, (_, i) => i + 1);
+const SEEDS = Array.from({ length: process.env.IDLIN_LONG === "1" ? 60 : 5 }, (_, i) => i + 1);
 const DAYS = 2;
 
 describe("game days with monsters", () => {

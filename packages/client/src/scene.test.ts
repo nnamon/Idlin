@@ -410,10 +410,13 @@ describe("the scene", () => {
       (i) => [i % 3, Math.floor(i / 3)],
       (i) => [i % 2, Math.floor(i / 2)],
     ];
+    // The capture workflow tries every place; the gate every other column and the
+    // rows above and below, which still takes in the block that stands for longer.
+    const long = process.env.IDLIN_LONG === "1";
     let shown = 0;
     for (const [s, shape] of shapes.entries())
-      for (let dx = -6; dx <= 2; dx++)
-        for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -6; dx <= 2; dx += long ? 1 : 2)
+        for (let dy = -1; dy <= 1; dy += long ? 1 : 2) {
           const group = newWorld(12);
           group.actors.forEach((actor, i) => {
             const [sx, sy] = shape(i);

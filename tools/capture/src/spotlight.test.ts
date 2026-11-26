@@ -20,9 +20,11 @@ const holds = (subjects: readonly (number | null)[]): number[] => {
 // A run of 50 residents takes several seconds, more on a shared CI runner than
 // vitest's default 5 s allows.
 const RUN_TIMEOUT_MS = 120_000;
+// The capture workflow runs the 50-resident case; the gate stops at twelve.
+const LONG = process.env.IDLIN_LONG === "1";
 
 describe("the spotlight over a headless run", () => {
-  for (const residents of [6, 50]) {
+  for (const residents of LONG ? [6, 12, 50] : [6, 12]) {
     it(`gives each of ${residents} residents a turn within the bound`, {
       timeout: RUN_TIMEOUT_MS,
     }, () => {
