@@ -1,0 +1,40 @@
+# Every project command runs through these services; nothing runs on the host.
+# Services use Docker's default bridge (network_mode: bridge) so the project
+# needs no network of its own.
+services:
+  dev:
+    build:
+      context: docker
+      dockerfile: dev.Dockerfile
+    working_dir: /repo
+    network_mode: bridge
+    volumes:
+      - .:/repo
+    mem_limit: 2g
+    cpus: 4
+
+  # The viewer with hot reload, at http://localhost:4310
+  client:
+    build:
+      context: docker
+      dockerfile: dev.Dockerfile
+    working_dir: /repo
+    network_mode: bridge
+    volumes:
+      - .:/repo
+    ports:
+      - "127.0.0.1:4310:4310"
+    command: pnpm --filter @idlin/client dev
+    mem_limit: 1g
+    cpus: 2
+
+  # Headless Chromium for pictures of the viewer. Build the client first.
+  capture:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    working_dir: /repo
+    network_mode: bridge
+    volumes:
+      - .:/repo
+    entrypoint: ["node", "tools/capture/src/index.ts"]
+    mem_limit: 2g
+    cpus: 4
