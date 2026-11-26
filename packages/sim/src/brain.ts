@@ -8,7 +8,8 @@ import { syscall } from "./syscalls.ts";
 import { FAULTS, type Program, runDecision } from "./vm.ts";
 import {
   type Actor,
-  actorAt,
+  blockerAt,
+  blocks,
   clock,
   enemies,
   kindOf,
@@ -77,22 +78,33 @@ function danger(world: World, actor: Actor, x: number, y: number): number {
   return soonest;
 }
 
-/** The way to the nearest tile that is free of other actors and of danger, or [] if this one already is. */
+/**
+ * The way to the nearest tile no enemy's blow is about to land on and nothing
+ * blocks, walking only where this actor can walk, or [] if this one is already
+ * safe or nowhere safe can be reached.
+ */
 function wayClear(world: World, actor: Actor): Point[] {
   const { map } = world;
-  const seen = new Set<number>([tileIndex(map, actor.x, actor.y)]);
+  const start = tileIndex(map, actor.x, actor.y);
+  const cameFrom = new Map<number, number>([[start, start]]);
   const queue: Point[] = [{ x: actor.x, y: actor.y }];
   for (let head = 0; head < queue.length; head++) {
     const at = queue[head] as Point;
-    const there = actorAt(world, at.x, at.y);
-    if ((!there || there === actor) && danger(world, actor, at.x, at.y) === 0) {
-      return findPath(map, actor, at) ?? [];
+    if (danger(world, actor, at.x, at.y) === 0) {
+      const path: Point[] = [];
+      for (let k = tileIndex(map, at.x, at.y); k !== start; k = cameFrom.get(k) as number) {
+        const x = k % map.width;
+        path.push({ x, y: (k - x) / map.width });
+      }
+      return path.reverse();
     }
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;
       const y = at.y + dy;
-      if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
-      seen.add(tileIndex(map, x, y));
+      if (!isWalkable(map, x, y) || blockerAt(world, x, y, actor)) continue;
+      const index = tileIndex(map, x, y);
+      if (cameFrom.has(index)) continue;
+      cameFrom.set(index, tileIndex(map, at.x, at.y));
       queue.push({ x, y });
     }
   }
@@ -115,7 +127,7 @@ function wayFrom(world: World, actor: Actor, from: Point): Point[] {
     for (const at of frontier) {
       for (const [dx, dy] of NEIGHBOURS) {
         const tile = { x: at.x + dx, y: at.y + dy };
-        if (!isWalkable(map, tile.x, tile.y) || actorAt(world, tile.x, tile.y)) continue;
+        if (!isWalkable(map, tile.x, tile.y) || blockerAt(world, tile.x, tile.y, actor)) continue;
         const index = tileIndex(map, tile.x, tile.y);
         if (cameFrom.has(index)) continue;
         cameFrom.set(index, tileIndex(map, at.x, at.y));
@@ -140,6 +152,95 @@ function attackTiles(world: World, actor: Actor, x: number, y: number): Point[] 
   if (dx === 0 && dy === 0) return [];
   const [sx, sy] = Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
   return lineOfAttack(world, actor, sx, sy);
+}
+
+/**
+ * The way to `to`, going round anyone who gets in the way (adventurers walk
+ * through each other; monsters do not). If someone already stands on `to`, or
+ * the way is cut off, it leads instead to the nearest tile (by walking,
+ * ignoring people) that can be reached and that nobody stands on; among tiles
+ * as near as each other, staying where it is comes first. So people sent to
+ * one place gather round it and settle instead of piling onto one tile.
+ * [] when there is nowhere nearer to go.
+ */
+export function wayTo(world: World, actor: Actor, to: Point): Point[] {
+  const { map } = world;
+  if (!isWalkable(map, to.x, to.y)) return [];
+  // Everywhere this actor can walk to without stepping on anyone, and how. The
+  // search stops as soon as it reaches the goal, if the goal is free.
+  const start = tileIndex(map, actor.x, actor.y);
+  const target = tileIndex(map, to.x, to.y);
+  // Tiles that bar the way, and tiles someone already stands on or is making for.
+  const barred = new Set<number>();
+  const standing = new Set<number>();
+  for (const other of world.actors) {
+    if (other === actor) continue;
+    standing.add(tileIndex(map, other.x, other.y));
+    // Where someone is already walking to counts as taken too, so two do not make for one tile.
+    const end = other.path[other.path.length - 1];
+    if (end) standing.add(tileIndex(map, end.x, end.y));
+    if (blocks(other, actor)) barred.add(tileIndex(map, other.x, other.y));
+  }
+  // Where someone else has stopped on this tile too, the one deciding walk_to moves
+  // off. The one that arrived later often decides again as soon as its walk ends,
+  // while the other is still resting, so it is usually the later one that makes way.
+  // Someone only passing through does not count.
+  const sharing = world.actors.some(
+    (other) =>
+      other !== actor &&
+      other.x === actor.x &&
+      other.y === actor.y &&
+      other.path.length === 0 &&
+      other.moveTicksLeft === 0,
+  );
+  const free = (index: number): boolean => (index === start ? !sharing : !standing.has(index));
+  const cameFrom = new Map<number, number>([[start, start]]);
+  const queue: Point[] = [{ x: actor.x, y: actor.y }];
+  for (let head = 0; head < queue.length && !(cameFrom.has(target) && free(target)); head++) {
+    const at = queue[head] as Point;
+    for (const [dx, dy] of NEIGHBOURS) {
+      const x = at.x + dx;
+      const y = at.y + dy;
+      if (!isWalkable(map, x, y)) continue;
+      const index = tileIndex(map, x, y);
+      if (cameFrom.has(index) || barred.has(index)) continue;
+      cameFrom.set(index, tileIndex(map, at.x, at.y));
+      queue.push({ x, y });
+    }
+  }
+  // The reachable tile nearest `to`, ring by ring outwards from it.
+  let goal: number | undefined;
+  const seen = new Set<number>([tileIndex(map, to.x, to.y)]);
+  let ring: Point[] = [to];
+  while (ring.length > 0 && goal === undefined) {
+    for (const at of ring) {
+      const index = tileIndex(map, at.x, at.y);
+      if (index === start && free(index)) {
+        goal = index;
+        break;
+      }
+      if (goal === undefined && cameFrom.has(index) && free(index)) goal = index;
+    }
+    if (goal !== undefined) break;
+    const next: Point[] = [];
+    for (const at of ring) {
+      for (const [dx, dy] of NEIGHBOURS) {
+        const x = at.x + dx;
+        const y = at.y + dy;
+        if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
+        seen.add(tileIndex(map, x, y));
+        next.push({ x, y });
+      }
+    }
+    ring = next;
+  }
+  if (goal === undefined || goal === start) return [];
+  const path: Point[] = [];
+  for (let at = goal; at !== start; at = cameFrom.get(at) as number) {
+    const x = at % map.width;
+    path.push({ x, y: (at - x) / map.width });
+  }
+  return path.reverse();
 }
 
 /** A walkable tile chosen at random with the world's generator. */
@@ -198,13 +299,15 @@ function act(
   args: readonly number[],
   events: WorldEvent[],
 ): void {
+  // Every decision starts a fresh walk, which may be re-routed once.
+  actor.blocked = 0;
   const [a = 0, b = 0] = args;
   switch (syscall(id)?.name) {
     case "wait":
       actor.wait = Math.max(IDLE_TICKS, Math.min(MAX_WAIT_ACTION_TICKS, a));
       return;
     case "walk_to":
-      actor.path = findPath(world.map, actor, { x: a, y: b }) ?? [];
+      actor.path = wayTo(world, actor, { x: a, y: b });
       break;
     case "wander":
       actor.path = findPath(world.map, actor, randomWalkableTile(world)) ?? [];

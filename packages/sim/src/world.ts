@@ -1,7 +1,7 @@
 // The world and the one function that advances it. Everything here is a pure
 // function of the seed, the map and the inputs: integers only, no clock.
 
-import { think } from "./brain.ts";
+import { think, wayTo } from "./brain.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, type TileMap, tileIndex } from "./map.ts";
 import { createRng, type Rng } from "./rng.ts";
@@ -122,7 +122,11 @@ export interface Actor {
   path: Point[];
   /** Ticks left to stand still before the program is asked again. */
   wait: number;
-  /** Ticks spent waiting for the next tile on the path to clear. */
+  /**
+   * Ticks spent waiting for the next tile on the path to clear. Below
+   * BLOCKED_PATIENCE_TICKS the walk has not yet been re-routed; from there up to
+   * twice that, it has, and the next hold-up ends the walk. A decision resets it.
+   */
   blocked: number;
   /** Name of the program that decides for this actor; one of the world's. */
   readonly program: string;
@@ -238,6 +242,18 @@ export const actorAt = (world: World, x: number, y: number): Actor | undefined =
   world.actors.find((a) => a.x === x && a.y === y);
 
 /**
+ * Whether `a` and `b` get in each other's way. Adventurers walk through each
+ * other, so no one can hold a narrow way against the rest; anything involving
+ * a monster blocks.
+ */
+export const blocks = (a: Actor, b: Actor): boolean =>
+  a !== b && (a.kind !== ADVENTURER || b.kind !== ADVENTURER);
+
+/** Someone on (x, y) who gets in `mover`'s way, if anyone does. */
+export const blockerAt = (world: World, x: number, y: number, mover: Actor): Actor | undefined =>
+  world.actors.find((a) => a.x === x && a.y === y && blocks(a, mover));
+
+/**
  * Something that happened during a tick, for whoever is watching: the ticker,
  * the spotlight, the metrics. Events are an output of `step`, not part of the
  * world's state; nothing in the simulation reads them back.
@@ -324,23 +340,26 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     attacker.recover = kind.recovery;
     for (const mark of world.marks) {
       if (mark.by !== attacker.id) continue;
-      const target = world.actors.find(
+      // Adventurers can share a tile, so a blow lands on every enemy standing there.
+      const targets = world.actors.filter(
         (a) => a.x === mark.x && a.y === mark.y && a.hp > 0 && enemies(a, attacker),
       );
-      if (!target) {
+      if (targets.length === 0) {
         events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
         continue;
       }
-      target.hp -= kind.damage;
-      struck.set(target.id, attacker.id);
-      events.push({
-        type: "hit",
-        tick: world.tick,
-        actor: attacker.id,
-        target: target.id,
-        damage: kind.damage,
-        hp: target.hp,
-      });
+      for (const target of targets) {
+        target.hp -= kind.damage;
+        struck.set(target.id, attacker.id);
+        events.push({
+          type: "hit",
+          tick: world.tick,
+          actor: attacker.id,
+          target: target.id,
+          damage: kind.damage,
+          hp: target.hp,
+        });
+      }
     }
     world.marks = world.marks.filter((mark) => mark.by !== attacker.id);
   }
@@ -375,23 +394,58 @@ function landAttacks(world: World, events: WorldEvent[]): void {
   }
 }
 
-/** The walkable tile nearest `from` that nobody but `self` stands on, or null if there is none. */
+/**
+ * The walkable tile nearest `from`, by walking, that nobody but `self` stands
+ * on or is walking to, or null if there is none. Among tiles as near as each
+ * other, `self`'s own tile comes first, so someone already as close as they can
+ * get stays put. If every reachable tile is taken that way, the nearest one
+ * nobody else stands on will do, as someone walking there may yet stop short.
+ */
 export function freeTileNear(world: World, from: Point, self?: Actor): Point | null {
   const { map } = world;
   if (!isWalkable(map, from.x, from.y)) return null;
+  const standing = new Set<number>();
+  const making = new Set<number>();
+  for (const other of world.actors) {
+    if (other === self) continue;
+    standing.add(tileIndex(map, other.x, other.y));
+    const end = other.path[other.path.length - 1];
+    if (end) making.add(tileIndex(map, end.x, end.y));
+  }
+  return (
+    nearestUntaken(world, from, self, (i) => standing.has(i) || making.has(i)) ??
+    nearestUntaken(world, from, self, (i) => standing.has(i))
+  );
+}
+
+function nearestUntaken(
+  world: World,
+  from: Point,
+  self: Actor | undefined,
+  taken: (index: number) => boolean,
+): Point | null {
+  const { map } = world;
   const seen = new Set<number>([tileIndex(map, from.x, from.y)]);
-  const queue: Point[] = [{ x: from.x, y: from.y }];
-  for (let head = 0; head < queue.length; head++) {
-    const at = queue[head] as Point;
-    const there = actorAt(world, at.x, at.y);
-    if (!there || there === self) return at;
-    for (const [dx, dy] of NEIGHBOURS) {
-      const x = at.x + dx;
-      const y = at.y + dy;
-      if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
-      seen.add(tileIndex(map, x, y));
-      queue.push({ x, y });
+  let ring: Point[] = [{ x: from.x, y: from.y }];
+  while (ring.length > 0) {
+    let found: Point | null = null;
+    for (const at of ring) {
+      if (taken(tileIndex(map, at.x, at.y))) continue;
+      if (self && self.x === at.x && self.y === at.y) return at;
+      if (!found) found = at;
     }
+    if (found) return found;
+    const next: Point[] = [];
+    for (const at of ring) {
+      for (const [dx, dy] of NEIGHBOURS) {
+        const x = at.x + dx;
+        const y = at.y + dy;
+        if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
+        seen.add(tileIndex(map, x, y));
+        next.push({ x, y });
+      }
+    }
+    ring = next;
   }
   return null;
 }
@@ -464,17 +518,39 @@ function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
     think(world, actor, events);
     return;
   }
-  if (actorAt(world, next.x, next.y)) {
-    // Someone stands where this actor wants to step. Wait a little, then give up the path.
+  const ahead = blockerAt(world, next.x, next.y, actor);
+  if (ahead) {
+    // Someone stands where this actor wants to step. Wait a little, then look
+    // once for a way round the people in the way, no more than a couple of
+    // steps longer; if that walk is held up too, give it up so the program
+    // decides again. Two walkers head to head: only the one that came later
+    // turns aside, so the two do not both pick the same detour and meet again.
     actor.blocked++;
-    if (actor.blocked >= BLOCKED_PATIENCE_TICKS) {
+    if (actor.blocked === BLOCKED_PATIENCE_TICKS) {
+      const facing = ahead.path[0]?.x === actor.x && ahead.path[0]?.y === actor.y;
+      if (facing && ahead.id > actor.id) {
+        actor.blocked = 0;
+        return;
+      }
+      const goal = actor.path[actor.path.length - 1] as Point;
+      const detour = wayTo(world, actor, goal);
+      const end = detour[detour.length - 1];
+      if (end?.x === goal.x && end.y === goal.y && detour.length <= actor.path.length + 2) {
+        actor.path = detour;
+        return;
+      }
+      actor.path = [];
+      actor.blocked = 0;
+    } else if (actor.blocked >= 2 * BLOCKED_PATIENCE_TICKS) {
       actor.path = [];
       actor.blocked = 0;
     }
     return;
   }
   actor.path.shift();
-  actor.blocked = 0;
+  // A walk that has been re-routed once stays marked as such until the next decision.
+  actor.blocked =
+    actor.blocked >= BLOCKED_PATIENCE_TICKS && actor.path.length > 0 ? BLOCKED_PATIENCE_TICKS : 0;
   actor.fromX = actor.x;
   actor.fromY = actor.y;
   actor.x = next.x;
@@ -739,14 +815,13 @@ function readState(raw: unknown, map: TileMap, programs: Programs, kinds: Kinds)
     if (windup > 0 && recover > 0) return null;
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
     if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
-    if (!isWalkable(map, x, y) || !isWalkable(map, fromX, fromY) || actorAt(world, x, y))
-      return null;
+    if (!isWalkable(map, x, y) || !isWalkable(map, fromX, fromY)) return null;
     if (!isInt32(moveTicksLeft) || moveTicksLeft < 0 || moveTicksLeft > STEP_TICKS) return null;
     const here = { x, y };
     const from = { x: fromX, y: fromY };
     if (moveTicksLeft === 0 ? fromX !== x || fromY !== y : !adjacent(here, from)) return null;
     if (!isInt32(wait) || wait < 0 || wait > MAX_WAIT_TICKS) return null;
-    if (!isInt32(blocked) || blocked < 0 || blocked >= BLOCKED_PATIENCE_TICKS) return null;
+    if (!isInt32(blocked) || blocked < 0 || blocked >= 2 * BLOCKED_PATIENCE_TICKS) return null;
     if (!Array.isArray(path) || path.length > map.tiles.length) return null;
     const steps: Point[] = [];
     let at: Point = here;
@@ -790,6 +865,15 @@ function readState(raw: unknown, map: TileMap, programs: Programs, kinds: Kinds)
       windup,
       recover,
     });
+  }
+  // Only adventurers share a tile.
+  for (const actor of world.actors) {
+    if (
+      world.actors.some(
+        (other) => other.x === actor.x && other.y === actor.y && blocks(other, actor),
+      )
+    )
+      return null;
   }
   // Every mark belongs to an actor in wind-up, and an actor in wind-up has
   // exactly the marks of one attack: its line in one of the four directions.

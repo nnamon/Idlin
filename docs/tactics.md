@@ -78,29 +78,29 @@ Sensors read the world; they go in conditions and values. Actions do something;
 they go after `->`. A sensor that takes no values is written without brackets.
 
 <!-- generated: system calls -->
-| Name              | Kind   | Takes | What it does                                                                  |
-| ----------------- | ------ | ----- | ----------------------------------------------------------------------------- |
-| `self_x`          | sensor | 0     | The tile column this actor stands on.                                         |
-| `self_y`          | sensor | 0     | The tile row this actor stands on.                                            |
-| `hour`            | sensor | 0     | The game hour, 0 to 23.                                                       |
-| `minute`          | sensor | 0     | The game minute, 0 to 59.                                                     |
-| `walkable`        | sensor | 2     | 1 if tile (x, y) can be walked on, else 0.                                    |
-| `distance`        | sensor | 2     | Steps in a straight grid line from here to (x, y).                            |
-| `idle`            | action | 0     | Do nothing for a moment.                                                      |
-| `wait`            | action | 1     | Do nothing for the given number of ticks (5 to 600).                          |
-| `walk_to`         | action | 2     | Walk to tile (x, y) by the shortest way.                                      |
-| `wander`          | action | 0     | Walk to a walkable tile chosen at random.                                     |
-| `hp`              | sensor | 0     | This actor's hitpoints.                                                       |
-| `max_hp`          | sensor | 0     | The most hitpoints this actor can have.                                       |
-| `threat_x`        | sensor | 0     | The column of the nearest enemy, or this actor's own if there is none.        |
-| `threat_y`        | sensor | 0     | The row of the nearest enemy, or this actor's own if there is none.           |
-| `threat_distance` | sensor | 0     | Steps in a straight grid line to the nearest enemy, or 9999 if there is none. |
-| `threat_hp`       | sensor | 0     | The nearest enemy's hitpoints, or 0 if there is none.                         |
-| `danger`          | sensor | 2     | Ticks until an enemy's attack lands on tile (x, y), or 0 if none is coming.   |
-| `danger_here`     | sensor | 0     | Ticks until an enemy's attack lands where this actor stands, or 0.            |
-| `attack`          | action | 2     | Wind up and strike in a line out from this actor, in the direction of (x, y). |
-| `step_clear`      | action | 0     | Walk to the nearest free tile that no enemy attack is about to land on.       |
-| `flee`            | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y).         |
+| Name              | Kind   | Takes | What it does                                                                                                                                                                                                 |
+| ----------------- | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `self_x`          | sensor | 0     | The tile column this actor stands on.                                                                                                                                                                        |
+| `self_y`          | sensor | 0     | The tile row this actor stands on.                                                                                                                                                                           |
+| `hour`            | sensor | 0     | The game hour, 0 to 23.                                                                                                                                                                                      |
+| `minute`          | sensor | 0     | The game minute, 0 to 59.                                                                                                                                                                                    |
+| `walkable`        | sensor | 2     | 1 if tile (x, y) can be walked on, else 0.                                                                                                                                                                   |
+| `distance`        | sensor | 2     | Steps in a straight grid line from here to (x, y).                                                                                                                                                           |
+| `idle`            | action | 0     | Do nothing for a moment.                                                                                                                                                                                     |
+| `wait`            | action | 1     | Do nothing for the given number of ticks (5 to 600).                                                                                                                                                         |
+| `walk_to`         | action | 2     | Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.                                                                                                                |
+| `wander`          | action | 0     | Walk to a walkable tile chosen at random.                                                                                                                                                                    |
+| `hp`              | sensor | 0     | This actor's hitpoints.                                                                                                                                                                                      |
+| `max_hp`          | sensor | 0     | The most hitpoints this actor can have.                                                                                                                                                                      |
+| `threat_x`        | sensor | 0     | The column of the nearest enemy, or this actor's own if there is none.                                                                                                                                       |
+| `threat_y`        | sensor | 0     | The row of the nearest enemy, or this actor's own if there is none.                                                                                                                                          |
+| `threat_distance` | sensor | 0     | Steps in a straight grid line to the nearest enemy, or 9999 if there is none.                                                                                                                                |
+| `threat_hp`       | sensor | 0     | The nearest enemy's hitpoints, or 0 if there is none.                                                                                                                                                        |
+| `danger`          | sensor | 2     | Ticks until an enemy's attack lands on tile (x, y), or 0 if none is coming.                                                                                                                                  |
+| `danger_here`     | sensor | 0     | Ticks until an enemy's attack lands where this actor stands, or 0.                                                                                                                                           |
+| `attack`          | action | 2     | Wind up and strike in a line out from this actor, in the direction of (x, y).                                                                                                                                |
+| `step_clear`      | action | 0     | Walk to the nearest tile no enemy attack is about to land on; an ally may be standing there.                                                                                                                 |
+| `flee`            | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster). |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
@@ -128,9 +128,14 @@ when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)
 otherwise -> walk_to(camp)
 ```
 
-An actor that is walking already counts as standing on the tile it is stepping
-onto. A monster with no hitpoints left is gone. An adventurer wakes at camp
-with full hitpoints and rests there for fifteen seconds.
+Adventurers walk through each other, so nobody can hold a narrow way against
+the rest; monsters and adventurers cannot pass through each other. An actor
+that is walking already counts as standing on the tile it is stepping onto,
+and a blow lands on every enemy on a marked tile. A monster with no hitpoints left is gone. An adventurer wakes at camp
+with full hitpoints and rests there for fifteen seconds. It wakes on the
+nearest tile nobody stands on or is walking to; if there is none, on the
+nearest tile nobody stands on, though someone may be walking to it; and if
+every tile is taken, where it fell.
 
 When two blows land on the same tick, the one from whoever has been in the
 world longer lands first, and someone it takes out does not get their own blow

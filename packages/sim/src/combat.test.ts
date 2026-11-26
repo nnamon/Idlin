@@ -35,6 +35,7 @@ const PROGRAMS = compileBots(
     // Strikes at whoever is nearest, wherever they are.
     biter: 'otherwise as "bite" -> attack(threat_x, threat_y)',
     stander: 'otherwise as "stand" -> wait(100)',
+    runner: "otherwise -> flee(0, 0)",
     dodger: `when danger_here > 0 as "step out" -> step_clear
 otherwise as "watch" -> idle`,
     fighter: `when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)
@@ -184,6 +185,151 @@ describe("fights", () => {
     const log = run(pack, 40);
     expect(named(pack, "Pup")).toMatchObject({ x: 15, y: 11, hp: 12 });
     expect(log.some((e) => e.type === "hit" && e.target === 2)).toBe(false);
+  });
+
+  it("a blow lands on every adventurer standing on the tile", () => {
+    const two = fight([
+      at("Wolf", "biter", 14, 11, "wolf"),
+      at("Ash", "stander", 15, 11),
+      at("Birch", "stander", 16, 12),
+    ]);
+    // Spawns never share a tile; put Birch on Ash's tile as if it were passing through.
+    Object.assign(named(two, "Birch") as World["actors"][number], {
+      x: 15,
+      y: 11,
+      fromX: 15,
+      fromY: 11,
+      path: [],
+    });
+    const log = run(two, 12);
+    const hit = log.flatMap((e) => (e.type === "hit" ? [e.target] : []));
+    expect(hit.sort()).toEqual([2, 3]);
+  });
+
+  it("monsters block each other; adventurers do not", () => {
+    // A wolf walking east along a row with another wolf in the way stops; an adventurer walks through.
+    const world = createWorld(MAP, 1, PROGRAMS, KINDS);
+    step(world, [
+      at("Wolf", "stander", 18, 11, "wolf"),
+      at("Pup", "stander", 19, 11, "wolf"),
+      at("Ash", "stander", 18, 13),
+      at("Birch", "stander", 19, 13),
+    ]);
+    const wolf = named(world, "Wolf") as World["actors"][number];
+    const ash = named(world, "Ash") as World["actors"][number];
+    for (const who of [wolf, ash]) {
+      who.wait = 1000;
+      who.path = [
+        { x: 19, y: who.y },
+        { x: 20, y: who.y },
+      ];
+    }
+    run(world, 8);
+    expect([wolf.x, ash.x]).toEqual([18, 20]);
+  });
+
+  it("step_clear steps onto an ally's tile to get out of the way, never through a monster", () => {
+    // On the bridge, with the river either side: a wolf east, an ally on the bank to the west.
+    const world = createWorld(MAP, 1, PROGRAMS, KINDS);
+    step(world, [
+      at("Wolf", "biter", 25, 8, "wolf"),
+      at("Ash", "dodger", 24, 8),
+      at("Birch", "stander", 23, 8),
+    ]);
+    const log = run(world, 40);
+    expect(log.some((e) => e.type === "hit" && e.target === 2)).toBe(false);
+    expect(named(world, "Ash")?.x).toBeLessThanOrEqual(23);
+  });
+
+  it("flee runs through allies", () => {
+    // Hemmed in by friends on three sides, with a wolf on the fourth.
+    const world = fight([
+      at("Wolf", "stander", 14, 11, "wolf"),
+      at("Ash", "coward", 15, 11),
+      at("Birch", "stander", 16, 11),
+      at("Cedar", "stander", 15, 10),
+      at("Dara", "stander", 15, 12),
+    ]);
+    run(world, 30);
+    expect(named(world, "Ash")?.x).toBeGreaterThanOrEqual(17);
+  });
+
+  it("an adventurer wakes on a bed of its own, not on a living ally", () => {
+    // Ash is struck down where Birch also stands; the camp tile itself is free.
+    const world = fight([
+      at("Brute", "biter", 20, 11, "brute"),
+      at("Ash", "stander", 21, 11),
+      at("Birch", "stander", 14, 9),
+    ]);
+    run(world, 12);
+    const ash = named(world, "Ash") as World["actors"][number];
+    const birch = named(world, "Birch") as World["actors"][number];
+    expect([ash.x, ash.y]).not.toEqual([birch.x, birch.y]);
+    expect(Math.abs(ash.x - 14) + Math.abs(ash.y - 9)).toBe(1);
+  });
+
+  it("struck down at camp on a tile shared with a living ally, it wakes on a tile of its own", () => {
+    // Ash rests on the camp tile; Birch walks onto it, and a thug's blow lands on both.
+    // Ash, low on hitpoints, goes down; Birch lives and keeps the tile.
+    const world = fight([
+      at("Thug", "biter", 13, 9, "thug"),
+      at("Ash", "stander", 14, 9),
+      at("Birch", "stander", 14, 8),
+    ]);
+    const ash = named(world, "Ash") as World["actors"][number];
+    const birch = named(world, "Birch") as World["actors"][number];
+    ash.hp = 5;
+    Object.assign(birch, { x: 14, y: 9, fromX: 14, fromY: 9, path: [] });
+    const log = run(world, 12);
+    expect(log.some((e) => e.type === "down" && e.actor === ash.id)).toBe(true);
+    expect(birch).toMatchObject({ x: 14, y: 9, hp: ADVENTURER_KIND.hp - 12 });
+    expect([ash.x, ash.y]).not.toEqual([14, 9]);
+    expect(Math.abs(ash.x - 14) + Math.abs(ash.y - 9)).toBe(1);
+  });
+
+  it("an adventurer does not wake on the camp tile someone is walking to", () => {
+    // Birch is three steps from the camp tile and making for it when Ash goes down.
+    const world = fight([
+      at("Brute", "biter", 20, 11, "brute"),
+      at("Ash", "stander", 21, 11),
+      at("Birch", "stander", 14, 12),
+    ]);
+    const birch = named(world, "Birch") as World["actors"][number];
+    Object.assign(birch, {
+      wait: 1000,
+      path: [
+        { x: 14, y: 11 },
+        { x: 14, y: 10 },
+        { x: 14, y: 9 },
+      ],
+    });
+    const log = run(world, 12);
+    expect(log.some((e) => e.type === "down" && e.actor === 2)).toBe(true);
+    expect(birch.path.length).toBeGreaterThan(0);
+    const ash = named(world, "Ash") as World["actors"][number];
+    expect([ash.x, ash.y]).not.toEqual([14, 9]);
+    expect(Math.abs(ash.x - 14) + Math.abs(ash.y - 9)).toBe(1);
+    run(world, 30);
+    expect(birch).toMatchObject({ x: 14, y: 9, path: [] });
+    expect([ash.x, ash.y]).not.toEqual([birch.x, birch.y]);
+  });
+
+  it("step_clear goes to the only safe tile even when an ally stands on it", () => {
+    // On the bridge: a wolf east strikes the two bridge tiles, Birch stands on the
+    // west bank, and monsters hold every tile round Birch, so its tile is the only way out.
+    const world = createWorld(MAP, 1, PROGRAMS, KINDS);
+    step(world, [
+      at("Wolf", "biter", 26, 8, "wolf"),
+      at("Ash", "dodger", 24, 8),
+      at("Birch", "stander", 23, 8),
+      at("North", "stander", 23, 7, "brute"),
+      at("South", "stander", 23, 9, "brute"),
+      at("West", "stander", 22, 8, "brute"),
+    ]);
+    const log = run(world, 40);
+    expect(log.some((e) => e.type === "attack" && e.actor === 1)).toBe(true);
+    expect(log.some((e) => e.type === "hit" && e.target === 2)).toBe(false);
+    expect(named(world, "Ash")).toMatchObject({ x: 23, y: 8, hp: ADVENTURER_KIND.hp });
   });
 
   it("an attack stops at whatever cannot be walked on", () => {
@@ -498,6 +644,22 @@ describe("fights and determinism", () => {
     shuffled.hash = hashWorld({ ...shuffled.state, map: MAP, programs: PROGRAMS, kinds: KINDS });
     expect(() => restore(JSON.stringify(shuffled), MAP, PROGRAMS, KINDS)).toThrow(SnapshotError);
     expect(restore(snapshot(two), MAP, PROGRAMS, KINDS)).toEqual(two);
+
+    // Only adventurers share a tile: two of them may, a monster and anyone may not.
+    const calm = fight([
+      at("Wolf", "stander", 20, 11, "wolf"),
+      at("Ash", "stander", 15, 11),
+      at("Birch", "stander", 16, 11),
+    ]);
+    const onto = (name: string): string => {
+      const copy = JSON.parse(snapshot(calm));
+      const who = copy.state.actors.find((a: { name: string }) => a.name === name);
+      Object.assign(who, { x: 15, y: 11, fromX: 15, fromY: 11 });
+      copy.hash = hashWorld({ ...copy.state, map: MAP, programs: PROGRAMS, kinds: KINDS });
+      return JSON.stringify(copy);
+    };
+    expect(restore(onto("Birch"), MAP, PROGRAMS, KINDS).actors[2]).toMatchObject({ x: 15, y: 11 });
+    expect(() => restore(onto("Wolf"), MAP, PROGRAMS, KINDS)).toThrow(SnapshotError);
 
     // An empty world still needs a next id of at least one.
     const empty = JSON.parse(snapshot(createWorld(MAP, 1, PROGRAMS, KINDS)));

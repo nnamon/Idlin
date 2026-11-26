@@ -17,6 +17,7 @@ import {
 
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
 const PROGRAMS = shippedPrograms();
+const KINDS = { wolf: { hp: 10, damage: 1, windup: 5, recovery: 5, reach: 1 } };
 
 const newWorld = (seed: number): World => {
   const world = createWorld(firstLight(), seed, PROGRAMS);
@@ -39,7 +40,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("909514bf1d44d262");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("038a5a7577349870");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -165,9 +166,9 @@ describe("world", () => {
       ["a step longer than a step", (d) => (actor(d).moveTicksLeft = 99)],
       ["a standing actor that came from elsewhere", (d) => (actor(d).fromX = 12)],
       [
-        "two actors on one tile",
+        "a monster on an adventurer's tile",
         (d) => {
-          d.state.actors.push({ ...actor(d), id: 2 });
+          d.state.actors.push({ ...actor(d), id: 2, kind: "wolf" });
           d.state.nextActorId = 3;
         },
       ],
@@ -186,14 +187,12 @@ describe("world", () => {
     }
   });
 
-  it("keeps every actor on its own walkable tile, and moves them", () => {
+  it("keeps every actor on a walkable tile, and moves them", () => {
     const world = newWorld(5);
     const start = world.actors.map((a) => `${a.x},${a.y}`);
     const visited = new Set<string>();
     for (let i = 0; i < 6000; i++) {
       step(world);
-      const tiles = world.actors.map((a) => `${a.x},${a.y}`);
-      expect(new Set(tiles).size).toBe(tiles.length);
       for (const a of world.actors) {
         expect(isWalkable(world.map, a.x, a.y)).toBe(true);
         expect(Math.abs(a.x - a.fromX) + Math.abs(a.y - a.fromY)).toBeLessThanOrEqual(1);
@@ -224,11 +223,31 @@ describe("world", () => {
     expect([actor.x, actor.fromX]).toEqual([14, 14]);
   });
 
-  it("an actor blocked by another waits, then gives up its path", () => {
+  it("adventurers walk through each other", () => {
     const world = createWorld(firstLight(), 1, PROGRAMS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" },
       { type: "spawn", name: "Birch", x: 12, y: 8, program: "wanderer" },
+    ]);
+    const [ash, birch] = world.actors;
+    if (!ash || !birch) throw new Error("no actors");
+    birch.wait = ash.wait = 1000;
+    birch.path = [];
+    ash.path = [
+      { x: 12, y: 8 },
+      { x: 13, y: 8 },
+    ];
+    run(world, 2);
+    expect([ash.x, ash.y]).toEqual([birch.x, birch.y]);
+    run(world, 6);
+    expect([ash.x, ash.y]).toEqual([13, 8]);
+  });
+
+  it("an adventurer held up by a monster waits, then gives up its walk", () => {
+    const world = createWorld(firstLight(), 1, PROGRAMS, KINDS);
+    step(world, [
+      { type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" },
+      { type: "spawn", name: "Birch", x: 12, y: 8, program: "wanderer", kind: "wolf" },
     ]);
     const [ash, birch] = world.actors;
     if (!ash || !birch) throw new Error("no actors");
@@ -240,6 +259,31 @@ describe("world", () => {
     expect([ash.x, ash.path.length]).toEqual([11, 1]);
     run(world, 1);
     expect([ash.x, ash.path.length, ash.blocked]).toEqual([11, 0, 0]);
+  });
+
+  it("of two walkers head to head, only the later one turns aside", () => {
+    const world = createWorld(firstLight(), 1, PROGRAMS, KINDS);
+    step(world, [
+      { type: "spawn", name: "Ash", x: 11, y: 11, program: "wanderer" },
+      { type: "spawn", name: "Birch", x: 12, y: 11, program: "wanderer", kind: "wolf" },
+    ]);
+    const [ash, birch] = world.actors;
+    if (!ash || !birch) throw new Error("no actors");
+    ash.wait = birch.wait = 1000;
+    ash.path = [
+      { x: 12, y: 11 },
+      { x: 13, y: 11 },
+    ];
+    birch.path = [
+      { x: 11, y: 11 },
+      { x: 10, y: 11 },
+    ];
+    run(world, 10);
+    expect(ash.path.length).toBe(2);
+    // Birch goes round Ash to where it was going, a couple of steps longer.
+    expect(birch.path.some((p) => p.x === 11 && p.y === 11)).toBe(false);
+    expect(birch.path[birch.path.length - 1]).toEqual({ x: 10, y: 11 });
+    expect(birch.path.length).toBeLessThanOrEqual(4);
   });
 
   it("drops spawn inputs it cannot honour", () => {

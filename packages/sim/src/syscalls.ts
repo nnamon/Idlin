@@ -49,7 +49,8 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "walk_to",
     kind: "action",
     args: 2,
-    about: "Walk to tile (x, y) by the shortest way.",
+    about:
+      "Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.",
   },
   {
     id: 9,
@@ -120,14 +121,16 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "step_clear",
     kind: "action",
     args: 0,
-    about: "Walk to the nearest free tile that no enemy attack is about to land on.",
+    about:
+      "Walk to the nearest tile no enemy attack is about to land on; an ally may be standing there.",
   },
   {
     id: 20,
     name: "flee",
     kind: "action",
     args: 2,
-    about: "Walk up to three tiles along the way that leads farthest from (x, y).",
+    about:
+      "Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster).",
   },
 ];
 
