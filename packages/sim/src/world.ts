@@ -68,10 +68,21 @@ function applyInput(world: World, input: Input): void {
   // Inputs come from outside the simulation, so nothing about their shape is assumed.
   const raw: unknown = input;
   if (typeof raw !== "object" || raw === null) return;
-  const { type, name, x, y } = raw as Record<string, unknown>;
+  let fields: Record<string, unknown>;
+  try {
+    // Read every field once, before anything changes, so a property that throws changes nothing.
+    const { type, name, x, y } = raw as Record<string, unknown>;
+    fields = { type, name, x, y };
+  } catch {
+    return;
+  }
+  const { type, name } = fields;
   if (type !== "spawn") return;
   if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return;
-  if (!isInt32(x) || !isInt32(y)) return;
+  if (!isInt32(fields.x) || !isInt32(fields.y)) return;
+  // `| 0` turns a negative zero into zero, so the stored position is what a snapshot would hold.
+  const x = fields.x | 0;
+  const y = fields.y | 0;
   if (!isWalkable(world.map, x, y) || actorAt(world, x, y)) return;
   world.actors.push({
     id: world.nextActorId++,
@@ -173,7 +184,9 @@ export function hashWorld(world: World): string {
   const { rng } = world;
   return hashInts([
     ...stringInts(hashMap(world.map)),
-    world.tick,
+    // The tick outgrows 32 bits after some years of uptime, so both halves are hashed.
+    world.tick % 0x1_0000_0000,
+    (world.tick - (world.tick % 0x1_0000_0000)) / 0x1_0000_0000,
     rng.a,
     rng.b,
     rng.c,
@@ -248,8 +261,10 @@ const MAX_WAIT_TICKS = 1_000_000;
 function readState(raw: unknown, map: TileMap): World | null {
   if (typeof raw !== "object" || raw === null) return null;
   const { tick, rng, nextActorId, actors } = raw as Record<string, unknown>;
-  if (!isInt32(tick) || tick < 0 || !isInt32(nextActorId) || nextActorId < 1) return null;
-  if (typeof rng !== "object" || rng === null || !Array.isArray(actors)) return null;
+  if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
+  // Actors are never removed, so ids are exactly 1..n and the next id is n + 1.
+  if (!Array.isArray(actors) || nextActorId !== actors.length + 1) return null;
+  if (typeof rng !== "object" || rng === null) return null;
   const { a, b, c, d } = rng as Record<string, unknown>;
   if (!isInt32(a) || !isInt32(b) || !isInt32(c) || !isInt32(d)) return null;
 
@@ -262,7 +277,7 @@ function readState(raw: unknown, map: TileMap): World | null {
       string,
       unknown
     >;
-    if (!isInt32(id) || id <= lastId || id >= nextActorId) return null;
+    if (id !== lastId + 1) return null;
     lastId = id;
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
     if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
@@ -286,6 +301,8 @@ function readState(raw: unknown, map: TileMap): World | null {
       steps.push(next);
       at = next;
     }
+    // The blocked count only runs while there is a path to wait on.
+    if (steps.length === 0 && blocked !== 0) return null;
     world.actors.push({ id, name, x, y, fromX, fromY, moveTicksLeft, path: steps, wait, blocked });
   }
   return world;

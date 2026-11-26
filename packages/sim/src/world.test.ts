@@ -32,7 +32,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("414cb0a903e847d4");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("f92e0a59d43460d0");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -156,6 +156,10 @@ describe("world", () => {
         },
       ],
       ["a missing name", (d) => delete actor(d).name],
+      ["a blocked count with no path", (d) => Object.assign(actor(d), { path: [], blocked: 3 })],
+      ["a gap in the ids", (d) => (actor(d).id = 2)],
+      ["a next id that skips ahead", (d) => (d.state.nextActorId = 9)],
+      ["a negative tick", (d) => (d.state.tick = -1)],
       ["an actor that is not an object", (d) => d.state.actors.push(null as never)],
     ];
     for (const [what, change] of forgeries) {
@@ -232,6 +236,14 @@ describe("world", () => {
       { type: "spawn", name: "Half", x: 13.5, y: 9 },
       null as never,
       "spawn" as never,
+      {
+        type: "spawn",
+        name: "Trap",
+        get x(): number {
+          throw new Error("no");
+        },
+        y: 9,
+      },
       { type: "move", name: "Mover", x: 12, y: 9 } as never,
       { type: "spawn", name: 7, x: 12, y: 9 } as never,
       { type: "spawn", name: "Texty", x: "12", y: 9 } as never,
@@ -242,6 +254,34 @@ describe("world", () => {
       [1, "Ash"],
       [2, "Birch"],
     ]);
+  });
+
+  it("runs, hashes and resumes past the 32-bit tick boundary", () => {
+    const map = firstLight();
+    const world = newWorld(4);
+    world.tick = 2 ** 31 - 2;
+    const before = hashWorld(world);
+    run(world, 5);
+    expect(world.tick).toBe(2 ** 31 + 3);
+    expect(hashWorld(restore(snapshot(world), map))).toBe(hashWorld(world));
+    const later = restore(snapshot(world), map);
+    later.tick += 2 ** 32;
+    expect(hashWorld(later)).not.toBe(hashWorld(world));
+    expect(before).not.toBe(hashWorld(world));
+  });
+
+  it("stores a spawn at negative zero as zero, as a snapshot would", () => {
+    const tiny = {
+      name: "one",
+      width: 1,
+      height: 1,
+      tiles: [0],
+      places: [{ name: "camp", x: 0, y: 0 }],
+    };
+    const world = createWorld(tiny, 1);
+    step(world, [{ type: "spawn", name: "Ash", x: -0, y: -0 }]);
+    expect(Object.is(world.actors[0]?.x, 0)).toBe(true);
+    expect(Object.is(world.actors[0]?.fromY, 0)).toBe(true);
   });
 
   it("starts at dawn and turns a day over every 24 minutes of ticks", () => {
