@@ -159,7 +159,7 @@ At night the same drawing is shown in pale ink on dark blue paper. Day and
 night are two separate drawings, and a frame that is half one and half the
 other looks broken, so the change between them is quick (a bit over half a
 minute). At nightfall the dark closes in on the lantern from the edges of the
-frame; at daybreak the light spreads back out from it. For that half minute
+map; at daybreak the light spreads back out from it. For that half minute
 there is a soft band, about 260 pixels wide, where both drawings show. The
 rest of the time the hour shows in the colour of the light, which shifts
 slowly: rose around dawn, amber towards dusk.
@@ -167,14 +167,16 @@ slowly: rose around dawn, amber towards dusk.
 At night each lamp shows the daytime drawing inside its reach: the lantern, the
 fire, and the small light every character carries. Names and place labels are
 drawn last, each wholly in day ink or wholly in night ink depending on the
-light where it sits, so they don't fade out at the edge of a lamp.
+light where it sits, so they don't fade out at the edge of a lamp. A name
+that has to move aside for another figure gets a short stroke back to its
+owner.
 
 The frame is 16:9. The map is on the left. On the right is a page with the
 clock and the residents, each with the rule its program is following. Along
-the bottom is one line saying what a program last decided. It is all one
-sheet, so the page changes between day and night along with the map; being
-farthest from the lantern, it goes dark first and light last. The typeface is
-IM Fell English.
+the bottom is one line saying what a program last decided. The page and the
+bottom line don't take part in the moving edge: they change between day and
+night ink in one go, over about three seconds, halfway through the turn. The
+typeface is IM Fell English.
 
 ## One player among many
 
