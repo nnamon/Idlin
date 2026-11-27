@@ -64,6 +64,7 @@ docker compose run --rm dev pnpm gate
 ## Docs
 
 - [docs/design.md](docs/design.md): what the game is meant to be
+- [docs/art.md](docs/art.md): how it is meant to be drawn, and how much of it is
 - [docs/roadmap.md](docs/roadmap.md): what's planned, in order
 - [docs/tactics.md](docs/tactics.md): the scripting language
 - [docs/stack.md](docs/stack.md): what it's built with and how to run things

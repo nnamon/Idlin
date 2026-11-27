@@ -7,7 +7,8 @@ after the fact. This file is the agreement the agents work to.
 
 Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 [docs/tactics.md](docs/tactics.md) (the language actors are programmed in),
-[docs/roadmap.md](docs/roadmap.md), [docs/watch-rubric.md](docs/watch-rubric.md).
+[docs/roadmap.md](docs/roadmap.md), [docs/watch-rubric.md](docs/watch-rubric.md),
+[docs/art.md](docs/art.md) (the art bible, for anything that changes the screen).
 
 ## 1. The mandate and its limits
 
@@ -15,8 +16,8 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
   Do not ask the operator for approval. Decide, record the decision, move on.
 - No deployment, no hosting, no publishing anywhere beyond this GitHub repo.
 - Everything runs locally: at most three builders at once, and at most three
-  reviewers or judges at once. The design child of a `look` issue and the
-  daily digest's watch judge count among those three.
+  reviewers or judges at once. The art director and the daily digest's watch
+  judge count among those three.
 - Capture runs are heavy, so only one runs at a time across the whole team.
   This holds for every capture, whether a builder, the conductor or the digest
   runs it. Before starting one, run
@@ -52,19 +53,27 @@ Read first: [docs/design.md](docs/design.md), [docs/stack.md](docs/stack.md),
 
 ## 2. Roles
 
-| Role            | Who                                                          | Owns                                                                                                                                                                                                                                                                                 |
-| --------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Conductor**   | Opus 5.5 (effort `medium`), in one long-running session      | The queue and the merge. Splits and orders issues so that builders don't collide, writes each builder's brief, starts the reviewers and judges, triages their findings, merges, and keeps `main` green. Plans the next milestone when the queue empties. Does not build.             |
-| **Builder**     | Opus 5.5 (effort `medium`), a child task in its own worktree | One `ready` issue, from branch to an open pull request with the gate green, the fixes the review sends back, the captures for a watch judgement, and the squash to one commit before the merge. Up to three run at once, each on an issue independent of the others.                 |
-| **Reviewer**    | Opus 5.5 (effort `medium`), a fresh child task               | An adversarial read of each pull request's diff, by a child that did not build it. Codex `gpt-6.2-sol` (reasoning effort `high`) may review instead while its usage limits allow. Mythos 5.2 reviews changes that are hard to get right. The pull request says which model reviewed. |
-| **Watch judge** | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures, the rubric and the number of the pull request to post on, which it does not read. Also the one to ask about art direction and look and feel.                                           |
+| Role             | Who                                                          | Owns                                                                                                                                                                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Conductor**    | Opus 5.5 (effort `medium`), in one long-running session      | The queue and the merge. Splits and orders issues so that builders don't collide, writes each builder's brief, starts the reviewers and judges, triages their findings, merges, and keeps `main` green. Plans the next milestone when the queue empties. Does not build.                     |
+| **Builder**      | Opus 5.5 (effort `medium`), a child task in its own worktree | One `ready` issue, from branch to an open pull request with the gate green, the fixes the review sends back, the captures for a watch judgement, and the squash to one commit before the merge. Up to three run at once, each on an issue independent of the others.                         |
+| **Reviewer**     | Opus 5.5 (effort `medium`), a fresh child task               | An adversarial read of each pull request's diff, by a child that did not build it. Codex `gpt-6.2-sol` (reasoning effort `high`) may review instead while its usage limits allow. Mythos 5.2 reviews changes that are hard to get right. The pull request says which model reviewed.         |
+| **Watch judge**  | Mythos 5.2, a fresh child task                               | Scores real captures against [docs/watch-rubric.md](docs/watch-rubric.md). Gets the captures, the rubric and the number of the pull request to post on, which it does not read.                                                                                                              |
+| **Art director** | Mythos 5.2, a fresh child task                               | The look. Owns [docs/art.md](docs/art.md), the art bible. Writes the art brief on every `look` issue before it is claimed, signs off each `look` pull request's capture against the bible's checklist, and files `look` issues for what is rough, in the order to redraw it. Does not build. |
 
 Every Claude child runs on Opus 5.5 at effort `medium` or higher; Sonnet and
 Haiku are not used. Mythos 5.2 judges how the game looks and plays on screen,
 and reviews code when the change is hard to get right: concurrency, data
 safety, the simulation's determinism, or a large change. It does not build.
 When Mythos cannot be reached, Codex judges, or a fresh Opus 5.5 child at
-effort `high`. Every child task named here runs at effort `medium` unless the
+effort `high`; the same goes for the art director's briefs and sign-offs.
+
+The art director and the watch judge look at the same captures for different
+things. The judge is told nothing about the change and says whether the stream
+is worth watching and whether it got better or worse. The art director wrote
+the brief, knows what the change was for, and says whether it is drawn to
+[docs/art.md](docs/art.md). One child never does both for the same pull
+request. Every child task named here runs at effort `medium` unless the
 table or this paragraph says otherwise.
 
 Antigravity is not used: its children can stall on approval prompts, which an
@@ -72,7 +81,8 @@ unattended cycle cannot answer.
 
 A reviewer is a fresh child that did not build the change; it may be the same
 model as the builder. The conductor never acts as
-reviewer or watch judge, because it knows what the change was meant to do. It
+reviewer or watch judge, because it knows what the change was meant to do,
+nor as art director, because the look needs one owner who does nothing else. It
 does not build either: its time goes on keeping three builders busy on work
 that won't collide, and on getting their pull requests reviewed and merged.
 
@@ -90,7 +100,9 @@ Work lives in GitHub issues, grouped by milestone. Labels:
   or the tooling around it.
 
 An issue is `ready` only if it states what to build, how it will be shown to
-work (tests, and captures if it is visible), and what it leaves out.
+work (tests, and captures if it is visible), and what it leaves out. A `look`
+issue gets the art director's brief as a comment before its builder starts: what to draw, by which sections of [docs/art.md](docs/art.md), and
+what the capture must show.
 
 **What to work on, in order:**
 
@@ -133,8 +145,10 @@ it, and their numbers are not the procedure's:
 
 1. **Claim** (conductor). Label the issue `in-progress` and comment that the
    cycle started.
-2. **Brief** (conductor). Start a builder with the issue, the files it is
-   likely to touch, and what the other builders are working on.
+2. **Brief** (conductor). For a `look` issue with no art brief yet, start the
+   art director first to write one on the issue. Then start a builder with
+   the issue, the files it is likely to touch, and what the other builders
+   are working on.
 3. **Branch** (builder) from fresh `main`: `i<issue>-<slug>`.
 4. **Build** (builder) to the issue. Keep the change as small as the issue
    allows.
@@ -147,9 +161,10 @@ it, and their numbers are not the procedure's:
    against the code, sends the blocking ones to a new builder on the
    branch, and answers the others in a PR comment that links to the
    review. Re-review only when a fix was large or risky.
-8. **Watch judge**, for `look` changes: the builder captures `main` and the
-   branch, the conductor starts the judge on the two folders, and the judge
-   posts its verdict on the pull request.
+8. **Watch judge and art sign-off**, for `look` changes: the builder captures
+   `main` and the branch, the conductor starts the judge and the art director
+   on the two folders, and each posts on the pull request: the judge its
+   verdict, the art director its sign-off against the bible's checklist.
 9. **Merge** as one commit (step 8 of the procedure) once section 5 holds.
    A builder squashes the branch to one commit when the conductor says so;
    if `main` moves after that, the conductor re-squashes it itself. The
@@ -175,6 +190,8 @@ follow a change from its issue:
 - A builder fixing findings replies to each inline comment (fixed, or why
   not) and resolves the thread.
 - The watch judge posts its verdict on the pull request.
+- The art director posts its brief on the issue and its sign-off on the pull
+  request. The sign-off's last line says ART-OK or ART-REDO.
 
 Every post is signed with its role tag (section 7) and follows section 1.
 [process/cycle.md](process/cycle.md) has the commands.
@@ -193,7 +210,8 @@ A pull request is merged only when all of these hold:
 - new core logic (simulation rules, saving, the server) has a test that would
   fail without it; viewer code has a test where there is something to compute,
   not for every visual detail;
-- for a `look` change: a capture with no hard fail and no "worse" verdict;
+- for a `look` change: a capture with no hard fail and no "worse" verdict,
+  and the art director's ART-OK;
 - docs describe the repo as it now is.
 
 Each pull request gets one code review. A finding blocks only if it is a real
@@ -203,12 +221,19 @@ listed and do not block, except for determinism and saving. Blocking findings
 are fixed once and the pull request merges without another full review,
 unless the fix itself was large or risky. The watch judge looks once per
 `look` pull request; anything short of a hard fail or a "worse" verdict
-becomes a follow-up issue.
+becomes a follow-up issue. The art director also looks once. It says ART-REDO
+only for a miss on one of the hard items of the checklist in
+[docs/art.md](docs/art.md), section 13, within what the issue set out to
+draw; the builder fixes those once and the art director looks again at the
+fixed capture only. Every other miss becomes a follow-up `look` issue. A
+`look` pull request opened before its issue had a brief, or before the one pen
+of the art backlog has landed, is signed off only against what it set out to
+draw; everything else it falls short of in the bible becomes a follow-up.
 
-If no reviewer can be reached, or for a `look` change no judge, the pull
-request stays open with a comment saying so. The conductor gives the builder
-slots other work and retries later. Nothing merges unreviewed or, for a `look`
-change, unjudged.
+If no reviewer can be reached, or for a `look` change no judge or no art
+director, the pull request stays open with a comment saying so. The conductor
+gives the builder slots other work and retries later. Nothing merges
+unreviewed or, for a `look` change, unjudged or without the art sign-off.
 
 Never force-push `main` or rewrite its history. A bad merge is undone with a
 revert pull request.
@@ -276,7 +301,8 @@ Anyone can open an issue, comment or pull request on a public repo.
   shows whether it waits, is being built, is in review, is blocked or is done.
 - **Issues and pull requests:** each issue's comments say who took it and
   what they decided; each pull request carries its review and, for a `look`
-  change, the watch judge's verdict.
+  change, the watch judge's verdict and the art director's sign-off. A `look`
+  issue carries its art brief.
 - **`docs/decisions/`:** each decision of consequence, short, with the
   alternative that was rejected.
 

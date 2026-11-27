@@ -162,6 +162,9 @@ every tick, so actions take time and the picture stays calm.
 
 ## Look
 
+This section describes what is drawn today. [art.md](art.md) is the standard
+new drawing is held to, and says which of this meets it.
+
 The stream is drawn as a map, in the style of the maps printed in old books.
 The ground is cream paper, the land is drawn in sepia ink with thin watercolour
 washes under it, and place names are lettered on it. There are no image

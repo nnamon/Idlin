@@ -15,7 +15,7 @@ about the last one.
 
 The agents talk to each other on the issue and the pull request, where the
 operator can follow along. Every post is signed with its role tag
-(`[conductor]`, `[builder]`, `[reviewer]`, `[watch judge]`) and is checked
+(`[conductor]`, `[builder]`, `[reviewer]`, `[watch judge]`, `[art director]`) and is checked
 against section 1 of `AGENTS.md` before it goes up.
 
 Issues are tracked on the project board
@@ -60,7 +60,7 @@ cat "$(git rev-parse --git-dir)/idlin.lock" 2>/dev/null
 
   ```sh
   gh api 'repos/nnamon/Idlin/issues/comments?sort=updated&direction=desc&per_page=100' \
-    --jq '[.[] | select(.body | test("^\\[(conductor|builder|reviewer|watch judge)\\]"))
+    --jq '[.[] | select(.body | test("^\\[(conductor|builder|reviewer|watch judge|art director)\\]"))
            | select(.body | startswith("[conductor] (scheduled run)") | not)
            | select(now - (.created_at | fromdateiso8601) < 9000)] | length'
   gh api 'repos/nnamon/Idlin/activity?per_page=1' \
@@ -112,16 +112,34 @@ with its Area.
 
 ## 3. Brief
 
-For a `look` issue whose design is still open, first ask a Mythos 5.2 child
-(`delegate_task`, role `design`, effort `medium`, no worktree: it only reads)
-for direction: the issue, current captures, and what the options are. It
-counts as one of the three reviewers or judges. If Mythos cannot be reached,
-the conductor decides and says so on the issue.
+A `look` issue needs the art director's brief before a builder is started on
+it. If the issue has no comment signed `[art director]`, start the art
+director first: a Mythos 5.2 child (`delegate_task`, role `design`, effort
+`medium`, no worktree: it only reads) with the issue number, `docs/art.md`,
+and the newest capture folders. It posts the brief on the issue
+(`gh issue comment <N> -R nnamon/Idlin --body-file -`), signed
+`[art director] <model>`, and reports the comment's URL. A brief says:
+
+- what is to be drawn, and at which sizes (far, mid, near);
+- the sections of `docs/art.md` that govern it, and any choice the bible
+  leaves open, decided (a colour, a proportion, a timing);
+- what must not change;
+- which frames the capture must contain, and what the art director will look
+  for in them at sign-off.
+
+It is short: a builder should be able to hold it in mind while drawing. If the
+issue needs something the bible does not cover, the art director says so in
+the brief and opens a pull request against `docs/art.md`; the builder works
+to the brief meanwhile. The art director counts as one of the three reviewers
+or judges. If Mythos cannot be reached, Codex `gpt-6.2-sol` or a fresh Opus
+5.5 child at effort `high` writes the brief from `docs/art.md`; if none can
+be reached, the issue waits and the slot takes other work.
 
 Start the builder: one `delegate_task` child on Opus 5.5 (effort `medium`)
 with `isolation: "worktree"`. Its brief gives the issue number, the docs to
-read, the files the change is likely to touch, the design direction if there
-is one, what the other running builders are working on (so it stays out of
+read (`docs/art.md` and the art brief for a `look` issue), the files the
+change is likely to touch, what the other running builders are working on (so
+it stays out of
 their files), and steps 4 and 5 of this procedure, plus step 7 for a `look`
 issue. It reports the pull request URL and head
 commit. The builder does not push to `main`.
@@ -142,8 +160,9 @@ git worktree remove --force <path>    # each such line's path; only a builder's 
 ```
 
 A builder's worktree that holds capture folders for a watch judgement (step
-7) is kept until the judge's verdict is posted, and the removal above skips
-it until then. The judge reads the folders from there.
+7) is kept until both the judge's verdict and the art director's sign-off are
+posted, and the removal above skips it until then. The judge and the art
+director read the folders from there.
 
 The new builder still never checks out `<branch>` itself, in case a worktree
 holding it was missed. It works on a local branch of another name made from
@@ -354,6 +373,38 @@ daily one in `process/daily.md`.
 Which checks apply depends on what exists so far; see "What applies when" in
 `docs/watch-rubric.md`.
 
+### Art sign-off
+
+Alongside the judge, the conductor starts the art director (`delegate_task`,
+role `design`, Mythos 5.2 at effort `medium`, with the same fallbacks and the
+same 60-minute limit as the judge; no worktree) with the two capture folders,
+the issue number and the pull request number. Unlike the judge, it reads the
+issue and its own brief there. It need not read the diff. It must be a
+different child from the one judging this pull request.
+
+It opens the branch's frames at full size and at 640 wide, by day and at
+night, goes down the checklist in section 13 of `docs/art.md`, and posts on
+the pull request (`gh pr comment <P> -R nnamon/Idlin --body-file -`), signed
+`[art director] <model>`:
+
+- each hard item of the checklist as met or missed, a miss with the frame and
+  the place in it;
+- the soft items it found missed, at most five, ranked by how much each hurts
+  the picture;
+- a last line of `ART-OK` or `ART-REDO`.
+
+`ART-REDO` is only for a hard item missed in what the issue set out to draw.
+Something rough that the change did not touch is not a reason; the art
+director files it as its own `look` issue. After an `ART-REDO` the change
+goes back to a builder (step 4) once, and the art director looks again at
+the fixed capture only. Soft misses and anything else it noticed become
+`look` issues, filed by the art director with the frame they were seen in
+and added to the board by the conductor.
+
+When the art backlog is thin, or after a milestone closes, the conductor may
+start the art director on the daily capture alone to audit the screen and
+file what to redraw next, in order.
+
 ## 8. Merge
 
 When every gate in section 5 of `AGENTS.md` holds, merge the branch as one
@@ -491,8 +542,8 @@ capture, embed the storyboard.
   the slots once and stops when each of its pull requests has merged or waits
   on something it cannot get this run.
 - At most three builders at a time, and at most three reviewers or judges at
-  a time, as section 1 of `AGENTS.md` says. The conductor builds nothing
-  itself.
+  a time, as section 1 of `AGENTS.md` says; the art director is one of those
+  three whenever it runs. The conductor builds nothing itself.
 - A builder with no activity for 60 minutes is replaced, as in step 3. A
   reviewer with none for 90 minutes, or a judge with none for 60, is stopped
   and its work goes to the fallback model, as in steps 6 and 7.
