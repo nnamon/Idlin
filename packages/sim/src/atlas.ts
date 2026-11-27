@@ -114,6 +114,25 @@ export function linked(atlas: Atlas, ax: number, ay: number, bx: number, by: num
   );
 }
 
+/**
+ * The box tile one step from box tile `tile` in direction `d` (an index into
+ * NEIGHBOURS), if `linked` joins the two, else -1. With `within`, only a step
+ * that stays in the region counts. The same answer as `linked`, by tile
+ * number, for searches that take many steps.
+ */
+export function stepTile(atlas: Atlas, tile: number, d: number, within: boolean): number {
+  const { width, open, regionOf } = atlas;
+  const cx = tile % width;
+  let next: number;
+  if (d === 0) next = tile - width;
+  else if (d === 1) next = cx === width - 1 ? -1 : tile + 1;
+  else if (d === 2) next = tile + width;
+  else next = cx === 0 ? -1 : tile - 1;
+  if (next < 0 || next >= open.length || !open[tile] || !open[next]) return -1;
+  if (regionOf[tile] === regionOf[next]) return next;
+  return !within && ((atlas.exitBits[tile] as number) & (1 << d)) !== 0 ? next : -1;
+}
+
 const wrapped = new WeakMap<TileMap, Atlas>();
 
 /** A world of one region, the map itself at world (0, 0) with no exits; an atlas is returned as it is. */

@@ -252,38 +252,44 @@ ceiling of 80 trims a few.
 
 ### 3.5 What a tick costs
 
-Timed on the shipped world, in the dev container, shipped programs, 3,000
-ticks after a 600-tick warm-up, with everyone starting at the camp:
+`packages/sim/src/scale.test.ts` times the tick on one 120 by 80 map
+(`bigMap` in `testing.ts`) with the shipped programs: a quarter of the actors
+residents, the rest wolves and goblins in equal numbers, each on a random
+tile, with monsters that go down replaced between ticks so the crowd keeps
+its size. In the dev container under plain Node, 1,000 ticks after 100
+untimed, the range over several runs:
 
-| Residents | Mean tick | Worst tick | Snapshot |
-| --------: | --------: | ---------: | -------: |
-|        15 |   0.09 ms |       3 ms |     8 KB |
-|        50 |   0.23 ms |       4 ms |    24 KB |
-|       150 |    0.9 ms |       7 ms |    67 KB |
-|       300 |    2.4 ms |      17 ms |   134 KB |
-|       450 |    5.0 ms |      24 ms |   199 KB |
-|       650 |   11.5 ms |      49 ms |   280 KB |
+| Actors | Residents | Monsters |  Mean tick | Worst tick |
+| -----: | --------: | -------: | ---------: | ---------: |
+|    150 |        38 |      112 | 0.6–0.7 ms |    5–11 ms |
+|    300 |        75 |      225 | 1.4–1.5 ms |    6–10 ms |
+|    600 |       150 |      450 | 3.5–4.2 ms |   12–18 ms |
 
-The cost grows with nearly the square of the actor count, because sensors and
-blocking checks look through every actor in the world. A tick has 100 ms, and
-the server stops a wake after 50 ms of work. From that:
+The bar is a mean tick of 4 ms or less and a worst tick of 25 ms or less at
+150 residents and 450 monsters, in the dev container; anyone who changes the
+simulation's cost checks it there with `IDLIN_LONG=1`, which times 3,000
+ticks and also 150 and 300 actors. The gate times 300 ticks and prints the
+result without checking it, because a tick's time depends on what else the
+machine is doing. The long run fails above four times the bar, since a shared
+runner is slower than the dev container. The ticks
+are timed in a Node process of their own, as the server runs the world,
+because under Vitest's module loader the same code runs nearly twice as
+slowly.
 
-- The M1 candidate, about 160 actors, is near 1 ms a tick. No change needed.
-- 852 actors would be about 20 ms a tick on that curve, with worst ticks near
-  85 ms. The server could not keep ten ticks a second.
-- The fix is to keep actors in a list per region and have sensors, blows and
-  blocking look only at their own region, which decision 0017 already makes
-  the rule. Eleven regions of 77 actors make about 66,000 pairs. That is three
-  times what 150 residents in one place make, which costs 0.9 ms today, and
-  an eleventh of what 852 actors in one list make. So the full night should come to
-  2 to 4 ms. Dormant regions and a 200-step limit on fodder programs cut it
-  further.
-
-#316 does the per-region lists and the measurement. The bar is a mean tick of
-4 ms or less and a worst tick of 25 ms or less, at 150 residents with four
-regions at their night budgets (470 actors). The same bar is checked again
-when M4 and M5 add regions. If it cannot be met, budgets come down before
-packs get smaller: the ceiling of 80 a region goes to 60.
+Who stands where is kept in `grid.ts`: actors in cells of 8 by 8 tiles, in
+update order, with a count per tile of who stands there and whose walk ends
+there, and a count per region of residents and monsters. `step` holds one
+grid for the pass in which actors update; every move, walk and mark goes
+through `grid.ts`, which keeps it in step. Sensing the nearest enemy,
+counting friends, blocking, landing blows and finding a free tile to walk to
+look at nearby cells or single tiles of the actor's own region, not at every
+actor. What a tick costs now is mostly path searches: `walk_to` and
+`step_to` search breadth-first until they reach the goal, so a walk costs the
+area around it, and a goal that a crowd has cut off (monsters holding a
+one-tile bridge, say) costs everything the walker can reach. A tick has 100 ms, and
+the server stops a wake after 50 ms of work. If the bar cannot be met when
+more regions open, budgets come down before packs get smaller: the ceiling of
+80 a region goes to 60.
 
 Worst-case VM work at the full night: 150 residents at 2,000 steps and 702
 monsters at 200 to 2,000, each deciding every 2 ticks at most, is about

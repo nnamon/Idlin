@@ -16,6 +16,20 @@ import {
 import { BAG_SLOTS, emptyBag, emptyBank, GOODS, MAX_BANKED } from "./bag.ts";
 import { MAX_STALLED, think, wayTo } from "./brain.ts";
 import { fullNodes, type NodeState, regrowNodes } from "./gather.ts";
+import {
+  addMark,
+  allAt,
+  countWithin,
+  firstAt,
+  type Grid,
+  gridOf,
+  holdGrid,
+  putAt,
+  releaseGrid,
+  setPath,
+  stepOff,
+  stepOnto,
+} from "./grid.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
@@ -560,7 +574,7 @@ export const mending = (actor: Actor): boolean =>
   actor.kind === ADVENTURER && actor.wait > 0 && actor.rule === -1 && actor.fault === 0;
 
 export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
-  world.actors.find((a) => a.x === x && a.y === y);
+  firstAt(gridOf(world), x, y, () => true);
 
 /**
  * Whether `a` and `b` get in each other's way. Adventurers walk through each
@@ -572,7 +586,7 @@ export const blocks = (a: Actor, b: Actor): boolean =>
 
 /** Someone on (x, y) who gets in `mover`'s way, if anyone does. */
 export const blockerAt = (world: World, x: number, y: number, mover: Actor): Actor | undefined =>
-  world.actors.find((a) => a.x === x && a.y === y && blocks(a, mover));
+  firstAt(gridOf(world), x, y, (a) => blocks(a, mover));
 
 /**
  * Something that happened during a tick, for whoever is watching: the ticker,
@@ -709,13 +723,30 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
   sendHome(world, events);
   spawnMonsters(world);
   landAttacks(world, events);
-  for (const actor of world.actors) updateActor(world, actor, events);
+  // Nobody joins or leaves the world while the actors update, and only a step
+  // moves one, so one grid of who stands where serves the whole pass.
+  holdGrid(world);
+  try {
+    for (const actor of world.actors) updateActor(world, actor, events);
+  } finally {
+    releaseGrid(world);
+  }
   return events;
 }
 
 /** Counts every wind-up down, lands the attacks that are due, and takes out whoever has no hitpoints left. */
 function landAttacks(world: World, events: WorldEvent[]): void {
   const struck = new Map<number, number>();
+  // Nobody moves while blows land, so one grid serves them all.
+  let grid: Grid | undefined;
+  // Each attacker's marks, in the order they were made.
+  const marksBy = new Map<number, Mark[]>();
+  for (const mark of world.marks) {
+    const own = marksBy.get(mark.by);
+    if (own) own.push(mark);
+    else marksBy.set(mark.by, [mark]);
+  }
+  const landed = new Set<number>();
   for (const attacker of world.actors) {
     if (attacker.windup === 0) continue;
     attacker.windup--;
@@ -723,12 +754,16 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     if (attacker.windup > 0 || attacker.hp <= 0) continue;
     const kind = kindOf(world, attacker);
     attacker.recover = kind.recovery;
-    for (const mark of world.marks) {
-      if (mark.by !== attacker.id) continue;
+    landed.add(attacker.id);
+    for (const mark of marksBy.get(attacker.id) ?? []) {
       // Adventurers can share a tile, so a blow lands on every enemy standing
       // there. One mending at camp after a down is passed by.
-      const targets = world.actors.filter(
-        (a) => a.x === mark.x && a.y === mark.y && a.hp > 0 && enemies(a, attacker) && !mending(a),
+      grid ??= gridOf(world);
+      const targets = allAt(
+        grid,
+        mark.x,
+        mark.y,
+        (a) => a.hp > 0 && enemies(a, attacker) && !mending(a),
       );
       if (targets.length === 0) {
         events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
@@ -754,8 +789,8 @@ function landAttacks(world: World, events: WorldEvent[]): void {
           events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
       }
     }
-    world.marks = world.marks.filter((mark) => mark.by !== attacker.id);
   }
+  if (landed.size > 0) world.marks = world.marks.filter((mark) => !landed.has(mark.by));
   const out = world.actors.filter((actor) => actor.hp <= 0);
   if (out.length === 0) return;
   const gone = new Set(out.map((actor) => actor.id));
@@ -778,10 +813,9 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     if (actor.kind !== ADVENTURER) continue;
     // An adventurer is carried back to camp and rests there. What it loses by this is not decided here.
     const bed = freeTileNear(world, place(world.atlas, "camp"), actor) ?? actor;
-    actor.x = actor.fromX = bed.x;
-    actor.y = actor.fromY = bed.y;
+    putAt(world, actor, bed.x, bed.y);
     actor.moveTicksLeft = 0;
-    actor.path = [];
+    setPath(world, actor, []);
     actor.blocked = 0;
     actor.windup = 0;
     actor.recover = 0;
@@ -943,20 +977,18 @@ const holdSpawns = (world: World, region: number, from = world.tick): void => {
  */
 function sendHome(world: World, events: WorldEvent[]): void {
   const now: Shift = isNight(world) ? "night" : "day";
-  const going = world.actors.filter(
-    (actor) =>
-      actor.shift !== "" &&
-      actor.shift !== now &&
-      actor.windup === 0 &&
-      !world.actors.some(
-        (other) =>
-          other.kind === ADVENTURER &&
-          Math.abs(other.x - actor.x) + Math.abs(other.y - actor.y) <= LEAVE_DISTANCE &&
-          sameRegion(world, other, actor),
-      ),
-  );
+  let grid: Grid | undefined;
+  const going = world.actors.filter((actor) => {
+    if (actor.shift === "" || actor.shift === now || actor.windup !== 0) return false;
+    grid ??= gridOf(world);
+    const near = (other: Actor): boolean =>
+      other.kind === ADVENTURER && sameRegion(world, other, actor);
+    const area = world.atlas.regions[regionAt(world.atlas, actor.x, actor.y)] as Region;
+    return countWithin(grid, actor.x, actor.y, LEAVE_DISTANCE, area, near) === 0;
+  });
   if (going.length === 0) return;
-  world.actors = world.actors.filter((actor) => !going.includes(actor));
+  const gone = new Set(going);
+  world.actors = world.actors.filter((actor) => !gone.has(actor));
   for (const actor of going) {
     const { id, name, kind, x, y } = actor;
     events.push({ type: "leave", tick: world.tick, actor: id, name, kind, x, y });
@@ -1125,25 +1157,22 @@ function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
       const detour = wayTo(world, actor, goal);
       const end = detour[detour.length - 1];
       if (end?.x === goal.x && end.y === goal.y && detour.length <= actor.path.length + 2) {
-        actor.path = detour;
+        setPath(world, actor, detour);
         return;
       }
-      actor.path = [];
+      setPath(world, actor, []);
       actor.blocked = 0;
     } else if (actor.blocked >= 2 * BLOCKED_PATIENCE_TICKS) {
-      actor.path = [];
+      setPath(world, actor, []);
       actor.blocked = 0;
     }
     return;
   }
-  actor.path.shift();
+  stepOff(world, actor);
   // A walk that has been re-routed once stays marked as such until the next decision.
   actor.blocked =
     actor.blocked >= BLOCKED_PATIENCE_TICKS && actor.path.length > 0 ? BLOCKED_PATIENCE_TICKS : 0;
-  actor.fromX = actor.x;
-  actor.fromY = actor.y;
-  actor.x = next.x;
-  actor.y = next.y;
+  stepOnto(world, actor, next.x, next.y);
   actor.moveTicksLeft = stepTicks(world, actor);
 }
 
@@ -1869,7 +1898,7 @@ export function readState(
     const last = world.marks.at(-1);
     if (marksOf.has(by) && last?.by !== by) return null;
     marksOf.set(by, [...(marksOf.get(by) ?? []), { x, y }]);
-    world.marks.push({ x, y, by });
+    addMark(world, { x, y, by });
   }
   const same = (a: readonly Point[], b: readonly Point[]): boolean =>
     a.length === b.length && a.every((p, i) => p.x === b[i]?.x && p.y === b[i]?.y);

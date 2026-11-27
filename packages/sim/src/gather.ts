@@ -6,6 +6,7 @@
 
 import { type Atlas, regionAt, terrainOf, tileAt, walkable } from "./atlas.ts";
 import { goodId } from "./bag.ts";
+import { gridOf, tallyOf, tileOf } from "./grid.ts";
 import { NEIGHBOURS, type Point } from "./map.ts";
 import { NODE_KINDS, type NodeKind, nodeKind } from "./nodes.ts";
 import { chance } from "./rng.ts";
@@ -86,13 +87,15 @@ const steps = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y
  */
 export function nearestNode(world: World, actor: Actor, kindId: number): Point | null {
   const { atlas } = world;
-  const taken = new Set<number>();
-  for (const other of world.actors) {
-    if (other === actor) continue;
-    taken.add(tileAt(atlas, other.x, other.y));
-    const end = other.path[other.path.length - 1];
-    if (end) taken.add(tileAt(atlas, end.x, end.y));
-  }
+  // Someone else stands on the tile or is walking to it: the grid's tally less this actor's share.
+  const grid = gridOf(world);
+  const { standing, ending } = tallyOf(grid);
+  const here = tileOf(grid, actor.x, actor.y);
+  const own = actor.path[actor.path.length - 1];
+  const ownEnd = own ? tileOf(grid, own.x, own.y) : -1;
+  const taken = (tile: number): boolean =>
+    (standing[tile] as number) - (tile === here ? 1 : 0) > 0 ||
+    (ending[tile] as number) - (tile === ownEnd ? 1 : 0) > 0;
   let best: Point | null = null;
   for (let index = 0; index < atlas.nodes.length; index++) {
     const node = atlas.nodes[index] as (typeof atlas.nodes)[number];
@@ -101,7 +104,7 @@ export function nearestNode(world: World, actor: Actor, kindId: number): Point |
     for (const [dx, dy] of NEIGHBOURS) {
       const side = { x: node.x + dx, y: node.y + dy };
       if (!walkable(atlas, side.x, side.y) || regionAt(atlas, side.x, side.y) !== region) continue;
-      if (taken.has(tileAt(atlas, side.x, side.y))) continue;
+      if (taken(tileAt(atlas, side.x, side.y))) continue;
       if (!best || steps(actor, side) < steps(actor, best)) best = side;
     }
   }
