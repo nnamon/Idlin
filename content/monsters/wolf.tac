@@ -3,8 +3,8 @@ bot "Wolf"
 # Remembers where it came out, and keeps to that part of the map. By day it keeps
 # well away from the fire; by night it comes up to the camp's edge.
 when home_x == 0 and home_y == 0 -> set home_x = self_x; set home_y = self_y; idle
-when distance(camp) < 5 and hour >= 6 and hour < 19 as "shy of the fire" -> walk_to(home_x, home_y)
-when distance(camp) < 4 as "shy of the fire" -> walk_to(home_x, home_y)
+when distance(camp) < 5 and hour >= 6 and hour < 19 as "too near camp" -> walk_to(home_x, home_y)
+when distance(camp) < 4 as "too near camp" -> walk_to(home_x, home_y)
 
 # Lunges when its prey is in line and in reach with nothing between them, twice at
 # most from one tile; otherwise circles it, two tiles off. Prey that keeps stepping
@@ -18,7 +18,7 @@ when (lunges < 2 or self_x != lunge_x or self_y != lunge_y) and threat_distance 
   set lunges = (self_x == lunge_x) * (self_y == lunge_y) * lunges + 1;
   set lunge_x = self_x; set lunge_y = self_y;
   attack(threat_x, threat_y)
-when stalled >= 4 as "nowhere to go" -> wander
+when stalled >= 4 as "stuck" -> wander
 when stalled >= 2 and threat_distance <= 8 as "press in" -> step_to(threat_x, threat_y)
 when threat_distance <= 8 as "circle" ->
   set turn = (turn + 1) mod 4;

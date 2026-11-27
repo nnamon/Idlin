@@ -877,8 +877,8 @@ describe("the camp's edge", () => {
           e.type === "decide" ? [program.rules[e.rule] as string] : [],
         );
       }
-      expect(rules.day, kind).toContain("shy of the fire");
-      expect(rules.night, kind).not.toContain("shy of the fire");
+      expect(rules.day, kind).toContain("too near camp");
+      expect(rules.night, kind).not.toContain("too near camp");
       expect(rules.night?.length, kind).toBeGreaterThan(1);
     }
   });
@@ -903,7 +903,7 @@ describe("the camp's edge", () => {
           e.type === "decide" ? [program.rules[e.rule] as string] : [],
         );
         // After the first decision, which only notes where home is.
-        expect(rules[1], `${kind} at ${at.x},${at.y}`).toBe("shy of the fire");
+        expect(rules[1], `${kind} at ${at.x},${at.y}`).toBe("too near camp");
       }
     }
   });

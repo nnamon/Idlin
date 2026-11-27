@@ -18,7 +18,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 // at (0, 0), where the view starts; the map's own size and labels are that
 // map's. The view moves only once the spotlight goes to another region.
 import mapJson from "../../../content/maps/camp.json";
-import { rawWorld, shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
+import { rawWorld, shippedMonsters, shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
 import { type Effects, glyphAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
 import { FRAME_HEIGHT, FRAME_WIDTH, ROW_PITCH, spreadPage } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
@@ -27,7 +27,7 @@ import { css } from "./light.ts";
 import { eat, ROUTE_ROW, routeLine } from "./marks.ts";
 import { DAY, NIGHT } from "./palette.ts";
 import { actorPose } from "./pose.ts";
-import { Scene } from "./scene.ts";
+import { NEWS_STALE, Scene } from "./scene.ts";
 import { FADE, MIN_HOLD, type Slips, slipAlpha } from "./slips.ts";
 import { type Box, bodyBox, type TagWish } from "./tags.ts";
 import { edgeFade, type Window, windowView } from "./view.ts";
@@ -112,9 +112,21 @@ const PROGRAMS = ["wanderer", "homebody", "riverwalker"];
 const WORLD = shippedWorld();
 const MAPS = rawWorld().maps;
 const SHIPPED = shippedPrograms(WORLD);
+const MONSTERS = shippedMonsters(WORLD);
+/** A line of news: it starts with whom it is about, and tells what happened to them. */
+const NEWS = /^(\w+) (is|was|killed|took) /;
 
-function newWorld(residents = 6, seed = 1): World {
-  const world = createWorld(WORLD, seed, SHIPPED);
+/** The shipped world with `residents` in it, and with its monsters if `monsters`, so there are fights to tell of. */
+function newWorld(residents = 6, seed = 1, monsters = false): World {
+  const world = monsters
+    ? createWorld(
+        WORLD,
+        seed,
+        { ...SHIPPED, ...MONSTERS.programs },
+        MONSTERS.kinds,
+        MONSTERS.spawns,
+      )
+    : createWorld(WORLD, seed, SHIPPED);
   step(
     world,
     spawnsNearCamp(
@@ -389,7 +401,8 @@ describe("the scene", () => {
     expect([out.width, out.height]).toEqual([FRAME_WIDTH, map.height * 48]);
     // In a frame only as tall as the map, the line of news is written on the page, not below the map.
     const news = (calls: Call[]): Call | undefined =>
-      calls.findLast((c) => c.op === "fillText" && String(c.args[0]).startsWith("Day 1"));
+      // The day, or when the world has residents, what one of them is doing.
+      calls.findLast((c) => c.op === "fillText" && /^(Day 1|\w+ is )/.test(String(c.args[0])));
     scene.resize(2200, map.height * 48);
     const onPage = news(drawn(day, () => scene.draw(world, world.tick)));
     expect(onPage?.args[1]).toBeGreaterThan(map.width * 48);
@@ -416,6 +429,17 @@ describe("the scene", () => {
     const foot = drawn(crowded.day, () => crowded.scene.draw(crowd, crowd.tick));
     const more = foot.find((c) => c.op === "fillText" && c.args[0] === "and 6 more");
     const line = news(foot);
+    // Nothing has happened yet, so it tells of one of the six the page does not list.
+    const listed = foot.filter(
+      (c) =>
+        c.op === "fillText" &&
+        (c.args[1] as number) > map.width * 48 &&
+        crowd.actors.some((a) => a.name === c.args[0]),
+    );
+    expect(listed).toHaveLength(6);
+    const told = String(line?.args[0]).split(" is ")[0];
+    expect(crowd.actors.map((a) => a.name)).toContain(told);
+    expect(listed.map((c) => c.args[0])).not.toContain(told);
     // A 30-pixel line of italic needs about 40 pixels clear above its baseline.
     expect((line?.args[2] as number) - (more?.args[2] as number)).toBeGreaterThanOrEqual(40);
     expect(below?.args[1]).toBeLessThan(map.width * 48);
@@ -423,46 +447,54 @@ describe("the scene", () => {
   });
 
   it("in a crowd writes at most eight names on the map; with six, all of them", async () => {
-    const crowd = newWorld(30);
-    const { scene, out, day } = await newScene();
-    scene.observe(crowd);
-    // Thirty residents start out together at camp, so slips come as they are
-    // named in the news or wander apart. Every frame keeps to the budget, and
-    // whoever the line of news names can be found on the map once their slip
-    // has had time to come: a slip held only for standing alone lasts at least
-    // MIN_HOLD before it gives way, then both fade.
-    let most = 0;
+    // Thirty residents, and twelve with monsters about, start out together at
+    // camp, so slips come as they are named in the news of their fights or
+    // wander apart. (Thirty are more than the camp's region lets monsters come
+    // to, so there is news only among the twelve.) Every frame keeps to the
+    // budget, and whoever the line of news names can be found on the map once
+    // their slip has had time to come: a slip held only for standing alone
+    // lasts at least MIN_HOLD before it gives way, then both fade.
     let found = 0;
-    let line = "";
-    let lineSince = 0;
-    for (let i = 0; i < TO_NIGHTFALL + 1200; i++) {
-      step(crowd);
+    for (const crowd of [newWorld(30), newWorld(12, 1, true)]) {
+      const { scene, out, day } = await newScene();
       scene.observe(crowd);
-      if (i % 10 !== 9) continue;
-      day.calls = [];
-      const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
-      const onMap = mapNames(calls);
-      expect(onMap.length).toBeLessThanOrEqual(8);
-      most = Math.max(most, onMap.length);
-      const now = String(
-        [...day.calls, ...calls].findLast(
-          (c) => c.op === "fillText" && /^\w+: /.test(String(c.args[0])),
-        )?.args[0] ?? "",
-      );
-      if (now !== line) [line, lineSince] = [now, crowd.tick];
-      if (line === "" || crowd.tick - lineSince <= MIN_HOLD + 2 * FADE) continue;
-      // Someone named on their way off the map ("off to the pinewood") is not
-      // looked for once they have stepped past its edge, nor anyone the view
-      // has drifted away from.
-      const named = line.split(":")[0];
-      const there = crowd.actors.find((a) => a.name === named);
-      const { window } = seenOf(scene);
-      const [dx, dy] = there ? [there.x - window.x, there.y - window.y] : [0, 0];
-      if (dx < 0 || dx >= map.width || dy < 0 || dy >= map.height) continue;
-      expect(onMap).toContain(named);
-      found++;
+      let most = 0;
+      let line = "";
+      let lineSince = 0;
+      const offSince = new Map<string, number>();
+      for (let i = 0; i < TO_NIGHTFALL + 1200; i++) {
+        step(crowd);
+        scene.observe(crowd);
+        if (i % 10 !== 9) continue;
+        day.calls = [];
+        const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
+        const onMap = mapNames(calls);
+        expect(onMap.length).toBeLessThanOrEqual(8);
+        most = Math.max(most, onMap.length);
+        const now = String(
+          [...day.calls, ...calls].findLast(
+            (c) => c.op === "fillText" && NEWS.test(String(c.args[0])),
+          )?.args[0] ?? "",
+        );
+        if (now !== line) [line, lineSince] = [now, crowd.tick];
+        // When each was last out of the view, or stepping into or out of it.
+        const { window } = seenOf(scene);
+        const off = (x: number, y: number): boolean =>
+          x < window.x || x >= window.x + map.width || y < window.y || y >= window.y + map.height;
+        for (const a of crowd.actors)
+          if (off(a.x, a.y) || off(a.fromX, a.fromY)) offSince.set(a.name, crowd.tick);
+        const settled = (since: number): boolean => crowd.tick - since > MIN_HOLD + 2 * FADE;
+        if (line === "" || !settled(lineSince)) continue;
+        // Someone named who has since walked off the map is not looked for
+        // until their slip has had time to come again after they are back:
+        // the news may name them long after it happened.
+        const named = NEWS.exec(line)?.[1] ?? "";
+        if (!settled(offSince.get(named) ?? Number.NEGATIVE_INFINITY)) continue;
+        expect(onMap).toContain(named);
+        found++;
+      }
+      expect(most).toBeGreaterThan(0);
     }
-    expect(most).toBeGreaterThan(0);
     expect(found).toBeGreaterThan(5);
     // Six residents or fewer: every one keeps a name.
     const few = newWorld(6);
@@ -474,8 +506,7 @@ describe("the scene", () => {
     }
     const names = mapNames(drawn(small.out, () => small.scene.draw(few, few.tick)));
     expect(new Set(names).size).toBe(6);
-    void day;
-  });
+  }, 60_000);
 
   it("with twelve residents writes eight names, from the first frame on", async () => {
     const twelve = newWorld(12);
@@ -946,9 +977,13 @@ describe("the scene", () => {
     expect(moved).toBeGreaterThan(0);
   }, 60_000);
 
-  it("starts the news afresh when the world goes back in time, as after a server restart", async () => {
+  it("starts the news and the page's lines afresh when the world goes back in time, as after a server restart", async () => {
+    // Everything written: the page's lines and the news among it.
     const newsOf = (calls: Call[]): unknown =>
-      calls.findLast((c) => c.op === "fillText" && /^\w+: /.test(String(c.args[0])))?.args[0];
+      calls
+        .filter((c) => c.op === "fillText")
+        .map((c) => c.args[0])
+        .join("|");
     const fresh = await newScene();
     const restarted = await newScene();
     // The restarted scene first followed a world far ahead of the one it now sees.
@@ -979,10 +1014,39 @@ describe("the scene", () => {
         newsOf(drawn(restarted.day, () => restarted.scene.draw(world, world.tick))),
       );
     }
-    // Something happened worth a line, more than once.
-    expect(new Set(lines.fresh.filter(Boolean)).size).toBeGreaterThan(1);
+    // The lines changed as the residents went about.
+    expect(new Set(lines.fresh).size).toBeGreaterThan(1);
     expect(lines.restarted).toEqual(lines.fresh);
   }, 60_000);
+
+  it("takes a line of news down after ten seconds with nothing after it, and tells of a resident instead", async () => {
+    const { scene, day } = await newScene();
+    const world = newWorld(12);
+    scene.observe(world);
+    const ash = world.actors.find((a) => a.name === "Ash") as World["actors"][number];
+    (scene as unknown as { newsQueue: unknown[] }).newsQueue = [
+      { text: "Ash killed a wolf", who: ash.id },
+    ];
+    const newsLine = (): string => {
+      const calls = drawn(day, () => scene.draw(world, world.tick));
+      return String(
+        calls.findLast((c) => c.op === "fillText" && NEWS.test(String(c.args[0])))?.args[0],
+      );
+    };
+    const seen: string[] = [];
+    for (let i = 0; i <= NEWS_STALE + 1; i++) {
+      step(world);
+      scene.observe(world);
+      seen.push(newsLine());
+    }
+    expect(seen[0]).toBe("Ash killed a wolf");
+    expect(seen[NEWS_STALE - 1]).toBe("Ash killed a wolf");
+    const after = seen.at(-1) as string;
+    expect(after).not.toBe("Ash killed a wolf");
+    // One of the six the page does not list.
+    const told = after.split(" is ")[0];
+    expect(world.actors.slice(6).map((a) => a.name)).toContain(told);
+  });
 
   it("writes a notice on the page beside the map, not over it", async () => {
     const { scene, day } = await newScene();
@@ -1010,7 +1074,7 @@ describe("the scene", () => {
     );
     const written = (text: string) => page.find((c) => c.args[0] === text);
     expect(written("Cedar")?.alpha).toBe(0.5);
-    expect(written("in the Pinewood")?.alpha).toBe(0.5);
+    expect(written("in the Pinewood · resting")?.alpha).toBe(0.5);
     // The others are written in full, with what they are doing.
     for (const name of ["Ash", "Birch", "Dara", "Elm", "Fen"]) expect(written(name)?.alpha).toBe(1);
     expect(page.filter((c) => String(c.args[0]).startsWith("in the "))).toHaveLength(1);

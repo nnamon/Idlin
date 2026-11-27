@@ -26,9 +26,12 @@ A rule is `when <condition> -> <what to do>`. A condition holds when its value
 is not zero. `otherwise -> …` always holds, so it goes last; nothing may follow
 it. A program with no `otherwise` stands still when no rule holds.
 
-A rule may be given a short label with `as "…"`. The label is what viewers see
-beside the character while the rule is in charge. Without one, the condition
-itself is shown.
+A rule may be given a short name with `as "…"`, such as `as "night"`. The
+name is for where a program's rules are listed with the one in charge marked
+(the spotlight panel, not built yet). Without one, the condition itself is
+used. The page and the line of news never show it: the line under each
+resident's name is built from what the resident is doing, where, and against
+whom (see `packages/client/src/line.ts`).
 
 The first line may name the bot: `bot "Lumberjack"`.
 

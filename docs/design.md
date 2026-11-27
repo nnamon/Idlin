@@ -259,19 +259,48 @@ is torn. A monster killed sinks into a blot of ink over half a second, and the
 blot stays a minute. A resident downed topples over where it stood and lies
 there for three seconds, then fades, and fades in at camp as it does; where it
 lay, a pale wash of its cloak inside a broken outline stays a minute. On the
-page it is listed as "downed" while it rests. A monster going home fades where
-it was. Kills, downs and blows that leave a resident under 30% go on the news
-line before what anyone decided, each for at least four seconds; a resident
-downed goes up at once. The kill goes to the last blow that landed, as in the
-simulation. What monsters decide is not news. Name slips keep clear of
-monsters, as they do of the fire.
+page its line reads "downed by a wolf at the river" while it lies there, then
+"mending at camp · up at 12:20" while it rests. A monster going home fades where
+it was. The news line carries events only, never what a program decided:
+kills, downs, blows that leave a resident under 30%, a resident starting a
+fight or starting to run. Each stays up for at least four seconds; a resident
+downed goes up at once. News of what someone is doing ("Dara is running from
+2 wolves, 9 tiles to camp") follows their page line while it is up and comes
+down, or is dropped from the queue, once they stop. The kill goes to the last blow that landed, as in the
+simulation. Name slips keep clear of monsters, as they do of the fire.
+
+The line under each resident's name on the page is built from its state by
+one function (`packages/client/src/line.ts`), never from its program's rule
+names: what it is doing, to what or where, then at most one number, as
+`<doing> <object or place> · <number>`. Walking is "walking to the river", or
+"walking near the meadow" when no named place is within 4 tiles of where the
+walk ends; a walk out of camp with an empty bag shows `bag 0/12`. A walk that
+began with a monster within 8 tiles and ends at least two tiles farther from
+it is "running from 2 wolves · 9 tiles to camp", for as long as a monster is
+still within 8 tiles. Within 4 tiles of a monster, winding up a blow or in a
+fight in the last five seconds, it is "fighting a wolf · wolf 16/24"
+("nearest 16/24" for several). A monster within 8 tiles walking towards it is
+"followed by a wolf · 5 tiles"; walking towards one is "walking towards a
+wolf · 3 tiles". Standing still is "resting at the river", or "asleep at
+camp" at night. A program fault is "stopped · program error". A row keeps its
+words for at least two seconds, except a change to downed or into a fight,
+and its number follows the world meanwhile. A line about a monster is not
+kept once no monster is within 8 tiles, so it never shows a dead wolf's
+hitpoints. A resident in another region reads "in the Pinewood · walking".
+Lines for gathering, banking, cooking and drops wait for those to exist.
+
+A line of news comes down after ten seconds if nothing has come after it.
+With no news up, the news line tells of one resident the page does not list,
+five seconds each in turn, with the same line: "Tim is walking to the river,
+bag 0/12". With every resident listed it goes round all of them. The resident
+it names has a claim to a name slip, as anyone in the news does.
 
 The fight is read off the whole world, where walking through an exit is a step
 like any other, so someone who walks off the map is not taken for killed or
 downed. The regions lie side by side as one plane, so a blot left in the
 pinewood is there when the map pans to the pinewood. The page and the news
 line cover every resident, so one downed in another region is on the news,
-listed as "downed", and fades in at camp.
+its line reads "downed", and it fades in at camp.
 
 A few things move while no one does: the river's ripples drift downstream, a
 line of smoke, as heavy as the grass ticks and thinning as it goes, rises

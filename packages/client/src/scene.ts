@@ -84,6 +84,7 @@ import {
   rgb,
   skyCast,
 } from "./light.ts";
+import { type Lines, NO_LINES, newsNow, nextLines, pageText, quietNews } from "./line.ts";
 import { looks, type Parts, partsFor } from "./looks.ts";
 import {
   drawBlot,
@@ -134,6 +135,8 @@ const TAG_FONT = '27px "Fell SC"';
 const FONTS = ['22px "Fell"', '22px "Fell Italic"', TAG_FONT];
 /** How long a line of news stays up at least, in ticks, so the line can be read. */
 const NEWS_TICKS = 40;
+/** How long a line of news stays up with nothing after it: ten seconds. */
+export const NEWS_STALE = 100;
 /** How far each kind of light reaches, in tiles. */
 const LANTERN_REACH = 5.4;
 const FIRE_REACH = 3;
@@ -343,7 +346,12 @@ export class Scene {
   private newsSince = Number.NEGATIVE_INFINITY;
   /** The resident the line of news is about, or -1 for none. */
   private newsWho = -1;
-  private readonly lastRule = new Map<number, number>();
+  /** The line each resident's page row shows (see line.ts). */
+  private lines: Lines = NO_LINES;
+  /** The line of news now up, as it was queued. */
+  private newsItem: News | null = null;
+  /** With no news up, the resident the line tells of instead, and what it says (see line.ts). */
+  private quiet: News | null = null;
   /** Things no name should cover: the fire, the lantern's glass, the place names. */
   private readonly avoid: Box[] = [];
   /** Which ink each name and each place label is in, settled once a tick. */
@@ -372,7 +380,7 @@ export class Scene {
   private fight: Fight = NO_FIGHT;
   /** For the frame being drawn: where each listed resident off the map is (see `draw`). */
   private away: ReadonlyMap<number, string> = new Map();
-  /** Lines of fight news waiting for the line, and whether the line now up is one. */
+  /** Lines of news waiting for the line, and whether the line now up is one. */
   private newsQueue: News[] = [];
   private newsFight = false;
   private newsUrgent = false;
@@ -936,7 +944,8 @@ export class Scene {
       this.newsUrgent = false;
       this.news = "";
       this.newsSince = Number.NEGATIVE_INFINITY;
-      this.lastRule.clear();
+      this.lines = NO_LINES;
+      this.newsItem = null;
       this.newsWho = -1;
       this.named.clear();
       this.slips = NO_SLIPS;
@@ -962,12 +971,25 @@ export class Scene {
       top: box.top - seen.y,
       bottom: box.bottom - seen.y,
     });
-    // Kills, downs and close calls go before what anyone decided. Each stays up
-    // long enough to be read; one waiting goes up once the last has had its time.
+    this.lines = nextLines(this.lines, whole, this.fight);
+    // The news tells only of what happened: kills, downs, close calls, a fight
+    // starting, someone running. Each stays up long enough to be read; one
+    // waiting goes up once the last has had its time.
     // A resident downed goes ahead of the rest, and up at once unless the line
     // already tells of another one downed.
     // A close call still waiting is dropped once that resident is downed.
-    const lines = [...this.newsQueue, ...this.fight.news];
+    // News of what someone is doing reads as it is now, waiting or up, and is
+    // dropped, or taken down, once they have stopped doing it.
+    const up = this.newsItem && newsNow(this.lines, whole, this.newsItem);
+    if (this.newsItem && !up) {
+      this.news = "";
+      this.newsWho = -1;
+      this.newsFight = false;
+    } else if (up) this.news = up.text;
+    this.newsItem = up ?? null;
+    const lines = [...this.newsQueue, ...this.lines.news, ...this.fight.news].flatMap(
+      (line) => newsNow(this.lines, whole, line) ?? [],
+    );
     const urgent = lines.filter((line) => line.urgent);
     const downed = new Set(urgent.map((line) => line.who));
     const rest = lines.filter((line) => !line.urgent && !(line.close && downed.has(line.who)));
@@ -982,18 +1004,31 @@ export class Scene {
     ) {
       this.newsQueue.shift();
       this.news = next.text;
+      this.newsItem = next;
       this.newsSince = world.tick;
       this.newsWho = next.who;
       this.newsFight = true;
       this.newsUrgent = next.urgent === true;
     }
-    // A line of fight news holds off what anyone decided for twice as long.
-    const hold = (): number =>
-      this.newsQueue.length > 0
-        ? Number.POSITIVE_INFINITY
-        : this.newsFight
-          ? 2 * NEWS_TICKS
-          : NEWS_TICKS;
+    // With nothing waiting, a line of news comes down once it has been up for
+    // NEWS_STALE, and the page's quiet line (see `page`) takes its place.
+    if (
+      this.news !== "" &&
+      this.newsQueue.length === 0 &&
+      world.tick - this.newsSince >= NEWS_STALE
+    ) {
+      this.news = "";
+      this.newsItem = null;
+      this.newsWho = -1;
+      this.newsFight = false;
+      this.newsUrgent = false;
+    }
+    // With no news up, the line tells what one resident the page does not list
+    // is doing, and that resident has a claim to a slip like anyone in the news.
+    const residents = whole.actors.filter(isResident);
+    const listed = new Set(residents.slice(0, ROSTER_ROWS).map((actor) => actor.id));
+    this.quiet = this.news === "" ? quietNews(this.lines, residents, listed, world.tick) : null;
+    if (this.quiet) this.newsWho = this.quiet.who;
     const alive = new Set<number>();
     for (const actor of world.actors) {
       alive.add(actor.id);
@@ -1001,24 +1036,6 @@ export class Scene {
       // Winding up a blow to one side, it turns to face it.
       const mark = actor.windup > 0 ? world.marks.find((m) => m.by === actor.id) : undefined;
       if (mark && mark.x !== actor.x) this.facing.set(actor.id, mark.x > actor.x ? 1 : -1);
-      const before = this.lastRule.get(actor.id);
-      this.lastRule.set(actor.id, actor.rule);
-      // A line stays up long enough to be read before the next one replaces it.
-      // What the monsters decide is not news.
-      if (
-        before === undefined ||
-        before === actor.rule ||
-        !isResident(actor) ||
-        world.tick - this.newsSince < hold()
-      )
-        continue;
-      const label = world.programs[actor.program]?.rules[actor.rule];
-      if (!label || label === "otherwise") continue;
-      this.news = `${actor.name}: ${label}`;
-      this.newsSince = world.tick;
-      this.newsWho = actor.id;
-      this.newsFight = false;
-      this.newsUrgent = false;
     }
     // Each figure moves a step further into or out of sitting, once a tick.
     const standing = world.actors.map((actor) => {
@@ -1190,14 +1207,7 @@ export class Scene {
     this.labels.forEach((_, index) => {
       this.labelDay[index] = dayInk(this.labelLit(index, litAt), this.labelDay[index]);
     });
-    for (const known of [
-      this.facing,
-      this.tagSpots,
-      this.lastRule,
-      this.nameDay,
-      this.sitting,
-      this.named,
-    ]) {
+    for (const known of [this.facing, this.tagSpots, this.nameDay, this.sitting, this.named]) {
       for (const id of known.keys()) if (!alive.has(id)) known.delete(id);
     }
   }
@@ -1774,18 +1784,11 @@ export class Scene {
           ink,
           2.4,
         );
-      // What the actor's program is doing, in the program's own words: the label of the rule that fired.
-      // One downed and resting at camp runs no program, so its last rule is not what it is doing.
-      const label = world.programs[actor.program]?.rules[actor.rule];
-      const downed = this.fight.downs.has(actor.id) && actor.wait > 0;
+      // What the resident is doing, read off its state (see line.ts).
+      const shown = this.lines.shown.get(actor.id)?.line;
       ctx.font = '31px "Fell Italic"';
-      const doing = downed ? "downed" : actor.fault !== 0 ? "confused" : (label ?? "");
-      ctx.fillText(
-        away === undefined ? doing : `in ${away}`,
-        x0 + 86,
-        top + ruleLine,
-        x1 - x0 - 86,
-      );
+      const doing = shown ? pageText(shown, away) : away === undefined ? "" : `in ${away}`;
+      ctx.fillText(doing, x0 + 86, top + ruleLine, x1 - x0 - 86);
       drawLevels(ctx, actor, x0 + 86, x1, top + levelLine);
       ctx.globalAlpha = 1;
     });
@@ -1800,9 +1803,11 @@ export class Scene {
     const more =
       residents.length > listed.length ? `and ${residents.length - listed.length} more` : "";
 
-    // The line of news: the last thing a program decided, or the day if nothing
-    // has happened yet and the clock is shown.
-    const line = this.news !== "" ? this.news : this.clockShown ? `Day ${day + 1}, ${part}.` : "";
+    // The line of news: the last thing that happened, or when nothing has for a
+    // while, what one resident the page does not list is doing (see `observe`),
+    // or the day if no one is in the world yet. None until the clock is shown.
+    const quiet = this.quiet?.text ?? `Day ${day + 1}, ${part}.`;
+    const line = this.news !== "" ? this.news : this.clockShown ? quiet : "";
     if (strip) {
       ctx.font = '36px "Fell Italic"';
       ctx.fillText(line, 28, this.height + 49, this.width - 56);

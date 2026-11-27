@@ -98,6 +98,8 @@ export interface Fallen {
   readonly kind: string;
   readonly id: number;
   readonly facing: 1 | -1;
+  /** For a resident downed: the name of the monster whose blow did it. */
+  readonly by?: string;
 }
 
 /** A monster gone home, fading where it was last. */
@@ -162,6 +164,11 @@ export interface News {
   readonly urgent?: boolean;
   /** A close call: old news once the same resident is downed. */
   readonly close?: boolean;
+  /**
+   * News of what a resident is doing (see line.ts): what its line says it is
+   * doing. It is true only while it still does that.
+   */
+  readonly doing?: string;
 }
 
 export const NO_FIGHT: Fight = {
@@ -295,7 +302,15 @@ export function nextFight(previous: Fight, world: World): Fight {
       // Downed: it falls where it stood, lies there a while, and only then
       // wakes at camp, so the two are never on the map at once.
       float(seen.x, seen.y, hits);
-      fallen.push({ since: tick, x: seen.x, y: seen.y, kind: seen.kind, id, facing: seen.facing });
+      fallen.push({
+        since: tick,
+        x: seen.x,
+        y: seen.y,
+        kind: seen.kind,
+        id,
+        facing: seen.facing,
+        by: attacker.name,
+      });
       arrivals.set(id, tick + LIE_TICKS);
       downs.set(id, tick);
       news.push({
