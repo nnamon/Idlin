@@ -190,6 +190,9 @@ Before pushing or posting anything, check the text against section 1 of
 `AGENTS.md`: nothing about the machine or the environment. This holds for every
 commit message, pull request, comment and issue in the cycle. Commit with
 `TZ=UTC git commit …`, so the commit date does not carry the local time zone.
+Agent sessions get `TZ=UTC` from `.claude/settings.json`, and `gate` fails on
+any commit in the pull request whose author or committer date is not `+0000`;
+fix it by amending or rebasing with `TZ=UTC` and `GIT_COMMITTER_DATE` set.
 
 Push the branch and open a pull request: title from the issue, body with
 "Closes #N", what changed, the evidence (test names, numbers, what the frames

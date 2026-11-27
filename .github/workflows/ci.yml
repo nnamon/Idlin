@@ -20,6 +20,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: every commit in the pull request is dated in UTC
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bad=0
+          for c in $(git rev-list "$BASE..$HEAD"); do
+            if [ "$(git log -1 --format='%ad %cd' --date=format:%z "$c")" != "+0000 +0000" ]; then
+              echo "$(git rev-parse --short "$c") not dated in UTC"
+              bad=1
+            fi
+          done
+          exit "$bad"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
