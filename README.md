@@ -12,9 +12,9 @@ viewer only draws the camp's region so far; a character who walks off it is
 listed faded on the page. The characters run one of three scripts from
 `content/bots/`, which tell them where to walk, when to go back to camp, and
 how to fight. Wolves and goblins
-(`content/monsters/`) fight them in the simulation. The viewer draws the fights,
-but only in a world of its own opened with `?monsters`; the world server
-doesn't run monsters yet. The scripting language is described in
+(`content/monsters/`) fight them in the simulation, and the viewer draws the
+fights, both in the world server's world and in a world of its own opened with
+`?monsters`. The scripting language is described in
 [docs/tactics.md](docs/tactics.md). Fighting earns Melee and Hitpoints
 experience, each character has a bag and a bank, and the page beside the map
 shows hitpoints and skill levels. Gathering, cooking and loot don't exist yet;

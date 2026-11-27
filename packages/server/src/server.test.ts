@@ -15,7 +15,10 @@ import { join } from "node:path";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import {
+  type Actor,
+  ADVENTURER,
   createWorld,
+  GROUP_SPREAD,
   hashWorld,
   restore,
   SNAPSHOT_VERSION,
@@ -27,6 +30,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { castOf } from "../../client/src/cast.ts";
+import { shippedPrograms as botPrograms } from "../../sim/src/testing.ts";
 import { loadContent } from "./content.ts";
 import {
   CLOSE_DEADLINE_MS,
@@ -39,6 +43,9 @@ import {
 import { listSnapshots, saveSnapshot, snapshotName } from "./store.ts";
 
 const CONTENT = loadContent();
+/** A snapshot read with the shipped content, as the server and the viewer read it. */
+const read = (text: string): World =>
+  restore(text, CONTENT.atlas, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
 const SEED = 5;
 const RESIDENTS = 6;
 
@@ -78,7 +85,7 @@ const start = async (
 
 /** The world a new server starts, stepped on to `tick`, without a server. */
 const reference = (tick: number): World => {
-  const world = createWorld(CONTENT.atlas, SEED, CONTENT.programs);
+  const world = createWorld(CONTENT.atlas, SEED, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
   step(world, spawnsNearCamp(world, castOf(RESIDENTS)));
   while (world.tick < tick) step(world);
   return world;
@@ -92,7 +99,7 @@ const viewer = async (port: number, origin?: string) => {
   const worlds: World[] = [];
   const waiting: { tick: number; resolve: () => void }[] = [];
   socket.on("message", (data) => {
-    const world = restore(String(data), CONTENT.atlas, CONTENT.programs);
+    const world = read(String(data));
     worlds.push(world);
     for (const wait of waiting.filter((w) => world.tick >= w.tick)) wait.resolve();
   });
@@ -240,11 +247,9 @@ describe("world server", () => {
     saveSnapshot(dir, later);
     expect(readFileSync(join(outside, "target"), "utf8")).toBe("untouched");
     expect(listSnapshots(dir)).toEqual([snapshotName(5), snapshotName(1)]);
-    expect(
-      hashWorld(
-        restore(readFileSync(join(dir, snapshotName(5)), "utf8"), CONTENT.atlas, CONTENT.programs),
-      ),
-    ).toBe(hashWorld(later));
+    expect(hashWorld(read(readFileSync(join(dir, snapshotName(5)), "utf8")))).toBe(
+      hashWorld(later),
+    );
   });
 
   it("after a failed save, tries again an interval later and not on every tick", async () => {
@@ -269,6 +274,49 @@ describe("world server", () => {
     const lines: string[] = [];
     const server = await start(tempDir(), lines);
     expect(lines[0]).toBe(`no snapshot to resume; new world from seed ${SEED}`);
+    expect(hashWorld(server.world)).toBe(hashWorld(reference(1)));
+  });
+
+  it("runs the shipped monsters: one comes at its spawn place within a game day, and viewers see it", async () => {
+    const server = await start(tempDir());
+    expect(Object.keys(server.world.kinds).sort()).toEqual(["goblin", "wolf"]);
+    expect(server.world.spawns.map((spawn) => spawn.kind).sort()).toEqual(["goblin", "wolf"]);
+    // Looked at on the tick it came, before it has walked anywhere. With seed 5 a
+    // group of goblins comes to the den on the first tick, with the residents.
+    const first = (): Actor | undefined =>
+      server.world.actors.find((actor) => actor.kind !== ADVENTURER);
+    let monster = first();
+    while (!monster && server.world.tick <= TICKS_PER_DAY) {
+      server.advance(1);
+      monster = first();
+    }
+    expect(monster, "no monster came in a game day").toBeDefined();
+    const { x, y, id, kind } = monster as Actor;
+    const spawn = server.world.spawns.find((each) => each.kind === kind);
+    const places = [...(spawn?.day ?? []), ...(spawn?.night ?? [])];
+    const nearest = Math.min(...places.map((p) => Math.abs(x - p.x) + Math.abs(y - p.y)));
+    expect(nearest).toBeLessThanOrEqual(GROUP_SPREAD);
+    // A viewer that connects now is sent the world with the monster in it, and can read it.
+    const watcher = await viewer(server.port);
+    await watcher.reach(server.world.tick);
+    expect(watcher.worlds.at(-1)?.actors.find((actor) => actor.id === id)?.kind).toBe(kind);
+    watcher.close();
+  });
+
+  it("sets aside a snapshot saved without monsters and starts a new world with them", async () => {
+    const dir = tempDir();
+    const without = createWorld(CONTENT.atlas, SEED, botPrograms());
+    step(without, spawnsNearCamp(without, castOf(RESIDENTS)));
+    while (without.tick < 500) step(without);
+    saveSnapshot(dir, without);
+
+    const lines: string[] = [];
+    const server = await start(dir, lines);
+    expect(lines.slice(0, 2)).toEqual([
+      "skipping snapshot world-0000000000000500.json: snapshot was taken with different programs",
+      `no snapshot to resume; new world from seed ${SEED}`,
+    ]);
+    expect(readdirSync(dir)).toContain("world-0000000000000500.json.bad");
     expect(hashWorld(server.world)).toBe(hashWorld(reference(1)));
   });
 

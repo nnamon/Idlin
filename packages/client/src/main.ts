@@ -93,18 +93,19 @@ async function main(): Promise<void> {
   const maps = mapFiles();
   const atlas = parseWorld(worldJson, maps);
   const programs = compileBots(botSources(), placeConstants(atlas));
-  // `?monsters` lets the shipped monsters into the world, by their spawn table,
-  // so that a capture can show fights. The world server does not run them yet.
-  const files = params.has("monsters") ? monsterFiles() : null;
-  const monsters = files ? loadMonsters(files.stats, files.sources, atlas) : null;
-  const world = monsters
-    ? createWorld(
-        atlas,
-        seed,
-        { ...programs, ...monsters.programs },
-        monsters.kinds,
-        monsters.spawns,
-      )
+  // The world server runs the shipped monsters, so live mode reads its world
+  // with them. A world of the page's own has them only with `?monsters`, so
+  // that a capture can show fights.
+  const files = monsterFiles();
+  const monsters = loadMonsters(files.stats, files.sources, atlas);
+  const shipped = {
+    atlas,
+    programs: { ...programs, ...monsters.programs },
+    kinds: monsters.kinds,
+    spawns: monsters.spawns,
+  };
+  const world = params.has("monsters")
+    ? createWorld(atlas, seed, shipped.programs, shipped.kinds, shipped.spawns)
     : createWorld(atlas, seed, programs);
   // `?crowd=50` fills the camp with that many residents, to see how a crowd reads.
   const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
@@ -159,7 +160,7 @@ async function main(): Promise<void> {
   ) {
     await document.fonts.ready;
     const server = params.get("server") || `ws://${location.hostname}:4311`;
-    follow(scene, atlas, world.programs, server, shown, names);
+    follow(scene, shipped, server, shown, names);
     return;
   }
 

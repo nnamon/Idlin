@@ -2,13 +2,23 @@
 import {
   type Atlas,
   createWorld,
+  type Kinds,
   type Programs,
   restore,
+  type Spawns,
   TICKS_PER_SECOND,
   type World,
 } from "@idlin/sim";
 import type { Scene } from "./scene.ts";
 import { awayFrom, regionView, rosterOf } from "./view.ts";
+
+/** The content the server's world was made with; a world made with other content is refused. */
+export interface LiveContent {
+  readonly atlas: Atlas;
+  readonly programs: Programs;
+  readonly kinds?: Kinds;
+  readonly spawns?: Spawns;
+}
 
 /**
  * Live mode: draws the server's world. The server sends the whole world after
@@ -23,14 +33,14 @@ import { awayFrom, regionView, rosterOf } from "./view.ts";
  */
 export function follow(
   scene: Pick<Scene, "notice" | "clockShown" | "observe" | "draw">,
-  atlas: Atlas,
-  programs: Programs,
+  content: LiveContent,
   url: string,
   shown = 0,
-  names: readonly string[] = atlas.regions.map((region) => region.map.name),
+  names: readonly string[] = content.atlas.regions.map((region) => region.map.name),
 ): void {
+  const { atlas, programs, kinds, spawns } = content;
   const tickMs = 1000 / TICKS_PER_SECOND;
-  const empty = createWorld(atlas, 0, programs);
+  const empty = createWorld(atlas, 0, programs, kinds, spawns);
   let world: World | null = null;
   let arrived = 0;
   const waiting = (note: string): void => {
@@ -51,7 +61,7 @@ export function follow(
     socket.onmessage = (event) => {
       let next: World;
       try {
-        next = restore(String(event.data), atlas, programs);
+        next = restore(String(event.data), atlas, programs, kinds, spawns);
       } catch (error) {
         // Most likely the server runs other content than this page was built with.
         // The server may be updated, so this keeps trying.
