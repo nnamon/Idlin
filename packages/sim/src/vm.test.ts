@@ -84,6 +84,13 @@ describe("the system call table", () => {
       "38 at_fire sensor 0",
       "39 cook action 0",
       "40 eat action 0",
+      "41 threat_friends sensor 0",
+      "42 friends_near sensor 1",
+      "43 lit_here sensor 0",
+      "44 threat_lit sensor 0",
+      "45 threat_moving sensor 0",
+      "46 lit_enemies sensor 0",
+      "47 lit_mending sensor 0",
     ]);
   });
 

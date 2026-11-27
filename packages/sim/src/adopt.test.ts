@@ -21,10 +21,12 @@ import {
   type Actor,
   ADVENTURER,
   createWorld,
+  DOWN_TICKS,
   hashStateAs,
   hashWorld,
   type Kinds,
-  MONSTER_CAP,
+  MONSTER_CEILING,
+  mending,
   type Programs,
   restore,
   SnapshotError,
@@ -174,6 +176,28 @@ describe("adopting a snapshot", () => {
     ]);
   });
 
+  it("after a program is edited: one of its residents mending after a down still mends, and one waiting decides at once", () => {
+    const d = data();
+    const homebodies = actors(d).filter((a) => a.program === "homebody");
+    expect(homebodies).toHaveLength(2);
+    const [down, idle] = homebodies as [Record<string, unknown>, Record<string, unknown>];
+    // As a down leaves one, and one partway through a wait its program chose.
+    Object.assign(down, { wait: DOWN_TICKS, rule: -1, fault: 0 });
+    Object.assign(idle, { wait: 100, rule: 0, fault: 0 });
+    const text = forge(d);
+    const saved = restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns);
+    const mender = saved.actors.find((a) => a.id === down.id) as Actor;
+    const waiter = saved.actors.find((a) => a.id === idle.id) as Actor;
+    expect([mending(mender), mending(waiter)]).toEqual([true, false]);
+
+    const world = continues(text, EDITED);
+    const after = (id: unknown) => world.actors.find((a) => a.id === id) as Actor;
+    expect(after(down.id)).toMatchObject({ wait: DOWN_TICKS, rule: -1 });
+    expect(mending(after(down.id))).toBe(true);
+    expect(after(idle.id)).toMatchObject({ wait: 0, rule: -1 });
+    expect(mending(after(idle.id))).toBe(false);
+  });
+
   it("after a program is removed: its actors go, with the reason, and the rest stay as they were", () => {
     const { riverwalker: _, ...rest } = BOTS;
     const content = { ...SHIPPED, programs: programsWith(rest) };
@@ -228,6 +252,40 @@ describe("adopting a snapshot", () => {
     expect(changes).toContain(
       `${monster.name} (#${monster.id}): hitpoints cut from ${monster.hp} to 1`,
     );
+  });
+
+  it("after a monster kind walks faster: one saved further into a step than it now takes is cut to the new step", () => {
+    // Wolves as they were before they had a step of their own: 6 ticks a tile.
+    const { step: fast, ...slowWolf } = MONSTERS.kinds.wolf as Kinds[string];
+    expect(fast).toBe(4);
+    const slow: Content = { ...SHIPPED, kinds: { ...MONSTERS.kinds, wolf: slowWolf } };
+    const world = createWorld(WORLD, 3, slow.programs, slow.kinds, slow.spawns);
+    step(world, [{ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 4, y: 6 }]);
+    const wolf = world.actors[0] as Actor;
+    const mid: Record<number, string> = {};
+    for (let t = 0; t < 600 && !(mid[5] && mid[6]); t++) {
+      step(world);
+      if (wolf.moveTicksLeft >= 5) mid[wolf.moveTicksLeft] ??= snapshot(world);
+    }
+    for (const ticks of [5, 6]) {
+      const text = mid[ticks] as string;
+      expect(text, `a wolf ${ticks} ticks into a step`).toBeDefined();
+      expect(() =>
+        restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns),
+      ).toThrow(/different monster kinds/);
+      const adopted = continues(text, SHIPPED);
+      const saved = restore(text, slow.atlas, slow.programs, slow.kinds, slow.spawns);
+      const was = saved.actors.find((a) => a.kind === "wolf") as Actor;
+      const now = adopted.actors.find((a) => a.id === was.id) as Actor;
+      expect(was.moveTicksLeft).toBe(ticks);
+      expect(now.moveTicksLeft).toBe(4);
+      expect({ x: now.x, y: now.y, fromX: now.fromX, fromY: now.fromY }).toEqual({
+        x: was.x,
+        y: was.y,
+        fromX: was.fromX,
+        fromY: was.fromY,
+      });
+    }
   });
 
   it("after a monster kind is removed: its monsters go, with the reason", () => {
@@ -339,7 +397,7 @@ describe("adopting a snapshot", () => {
       free.push(p);
     }
     let last = 0;
-    while (monstersThere() <= MONSTER_CAP) {
+    while (monstersThere() <= MONSTER_CEILING) {
       const { x, y } = free.shift() as Point;
       last = d.state.nextActorId as number;
       d.state.nextActorId = last + 1;
@@ -355,11 +413,11 @@ describe("adopting a snapshot", () => {
     const there = world.actors.filter(
       (a) => a.kind !== ADVENTURER && regionAt(WORLD, a.x, a.y) === region,
     );
-    expect(there.length).toBe(MONSTER_CAP);
+    expect(there.length).toBe(MONSTER_CEILING);
     expect(there.some((a) => a.id === last)).toBe(false);
     const name = WORLD.regions[region]?.map.name;
     expect(changes).toContain(
-      `removed ${monster.name} (#${last}): ${name} already holds ${MONSTER_CAP} monsters`,
+      `removed ${monster.name} (#${last}): ${name} already holds ${MONSTER_CEILING} monsters`,
     );
   });
 

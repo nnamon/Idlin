@@ -22,7 +22,7 @@ export interface Region {
   /** World coordinates of the map's top-left tile. */
   readonly x: number;
   readonly y: number;
-  /** How many of its tiles can be walked on; the crowd target is reckoned from this. */
+  /** How many of its tiles can be walked on. */
   readonly walkable: number;
 }
 

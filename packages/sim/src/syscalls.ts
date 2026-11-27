@@ -283,6 +283,61 @@ export const SYSCALLS: readonly Syscall[] = [
     about:
       "Eat a cooked fish from the bag for up to 6 hitpoints. At full hitpoints, or with none, nothing happens.",
   },
+  {
+    id: 41,
+    name: "threat_friends",
+    kind: "sensor",
+    args: 0,
+    about:
+      "How many of the nearest enemy's own kind stand within 4 steps of it, not counting itself; 0 if there is no enemy.",
+  },
+  {
+    id: 42,
+    name: "friends_near",
+    kind: "sensor",
+    args: 1,
+    about:
+      "How many of this actor's own kind (residents, or monsters of its kind), not counting itself or residents mending after a down, stand within the given number of steps of it in its region; 0 below 0.",
+  },
+  {
+    id: 43,
+    name: "lit_here",
+    kind: "sensor",
+    args: 0,
+    about:
+      "1 if this actor stands in the camp's firelight (in the camp's region, at most 5 tiles from `camp` in a straight line), else 0.",
+  },
+  {
+    id: 44,
+    name: "threat_lit",
+    kind: "sensor",
+    args: 0,
+    about: "1 if the nearest enemy stands in the camp's firelight, else 0, and 0 if there is none.",
+  },
+  {
+    id: 45,
+    name: "threat_moving",
+    kind: "sensor",
+    args: 0,
+    about:
+      "1 if the nearest enemy is walking (partway through a step, or with more of a walk ahead of it), else 0, and 0 if there is none.",
+  },
+  {
+    id: 46,
+    name: "lit_enemies",
+    kind: "sensor",
+    args: 0,
+    about:
+      "How many of this actor's enemies stand in the camp's firelight, in its region, not counting residents mending after a down.",
+  },
+  {
+    id: 47,
+    name: "lit_mending",
+    kind: "sensor",
+    args: 0,
+    about:
+      "How many residents lie mending after a down in the camp's firelight, in this actor's region.",
+  },
 ];
 
 export const syscall = (id: number): Syscall | undefined => SYSCALLS[id];

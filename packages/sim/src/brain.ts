@@ -27,8 +27,10 @@ import {
   canStep,
   clock,
   enemies,
+  inFirelight,
   kindOf,
   lineOfAttack,
+  mending,
   sameRegion,
   type World,
   type WorldEvent,
@@ -75,14 +77,34 @@ export function think(world: World, actor: Actor, events: WorldEvent[]): void {
 
 const steps = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
-/** The nearest enemy in this actor's region, the one with the lowest id if several are as near. */
+/**
+ * The nearest enemy in this actor's region, the one with the lowest id if
+ * several are as near. A resident mending at camp is nobody's enemy.
+ */
 function threat(world: World, actor: Actor): Actor | undefined {
   let nearest: Actor | undefined;
   for (const other of world.actors) {
-    if (!enemies(actor, other) || !sameRegion(world, actor, other)) continue;
+    if (!enemies(actor, other) || mending(other) || !sameRegion(world, actor, other)) continue;
     if (!nearest || steps(actor, other) < steps(actor, nearest)) nearest = other;
   }
   return nearest;
+}
+
+/** How near, in steps, someone stands to count as one of the nearest enemy's friends for `threat_friends`. */
+export const FRIENDS_REACH = 4;
+
+/**
+ * How many of `actor`'s own kind, itself and anyone mending left out, stand
+ * within `reach` steps of it in its region. A reach below 0 finds nobody.
+ */
+function friendsWithin(world: World, actor: Actor, reach: number): number {
+  let count = 0;
+  for (const other of world.actors) {
+    if (other === actor || other.kind !== actor.kind || mending(other)) continue;
+    if (!sameRegion(world, actor, other)) continue;
+    if (steps(actor, other) <= reach) count++;
+  }
+  return count;
 }
 
 /** Ticks until an enemy's attack lands on a tile, or 0 if none is coming. */
@@ -349,6 +371,36 @@ function sense(world: World, actor: Actor, id: number, args: readonly number[]):
       return (nearestNode(world, actor, a) ?? actor).y;
     case "at_fire":
       return atFire(world, actor) ? 1 : 0;
+    case "threat_friends": {
+      const enemy = threat(world, actor);
+      return enemy ? friendsWithin(world, enemy, FRIENDS_REACH) : 0;
+    }
+    case "friends_near":
+      return friendsWithin(world, actor, a);
+    case "lit_here":
+      return inFirelight(world, actor.x, actor.y) ? 1 : 0;
+    case "threat_lit": {
+      const enemy = threat(world, actor);
+      return enemy && inFirelight(world, enemy.x, enemy.y) ? 1 : 0;
+    }
+    case "threat_moving": {
+      const enemy = threat(world, actor);
+      return enemy && (enemy.moveTicksLeft > 0 || enemy.path.length > 0) ? 1 : 0;
+    }
+    case "lit_enemies":
+    case "lit_mending": {
+      // Enemies who can fight, or residents who can't yet.
+      const down = name === "lit_mending";
+      let count = 0;
+      for (const other of world.actors)
+        if (
+          (down ? mending(other) : enemies(actor, other) && !mending(other)) &&
+          sameRegion(world, actor, other) &&
+          inFirelight(world, other.x, other.y)
+        )
+          count++;
+      return count;
+    }
     default:
       return 0;
   }

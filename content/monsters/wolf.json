@@ -5,8 +5,10 @@
   "windup": 8,
   "recovery": 20,
   "reach": 2,
+  "step": 4,
   "program": "wolf",
-  "group": 1,
+  "group": [2, 3],
+  "night_group": [3, 5],
   "day": ["deep_wood"],
   "night": ["near_wood"]
 }

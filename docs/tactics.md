@@ -153,6 +153,13 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `at_fire`           | sensor | 0     | 1 if this actor stands within two steps of the camp fire, where it can cook, else 0.                                                                                                                                                                      |
 | `cook`              | action | 0     | At the fire, cook a raw fish from the bag over a log from the bag, then stand for 18 ticks. The log burns up and the fish comes out cooked, or burnt.                                                                                                     |
 | `eat`               | action | 0     | Eat a cooked fish from the bag for up to 6 hitpoints. At full hitpoints, or with none, nothing happens.                                                                                                                                                   |
+| `threat_friends`    | sensor | 0     | How many of the nearest enemy's own kind stand within 4 steps of it, not counting itself; 0 if there is no enemy.                                                                                                                                         |
+| `friends_near`      | sensor | 1     | How many of this actor's own kind (residents, or monsters of its kind), not counting itself or residents mending after a down, stand within the given number of steps of it in its region; 0 below 0.                                                     |
+| `lit_here`          | sensor | 0     | 1 if this actor stands in the camp's firelight (in the camp's region, at most 5 tiles from `camp` in a straight line), else 0.                                                                                                                            |
+| `threat_lit`        | sensor | 0     | 1 if the nearest enemy stands in the camp's firelight, else 0, and 0 if there is none.                                                                                                                                                                    |
+| `threat_moving`     | sensor | 0     | 1 if the nearest enemy is walking (partway through a step, or with more of a walk ahead of it), else 0, and 0 if there is none.                                                                                                                           |
+| `lit_enemies`       | sensor | 0     | How many of this actor's enemies stand in the camp's firelight, in its region, not counting residents mending after a down.                                                                                                                               |
+| `lit_mending`       | sensor | 0     | How many residents lie mending after a down in the camp's firelight, in this actor's region.                                                                                                                                                              |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
@@ -319,8 +326,10 @@ any other, and must not share a name with a program in `content/bots/`.
   "windup": 8,
   "recovery": 20,
   "reach": 2,
+  "step": 4,
   "program": "wolf",
-  "group": 1,
+  "group": [2, 3],
+  "night_group": [3, 5],
   "day": ["deep_wood"],
   "night": ["near_wood"]
 }
@@ -330,21 +339,31 @@ any other, and must not share a name with a program in `content/bots/`.
   spaces.
 - `hp` (1 to 100,000), `damage` (0 to 100,000), `windup` (1 to 100 ticks),
   `recovery` (0 to 100 ticks) and `reach` (1 to 3 tiles): its numbers in a fight.
-- `group`: how many arrive together, 1 to 3.
+- `step`: ticks it takes to walk one tile, 2 to 30. Left out, it is 6, which is
+  how fast residents walk.
+- `group`: how many arrive together by day, 1 to 3, or the fewest and the
+  most as a list of two, `[2, 3]`, and then the number is drawn when they come
+  out. `night_group`: how many arrive together by night, 1 to 6, or a list of
+  two in the same way, `[3, 5]`. Left out, it is the same as `group`'s fewest.
 - `day` and `night`: the world's places they come out at, by day and from
   19:00 to 06:00. Either list may be empty, and the places may be in any
   regions.
 
-Each region spawns on its own. Every game hour at most, one group arrives in a
-region, all of it on free tiles within two steps of one of its places in that
-region for the time of day, chosen at random. A region holds at most three
-monsters at once, and a group only comes if all of it fits under that cap,
-fits near its place, and leaves the region under its crowd target: one actor,
-resident or monster, for every 25 of its walkable tiles (17 to 19 in the
-shipped regions). If the place is too crowded, none of it comes and the
-region's hour starts again. The hour also starts again whenever a monster in
-the region goes down or is put in by hand, and on every tick it holds three,
-so one that dies is replaced an hour later at the earliest. The shipped wolves
+Each region spawns on its own. Every six game minutes at most, one group
+arrives in a region, all of it on free tiles within two steps of one of its
+places in that region for the time of day, chosen at random. A region holds at
+most a cap of monsters, which counts monsters only and grows with the
+residents in the region: by day four, and one more for every three residents,
+up to twelve; by night ten, and one more for every two residents, up to 24.
+At six residents that is six by day and thirteen by night. A group only comes if
+all of it fits under the cap and near its place. A group whose number is a
+range comes in as many as were drawn or as there is room for, whichever
+is fewer, and not at all if there is room for fewer than its fewest. If the
+place is too crowded, none of it comes and the region's wait starts again. The
+wait also starts again whenever a monster in the region goes down or is put in
+by hand, and on every tick it is at its cap, so one that dies is replaced six
+game minutes later at the earliest. The numbers are `MONSTER_CAPS` and
+`RESPAWN_TICKS` in `packages/sim/src/world.ts`. The shipped wolves
 and goblins come out at `deep_wood`, `den` and `near_wood`, all on the camp's
 map, so the other regions have no monsters yet. A monster file with a field
 missing, out of range or unknown, a list with gaps, or a place the map doesn't
@@ -354,18 +373,63 @@ Monsters from the spawn table go home at the end of the part of the day they
 came out for: day ones at 19:00, night ones at 06:00. Each goes as soon as no
 adventurer in its region is within eight steps of it and it is not in the middle of a blow,
 so one still fighting stays until it is clear. That leaves room for the next
-part of the day's monsters. Monsters never step onto the camp's ground (its
-`camp` tiles), though their blows reach onto it.
+part of the day's monsters. Monsters never come out on the camp's ground (its
+`camp` tiles) and can't be put down on it by hand, but they may walk onto it.
 
-The wolf circles its prey two tiles off and lunges from two tiles away, at
-most twice from one tile before it circles again. Goblins come in threes, rush
-whoever is near and run once a blow has taken them to half their hitpoints; one
-that tries to run and gets nowhere stabs instead if its enemy is beside it. A
-goblin whose moves get it nowhere twice in a row wanders off. A wolf whose
-circling gets it nowhere twice in a row steps straight at its prey, and wanders
-off after four. By day both turn back to
-where they came out when they come within four tiles of `camp`, and by night
-within three, which brings them up to the camp's edge.
+The camp's firelight reaches 5 tiles from `camp` in a straight line, and
+`lit_here` says whether an actor stands in it; `lit_enemies` counts an actor's
+enemies standing in it.
+
+A resident struck down is carried to camp and mends there for 15 seconds
+(`DOWN_TICKS`) before its program runs again. While it mends, blows pass it by
+and monsters' sensors leave it out: it is nobody's `threat`, and
+`friends_near`, `threat_friends` and `lit_enemies` don't count it.
+`lit_mending` counts the residents mending in the light.
+
+Wolves walk a tile in 4 ticks, so one 8 tiles behind a resident catches it
+after the resident has walked about 16 more. Wolves come in packs, of two or
+three by day and three to five by night. A wolf counts as its pack itself and the
+wolves within ten tiles of it (`friends_near(10)`, which counts only an
+actor's own kind), and as its prey's group
+the prey and the residents within four tiles of it (`threat_friends`). It
+lunges at its prey when it is in line and in reach, from two tiles off only if
+the prey is standing, and at most twice from one tile, and from inside the
+light only when it may be there. Prey within ten tiles
+whose group is bigger than the pack by two or more is left alone; bigger by
+one, it is stalked from four or five tiles off until more of the pack comes;
+otherwise it is hunted: run down while it walks, and circled two tiles off
+while it stands.
+
+The light is no refuge from a pack that outnumbers the residents in it. A wolf
+whose pack does follows its prey into the light and onto the camp's ground. One
+that is outnumbered there walks out of it, and a chase that reaches the light
+stops at its edge, where the wolf paces for a few seconds. By day a wolf keeps
+out of the light. A wolf has had its fill of the camp once it has bitten three
+times at prey in the light, or once anyone lies mending there: then it walks
+out and keeps out of the light for a game hour. Every wolf in the region sees
+the resident mending, so the pack leaves together after its first down in the
+light. Over a night with one pack, a resident alone by the fire is downed about
+once a game hour, and never twice within half of one (`hunt.test.ts`).
+
+With no prey near, a wolf walks a round: by day the near wood, the meadow, the
+river, the den and the deep wood; by night the whole camp's map, through the
+camp's light, the meadow, the river, the south road, the den, the deep wood and
+the light again. A wolf whose moves get it nowhere twice in a row while
+hunting steps straight at its prey, and wanders off after four.
+
+Goblins come in threes, rush whoever is near and run once a blow has taken
+them to half their hitpoints; one that tries to run and gets nowhere stabs
+instead if its enemy is beside it. A goblin whose moves get it nowhere twice in
+a row wanders off. Out of a fight, goblins roam, by day and by night. Every
+goblin heads for the same place in the same half game hour, so a group that
+came out together keeps together: west of the camp the deep wood, the den, the
+south road and the den again, and east of it the river and the meadow by
+turns. The light works for goblins as for wolves: by night a goblin goes into it after
+prey when its group (itself and the goblins within ten tiles) outnumbers the
+residents standing there, and otherwise keeps out of it and walks out if it is
+in it, as it does by day. A goblin in the light with no prey there walks out
+too. Once anyone lies mending in the light, a goblin has had its fill of the
+camp for a game hour.
 
 When two blows land on the same tick, the one from whoever has been in the
 world longer lands first, and someone it takes out does not get their own blow

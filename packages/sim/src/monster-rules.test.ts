@@ -1,7 +1,7 @@
 import { atlasOf } from "./atlas.ts";
 // The smaller rules around monsters and getting nowhere, each tested where it
 // changes what happens: the residents' and monsters' rules for being stuck, a
-// monster's blow at dusk, keeping off the camp's ground, and the `stalled` count.
+// monster's blow at dusk, the camp's ground, and the `stalled` count.
 
 import { describe, expect, it } from "vitest";
 import { MAX_STALLED } from "./brain.ts";
@@ -208,7 +208,7 @@ describe("going home", () => {
 });
 
 describe("the camp's ground", () => {
-  it("a monster stepping out of a blow does not step onto it, even when it is nearest", () => {
+  it("a monster may step onto it, but is never put down on it", () => {
     // (14, 5) is beside the camp's ground at (14, 6). Blows are about to land on
     // it and on its other three neighbours, so the nearest safe tile is camp.
     const edge = { x: 14, y: 5 };
@@ -217,19 +217,25 @@ describe("the camp's ground", () => {
     step(world, [
       { type: "spawn", name: "Goblin", program: "clear", kind: "goblin", ...edge },
       { type: "spawn", name: "Ash", program: "post", x: 22, y: 3 },
+      // Put down on the camp's ground by hand: refused.
+      { type: "spawn", name: "Goblin", program: "post", kind: "goblin", x: 14, y: 7 },
     ]);
+    expect(world.actors).toHaveLength(2);
     const [goblin, ash] = world.actors as [Actor, Actor];
     ash.windup = 100;
     world.marks = [edge, { x: 13, y: 5 }, { x: 15, y: 5 }, { x: 14, y: 4 }].map((p) => ({
       ...p,
       by: ash.id,
     }));
-    for (let t = 0; t < 40; t++) {
-      step(world);
-      expect(terrainAt(MAP, goblin.x, goblin.y), `tick ${world.tick}`).not.toBe("camp");
-    }
-    // It went round instead, to a safe tile two steps off.
-    expect(steps(goblin, edge)).toBe(2);
+    run(world, 10);
+    // It took the nearest safe tile, on the camp's ground.
+    expect(goblin).toMatchObject({ x: 14, y: 6 });
+    // And a world with it standing there saves and resumes, once the blows
+    // made up for this test, longer than Ash's wind-up, are cleared.
+    ash.windup = 0;
+    world.marks = [];
+    const resumed = restore(snapshot(world), WORLD, ALL, MONSTERS.kinds);
+    expect(hashWorld(resumed)).toBe(hashWorld(world));
   });
 });
 

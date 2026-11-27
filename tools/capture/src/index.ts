@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
+import { ADVENTURER } from "@idlin/sim";
 import { chromium } from "playwright";
 import { DRIFT_TICKS } from "../../../packages/client/src/camera.ts";
 import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
@@ -432,6 +433,10 @@ if (review) {
     // Ticks from 06:00, in the world with its monsters: the fight the fight sheets show, the first blow after 19:00.
     fight,
     duskBlow,
+    // Residents downed in that game day of the world with its monsters, on the map shown or elsewhere.
+    downs: fightRun
+      .flatMap((r) => [...r.events, ...(r.elsewhere?.events ?? [])])
+      .filter((e) => e.type === "down" && e.kind === ADVENTURER).length,
     // The figures sheet's moment, in ticks from 06:00, and how many residents the map shows then.
     figures: { tick: crowded.tick, onMap: crowded.count },
     // One game day per population.

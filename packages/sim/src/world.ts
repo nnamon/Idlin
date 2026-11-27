@@ -61,6 +61,8 @@ export interface Kind {
   readonly recovery: number;
   /** How many tiles in a line its attack reaches, 1 to 3. */
   readonly reach: number;
+  /** Ticks it takes to walk from one tile to the next, 2 to 30. STEP_TICKS when left out. */
+  readonly step?: number;
 }
 export type Kinds = Readonly<Record<string, Kind>>;
 
@@ -72,6 +74,7 @@ export const ADVENTURER_KIND: Kind = Object.freeze({
   windup: 6,
   recovery: 6,
   reach: 1,
+  step: STEP_TICKS,
 });
 const KIND_LIMITS: Readonly<Record<keyof Kind, readonly [number, number]>> = {
   hp: [1, 100_000],
@@ -79,6 +82,7 @@ const KIND_LIMITS: Readonly<Record<keyof Kind, readonly [number, number]>> = {
   windup: [1, 100],
   recovery: [0, 100],
   reach: [1, 3],
+  step: [2, 30],
 };
 
 export class KindError extends Error {
@@ -100,7 +104,9 @@ export function checkKinds(kinds: Kinds): Kinds {
         throw new KindError(`kind "${name}" is not an object`);
       const kind: Record<string, number> = {};
       for (const field of Object.keys(KIND_LIMITS) as (keyof Kind)[]) {
-        const value: unknown = (raw as Record<string, unknown>)[field];
+        const given: unknown = (raw as Record<string, unknown>)[field];
+        // A kind that does not say how fast it walks walks as adventurers do.
+        const value = field === "step" && given === undefined ? STEP_TICKS : given;
         const [low, high] = KIND_LIMITS[field];
         if (!isInt32(value) || value < low || value > high)
           throw new KindError(
@@ -117,21 +123,29 @@ export function checkKinds(kinds: Kinds): Kinds {
   return Object.freeze(table);
 }
 
-/** The most monsters alive at once in one region: one group of three. */
-export const MONSTER_CAP = 3;
+/** The most monsters in a group that comes by day, and in one that comes by night. */
+export const MOST_IN_GROUP = 3;
+export const MOST_IN_NIGHT_GROUP = 6;
 /**
- * The crowd target: a region is full when it holds one actor, adventurer or
- * monster, for every this many of its walkable tiles. No group of monsters comes
- * into a region that it would take past that. The shipped regions, each the
- * frame's size, have 442 to 483 walkable tiles, so each is full at 17 to 19:
- * about 15 residents and a group.
+ * How many monsters a region may hold at once: `base`, and one more for every
+ * `residents` adventurers in the region, up to `most`. Residents never keep
+ * monsters away; a busy region draws more. At six residents in a region that
+ * is 6 by day and 13 by night, at fifteen 9 and 17, and from 28 on 12 and 24.
  */
-export const CROWD_TILES = 25;
+export const MONSTER_CAPS = {
+  day: { base: 4, residents: 3, most: 12 },
+  night: { base: 10, residents: 2, most: 24 },
+} as const;
+/** The most monsters any region holds at any hour. */
+export const MONSTER_CEILING = MONSTER_CAPS.night.most;
 /**
  * The shortest time from a monster arriving or going down in a region, or from
- * the region last holding MONSTER_CAP, to the next group arriving there.
+ * the region last being at its cap, to the next group arriving there: six game
+ * minutes, so a region refills within a few game minutes after a fight.
  */
-export const RESPAWN_TICKS = TICKS_PER_GAME_HOUR;
+export const RESPAWN_TICKS = 60;
+/** The longest wait a snapshot may hold; worlds saved before the wait was shortened held a game hour. */
+const MOST_SPAWN_WAIT = TICKS_PER_GAME_HOUR;
 /** Monsters come out at their night places from this hour until DAY_HOUR. */
 export const NIGHT_HOUR = 19;
 export const DAY_HOUR = 6;
@@ -145,7 +159,17 @@ export const LEAVE_DISTANCE = 8;
 /** Places a spawn may list for one part of the day. */
 const MAX_SPAWN_PLACES = 16;
 export const MONSTER_NAME = /^[A-Z][A-Za-z ]{0,15}$/;
-const SPAWN_FIELDS = ["kind", "name", "program", "group", "day", "night"] as const;
+const SPAWN_FIELDS = [
+  "kind",
+  "name",
+  "program",
+  "group",
+  "day",
+  "night",
+  "nightGroup",
+  "nightMost",
+  "most",
+] as const;
 
 /** A plain object, as JSON makes: not null, not a list, no prototype but Object's or none. */
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
@@ -172,17 +196,20 @@ export function plainList(value: unknown, most: number): unknown[] | null {
 export const own = (record: object, key: string): unknown =>
   Object.hasOwn(record, key) ? (record as Record<string, unknown>)[key] : undefined;
 
-/** Whether `actor` may stand on (x, y). Monsters keep off the camp's ground. */
-export const walkableFor = (world: World, actor: Actor, x: number, y: number): boolean =>
-  monsterWalkable(world.atlas, x, y) || (actor.kind === ADVENTURER && walkable(world.atlas, x, y));
+/**
+ * Whether `actor` may stand on (x, y). Anyone may stand on any walkable tile,
+ * the camp's ground included; monsters only keep to their region.
+ */
+export const walkableFor = (world: World, _actor: Actor, x: number, y: number): boolean =>
+  walkable(world.atlas, x, y);
 
-const monsterWalkable = (atlas: Atlas, x: number, y: number): boolean =>
+/** Whether a monster may come out on (x, y): walkable and off the camp's ground. */
+const spawnGround = (atlas: Atlas, x: number, y: number): boolean =>
   walkable(atlas, x, y) && terrainOf(atlas, x, y) !== "camp";
 
 /**
  * Whether one step takes an adventurer, or a monster, from (ax, ay) to (bx, by). Adventurers
- * cross exits into other regions; monsters keep to the region they are in, and
- * off the camp's ground.
+ * cross exits into other regions; monsters keep to the region they are in.
  */
 function stepsFor(
   atlas: Atlas,
@@ -194,7 +221,7 @@ function stepsFor(
 ) {
   if (!linked(atlas, ax, ay, bx, by)) return false;
   if (adventurer) return true;
-  return terrainOf(atlas, bx, by) !== "camp" && regionAt(atlas, ax, ay) === regionAt(atlas, bx, by);
+  return regionAt(atlas, ax, ay) === regionAt(atlas, bx, by);
 }
 
 /** Whether one step takes `actor` from (ax, ay) to (bx, by). */
@@ -219,13 +246,38 @@ export interface Spawn {
   readonly name: string;
   /** The program each one runs; one of the world's. */
   readonly program: string;
-  /** How many arrive together, 1 to MONSTER_CAP. */
+  /** The fewest that arrive together by day, 1 to MOST_IN_GROUP. */
   readonly group: number;
+  /**
+   * The most that arrive together by day, from `group` to MOST_IN_GROUP;
+   * `group` when left out. Between the two, the number is drawn when they
+   * come out.
+   */
+  readonly most?: number;
+  /**
+   * The fewest that arrive together by night, 1 to MOST_IN_NIGHT_GROUP; `group`
+   * when left out.
+   */
+  readonly nightGroup?: number;
+  /**
+   * The most that arrive together by night, from `nightGroup` to
+   * MOST_IN_NIGHT_GROUP; `nightGroup` when left out. Between the two, the
+   * number is drawn when they come out.
+   */
+  readonly nightMost?: number;
   /** Where they come out by day, and by night. Either may be empty. */
   readonly day: readonly Point[];
   readonly night: readonly Point[];
 }
 export type Spawns = readonly Spawn[];
+
+/** The fewest of a spawn that arrive together, by night or by day. */
+export const groupOf = (spawn: Spawn, night: boolean): number =>
+  night ? (spawn.nightGroup ?? spawn.group) : spawn.group;
+
+/** The most of a spawn that arrive together, by night or by day. */
+export const mostOf = (spawn: Spawn, night: boolean): number =>
+  night ? (spawn.nightMost ?? groupOf(spawn, true)) : (spawn.most ?? spawn.group);
 
 /**
  * Validates a spawn table against the world, programs and kinds it will be used
@@ -244,7 +296,17 @@ export function checkSpawns(
     if (!list) throw new KindError("the spawn table must be a list of at most 64 spawns, no gaps");
     for (const raw of list) {
       if (!isPlainObject(raw)) throw new KindError("a spawn is not a plain object");
-      const [kind, name, program, group, day, night] = SPAWN_FIELDS.map((field) => own(raw, field));
+      const [
+        kind,
+        name,
+        program,
+        group,
+        day,
+        night,
+        nightGroup = group,
+        nightMost = nightGroup,
+        most = group,
+      ] = SPAWN_FIELDS.map((field) => own(raw, field));
       if (typeof kind !== "string" || !Object.hasOwn(kinds, kind))
         throw new KindError(`spawn of an unknown kind ${show(kind).slice(0, 40)}`);
       if (typeof name !== "string" || !MONSTER_NAME.test(name))
@@ -253,9 +315,21 @@ export function checkSpawns(
         );
       if (typeof program !== "string" || !Object.hasOwn(programs, program))
         throw new KindError(`spawn of "${kind}": no program called ${show(program).slice(0, 40)}`);
-      if (!isInt32(group) || group < 1 || group > MONSTER_CAP)
+      if (!isInt32(group) || group < 1 || group > MOST_IN_GROUP)
         throw new KindError(
-          `spawn of "${kind}": group must be a whole number from 1 to ${MONSTER_CAP}`,
+          `spawn of "${kind}": group must be a whole number from 1 to ${MOST_IN_GROUP}`,
+        );
+      if (!isInt32(most) || most < group || most > MOST_IN_GROUP)
+        throw new KindError(
+          `spawn of "${kind}": the most by day must be a whole number from the group to ${MOST_IN_GROUP}`,
+        );
+      if (!isInt32(nightGroup) || nightGroup < 1 || nightGroup > MOST_IN_NIGHT_GROUP)
+        throw new KindError(
+          `spawn of "${kind}": the night group must be a whole number from 1 to ${MOST_IN_NIGHT_GROUP}`,
+        );
+      if (!isInt32(nightMost) || nightMost < nightGroup || nightMost > MOST_IN_NIGHT_GROUP)
+        throw new KindError(
+          `spawn of "${kind}": the most by night must be a whole number from the night group to ${MOST_IN_NIGHT_GROUP}`,
         );
       const points = (value: unknown, part: string): Point[] => {
         const tiles = plainList(value, MAX_SPAWN_PLACES);
@@ -267,8 +341,8 @@ export function checkSpawns(
           if (!isPlainObject(p))
             throw new KindError(`spawn of "${kind}": a ${part} tile is not x and y`);
           const [x, y] = [own(p, "x"), own(p, "y")];
-          // Monsters keep off the camp's ground, so they cannot come out on it either.
-          if (!isInt32(x) || !isInt32(y) || !monsterWalkable(atlas, x, y))
+          // Monsters never come out on the camp's ground.
+          if (!isInt32(x) || !isInt32(y) || !spawnGround(atlas, x, y))
             throw new KindError(
               `spawn of "${kind}": a ${part} tile is not ground a monster can stand on`,
             );
@@ -281,6 +355,9 @@ export function checkSpawns(
           name,
           program,
           group,
+          most,
+          nightGroup,
+          nightMost,
           day: Object.freeze(points(day, "day")),
           night: Object.freeze(points(night, "night")),
         }),
@@ -328,8 +405,9 @@ export interface Actor {
   memory: number[];
   /**
    * Index of the rule that was running when the last decision ended (the rule
-   * that chose the action, or the one that faulted), or -1. For showing why an
-   * actor does what it does.
+   * that chose the action, or the one that faulted), or -1 before its first
+   * decision and after a down (see `mending`). For showing why an actor does
+   * what it does.
    */
   rule: number;
   /** Index into FAULTS of how the last decision ended; 0 is no fault. A faulted actor stands confused. */
@@ -471,6 +549,15 @@ export function lineOfAttack(world: World, actor: Actor, sx: number, sy: number)
 /** Adventurers and monsters are enemies; nobody else is. */
 export const enemies = (a: Actor, b: Actor): boolean =>
   (a.kind === ADVENTURER) !== (b.kind === ADVENTURER);
+
+/**
+ * Is `actor` a resident lying at camp after a down, not yet up? A down leaves
+ * it waiting with no rule in charge and no fault (rule -1, fault 0), which no
+ * decision does, until the wait runs out. Blows pass it by, and monsters'
+ * sensors leave it out.
+ */
+export const mending = (actor: Actor): boolean =>
+  actor.kind === ADVENTURER && actor.wait > 0 && actor.rule === -1 && actor.fault === 0;
 
 export const actorAt = (world: World, x: number, y: number): Actor | undefined =>
   world.actors.find((a) => a.x === x && a.y === y);
@@ -638,9 +725,10 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     attacker.recover = kind.recovery;
     for (const mark of world.marks) {
       if (mark.by !== attacker.id) continue;
-      // Adventurers can share a tile, so a blow lands on every enemy standing there.
+      // Adventurers can share a tile, so a blow lands on every enemy standing
+      // there. One mending at camp after a down is passed by.
       const targets = world.actors.filter(
-        (a) => a.x === mark.x && a.y === mark.y && a.hp > 0 && enemies(a, attacker),
+        (a) => a.x === mark.x && a.y === mark.y && a.hp > 0 && enemies(a, attacker) && !mending(a),
       );
       if (targets.length === 0) {
         events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
@@ -673,7 +761,7 @@ function landAttacks(world: World, events: WorldEvent[]): void {
   const gone = new Set(out.map((actor) => actor.id));
   world.marks = world.marks.filter((mark) => !gone.has(mark.by));
   world.actors = world.actors.filter((actor) => actor.hp > 0 || actor.kind === ADVENTURER);
-  // One that dies is replaced an hour later at the earliest, in the region it was in.
+  // One that dies is replaced a wait later at the earliest, in the region it was in.
   for (const actor of out)
     if (actor.kind !== ADVENTURER) holdSpawns(world, regionAt(world.atlas, actor.x, actor.y));
   for (const actor of out) {
@@ -698,6 +786,9 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     actor.windup = 0;
     actor.recover = 0;
     actor.wait = DOWN_TICKS;
+    // No rule is in charge while it mends; see `mending`.
+    actor.rule = -1;
+    actor.fault = 0;
     actor.hp = ADVENTURER_KIND.hp;
     actor.deaths = Math.min(MAX_DEATHS, actor.deaths + 1);
   }
@@ -790,7 +881,8 @@ function applyInput(world: World, input: Input): void {
     // A monster put in by hand counts against its region's cap and wait like any other.
     if (!Object.hasOwn(world.kinds, kind)) return;
     const region = regionAt(world.atlas, x, y);
-    if (!monsterWalkable(world.atlas, x, y) || monstersIn(world, region) >= MONSTER_CAP) return;
+    if (!spawnGround(world.atlas, x, y) || monstersIn(world, region) >= capFor(world, region))
+      return;
     // Inputs are applied before the tick moves on, and the monster is first in
     // the world on that next tick, so the hour is counted from there.
     holdSpawns(world, region, world.tick + 1);
@@ -798,10 +890,35 @@ function applyInput(world: World, input: Input): void {
   addActor(world, name, x, y, program, kind, "");
 }
 
+/**
+ * How far the camp's firelight reaches, in tiles, straight-line from the
+ * `camp` place. The viewer's lantern light fades out at about this distance.
+ */
+export const LIGHT_REACH = 5;
+
+/** Whether tile (x, y) is in the camp's firelight: in the camp's region and within LIGHT_REACH of `camp`. */
+export function inFirelight(world: World, x: number, y: number): boolean {
+  const camp = place(world.atlas, "camp");
+  if (!walkable(world.atlas, x, y) || !sameRegion(world, camp, { x, y })) return false;
+  const dx = x - camp.x;
+  const dy = y - camp.y;
+  return dx * dx + dy * dy <= LIGHT_REACH * LIGHT_REACH;
+}
+
 /** Is it the part of the day when monsters come out at their night places? */
 export function isNight(world: World): boolean {
   const { hour } = clock(world);
   return hour >= NIGHT_HOUR || hour < DAY_HOUR;
+}
+
+/** The most monsters a region may hold at this time of day. */
+export function capFor(world: World, region: number): number {
+  const cap = isNight(world) ? MONSTER_CAPS.night : MONSTER_CAPS.day;
+  let residents = 0;
+  for (const actor of world.actors)
+    if (actor.kind === ADVENTURER && regionAt(world.atlas, actor.x, actor.y) === region)
+      residents++;
+  return Math.min(cap.most, cap.base + Math.floor(residents / cap.residents));
 }
 
 /** How many monsters are in the region with this index. */
@@ -848,11 +965,13 @@ function sendHome(world: World, events: WorldEvent[]): void {
 
 /**
  * Region by region, in the atlas's order, brings in a whole group of monsters
- * when it is time there and the group fits: under the region's MONSTER_CAP,
- * under its crowd target (CROWD_TILES), and on free tiles within GROUP_SPREAD
- * steps of one of its places in that region. A group that does not fit near
- * its place does not come, and the region's wait starts again. While a region
- * holds MONSTER_CAP monsters its wait starts again too.
+ * when it is time there and the group fits: under the region's cap (capFor,
+ * which counts monsters only and grows with the residents there), and on free
+ * tiles within GROUP_SPREAD steps of one of its places in that region. A group
+ * that does not fit near its place does not come, and the region's wait starts
+ * again. While a region is at its cap its wait starts again too. A spawn whose
+ * number by night is a range has the number drawn, and comes in as many of it
+ * as there is room for, at least its fewest.
  */
 function spawnMonsters(world: World): void {
   if (world.spawns.length === 0) return;
@@ -860,19 +979,17 @@ function spawnMonsters(world: World): void {
   const { atlas } = world;
   const placesIn = (spawn: Spawn, region: number): readonly Point[] =>
     (night ? spawn.night : spawn.day).filter((p) => regionAt(atlas, p.x, p.y) === region);
-  atlas.regions.forEach((ground, region) => {
+  atlas.regions.forEach((_ground, region) => {
     const alive = monstersIn(world, region);
-    if (alive >= MONSTER_CAP) {
+    const cap = capFor(world, region);
+    if (alive >= cap) {
       holdSpawns(world, region);
       return;
     }
     if (world.tick < (world.nextSpawn[region] as number)) return;
-    const crowd = actorsIn(world, region);
+    const room = cap - alive;
     const open = world.spawns.filter(
-      (spawn) =>
-        placesIn(spawn, region).length > 0 &&
-        alive + spawn.group <= MONSTER_CAP &&
-        (crowd + spawn.group) * CROWD_TILES <= ground.walkable,
+      (spawn) => placesIn(spawn, region).length > 0 && groupOf(spawn, night) <= room,
     );
     // Nothing fits yet; look again when one more has gone.
     if (open.length === 0) return;
@@ -880,8 +997,12 @@ function spawnMonsters(world: World): void {
     const spawn = open[nextInt(world.rng, open.length)] as Spawn;
     const places = placesIn(spawn, region);
     const at = places[nextInt(world.rng, places.length)] as Point;
-    const tiles = groupTiles(world, at, spawn.group);
-    if (!tiles || world.nextActorId > MAX_ACTOR_ID - spawn.group) return;
+    const fewest = groupOf(spawn, night);
+    const most = mostOf(spawn, night);
+    const drawn = most > fewest ? fewest + nextInt(world.rng, most - fewest + 1) : fewest;
+    const group = Math.min(drawn, room);
+    const tiles = groupTiles(world, at, group);
+    if (!tiles || world.nextActorId > MAX_ACTOR_ID - group) return;
     for (const tile of tiles) {
       addActor(
         world,
@@ -898,8 +1019,8 @@ function spawnMonsters(world: World): void {
 
 /**
  * The first `count` tiles, nearest first by walking, within GROUP_SPREAD steps
- * of `at` and in its region, that a monster can stand on and nobody stands on
- * or is walking to; null if there are not that many.
+ * of `at` and in its region, that a monster can come out on (off the camp's
+ * ground) and nobody stands on or is walking to; null if there are not that many.
  */
 function groupTiles(world: World, at: Point, count: number): Point[] | null {
   const { atlas } = world;
@@ -915,7 +1036,8 @@ function groupTiles(world: World, at: Point, count: number): Point[] | null {
   for (let depth = 0; depth <= GROUP_SPREAD && tiles.length < count; depth++) {
     const next: Point[] = [];
     for (const tile of ring) {
-      if (!taken.has(tileAt(atlas, tile.x, tile.y)) && tiles.length < count) tiles.push(tile);
+      const free = !taken.has(tileAt(atlas, tile.x, tile.y)) && spawnGround(atlas, tile.x, tile.y);
+      if (free && tiles.length < count) tiles.push(tile);
       for (const [dx, dy] of NEIGHBOURS) {
         const x = tile.x + dx;
         const y = tile.y + dy;
@@ -1022,8 +1144,12 @@ function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
   actor.fromY = actor.y;
   actor.x = next.x;
   actor.y = next.y;
-  actor.moveTicksLeft = STEP_TICKS;
+  actor.moveTicksLeft = stepTicks(world, actor);
 }
+
+/** Ticks `actor` takes to walk from one tile to the next. */
+export const stepTicks = (world: World, actor: Actor): number =>
+  kindOf(world, actor).step ?? STEP_TICKS;
 
 /** Spawn inputs that put the given actors on the free walkable tiles nearest the camp, in order. */
 export function spawnsNearCamp(
@@ -1092,14 +1218,29 @@ export function hashPrograms(programs: Programs): string {
 export const hashProgram = (name: string, program: Program): string =>
   hashInts(programInts(name, program));
 
-/** A fingerprint of the monster kinds: names in order, with each one's numbers. */
+/**
+ * A fingerprint of the monster kinds: names in order, with each one's numbers.
+ * A kind that walks at STEP_TICKS hashes as kinds did before they had a
+ * `step`, so snapshots saved then still match; any other step follows its
+ * numbers as -1 and the step. Nothing else can stand there (the next kind's
+ * name starts with its length), so the two forms never read the same.
+ */
 export function hashKinds(kinds: Kinds): string {
   return hashInts(
     Object.keys(kinds)
       .sort()
       .flatMap((name) => {
         const kind = kinds[name] as Kind;
-        return [...stringInts(name), kind.hp, kind.damage, kind.windup, kind.recovery, kind.reach];
+        const step = kind.step ?? STEP_TICKS;
+        return [
+          ...stringInts(name),
+          kind.hp,
+          kind.damage,
+          kind.windup,
+          kind.recovery,
+          kind.reach,
+          ...(step === STEP_TICKS ? [] : [-1, step]),
+        ];
       }),
   );
 }
@@ -1203,7 +1344,13 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
   ]);
 }
 
-/** A fingerprint of the spawn table, in order. */
+/**
+ * A fingerprint of the spawn table, in order. A spawn that comes in the same
+ * number by night as by day hashes as spawns did before they had a night
+ * group; any other follows its night places with -1, its fewest by night and
+ * its most by night, as in hashKinds. One whose most by day is more than its
+ * group then adds -2 and that most.
+ */
 export function hashSpawns(spawns: Spawns): string {
   return hashInts([
     spawns.length,
@@ -1216,6 +1363,10 @@ export function hashSpawns(spawns: Spawns): string {
       ...s.day.flatMap((p) => [p.x, p.y]),
       s.night.length,
       ...s.night.flatMap((p) => [p.x, p.y]),
+      ...(groupOf(s, true) === s.group && mostOf(s, true) === s.group
+        ? []
+        : [-1, groupOf(s, true), mostOf(s, true)]),
+      ...(mostOf(s, false) === s.group ? [] : [-2, mostOf(s, false)]),
     ]),
   ]);
 }
@@ -1313,7 +1464,7 @@ export function sameGround(version: number, mapHash: unknown, atlas: Atlas): boo
  */
 export function migrate(version: number, state: unknown, atlas: Atlas): unknown {
   const old = version < 7;
-  if (old) refuseOldMonsters(state, atlas);
+  if (old) refuseOldMonsters(state);
   const v5 = version === 4 ? fromVersion4(state) : state;
   const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
   const v7 = old ? fromVersion6(v6) : v6;
@@ -1378,35 +1529,25 @@ export function restore(
 }
 
 /**
- * Version 4 had no monster cap and let monsters onto the camp's ground, and
- * versions 5 and 6 allowed six monsters where a region now holds MONSTER_CAP. A world
+ * Version 4 had no monster cap, and versions 5 and 6 allowed six monsters by
+ * day and night alike, where a region may now hold up to MONSTER_CEILING. A world
  * saved like that cannot go on under today's rules, so it is refused with a
  * message that says so, before readState would call it damaged.
  */
-function refuseOldMonsters(state: unknown, atlas: Atlas): void {
+function refuseOldMonsters(state: unknown): void {
   if (typeof state !== "object" || state === null) return;
   const { actors } = state as Record<string, unknown>;
   if (!Array.isArray(actors)) return;
   let monsters = 0;
   for (const actor of actors as unknown[]) {
     if (typeof actor !== "object" || actor === null) continue;
-    const { kind, x, y, fromX, fromY, path } = actor as Record<string, unknown>;
+    const { kind } = actor as Record<string, unknown>;
     if (typeof kind !== "string" || kind === ADVENTURER) continue;
     monsters++;
-    const onCamp = (px: unknown, py: unknown): boolean =>
-      isInt32(px) && isInt32(py) && terrainOf(atlas, px, py) === "camp";
-    const walking = Array.isArray(path) ? (path as unknown[]) : [];
-    const stepsOnCamp = walking.some(
-      (p) => typeof p === "object" && p !== null && onCamp(own(p, "x"), own(p, "y")),
-    );
-    if (onCamp(x, y) || onCamp(fromX, fromY) || stepsOnCamp)
-      throw new SnapshotError(
-        "snapshot has a monster on or walking onto the camp's ground, where monsters can no longer go",
-      );
   }
-  if (monsters > MONSTER_CAP)
+  if (monsters > MONSTER_CEILING)
     throw new SnapshotError(
-      `snapshot holds ${monsters} monsters, more than the ${MONSTER_CAP} a region now allows`,
+      `snapshot holds ${monsters} monsters, more than the ${MONSTER_CEILING} a region now allows`,
     );
 }
 
@@ -1559,12 +1700,12 @@ export function readState(
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
   const nodes = readNodes(rawNodes, atlas, tick);
   if (!nodes) return null;
-  // One arrival time per region, each set RESPAWN_TICKS ahead, and only ever from a tick already reached.
+  // One arrival time per region, each set at most MOST_SPAWN_WAIT ahead, and only ever from a tick already reached.
   if (!Array.isArray(nextSpawn) || nextSpawn.length !== atlas.regions.length) return null;
   const arrivals: number[] = [];
   for (const at of nextSpawn as unknown[]) {
     if (typeof at !== "number" || !Number.isSafeInteger(at) || at < 0) return null;
-    if (at > tick + RESPAWN_TICKS) return null;
+    if (at > tick + MOST_SPAWN_WAIT) return null;
     arrivals.push(at);
   }
   // Ids are handed out in order and monsters leave, so ids rise and stay below the next one.
@@ -1632,10 +1773,9 @@ export function readState(
     if (typeof kind !== "string") return null;
     if (kind !== ADVENTURER && !Object.hasOwn(kinds, kind)) return null;
     if (!SHIFTS.includes(shift as Shift) || (kind === ADVENTURER && shift !== "")) return null;
-    // Monsters keep off the camp's ground and to their region, and a region never holds more than the cap.
+    // Monsters keep to their region, and a region never holds more than the night's cap.
     const adventurer = kind === ADVENTURER;
-    const ground = (px: number, py: number): boolean =>
-      adventurer ? walkable(atlas, px, py) : monsterWalkable(atlas, px, py);
+    const ground = (px: number, py: number): boolean => walkable(atlas, px, py);
     const stepped = (p: Point, q: Point): boolean =>
       stepsFor(atlas, adventurer, p.x, p.y, q.x, q.y);
     const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
@@ -1648,8 +1788,9 @@ export function readState(
     if (!ground(x, y) || !ground(fromX, fromY)) return null;
     const region = regionAt(atlas, x, y);
     if (!adventurer) monsters.set(region, (monsters.get(region) ?? 0) + 1);
-    if ((monsters.get(region) ?? 0) > MONSTER_CAP) return null;
-    if (!isInt32(moveTicksLeft) || moveTicksLeft < 0 || moveTicksLeft > STEP_TICKS) return null;
+    if ((monsters.get(region) ?? 0) > MONSTER_CEILING) return null;
+    const stepLength = numbers.step ?? STEP_TICKS;
+    if (!isInt32(moveTicksLeft) || moveTicksLeft < 0 || moveTicksLeft > stepLength) return null;
     const here = { x, y };
     const from = { x: fromX, y: fromY };
     if (moveTicksLeft === 0 ? fromX !== x || fromY !== y : !stepped(from, here)) return null;

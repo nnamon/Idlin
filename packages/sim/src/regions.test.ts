@@ -6,12 +6,14 @@ import { describe, expect, it } from "vitest";
 import { type Atlas, atlasOf, linked, parseWorld, regionAt, terrainOf, walkable } from "./atlas.ts";
 import { atBank } from "./bag.ts";
 import {
+  isWalkable,
   MAX_MAP_HEIGHT,
   MAX_MAP_WIDTH,
   MapError,
   type Point,
   place,
   placeConstants,
+  terrainAt,
 } from "./map.ts";
 import { findPath } from "./path.ts";
 import { compileBots } from "./tactics.ts";
@@ -19,17 +21,20 @@ import { firstLight, rawWorld, shippedMonsters, shippedPrograms, shippedWorld } 
 import {
   type Actor,
   ADVENTURER,
-  actorsIn,
-  CROWD_TILES,
+  capFor,
   createWorld,
   hashWorld,
   type Input,
   lineOfAttack,
-  MONSTER_CAP,
+  MONSTER_CAPS,
+  MONSTER_CEILING,
   monstersIn,
+  NIGHT_HOUR,
+  RESPAWN_TICKS,
   restore,
   SNAPSHOT_VERSION,
   SnapshotError,
+  START_HOUR,
   snapshot,
   spawnsNearCamp,
   step,
@@ -300,28 +305,29 @@ describe("monsters per region", () => {
     expect(world.nextSpawn.slice(1)).toEqual([0, 0, 0]);
   });
 
-  it("each region spawns on its own wait and holds at most MONSTER_CAP", () => {
+  it("each region spawns on its own wait and holds at most its cap", () => {
     const world = createWorld(WORLD, 3, ALL, MONSTERS.kinds, SPREAD);
     step(world, spawnsNearCamp(world, [{ name: "Ash", program: "homebody" }]));
-    // From the first tick, the camp, the pinewood and the hills each get a group of their own.
+    // From the first tick, the camp, the pinewood and the hills each get a
+    // group of their own: wolves in the pinewood, goblins in the hills.
     expect(monstersIn(world, CAMP)).toBeGreaterThan(0);
-    expect(monstersIn(world, PINE)).toBe(1);
+    expect(monstersIn(world, PINE)).toBeGreaterThanOrEqual(2);
+    expect(monstersIn(world, PINE)).toBeLessThanOrEqual(3);
+    expect(capFor(world, HILLS)).toBe(MONSTER_CAPS.day.base);
     expect(monstersIn(world, HILLS)).toBe(3);
     let most = 0;
     for (let t = 0; t < TICKS_PER_DAY / 2; t++) {
       step(world);
       for (const r of [CAMP, PINE, HILLS, LOWER])
-        expect(monstersIn(world, r)).toBeLessThanOrEqual(MONSTER_CAP);
+        expect(monstersIn(world, r)).toBeLessThanOrEqual(MONSTER_CEILING);
       most = Math.max(most, world.actors.filter((a) => a.kind !== ADVENTURER).length);
     }
     // More than one region's worth alive at once, and nothing ever came out by the lower river.
-    expect(most).toBeGreaterThan(MONSTER_CAP);
+    expect(most).toBeGreaterThan(MONSTER_CAPS.day.base);
     expect(world.nextSpawn[LOWER]).toBe(0);
   });
 
-  it("sends no group into a region it would take past the crowd target", () => {
-    const camp = WORLD.regions[CAMP] as Atlas["regions"][number];
-    const full = Math.floor(camp.walkable / CROWD_TILES);
+  it("residents never keep monsters out of a region, and a busy one draws more", () => {
     // Residents standing on the camp's map east of the river, away from where
     // monsters come out by day (the deep wood and the den).
     const crowd = (count: number): Input[] => {
@@ -332,19 +338,35 @@ describe("monsters per region", () => {
             inputs.push({ type: "spawn", name: `R${inputs.length}`, program: "still", x, y });
       return inputs;
     };
-    for (const [standing, monsters] of [
-      [full - 1, 1],
-      [full, 0],
+    // By day the cap is four, and one more for every three residents, up to twelve.
+    for (const [standing, cap] of [
+      [0, 4],
+      [6, 6],
+      [12, 8],
+      [36, 12],
     ] as const) {
       const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, SPREAD);
       step(world, crowd(standing));
       expect(world.actors.filter((a) => a.kind === ADVENTURER)).toHaveLength(standing);
-      run(world, 30);
-      // Room for one more: a lone wolf, never a group of three goblins.
-      expect(monstersIn(world, CAMP), `${standing} standing`).toBe(monsters);
-      expect(actorsIn(world, CAMP) * CROWD_TILES).toBeLessThanOrEqual(camp.walkable);
-      // The hills' goblins come all the same.
-      expect(monstersIn(world, HILLS)).toBe(3);
+      expect(capFor(world, CAMP), `${standing} standing`).toBe(cap);
+      // Twelve waits are time enough for twelve groups; nobody here fights back,
+      // so none die. It fills to the cap, or one short where no group of two or
+      // three fits.
+      run(world, 12 * RESPAWN_TICKS);
+      expect(monstersIn(world, CAMP), `${standing} standing`).toBeGreaterThanOrEqual(cap - 1);
+      expect(monstersIn(world, CAMP), `${standing} standing`).toBeLessThanOrEqual(cap);
+    }
+    // By night: ten, and one more for every two residents, up to 24.
+    for (const [standing, cap] of [
+      [0, 10],
+      [6, 13],
+      [12, 16],
+      [36, 24],
+    ] as const) {
+      const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
+      world.tick = (NIGHT_HOUR - START_HOUR) * TICKS_PER_GAME_HOUR;
+      step(world, crowd(standing));
+      expect(capFor(world, CAMP), `${standing} standing by night`).toBe(cap);
     }
   });
 });
@@ -477,19 +499,34 @@ for (const { version, file, brynXp } of OLD_SNAPSHOTS) {
 
     it("is refused on a world of regions, with more monsters than a region holds, or damaged", () => {
       expect(() => restore(TEXT, WORLD, PROGRAMS, OLD_KINDS, OLD_SPAWNS)).toThrow(/different map/);
+      // Three monsters in it, and MONSTER_CEILING - 2 more: past the most a
+      // region holds at any hour.
       const crowded = JSON.parse(TEXT);
-      crowded.state.actors.push({
-        ...crowded.state.actors[5],
-        id: 100,
-        x: 20,
-        y: 15,
-        fromX: 20,
-        fromY: 15,
-        path: [],
-      });
-      crowded.state.nextActorId = 101;
+      const actors = crowded.state.actors as Point[];
+      const free: Point[] = [];
+      for (let y = 0; y < MAP.height; y++)
+        for (let x = 0; x < MAP.width; x++)
+          if (
+            free.length < MONSTER_CEILING - 2 &&
+            isWalkable(MAP, x, y) &&
+            terrainAt(MAP, x, y) !== "camp" &&
+            !actors.some((a) => a.x === x && a.y === y)
+          )
+            free.push({ x, y });
+      for (const [i, p] of free.entries())
+        crowded.state.actors.push({
+          ...crowded.state.actors[5],
+          id: 100 + i,
+          ...p,
+          fromX: p.x,
+          fromY: p.y,
+          path: [],
+        });
+      crowded.state.nextActorId = 200;
       expect(() => restore(JSON.stringify(crowded), MAP, PROGRAMS, OLD_KINDS, OLD_SPAWNS)).toThrow(
-        /holds 4 monsters, more than the 3 a region now allows/,
+        new RegExp(
+          `holds ${MONSTER_CEILING + 1} monsters, more than the ${MONSTER_CEILING} a region now allows`,
+        ),
       );
       const damaged = JSON.parse(TEXT);
       damaged.state.nextSpawn = 1802;
@@ -510,7 +547,7 @@ for (const { version, file, brynXp } of OLD_SNAPSHOTS) {
 const FIFTY_TICKS = process.env.IDLIN_LONG === "1" ? TICKS_PER_DAY : 6 * TICKS_PER_GAME_HOUR;
 
 describe("a game day with fifty residents", () => {
-  it(`over ${FIFTY_TICKS} ticks, leaves nobody stuck, and keeps monsters under each region's cap and crowd target`, () => {
+  it(`over ${FIFTY_TICKS} ticks, leaves nobody stuck, and keeps monsters under each region's cap`, () => {
     const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, MONSTERS.spawns);
     const cast = Array.from({ length: 50 }, (_, i) => ({
       name: `R${i}`,
@@ -523,7 +560,6 @@ describe("a game day with fifty residents", () => {
     let longest = 0;
     const regions = WORLD.regions.map(() => ({ sum: 0, most: 0, monsters: 0 }));
     let samples = 0;
-    const arrivals = new Set<number>(world.actors.map((a) => a.id));
     for (let tick = 1; tick <= FIFTY_TICKS; tick++) {
       for (const e of events)
         if (e.type === "decide" || e.type === "fault") last.set(e.actor, tick);
@@ -533,15 +569,10 @@ describe("a game day with fifty residents", () => {
         if (a.kind === ADVENTURER) longest = Math.max(longest, tick - (last.get(a.id) ?? 0));
       }
       events = step(world);
-      // A group that has just come must have found its region under the crowd target.
-      for (const a of world.actors) {
-        if (arrivals.has(a.id)) continue;
-        arrivals.add(a.id);
-        const r = regionOf(world, a);
-        expect(actorsIn(world, r) * CROWD_TILES).toBeLessThanOrEqual(
-          (WORLD.regions[r] as Atlas["regions"][number]).walkable,
-        );
-      }
+      WORLD.regions.forEach((_, r) => {
+        const stats = regions[r] as (typeof regions)[number];
+        stats.monsters = Math.max(stats.monsters, monstersIn(world, r));
+      });
       if (tick % 60 !== 0) continue;
       samples++;
       WORLD.regions.forEach((_, r) => {
@@ -549,25 +580,27 @@ describe("a game day with fifty residents", () => {
         const stats = regions[r] as (typeof regions)[number];
         stats.sum += here.length;
         stats.most = Math.max(stats.most, here.length);
-        stats.monsters = Math.max(stats.monsters, monstersIn(world, r));
       });
     }
     // Nobody stands for a minute of stream time (a game hour) without deciding anything. A long walk is not standing.
     expect(longest).toBeLessThanOrEqual(TICKS_PER_GAME_HOUR);
+    // A readable crowd: one resident for every 25 walkable tiles.
     const measured = WORLD.regions.map((region, r) => {
       const { sum, most, monsters } = regions[r] as (typeof regions)[number];
       return {
         region: region.map.name,
-        target: Math.floor(region.walkable / CROWD_TILES),
+        target: Math.floor(region.walkable / 25),
         mean: Math.round(sum / samples),
         most,
         monsters,
       };
     });
-    for (const m of measured) expect(m.monsters, m.region).toBeLessThanOrEqual(MONSTER_CAP);
-    // Away from camp, residents spread out under the target on average. The camp
-    // is over it: only the wanderers leave its map, and they spend the night
-    // there. Its crowd keeps monsters out of it instead.
+    // However many residents a region holds, no more than the ceiling of monsters.
+    for (const m of measured) expect(m.monsters, m.region).toBeLessThanOrEqual(MONSTER_CEILING);
+    // The camp's region, with most of the fifty in it, draws more than its base.
+    expect(measured[CAMP]?.monsters).toBeGreaterThan(MONSTER_CAPS.day.base);
+    // Away from camp, residents spread out under that crowd on average. The camp
+    // is over it: only the wanderers leave its map, and they spend the night there.
     for (const m of measured.slice(1)) expect(m.mean, m.region).toBeLessThan(m.target);
   }, 60_000);
 });

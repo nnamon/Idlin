@@ -20,6 +20,7 @@ import {
   kindOf,
   place,
   START_HOUR,
+  stepTicks,
   TICKS_PER_GAME_HOUR,
   terrainOf,
   type World,
@@ -577,7 +578,7 @@ export class Scene {
     const fraction = time - world.tick;
     const between = Math.min(1, Math.max(0, fraction));
     const walkers: Walker[] = world.actors.map((actor) => {
-      const raw = actorPose(actor, fraction, time);
+      const raw = actorPose(actor, fraction, time, stepTicks(world, actor));
       // Between ticks the figure goes on easing down or up, so it never steps.
       const [before, now] = this.sitting.get(actor.id) ?? [raw.sit, raw.sit];
       const stoop = stoopAt(this.fight, actor.id, time);
@@ -1039,7 +1040,7 @@ export class Scene {
     }
     // Each figure moves a step further into or out of sitting, once a tick.
     const standing = world.actors.map((actor) => {
-      const pose = actorPose(actor, 0, world.tick);
+      const pose = actorPose(actor, 0, world.tick, stepTicks(world, actor));
       const was = this.sitting.get(actor.id)?.[1] ?? pose.sit;
       const sit = easeSit(was, pose.sit);
       this.sitting.set(actor.id, [was, sit]);
@@ -1056,8 +1057,9 @@ export class Scene {
     const moves = new Map(
       world.actors.map((actor) => {
         const [was, sit] = this.sitting.get(actor.id) ?? [0, 0];
-        const start = this.wish(actor, { ...actorPose(actor, 0, world.tick), sit: was });
-        const end = this.wish(actor, { ...actorPose(actor, 1, world.tick + 1), sit });
+        const step = stepTicks(world, actor);
+        const start = this.wish(actor, { ...actorPose(actor, 0, world.tick, step), sit: was });
+        const end = this.wish(actor, { ...actorPose(actor, 1, world.tick + 1, step), sit });
         return [actor.id, { start, end, lift: actor.moveTicksLeft > 0 ? 3 : 0 }];
       }),
     );

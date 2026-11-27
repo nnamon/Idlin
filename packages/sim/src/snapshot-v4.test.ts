@@ -6,13 +6,14 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { placeConstants } from "./map.ts";
+import { isWalkable, type Point, placeConstants, terrainAt } from "./map.ts";
 import { compileBots } from "./tactics.ts";
 import { firstLight, shippedMonsters } from "./testing.ts";
 import {
   ADVENTURER,
   hashSpawns,
   hashWorld,
+  MONSTER_CEILING,
   restore,
   SNAPSHOT_VERSION,
   SnapshotError,
@@ -29,6 +30,21 @@ const SOURCES = {
 };
 const KINDS = { wolf: { hp: 400, damage: 1, windup: 8, recovery: 10, reach: 1 } };
 const PROGRAMS = compileBots(SOURCES, placeConstants(MAP));
+
+/** The first `count` tiles of MAP, row by row, a monster can stand on and none of `actors` stands on. */
+function freeTiles(actors: readonly { x: number; y: number }[], count: number): Point[] {
+  const free: Point[] = [];
+  for (let y = 0; y < MAP.height; y++)
+    for (let x = 0; x < MAP.width; x++)
+      if (
+        free.length < count &&
+        isWalkable(MAP, x, y) &&
+        terrainAt(MAP, x, y) !== "camp" &&
+        !actors.some((a) => a.x === x && a.y === y)
+      )
+        free.push({ x, y });
+  return free;
+}
 const TEXT = readFileSync(new URL("./fixtures/snapshot-v4.json", import.meta.url), "utf8");
 
 describe("a version 4 snapshot", () => {
@@ -75,33 +91,19 @@ describe("a version 4 snapshot", () => {
   });
 
   it("is refused, saying why, when its monsters break today's rules", () => {
-    // Version 4 had no cap and let monsters onto the camp's ground.
+    // Version 4 had no cap. (It let monsters onto the camp's ground too, which
+    // they may walk onto today.)
     const crowded = JSON.parse(TEXT);
     const wolf = crowded.state.actors[3];
     expect(wolf.kind).toBe("wolf");
-    for (let i = 0; i < 6; i++)
-      crowded.state.actors.push({
-        ...wolf,
-        id: 100 + i,
-        x: 20 + i,
-        y: 15,
-        fromX: 20 + i,
-        fromY: 15,
-        path: [],
-      });
+    const free = freeTiles(crowded.state.actors, MONSTER_CEILING);
+    for (const [i, p] of free.entries())
+      crowded.state.actors.push({ ...wolf, id: 100 + i, ...p, fromX: p.x, fromY: p.y, path: [] });
     expect(() => restore(JSON.stringify(crowded), MAP, PROGRAMS, KINDS)).toThrow(
-      /holds 7 monsters, more than the 3 a region now allows/,
+      new RegExp(
+        `holds ${MONSTER_CEILING + 1} monsters, more than the ${MONSTER_CEILING} a region now allows`,
+      ),
     );
-    for (const change of [
-      { x: 14, y: 9, fromX: 14, fromY: 9, path: [] },
-      { path: [{ x: 14, y: 9 }] },
-    ]) {
-      const camped = JSON.parse(TEXT);
-      Object.assign(camped.state.actors[3], change);
-      expect(() => restore(JSON.stringify(camped), MAP, PROGRAMS, KINDS)).toThrow(
-        /a monster on or walking onto the camp's ground/,
-      );
-    }
   });
 
   it("is refused when damaged, like any other", () => {

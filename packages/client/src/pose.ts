@@ -55,12 +55,13 @@ export function easeSit(before: number, target: number): number {
 
 /**
  * `fraction` is how far the picture is into the next tick, 0 to 1. A step
- * starts with `moveTicksLeft` at STEP_TICKS and ends when it reaches 0, so the
- * pose moves smoothly from one tile to the next and on into a following step.
+ * starts with `moveTicksLeft` at `step` (the ticks a tile takes this actor's
+ * kind, `stepTicks` in the sim) and ends when it reaches 0, so the pose moves
+ * smoothly from one tile to the next and on into a following step.
  */
-export function actorPose(actor: Actor, fraction: number, time: number): Pose {
+export function actorPose(actor: Actor, fraction: number, time: number, step = STEP_TICKS): Pose {
   const moving = actor.moveTicksLeft > 0;
-  const raw = moving ? (STEP_TICKS - actor.moveTicksLeft + fraction) / STEP_TICKS : 1;
+  const raw = moving ? (step - actor.moveTicksLeft + fraction) / step : 1;
   const progress = Math.min(1, Math.max(0, raw));
   // Ease in and out of each step.
   const eased = progress * progress * (3 - 2 * progress);

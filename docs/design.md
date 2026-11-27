@@ -394,9 +394,9 @@ worth watching for someone who owns just one of them. The plan
    ones there are or there are too many for them, because ground the frame
    has to travel to takes frame time from every player. The regions lie in a
    grid three regions tall, which two rows of the frame cover, and the world
-   holds at most 150 characters. Monsters come into a region only
-   while it is under its crowd target (one actor per 25 walkable tiles, about
-   18). The stream stays on one region at a time and moves to the next
+   holds at most 150 characters. Residents never keep monsters out of a
+   region: a busy region draws more, up to a ceiling (24 a region by night).
+   The stream stays on one region at a time and moves to the next
    slowly, without cutting. Characters elsewhere carry on, and show up in the
    news line and on their own page.
 

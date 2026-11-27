@@ -11,8 +11,9 @@ import {
   type Kind,
   KindError,
   type Kinds,
-  MONSTER_CAP,
   MONSTER_NAME,
+  MOST_IN_GROUP,
+  MOST_IN_NIGHT_GROUP,
   own,
   plainList,
   type Spawn,
@@ -26,8 +27,17 @@ export interface Monsters {
   readonly spawns: Spawns;
 }
 
-const NUMBERS = ["hp", "damage", "windup", "recovery", "reach"] as const;
-const FIELDS = new Set<string>([...NUMBERS, "name", "program", "group", "day", "night"]);
+/** A kind's numbers. `step` may be left out, and then the kind walks as adventurers do. */
+const NUMBERS = ["hp", "damage", "windup", "recovery", "reach", "step"] as const;
+const FIELDS = new Set<string>([
+  ...NUMBERS,
+  "name",
+  "program",
+  "group",
+  "night_group",
+  "day",
+  "night",
+]);
 /** More places than a spawn may list; the world refuses those with a clearer message. */
 const MOST_PLACES = 64;
 
@@ -74,13 +84,41 @@ export function loadMonsters(
           return places[name] as Point;
         });
       };
-      const [name, program, group] = [own(raw, "name"), own(raw, "program"), own(raw, "group")];
+      const [name, program] = [own(raw, "name"), own(raw, "program")];
+      // Each a number, or the fewest and the most as a list of two.
+      const day = own(raw, "group");
+      const dayRange = Array.isArray(day) ? plainList(day, 2) : null;
+      const [group, most] = dayRange ? dayRange : [day, day];
+      const night = own(raw, "night_group");
+      const range = Array.isArray(night) ? plainList(night, 2) : null;
+      const [nightGroup, nightMost] =
+        night === undefined ? [group, group] : range ? range : [night, night];
       if (typeof name !== "string" || !MONSTER_NAME.test(name))
         throw new KindError(
           `${file}: name must be a capital letter and up to 15 letters or spaces`,
         );
-      if (!isInt32(group) || group < 1 || group > MONSTER_CAP)
-        throw new KindError(`${file}: group must be a whole number from 1 to ${MONSTER_CAP}`);
+      if (
+        (dayRange && dayRange.length !== 2) ||
+        !isInt32(group) ||
+        !isInt32(most) ||
+        group < 1 ||
+        most < group ||
+        most > MOST_IN_GROUP
+      )
+        throw new KindError(
+          `${file}: group must be a whole number from 1 to ${MOST_IN_GROUP}, or the fewest and the most as two of those`,
+        );
+      if (
+        (range && range.length !== 2) ||
+        !isInt32(nightGroup) ||
+        !isInt32(nightMost) ||
+        nightGroup < 1 ||
+        nightMost < nightGroup ||
+        nightMost > MOST_IN_NIGHT_GROUP
+      )
+        throw new KindError(
+          `${file}: night_group must be a whole number from 1 to ${MOST_IN_NIGHT_GROUP}, or the fewest and the most as two of those`,
+        );
       if (typeof program !== "string" || !Object.hasOwn(programs, program))
         throw new KindError(
           `${file}: there is no monster program called ${show(program).slice(0, 40)}`,
@@ -90,6 +128,9 @@ export function loadMonsters(
         name,
         program,
         group,
+        most,
+        nightGroup,
+        nightMost,
         day: where("day"),
         night: where("night"),
       });

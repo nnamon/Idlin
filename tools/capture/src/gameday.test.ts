@@ -2,10 +2,19 @@
 // world as the viewer and the capture record it: the camp's region. With
 // monsters at six residents over many seeds: the full 60 seeds take about a
 // minute, so the gate runs five of them and the capture workflow all 60
-// (IDLIN_LONG=1). Without monsters, as `capture --review` runs it, for seeds 1
-// and 2.
+// (IDLIN_LONG=1). And as `capture --review` runs it, also with monsters, for
+// seeds 1 and 2 at six and twelve residents.
 
-import { ADVENTURER, isNight, TICKS_PER_DAY, terrainOf } from "@idlin/sim";
+import {
+  ADVENTURER,
+  inFirelight,
+  isNight,
+  LIGHT_REACH,
+  place,
+  sameRegion,
+  TICKS_PER_DAY,
+  terrainOf,
+} from "@idlin/sim";
 import { describe, expect, it } from "vitest";
 import { castOf } from "../../../packages/client/src/cast.ts";
 import { botSources, shippedMonsters, shippedWorld } from "../../../packages/sim/src/testing.ts";
@@ -27,11 +36,14 @@ describe("game days with monsters", () => {
         if (terrainOf(atlas, x, y) === "camp") camp.push({ x, y });
     const toCamp = (p: { x: number; y: number }) =>
       Math.min(...camp.map((c) => Math.abs(c.x - p.x) + Math.abs(c.y - p.y)));
+    const campPlace = place(atlas, "camp");
     const monsters = shippedMonsters();
     const fails: string[] = [];
-    // Monster-ticks spent on the camp's ground, beside it, and in all, by day and by night.
-    let onCamp = 0;
-    const beside = { day: 0, night: 0 };
+    // Monster-ticks spent on the camp's ground, in its firelight, at the edge of
+    // the light (up to two tiles past its reach), and in all, by day and by night.
+    const onCamp = { day: 0, night: 0 };
+    const lit = { day: 0, night: 0 };
+    const edge = { day: 0, night: 0 };
     const present = { day: 0, night: 0 };
     let nightHits = 0;
     let leaves = 0;
@@ -43,9 +55,12 @@ describe("game days with monsters", () => {
         const part = isNight(world) ? "night" : "day";
         const out = world.actors.filter((a) => a.kind !== ADVENTURER);
         for (const monster of out) {
-          const d = toCamp(monster);
-          if (d === 0) onCamp++;
-          if (d === 1) beside[part]++;
+          if (toCamp(monster) === 0) onCamp[part]++;
+          if (inFirelight(world, monster.x, monster.y)) lit[part]++;
+          const [dx, dy] = [monster.x - campPlace.x, monster.y - campPlace.y];
+          const away = dx * dx + dy * dy;
+          if (sameRegion(world, monster, campPlace) && away > LIGHT_REACH ** 2)
+            if (away <= (LIGHT_REACH + 2) ** 2) edge[part]++;
           present[part]++;
         }
         for (const event of events) {
@@ -64,10 +79,22 @@ describe("game days with monsters", () => {
       }
     }
     expect(fails).toEqual([]);
-    // Monsters never set foot on the camp's ground, and by night they spend far
-    // more of their time right at its edge than by day.
-    expect(onCamp).toBe(0);
-    expect(beside.night / present.night).toBeGreaterThan((2 * beside.day) / present.day);
+    // By day monsters are on the camp's ground or in its light only for the odd
+    // step of a chase or out of a blow. By night packs go into the light and
+    // onto the camp's ground some of the time, when they outnumber the residents
+    // there, and spend more of their time in the light or at its edge than by day:
+    // the camp is where residents are at night. By day a wolf chasing someone
+    // just outside the light may cross its edge, so the night's share in the
+    // light is held to half as much again as the day's, not twice.
+    const shares = JSON.stringify({ onCamp, lit, edge, present });
+    expect(onCamp.day / present.day, shares).toBeLessThan(0.003);
+    expect(lit.day / present.day, shares).toBeLessThan(0.04);
+    expect(lit.day / present.day, shares).toBeLessThan(lit.night / present.night / 1.5);
+    expect(onCamp.night, shares).toBeGreaterThan(0);
+    expect(lit.night / present.night, shares).toBeLessThan(0.25);
+    expect((edge.night + lit.night) / present.night, shares).toBeGreaterThan(
+      (edge.day + lit.day) / present.day,
+    );
     // Day monsters go home at dusk, so the night has monsters of its own for most
     // of its length, and fights in it.
     expect(leaves).toBeGreaterThan(SEEDS.length);

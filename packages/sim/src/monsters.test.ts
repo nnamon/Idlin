@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atlasOf } from "./atlas.ts";
+import { atlasOf, regionAt } from "./atlas.ts";
 import { CONFUSED_TICKS } from "./brain.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, terrainAt } from "./map.ts";
 import { loadMonsters } from "./monsters.ts";
@@ -17,21 +17,29 @@ import {
 import { FAULTS } from "./vm.ts";
 import {
   ADVENTURER,
+  capFor,
   checkSpawns,
   createWorld,
   DAY_HOUR,
   GROUP_SPREAD,
+  groupOf,
   hashWorld,
+  inFirelight,
   isNight,
   KindError,
   LEAVE_DISTANCE,
-  MONSTER_CAP,
+  MONSTER_CAPS,
+  MONSTER_CEILING,
+  MOST_IN_GROUP,
+  MOST_IN_NIGHT_GROUP,
+  mostOf,
   NIGHT_HOUR,
   RESPAWN_TICKS,
   restore,
   SnapshotError,
   type Spawns,
   START_HOUR,
+  STEP_TICKS,
   snapshot,
   spawnsNearCamp,
   step,
@@ -46,6 +54,8 @@ import {
 // coordinates, so the tests read the ground off MAP.
 const MAP = firstLight();
 const WORLD = shippedWorld();
+/** The camp's region, where every shipped monster comes out. */
+const CAMP_REGION = regionAt(WORLD, place(MAP, "camp").x, place(MAP, "camp").y);
 const MONSTERS = shippedMonsters();
 const PROGRAMS = { ...shippedPrograms(), ...MONSTERS.programs };
 
@@ -78,9 +88,20 @@ describe("monsters from content", () => {
         windup: stats.windup,
         recovery: stats.recovery,
         reach: stats.reach,
+        step: stats.step ?? STEP_TICKS,
       });
       const spawn = MONSTERS.spawns.find((s) => s.kind === kind);
-      expect(spawn).toMatchObject({ name: stats.name, program: stats.program, group: stats.group });
+      const range = (value: unknown) => (Array.isArray(value) ? value : [value, value]);
+      const [group, dayMost] = range(stats.group);
+      const [fewest, most] = range(stats.night_group ?? group);
+      expect(spawn).toMatchObject({
+        name: stats.name,
+        program: stats.program,
+        group,
+        most: dayMost,
+        nightGroup: fewest,
+        nightMost: most,
+      });
       expect(spawn?.day).toEqual(
         (stats.day as string[]).map((p) => ({ x: place(MAP, p).x, y: place(MAP, p).y })),
       );
@@ -117,6 +138,34 @@ describe("monsters from content", () => {
       { wolf: { ...wolf, day: "deep_wood" } },
       { wolf: { ...wolf, night: [null] } },
       { wolf: { ...wolf, group: 1.5 } },
+      { wolf: { ...wolf, group: [] } },
+      { wolf: { ...wolf, group: [2] } },
+      { wolf: { ...wolf, group: [1, 2, 3] } },
+      { wolf: { ...wolf, group: [3, 2] } },
+      { wolf: { ...wolf, group: [0, 2] } },
+      { wolf: { ...wolf, group: [2, MOST_IN_GROUP + 1] } },
+      { wolf: { ...wolf, group: [2, "3"] } },
+      { wolf: { ...wolf, group: gap(2).slice(0, 2) } },
+      { wolf: { ...wolf, most: 3 } },
+      { wolf: { ...wolf, step: 1 } },
+      { wolf: { ...wolf, step: 31 } },
+      { wolf: { ...wolf, step: "4" } },
+      { wolf: { ...wolf, step: null } },
+      { wolf: { ...wolf, night_group: 2.5 } },
+      { wolf: { ...wolf, night_group: "2" } },
+      { wolf: { ...wolf, night_group: null } },
+      { wolf: { ...wolf, night_group: [] } },
+      { wolf: { ...wolf, night_group: [3] } },
+      { wolf: { ...wolf, night_group: [3, 4, 5] } },
+      { wolf: { ...wolf, night_group: [5, 3] } },
+      { wolf: { ...wolf, night_group: [0, 3] } },
+      { wolf: { ...wolf, night_group: [3, MOST_IN_NIGHT_GROUP + 1] } },
+      { wolf: { ...wolf, night_group: [3, "5"] } },
+      { wolf: { ...wolf, night_group: [3, 4.5] } },
+      { wolf: { ...wolf, night_group: gap(3).slice(0, 2) } },
+      { wolf: { ...wolf, night_group: { 0: 3, 1: 5, length: 2 } } },
+      { wolf: { ...wolf, nightGroup: 2 } },
+      { wolf: { ...wolf, nightMost: 2 } },
       { wolf: { ...wolf, colour: "grey" } },
       { wolf: null },
       { wolf: [] },
@@ -162,13 +211,39 @@ describe("monsters from content", () => {
       { name: 7 },
       { name: undefined },
       { group: 0 },
-      { group: MONSTER_CAP + 1 },
+      { group: MOST_IN_GROUP + 1 },
+      { group: [3, 1] },
+      { night_group: 0 },
+      { night_group: MOST_IN_NIGHT_GROUP + 1 },
+      { night_group: [4, 2] },
     ]) {
       expect(
         () => loadMonsters({ wolf: { ...wolf, ...change } }, monsterSources(), MAP),
         JSON.stringify(change),
-      ).toThrow(/^wolf\.json: (name|group) must be/);
+      ).toThrow(/^wolf\.json: (name|group|night_group) must be/);
     }
+    // Either may be left out: a kind with no step walks as residents do, and
+    // one with no night group comes in the fewest of its day group by night.
+    const plain = loadMonsters(
+      { wolf: without(without(wolf, "step"), "night_group") },
+      monsterSources(),
+      MAP,
+    );
+    expect(plain.kinds.wolf?.step).toBe(STEP_TICKS);
+    expect(plain.spawns[0]).toMatchObject({ group: 2, most: 3, nightGroup: 2, nightMost: 2 });
+    // A group of one number is both the fewest and the most.
+    const one = loadMonsters({ wolf: { ...wolf, group: 1 } }, monsterSources(), MAP);
+    expect(one.spawns[0]).toMatchObject({ group: 1, most: 1 });
+    // A night group of one number is both the fewest and the most, and up to the night's cap.
+    const six = loadMonsters(
+      { wolf: { ...wolf, night_group: MOST_IN_NIGHT_GROUP } },
+      monsterSources(),
+      MAP,
+    );
+    expect(six.spawns[0]).toMatchObject({
+      nightGroup: MOST_IN_NIGHT_GROUP,
+      nightMost: MOST_IN_NIGHT_GROUP,
+    });
   });
 
   it("a monster whose program is broken stands confused, and the world keeps running", () => {
@@ -183,8 +258,13 @@ describe("monsters from content", () => {
     step(world, spawnsNearCamp(world, [{ name: "Ash", program: "homebody" }]));
     const log = run(world, 3 * TICKS_PER_GAME_HOUR);
     const wolves = world.actors.filter((a) => a.kind === "wolf");
-    // One wolf an hour, from the first tick on, until the region holds its three: ticks 1, 601 and 1201.
-    expect(wolves).toHaveLength(MONSTER_CAP);
+    // Two or three wolves a wait, from the first tick on, until the region is at
+    // its cap, four by day with one resident, or one short of it, where a pair
+    // has no room.
+    const cap = capFor(world, CAMP_REGION);
+    expect(cap).toBe(MONSTER_CAPS.day.base);
+    expect(wolves.length).toBeGreaterThanOrEqual(cap - 1);
+    expect(wolves.length).toBeLessThanOrEqual(cap);
     for (const wolf of wolves) {
       expect(FAULTS[wolf.fault]).toBe("divide_by_zero");
       // A confused wolf does nothing: no decision, no step.
@@ -313,16 +393,24 @@ describe("spawning", () => {
 
   it("by day monsters come out near their day places, up to the cap, and stay away from camp", () => {
     const kinds = new Set<string>();
+    let ticks = 0;
+    let near = 0;
     for (let seed = 1; seed <= 6; seed++) {
       const w = world(seed);
       const seen = new Set<number>();
+      const lit = new Map<number, number>();
       let most = 0;
       for (let t = 0; t < 12 * TICKS_PER_GAME_HOUR; t++) {
         step(w);
         expect(isNight(w)).toBe(false);
         for (const actor of monsters(w)) {
-          // With nobody to fight them they keep well away from camp.
-          expect(steps(actor, place(MAP, "camp"))).toBeGreaterThan(4);
+          // With nobody to fight them they keep away from camp. One that gets
+          // nowhere and wanders off may cross the light, but never stays in it.
+          ticks++;
+          if (steps(actor, place(MAP, "camp")) <= 4) near++;
+          const inLight = inFirelight(w, actor.x, actor.y) ? (lit.get(actor.id) ?? 0) + 1 : 0;
+          lit.set(actor.id, inLight);
+          expect(inLight).toBeLessThanOrEqual(60);
           if (seen.has(actor.id)) continue;
           seen.add(actor.id);
           kinds.add(actor.kind);
@@ -332,14 +420,18 @@ describe("spawning", () => {
         }
         most = Math.max(most, monsters(w).length);
       }
-      // Nobody dies, so the cap is reached and nothing more arrives.
-      expect(most).toBe(MONSTER_CAP);
-      expect(seen.size).toBe(MONSTER_CAP);
+      // Nobody dies, so the cap is reached, or one short of it where no group
+      // fits, and nothing more arrives: four by day with no residents.
+      expect(capFor(w, CAMP_REGION)).toBe(MONSTER_CAPS.day.base);
+      expect(most).toBeGreaterThanOrEqual(MONSTER_CAPS.day.base - 1);
+      expect(most).toBeLessThanOrEqual(MONSTER_CAPS.day.base);
+      expect(seen.size).toBe(most);
     }
     expect([...kinds].sort()).toEqual(["goblin", "wolf"]);
+    expect(near / ticks).toBeLessThan(0.002);
   });
 
-  it("night places are used at night, and one that dies is replaced an hour later", () => {
+  it("night places are used at night, and one that dies is replaced a wait later", () => {
     const night = world(2);
     night.tick = (NIGHT_HOUR - START_HOUR) * TICKS_PER_GAME_HOUR;
     run(night, 1);
@@ -350,19 +442,27 @@ describe("spawning", () => {
       const spawn = MONSTERS.spawns.find((s) => s.kind === actor.kind) as Spawns[number];
       expect(Math.min(...spawn.night.map((p) => steps(p, actor)))).toBeLessThanOrEqual(2);
     }
-    // Fill up, then take one out as a fatal blow would.
-    while (monsters(night).length < MONSTER_CAP) step(night);
-    run(night, 3 * RESPAWN_TICKS);
-    expect(monsters(night)).toHaveLength(MONSTER_CAP);
-    const gone = monsters(night)[0] as World["actors"][number];
-    night.actors = night.actors.filter((a) => a !== gone);
-    const lost = night.tick;
+    // With wolves that come one at a time, fill the night's cap, then take one
+    // out as a fatal blow would.
+    const [wolves] = MONSTERS.spawns.filter((s) => s.kind === "wolf") as [Spawns[number]];
+    const ones = world(2, [{ ...wolves, nightGroup: 1, nightMost: 1 }]);
+    ones.tick = night.tick - 1;
+    run(ones, 1);
+    // With no residents the night's cap is its base.
+    const cap = capFor(ones, CAMP_REGION);
+    expect(cap).toBe(MONSTER_CAPS.night.base);
+    for (let t = 0; t < 2 * TICKS_PER_GAME_HOUR && monsters(ones).length < cap; t++) step(ones);
+    run(ones, 3 * RESPAWN_TICKS);
+    expect(monsters(ones)).toHaveLength(cap);
+    const gone = monsters(ones)[0] as World["actors"][number];
+    ones.actors = ones.actors.filter((a) => a !== gone);
+    const lost = ones.tick;
     let back = 0;
     for (let t = 0; t < 2 * RESPAWN_TICKS && back === 0; t++) {
-      step(night);
-      if (monsters(night).length === MONSTER_CAP) back = night.tick;
+      step(ones);
+      if (monsters(ones).length === cap) back = ones.tick;
     }
-    // The wait starts again on every tick the world is full, so it is a full hour from the loss.
+    // The wait starts again on every tick the region is full, so it is a full wait from the loss.
     expect(back - lost).toBe(RESPAWN_TICKS);
   });
 
@@ -428,7 +528,7 @@ describe("spawning", () => {
         restore(JSON.stringify(data), WORLD, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns),
       ).toThrow(SnapshotError);
     }
-  });
+  }, 30_000);
 
   it("refuses spawn tables that are wrong, whatever is passed in", () => {
     const [good] = MONSTERS.spawns as [Spawns[number]];
@@ -455,8 +555,16 @@ describe("spawning", () => {
       [{ ...good, name: "x" }],
       [{ ...good, name: 5 }],
       [{ ...good, group: 0 }],
-      [{ ...good, group: MONSTER_CAP + 1 }],
+      [{ ...good, group: MOST_IN_GROUP + 1 }],
       [{ ...good, group: Number.NaN }],
+      [{ ...good, group: 2, most: 1 }],
+      [{ ...good, group: 1, most: MOST_IN_GROUP + 1 }],
+      [{ ...good, group: 1, most: "2" }],
+      [{ ...good, group: 1, most: null }],
+      [{ ...good, nightGroup: 0 }],
+      [{ ...good, nightGroup: MOST_IN_GROUP + 1 }],
+      [{ ...good, nightGroup: null }],
+      [{ ...good, nightGroup: "2" }],
       [{ ...good, day: [{ x: 0, y: 0 }] }],
       [{ ...good, day: [{ x: -1, y: 5 }] }],
       [{ ...good, day: [{ x: 4.5, y: 6 }] }],
@@ -496,6 +604,14 @@ describe("spawning", () => {
       expect(() => check([noGroup])).toThrow(KindError);
     } finally {
       delete proto.group;
+    }
+    // A night group left out is the group, whatever an object inherits.
+    const noNight = Object.fromEntries(Object.entries(good).filter(([k]) => k !== "nightGroup"));
+    proto.nightGroup = MOST_IN_GROUP + 5;
+    try {
+      expect(check([noNight])[0]?.nightGroup).toBe(good.group);
+    } finally {
+      delete proto.nightGroup;
     }
     // Restoring checks the table it is given the same way.
     const saved = snapshot(world());
@@ -612,13 +728,15 @@ describe("goblins", () => {
 });
 
 describe("the cap and the wait", () => {
-  it("one that dies is replaced an hour after it died at the earliest, however few are out", () => {
+  it("one that dies is replaced a wait after it died at the earliest, however few are out", () => {
     for (const seed of [3, 4, 5]) {
       const world = createWorld(WORLD, seed, ALL, MONSTERS.kinds, MONSTERS.spawns);
       step(world);
       const target = monstersIn(world)[0] as World["actors"][number];
       expect(world.tick).toBe(1);
-      target.hp = 1;
+      // Whichever of the group Ash strikes dies of it, and they stand still for Ash.
+      for (const monster of monstersIn(world))
+        Object.assign(monster, { hp: 1, wait: 30, path: [] });
       step(world, [
         { type: "spawn", name: "Ash", program: "once", ...(besides(world, target)[0] as Point) },
       ]);
@@ -627,11 +745,11 @@ describe("the cap and the wait", () => {
       const known = new Set(world.actors.map((a) => a.id));
       for (let t = 0; t < 3 * RESPAWN_TICKS && back === 0; t++) {
         for (const event of step(world)) {
-          if (event.type === "down" && event.actor === target.id) died = event.tick;
+          if (event.type === "down" && event.kind !== ADVENTURER && died === 0) died = event.tick;
         }
         if (monstersIn(world).some((a) => !known.has(a.id))) back = world.tick;
       }
-      // It died within the first few seconds, long before the hour was up.
+      // It died within the first few seconds, before the wait was up.
       expect(died).toBeGreaterThan(0);
       expect(died).toBeLessThan(30);
       expect(back - died).toBeGreaterThanOrEqual(RESPAWN_TICKS);
@@ -651,8 +769,8 @@ describe("the cap and the wait", () => {
         ...p,
       })),
     );
-    expect(monstersIn(crowd)).toHaveLength(MONSTER_CAP);
-    // A wolf put in by hand holds the table's first group back for a full hour
+    expect(monstersIn(crowd)).toHaveLength(capFor(crowd, CAMP_REGION));
+    // A wolf put in by hand holds the table's first group back for a full wait
     // from the tick it is first in the world.
     const early = createWorld(WORLD, 1, ALL, MONSTERS.kinds, MONSTERS.spawns);
     step(early, [{ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 8, y: 15 }]);
@@ -679,14 +797,21 @@ describe("the cap and the wait", () => {
       for (let t = 0; t < 2 * TICKS_PER_DAY; t++) {
         step(world);
         const out = monstersIn(world);
-        expect(out.length).toBeLessThanOrEqual(MONSTER_CAP);
+        // Night packs may still be on their way out after dawn, but no group
+        // comes past the cap for its part of the day.
+        expect(out.length).toBeLessThanOrEqual(MONSTER_CAPS.night.base);
         const fresh = out.filter((a) => !known.has(a.id));
         for (const a of out) known.add(a.id);
         if (fresh.length === 0) continue;
         groups++;
+        const night = fresh[0]?.shift === "night";
+        expect(out.length).toBeLessThanOrEqual(capFor(world, CAMP_REGION));
+        expect(fresh.length).toBeLessThanOrEqual(night ? MOST_IN_NIGHT_GROUP : MOST_IN_GROUP);
         const spawn = MONSTERS.spawns.find((s) => s.kind === fresh[0]?.kind) as Spawns[number];
-        expect(fresh.map((a) => a.kind)).toEqual(Array(spawn.group).fill(spawn.kind));
-        const places = isNight(world) ? spawn.night : spawn.day;
+        expect(fresh.every((a) => a.kind === spawn.kind)).toBe(true);
+        expect(fresh.length).toBeGreaterThanOrEqual(groupOf(spawn, night));
+        expect(fresh.length).toBeLessThanOrEqual(mostOf(spawn, night));
+        const places = night ? spawn.night : spawn.day;
         // All of them near one of the places for this part of the day.
         expect(
           places.some((p) =>
@@ -697,7 +822,7 @@ describe("the cap and the wait", () => {
     }
     // Groups by day and by night, over two days and six seeds.
     expect(groups).toBeGreaterThan(6 * 4);
-  });
+  }, 20_000);
 
   it("a place too crowded for the whole group gets none, until there is room", () => {
     const den = { x: 26, y: 15 };
@@ -737,26 +862,31 @@ describe("day and night", () => {
       const world = createWorld(WORLD, seed, ALL, MONSTERS.kinds, MONSTERS.spawns);
       until(world, NIGHT_HOUR);
       const day = monstersIn(world);
-      expect(day).toHaveLength(MONSTER_CAP);
+      expect(day.length).toBeGreaterThanOrEqual(MONSTER_CAPS.day.base - 1);
+      expect(day.length).toBeLessThanOrEqual(MONSTER_CAPS.day.base);
       expect(day.every((a) => a.shift === "day")).toBe(true);
       // Nobody is near them, so they go the moment night falls.
       const dusk = run(world, 1);
       expect(
         dusk.filter((e) => e.type === "leave").map((e) => e.type === "leave" && e.actor),
       ).toEqual(day.map((a) => a.id));
-      expect(monstersIn(world)).toHaveLength(0);
+      // The night's first group may come on the same tick.
+      expect(monstersIn(world).filter((a) => a.shift === "day")).toHaveLength(0);
       // The night's monsters come within the next hour or so, and fill up by midnight.
       until(world, NIGHT_HOUR + 2);
       expect(monstersIn(world).length).toBeGreaterThan(0);
       until(world, 23);
       const night = monstersIn(world);
       expect(night.every((a) => a.shift === "night")).toBe(true);
-      expect(night.length).toBeGreaterThanOrEqual(MONSTER_CAP - 2);
+      expect(night.length).toBeGreaterThanOrEqual(MONSTER_CAPS.night.base - 2);
       // At dawn they go in turn, and the day's come back.
       until(world, DAY_HOUR, 1);
-      expect(monstersIn(world).length).toBeGreaterThan(0);
+      const late = monstersIn(world);
+      expect(late.length).toBeGreaterThan(0);
+      // The last night monsters going leave room under the day's cap, so a day group may come on the same tick.
       run(world, 1);
-      expect(monstersIn(world)).toHaveLength(0);
+      expect(monstersIn(world).filter((a) => late.includes(a))).toHaveLength(0);
+      expect(monstersIn(world).every((a) => a.shift === "day")).toBe(true);
       until(world, DAY_HOUR + 2, 1);
       expect(monstersIn(world).every((a) => a.shift === "day")).toBe(true);
       expect(monstersIn(world).length).toBeGreaterThan(0);
@@ -776,7 +906,7 @@ describe("day and night", () => {
     // It stays, and so does anyone else that near the adventurer (give or take the
     // step it took after); the rest go.
     expect(monstersIn(world)).toContain(stays);
-    for (const m of monstersIn(world))
+    for (const m of monstersIn(world).filter((a) => a.shift === "day"))
       expect(steps(m, spot)).toBeLessThanOrEqual(LEAVE_DISTANCE + 1);
     // For as long as an adventurer is near it, it stays. The goblins go at Ash,
     // who only stands, so Ash goes down in time and wakes at camp, far off.
@@ -820,20 +950,23 @@ describe("day and night", () => {
     for (const bad of [
       forge((s) => Object.assign(first(s), { shift: "dusk" })),
       forge((s) => Object.assign(first(s), { shift: undefined })),
-      // On the camp's ground.
-      forge((s) => Object.assign(first(s), { x: 14, y: 9, fromX: 14, fromY: 9, path: [] })),
-      // More than the cap.
+      // On rock.
+      forge((s) =>
+        Object.assign(first(s), { x: 0, y: 13, fromX: 0, fromY: 13, path: [], moveTicksLeft: 0 }),
+      ),
+      // More than a region ever holds.
       forge((s) => {
-        for (let i = 0; i < MONSTER_CAP; i++)
-          s.actors.push({
-            ...first(s),
-            id: 1000 + i,
-            x: 8 + i,
-            y: 15,
-            fromX: 8 + i,
-            fromY: 15,
-            path: [],
-          });
+        const free: Point[] = [];
+        for (let y = 0; y < MAP.height; y++)
+          for (let x = 0; x < MAP.width; x++)
+            if (
+              isWalkable(MAP, x, y) &&
+              terrainAt(MAP, x, y) !== "camp" &&
+              !s.actors.some((a) => a.x === x && a.y === y)
+            )
+              free.push({ x, y });
+        for (const [i, p] of free.slice(0, MONSTER_CEILING).entries())
+          s.actors.push({ ...first(s), id: 1000 + i, ...p, fromX: p.x, fromY: p.y, path: [] });
         (s as unknown as { nextActorId: number }).nextActorId = 2000;
       }),
     ]) {
@@ -860,50 +993,46 @@ describe("day and night", () => {
 });
 
 describe("the camp's edge", () => {
-  it("by day monsters turn back four tiles from camp; by night they come on to the camp's edge", () => {
-    // (14, 5) is four steps from `camp` and right beside the camp's ground.
-    const edge = { x: 14, y: 5 };
-    expect(steps(edge, place(MAP, "camp"))).toBe(4);
-    expect(terrainAt(MAP, 14, 6)).toBe("camp");
-    for (const kind of ["wolf", "goblin"]) {
-      const rules: Record<string, string[]> = {};
-      for (const part of ["day", "night"]) {
-        const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-        if (part === "night") world.tick = (NIGHT_HOUR - START_HOUR + 1) * TICKS_PER_GAME_HOUR;
-        step(world, [{ type: "spawn", name: "M", program: kind, kind, ...edge }]);
-        const log = run(world, 30);
-        const program = world.programs[kind] as (typeof world.programs)[string];
-        rules[part] = log.flatMap((e) =>
-          e.type === "decide" ? [program.rules[e.rule] as string] : [],
-        );
-      }
-      expect(rules.day, kind).toContain("too near camp");
-      expect(rules.night, kind).not.toContain("too near camp");
-      expect(rules.night?.length, kind).toBeGreaterThan(1);
-    }
-  });
-
-  it("by night monsters still turn back three tiles from camp", () => {
-    const camp = place(MAP, "camp");
-    const near: Point[] = [];
+  it("by day and by night, a monster put in the firelight with two residents in it walks out of it at once", () => {
+    // Every tile in the light that a monster can stand on.
+    const lit: Point[] = [];
+    const probe = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
     for (let y = 0; y < MAP.height; y++)
       for (let x = 0; x < MAP.width; x++)
-        if (steps({ x, y }, camp) === 3 && isWalkable(MAP, x, y) && terrainAt(MAP, x, y) !== "camp")
-          near.push({ x, y });
-    expect(near.length).toBeGreaterThan(0);
-    for (const kind of ["wolf", "goblin"]) {
-      for (const at of near) {
-        const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-        world.tick = (NIGHT_HOUR - START_HOUR + 1) * TICKS_PER_GAME_HOUR;
-        expect(isNight(world)).toBe(true);
-        step(world, [{ type: "spawn", name: "M", program: kind, kind, ...at }]);
-        const log = run(world, 30);
-        const program = world.programs[kind] as (typeof world.programs)[string];
-        const rules = log.flatMap((e) =>
-          e.type === "decide" ? [program.rules[e.rule] as string] : [],
-        );
-        // After the first decision, which only notes where home is.
-        expect(rules[1], `${kind} at ${at.x},${at.y}`).toBe("too near camp");
+        if (isWalkable(MAP, x, y) && terrainAt(MAP, x, y) !== "camp" && inFirelight(probe, x, y))
+          lit.push({ x, y });
+    expect(lit.length).toBeGreaterThan(20);
+    for (const kind of ["wolf", "goblin"] as const) {
+      for (const night of [false, true]) {
+        for (const at of lit) {
+          const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
+          if (night) world.tick = (NIGHT_HOUR - START_HOUR + 1) * TICKS_PER_GAME_HOUR;
+          expect(isNight(world)).toBe(night);
+          // Two residents stand by the fire, so a lone wolf is outnumbered in the light.
+          const log = step(world, [
+            { type: "spawn", name: "M", program: kind, kind, ...at },
+            { type: "spawn", name: "Ash", program: "post", x: 14, y: 8 },
+            { type: "spawn", name: "Birch", program: "post", x: 13, y: 8 },
+          ]);
+          expect(world.actors).toHaveLength(3);
+          // Out of the light within six seconds: a flee goes three tiles at a
+          // time. A wolf's round may take it back across the light's edge
+          // later, and out again.
+          const [monster] = world.actors as [World["actors"][number]];
+          let out = -1;
+          for (let t = 0; t < 60 && out < 0; t++) {
+            log.push(...step(world));
+            if (!inFirelight(world, monster.x, monster.y)) out = t;
+          }
+          const program = world.programs[kind] as (typeof world.programs)[string];
+          const rules = log.flatMap((e) =>
+            e.type === "decide" && e.actor === monster.id ? [program.rules[e.rule] as string] : [],
+          );
+          const where = `${kind} at ${at.x},${at.y}${night ? " by night" : ""}`;
+          // Its first decision is to walk out.
+          expect(rules[0], where).toBe("out of the light");
+          expect(out, where).toBeGreaterThanOrEqual(0);
+        }
       }
     }
   });

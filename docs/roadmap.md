@@ -20,7 +20,7 @@ screen and not get bored of in ten minutes.
 | Viewer: the map, the figures, day and night      | done                                                                                                                          |
 | Capture tool and metrics                         | done: captures at 15 residents, judged from a player's seat as well as against `main`                                         |
 | Combat                                           | telegraphed blows work and are drawn. One monster at a time, 1.2 s between blows, numbers that never grow                     |
-| Monsters as a threat                             | wolves and goblins exist; hunting packs (#298, #299) and swarms (#316) are not in                                             |
+| Monsters as a threat                             | wolves hunt in packs and raid the camp's light when they outnumber residents there; reactions (#299), swarms (#316) not in    |
 | Tempo: fast steps and blows, wide attacks, moves | not started (#315 to #324)                                                                                                    |
 | Skills, the bag and the bank                     | experience, gathering, cooking and eating work in the simulation; levels change nothing in a fight until #317                 |
 | Trips, death drops, hauls on screen              | not started (#237, #238); the viewer does not draw gathering                                                                  |

@@ -27,7 +27,8 @@ import {
   type Kinds,
   kindOf,
   lineOfAttack,
-  MONSTER_CAP,
+  MONSTER_CEILING,
+  mending,
   migrate,
   type Programs,
   parseSnapshot,
@@ -37,6 +38,7 @@ import {
   SnapshotError,
   type Spawns,
   sameGround,
+  stepTicks,
   type World,
   walkableFor,
 } from "./world.ts";
@@ -70,6 +72,7 @@ interface Fitting {
   fromY: number;
   moveTicksLeft: number;
   path: Point[];
+  wait: unknown;
   blocked: unknown;
   memory: unknown;
   rule: number;
@@ -104,6 +107,7 @@ function readActor(item: unknown): Fitting {
       if (!isRecord(p) || !isInt32(p.x) || !isInt32(p.y)) damaged();
       return { x: p.x, y: p.y };
     }),
+    wait: item.wait,
     blocked: item.blocked,
     memory: item.memory,
     rule: rule as number,
@@ -164,15 +168,17 @@ const sameTiles = (a: readonly Point[], b: readonly Point[]): boolean =>
  * to date first, as `restore` does. Then:
  *
  * - An actor whose program or monster kind is gone is removed.
- * - An actor whose program changed has its memory cleared and its rule reset.
+ * - An actor whose program changed has its memory cleared and its rule reset,
+ *   and decides again at once unless it is mending after a down.
  *   A snapshot without `byProgram`, from before it was stored, cannot say which
  *   changed, so every program counts as changed.
- * - Hitpoints, wind-up and recovery over what the actor's kind now allows come
- *   down to it. An attack whose marks are no longer its line is called off.
+ * - Hitpoints, wind-up, recovery and the ticks left in a step over what the
+ *   actor's kind now allows come down to it. An attack whose marks are no
+ *   longer its line is called off.
  * - An actor on a tile it can no longer stand on moves to the nearest one it
  *   can, and stops what it was doing; one in the middle of a step or a walk
  *   over ground that changed stops where it stands. A monster that would make
- *   its region hold more than MONSTER_CAP is removed.
+ *   its region hold more than MONSTER_CEILING is removed.
  * - If the map changed, every node stands full and each region keeps its wait
  *   for monsters by index, a new region having none: the snapshot does not
  *   record where its nodes or regions were.
@@ -258,6 +264,9 @@ export function adopt(
     const changed =
       !samePrograms && (byProgram?.[a.program] ?? "") !== hashProgram(a.program, program);
     if (changed || a.rule >= program.rules.length) {
+      // A wait from the old program ends, so that a reset rule reads as mending
+      // only for one who was mending already.
+      if (!mending(a as unknown as Actor)) a.wait = 0;
       a.memory = new Array<number>(MEMORY_SLOTS).fill(0);
       a.rule = -1;
       a.fault = 0;
@@ -270,6 +279,8 @@ export function adopt(
     }
     a.windup = Math.min(a.windup, numbers.windup);
     a.recover = Math.min(a.recover, numbers.recovery);
+    // A kind that walks faster now would have this actor further into its step than one takes.
+    a.moveTicksLeft = Math.min(a.moveTicksLeft, stepTicks(rules, a as unknown as Actor));
 
     const actor = a as unknown as Actor;
     if (!walkableFor(rules, actor, a.x, a.y)) {
@@ -326,12 +337,12 @@ export function adopt(
     if (a.kind === ADVENTURER) return true;
     const region = regionAt(atlas, a.x, a.y);
     const count = (monsters.get(region) ?? 0) + 1;
-    if (count <= MONSTER_CAP) {
+    if (count <= MONSTER_CEILING) {
       monsters.set(region, count);
       return true;
     }
     const name = atlas.regions[region]?.map.name ?? "its region";
-    changes.push(`removed ${who(a)}: ${name} already holds ${MONSTER_CAP} monsters`);
+    changes.push(`removed ${who(a)}: ${name} already holds ${MONSTER_CEILING} monsters`);
     return false;
   });
 
@@ -375,6 +386,7 @@ export function adopt(
       fromY: a.fromY,
       moveTicksLeft: a.moveTicksLeft,
       path: a.path,
+      wait: a.wait,
       blocked: a.blocked,
       memory: a.memory,
       rule: a.rule,
