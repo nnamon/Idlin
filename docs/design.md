@@ -357,26 +357,41 @@ map's own edge in every layout. The typeface is IM Fell English.
 
 ## One player on a busy stream
 
-Everyone watches the same stream. No viewer has their own camera, and there
-may be many more characters than the six in the first milestone. The game has
-to stay worth watching for someone who owns just one of them. The plan:
+Everyone watches the same stream, and nobody can point it. There may be many
+more characters than the six in the first milestone. The game has to stay
+worth watching for someone who owns just one of them. The plan
+([plan.md](plan.md), section 4.5, has the numbers):
 
 1. **Finding your character.** Each player's character has a hood and cloak pair of
    its own. Typing `!me` in chat will highlight it for a few seconds.
-2. **Getting noticed.** Time in the spotlight is rationed. Notable events earn
-   it, but every active character gets a turn within a bounded wait, and the
-   news line says who did what. How much attention each character got is measured,
-   so a crowd can't quietly squeeze someone out.
+2. **Getting noticed.** The map will be drawn smaller, so that the frame
+   holds about a region and a half each way. The frame will rest for 80
+   seconds at a time where the characters shown least are, and the spotlight
+   will change among the characters in it. A player who is
+   watching has their character in the map frame for at least 240 seconds of
+   every hour, with no gap over 20 minutes, however many others are watching.
+   Notable events can take the view, for at most a fifth of the hour. The
+   news line says who did what. How long each character was in the frame and
+   in the spotlight is measured, so a crowd can't quietly squeeze someone
+   out.
 3. **Comparing.** The spotlight shows a character's rules firing. Leaderboards
    rank single trips in many categories (best haul today, longest night
    survived, fastest to a level), so someone new with a clever program can top
    one on their first day while long-time players keep their levels.
 4. **A page of your own.** Each character gets a companion web page: its
-   stats, what happened since you last looked, and its program to edit.
+   stats, what happened since you last looked, and its program to edit. The
+   page also draws the character live, with the ground a few tiles round it.
+   That is the one picture a player has besides the stream. It follows their
+   own character and can't be moved off it, and it is how they see what a
+   change to the program did without waiting for the stream to come round.
 5. **Regions.** A frame only holds as many characters as can be read: about
    12 to 15, or 20 if they spread out, by the crowd captures. So the world is
-   several regions, each a map of one frame, joined by exits, and the number
-   of regions grows with the population. Monsters come into a region only
+   several regions, each a map of one frame, joined by exits. A region opens
+   only when the world needs it, because the characters have outgrown the
+   ones there are or there are too many for them, because ground the frame
+   has to travel to takes frame time from every player. The regions lie in a
+   grid three regions tall, which two rows of the frame cover, and the world
+   holds at most 150 characters. Monsters come into a region only
    while it is under its crowd target (one actor per 25 walkable tiles, about
    18). The stream stays on one region at a time and moves to the next
    slowly, without cutting. Characters elsewhere carry on, and show up in the
@@ -386,14 +401,16 @@ Whether this is enough is not known. It will be tested by capturing the stream
 with 12, 50 and 150 characters and judging it from one player's point of view
 (the "Mine" score in [watch-rubric.md](watch-rubric.md)). The first milestone
 only builds the frame and the spotlight and measures how many characters fit.
-Points 1, 3 and 4 need real players and are planned for M3. Four regions
-exist, and the view follows the spotlight between them.
+Points 1 and 4 need owners and are planned for M2, and the boards of point 3
+for M7. Four regions exist, and today the view follows the spotlight between
+them.
 
 ## What a viewer can do
 
 In the first milestone, only watch; the programs are built in. Later: claim an
 adventurer, read its program, edit it in the browser, and see how it does
-against the others. That part is M3.
+against the others. That part starts in M2; [plan.md](plan.md) has it in
+full, with builds, the store and how the world grows.
 
 ## Not planned yet
 
