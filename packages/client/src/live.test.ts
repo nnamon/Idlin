@@ -87,7 +87,7 @@ it("reads a world with monsters when given the monsters, and refuses it without 
   const scene = {
     notice: "",
     clockShown: true,
-    observe: (_: unknown, shownWorld: World) => seen.push(shownWorld),
+    observe: (whole: World) => seen.push(whole),
     draw: () => {},
   };
   follow(scene, content, "ws://server");

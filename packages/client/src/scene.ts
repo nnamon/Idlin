@@ -7,19 +7,25 @@
 // other.
 // Everything that moves is a function of sim time, so the same time gives the
 // same frame.
+// The map is a window onto the world plane, where every region lies at its
+// own place. The window follows the spotlight from region to region (see
+// camera.ts); everything on the map is kept in world pixels and drawn moved
+// by where the window is, so a drift is the same drawing seen from further on.
 
 import {
   type Actor,
   ADVENTURER,
+  type Atlas,
   clock,
   kindOf,
+  place,
   START_HOUR,
   TICKS_PER_GAME_HOUR,
-  type TileMap,
-  terrainAt,
+  terrainOf,
   type World,
 } from "@idlin/sim";
 import { drawBeast } from "./beasts.ts";
+import { legAt, nextWatch, startWatch, viewAt, type Watch } from "./camera.ts";
 import {
   type Effects,
   glyphAt,
@@ -60,7 +66,7 @@ import {
   spreadPage,
   TIGHT_PITCH,
 } from "./frame.ts";
-import { drawGround, type Ground, type MapLabel, TILE } from "./ground.ts";
+import { drawGround, type Ground, type MapLabel, type Standing, TILE } from "./ground.ts";
 import { identity } from "./identity.ts";
 import {
   css,
@@ -109,7 +115,17 @@ import {
   type TagWish,
   tagBox,
 } from "./tags.ts";
-import { edgeFade, fightOn } from "./view.ts";
+import {
+  awayFrom,
+  campRegion,
+  edgeFade,
+  monsterGroups,
+  regionNames,
+  rosterOf,
+  viewSize,
+  type Window,
+  windowView,
+} from "./view.ts";
 
 const FIGURE_SCALE = 1.3;
 /** How strongly a page row is drawn while its resident is off the map. */
@@ -162,6 +178,15 @@ const FLOAT_ROW = 24;
 const BLOT_SIZE: Readonly<Record<string, number>> = { wolf: 50, goblin: 36, [ADVENTURER]: 30 };
 /** The most lines of fight news waiting their turn; older ones give way to newer. */
 const NEWS_QUEUE = 3;
+/**
+ * The overview of the world at the head of the page: the most room it takes,
+ * beside the clock and above the day's line, the most pixels it gives a tile,
+ * and how far below the page's top it starts.
+ */
+const OVERVIEW_WIDTH = 170;
+const OVERVIEW_HEIGHT = 80;
+const OVERVIEW_SCALE = 3;
+const OVERVIEW_TOP = 142;
 
 const isResident = (actor: Actor): boolean => actor.kind === ADVENTURER;
 
@@ -202,11 +227,60 @@ interface Light {
   readonly carried?: boolean;
 }
 
+/** One region's ground in one palette, set at its place on the world plane: everything in world pixels. */
+interface Placed {
+  readonly base: HTMLCanvasElement;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  /** By base, as `Ground` has them. */
+  readonly standing: readonly Standing[];
+  readonly ripples: readonly Pt[];
+  readonly fires: readonly Pt[];
+  readonly lanterns: readonly Pt[];
+}
+
+/** `ground`, drawn for a map whose top-left tile is at world tile (x, y). */
+function placeGround(ground: Ground, x: number, y: number): Placed {
+  const ox = x * TILE;
+  const oy = y * TILE;
+  const shift = ([px, py]: Pt): Pt => [px + ox, py + oy];
+  return {
+    base: ground.base,
+    x: ox,
+    y: oy,
+    width: ground.base.width,
+    height: ground.base.height,
+    standing: ground.standing.map((s) => ({ ...s, x: s.x + ox, y: s.y + oy, base: s.base + oy })),
+    ripples: ground.ripples.map(shift),
+    fires: ground.fires.map(shift),
+    lanterns: ground.lanterns.map(shift),
+  };
+}
+
+/**
+ * How far above and to either side of its own region something standing on
+ * it can reach: half a sprite across, a sprite up. A region this near the
+ * window has its trees drawn, so none comes into view all at once.
+ */
+const OVERHANG = 132;
+
 interface Side {
   readonly palette: Palette;
-  readonly ground: Ground;
+  /** Each region's ground, in the atlas's order. */
+  readonly grounds: readonly Placed[];
+  /** The same, small, laid out as the overview on the page shows them. */
+  readonly mini: HTMLCanvasElement;
   readonly canvas: HTMLCanvasElement;
   readonly ctx: Ctx;
+}
+
+/** Where the window is in a frame: its top-left in world pixels, and in world tiles with its size. */
+interface Seen {
+  readonly x: number;
+  readonly y: number;
+  readonly window: Window;
 }
 
 const two = (n: number): string => String(n).padStart(2, "0");
@@ -244,9 +318,27 @@ export class Scene {
   /** When each resident was last named in the line of news. */
   private readonly named = new Map<number, number>();
   private readonly tagWidths = new Map<string, number>();
-  /** Where the dark closes in to at dusk: the first lantern, or the middle of the map. */
-  private readonly hearth: readonly [number, number];
+  /**
+   * Per region, in world pixels, where the dark closes in to at dusk while the
+   * view is on it: its first lantern, or its middle.
+   */
+  private readonly hearths: readonly Pt[];
+  /** Every region's lanterns, in world pixels. */
+  private readonly lanterns: readonly Pt[];
+  /** Every region's place labels, at their places in world tiles. */
   private readonly labels: readonly MapLabel[];
+  private readonly atlas: Atlas;
+  /** What the page calls each region. */
+  private readonly names: readonly string[];
+  /** The map's size in tiles. */
+  private readonly tiles: { readonly width: number; readonly height: number };
+  /** Pixels a tile takes on the overview. */
+  private readonly miniScale: number;
+  /** The fight, the spotlight and where the view is, as of the last tick observed. */
+  private watch: Watch;
+  /** For the frame being drawn: the whole world, and where the window is. */
+  private whole: World | null = null;
+  private seen: Seen;
   private news = "";
   private newsSince = Number.NEGATIVE_INFINITY;
   /** The resident the line of news is about, or -1 for none. */
@@ -276,11 +368,7 @@ export class Scene {
   /** The river's outline in frame pixels, rounded as its banks are, and whether a point is on water. */
   private readonly water: Pt[][];
   private readonly wet: (x: number, y: number) => boolean;
-  /**
-   * Blows, hurts and the fallen (see fight.ts): `fought` as read off the
-   * whole world, and `fight` as the map shows it (see `fightOn` in view.ts).
-   */
-  private fought: Fight = NO_FIGHT;
+  /** Blows, hurts and the fallen, read off the whole world (see fight.ts). */
   private fight: Fight = NO_FIGHT;
   /** For the frame being drawn: where each listed resident off the map is (see `draw`). */
   private away: ReadonlyMap<number, string> = new Map();
@@ -289,44 +377,92 @@ export class Scene {
   private newsFight = false;
   private newsUrgent = false;
 
-  private constructor(host: HTMLElement, map: TileMap, labels: readonly MapLabel[]) {
-    const camp = map.places.find((place) => place.name === "camp");
-    this.home = camp ? { x: camp.x, y: camp.y } : { x: 0, y: 0 };
-    // Open water only: a bridge's deck takes a carried light as land does. Traced
-    // with the edge tiles repeated outwards, as the banks are, so a river running
-    // off the map is not rounded off at the edge.
+  private constructor(host: HTMLElement, atlas: Atlas, maps: Readonly<Record<string, unknown>>) {
+    this.atlas = atlas;
+    this.names = regionNames(atlas, maps);
+    const campAt = campRegion({ atlas });
+    this.tiles = viewSize(atlas, campAt);
+    this.width = this.tiles.width * TILE;
+    this.height = this.tiles.height * TILE;
+    const camp = place(atlas, "camp");
+    this.home = { x: camp.x, y: camp.y };
+    // Open water only: a bridge's deck takes a carried light as land does.
+    // Traced over the box round every region, and a tile past a region's edge
+    // that no region holds counts as the edge tile beside it, as the banks do,
+    // so a river running off the world is not rounded off at its edge.
+    const water = (x: number, y: number): boolean => terrainOf(atlas, x, y) === "water";
     const open = (x: number, y: number): boolean =>
-      terrainAt(
-        map,
-        Math.min(map.width - 1, Math.max(0, x)),
-        Math.min(map.height - 1, Math.max(0, y)),
-      ) === "water";
-    this.water = regionLoops(map.width + 2, map.height + 2, (x, y) => open(x - 1, y - 1)).map(
-      (loop) => smoothLoop(loop, 3).map(([x, y]) => [(x - 1) * TILE, (y - 1) * TILE] as const),
+      terrainOf(atlas, x, y) === undefined
+        ? water(x - 1, y) || water(x + 1, y) || water(x, y - 1) || water(x, y + 1)
+        : water(x, y);
+    const [left, top] = [atlas.left - 1, atlas.top - 1];
+    this.water = regionLoops(atlas.width + 2, atlas.height + 2, (x, y) =>
+      open(x + left, y + top),
+    ).map((loop) =>
+      smoothLoop(loop, 3).map(([x, y]) => [(x + left) * TILE, (y + top) * TILE] as const),
     );
-    this.wet = (x, y) =>
-      x >= 0 &&
-      y >= 0 &&
-      x < this.width &&
-      y < this.height &&
-      open(Math.floor(x / TILE), Math.floor(y / TILE));
-    this.width = map.width * TILE;
-    this.height = map.height * TILE;
+    this.wet = (x, y) => water(Math.floor(x / TILE), Math.floor(y / TILE));
     const { canvas, ctx } = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
     host.appendChild(canvas);
     this.out = ctx;
-    const side = (palette: Palette): Side => ({
-      palette,
-      ground: drawGround(map, palette),
-      ...newCanvas(FRAME_WIDTH, FRAME_HEIGHT),
-    });
+    const grounds = (palette: Palette): Placed[] =>
+      atlas.regions.map((region) =>
+        placeGround(drawGround(region.map, palette), region.x, region.y),
+      );
+    this.miniScale = Math.min(
+      OVERVIEW_SCALE,
+      OVERVIEW_WIDTH / atlas.width,
+      OVERVIEW_HEIGHT / atlas.height,
+    );
+    // The overview on the page draws each region as its own ground, made small once.
+    const mini = (placed: readonly Placed[]): HTMLCanvasElement => {
+      const k = this.miniScale / TILE;
+      const { canvas, ctx } = newCanvas(
+        Math.ceil(atlas.width * this.miniScale),
+        Math.ceil(atlas.height * this.miniScale),
+      );
+      ctx.imageSmoothingQuality = "high";
+      for (const g of placed)
+        ctx.drawImage(
+          g.base,
+          g.x * k - atlas.left * this.miniScale,
+          g.y * k - atlas.top * this.miniScale,
+          g.width * k,
+          g.height * k,
+        );
+      return canvas;
+    };
+    const side = (palette: Palette): Side => {
+      const placed = grounds(palette);
+      return {
+        palette,
+        grounds: placed,
+        mini: mini(placed),
+        ...newCanvas(FRAME_WIDTH, FRAME_HEIGHT),
+      };
+    };
     this.day = side(DAY);
     this.night = side(NIGHT);
     this.lit = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
+    this.lanterns = this.day.grounds.flatMap((ground) => ground.lanterns);
+    this.hearths = this.day.grounds.map((ground) => {
+      const lantern = ground.lanterns[0];
+      return lantern
+        ? [lantern[0], lantern[1] + 28]
+        : [ground.x + ground.width / 2, ground.y + ground.height / 2];
+    });
+    this.watch = startWatch(atlas);
+    this.seen = { x: 0, y: 0, window: { x: 0, y: 0, ...this.tiles } };
+    const labels = atlas.regions.flatMap((region) =>
+      ((maps[region.map.name] as { labels?: MapLabel[] } | undefined)?.labels ?? []).map(
+        (label) => ({ ...label, x: label.x + region.x, y: label.y + region.y }),
+      ),
+    );
     this.labels = labels;
-    for (const [x, y] of this.day.ground.fires)
-      this.avoid.push({ left: x - 16, right: x + 16, top: y - 34, bottom: y + 6 });
-    for (const [x, y] of this.day.ground.lanterns)
+    for (const ground of this.day.grounds)
+      for (const [x, y] of ground.fires)
+        this.avoid.push({ left: x - 16, right: x + 16, top: y - 34, bottom: y + 6 });
+    for (const [x, y] of this.lanterns)
       this.avoid.push({ left: x - 10, right: x + 10, top: y - 12, bottom: y + 14 });
     for (const label of labels) {
       // At least the lettering's own width, as the context measures it, and a little either side.
@@ -346,18 +482,54 @@ export class Scene {
       this.labelBoxes.push(box);
     }
     ctx.letterSpacing = "0px";
-    const lantern = this.day.ground.lanterns[0];
-    this.hearth = lantern ? [lantern[0], lantern[1] + 28] : [this.width / 2, this.height / 2];
   }
 
+  /**
+   * A scene for a world on `atlas`. `maps` are the map files, parsed, by file
+   * name: the page takes the regions' names from them and the map their labels.
+   */
   static async create(
     host: HTMLElement,
-    map: TileMap,
-    labels: readonly MapLabel[],
+    atlas: Atlas,
+    maps: Readonly<Record<string, unknown>>,
   ): Promise<Scene> {
     // The lettering on the map is drawn once, so the typefaces have to be there first.
     await Promise.all(FONTS.map((font) => document.fonts.load(font)));
-    return new Scene(host, map, labels);
+    return new Scene(host, atlas, maps);
+  }
+
+  /** Where the window is at `time` (see camera.ts). */
+  private seenAt(time: number): Seen {
+    const at = viewAt(this.watch.camera, this.atlas, time);
+    return { x: at.x * TILE, y: at.y * TILE, window: { ...at, ...this.tiles } };
+  }
+
+  /**
+   * Where the dark closes in to at `time`, in world pixels. On a drift it
+   * moves across the window from where the hearth of the region left behind
+   * sits in it to where the next region's will, so the dark never jumps.
+   */
+  private hearthAt(time: number, seen: Seen): Pt {
+    const { from, to, share } = legAt(this.watch.camera, time);
+    const within = (index: number): Pt => {
+      const [x, y] = this.hearths[index] ?? [this.width / 2, this.height / 2];
+      const region = this.atlas.regions[index];
+      return [x - (region?.x ?? 0) * TILE, y - (region?.y ?? 0) * TILE];
+    };
+    const [ax, ay] = within(from);
+    const [bx, by] = within(to);
+    return [seen.x + ax + (bx - ax) * share, seen.y + ay + (by - ay) * share];
+  }
+
+  /** The grounds of the regions any of which can be seen in the window, in one palette. */
+  private groundsIn(side: Side, seen: Seen, margin = 0): Placed[] {
+    return side.grounds.filter(
+      (g) =>
+        g.x - margin < seen.x + this.width &&
+        g.x + g.width + margin > seen.x &&
+        g.y - margin < seen.y + this.height &&
+        g.y + g.height > seen.y,
+    );
   }
 
   /**
@@ -383,17 +555,17 @@ export class Scene {
 
   /**
    * Draws the world as it is at `time` ticks (the world's tick plus a fraction
-   * of the next). The map shows `world.actors`; the page lists `roster`.
-   * `away` names, by id, the region each listed resident off the map is in,
-   * and the page fades those rows and writes that instead of what they do.
+   * of the next). The map shows what is in the window, where the view is at
+   * that time; the page lists every resident, and fades the rows of those off
+   * the map, saying which region each is in instead of what it is doing.
    */
-  draw(
-    world: World,
-    time: number,
-    roster: readonly Actor[] = world.actors,
-    away: ReadonlyMap<number, string> = new Map(),
-  ): void {
-    this.away = away;
+  draw(whole: World, time: number): void {
+    const seen = this.seenAt(time);
+    this.seen = seen;
+    this.whole = whole;
+    const world = windowView(whole, seen.window);
+    const roster = rosterOf(whole);
+    this.away = awayFrom(whole, world, this.names);
     const fraction = time - world.tick;
     const between = Math.min(1, Math.max(0, fraction));
     const walkers: Walker[] = world.actors.map((actor) => {
@@ -414,12 +586,14 @@ export class Scene {
       };
       const x = pose.x * TILE + push.x;
       const y = pose.y * TILE - 4 + push.y;
-      return { actor, pose, x, y, fade: edgeFade(x, y, this.width, this.height) };
+      return { actor, pose, x, y, fade: edgeFade(x - seen.x, y - seen.y, this.width, this.height) };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
-    const { hour, lamps, region, lights, litAt } = this.lighting(walkers, time);
-    const [hx, hy] = this.hearth;
+    const { hour, lamps, region, lights, litAt, hearth } = this.lighting(walkers, time, seen);
+    const [hx, hy] = hearth;
     const mx = this.mapX;
+    // From here on what is on the map is drawn in world pixels, moved by where the window is.
+    const [cx, cy] = [seen.x, seen.y];
     // With the page below the map, the paper either side of the map is lit as the map is.
     const mapRight = this.pageBelow ? this.frameWidth : this.width;
 
@@ -459,14 +633,14 @@ export class Scene {
       const lit = this.lit.ctx;
       lit.globalCompositeOperation = "source-over";
       lit.clearRect(0, 0, this.frameWidth, this.frameHeight);
-      lit.setTransform(1, 0, 0, 1, mx, 0);
+      lit.setTransform(1, 0, 0, 1, mx - cx, 0 - cy);
       if (region.kind === "circle" && region.radius + EDGE > 0) {
         const inner = Math.max(0, region.radius);
         const gradient = lit.createRadialGradient(hx, hy, inner, hx, hy, region.radius + EDGE);
         gradient.addColorStop(0, "rgba(255,255,255,1)");
         gradient.addColorStop(1, "rgba(255,255,255,0)");
         lit.fillStyle = gradient;
-        lit.fillRect(0 - mx, 0, this.frameWidth, this.frameHeight);
+        lit.fillRect(cx - mx, cy, this.frameWidth, this.frameHeight);
       }
       const paint = (light: Light, strength: number): void => {
         const gradient = lit.createRadialGradient(
@@ -496,7 +670,7 @@ export class Scene {
         for (const wet of [false, true]) {
           lit.save();
           lit.beginPath();
-          if (!wet) lit.rect(...this.inRule());
+          if (!wet) lit.rect(...this.ruleSeen());
           for (const loop of this.water) {
             trace(lit, loop);
             lit.closePath();
@@ -534,9 +708,9 @@ export class Scene {
     // while the lamps are coming on or going out, so that they never switch.
     if (lights.length > 0) {
       out.save();
-      out.translate(mx, 0);
+      out.translate(mx - cx, 0 - cy);
       out.beginPath();
-      out.rect(...this.inRule());
+      out.rect(...this.ruleSeen());
       out.clip();
       out.globalCompositeOperation = "soft-light";
       for (const light of lights) {
@@ -563,10 +737,10 @@ export class Scene {
     // Which ink was settled at the last tick; before the first tick it is worked out here.
     const inkOf = (settled: boolean | undefined, x: number, y: number): Palette =>
       (settled ?? dayInk(litAt(x, y), undefined)) ? DAY : NIGHT;
-    out.setTransform(1, 0, 0, 1, mx, 0);
+    out.setTransform(1, 0, 0, 1, mx - cx, 0 - cy);
     out.save();
     out.beginPath();
-    out.rect(...this.inRule());
+    out.rect(...this.ruleSeen());
     out.clip();
     out.textAlign = "center";
     out.lineJoin = "round";
@@ -652,38 +826,54 @@ export class Scene {
     out.setTransform(1, 0, 0, 1, 0, 0);
   }
 
-  /** The light at `time`: the hour, the lamps, and how lit any point of the map is. */
+  /**
+   * The light at `time`, with the window at `seen`: the hour, the lamps, where
+   * the dark closes in to, and how lit any point of the map is. Everything is
+   * in world pixels.
+   */
   private lighting(
     walkers: readonly Walker[],
     time: number,
+    seen: Seen,
   ): {
     hour: number;
     lamps: number;
     region: ReturnType<typeof dayRegion>;
     lights: Light[];
     litAt: (x: number, y: number) => number;
+    hearth: Pt;
   } {
     const hour = (((time / TICKS_PER_GAME_HOUR + START_HOUR) % 24) + 24) % 24;
     const lamps = lampStrength(hour);
-    const [hx, hy] = this.hearth;
+    const hearth = this.hearthAt(time, seen);
+    const [hx, hy] = hearth;
     // The dark closes in over the map only, from the map's own corners; the page changes separately.
     // With the page below, the paper either side of the map goes dark with it.
-    const left = hx + this.mapX;
-    const right = (this.pageBelow ? this.frameWidth - this.mapX : this.width) - hx;
+    const [sx, sy] = [hx - seen.x, hy - seen.y];
+    const left = sx + this.mapX;
+    const right = (this.pageBelow ? this.frameWidth - this.mapX : this.width) - sx;
     const reach = Math.max(
-      Math.hypot(left, hy),
-      Math.hypot(right, hy),
-      Math.hypot(left, this.height - hy),
-      Math.hypot(right, this.height - hy),
+      Math.hypot(left, sy),
+      Math.hypot(right, sy),
+      Math.hypot(left, this.height - sy),
+      Math.hypot(right, this.height - sy),
     );
     const region = dayRegion(hour, reach);
-    // Every light there is, as a place, a reach in pixels and a strength.
+    // Every light near enough to the window to reach into it, as a place, a
+    // reach in pixels and a strength.
+    const near = ([x, y]: Pt, reach: number): boolean =>
+      x + reach > seen.x &&
+      x - reach < seen.x + this.width &&
+      y + reach > seen.y &&
+      y - reach < seen.y + this.height;
     const lights: Light[] = [];
     if (lamps > 0) {
-      for (const [x, y] of this.day.ground.lanterns) {
+      for (const [x, y] of this.lanterns) {
+        if (!near([x, y + 28], LANTERN_REACH * TILE)) continue;
         lights.push({ x, y: y + 28, reach: LANTERN_REACH * TILE, strength: lamps });
       }
-      for (const [x, y] of this.day.ground.fires) {
+      for (const [x, y] of this.day.grounds.flatMap((ground) => ground.fires)) {
+        if (!near([x, y], FIRE_REACH * TILE * 1.1)) continue;
         // A fire's light breathes slowly; it never jumps.
         const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
         lights.push({ x, y, reach: FIRE_REACH * TILE * breath, strength: lamps * 0.95 });
@@ -710,7 +900,7 @@ export class Scene {
       }
       return 1 - dark;
     };
-    return { hour, lamps, region, lights, litAt };
+    return { hour, lamps, region, lights, litAt, hearth };
   }
 
   /** The frame as just drawn, scaled by `scale` (1 is full size), as RGBA. */
@@ -727,19 +917,19 @@ export class Scene {
    * anything worth a line of news, where each name sits and which ink each
    * piece of lettering is in. Call it after every `step`, drawn or not, so
    * that what a frame shows depends on the world's history and not on which
-   * frames happened to be drawn. `world` is what the map shows; `whole` is
-   * the world it was cut from, as region `region` (see view.ts), which the
-   * fight is read off.
+   * frames happened to be drawn. The fight, the spotlight and where the view
+   * goes are read off the whole world (see camera.ts); the rest is about what
+   * is in the window.
    */
-  observe(world: World, whole: World = world, region = 0): void {
+  observe(whole: World): void {
     // Each tick is taken note of once: seeing it again changes nothing.
-    if (world.tick === this.lastTick) return;
+    if (whole.tick === this.lastTick) return;
     // A world from earlier than the last (a server restarted from a snapshot) has
     // another history: what was news in the old one says nothing about the new,
-    // nor who had a slip, where it sat, how far down anyone was sitting, or which
-    // ink the place names were in.
-    if (world.tick < this.lastTick) {
-      this.fought = NO_FIGHT;
+    // nor who had a slip, where it sat, how far down anyone was sitting, which
+    // ink the place names were in, or who was in the spotlight.
+    if (whole.tick < this.lastTick) {
+      this.watch = startWatch(this.atlas);
       this.fight = NO_FIGHT;
       this.newsQueue = [];
       this.newsFight = false;
@@ -758,11 +948,20 @@ export class Scene {
       this.labelDay.length = 0;
       this.effects = NO_EFFECTS;
     }
-    this.lastTick = world.tick;
-    this.effects = nextEffects(this.effects, world.actors, world.tick, this.home);
-    const fight = fightOn(this.fought, whole, region);
-    this.fought = fight.all;
-    this.fight = fight.shown;
+    this.lastTick = whole.tick;
+    this.watch = nextWatch(this.watch, whole);
+    this.fight = this.watch.fight;
+    const seen = this.seenAt(whole.tick);
+    this.seen = seen;
+    const world = windowView(whole, seen.window);
+    this.effects = nextEffects(this.effects, whole.actors, whole.tick, this.home);
+    // Boxes are kept in world pixels and placed in the window's (see `wish`).
+    const toWindow = (box: Box): Box => ({
+      left: box.left - seen.x,
+      right: box.right - seen.x,
+      top: box.top - seen.y,
+      bottom: box.bottom - seen.y,
+    });
     // Kills, downs and close calls go before what anyone decided. Each stays up
     // long enough to be read; one waiting goes up once the last has had its time.
     // A resident downed goes ahead of the rest, and up at once unless the line
@@ -858,9 +1057,12 @@ export class Scene {
     // The paper of a slip reaches 2 pixels above its box.
     const paper = (box: Box): Box => ({ ...box, top: box.top - 2 });
     // A slip fading out stays where it was drawn at the tick it was taken away.
-    const fadingBox = (id: number): Box =>
-      this.fading.get(id) ??
-      tagBox((moves.get(id) as { start: TagWish }).start, this.tagSpots.get(id) ?? 0, bounds);
+    const fadingBox = (id: number): Box => {
+      const left = this.fading.get(id);
+      return left
+        ? toWindow(left)
+        : tagBox((moves.get(id) as { start: TagWish }).start, this.tagSpots.get(id) ?? 0, bounds);
+    };
     // A slip keeps its spot from the last tick; one newly given, or given back
     // while fading, finds its own.
     const kept = new Map([...this.tagSpots].filter(([id]) => this.slips.held.has(id)));
@@ -875,7 +1077,7 @@ export class Scene {
     const beasts = world.actors
       .filter((actor) => !isResident(actor))
       .map((actor) => sweep(actor.id, bodyBox));
-    const avoid = [...this.avoid, ...beasts];
+    const avoid = [...this.avoid.map(toWindow), ...beasts];
     const covered = new Map<string, { bad: Set<number>; spots: Map<number, number> }>();
     const covering = (held: readonly number[], leaving: readonly number[]) => {
       const holding = new Set(held);
@@ -952,7 +1154,13 @@ export class Scene {
     const { spots } = covering([...slips.held.keys()], [...slips.leaving.keys()]);
     const fading = new Map([...slips.leaving.keys()].map((id) => [id, fadingBox(id)]));
     this.fading.clear();
-    for (const [id, box] of fading) this.fading.set(id, box);
+    for (const [id, box] of fading)
+      this.fading.set(id, {
+        left: box.left + seen.x,
+        right: box.right + seen.x,
+        top: box.top + seen.y,
+        bottom: box.bottom + seen.y,
+      });
     for (const [id, spot] of spots) this.tagSpots.set(id, spot);
     const slipped = standing.filter(({ actor }) => slips.held.has(actor.id));
     // The ink of each piece of lettering is settled here too, from the light
@@ -961,15 +1169,22 @@ export class Scene {
     const { litAt } = this.lighting(
       standing.map(({ actor, pose }) => {
         const [x, y] = [pose.x * TILE, pose.y * TILE - 4];
-        return { actor, pose, x, y, fade: edgeFade(x, y, this.width, this.height) };
+        return {
+          actor,
+          pose,
+          x,
+          y,
+          fade: edgeFade(x - seen.x, y - seen.y, this.width, this.height),
+        };
       }),
       world.tick,
+      seen,
     );
     for (const { actor, pose } of slipped) {
       const box = tagBox(this.wish(actor, { ...pose, hop: 0 }), this.tagSpots.get(actor.id) ?? 0, {
         width: this.width,
       });
-      const lit = litAt((box.left + box.right) / 2, box.bottom - 15);
+      const lit = litAt((box.left + box.right) / 2 + seen.x, box.bottom - 15 + seen.y);
       this.nameDay.set(actor.id, dayInk(lit, this.nameDay.get(actor.id)));
     }
     this.labels.forEach((_, index) => {
@@ -1004,7 +1219,11 @@ export class Scene {
     return sum / 9;
   }
 
-  /** Where a figure's name would like to sit: centred, on the line just above the hood. */
+  /**
+   * Where a figure's name would like to sit: centred, on the line just above
+   * the hood. In pixels from the window's top-left, where the window was last
+   * set (`observe` and `draw` set it first), as names are kept inside it.
+   */
   private wish(
     actor: Actor,
     pose: Pose,
@@ -1015,12 +1234,12 @@ export class Scene {
       width = Math.ceil(this.out.measureText(actor.name).width) + 12;
       this.tagWidths.set(actor.name, width);
     }
-    const feet = pose.y * TILE - 4;
+    const feet = pose.y * TILE - 4 - this.seen.y;
     // Over the top of the figure, which a tall hood or a tool held high raises.
     const parts = partsFor(actor);
     return {
       id: actor.id,
-      x: pose.x * TILE,
+      x: pose.x * TILE - this.seen.x,
       y: feet - (figureTop(parts) - 7 * pose.sit + liftOf(pose, parts.gait)) * FIGURE_SCALE,
       width,
       feet,
@@ -1038,12 +1257,20 @@ export class Scene {
     headX: number;
     headY: number;
   }[] {
+    const { x: sx, y: sy } = this.seen;
     return walkers.map((walker) => {
       const wish = this.wish(walker.actor, walker.pose);
       const spot = this.tagSpots.get(walker.actor.id) ?? 0;
       // A slip fading out stays where it was taken away, so it is not tied to its figure.
       const left = this.fading.get(walker.actor.id);
-      const box = left ?? tagBox(wish, spot, { width: this.width });
+      // Placed in the window, so that it is kept inside it, and drawn in world pixels.
+      const placed = tagBox(wish, spot, { width: this.width });
+      const box = left ?? {
+        left: placed.left + sx,
+        right: placed.right + sx,
+        top: placed.top + sy,
+        bottom: placed.bottom + sy,
+      };
       return {
         id: walker.actor.id,
         name: walker.actor.name,
@@ -1051,8 +1278,8 @@ export class Scene {
         y: box.top + TAG_HEIGHT - 7,
         width: box.right - box.left,
         moved: !left && spot !== 0,
-        headX: wish.x,
-        headY: wish.y + 6,
+        headX: wish.x + sx,
+        headY: wish.y + 6 + sy,
       };
     });
   }
@@ -1068,11 +1295,18 @@ export class Scene {
     only: readonly { x: number; y: number; reach: number }[] | null = null,
     cast: ReturnType<typeof skyCast> | null = null,
   ): void {
-    const { ctx, ground, palette } = side;
+    const { ctx, palette } = side;
     const ink = css(palette.ink);
     const paper = css(palette.paper);
+    const seen = this.seen;
+    // The regions in the window, and those near enough for their trees to reach into it.
+    const shown = this.groundsIn(side, seen);
+    const near = this.groundsIn(side, seen, OVERHANG);
     ctx.save();
-    ctx.translate(this.mapX, 0);
+    // The map is drawn in world pixels, moved by where the window is. The
+    // window's move is undone by hand further on, not by `restore`, so that
+    // the lamps' clip holds over the page as well.
+    ctx.translate(this.mapX - seen.x, 0 - seen.y);
     if (only) {
       ctx.beginPath();
       for (const spot of only) {
@@ -1083,31 +1317,39 @@ export class Scene {
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = paper;
-    ctx.fillRect(0 - this.mapX, 0, this.frameWidth, this.frameHeight);
-    ctx.drawImage(ground.base, 0, 0);
+    ctx.fillRect(seen.x - this.mapX, seen.y, this.frameWidth, this.frameHeight);
+    // The ground goes only where the map is: the next region's lies beside
+    // it on the world plane, where the page is on the frame.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(seen.x, seen.y, this.width, this.height);
+    ctx.clip();
+    for (const ground of shown) ctx.drawImage(ground.base, ground.x, ground.y);
 
     // Water moving: short strokes that drift downstream and fade in and out.
     ctx.strokeStyle = ink;
     ctx.lineCap = "round";
     ctx.lineWidth = 1.2;
-    ground.ripples.forEach(([x, y], i) => {
-      const phase = (((time * 0.012 + i * 0.37) % 1) + 1) % 1;
-      const alpha = Math.sin(Math.PI * phase) * 0.55;
-      if (alpha <= 0.05 || i % 2 === 1) return;
-      const sx = x + (i % 3) * 3;
-      const sy = y + phase * 14;
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo(sx + 6, sy + 3, sx + 12, sy);
-      ctx.stroke();
-    });
+    for (const ground of shown)
+      ground.ripples.forEach(([x, y], i) => {
+        const phase = (((time * 0.012 + i * 0.37) % 1) + 1) % 1;
+        const alpha = Math.sin(Math.PI * phase) * 0.55;
+        if (alpha <= 0.05 || i % 2 === 1) return;
+        const sx = x + (i % 3) * 3;
+        const sy = y + phase * 14;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.quadraticCurveTo(sx + 6, sy + 3, sx + 12, sy);
+        ctx.stroke();
+      });
     ctx.globalAlpha = 1;
+    ctx.restore();
 
     // From here to the map's rule, nothing is drawn outside it.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(...this.inRule());
+    ctx.rect(...this.ruleSeen());
     ctx.clip();
 
     // The route of a walk just begun, on the ground under everything that
@@ -1117,7 +1359,7 @@ export class Scene {
     // the slips, so it never runs through lettering.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, this.width, this.height);
+    ctx.rect(seen.x, seen.y, this.width, this.height);
     for (const hole of holes)
       ctx.rect(hole.left, hole.top, hole.right - hole.left, hole.bottom - hole.top);
     ctx.clip("evenodd");
@@ -1151,9 +1393,20 @@ export class Scene {
     this.drawFightGround(ctx, world, walkers, palette, time);
 
     // Standing things and walkers together, farthest first, so each overlaps what is behind it.
+    // Of every region near the window, what reaches into it, in one order.
     let next = 0;
-    const standing = ground.standing;
-    const fires = [...ground.fires].sort((a, b) => a[1] - b[1]);
+    const inView = (x: number, y: number, width: number, height: number): boolean =>
+      x < seen.x + this.width &&
+      x + width > seen.x &&
+      y < seen.y + this.height &&
+      y + height > seen.y;
+    const standing = near
+      .flatMap((ground) =>
+        ground.standing.filter((s) => inView(s.x, s.y, s.canvas.width, s.canvas.height)),
+      )
+      .sort((a, b) => a.base - b.base);
+    const burning = near.flatMap((ground) => ground.fires);
+    const fires = [...burning].sort((a, b) => a[1] - b[1]);
     let fire = 0;
     const upTo = (base: number): void => {
       while (next < standing.length && (standing[next] as (typeof standing)[number]).base <= base) {
@@ -1211,8 +1464,9 @@ export class Scene {
       const t = (time - recoil.since) / 4;
       drawFlecks(ctx, walker.x, walker.y - 22, recoil.dx, recoil.dy, t, ink);
     }
-    for (const spot of ground.fires) this.smoke(ctx, spot, palette, time);
+    for (const spot of burning) this.smoke(ctx, spot, palette, time);
     ctx.restore();
+    ctx.translate(seen.x, seen.y);
 
     // A ruled double border round the map, as round a printed map.
     ctx.strokeStyle = ink;
@@ -1398,6 +1652,12 @@ export class Scene {
     return [RULE_MARGIN, RULE_MARGIN, this.width - 2 * RULE_MARGIN, this.height - 2 * RULE_MARGIN];
   }
 
+  /** The same, in world pixels where the window was last set. */
+  private ruleSeen(): [number, number, number, number] {
+    const [x, y, width, height] = this.inRule();
+    return [x + this.seen.x, y + this.seen.y, width, height];
+  }
+
   /**
    * The part of the frame that is only map, in frame pixels. Beside the map,
    * the thin margin outside its rule belongs to the page; with the page below,
@@ -1463,7 +1723,7 @@ export class Scene {
       ctx.fillText(this.notice, right, top0 + 208);
       ctx.globalAlpha = 1;
       ctx.textAlign = "left";
-    }
+    } else if (this.whole) this.overview(ctx, palette, right, top0 + OVERVIEW_TOP);
 
     // Beside the map, the line of news goes below the map if there is room
     // there. In a frame only as tall as the map it goes at the foot of the
@@ -1559,6 +1819,64 @@ export class Scene {
         ctx.textAlign = "left";
       } else ctx.fillText(more, left, foot + 40);
     }
+  }
+
+  /**
+   * A small map of the whole world at the head of the page, its right edge at
+   * `right` and its top at `top`: each region's ground, small, ruled round as
+   * it lies, a heavier rule round the part the map shows, which moves as the
+   * view drifts, a dot in its cloak's colour for each resident and a cross for
+   * each group of monsters.
+   */
+  private overview(ctx: Ctx, palette: Palette, right: number, top: number): void {
+    const whole = this.whole;
+    if (!whole) return;
+    const atlas = this.atlas;
+    const scale = this.miniScale;
+    const left = right - atlas.width * scale;
+    const at = (x: number, y: number): [number, number] => [
+      left + (x - atlas.left) * scale,
+      top + (y - atlas.top) * scale,
+    ];
+    const ink = css(palette.ink);
+    ctx.save();
+    // In whichever ink the page is in, the ground drawn in that ink.
+    const mini = (palette.ink === NIGHT.ink ? this.night : this.day).mini;
+    ctx.drawImage(mini, left, top);
+    ctx.strokeStyle = ink;
+    ctx.lineJoin = "round";
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    for (const region of atlas.regions)
+      ctx.strokeRect(
+        ...at(region.x + 0.1, region.y + 0.1),
+        (region.map.width - 0.2) * scale,
+        (region.map.height - 0.2) * scale,
+      );
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2;
+    const { window } = this.seen;
+    ctx.strokeRect(...at(window.x, window.y), window.width * scale, window.height * scale);
+    ctx.lineWidth = 1.6;
+    for (const group of monsterGroups(whole)) {
+      const [x, y] = at(group.x + 0.5, group.y + 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x - 3, y - 3);
+      ctx.lineTo(x + 3, y + 3);
+      ctx.moveTo(x + 3, y - 3);
+      ctx.lineTo(x - 3, y + 3);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    for (const actor of rosterOf(whole)) {
+      const [x, y] = at(actor.x + 0.5, actor.y + 0.5);
+      ctx.fillStyle = identity(actor.id).cloak;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.6, 0, 7);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /**

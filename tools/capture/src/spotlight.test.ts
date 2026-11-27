@@ -3,25 +3,17 @@ import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 import { spotlightWait } from "./metrics.ts";
 import { spotlightRun } from "./simrun.ts";
 
-type Away = ReadonlyMap<number, readonly (readonly [number, number])[]>;
-
-/** Whether `id` was off the map at `tick`. */
-const isAway = (away: Away, id: number, tick: number): boolean =>
-  (away.get(id) ?? []).some(([from, to]) => tick >= from && tick < to);
-
 /**
  * Each stretch one subject held the spotlight, in ticks, leaving out the last,
- * which the run's end cuts short, and any that ended because the subject left
- * the map.
+ * which the run's end cuts short.
  */
-const holds = (subjects: readonly (number | null)[], away: Away = new Map()): number[] => {
+const holds = (subjects: readonly (number | null)[]): number[] => {
   const out: number[] = [];
   let length = 0;
   subjects.forEach((s, i) => {
     length++;
     if (subjects[i + 1] !== s) {
-      const left = s !== null && isAway(away, s, i + 1);
-      if (i + 1 < subjects.length && !left) out.push(length);
+      if (i + 1 < subjects.length) out.push(length);
       length = 0;
     }
   });
@@ -36,22 +28,21 @@ const LONG = process.env.IDLIN_LONG === "1";
 
 describe("the spotlight over a headless run", () => {
   for (const residents of LONG ? [6, 12, 50] : [6, 12]) {
-    it(`keeps the wait of each of ${residents} residents on the map within the bound`, {
+    it(`keeps the wait of each of ${residents} residents, wherever they are, within the bound`, {
       timeout: RUN_TIMEOUT_MS,
     }, () => {
-      const { subjects, names, away } = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
+      const { subjects, names } = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
       expect(names.size).toBe(residents);
-      const wait = spotlightWait(subjects, names, away);
+      const wait = spotlightWait(subjects, names);
       expect(wait.limitSeconds).toBe((2 * residents * DWELL_TICKS) / 10);
       expect(wait.hardFails).toEqual([]);
       expect(wait.longestSeconds).toBeLessThanOrEqual(wait.limitSeconds);
-      // Only residents are shown, only while on the map, and more than half the cast gets a turn.
+      // Only residents are shown, and more than half the cast gets a turn.
       const shown = subjects.filter((s): s is number => s !== null);
       expect(shown.every((id) => names.has(id))).toBe(true);
-      expect(subjects.some((id, tick) => id !== null && isAway(away, id, tick))).toBe(false);
       expect(new Set(shown).size).toBeGreaterThan(residents / 2);
-      // Nobody is shown for less than the dwell, unless they walk off the map.
-      expect(Math.min(...holds(subjects, away))).toBeGreaterThanOrEqual(DWELL_TICKS);
+      // Nobody is shown for less than the dwell: the view goes with them to another region.
+      expect(Math.min(...holds(subjects))).toBeGreaterThanOrEqual(DWELL_TICKS);
     });
   }
 

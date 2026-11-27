@@ -19,6 +19,10 @@ that folder's storyboard above the new one.
   through nightfall. Shows what a viewer sees over two minutes.
 - **burst**: 12 consecutive rendered frames from the busiest moment. Shows
   motion, and exposes flicker.
+- **drift**: 12 frames from the first time in the day the view pans to
+  another region to when it gets there. The flicker index is also taken in
+  the middle of that pan, where it goes fastest, and a day in which the view
+  never pans is a hard fail.
 - **day strip**: 6 frames across a full day. Shows the light changing.
 - **figures**: 12 residents at 07:00 with a spread of levels (`?levels`, which
   only a capture's own world takes), so every kit tier and walk can be seen:

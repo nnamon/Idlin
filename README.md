@@ -8,8 +8,9 @@ the scripts.
 It's early. The world is four regions, six characters and a day/night cycle.
 The camp's region holds the lantern, the wood, the river, the den and the
 meadow, and a pinewood, hills and a lower river lie past its edges. The
-viewer only draws the camp's region so far; a character who walks off it is
-listed faded on the page. The characters run one of three scripts from
+viewer shows one region at a time, the one the spotlit character is in, and
+pans slowly to the next when the spotlight moves; a small map on the page
+shows all four and where everyone is. The characters run one of three scripts from
 `content/bots/`, which tell them where to walk, when to go back to camp, and
 how to fight. Wolves and goblins
 (`content/monsters/`) fight them in the simulation, and the viewer draws the

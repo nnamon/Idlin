@@ -27,6 +27,8 @@ export interface ActorSample {
 export interface TickRecord {
   readonly events: readonly WorldEvent[];
   readonly actors: readonly ActorSample[];
+  /** Where the map's window was, its top-left in world tiles; the metrics do not read it. */
+  readonly view?: { readonly x: number; readonly y: number };
   readonly elsewhere?: {
     readonly actors: readonly ActorSample[];
     readonly events: readonly WorldEvent[];

@@ -74,8 +74,15 @@ dangerous part of the day comes.
 
 The world is a few regions, each of which fits in one frame, and the camera
 doesn't cut between characters: the stream shows one region at a time (see
-"One player on a busy stream" below). A panel beside the map will spotlight one character at a time,
-changing slowly and preferring whoever something is happening to.
+"One player on a busy stream" below). The spotlight is on one character at a
+time, changing slowly and preferring whoever something is happening to, and
+the map shows the region that character is in. When that character has been
+in another region for two seconds, as when the spotlight goes to someone
+elsewhere or its subject walks through an exit, the map pans there over
+eight seconds, region by region along the exits, easing in and out. A small map at the head of the page shows every
+region, a frame round the part on screen that moves with the pan, a dot in
+each resident's cloak colour and a cross for each group of monsters. A panel
+beside the map will show the spotlit character up close.
 
 Feedback is small and local: a hop, a lunge, a number that floats up and
 fades. No full-screen flashes and nothing that changes brightness quickly over
@@ -261,10 +268,10 @@ monsters, as they do of the fire.
 
 The fight is read off the whole world, where walking through an exit is a step
 like any other, so someone who walks off the map is not taken for killed or
-downed. The map draws only what happens in the region it shows: its
-monsters, marked tiles, numbers, blots and rings. The page and the news line
-cover every resident, so one downed in another region is on the news, listed
-as "downed", and fades in at camp.
+downed. The regions lie side by side as one plane, so a blot left in the
+pinewood is there when the map pans to the pinewood. The page and the news
+line cover every resident, so one downed in another region is on the news,
+listed as "downed", and fades in at camp.
 
 A few things move while no one does: the river's ripples drift downstream, a
 line of smoke, as heavy as the grass ticks and thinning as it goes, rises
@@ -351,8 +358,7 @@ with 12, 50 and 150 characters and judging it from one player's point of view
 (the "Mine" score in [watch-rubric.md](watch-rubric.md)). The first milestone
 only builds the frame and the spotlight and measures how many characters fit.
 Points 1, 3 and 4 need real players and are planned for M3. Four regions
-exist in the simulation; the viewer draws only the camp's so far, and moving
-the view between regions is still to be built.
+exist, and the view follows the spotlight between them.
 
 ## What a viewer can do
 

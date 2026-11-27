@@ -1,90 +1,88 @@
-// The world as the map shows it. The viewer draws one region at a time: the
-// actors and marks in it, moved from world coordinates into the region's own.
+// The world as the map shows it. The map is a window onto the world plane, as
+// big as one region, and the actors and marks drawn are those in the window,
+// in world coordinates. Where the window is comes from camera.ts.
 import { type Actor, ADVENTURER, type Atlas, place, regionAt, type World } from "@idlin/sim";
-import { type Fight, nextFight } from "./fight.ts";
 import { TILE } from "./ground.ts";
 
 /** Over how many pixels a figure walking off the map fades out (see `edgeFade`). */
 export const EDGE_FADE = 32;
 
-/** The index of the region the camp is in, which the viewer shows. */
-export function campRegion(world: World): number {
+/** The index of the region the camp is in, where the view starts. */
+export function campRegion(world: { readonly atlas: Atlas }): number {
   const camp = place(world.atlas, "camp");
   return regionAt(world.atlas, camp.x, camp.y);
 }
 
-/** Whether `actor` is drawn on region `index`'s map. */
-function onMap(world: World, index: number, actor: Actor): boolean {
-  if (regionAt(world.atlas, actor.x, actor.y) === index) return true;
-  // Someone stepping out stays until the step is done, so it is seen walking off the edge.
-  return actor.moveTicksLeft > 0 && regionAt(world.atlas, actor.fromX, actor.fromY) === index;
+/** The map's size in tiles: the camp region's. */
+export function viewSize(atlas: Atlas, camp: number): { width: number; height: number } {
+  const map = atlas.regions[camp]?.map ?? atlas.regions[0]?.map;
+  return { width: map?.width ?? 0, height: map?.height ?? 0 };
+}
+
+/** A window onto the world: its top-left corner in world tiles (fractions allowed while it drifts) and its size in tiles. */
+export interface Window {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Whether any part of tile (x, y) is in the window. */
+export function inWindow(window: Window, x: number, y: number): boolean {
+  return (
+    x + 1 > window.x &&
+    x < window.x + window.width &&
+    y + 1 > window.y &&
+    y < window.y + window.height
+  );
 }
 
 /**
- * `world` with only what is in region `index`, in that region's tile
- * coordinates. Someone who has just stepped in from another region keeps the
- * tile it stepped from, just off the map's edge, so it is seen walking in, and
- * someone stepping out is kept until the step is done. A path is cut where it
- * leaves the region, so a route drawn along it ends at the exit.
+ * `world` with only the actors and marks in `window`, in world coordinates.
+ * Someone stepping out of the window is kept until the step is done, so it is
+ * seen walking off the edge.
  */
-export function regionView(world: World, index: number): World {
-  const region = world.atlas.regions[index];
-  if (!region) return { ...world, actors: [], marks: [] };
-  const { x: dx, y: dy } = region;
-  const inside = (p: { x: number; y: number }): boolean =>
-    regionAt(world.atlas, p.x, p.y) === index;
+export function windowView(world: World, window: Window): World {
+  const seen = (actor: Actor): boolean =>
+    inWindow(window, actor.x, actor.y) ||
+    (actor.moveTicksLeft > 0 && inWindow(window, actor.fromX, actor.fromY));
   return {
     ...world,
-    actors: world.actors
-      .filter((actor) => onMap(world, index, actor))
-      .map((actor) => {
-        const out = actor.path.findIndex((p) => !inside(p));
-        const path = out < 0 ? actor.path : actor.path.slice(0, out);
-        return {
-          ...actor,
-          x: actor.x - dx,
-          y: actor.y - dy,
-          fromX: actor.fromX - dx,
-          fromY: actor.fromY - dy,
-          path: path.map((p) => ({ x: p.x - dx, y: p.y - dy })),
-        };
-      }),
-    marks: world.marks.filter(inside).map((m) => ({ ...m, x: m.x - dx, y: m.y - dy })),
+    actors: world.actors.filter(seen),
+    marks: world.marks.filter((m) => inWindow(window, m.x, m.y)),
   };
 }
 
+/** Monsters this many steps apart or nearer, either way, in one region, count as one group. */
+export const GROUP_REACH = 6;
+
 /**
- * The fight after a tick, as region `index`'s map shows it. `all` is read off
- * the whole world, where stepping through an exit is a step like any other,
- * so someone who walks off the map is not taken for killed or downed, and a
- * resident downed in another region still counts as downed on the page.
- * `shown` is `all` with the numbers, blots, scratches and struck tiles kept to
- * the region, in its tile coordinates. What is kept by actor (rings, lunges,
- * downs) and the lines of news are left whole: only actors on the map are
- * drawn, and the page lists every resident.
+ * Where the monster groups are: monsters in one region within GROUP_REACH of
+ * another of the group, each group at the middle of its monsters, in world
+ * tiles. The world keeps no group for a monster, so the overview reckons it
+ * from where they stand, as they spawn close together and keep near.
  */
-export function fightOn(
-  previous: Fight,
-  world: World,
-  index: number,
-): { all: Fight; shown: Fight } {
-  const all = nextFight(previous, world);
-  const region = world.atlas.regions[index];
-  const dx = region?.x ?? 0;
-  const dy = region?.y ?? 0;
-  const here = <T extends { x: number; y: number }>(list: readonly T[]): T[] =>
-    list
-      .filter((p) => regionAt(world.atlas, p.x, p.y) === index)
-      .map((p) => ({ ...p, x: p.x - dx, y: p.y - dy }));
-  const shown: Fight = {
-    ...all,
-    floaters: here(all.floaters),
-    fallen: here(all.fallen),
-    gone: here(all.gone),
-    scratches: here(all.scratches),
-    landed: here(all.landed),
-  };
-  return { all, shown };
+export function monsterGroups(world: World): { x: number; y: number }[] {
+  const groups: { region: number; members: Actor[] }[] = [];
+  for (const actor of world.actors) {
+    if (actor.kind === ADVENTURER) continue;
+    const region = regionAt(world.atlas, actor.x, actor.y);
+    const near = (other: Actor): boolean =>
+      Math.max(Math.abs(other.x - actor.x), Math.abs(other.y - actor.y)) <= GROUP_REACH;
+    const joined = groups.filter((g) => g.region === region && g.members.some(near));
+    const into = joined[0] ?? { region, members: [] };
+    if (!joined[0]) groups.push(into);
+    // One that stands near two groups joins them.
+    for (const other of joined.slice(1)) {
+      into.members.push(...other.members);
+      groups.splice(groups.indexOf(other), 1);
+    }
+    into.members.push(actor);
+  }
+  return groups.map(({ members }) => ({
+    x: members.reduce((sum, a) => sum + a.x, 0) / members.length,
+    y: members.reduce((sum, a) => sum + a.y, 0) / members.length,
+  }));
 }
 
 /**
@@ -108,8 +106,8 @@ export function regionNames(atlas: Atlas, maps: Readonly<Record<string, unknown>
 }
 
 /**
- * For each resident of `whole` that is not on `view` (its cut to one region,
- * see `regionView`), the name of the region it is in, by id. The page writes
+ * For each resident of `whole` that is not on `view` (its cut to the window,
+ * see `windowView`), the name of the region it is in, by id. The page writes
  * that in place of what it is doing.
  */
 export function awayFrom(
@@ -128,10 +126,11 @@ export function awayFrom(
 }
 
 /**
- * How strongly a figure whose feet are at (x, y), in map pixels, is drawn on
- * a map `width` by `height` pixels: 1 while it stands anywhere on the map, up
- * to the middle of an edge tile, falling to 0 as it walks on off that edge.
- * Its feet are at the middle of a tile across and near its foot down.
+ * How strongly a figure whose feet are at (x, y), in map pixels from the
+ * window's top-left, is drawn on a map `width` by `height` pixels: 1 while it
+ * stands anywhere on the map, up to the middle of an edge tile, falling to 0
+ * as it walks on off that edge, or as the view drifts away from it. Its feet
+ * are at the middle of a tile across and near its foot down.
  */
 export function edgeFade(x: number, y: number, width: number, height: number): number {
   const across = Math.min(x, width - x) - TILE / 2;

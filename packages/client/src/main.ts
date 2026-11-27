@@ -15,10 +15,8 @@ import {
 import worldJson from "../../../content/world.json";
 import { castOf, spreadDeaths, spreadLevels } from "./cast.ts";
 import { fitFrame } from "./frame.ts";
-import type { MapLabel } from "./ground.ts";
 import { follow } from "./live.ts";
 import { Scene } from "./scene.ts";
-import { awayFrom, campRegion, regionNames, regionView, rosterOf } from "./view.ts";
 import "./style.css";
 
 /** Files by their name without the folder or the extension. */
@@ -121,18 +119,9 @@ async function main(): Promise<void> {
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
 
-  // The map shows the camp's region; drawing the others is still to come.
-  const shown = campRegion(world);
-  const region = atlas.regions[shown] as (typeof atlas.regions)[number];
-  const labels = (maps[region.map.name] as { labels?: MapLabel[] }).labels ?? [];
-  const view = (): typeof world => regionView(world, shown);
-  const names = regionNames(atlas, maps);
-  /** Draws the camp's map, and the page listing every resident, those away faded. */
-  const drawAt = (time: number): void => {
-    const map = view();
-    scene.draw(map, time, rosterOf(world), awayFrom(world, map, names));
-  };
-  const scene = await Scene.create(frame, region.map, labels);
+  // The map shows the region the spotlight is on, and drifts to the next (see camera.ts).
+  const scene = await Scene.create(frame, atlas, maps);
+  const drawAt = (time: number): void => scene.draw(world, time);
   // The frame fills the window: scaled as a whole, and wider or taller than 16:9 where the window is.
   const fit = (): void => {
     const { width, height, scale, below, columns } = fitFrame(
@@ -162,16 +151,16 @@ async function main(): Promise<void> {
   ) {
     await document.fonts.ready;
     const server = params.get("server") || `ws://${location.hostname}:4311`;
-    follow(scene, shipped, server, shown, names);
+    follow(scene, shipped, server);
     return;
   }
 
   const draw = (fraction: number): void => drawAt(world.tick + fraction);
   const tick = (): void => {
     step(world);
-    scene.observe(view(), world, shown);
+    scene.observe(world);
   };
-  scene.observe(view(), world, shown);
+  scene.observe(world);
   for (let i = 0; i < skip; i++) tick();
   await document.fonts.ready;
 

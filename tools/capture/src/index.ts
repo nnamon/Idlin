@@ -9,8 +9,8 @@
 // run forward to before the page draws, `ticks` are stepped after that.
 //
 // `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
-// figures.png and its crops, burst.png, fight.png, fight-burst.png, fight-down.png, daystrip.png,
-// crowd-12/50/150.png, crowd-50-levels.png, metrics.json, and a
+// figures.png and its crops, burst.png, drift.png, fight.png, fight-burst.png, fight-down.png,
+// daystrip.png, crowd-12/50/150.png, crowd-50-levels.png, metrics.json, and a
 // `showcase` folder for the README. With `--baseline`, also compare.png: that
 // folder's storyboard above this one. Everything comes from seed 1, so two
 // runs of the same code give the same files.
@@ -20,6 +20,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { chromium } from "playwright";
+import { DRIFT_TICKS } from "../../../packages/client/src/camera.ts";
 import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 import { parseArgs } from "./args.ts";
 import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
@@ -35,7 +36,7 @@ import {
   type Image,
   stack,
 } from "./sheet.ts";
-import { busiest, play, spotlightRun } from "./simrun.ts";
+import { busiest, drifts, play, spotlightRun } from "./simrun.ts";
 
 const DIST = new URL("../../../packages/client/dist/", import.meta.url).pathname;
 const TYPES: Record<string, string> = {
@@ -160,6 +161,18 @@ async function run(count: number, every: number, scale: number): Promise<Image[]
   return frames;
 }
 
+/** Brightness grids of thirteen frames a sixth of a tick apart, from where the page is now. */
+const grids = (): Promise<number[][]> =>
+  page.evaluate(() => {
+    const api = (window as unknown as { idlin: Idlin }).idlin;
+    const seen = [api.brightness()];
+    for (let i = 0; i < 12; i++) {
+      api.advance(1 / 6);
+      seen.push(api.brightness());
+    }
+    return seen;
+  });
+
 const hashes: Record<string, string> = {};
 async function save(name: string, bytes: Uint8Array): Promise<void> {
   await mkdir(join(outDir, name, ".."), { recursive: true });
@@ -193,16 +206,7 @@ for (const [hour, monsters] of [
   ...FLICKER_FIGHTS.map((hour) => [hour, true] as const),
 ]) {
   await open(hour, 6, monsters);
-  const grids = await page.evaluate(() => {
-    const api = (window as unknown as { idlin: Idlin }).idlin;
-    const seen = [api.brightness()];
-    for (let i = 0; i < 12; i++) {
-      api.advance(1 / 6);
-      seen.push(api.brightness());
-    }
-    return seen;
-  });
-  const index = flickerIndex(grids);
+  const index = flickerIndex(await grids());
   if (index > worst.index) worst = { index, hour };
 }
 console.log(
@@ -241,14 +245,39 @@ if (review) {
   const sim: Record<string, ReturnType<typeof watchMetrics>> = {};
   const spotlight: Record<string, ReturnType<typeof spotlightWait>> = {};
   let busiestTick = 0;
+  let firstDrift: { from: number; to: number } | undefined;
   for (const residents of [6, 12, 50, 150]) {
     const record = play(1, residents, DAY);
     sim[residents] = watchMetrics(record);
-    if (residents === 6) busiestTick = busiest(record, 20);
+    if (residents === 6) {
+      busiestTick = busiest(record, 20);
+      firstDrift = drifts(record)[0];
+    }
     // Three times the population times the dwell, as the rubric asks for this one.
     const watched = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
-    spotlight[residents] = spotlightWait(watched.subjects, watched.names, watched.away);
+    spotlight[residents] = spotlightWait(watched.subjects, watched.names);
   }
+
+  // Drift: the first time in the day the view drifts to another region, as
+  // twelve frames from when it sets out to when it gets there, and the
+  // flicker index over a sixth of a tick apart at the middle of its first
+  // leg, where it goes fastest.
+  const driftFail: string[] = [];
+  let driftFlicker: { index: number; tick: number } | null = null;
+  if (firstDrift) {
+    const every = Math.ceil((firstDrift.to - firstDrift.from) / 11);
+    await open(6);
+    await advance(firstDrift.from);
+    await save("drift.png", encodePng(grid(await run(12, every, 0.5), 4)));
+    await open(6);
+    const fastest = firstDrift.from + DRIFT_TICKS / 2 - 1;
+    await advance(fastest);
+    const index = flickerIndex(await grids());
+    driftFlicker = { index, tick: fastest };
+    console.log(`flicker index during a drift: ${(index * 100).toFixed(2)}% of the frame`);
+    if (index > FLICKER_LIMIT)
+      driftFail.push(`flicker index ${index} during a drift is over ${FLICKER_LIMIT} of the frame`);
+  } else driftFail.push("the view never drifted to another region in the day");
 
   // Storyboard: two minutes from 19:20, through the lamps coming on and nightfall.
   await open(19.33);
@@ -317,6 +346,7 @@ if (review) {
   // residents one frame can hold, and blocks nothing.
   const hardFails = [
     ...flickerFail,
+    ...driftFail,
     ...problems.map((problem) => `page error: ${problem}`),
     ...(sim[6]?.hardFails ?? []),
     ...(spotlight[6]?.hardFails ?? []),
@@ -330,11 +360,13 @@ if (review) {
     seed: 1,
     flicker: { index: worst.index, worstHour: worst.hour, limit: FLICKER_LIMIT },
     busiestTick,
+    // Ticks from the start at six residents: the first drift between regions, and the flicker index in it.
+    drift: firstDrift ? { ...firstDrift, flicker: driftFlicker } : null,
     // One game day per population.
     sim,
     pacing: "n/a: there are no trips, deaths or drops yet (#195, #196, #197)",
     acknowledgment: "n/a: no ticker, caption or spotlight names anyone on screen yet (#198)",
-    // The director picks the subject; nothing draws it yet. Per population, a run of three times the population times the dwell.
+    // The director picks the subject and the map follows its region. Per population, a run of three times the population times the dwell.
     spotlightWait: spotlight,
     consoleErrors: problems,
     hardFails,

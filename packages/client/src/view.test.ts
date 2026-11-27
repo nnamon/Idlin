@@ -9,25 +9,29 @@ import {
 } from "@idlin/sim";
 import { expect, it } from "vitest";
 import { rawWorld, shippedWorld } from "../../sim/src/testing.ts";
-import { type Fight, type News, NO_FIGHT } from "./fight.ts";
+import { type Fight, type News, NO_FIGHT, nextFight } from "./fight.ts";
 import { TILE } from "./ground.ts";
 import {
   awayFrom,
   campRegion,
   EDGE_FADE,
   edgeFade,
-  fightOn,
+  GROUP_REACH,
+  inWindow,
+  monsterGroups,
   regionNames,
-  regionView,
   rosterOf,
+  viewSize,
+  windowView,
 } from "./view.ts";
 
 // The shipped world: the camp's region at (0, 0), the pinewood west of it at
 // (-30, 0), joined by the exit (-1, 7) to (0, 7), and the hills east of it at (30, 0).
 const atlas = shippedWorld();
-const [CAMP, PINE, HILLS] = [0, 1, 2];
+const CAMP = 0;
+const CAMP_WINDOW = { x: 0, y: 0, width: 30, height: 21 };
 
-it("shows the camp's region: who is in it, in its own tile coordinates", () => {
+it("shows who is in the window, where they are in the world", () => {
   const programs = compileBots(
     { out: "otherwise -> walk_to(pinewood)", stay: "otherwise -> wait(600)" },
     placeConstants(atlas),
@@ -41,17 +45,27 @@ it("shows the camp's region: who is in it, in its own tile coordinates", () => {
     { type: "spawn", name: "Cole", program: "stay", x: -1, y: 7 },
     { type: "spawn", name: "Dara", program: "stay", x: 31, y: 8 },
   ]);
-  const shown = campRegion(world);
-  expect(shown).toBe(CAMP);
-  expect(atlas.regions[shown]?.map.name).toBe("camp");
-  const view = regionView(world, shown);
-  expect(view.actors.map((a) => [a.name, a.x, a.y])).toEqual([
+  expect(campRegion(world)).toBe(CAMP);
+  expect(atlas.regions[CAMP]?.map.name).toBe("camp");
+  // The window is as big as the camp's map.
+  expect(viewSize(atlas, CAMP)).toEqual({ width: 30, height: 21 });
+  const names = (window: typeof CAMP_WINDOW) =>
+    windowView(world, window).actors.map((a) => [a.name, a.x, a.y]);
+  expect(names(CAMP_WINDOW)).toEqual([
     ["Ash", 0, 7],
     ["Bryn", 14, 9],
   ]);
-  // Another region is moved into its own coordinates.
-  expect(regionView(world, HILLS).actors.map((a) => [a.name, a.x, a.y])).toEqual([["Dara", 1, 8]]);
-  expect(regionView(world, PINE).actors.map((a) => [a.name, a.x, a.y])).toEqual([["Cole", 29, 7]]);
+  // Over the hills and the pinewood, in world coordinates as they are.
+  expect(names({ ...CAMP_WINDOW, x: 30 })).toEqual([["Dara", 31, 8]]);
+  expect(names({ ...CAMP_WINDOW, x: -30 })).toEqual([["Cole", -1, 7]]);
+  // Partway through a drift west, a tile partly in the window counts: Cole
+  // comes in at its left edge while Bryn is still in it.
+  expect(names({ ...CAMP_WINDOW, x: -15.5 }).map(([name]) => name)).toEqual([
+    "Ash",
+    "Bryn",
+    "Cole",
+  ]);
+  expect(names({ ...CAMP_WINDOW, x: -16 }).map(([name]) => name)).toEqual(["Ash", "Cole"]);
   // The world itself is left as it was.
   expect(world.actors.map((a) => a.x)).toEqual([0, 14, -1, 31]);
 
@@ -60,34 +74,24 @@ it("shows the camp's region: who is in it, in its own tile coordinates", () => {
   const ash = world.actors[0];
   expect([ash?.x, ash?.fromX]).toEqual([-1, 0]);
   expect(ash?.moveTicksLeft).toBeGreaterThan(0);
-  const leaving = regionView(world, shown).actors;
-  expect(leaving.map((a) => [a.name, a.x, a.fromX])).toEqual([
+  expect(windowView(world, CAMP_WINDOW).actors.map((a) => [a.name, a.x, a.fromX])).toEqual([
     ["Ash", -1, 0],
     ["Bryn", 14, 14],
   ]);
-  // Nothing of the path left to draw is off this map.
-  expect(leaving[0]?.path).toEqual([]);
   while ((world.actors[0]?.moveTicksLeft ?? 0) > 0) step(world);
-  expect(regionView(world, shown).actors.map((a) => a.name)).toEqual(["Bryn"]);
+  expect(windowView(world, CAMP_WINDOW).actors.map((a) => a.name)).toEqual(["Bryn"]);
   // The page still lists all four.
   expect(rosterOf(world).map((a) => a.name)).toEqual(["Ash", "Bryn", "Cole", "Dara"]);
 });
 
-it("cuts a path where it leaves the region, so a route ends at the exit", () => {
-  const programs = compileBots({ out: "otherwise -> walk_to(pinewood)" }, placeConstants(atlas));
-  const world = createWorld(atlas, 1, programs);
-  step(world, [{ type: "spawn", name: "Ash", program: "out", x: 14, y: 9 }]);
-  step(world);
-  const shown = campRegion(world);
-  const [actor] = world.actors;
-  // In the world the path runs on into the pinewood.
-  expect(actor?.path.some((p) => p.x < 0)).toBe(true);
-  const [seen] = regionView(world, shown).actors;
-  const path = seen?.path ?? [];
-  expect(path.length).toBeGreaterThan(0);
-  expect(path.every((p) => p.x >= 0 && p.x < 30 && p.y >= 0 && p.y < 21)).toBe(true);
-  // It ends on the camp's side of the exit to the pinewood.
-  expect(path[path.length - 1]).toEqual({ x: 0, y: 7 });
+it("takes a tile as in the window if any of it is", () => {
+  const window = { x: 2.25, y: -0.5, width: 30, height: 21 };
+  expect(inWindow(window, 2, 0)).toBe(true);
+  expect(inWindow(window, 1, 0)).toBe(false);
+  expect(inWindow(window, 32, 20)).toBe(true);
+  expect(inWindow(window, 33, 0)).toBe(false);
+  expect(inWindow(window, 5, -1)).toBe(true);
+  expect(inWindow(window, 5, 21)).toBe(false);
 });
 
 it("lists every resident on the page and no monster", () => {
@@ -122,8 +126,8 @@ it("names the region each resident off the map is in, and nobody on it", () => {
     { type: "spawn", name: "Dara", program: "stay", x: 31, y: 8 },
     { type: "spawn", name: "Elm", program: "stay", x: 12, y: 25 },
   ]);
-  const at = (): [string, string][] => {
-    const away = awayFrom(world, regionView(world, CAMP), names);
+  const at = (window = CAMP_WINDOW): [string, string][] => {
+    const away = awayFrom(world, windowView(world, window), names);
     return world.actors.flatMap((a) =>
       away.has(a.id) ? [[a.name, away.get(a.id) as string]] : [],
     );
@@ -132,6 +136,8 @@ it("names the region each resident off the map is in, and nobody on it", () => {
     ["Dara", "the Hills"],
     ["Elm", "the Lower River"],
   ]);
+  // With the view on the hills, the camp's residents are the ones away.
+  expect(at({ ...CAMP_WINDOW, x: 30 }).map(([name]) => name)).toEqual(["Ash", "Bryn", "Elm"]);
   // Ash, still drawn while stepping off the map, is not away until the step is done.
   step(world);
   expect(world.actors[0]?.x).toBe(-1);
@@ -177,9 +183,31 @@ it("fades a figure out over the last tile it walks off the map, and only then", 
   expect(last).toBe(0);
 });
 
-// The fight is read off worlds made by hand, as in fight.test.ts, placed on the
-// shipped atlas: the camp's region runs from x 0 to 29, and its west exit
-// joins (-1, 7) in the pinewood to (0, 7) in the camp.
+it("marks each group of monsters once, at its middle, and keeps groups apart by region", () => {
+  const wolf = (id: number, x: number, y: number): Actor =>
+    ({ id, name: "Wolf", kind: "wolf", x, y }) as Actor;
+  const ash = { id: 9, name: "Ash", kind: "adventurer", x: 5, y: 5 } as Actor;
+  const world = (actors: Actor[]) => ({ atlas, actors }) as unknown as World;
+  // Three wolves together, a resident among them, and one far off: two groups.
+  expect(
+    monsterGroups(world([wolf(1, 4, 4), ash, wolf(2, 6, 4), wolf(3, 5, 7), wolf(4, 25, 15)])),
+  ).toEqual([
+    { x: 5, y: 5 },
+    { x: 25, y: 15 },
+  ]);
+  // Near enough by steps, but either side of the pinewood exit: two groups.
+  expect(monsterGroups(world([wolf(1, 0, 7), wolf(2, -1, 7)]))).toHaveLength(2);
+  // One that comes between two groups joins them into one.
+  const far = 2 * GROUP_REACH;
+  expect(
+    monsterGroups(world([wolf(1, 2, 10), wolf(2, 2 + far, 10), wolf(3, 2 + GROUP_REACH, 10)])),
+  ).toEqual([{ x: 2 + GROUP_REACH, y: 10 }]);
+  expect(monsterGroups(world([ash]))).toEqual([]);
+});
+
+// The fight is read off whole worlds made by hand, as in fight.test.ts, placed
+// on the shipped atlas: the camp's region runs from x 0 to 29, and its west
+// exit joins (-1, 7) in the pinewood to (0, 7) in the camp.
 const KINDS = { wolf: { hp: 24, damage: 8, windup: 8, recovery: 20, reach: 2 } };
 const someone = (over: Partial<Actor>): Actor =>
   ({
@@ -203,29 +231,27 @@ const wolf = (over: Partial<Actor>): Actor =>
   someone({ id: 2, name: "Wolf", kind: "wolf", hp: 24, ...over });
 
 /**
- * The fight on the camp's map after a run of ticks from tick 1, with every
- * line of news, and everything that fell or went home on it at any tick.
+ * The fight after a run of ticks from tick 1, with every line of news, and
+ * everything that fell or went home at any tick.
  */
 function watch(ticks: readonly { actors: Actor[]; marks?: Mark[] }[]): {
-  all: Fight;
-  shown: Fight;
+  fight: Fight;
   news: News[];
   fell: Fight["fallen"][number][];
   went: Fight["gone"][number][];
 } {
-  let all = NO_FIGHT;
-  let shown = NO_FIGHT;
+  let fight = NO_FIGHT;
   const news: News[] = [];
   const fell = new Map<number, Fight["fallen"][number]>();
   const went = new Map<number, Fight["gone"][number]>();
   ticks.forEach(({ actors, marks = [] }, i) => {
     const world = { atlas, tick: i + 1, actors, marks, kinds: KINDS } as unknown as World;
-    ({ all, shown } = fightOn(all, world, CAMP));
-    news.push(...shown.news);
-    for (const f of shown.fallen) fell.set(f.id, f);
-    for (const g of shown.gone) went.set(g.id, g);
+    fight = nextFight(fight, world);
+    news.push(...fight.news);
+    for (const f of fight.fallen) fell.set(f.id, f);
+    for (const g of fight.gone) went.set(g.id, g);
   });
-  return { all, shown, news, fell: [...fell.values()], went: [...went.values()] };
+  return { fight, news, fell: [...fell.values()], went: [...went.values()] };
 }
 
 /** Ticks of `actor` stepping from where it is one tile west, then standing there. */
@@ -237,8 +263,7 @@ const stepWest = (actor: Actor, after: number): Actor[] =>
     moveTicksLeft: Math.max(0, 5 - i),
   }));
 
-it("does not take a monster walking off the map for killed or gone home", () => {
-  expect(atlas.regions[CAMP]?.map.name).toBe("camp");
+it("does not take a monster walking into the next region for killed or gone home", () => {
   // Ash's blow lands on the wolf at the camp's west exit, and the wolf walks
   // on into the pinewood, hurt.
   const marks = [{ x: 0, y: 7, by: 1 }];
@@ -247,9 +272,9 @@ it("does not take a monster walking off the map for killed or gone home", () => 
     { actors: [someone({ x: 1, windup: 1 }), wolf({ x: 0 })], marks },
     ...stepWest(wolf({ x: 0, hp: 20 }), 6).map((w) => ({ actors: [ash, w] })),
   ];
-  const { shown, news, fell, went } = watch(ticks);
+  const { fight, news, fell, went } = watch(ticks);
   // The blow is seen to land, on the camp's side of the exit.
-  expect(shown.floaters).toEqual([{ since: 2, x: 0, y: 7, damage: 4, order: 0 }]);
+  expect(fight.floaters).toEqual([{ since: 2, x: 0, y: 7, damage: 4, order: 0 }]);
   expect(fell).toEqual([]);
   expect(went).toEqual([]);
   expect(news.filter((line) => line.text.includes("killed"))).toEqual([]);
@@ -258,11 +283,11 @@ it("does not take a monster walking off the map for killed or gone home", () => 
     { actors: [someone({ x: 1, windup: 1 }), wolf({ x: 0, hp: 4 })], marks },
     { actors: [ash] },
   ]);
-  expect(killed.shown.fallen.map((f) => [f.kind, f.x, f.y])).toEqual([["wolf", 0, 7]]);
+  expect(killed.fight.fallen.map((f) => [f.kind, f.x, f.y])).toEqual([["wolf", 0, 7]]);
   expect(killed.news.map((line) => line.text)).toEqual(["Ash killed a wolf"]);
 });
 
-it("does not take a resident walking off the map for downed, and counts one downed off the map", () => {
+it("does not take a resident walking into the next region for downed, and counts one downed there", () => {
   // Ash, nearly out, hops off the tile a wolf marked, out through the exit,
   // and the blow lands on nothing.
   const marks = [{ x: 0, y: 7, by: 2 }];
@@ -274,22 +299,20 @@ it("does not take a resident walking off the map for downed, and counts one down
     ...out.slice(1).map((a) => ({ actors: [a, wolf({ x: 1, recover: 20 })] })),
   ];
   const away = watch(ticks);
-  expect(away.shown.scratches.map((s) => [s.x, s.y])).toEqual([[0, 7]]);
-  expect(away.shown.downs.size).toBe(0);
+  expect(away.fight.scratches.map((s) => [s.x, s.y])).toEqual([[0, 7]]);
+  expect(away.fight.downs.size).toBe(0);
   expect(away.fell).toEqual([]);
   expect(away.news).toEqual([]);
 
-  // In the pinewood a wolf downs her, and she is carried to camp: the page
-  // calls her downed and the news says so, but what she leaves where she fell
-  // is not on this map.
+  // In the pinewood a wolf downs her, and she is carried to camp: she is
+  // downed, the news says so, and what she leaves lies where she fell, in
+  // the pinewood, where the map draws it when it shows the pinewood.
   const deep = { ...(out.at(-1) as Actor), x: -10, fromX: -10 };
   const downed = watch([
     { actors: [deep, wolf({ id: 3, x: -9, windup: 1 })], marks: [{ x: -10, y: 7, by: 3 }] },
     { actors: [someone({ x: 14, y: 9, wait: 150 }), wolf({ id: 3, x: -9, recover: 20 })] },
   ]);
-  expect(downed.shown.downs.has(1)).toBe(true);
+  expect(downed.fight.downs.has(1)).toBe(true);
   expect(downed.news.map((line) => line.text)).toEqual(["Ash was downed by a wolf"]);
-  expect(downed.all.fallen.map((f) => [f.x, f.y])).toEqual([[-10, 7]]);
-  expect(downed.shown.fallen).toEqual([]);
-  expect(downed.shown.floaters).toEqual([]);
+  expect(downed.fight.fallen.map((f) => [f.x, f.y])).toEqual([[-10, 7]]);
 });

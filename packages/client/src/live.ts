@@ -10,7 +10,6 @@ import {
   type World,
 } from "@idlin/sim";
 import type { Scene } from "./scene.ts";
-import { awayFrom, regionView, rosterOf } from "./view.ts";
 
 /** The content the server's world was made with; a world made with other content is refused. */
 export interface LiveContent {
@@ -28,15 +27,13 @@ export interface LiveContent {
  * world arrives the map is drawn empty and the clock is hidden, since the
  * empty world's 06:00 is no time the server has reached. While there is no
  * connection the page says it is waiting; an address the browser will not
- * open is shown with the reason and not retried. The map shows region `shown`
- * of the world, and the page calls the regions by `names` (see `regionNames`).
+ * open is shown with the reason and not retried. Which region the map shows
+ * the scene works out from the worlds it is given (see camera.ts).
  */
 export function follow(
   scene: Pick<Scene, "notice" | "clockShown" | "observe" | "draw">,
   content: LiveContent,
   url: string,
-  shown = 0,
-  names: readonly string[] = content.atlas.regions.map((region) => region.map.name),
 ): void {
   const { atlas, programs, kinds, spawns } = content;
   const tickMs = 1000 / TICKS_PER_SECOND;
@@ -74,7 +71,7 @@ export function follow(
       document.body.dataset.live = "connected";
       scene.notice = "";
       scene.clockShown = true;
-      scene.observe(regionView(world, shown), world, shown);
+      scene.observe(world);
       arrived = performance.now();
     };
     socket.onclose = () => {
@@ -87,14 +84,8 @@ export function follow(
   connect();
   const loop = (now: number): void => {
     if (world) {
-      const map = regionView(world, shown);
-      scene.draw(
-        map,
-        world.tick + Math.min(0.99, Math.max(0, now - arrived) / tickMs),
-        rosterOf(world),
-        awayFrom(world, map, names),
-      );
-    } else scene.draw(regionView(empty, shown), 0);
+      scene.draw(world, world.tick + Math.min(0.99, Math.max(0, now - arrived) / tickMs));
+    } else scene.draw(empty, 0);
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

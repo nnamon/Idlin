@@ -14,9 +14,9 @@ import {
   type World,
 } from "@idlin/sim";
 import { beforeAll, describe, expect, it } from "vitest";
-// The scene draws the camp's map. The worlds here are the shipped world,
-// whose camp region is that map at (0, 0), so the whole world can be drawn as
-// it is: anyone off the map is outside it, faded out and cut at its rule.
+// The worlds here are the shipped world, whose camp region is the camp's map
+// at (0, 0), where the view starts; the map's own size and labels are that
+// map's. The view moves only once the spotlight goes to another region.
 import mapJson from "../../../content/maps/camp.json";
 import { rawWorld, shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
 import { type Effects, glyphAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
@@ -30,7 +30,7 @@ import { actorPose } from "./pose.ts";
 import { Scene } from "./scene.ts";
 import { FADE, MIN_HOLD, type Slips, slipAlpha } from "./slips.ts";
 import { type Box, bodyBox, type TagWish } from "./tags.ts";
-import { awayFrom, regionNames, regionView, rosterOf } from "./view.ts";
+import { edgeFade, type Window, windowView } from "./view.ts";
 
 interface Call {
   readonly op: string;
@@ -110,6 +110,7 @@ const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
 const PROGRAMS = ["wanderer", "homebody", "riverwalker"];
 
 const WORLD = shippedWorld();
+const MAPS = rawWorld().maps;
 const SHIPPED = shippedPrograms(WORLD);
 
 function newWorld(residents = 6, seed = 1): World {
@@ -128,26 +129,6 @@ function newWorld(residents = 6, seed = 1): World {
 }
 
 /** A scene and the four frame-sized sheets it draws on: the frame itself, day, night and the lit mask. */
-/**
- * `scene`, given a whole world to observe or draw, given the camp's map of it
- * as main.ts gives it: the actors there, the fight read off the whole world,
- * and every resident on the page, those away faded. A call that passes the
- * cut itself goes through as it is.
- */
-function asMainDrivesIt(scene: Scene): Scene {
-  const observe = scene.observe.bind(scene);
-  const draw = scene.draw.bind(scene);
-  const names = regionNames(WORLD, rawWorld().maps);
-  scene.observe = (world, whole, region) =>
-    whole === undefined ? observe(regionView(world, 0), world, 0) : observe(world, whole, region);
-  scene.draw = (world, time, roster, away) => {
-    if (roster !== undefined) return draw(world, time, roster, away);
-    const view = regionView(world, 0);
-    draw(view, time, rosterOf(world), awayFrom(world, view, names));
-  };
-  return scene;
-}
-
 async function newScene(): Promise<{
   scene: Scene;
   out: FakeCanvas;
@@ -156,8 +137,10 @@ async function newScene(): Promise<{
   night: FakeCanvas;
 }> {
   install();
-  const scene = asMainDrivesIt(
-    await Scene.create({ appendChild: () => {} } as unknown as HTMLElement, map, labels),
+  const scene = await Scene.create(
+    { appendChild: () => {} } as unknown as HTMLElement,
+    WORLD,
+    MAPS,
   );
   const sheets = canvases.filter((c) => c.width === FRAME_WIDTH && c.height === FRAME_HEIGHT);
   expect(sheets).toHaveLength(4);
@@ -198,6 +181,18 @@ function routes(calls: readonly Call[]): [number, number][] {
 
 /** A name's slip of paper. The tab a glyph sits on beside it is rounded on one side only. */
 const isSlip = (call: Call): boolean => call.op === "roundRect" && typeof call.args[4] === "number";
+
+/** The names written on the map: each is lettered just after its slip is filled. */
+const mapNames = (calls: readonly Call[]): string[] =>
+  calls.flatMap((call, at) =>
+    call.op === "fillText" && at >= 2 && isSlip(calls[at - 2] as Call)
+      ? [String(call.args[0])]
+      : [],
+  );
+
+/** Where the scene's window was at its last draw or tick: its top-left in world pixels, and in tiles. */
+const seenOf = (scene: Scene) =>
+  (scene as unknown as { seen: { x: number; y: number; window: Window } }).seen;
 
 /** The clip that keeps the day sheet to the lamps' reach; a route's clip around lettering is even-odd. */
 const lampClip = (call: Call): boolean => call.op === "clip" && call.args.length === 0;
@@ -279,7 +274,8 @@ describe("the scene", () => {
   it("draws the same frame whether or not earlier frames were drawn", () => {
     expect(pairs).toHaveLength(24 + 60);
     for (const pair of pairs) {
-      expect(pair.watched.length).toBeGreaterThan(50);
+      // Something is drawn. A frame over a region with fewer names than the camp makes fewer calls.
+      expect(pair.watched.length).toBeGreaterThan(30);
       expect(pair.unwatched).toEqual(pair.watched);
       expect(pair.unwatchedSheets).toEqual(pair.watchedSheets);
     }
@@ -331,13 +327,20 @@ describe("the scene", () => {
   });
 
   it("at full night draws the day sheet only where a lamp reaches", () => {
-    // Two plain clips: first to the lamps' reach, then, inside that, to the map's rule.
+    // Three plain clips: first to the lamps' reach, then, inside that, the
+    // ground to the map, and what stands on it to the map's rule. The world
+    // is drawn moved by where the window is, so the rule is in world pixels.
     const clips = sheetClips(midnight.daySheet);
-    expect(clips).toHaveLength(2);
-    const rule = midnight.daySheet[midnight.daySheet.indexOf(clips[1] as Call) - 1];
+    expect(clips).toHaveLength(3);
+    const at = (clip: Call) => midnight.daySheet[midnight.daySheet.indexOf(clip) - 1];
+    const ground = at(clips[1] as Call) as Call;
+    expect(ground.op).toBe("rect");
+    const [x, y] = ground.args as [number, number];
+    expect(ground.args).toEqual([x, y, map.width * 48, map.height * 48]);
+    const rule = at(clips[2] as Call);
     expect(rule?.op === "rect" && rule.args).toEqual([
-      5,
-      5,
+      x + 5,
+      y + 5,
       map.width * 48 - 10,
       map.height * 48 - 10,
     ]);
@@ -345,8 +348,8 @@ describe("the scene", () => {
     // One circle per light: the lantern, the fire and one carried by each resident.
     expect(before.filter((call) => call.op === "arc")).toHaveLength(2 + NAMES.length);
     expect(before.some((call) => call.op === "fillRect" || call.op === "drawImage")).toBe(false);
-    // While the dark is still closing in, all of it is drawn: the one plain clip is the map's rule.
-    expect(sheetClips(nightfall.daySheet)).toHaveLength(1);
+    // While the dark is still closing in, all of it is drawn: the plain clips are the map's.
+    expect(sheetClips(nightfall.daySheet)).toHaveLength(2);
     expect(nightfall.daySheet.length).toBeGreaterThan(50);
   });
 
@@ -423,7 +426,6 @@ describe("the scene", () => {
     const crowd = newWorld(30);
     const { scene, out, day } = await newScene();
     scene.observe(crowd);
-    const mapWidth = map.width * 48;
     // Thirty residents start out together at camp, so slips come as they are
     // named in the news or wander apart. Every frame keeps to the budget, and
     // whoever the line of news names can be found on the map once their slip
@@ -439,14 +441,7 @@ describe("the scene", () => {
       if (i % 10 !== 9) continue;
       day.calls = [];
       const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
-      const onMap = calls
-        .filter(
-          (c) =>
-            c.op === "fillText" &&
-            (c.args[1] as number) < mapWidth &&
-            /^(Ash|Birch|Cedar|Dara|Elm|Fen|Extra\d+)$/.test(String(c.args[0])),
-        )
-        .map((c) => String(c.args[0]));
+      const onMap = mapNames(calls);
       expect(onMap.length).toBeLessThanOrEqual(8);
       most = Math.max(most, onMap.length);
       const now = String(
@@ -457,11 +452,13 @@ describe("the scene", () => {
       if (now !== line) [line, lineSince] = [now, crowd.tick];
       if (line === "" || crowd.tick - lineSince <= MIN_HOLD + 2 * FADE) continue;
       // Someone named on their way off the map ("off to the pinewood") is not
-      // looked for once they have stepped past its edge.
+      // looked for once they have stepped past its edge, nor anyone the view
+      // has drifted away from.
       const named = line.split(":")[0];
       const there = crowd.actors.find((a) => a.name === named);
-      if (there && (there.x < 0 || there.x >= map.width || there.y < 0 || there.y >= map.height))
-        continue;
+      const { window } = seenOf(scene);
+      const [dx, dy] = there ? [there.x - window.x, there.y - window.y] : [0, 0];
+      if (dx < 0 || dx >= map.width || dy < 0 || dy >= map.height) continue;
       expect(onMap).toContain(named);
       found++;
     }
@@ -475,26 +472,15 @@ describe("the scene", () => {
       step(few);
       small.scene.observe(few);
     }
-    const names = drawn(small.out, () => small.scene.draw(few, few.tick)).filter(
-      (c) =>
-        c.op === "fillText" &&
-        NAMES.includes(String(c.args[0])) &&
-        (c.args[1] as number) < map.width * 48,
-    );
-    expect(new Set(names.map((c) => c.args[0])).size).toBe(6);
+    const names = mapNames(drawn(small.out, () => small.scene.draw(few, few.tick)));
+    expect(new Set(names).size).toBe(6);
     void day;
   });
 
   it("with twelve residents writes eight names, from the first frame on", async () => {
     const twelve = newWorld(12);
     const { scene, out } = await newScene();
-    const onMap = (): number =>
-      drawn(out, () => scene.draw(twelve, twelve.tick)).filter(
-        (c) =>
-          c.op === "fillText" &&
-          (c.args[1] as number) < map.width * 48 &&
-          /^(Ash|Birch|Cedar|Dara|Elm|Fen|Extra\d+)$/.test(String(c.args[0])),
-      ).length;
+    const onMap = (): number => mapNames(drawn(out, () => scene.draw(twelve, twelve.tick))).length;
     scene.observe(twelve);
     // The first frame of a run is drawn at the tick it starts on: no fade-in, no unnamed second.
     expect(onMap()).toBe(8);
@@ -502,8 +488,13 @@ describe("the scene", () => {
     for (let i = 0; i < 3000; i++) {
       step(twelve);
       scene.observe(twelve);
-      if (i % 10 === 9) counts.push(onMap());
+      if (i % 10 !== 9) continue;
+      const count = onMap();
+      // Counted while the view is on the camp, where most of the twelve are.
+      const { x, y } = seenOf(scene);
+      if (x === 0 && y === 0) counts.push(count);
     }
+    expect(counts.length).toBeGreaterThan(150);
     expect(Math.max(...counts)).toBe(8);
     // Slips change hands now and then and fade as they do; most of the time all eight are out.
     expect(counts.filter((n) => n === 8).length).toBeGreaterThan(counts.length * 0.8);
@@ -530,11 +521,7 @@ describe("the scene", () => {
       if (tick % 5 !== 0 || (tick > 900 && tick <= EVENING)) continue;
       day.calls = [];
       const frame = drawn(out, () => scene.draw(twelve, twelve.tick));
-      const named = new Set(
-        frame
-          .filter((c) => c.op === "fillText" && (c.args[1] as number) < map.width * 48)
-          .map((c) => String(c.args[0])),
-      );
+      const named = new Set(mapNames(frame));
       const time = twelve.tick;
       const slips = (scene as unknown as { slips: Slips }).slips;
       const walking = (a: Actor) => a.path.length > 0 || a.moveTicksLeft > 0;
@@ -560,7 +547,7 @@ describe("the scene", () => {
       // What is left of a route all but eaten up can be a pixel long or less, and
       // is not drawn; every other route of a named walker is. Its line is worked
       // out as the scene does, from the walker on the map along its path there.
-      const seen = new Map(regionView(twelve, 0).actors.map((a) => [a.id, a]));
+      const seen = new Map(windowView(twelve, seenOf(scene).window).actors.map((a) => [a.id, a]));
       const longEnough = (a: Actor): boolean => {
         const route = routeAt(effects, a.id, time);
         const on = seen.get(a.id);
@@ -760,7 +747,18 @@ describe("the scene", () => {
             const raw = actorPose(actor, fraction, time);
             const [before, now] = inside.sitting.get(actor.id) ?? [raw.sit, raw.sit];
             const pose = { ...raw, sit: before + (now - before) * fraction };
-            return { id: actor.id, box: bodyBox(inside.wish(actor, pose)) };
+            // The wish is in the window's pixels, the slips as drawn in the world's.
+            const { x, y } = seenOf(scene);
+            const box = bodyBox(inside.wish(actor, pose));
+            return {
+              id: actor.id,
+              box: {
+                left: box.left + x,
+                right: box.right + x,
+                top: box.top + y,
+                bottom: box.bottom + y,
+              },
+            };
           });
         for (const { id, box } of drawnSlips) {
           if (!slips.room.has(id) && !slips.leaving.has(id)) continue;
@@ -801,8 +799,10 @@ describe("the scene", () => {
     for (const residents of [12, 50]) {
       const world = newWorld(residents);
       install();
-      const scene = asMainDrivesIt(
-        await Scene.create({ appendChild: () => {} } as unknown as HTMLElement, map, labels),
+      const scene = await Scene.create(
+        { appendChild: () => {} } as unknown as HTMLElement,
+        WORLD,
+        MAPS,
       );
       const sheets = canvases.filter((c) => c.width === FRAME_WIDTH && c.height === FRAME_HEIGHT);
       const [out, ...others] = sheets as [FakeCanvas, ...FakeCanvas[]];
@@ -921,16 +921,26 @@ describe("the scene", () => {
       step(crowd);
       scene.observe(crowd);
       if (i % 10 !== 9) continue;
-      const strokes = drawn(out, () => scene.draw(crowd, crowd.tick)).filter(
-        (c) => c.op === "lineTo" && (c.args[0] as number) > 20,
+      const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
+      // Lettering is in world pixels, moved by where the window is.
+      const left = seenOf(scene).x;
+      const strokes = calls.filter(
+        (c) => c.op === "lineTo" && (c.args[0] as number) > left + 20,
       ).length;
+      // A figure the window has drifted off is faded out, and so is its slip.
+      const drawnFigure = (actor: Actor): boolean => {
+        const pose = actorPose(actor, 0, crowd.tick);
+        const { x, y } = seenOf(scene);
+        return edgeFade(pose.x * 48 - x, pose.y * 48 - 4 - y, map.width * 48, map.height * 48) > 0;
+      };
       const aside = crowd.actors.filter(
         (actor) =>
           inside.slips.held.has(actor.id) &&
           slipAlpha(inside.slips, actor.id, crowd.tick) > 0 &&
-          (inside.tagSpots.get(actor.id) ?? 0) !== 0,
+          (inside.tagSpots.get(actor.id) ?? 0) !== 0 &&
+          drawnFigure(actor),
       ).length;
-      expect(strokes).toBe(aside);
+      expect(strokes, `at ${crowd.tick}`).toBe(aside);
       moved += aside;
     }
     expect(moved).toBeGreaterThan(0);
@@ -1214,9 +1224,9 @@ describe("the scene", () => {
     scene.observe(world);
     const ground = (
       scene as unknown as {
-        day: { ground: { fires: [number, number][]; standing: { sways: boolean }[] } };
+        day: { grounds: { fires: [number, number][]; standing: { sways: boolean }[] }[] };
       }
-    ).day.ground;
+    ).day.grounds[0] as { fires: [number, number][]; standing: { sways: boolean }[] };
     expect(ground.fires.length).toBeGreaterThan(0);
     const trees = ground.standing.filter((thing) => thing.sways).length;
     expect(trees).toBeGreaterThan(0);
@@ -1255,9 +1265,11 @@ describe("the scene", () => {
       expect(b.map((p) => p[1])).toEqual(a.map((p) => p[1]));
       expect(b.map((p) => p[0])).not.toEqual(a.map((p) => p[0]));
     }
+    // Every tree of the camp's map leans, and so do those of the regions round
+    // it whose crowns reach over its edge.
     const [first, second] = [leans(early), leans(later)];
-    expect(first).toHaveLength(trees);
-    expect(second).toHaveLength(trees);
+    expect(first.length).toBeGreaterThanOrEqual(trees);
+    expect(second).toHaveLength(first.length);
     for (const lean of [...first, ...second]) expect(Math.abs(lean)).toBeLessThanOrEqual(0.026);
     expect(Math.max(...first.map(Math.abs))).toBeGreaterThan(0.01);
     const moved = first.filter((lean, i) => Math.abs(lean - (second[i] as number)) > 0.001);

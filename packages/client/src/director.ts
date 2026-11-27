@@ -10,6 +10,17 @@ import type { WorldEvent } from "@idlin/sim";
 /** 45 seconds of stream time at 10 ticks a second. */
 export const DWELL_TICKS = 450;
 
+/**
+ * What the director reads of an event: who it happened to. The sim's own
+ * events have this shape, and so does what the viewer reads off the worlds it
+ * is sent (see `noticesOf` in camera.ts).
+ */
+export type Notice =
+  | { readonly type: "decide"; readonly actor: number; readonly rule: number }
+  | { readonly type: "fault" | "attack" | "miss"; readonly actor: number }
+  | { readonly type: "hit"; readonly actor: number; readonly target: number }
+  | { readonly type: "down"; readonly actor: number; readonly by: number };
+
 /** How much an event makes a resident worth showing. Higher wins. */
 const WEIGHT = { rule: 1, fault: 1, fight: 2, down: 3 } as const;
 
@@ -37,7 +48,7 @@ export function createDirector(): Director {
 export function direct(
   director: Director,
   tick: number,
-  events: readonly WorldEvent[],
+  events: readonly (WorldEvent | Notice)[],
   present: readonly number[],
 ): number | null {
   const here = new Set(present);
