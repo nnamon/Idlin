@@ -1,1279 +1,1634 @@
 # Plan
 
-This is the plan for Idlin from the rest of M1 onwards: what a resident's
-build is, how players own residents, how the world grows, and the milestones
-that get there. [roadmap.md](roadmap.md) is the short version.
-[design.md](design.md) still describes the frame, the look and the program
-model, and nothing here changes those.
-[chat.md](chat.md) is the design for how chat joins and commands citizens.
-
-It was written from three proposals on
-[#313](https://github.com/nnamon/Idlin/issues/313): progression and builds
-([first part](https://github.com/nnamon/Idlin/issues/313#issuecomment-7218617042),
-[tempo](https://github.com/nnamon/Idlin/issues/313#issuecomment-7218680860)),
-[players and the stream](https://github.com/nnamon/Idlin/issues/313#issuecomment-7218692331),
-and the world's arc
-([first part](https://github.com/nnamon/Idlin/issues/313#issuecomment-7218748357),
-[density](https://github.com/nnamon/Idlin/issues/313#issuecomment-7218824702)).
-Where this page gives a number, this page stands. Where it names something
-without specifying it (a technique's exact effect, a region's nodes), the
-proposal's text is the specification.
-
-It was then revised after a
-[fun audit](https://github.com/nnamon/Idlin/pull/325#issuecomment-7219490742)
-that went through it milestone by milestone asking what a viewer and an owner
-see in an hour. The audit found that the first version grew the world to 14
-regions without working out what that did to an owner's time on screen, and
-that most of what its milestones listed happened less than once an hour.
-Section 4.5 (what an owner sees as the world grows), section 4.6 (the fun
-test) and the milestone list in section 6 come from that. Three regions, three
-skills and two milestones were cut; section 6 ends with the list.
-
-What was checked for this page: the formulas below were worked through by hand
-at the levels shown, and a tick and a snapshot were timed on the shipped world
-at 15 to 650 residents (section 3.5). Nothing was captured or watched. Monster
-counts above three a region cannot be run on `main`, so the cost of a dense
-world is worked out from the resident-only timing and has to be measured again
-in #316. Every figure for seconds on screen in sections 4.5 and 6 is
-arithmetic from the director's rules. `metrics.json` records none of them yet,
-so they are estimates until a capture measures them.
-
-## 1. What the operator asked for
-
-From #296, #298, #299, #231, #313, #314 and #326, in their words where quoted:
-
-- Fights should be a power fantasy with weight, where today it looks like
-  "some boring slow paced grid turn based game".
-- Monsters should be many and dangerous. One wolf at the fire was "so small
-  and pathetic with zero danger", and "monster density is not there at all".
-- Residents should have an aim at every hour. Nobody naps through the night.
-- The page should fit the cast and show stats that mean something.
-- Builds should be more than items and levels, and the plan should be
-  ambitious.
-- Substance comes before polish. Judges score from a player's seat, in
-  absolute terms.
-- Each milestone should say why it is fun and what it does to the player's
-  experience. "The more you expand, the more you're likely to not show the
-  player."
-- The map should be zoomed out: "otherwise it just feels like a tiny ass map
-  view" (#326).
-
-Every milestone below is checked against that list, and from M2 on against
-the fun test in section 4.6. Polish issues with no part in it leave M1
-(section 5).
-
-## 2. Conflicts between the proposals, settled
-
-| Question                            | Decision                                                                                                                                                                                                                                               | Why, and what was turned down                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Players before trades, or after     | Beside each other, in M2: builds and owners share one foundation issue and then run as two strands.                                                                                                                                                    | The operator asked about builds first, and asked for judging from an owner's seat. Each needs the other: a build is a choice an owner makes. The builds strand is in `packages/sim` and content; the owners strand is a new `packages/hall` and a new page, so three builders don't collide. Turned down: trades first with players a milestone later, and players first with builds waiting. |
-| Where the horde goes                | In M1. #315 to #324 are most of it; one new issue gives the other three regions monsters.                                                                                                                                                              | It is the complaint the operator repeated most, and it is already filed. A separate "Horde" milestone would only rename M1's remaining work.                                                                                                                                                                                                                                                  |
-| The store or the works first        | Works in M4, taking goods that residents deliver. The store with tally in M6; from then it pays for deliveries and a work can draw on its stock.                                                                                                       | A way down is a work, and the way down cannot wait behind four new skills (section 3.3). Until the store, what draws goods to a site is its `needs` sensor, a `deliver` rule in the starter programs and the deliverer's name in the ledger. Turned down: the store first, as the first version of this plan had it.                                                                          |
-| How goods reach the store           | Residents sell to it for tally at a price set by stock. Works and the fire take from that stock. No tithe.                                                                                                                                             | One store with one rule. A work drains the stock, the price rises, and programs that read `price` bring what the work needs. Turned down: an automatic tenth of everything banked, which no program chose and no viewer can see.                                                                                                                                                              |
-| One store or several                | One, at Lantern Camp. Outpost and company chests reach a resident's own bank only.                                                                                                                                                                     | All three proposals agree.                                                                                                                                                                                                                                                                                                                                                                    |
-| Trade between residents             | None, except through the store and a company's shared stock.                                                                                                                                                                                           | Agreed by all three. It needs no counterparty and leaves no channel for feeding one account from another.                                                                                                                                                                                                                                                                                     |
-| The word "season"                   | The game's calendar has a year of four quarters (spring to winter). The 13-week competitive period is a **round**.                                                                                                                                     | Two proposals used "season" for a 13-week period and one for 6 hours 24 minutes.                                                                                                                                                                                                                                                                                                              |
-| Round length                        | 13 real weeks. Nothing is wiped.                                                                                                                                                                                                                       | Level 99 in one skill takes 7 to 9 weeks at the pace in section 3.3, so a round is long enough to reach one.                                                                                                                                                                                                                                                                                  |
-| Calendar year                       | 64 game days (25 h 36 min real), four quarters of 16.                                                                                                                                                                                                  | As the world proposal has it. A real round is about 85 game years, so anything that "returns next year" returns the next real day.                                                                                                                                                                                                                                                            |
-| Boss strength over time             | A boss gains 10% hitpoints each time it is killed, up to double, and returns to its base at the start of a round.                                                                                                                                      | "25% a year" would reach its ceiling in four real days.                                                                                                                                                                                                                                                                                                                                       |
-| Monster and resident numbers        | One set of formulas (section 3.1). A region's tier is a band of monster levels. The hand-written tier table is dropped.                                                                                                                                | The two tables disagreed by up to 5 times at the top, and used the word "pack" for different ranks. Formulas keep them in step when either side is tuned.                                                                                                                                                                                                                                     |
-| Ranks                               | fodder, pack, brute, elite, boss. Rats, bats and their like are fodder, goblins are pack, wolves are brutes.                                                                                                                                           | As #316 has it. The goblin is not renamed.                                                                                                                                                                                                                                                                                                                                                    |
-| Experience                          | Per kill, from rank and level (section 3.3).                                                                                                                                                                                                           | Per hitpoint dealt reaches 99 in an afternoon at the new numbers. "100 to 3,000 kills a level" would reach it in two days, so that figure is dropped and the time targets kept.                                                                                                                                                                                                               |
-| Monster caps                        | A budget per region, by tier, time of day and residents present (section 3.4). The crowd target counts residents only. `MONSTER_CAP` goes.                                                                                                             | The operator's note on #298 asks for caps "scaled by residents with a hard ceiling" and short refills.                                                                                                                                                                                                                                                                                        |
-| Refill                              | A fodder group every 20 ticks while under budget.                                                                                                                                                                                                      | At one group every 10 seconds, six fighters in a region would share 40 kills a minute.                                                                                                                                                                                                                                                                                                        |
-| Step and blow timings               | Step 4 ticks, diagonal 6. A resident's blow is 2 + 3 ticks, 2 + 2 from Melee 30, 1 + 2 from 60. Residents never step faster than 4. Wolves and pack monsters of tier 3 and up step at 3.                                                               | As #315 has it. A step of 3 for strong residents is turned down: #298's rule that a wolf catches a lone walker has to hold at every level.                                                                                                                                                                                                                                                    |
-| Ground costs                        | Road and plank 4, snow 6, mud 7.                                                                                                                                                                                                                       | The world proposal's 6, 8 and 10 were set against a 6-tick step.                                                                                                                                                                                                                                                                                                                              |
-| Decisions every 2 ticks             | Only for an actor with an enemy within 8 tiles or hatching on its tile. Everyone else stays at 5.                                                                                                                                                      | It is needed to react to a blow, and it costs VM steps for every idle actor otherwise.                                                                                                                                                                                                                                                                                                        |
-| The Underway                        | Three regions: the Underway, the Deep Halls, the Root of the Hills. Eleven regions are planned, in a grid three regions tall (section 4.5).                                                                                                            | As the density addendum has it. The atlas allows 16 regions. The world proposal's 14 are cut to 11: the Old Orchard, the Burnt Wood and the High Pass add no tier that isn't there already.                                                                                                                                                                                                   |
-| Where Mining starts                 | With the trades in M6: two ore seams in the Hills, and Stonefall's quarry faces and seams, which are drawn from M4 and worked from M6.                                                                                                                 | Stonefall is built two milestones before Mining, as the tier-2 region. Its rock is scenery until then.                                                                                                                                                                                                                                                                                        |
-| Player groups, outposts and pitches | A player group is a **company** (3 to 8 residents). Every region has two company sites. An outpost is a work, open to everyone. A resident's pitch stands at its home fire.                                                                            | "Camp" already means Lantern Camp. Two sites a region gives 20 sites at ten regions, room for 150.                                                                                                                                                                                                                                                                                            |
-| Population                          | 15 residents per open region, so 60 on today's four and 150 on ten or more. 150 is the ceiling (section 4.5). A claim past the cap goes on the waiting list. At least 24 residents in the world, of which at least 6 are house residents.              | As the players proposal has it, with the ceiling from the brief's "50 to 150". The tick and message bars are set at it.                                                                                                                                                                                                                                                                       |
-| Bank and store caps                 | Bank: 200 of each good and 24 items. Store: 2,000 of each good, 10,000 with the Storehouse.                                                                                                                                                            | Every pool is capped, so a world that runs for months does not pile up. A full bank sells to the store.                                                                                                                                                                                                                                                                                       |
-| The hourly vote                     | Each real hour the world rolls three weathers for a coming night from the quarter's table, and the vote picks one. With no votes the first roll stands.                                                                                                | A vote that added effects of its own would be a second weather system. This way it only chooses among what the calendar could have done.                                                                                                                                                                                                                                                      |
-| The director                        | Schedules where the frame rests first and residents second (section 4.5): a circuit of stops, 80 seconds a visit, with the spotlight changing among the residents in the frame. In the viewer in M1, with #326's wider view; on the server from M2.    | The proposals' queue of residents put a pan inside most turns and promised a wait that held only while 20 or fewer owners watched. Turned down: that queue, and its cap of 3 minutes an hour, which at 15 residents left 15 minutes of each hour with nobody allowed on.                                                                                                                      |
-| The page                            | #231's compact rows for the residents in the frame, present owners first, and the rest as a count when they outnumber the rows; then one line per region. When the frame settles, the present owners' name slips in it are lettered one after another. | #231 replaced the roll of busts. The roll call takes no stream time. Turned down: a timed roll call, which at 60 residents and 3 seconds each is three minutes of nothing.                                                                                                                                                                                                                    |
-| Pans                                | A straight line across the world plane, at most 14 s. The frame travels only between the director's visits, and starts at once.                                                                                                                        | Today a pan runs along the exits at 8 s each and waits 2 s first, inside the subject's turn. Three exits would be 24 s of travel.                                                                                                                                                                                                                                                             |
-| Camp ground                         | Monsters still cannot stand on `camp` tiles (decision 0011). The light is not safety: packs strike in from its edge, the light shrinks with the fire (#301), and raids go for stores outside the ground.                                               | Residents wake on those tiles after a down.                                                                                                                                                                                                                                                                                                                                                   |
-| Fodder on screen                    | Half a resident's height, ink with no wash. The mow sheet (#323) decides whether that is right. Stains last 20 s for fodder, and at most 200 are kept per region.                                                                                      | One proposal said a third, the other 60%.                                                                                                                                                                                                                                                                                                                                                     |
-| Try it before submitting            | Three game hours, both ways, in a worker. A full game day on request.                                                                                                                                                                                  | A game day at 150 residents is 14,400 ticks at 3 ms or more, twice: over a minute in a browser.                                                                                                                                                                                                                                                                                               |
-| Long sweeps in the gate             | 2 game days at 15 residents in the gate; 60 game days or a year only under `IDLIN_LONG=1`, at a milestone's exit check.                                                                                                                                | 20 game days at 50 residents is several minutes, and the gate aims at one.                                                                                                                                                                                                                                                                                                                    |
-
-## 3. The numbers
-
-All integer arithmetic, rounded down. `L` is a resident's skill level, `M` a
-monster's level.
-
-### 3.1 Residents and monsters
-
-- Base blow: `6 + L + L*L/20`.
-- Hitpoints: `40 + 10*L + L*L/5`, on the Hitpoints level.
-- Gear is expected to multiply a blow by `(100 + 2*L)/100` and what a resident
-  can take by `(100 + L)/100`, for a resident wearing ordinary rare gear of
-  its own level. The item tables (#240) are tuned to that. The best gear is
-  about a third above it. A crit is double; `accuracy` is the crit chance, 5%
-  bare and 40% at most.
-- A monster's hitpoints are `rank * blow(M) * (100 + 2*M)/100`, with rank 1
-  for fodder, 3 for pack, 12 for a brute, 40 for an elite and `300 + 7*M` for
-  a boss.
-- A monster's blow is a share of `hp(M) * (100 + M)/100`: 1% for fodder, 4%
-  for pack, 25% for a brute, 40% for an elite, and never less than 1. Boss
-  blows are set per boss.
-
-The monster formulas include the gear factors. Without them a geared
-resident one tier short would kill deeper fodder in one blow, and depth would
-show nothing.
-
-| Level | Base blow | Hitpoints | Blow with ordinary gear | Fodder hp / hit | Pack hp / hit | Brute hp / hit | Elite hp |
-| ----: | --------: | --------: | ----------------------: | --------------- | ------------- | -------------- | -------: |
-|     5 |        12 |        95 |                      13 | 13 / 1          | 39 / 3        | 158 / 24       |      528 |
-|    18 |        40 |       284 |                      54 | 54 / 3          | 163 / 13      | 652 / 83       |    2,176 |
-|    38 |       116 |       708 |                     204 | 204 / 9         | 612 / 39      | 2,449 / 244    |    8,166 |
-|    58 |       232 |     1,292 |                     501 | 501 / 20        | 1,503 / 81    | 6,013 / 510    |   20,044 |
-|    78 |       388 |     2,036 |                     993 | 993 / 36        | 2,979 / 144   | 11,919 / 906   |   39,731 |
-|    95 |       552 |     2,795 |                   1,600 | 1,600 / 54      | 4,802 / 218   | 19,209 / 1,362 |   64,032 |
-
-Tiers are bands of monster level. Day monsters sit at the low end of a band
-and night monsters at the high end.
-
-| Tier | Monster levels | Regions                            | Boss level, hitpoints |
-| ---: | -------------- | ---------------------------------- | --------------------- |
-|    0 | 1 to 8         | Lantern Camp                       | 8: 7,020              |
-|    1 | 10 to 25       | Pinewood, Hills, Lower River, Mere | 25: 44,175            |
-|    2 | 30 to 45       | Stonefall, Mire                    | 45: 177,612           |
-|    3 | 50 to 65       | Underway, Barrow Downs             | 65: 489,693           |
-|    4 | 70 to 85       | Deep Halls                         | 85: 1,092,258         |
-|    5 | 90 to 99       | Root of the Hills                  | 99: 1,760,688         |
-
-The largest monster is over the content limit of 100,000 hitpoints, so #317
-raises that limit to 4,000,000. Everything stays inside 32 bits.
-
-### 3.2 Do the two proposals' curves agree
-
-The world proposal asked for monsters about 2.5 times as tough per tier, about
-a hundredfold from bottom to top, and blows about 1.7 times as hard per tier.
-From the table:
-
-- A blow with ordinary gear goes 13, 54, 204, 501, 993, 1,600. That is 123
-  times from tier 0 to tier 5, in steps of 4.2, 3.8, 2.5, 2.0 and 1.6: a mean
-  of 2.6 a tier, steep early and flatter late.
-- A fodder hit goes 1, 3, 9, 20, 36, 54: a mean of 2.2 a tier.
-
-So the totals agree and the shape differs: the first tiers are a bigger step
-than the last. What that does to the gradient the world proposal wanted:
-
-| A resident at its tier's middle level, in ordinary gear | On its own tier | One tier deeper                       | Two tiers deeper                                                   |
-| ------------------------------------------------------- | --------------- | ------------------------------------- | ------------------------------------------------------------------ |
-| Blows to kill a fodder monster                          | 1               | 2 to 5 (5 from tier 0, 2 from tier 3) | 4 to 16                                                            |
-| A brute's hit, as a share of what the resident can take | 25%             | 38% to 83%                            | a down in one from tiers 0 and 1, 93% from tier 2, 67% from tier 3 |
-| Eight fodder round it take                              | 5% a second     | 8% to 16% a second                    | all of it in under 8 s                                             |
-
-One tier deeper is hard and two is a down, or two brute hits from tiers 2 and 3. The gentlest step is
-tier 4 to tier 5, where one tier deeper costs twice the blows and a brute
-takes 38% a hit. If the captures show the deep regions reading as no harder
-than the ones above, the fix is to narrow tier 4's band, not to change the
-formulas.
-
-Bosses: five residents of the boss's level, at 2 to 3.3 blows a second, on
-target half the time, do 5 to 8 fodder-kills of damage a second in ordinary
-gear. A boss of `300 + 7*M` such kills lasts 71 seconds at tier 0, 91 to 98 at
-tiers 1 to 3, 107 at tier 4 and 119 at tier 5. That is the 4 to 6 residents
-and 60 to 120 seconds the world proposal asked for. The best gear takes about
-a quarter off each.
-
-The largest number on screen: a level-99 blow with the best gear is about
-2,300, a crit 4,600, and a 300% move that crits about 13,800.
-
-### 3.3 Experience and pace
-
-A kill gives `weight * (40 + M) / 40` experience, with the weight equal to the
-rank number above (1, 3, 12, 40, `300 + 7*M`), split by damage done. Fodder
-pays 1 below level 40, 2 from 40 and 3 from 80. A monster
-ten or more levels under its killer gives a quarter, rounded down, so far
-weaker fodder gives nothing. Hitpoints gets a third of all combat experience
-on top. The experience table (level 99 at 13,034,431) is unchanged.
-
-Pace for a resident on a competent program that fights monsters of its own
-level for a third of each minute (the tempo proposal's 15 to 25 seconds),
-killing the equivalent of 10 fodder a stream minute at level 10, 40 at level
-40 and 100 at level 80:
-
-| Level | Reached after, at best |
-| ----: | ---------------------- |
-|    30 | 12 hours               |
-|    40 | 23 hours               |
-|    50 | 34 hours               |
-|    60 | 2.4 days               |
-|    70 | 4.5 days               |
-|    80 | 9 days                 |
-|    90 | 17 days                |
-|    99 | 32 days                |
-
-With trips, banking, downs and packs shared with others, 99 in one skill is 7
-to 9 weeks. That is slower than a month and inside a round, which both
-proposals asked for. Through levels 40 to 60 a level takes from under an hour
-to about three. These are targets: #323 puts kills per minute in `metrics.json`,
-and the `xp` field in each monster's file is where the pace is tuned.
-
-The pace has a consequence for the order of milestones. The four regions that
-exist stop at monster level 25. A resident passes 30 in about a day, and from
-35 every kill there pays a quarter. A level-38 resident kills a level-25
-fodder monster in one blow and loses 1 hitpoint to its hit; only a brute, at 36%
-of what the resident can take, is still a danger. So a world more than a few
-days old has outgrown its map, and the way down (M4, M5) comes before the
-trades.
-
-### 3.4 Monster budgets
-
-A region's budget is `14 + 4*tier` by day and `24 + 6*tier` by night, plus 2
-for each resident in the region, and never more than 80. About 60% of it is
-fodder, 35% pack and brute, 5% elite. While a region is under its budget a
-fodder group arrives every 20 ticks, a pack or brute group every 100 and an
-elite every 600 at night, at the region's spawn places, never within 6 tiles
-of a resident and never on lit ground. Fodder groups are 6 to 8 at tier 0 and
-up to 20 to 30 at tier 5; up to three fodder share a tile, and fodder give up
-10 tiles from where they came out.
-
-A region with no resident in it is dormant: its monsters stand, decide
-nothing and are not refilled. The rule reads only world state, so it is
-deterministic. Nests and marches (M5) are state on the region, not decisions
-by its monsters, so they still build up.
-
-Supply, as a check on the pace above: thirty groups a minute is 180 fodder a
-minute at tier 0 and about 600 at tier 4. A level-80 fighter wants 100 a
-minute, so a tier-4 region feeds six fighters at full rate, and more than
-that share. With 150 residents over eleven regions there are about 14 a
-region and not all fight. Kills, like trees, are a supply that crowding
-thins, which is another reason for residents to spread out.
-
-Totals: the M1 candidate (15 residents, four regions, night) holds up to 144
-monsters. Eleven regions open at night with 150 residents hold 402 from the
-tier terms plus 300 from residents: 702 monsters and 852 actors, before the
-ceiling of 80 trims a few.
-
-### 3.5 What a tick costs
-
-Timed on the shipped world, in the dev container, shipped programs, 3,000
-ticks after a 600-tick warm-up, with everyone starting at the camp:
-
-| Residents | Mean tick | Worst tick | Snapshot |
-| --------: | --------: | ---------: | -------: |
-|        15 |   0.09 ms |       3 ms |     8 KB |
-|        50 |   0.23 ms |       4 ms |    24 KB |
-|       150 |    0.9 ms |       7 ms |    67 KB |
-|       300 |    2.4 ms |      17 ms |   134 KB |
-|       450 |    5.0 ms |      24 ms |   199 KB |
-|       650 |   11.5 ms |      49 ms |   280 KB |
-
-The cost grows with nearly the square of the actor count, because sensors and
-blocking checks look through every actor in the world. A tick has 100 ms, and
-the server stops a wake after 50 ms of work. From that:
-
-- The M1 candidate, about 160 actors, is near 1 ms a tick. No change needed.
-- 852 actors would be about 20 ms a tick on that curve, with worst ticks near
-  85 ms. The server could not keep ten ticks a second.
-- The fix is to keep actors in a list per region and have sensors, blows and
-  blocking look only at their own region, which decision 0017 already makes
-  the rule. Eleven regions of 77 actors make about 66,000 pairs. That is three
-  times what 150 residents in one place make, which costs 0.9 ms today, and
-  an eleventh of what 852 actors in one list make. So the full night should come to
-  2 to 4 ms. Dormant regions and a 200-step limit on fodder programs cut it
-  further.
-
-#316 does the per-region lists and the measurement. The bar is a mean tick of
-4 ms or less and a worst tick of 25 ms or less, at 150 residents with four
-regions at their night budgets (470 actors). The same bar is checked again
-when M4 and M5 add regions. If it cannot be met, budgets come down before
-packs get smaller: the ceiling of 80 a region goes to 60.
-
-Worst-case VM work at the full night: 150 residents at 2,000 steps and 702
-monsters at 200 to 2,000, each deciding every 2 ticks at most, is about
-470,000 steps a tick. In practice most actors are mid-action and decide far
-less often.
-
-The long exit checks in section 6 do not fit the capture workflow's long job,
-which stops at 20 minutes: 60 game days is 864,000 ticks. They are run
-through Docker Compose at the milestone's exit check and the result is posted
-on the issue that closes the milestone. The workflow's long job keeps to what
-fits.
-
-### 3.6 What a viewer is sent
-
-Today each tick's message is the whole snapshot, about 440 bytes an actor. At
-852 actors that is 375 KB a tick, 3.7 MB a second for each viewer, and the
-server drops a viewer that falls 1 MiB behind, which would be three messages.
-
-The people who watch over the WebSocket are the machine that renders the
-stream and anyone with the viewer open locally. Players watch the stream and
-their own page. So the message is cut to what one frame draws, and the pages
-are served separately:
-
-- M1 to M3 keep the snapshot message. At the candidate's 160 actors it is
-  about 70 KB a tick, the size decision 0009 accepted for 150 residents. Four
-  regions full at night, with 60 residents, are 294 actors and about 130 KB.
-  M2 reports whether a local viewer keeps up at that size. If it does not,
-  the view message comes forward from M4.
-- M4, the first milestone past four regions, replaces it with a view message:
-  every resident as the page needs it (name, region, hitpoints, line; about
-  80 bytes), the residents and monsters on the ground in the frame and a few
-  tiles round it, a count for every region, the tick's blows (#319), and each
-  program once by hash. An actor is sent with the fields a frame draws, about
-  170 bytes against the snapshot's 440. At 32 pixels a tile the frame covers
-  2.25 regions (section 4.5), so about 175 actors at the full night: 30 KB,
-  and 12 KB of resident summaries. While the frame travels it is sent the
-  ground at both ends, which is twice the actors. The targets are 45 KB a
-  tick at rest and 75 KB during a move, at 150 residents and the full night.
-  The director is on the server from M2, which is how the server knows where
-  the frame is.
-- An owner's companion page gets its live window (section 4.5) from `hall`
-  twice a second: the owner's resident and the actors within seven tiles,
-  estimated at 3 KB an update. M2 measures it. The region's ground is fetched
-  once.
-- Per-tick diffs wait for the hosting conversation.
-
-## 4. The game this builds
-
-Short statements of what stands from each proposal, with the changes above
-applied.
-
-### 4.1 A build
-
-A resident's build is its skills, its kit, the techniques it carries and its
-program. There are no classes: the program's `carry` line names the
-techniques it takes out, and that is its class until the owner changes it.
-
-- **Skills.** Nine, each 1 to 99. Now: Melee, Hitpoints, Woodcutting,
-  Fishing, Cooking. M6: Archery, Mining, Smithing, Woodworking.
-- **Kit.** Six slots: `weapon`, `off`, `body`, `helm`, `ring`, and `tool`
-  from M6. The weapon sets the basic attack: sword an arc of 3, axe an arc of
-  5 at 150% and a tick slower, spear a line of 3, bow a line of 6 that passes
-  through fodder. `off` holds a shield, a torch or a quiver.
-- **Techniques.** Moves on a cooldown and habits that are always on. Each
-  skill unlocks one at 10, 25, 40, 55, 70 and 85, and a node, recipe or
-  wearable tier at 15, 30, 45, 60, 75 and 90. Slots: three, a fourth at a
-  lifetime total of 150 levels, a fifth at 400, and up to two more from
-  rings. Every technique is specified with the mistake it punishes.
-
-  | Skill       | Techniques, by level                                                              |
-  | ----------- | --------------------------------------------------------------------------------- |
-  | Melee       | `guard` and `whirl` 10, `charge` 25, `slam` 40, `shove` 55, `reap` 70, `storm` 85 |
-  | Archery     | `aimed_shot` 10, `volley` and `pin` 25, `night_eyes` 40, `rain` 55                |
-  | Woodcutting | `pack_mule` 10, `fell` 25                                                         |
-  | Fishing     | `night_eyes` 10, `long_cast` 25                                                   |
-  | Cooking     | `field_cook` 25                                                                   |
-  | Hitpoints   | `rally` 40                                                                        |
-
-- **Mastery.** Rank 1 to 5 per technique, from 50, 250, 1,000 and 4,000 uses
-  that did their job. It rewards a good program, so it arrives with rounds in
-  M7.
-- **The program.** Tactics gains `carry`, `def`, `section` and `param`, all
-  resolved at compile time. Memory goes from 15 names to 31. The limits of 63
-  rules and 2,000 steps stay.
-- **Rings.** At 99 an owner may take a ring in that skill: the skill returns
-  to 1, everything else is kept, and the resident gets a loadout slot for
-  that skill's techniques and 25% more experience in it. Up to three rings a
-  skill, and two ring slots count. Rings come with the deepest tier, in M5.
-- **Starter programs.** Homebody, River walker and Wanderer as shipped. M2
-  adds Holder (spear, `guard`, `shove`, `rally`) and Torchbearer (axe and
-  torch, `fell`, `pack_mule`; keeps the fire fed and walks others home). M3
-  adds Angler (`long_cast`, `field_cook`, `night_eyes`; fishes the deep pools
-  after dark). Skirmisher and Smith follow in M6.
-
-What a viewer reads without the page: the held weapon and off-hand, a shape
-and pose per technique, notches for mastery, ink colour for rarity, hat
-height for lifetime levels, a band per ring, and a pitch that grows from
-bedroll to tent to hut.
-
-### 4.2 The economy
-
-The store and the trades are M6. Works come first, in M4.
-
-- Goods are sold to the store for tally and bought from it. A good pays
-  `base * 2 * target / (stock + target)`, at least 1, with `target` 4 per
-  resident in the world; the store sells a quarter above that. Tally is a
-  count in the ledger and is never carried or dropped.
-- Crafted items are a plain base of the maker's choice. Dropped items are a
-  random base with rolled rarity. Tempering at the forge adds an affix to a
-  plain or magic item for ingots and a monster part, from the group that part
-  belongs to.
-- Parts from kills go to a pouch (200 in all), are picked up by walking past
-  them, and are lost with the bag on a down.
-- Sinks: food, arrows, torch and fire logs; tempering; pitches; works and
-  their upkeep of 1% a game day; braziers; spoilage; the store's spread.
-- Works are built at a site from goods residents deliver and from labour.
-  Each delivery adds a piece to the drawing and a line to the ledger with the
-  deliverer's name. From M6 the store pays tally for each unit carried or
-  built, and a work can draw on the store's stock. Costs are set in camp-days
-  (what a camp delivers in a game day), which M4's long run measures.
-
-### 4.3 Players
-
-- `!claim` makes a new level-1 resident who walks in by the east road. One
-  resident per chat account. Names are 3 to 12 letters and filtered. Looks
-  come from the parts sheet with 12 hood and 12 cloak colours.
-- An owner is gone after 30 real days with no command, chat line or page
-  visit. The resident retires and can be brought back within a year.
-- The companion page shows the owner's resident live (section 4.5) above its
-  tabs: since you last looked and program in M2, best moment in M3, boards
-  and company in M7. Pairing is by a six-letter code typed in chat.
-- Most players will only move `param` sliders, and that has to be a real way
-  to play. The editor compiles in the browser; the server compiles again and
-  never trusts the page. One program change per owner per 10 real minutes,
-  one `param` change a minute.
-- Residents never damage or block each other. Rivalry is on boards, at nodes
-  and packs that run out, at the store's price, and in weekly trials at fixed
-  levels where only the program matters.
-- Boards are per game day and per real week, in three bands by lifetime
-  levels (under 12% of the maximum, 12% to 40%, above). A round ends with
-  titles, checked by re-running the entries. Companies, boards, trials and
-  rounds are M7, filed when M6 closes. They are play among players, and a
-  scripted crowd can't say whether they are any good, so M7 goes through the
-  fun test again then (section 8).
-- Nothing is lost by being away: no streaks, no decay, no login reward, no
-  pings, nothing to buy.
-- Nothing a viewer types reaches the stream except a resident's or company's
-  name that passed the filter.
-- Everything a real chat platform would touch sits behind one adapter. Until
-  hosting is discussed with the operator, the adapter is a local chat page
-  and a scripted crowd, and nothing is deployed.
-
-### 4.4 The world
-
-Eleven regions are planned. They lie on one plane, in a grid three regions
-tall (section 4.5 has the layout and the reason).
-
-| Region                | Tier | Way in           | Opens for | Boss              | Built in             |
-| --------------------- | ---: | ---------------- | --------- | ----------------- | -------------------- |
-| Lantern Camp          |    0 | exists           |           |                   | M1                   |
-| the Pinewood          |    1 | exists           |           |                   | M1                   |
-| the Hills             |    1 | exists           |           |                   | M1                   |
-| the Lower River       |    1 | exists           |           |                   | M1                   |
-| Stonefall             |    2 | the Hill Road    | depth     | the Quarry Troll  | M4                   |
-| the Underway          |    3 | the Pit Props    | depth     | the Lamp-eater    | M5                   |
-| the Deep Halls        |    4 | the Second Shaft | depth     | the Hollow Knight | M5                   |
-| the Root of the Hills |    5 | the Root Stair   | depth     | the Brood Mother  | M5                   |
-| the Mere              |    1 | the Causeway     | a crowd   | the Mere-wife     | when the world fills |
-| the Mire              |    2 | the Plank Way    | a crowd   | the Bell-ringer   | when the world fills |
-| the Barrow Downs      |    3 | the Dyke Gate    | a crowd   | the Barrow King   | when the world fills |
-
-A region opens when a resident has charted it, the camp has built the way in,
-and the world needs it. Until it is needed its site takes no deliveries.
-There are two kinds of need:
-
-- **Depth.** A region one tier deeper than anything open is needed when at
-  least a tenth of the residents, and at least four, have Melee or Archery
-  above the top of the deepest open band (25, 45, 65, 85). At the pace of
-  section 3.3 that is Stonefall in a world's first two days, the Underway in
-  its first week, the Deep Halls after about a week and the Root of the Hills
-  after three to four weeks.
-- **A crowd.** A region of a tier that is already open is needed when the
-  world has more than 12 residents for each region open. Only players in
-  numbers bring that, so the three crowd regions are not built until a
-  running world shows the need (section 6).
-
-The rule opens places. It does not change how hard a place is: difficulty
-comes from a region's tier and from what the camp neglects, never from the
-residents' levels. The goblins' hoard sets the size of a raid, an unvisited
-region grows a nest, and the autumn's elk kills set the winter wolves. A
-timer decides in two places: the calendar (quarters, moon, weather, the Long
-Night, the eclipse), and the floor on set pieces (M3), which sends a hunting
-pack when an hour has had fewer than four. Events are written in Tactics and
-run by a world body on the same VM.
-
-The bosses of tiers 0 and 1 (Gristle, the White Stag, the Black Ram, the Old
-Pike) are not scheduled. A world old enough to have reached M4 has residents
-past level 35, and a level-25 boss lasts them half a minute. They are filed
-with the crowd regions, when new residents arrive in numbers.
-
-The ledger is an append-only list of chartings, works, deliveries, boss kills
-and records. It feeds the dawn news and "since you last looked".
-
-### 4.5 What an owner sees as the world grows
-
-The stream shows part of the world. Ground added outside the frame takes
-frame time from every owner, and every owner added takes spotlight time from
-the others. This section sets what an owner is owed and how the world stays
-inside it. Decision 0023 records it.
-
-**The frame.** The operator asked for the map to be zoomed out (#326): about
-32 pixels a tile where it was 48, and a view that frames the action and is
-not locked to one region. The map area of the frame is 1,440 by 1,008 pixels,
-so at 32 pixels it shows 45 by 31.5 tiles. A region is 30 by 21. The frame
-therefore holds one and a half regions each way, 2.25 regions of ground, and
-with residents spread evenly it holds 2.25 times as many of them. Every
-figure below assumes that scale. If #326 settles on another, the figures are
-worked again from the same rule.
-
-**The promise.** Each present owner's resident is in the map frame for at
-least 240 seconds of every hour, with no gap over 20 minutes, at any
-population the world allows and however many owners are present. That is the
-hard fail. The plan's own figures are well above it: 817 seconds on today's
-world and never under 408. From M2 the owner's companion page shows their
-resident live for the whole hour.
-
-**How the director keeps it.**
-
-1. It schedules stops first. A stop is a place for the frame, chosen to hold
-   the present owners' residents who have had least frame time in the last
-   hour, and among equal choices the nearest. A visit lasts 80 seconds. With
-   no owners, as in M1, every resident counts as a present owner's.
-2. During a visit the frame may drift up to 8 tiles to keep a fight in view,
-   and no more. The spotlight changes among the residents in the frame in
-   turns of at least 20 seconds: present owners' residents first, least shown
-   first, until each has had 180 seconds as the subject in the last hour,
-   then anyone else in the frame. The limit never leaves a turn empty.
-3. The frame travels only between visits and starts at once, in a straight
-   line, for 14 seconds at most. It does not change scale during a visit.
-4. A set piece (a boss fight, a raid, a hunt by a pack of four or more, a
-   work finishing, a march arriving) may pull the frame or hold it, for at
-   most 240 seconds in any 20 minutes.
-5. An owner who has just arrived or claimed gets a stop on their resident as
-   the next visit and the first turn there.
-6. When the frame settles, the present owners' name slips in it are lettered
-   one after another and their rows lead the page.
-
-**The layout.** The regions lie on one plane in a grid, and the grid is kept
-three regions tall: 63 tiles, which is exactly two frames. Today's four are
-the camp with the Pinewood to its west and the Hills to its east, and the
-Lower River south of the camp. Stonefall goes south of the Hills. The
-Underway, the Deep Halls and the Root of the Hills make the third row, east
-to west, so each is next to the one before it on the way down. The Mere fills
-the gap south of the Pinewood, and the Mire and the Barrow Downs start a
-fourth column in the east.
-
-**The arithmetic.** An hour has 3,600 seconds. Set pieces take at most 720,
-which leaves 2,880. A visit and the longest move take 94, so there are about
-30 visits and 2,451 seconds of frame time. What divides it is the number of
-stops needed to cover every tile of the open regions, since a resident can be
-anywhere in them. A grid three regions tall needs two rows of stops, and a
-grid of `c` columns needs `2c/3` columns of stops, rounded up.
-
-| Open regions      | Columns | Stops to cover them | In the frame, seconds an hour | Longest gap |
-| ----------------- | ------: | ------------------: | ----------------------------: | ----------: |
-| 4, as today       |       3 |                   3 |                           817 |       9 min |
-| 5 to 9            |       3 |                   4 |                           612 |      10 min |
-| 10 to 12          |       4 |                   6 |                           408 |      13 min |
-| 13 to 16          |  5 or 6 |                   8 |                           306 |      17 min |
-| 21, were it built |       7 |                  10 |                           245 |      20 min |
-
-Today's four regions need three stops because the frame is taller than a
-region: two stops cover the top row and the upper half of the Lower River,
-and a third covers the rest of it. Five regions need four stops, and so do
-nine, which is why opening the deep costs an owner nothing more once
-Stonefall is open.
-
-These are floors. They count every open region as holding someone, the
-longest move every time, and no set piece as showing the owner. A director
-that puts each stop on residents and not on a grid does better wherever
-residents bunch, as they do at the camp. The number depends on the ground and
-not on who is watching, so it holds with 20 owners present or 150.
-
-For comparison, the view locked to one region at 48 pixels gave 612 seconds
-on four regions, 306 on eight and 245 on ten.
-
-**What limits the world now.** Frame time no longer does. At ten regions it
-is 408 seconds, and it would take 21 regions to bring it down to 245. The
-limits that bind first are these:
-
-- The atlas allows 16 regions. At 16 the figure is 306.
-- The population ceiling stays at 150. It comes from the brief, and the tick
-  and message bars of section 3 are set at it. With 15 residents a region the
-  frame holds about 34 when the world is full, where it held 15. Whether 34
-  figures two thirds the size can be told apart is not known. #326's captures
-  at 15 residents and M2's at 50 are the check, and if they can't, the answer
-  is fewer residents a region, not a narrower view.
-- The page lists the residents in the frame. Past the rows it has, it lists
-  present owners first and the rest as a count.
-
-So the plan's eleven regions can all be open at once, and the Mire and the
-Barrow Downs no longer share a place. The three regions cut from the first
-version stay cut. They were cut for adding no tier and nothing to see hourly,
-and a wider view does not change that.
-
-Time as the subject does depend on who is watching, since 2,451 seconds are
-shared among the present owners. The wider view does not change it:
-
-| Residents | Owners present | As the subject, seconds an hour |
-| --------: | -------------: | ------------------------------- |
-|        15 |              6 | 180, the limit                  |
-|        50 |             20 | about 120                       |
-|       150 |             20 | about 120                       |
-|       150 |             60 | about 40                        |
-
-The plan promises frame time and does not promise subject time past 20
-owners present.
-
-**The live window.** The companion page draws the owner's resident and the
-ground seven tiles each way, with the viewer's own drawing code, twice a
-second, at the closer scale the stream used to have. It follows that resident
-and cannot be pointed anywhere else. It is how an owner sees what a slider
-did without waiting for the stream to come round, and with the stream zoomed
-out it is the close view of their resident. It is 3,600 seconds an hour for
-anyone who has the page open. The stream keeps what the window lacks: the
-country round the resident, everyone else, the page, the news and the set
-pieces. The 240 seconds are measured on the stream alone, so the stream
-cannot lean on the window. This changes a line of [design.md](design.md),
-which said no viewer has their own camera.
-
-**What is measured.** `metrics.json` gains, for each resident and split into
-present, absent and house: frame seconds an hour, subject seconds an hour,
-and the longest gap out of frame. It also gains moves of the frame an hour
-and set pieces an hour. A present owner under 240 frame seconds, or a gap
-over 20 minutes, is a hard fail, measured at the milestone's population cap
-with 20 owners present and with 60. #326 takes the first measurement, before
-and after the change of scale.
-
-**Past 150 residents** the question is whether a frame and a page can show
-more, and after that whether a second view of the same world is wanted. That
-only matters for a hosted game that fills (section 8). Until then the world
-does not grow past 150.
-
-Turned down: a queue of residents with the view following each one, as the
-first version had it; a cap of 3 minutes an hour; highlights on the stream in
-place of the live map, since a replay is an older picture beside the live
-one; a timed roll call; holding a small world on four maps until 60 residents
-(see decision 0023); and a view locked to one region, which is what made ten
-regions the most a stream could carry.
-
-### 4.6 The fun test
-
-A milestone is filed only when its section of this plan answers these six
-points, and it closes only when a judge has checked them from captures. A new
-milestone, or a change to one, goes through the same test before it is built.
-
-1. **The hour.** What a viewer who owns nothing sees in a typical hour, each
-   item with a rate. Anything rarer than once an hour is not a reason to
-   watch. The section names at least one thing that makes hour two differ
-   from hour one.
-2. **The owner's seconds.** Frame seconds an hour for a present owner at 15,
-   50 and 150 residents, from section 4.5, and from `metrics.json` once the
-   milestone is built. Never under 240, and no lower than the milestone
-   before unless the section says what the owner gets in return.
-3. **A decision with a result.** One new decision an owner makes, a test that
-   a different choice changes a measured outcome, and a way to see the result
-   within 10 minutes.
-4. **Tomorrow.** What is on "since you last looked" after a day away that was
-   not there before this milestone.
-5. **Played, not only run.** A fresh judge plays an owner through the local
-   chat page and the companion page: it claims, changes something, leaves,
-   and comes back after a real day's worth of game time. It writes what it
-   did, what it waited for and when it lost interest. "Nothing to do" or "I
-   couldn't see what my change did" is fixed before the milestone closes.
-6. **Size.** A milestone that adds a region, a skill or a system says what it
-   removes, or shows the need. For a region the need is one of the two in
-   section 4.4.
-
-The first version of this plan was run through the test by the audit. Its M2
-failed point 3, M3 and M4 failed point 1, M4 to M6 failed point 2, and M7 and
-M8 failed points 1, 2, 3 and 6. Section 6 is what came of that.
-
-A stream hour is 2.5 game days. Rates in section 6 are targets worked from
-the rules, and each one is counted in `metrics.json` by the milestone that
-makes it.
-
-## 5. M1: what is left
-
-M1 has 36 open issues. Eighteen of them and one still to be filed make the
-candidate: the first build worth showing the operator. Eight more and the
-three umbrella issues close the milestone. Seven leave it.
-
-### Why it's fun
-
-**A viewer who owns nothing** sees, in an hour:
-
-- 2.5 dusks and nights, each with the walk home and the dark closing in.
-- Fights for 15 to 25 seconds of each fighter's minute. A fodder group
-  arrives every 2 seconds while a region is under its budget, and a pack is
-  cut down in 3 to 5 seconds, with ink left on the ground.
-- A wolf hunt most nights, so about two an hour, each with 10 to 30 seconds
-  of stalking before it breaks.
-- At least 37 homecomings with a haul, since each of 15 residents is home at
-  least once a game day.
-- New gear worn and taller hats, as residents level. In a world's first day
-  this is what makes hour two differ from hour one. After that M1 has
-  nothing that does, and the calendar in M3 is the fix.
-
-**An owner.** M1 has none. With the wider view and the circuit of stops
-(#326, section 4.5), each of 15 residents is in the frame at least 817
-seconds an hour and is the subject for about 160. At 50 residents it is 817
-and about 50. 150 residents do not fit: four regions hold 60.
-
-Points 3 to 5 of the fun test need owners and start at M2. Point 6: M1 adds
-no region and no skill.
-
-### The candidate
-
-At the end of it a viewer sees 15 residents who go out with an aim, cut
-through packs with fast wide blows that leave ink on the ground, get hunted
-by wolf packs at night and call for help, come home carrying a haul, and wear
-what they found. The page lists all 15 on a line each. No region is empty of
-monsters. The map is drawn at about 32 pixels a tile, so the frame holds the
-camp and the near edges of the three regions round it at once. It rests for
-80 seconds and then moves on, where today it shows one region, follows one
-resident from region to region and pans inside that resident's turn.
-
-| Chain             | Issues, in order                                                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| In progress       | #298 wolves hunt, #309 region view                                                                                                                |
-| Tempo, simulation | #315 fast time, then #316 ranks and fodder, then #317 numbers that grow, then #324 programs fight packs. #318 arcs and moves beside #316.         |
-| Tempo, on screen  | #319 blows in the message, then #320 swing, hit and kill in ink. #321 off the grid. #323 the mow sheet.                                           |
-| Danger            | #299 residents react                                                                                                                              |
-| Purpose           | #237 trips and death drops, then #238 gathering and hauls on screen                                                                               |
-| Loot              | #240 drops and equipment, after #317                                                                                                              |
-| Page and judging  | #231 the page for 15, #314 absolute verdicts at 15 residents                                                                                      |
-| New               | Monsters in every region: rosters, levels and budgets for the Pinewood, the Hills and the Lower River (bats, ravens, boars, slingers), after #317 |
-| The view          | #326 zoom out and a view that frames the action, from the operator. After #309 and #231, in the client                                            |
-
-The longest chain is five cycles on the simulation, one after another: #298,
-#315, #316, #317, #324. Everything else fits beside it.
-
-Changes to issues already filed:
-
-- #315: decisions every 2 ticks only near an enemy or on hatched ground.
-- #316: budgets as in section 3.4 in place of fixed caps; actors listed per
-  region; dormant regions; fodder programs limited to 8 rules and 200 steps;
-  the bar is 4 ms mean and 25 ms worst at 470 actors, and the message size at
-  the candidate's 160 actors is reported.
-- #317: the monster formulas with the gear factors, the experience formula of
-  section 3.3, and the hitpoint limit raised to 4,000,000. Its seeded test,
-  with the ordinary-gear factors applied to the resident directly since
-  equipment comes with #240: a level-38 resident clears 12 level-38 fodder and
-  lives, and a level-18 resident is downed by the same pack.
-- #237: drops are built as an owned ground object with an end tick, since a
-  resident's own fire reuses it.
-- #240: affix tiers tuned to the gear factors in section 3.1.
-- #302: the reckoning at 06:00 is at most six rows, the day's best in six
-  categories, 24 seconds in all. A row for each resident would be a minute at
-  15 residents and ten minutes of a 24-minute game day at 150.
-- #326: its camera is the circuit of stops in section 4.5 (80-second visits,
-  turns within a visit, travel only between visits), and its measures are
-  the ones that section lists: frame seconds, subject seconds and the longest
-  gap for each resident, and moves of the frame an hour.
-- #306 is folded into #314, which already rewrites the rubric. #314 also takes
-  #306's metric change: a change of page line counts as a visible event in the
-  capture metrics, and a rule change alone does not.
-- #286 is closed: the gate has failed any commit not dated in UTC since the
-  CI change that followed it.
-
-### To close M1 after the candidate
-
-#300 the hunt on screen, #301 the fire burns logs, #302 the day's reckoning,
-#322 loot spill and streaks, #241 drops on screen, #245 the spotlight card,
-#311 adoption keeps a copy, #200 the watch review. The umbrella issues #250,
-#251 and #296 close with #200.
-
-### Leaving M1
-
-- #272 (spreading residents at 50) goes to M2, into the starter programs,
-  because M2 is judged at 50 residents. #232 (tents and sitting rings) goes
-  to M7, where pitches at a company's fire are what tents are drawn for. M1
-  is judged at 15 residents.
-- #288, #294 and #304 are polish on things that work. They lose their
-  milestone and are taken only when a builder slot has nothing else.
-
-### Exit check
-
-As in [roadmap.md](roadmap.md): the server restarts without loss, a 24-hour
-headless run has no error and no stuck actor, the determinism tests pass, the
-watch review at 15 residents has no hard fail and no "no" in its absolute
-verdict, on the mow sheet a judge with the page hidden can say which
-resident is stronger and see afterwards that a fight happened, and a tick
-averages 4 ms or less, worst 25 ms, at 470 actors (section 3.5).
-
-Two more come from the audit. A judge watches a full hour of capture and
-says what minute 50 showed that minute 10 did not; "nothing" is filed as a
-`watch` issue against M3 and does not block M1. And in that hour every
-resident is in the frame for 240 seconds or more with no gap over 20 minutes.
-
-## 6. Milestones after M1
-
-Each list is the pieces the conductor files as issues when the milestone
-before closes, twelve at most. Exit checks marked "long" are run at the
-milestone's exit check (section 3.5). Every milestone's exit check also has
-the played test of section 4.6 and the frame measurement of section 4.5; they
-are not repeated in each list.
-
-| Milestone                 | Open regions | In the frame at 15 | At 50 | At 150                |
-| ------------------------- | -----------: | -----------------: | ----: | --------------------- |
-| M1 First Light            |            4 |                817 |   817 | does not fit; 60 hold |
-| M2 Builds and owners      |            4 |                817 |   817 | does not fit; 60      |
-| M3 The year               |            4 |                817 |   817 | does not fit; 60      |
-| M4 Works and Stonefall    |            5 |                612 |   612 | does not fit; 75      |
-| M5 The deep               |            8 |                612 |   612 | does not fit; 120     |
-| M6 Trades and the store   |            8 |                612 |   612 | does not fit; 120     |
-| M7 Players among players  |            8 |                612 |   612 | does not fit; 120     |
-| Later, if the world fills |           11 |                612 |   612 | 408                   |
-
-Seconds an hour in the map frame for a present owner, at least, from section
-4.5, with the view at 32 pixels a tile (#326). Where 150 residents do not
-fit, the figure for those the world holds is the one at 50, and the next
-claim waits. The crowd regions stay shut at 15 and 50 residents, so the last
-row's first two figures are M5's. With the view locked to one region at 48
-pixels, as it is today, the same rows would read 612, 612, 612, 490, 306,
-306, 306 and 245.
-
-### M2: Builds and owners
-
-**Aim.** A resident has a build its owner chose, and residents have owners.
-
-**Why it's fun.**
-
-- _The hour, for a viewer who owns nothing._ M1's hour, with five starter
-  programs where there were three, and residents who hold different weapons
-  and fight differently: an arc, a wide slow arc, a line. That is on screen
-  all the time. A resident walks in by the east road each time someone
-  claims, 40 seconds of it, and the next visit goes to its region. The news
-  line names an owner whose program changed. Hour two differs from hour one
-  by who claimed and what they changed, and in a world with nobody claiming
-  it does not differ. M3 follows for that reason.
-- _The owner's seconds._ In the frame: 817 an hour at 15 residents and at 50.
-  150 do not fit on four regions; the 60 who do get 817. As the subject: 180
-  at 15 with 6 present, about 120 at 50 with 20 present. On their own page:
-  the whole hour.
-- _A decision with a result._ A name and colours, one of five programs, its
-  sliders, three techniques, a weapon. The test: each starter program's main
-  slider, at its two ends, changes a measured outcome over a seeded game day
-  (hauls, downs or kills). The owner sees it at once in the live window and
-  in the rule under their resident's name.
-- _Tomorrow._ "Since you last looked": after a real day away, 60 game days
-  and about 30 levels, with the downs, the hauls and the gear found.
-- _Size._ No region and no skill. It adds a second process (`hall`) and a
-  page. The viewer's own director goes.
-
-**Exit check.**
-
-- A judge given a fight sheet with the page cropped off names each
-  resident's weapon and one technique it used.
-- Long: a scripted crowd of 50 owners over 60 game days, with no error and no
-  stuck actor, and the last snapshot plus the input log since it gives the
-  live world's hash.
-- The slider test above passes for all five starters.
-- Captures with the scripted crowd at 15 residents with 6 present, 50 with 20
-  and 60 with 60: Mine is 3 or more at 15 and 50, and the frame measurement
-  holds in all three.
-- The run reports the snapshot message's size at 60 residents and the live
-  window's bytes a second.
-
-**Pieces.**
-
-1. Programs become world state keyed by hash; typed inputs with a log; the
-   determinism test for snapshot plus log. Both strands start from this.
-2. Tactics: `carry`, `def`, `section`, `param`; memory to 31 names.
-3. Loadouts: slots, cooldowns, statuses (braced, held, rallied), `carry`
-   taking effect at the bank chest, and `guard`, `shove`, `rally`, `fell` and
-   `pack_mule` beside M1's three moves.
-4. Kit: the `off` slot, spear and axe shapes, shield and torch, wearing by
-   level.
-5. Builds on screen: held weapon and off-hand, a shape and pose per
-   technique, the `next:` line, the `carry` line on the spotlight card.
-   `look`.
-6. The five starter programs with their `param`s, the slider test, and
-   #272's changes so that residents spread out at 50.
-7. `hall`: the second process, `node:sqlite`, accounts, the local chat page,
-   the scripted crowd tool, inputs to the world over a local socket.
-8. Claiming: `!claim`, names and the filter, the 12-colour palette and
-   `!cloak`, house residents, the waiting list, retirement, mod commands.
-9. The companion page: pairing, since you last looked, `!where`.
-10. The live window on the companion page.
-11. Editor and submit: compile in the browser and again on the server, the
-    limits, version numbers, sliders, `!set`, `!program`.
-12. The director on the server: the circuit with present owners, arrival, the
-    roll call, `!me`, the capture run with the scripted crowd, and the
-    measures split into present, absent and house.
-
-### M3: The year
-
-**Aim.** Hour two differs from hour one, and an owner has a reason to look
-tomorrow.
-
-**Why it's fun.**
-
-- _The hour, for a viewer who owns nothing._ Weather is rolled each game day,
-  so 2.5 times an hour: rain, fog, snow or a storm, each drawn and each
-  changing what residents do. Once an hour chat votes among three weathers
-  for a coming night, which is the one thing a viewer who owns nothing can
-  do. At least four set pieces an hour: hunts by a pack of four or more, and
-  in their time the elk crossing with wolves behind it and the fish run. The
-  day's best moment is named at 06:00, 2.5 times an hour. The quarter turns
-  every 6 hours 24 minutes and nights go from 8 game hours to 16, so the
-  evening stream and the morning stream are different seasons. Hour two
-  differs from hour one by its weather and the vote, and hour seven by the
-  quarter.
-- _The owner's seconds._ As M2: 817 in the frame at 15 and at 50, and the
-  whole hour on their page. No region is added.
-- _A decision with a result._ When to go home. With nights that change
-  length, a program that turns for home at a fixed hour loses four game hours
-  of a summer evening or is caught out in winter. The test: on a winter seed
-  and a summer seed, a starter with its `home_by` slider at each end differs
-  in downs and in haul. An owner sees it in under a minute with "try it",
-  which runs a draft and the live program side by side for three game hours.
-- _Tomorrow._ The day's best moment for their resident, replayed with the
-  rules that fired. The year has moved on: it was spring and now it is
-  autumn.
-- _Size._ No region and no skill. It adds a calendar, because without one
-  every game day is the same day.
-
-**Exit check.**
-
-- A strip of four frames at 18:00, one a quarter, that a judge tells apart.
-- A judge given an hour of capture says what minute 50 showed that minute 10
-  did not, and given two hours from different quarters with the clock cropped
-  off says which is which.
-- Six hours at 15 residents with four or more set pieces in every hour.
-- Long: a 64-day year at 50 residents with no stuck actor, in which the elk
-  cross and the winter's wolves follow the autumn's elk kills.
-- The flicker index stays under its limit in a burst of rain and of snow.
-- A baked moment replays tick for tick against the world it came from.
-- The `home_by` test above passes, and "try it" reports the first tick at
-  which the two runs differ.
-
-**Pieces.**
-
-1. The calendar: year, quarters, day length, the moon; sensors; the year
-   line on the page.
-2. Weather: the daily roll and its effects.
-3. Quarters and weather drawn: rain, fog, snow, storm damage, short and long
-   nights. `look`.
-4. The hourly vote and `event`.
-5. The world's program, `content/world/events.tac`, on the VM; the ledger;
-   the dawn news from it.
-6. Beasts as a third side; the elk migration and the wolf winter.
-7. The fish run, the Long Night and the eclipse; the Angler starter with
-   `long_cast`, `field_cook` and `night_eyes`.
-8. The floor on set pieces, and what is coming on the page: tonight's
-   weather, the moon, days to the elk.
-9. Best moments: scoring from events, baking with the decision trace, the
-   replay and its rules toggle on the page, the best-moment line at 06:00.
-10. Try it: three game hours both ways in a worker, with the first tick the
-    two runs differ.
-11. Captures: the quarter strip, a weather sheet, a winter night.
-
-### M4: Works and Stonefall
-
-**Aim.** The camp builds, and what it builds first is a way to somewhere
-that can still hurt it.
-
-**Why it's fun.**
-
-- _The hour, for a viewer who owns nothing._ Tier-2 packs in Stonefall, where
-  a level-38 resident has a fight on its hands again and one at level 18 is
-  downed: on screen for about a quarter of the hour. Rock falling on hatched ground
-  at the quarry. A work that gains a drawn piece with each delivery, at 20
-  deliveries an hour or more from a camp of 24, and finishes about every two
-  hours. A raid on the woodpile and the racks when the hoard is large enough,
-  about one night in three. The Quarry Troll comes back four game days after
-  it falls and the page counts down to it, so a boss fight about every second
-  hour. The boss and the raid are each rarer than once an hour; the floor of
-  four set pieces holds with hunts. Hour two differs from hour one by how far
-  the work has got.
-- _The owner's seconds._ In the frame: 612 an hour at 15 and at 50, down from
-  817, because a fifth region takes a fourth stop to cover. 150 do not fit;
-  five regions hold 75. In return a resident past level 35 gets full
-  experience again and monsters that can down it. On the four old maps it
-  earns a quarter and only a wolf can hurt it.
-- _A decision with a result._ How deep to go and when. The test: a level-38
-  resident whose program goes to Stonefall earns at least twice the
-  experience in a seeded game day of one that stays in the Hills, where its
-  kills pay a quarter; a level-18 resident sent there is downed. Seen in the live window and with
-  "try it".
-- _Tomorrow._ Whether it lived through the night at Stonefall, the notch for
-  the deepest tier it has survived a night in, and its name in the ledger
-  against the Hill Road if it carried goods there.
-- _Size._ One region. The need is depth (section 4.4): Stonefall opens only
-  once four residents have outgrown tier 1. It takes a quarter of each
-  owner's frame time, as above.
-
-**Exit check.**
-
-- A seeded headless run from a fresh world of 24 house residents builds the
-  woodpile, the racks and the Hill Road and opens Stonefall with no input.
-  The run reports the camp-day.
-- The same run with every resident held under level 26 does not open it.
-- Five seeded residents at level 45 in ordinary gear kill the Quarry Troll
-  with at most two downs.
-- The depth test above passes.
-- A capture shows a raid carrying goods off the racks.
-- The tick bar of section 3.5 holds with five regions at night budgets, and
-  the view message is inside its two targets (section 3.6).
-
-**Pieces.**
-
-1. World features: one table for sites, the hoard, cairns and lamps, with
-   M1's drops moved onto it.
-2. Works: sites, `deliver`, `build`, `needs`, a drawn piece for each
-   delivery, the deliverer in the ledger; the woodpile and the drying racks.
-3. Charting, cairns, exits that open, the two needs of section 4.4; the Hill
-   Road.
-4. Stonefall: the map, quarry faces, rockfall on hatched ground, the Quarry
-   camp.
-5. The crawler family for tier 2: crawlerlings, crawlers and matrons.
-6. Bosses: lairs, area patterns, return times, the 10% rule, the countdown
-   on the page; the Quarry Troll.
-7. The hoard, and raids on the camp's stores sized by it.
-8. Item bases and affix tiers for item levels 35 to 60.
-9. Long trips: programs that cook and camp away from home; the depth notch.
-10. The page and overview past four regions: rows for the region on screen,
-    a line per other region, charted outlines.
-11. The view message of section 3.6.
-12. Captures: a Stonefall night, a raid sheet, a boss sheet, a work going up.
-
-### M5: The deep
-
-**Aim.** There is a way down to tier 5, and how deep a resident can stay
-shows how strong it is.
-
-**Why it's fun.**
-
-- _The hour, for a viewer who owns nothing._ Three regions drawn dark, with
-  day ink only inside lamps and braziers, which look like nothing else in
-  the game. Fodder groups of 20 to 30, and a level-80 resident clearing one
-  in about 3 seconds: on screen whenever the view is below. Four bosses, each
-  back four game days after it falls, so a boss fight in most hours. A march
-  that comes up region by region from a nest nobody cleared; this one is
-  rare, and it is a consequence to avoid more than a show. Hour two differs
-  from hour one by which boss is up and who went a tier deeper.
-- _The owner's seconds._ In the frame: 612 an hour at 15 and at 50, the same
-  as M4. The three regions make a third row of the grid, and the frame is tall
-  enough that the same four stops cover it. 150 do not fit; eight regions
-  hold 120. Levels 45 to 99 get somewhere to be fought, and without it a
-  resident two weeks old is where a day-old one was before M4. The three open
-  one at a time by the depth rule, the last after three to four weeks.
-- _A decision with a result._ Where to spend the night, and whether to wear
-  a unique that changes a rule. The test: for tiers 3 to 5, a resident at the
-  tier's middle level in ordinary gear clears a fodder pack and lives, and
-  one two tiers short is downed. Seen in the live window.
-- _Tomorrow._ Did it live through the night down there. A deeper notch, a
-  unique found, and at 99 a ring to take.
-- _Size._ Three regions, each for a tier that exists nowhere else, each
-  opening by the depth rule. They cost an owner no frame time. A 15-resident
-  world on eight regions has about four residents in a frame, which is thin,
-  and the director's choice of stops has to make up for it.
-
-**Exit check.**
-
-- An Underway capture shows day ink only inside lamps and braziers.
-- The gradient test above passes for tiers 3, 4 and 5.
-- Five seeded residents at each boss's level kill it in 60 to 120 seconds
-  with at most two downs.
-- A seeded run that leaves a nest alone ends with a march in the camp's
-  region and a line in the ledger.
-- The tick and message bars hold with eight regions at night budgets and 120
-  residents.
-- A capture at 120 residents with 20 and with 60 present holds the frame
-  measurement (612 expected) and scores 3 or more on Mine. It reports the
-  share of the hour spent on the three dark regions.
-- Long: 60 game days at 120 residents in which no region averages over 15
-  residents.
-
-**Pieces.**
-
-1. The always-night drawing, braziers and lamps. `look`.
-2. The Underway: the map, the Pit Props, its tier-3 monsters, the
-   Lamp-eater.
-3. The Deep Halls, the Second Shaft, pale wardens, the Hollow Knight.
-4. The Root of the Hills, the Root Stair, the Brood Mother.
-5. Nests from neglect, and marches from a nest left alone.
-6. Uniques: fixed affixes that change a rule, one per boss, and the rare
-   drop outside bosses at tiers 4 and 5.
-7. Item bases and affix tiers for item levels 60 to 100.
-8. Rings at 99, with a band on the figure.
-9. Kill counts and the deepest night on the page line.
-10. Captures: an Underway sheet, a tier-3 swarm night, a march.
-
-### M6: Trades and the store
-
-**Aim.** Goods have a price, gear can be made, and there is a second way to
-fight.
-
-**Why it's fun.**
-
-- _The hour, for a viewer who owns nothing._ Archers, who stand off and shoot
-  a line of six tiles through the fodder: a fight that looks different from a
-  melee arc, on screen whenever an archer is. Piles at the store that rise
-  with each sale, and with 15 residents there are at least 37 homecomings an
-  hour. Residents who change what they carry home when a pile gets tall. A
-  smith at a forge is on screen and is not an event. Hour two differs from
-  hour one by which piles are tall and what residents are bringing in because
-  of it.
-- _The owner's seconds._ As M5: 612 in the frame at 15 and at 50. No region
-  is added.
-- _A decision with a result._ What to gather by price, whether to make a
-  weapon or wait for a drop, what to temper. The test: a scripted owner who
-  only moves the `sell_above` slider changes its resident's tally for a game
-  day by a measured amount. Seen with "try it" in under a minute and in the
-  ledger within a game day.
-- _Tomorrow._ Tally earned, what was made and what it sold for.
-- _Size._ Four skills and a system, and nothing is removed. This is the
-  plan's weakest answer to point 6, which is why it comes after the deep. The
-  need: by M5 a bank is at its cap of 200 a good and gathering has no use
-  past the fire, food and works; and every build so far fights hand to hand.
-
-**Exit check.**
-
-- Long: 60 game days at 50 residents in which store prices move, at least two
-  starter programs change what they gather because of them, and every bank
-  and the store end either at a cap or no longer rising.
-- With the page hidden, a judge says which good is scarce from the piles.
-- A judge given a fight sheet with the page cropped off tells the archers
-  from the rest.
-- The `sell_above` test above passes.
-
-**Pieces.**
-
-1. Goods and recipes as content with permanent ids; stations; `make` and
-   `can_make`.
-2. Mining and Smithing: the seams in the Hills and at Stonefall, a forge at
-   camp, ingots, blades, armour, tools; the `tool` slot.
-3. Woodworking and Archery: bows, arrows, quivers, shields, rods; the bow's
-   line attack; `aimed_shot`, `pin`, `volley`, `rain`.
-4. The store: tally, the price formula, `sell`, `buy`, `price`, `stock`, the
-   item rack, bank caps; works pay tally and draw on the stock.
-5. The store on screen: piles, the rack, the ledger in tally marks. `look`.
-6. Food tiers and spoilage.
-7. Tempering at the forge.
-8. Skirmisher and Smith as starters; starter programs that read prices.
-9. The Storehouse and the palisade as works.
-10. Captures: the store over six game days, and an archer fight sheet.
-
-### M7: Players among players
-
-**Aim.** Owners can band together and compete on their programs.
-
-This milestone is filed when M6 closes (section 8). It is play among players,
-and a scripted crowd cannot found a company or be proud of a title, so it goes
-through the fun test again then, with whatever owners have said about M2 to
-M6. While the game is not hosted it is judged against the house residents and
-the scripted crowd, and shrinks to trials, mastery and boards if that is all
-they can show.
-
-**Why it's fun.**
-
-- _The hour, for a viewer who owns nothing._ Company fires with pitches round
-  them that grow from bedroll to tent to hut: always on screen. The day's
-  board at dawn, 2.5 times an hour. A trial's winners once a week. For this
-  viewer M7 adds little, and that is the reason it is last.
-- _The owner's seconds._ As M5: 612 in the frame at 15 and at 50.
-- _A decision with a result._ Enter a trial, where every entry is run at the
-  same level and only the program counts. The result is a score, shown with
-  the winning run on the page.
-- _Tomorrow._ A place on a board among residents of the same band, the
-  trial's result, mastery earned, how far the title is.
-- _Size._ No region and no skill. Companies, boards, trials and rounds are
-  four systems, built for owners who by then exist.
-
-**Exit check.** A round run headless from start to titles, each title
-confirmed by re-running its entry. A trial's winning run replays on the page
-tick for tick. Long: at the population cap with four companies, no region
-holds more than 15 residents on average for over a tenth of a game day.
-
-**Pieces.** Companies: founding and joining, company sites, `home`, fires,
-the shared stock and its limits; pitches at the home fire (#232); boards in
-bands; trials (the worker, scenarios, the weekly close, the winning run on
-the page); rounds (counters, the ladder, titles, re-run checks); mastery with
-notches on the figure; the library (publishing, forks, lineage, reports,
-`!unpublish`); the rule builder form.
-
-### Later, if the world fills
-
-Not a milestone yet. It is filed when a running world has had more than 12
-residents for each open region for a real week, and it goes through the fun
-test then.
-
-- The Mere, a fifth tier-1 region, with the Causeway, reed beds, otters,
-  shamblers and the drowned.
-- The Mire, with bog lights that lead a careless program off the planks, and
-  the Barrow Downs, with barrows that wake a wight when dug. The Bell rings in the Mire on each new moon, and how few of the
-  drowned were killed since the last one sets how many come up.
-- The bosses of tiers 0 and 1, for the new residents a crowd brings.
-- The page and overview at 150.
-
-What it does to an owner: the Mere fills the gap in the grid and costs
-nothing, so nine regions still give 612 seconds an hour in the frame. The
-Mire and the Barrow Downs start a fourth column, which takes six stops to
-cover, and the figure falls to 408. What the owner gets is ground that isn't
-crowded: without the new regions, 150 residents on eight would be 19 a
-region, past the crowd target of 15. It adds regions and removes none, and it
-is built only because a crowd is already there.
-
-### Cut from the first version
-
-These failed the fun test and are in no milestone. Any of them can be
-proposed again through the test.
-
-- The Old Orchard, with Old Tusk and the Farmstead: a fifth tier-1 region
-  with nothing a resident past level 25 wants.
-- The Burnt Wood and the High Pass, with Old Greymuzzle, the Ice Bear and the
-  Watch: tiers 3 and 4 are under the Hills already.
-- The old M7 and M8 as milestones. What was worth keeping moved: marches and
-  rings to M5, the eclipse to M3, and the Mire and the Barrow Downs to the
-  regions built when the world fills.
-- Trapping, Foraging and Brewing, with snares, stews, draughts, `mend` and
-  the Trapper starter.
-- Notes lettered on the map, the Stones, feasts, road lamps, the Smithy and
-  the Watchtower as works.
-- The `tool` slot and three techniques in M2, which moved to M6 and M3.
-
-## 7. Risks
-
-- **Tick cost.** The dense world depends on per-region actor lists. It is the
-  first thing #316 builds and measures, and the fallback is a lower ceiling
-  per region.
-- **Pace.** The experience table in 3.3 rests on kill rates nobody has
-  measured. #323's kills per minute is the check, and each monster's `xp`
-  field is the lever. The times at which the depth regions open rest on the
-  same table.
-- **Seconds on screen.** Every figure in section 4.5 is arithmetic, and it
-  assumes #326 settles at 32 pixels a tile. At 36 the frame is 40 by 28
-  tiles, three rows of regions need three rows of stops, and the figures fall
-  to 612 on today's four regions and 272 on nine. A resident that walks out
-  of the frame as it arrives gets less than its share, and the director's
-  rule for who is behind is what corrects that.
-  #326 measures it at 15 residents before M2 relies on it.
-- **Small figures.** At 32 pixels a figure is two thirds the size, about 9
-  pixels tall in a 640-wide window where it was 13, and a full world puts
-  about 34 in the frame. Hat, hood and cloak have to carry at that size.
-  #326's captures at 640 wide are the check. The live window is where an
-  owner sees their resident close.
-- **Thin frames.** A world of 15 on eight regions has about four residents in
-  a frame. The director puts stops on residents and skips empty ground, and a
-  deep frame has 30 monsters or more round its residents, but nobody has
-  looked at one yet. M5's capture is the check.
-- **Dark.** Three of eight regions are always night, and the other five are
-  night about half the time, so about 70% of the stream after M5 is the night
-  drawing. M5's capture reports the share.
-- **Calm.** Fights at this speed could make the stream busy. A fighter should
-  be in a fight for 15 to 25 seconds of each minute, and the flicker index is
-  taken over a 30-kill slam.
-- **Gatherers among fodder.** Every starter program needs a rule for a pack,
-  and fodder give up at 10 tiles so walking away works.
-- **A small world at a 4-tick step.** A region is a 12-second walk. The
-  answer is depth, not bigger maps: decision 0003 fixes the frame.
-- **Works before the store.** From M4 to M6 nothing pays a resident to
-  deliver. If the house residents' works stall in M4's long run, the store's
-  pay for deliveries comes forward on its own.
-- **Players without a platform.** Everything about owners is tested on a
-  scripted crowd and on a judge playing an owner. Some of it will be wrong in
-  ways only real chat shows.
-
-## 8. Settled by the team
-
-The first version of this section asked the operator six questions. They are
-the team's to answer, and these are the answers.
-
-1. **Hosting.** The plan builds for the local stream. The owner features run
-   against a scripted crowd standing in for chat, and nothing is deployed, as
-   section 1 of `AGENTS.md` says. Hosting is raised with the operator only
-   when there is a build worth putting in front of people. M3 to M6 make the
-   local stream better with or without players, and M7 is filed when M6
-   closes.
-2. **The played test.** A judge plays M2 from an owner's seat, in
-   absolute terms (#314). The operator's feedback outranks
-   it whenever they give it.
-3. **The live window.** Taken, as decision 0023 says: at 150 residents an
-   owner's resident is on the stream for about 7 minutes of an hour, and
-   small when it is there, so the owner's page draws it live.
-4. **The scale.** 32 pixels a tile, as #326 says, checked by the judge on
-   #326's captures. If figures don't read at that scale, the fix is fewer
-   residents to a region before a closer view.
-5. **The cuts.** They stand: three regions, three skills, the map notes and
-   the Stones add nothing new to watch.
-6. **Past 150 residents.** Not planned until a hosted game fills.
+This is the plan for Idlin as a walking city. It replaces the plan built
+around a fixed camp and hand-made regions, which the operator turned down on
+[#331](https://github.com/nnamon/Idlin/issues/331): "no satisfying game
+loops, no thought to how to intelligently depict a large amount of players in
+a finite screen and have the world feel full and vast at the same time". The
+walking city is the operator's idea from that issue. Five more ideas came
+from the conductor (the language as loot, the horde as the clock, the
+stranded, the map drawn by the expedition, and chat playing the threat), and
+section 2 says which two stand and why the other three were dropped.
+[roadmap.md](roadmap.md) is the short version, [chat.md](chat.md) is the
+design for how chat joins and commands citizens, and
+[decision 0028](decisions/0028-the-walking-city.md) lists what was decided
+and what was turned down.
+
+None of this is built. Every time, rate and count on this page is a target or
+arithmetic from the rules, and M1's exit check (section 13) says which ones
+are measured first. What carries over from the code and the open issues is
+in section 12.
+
+## 1. The game in one page
+
+Idlin is a city that walks, with a horde behind it. The city is a machine on
+legs with its residents aboard, each running its owner's program. One
+streamer is one city, and one chatter is one citizen of it: anyone who writes a line in the stream's chat has a
+resident, named by their chat username, from that moment.
+
+The game is one picture that breathes once every 20 minutes.
+
+1. **In.** On a crossing the frame is drawn tight round the city. It is
+   small and crowded, everyone is close and can be seen, and it is home.
+   Residents cook, forge, mend and crew the rail while the land slides by.
+2. **Out.** The city sets down and the frame pulls back. The land is inked
+   outward from the city as it does, and how far it pulls back says what
+   kind of landing this is: a small clearing with a few packs, or a valley
+   that makes the city an eighth of the picture, thick with monsters and
+   with things worth carrying home. The residents pour out into it.
+3. **In again.** A horde comes onto the far side of the plate and crosses
+   it. The frame closes with it. Residents stream home, the strong hold the
+   line on the lit ground under the city, the ramps lift, and whoever is
+   still outside is winched aboard without bag or kit. The legs unfold and
+   the frame is the city again.
+
+Set-down is on the real clock, at :00, :20 and :40 past every hour. The lift
+is whenever the horde gets there, 10 to 15 minutes later.
+
+Every resident is on screen all the time. There is one frame, it never cuts,
+and there is no second window.
+
+The city's size is what its chat builds together. It starts as a cramped
+hull with berths for 40. Each rebuild makes it wider and taller, makes room
+for more chatters, and widens the frame it is seen in on a crossing.
+
+The whole programming language is open to every resident from its first
+minute. What a resident gains over time is levels and gear, and what its
+owner gains is a better program.
+
+## 2. The five ideas, and what was done with them
+
+The conductor put five ideas beside the operator's. Each was weighed as the
+walking city was. The operator's rulings removed three. The two that stand are the horde as
+the clock and the map being drawn, which became the reveal at set-down. Both
+fit the rule that every resident is always on screen (section 5).
+
+| Idea                             | Verdict                 | What was kept, changed and added                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The language is the loot**     | Rejected                | The idea was a small starting vocabulary with every other sensor and action found as loot. A draft of this plan adopted it, and the operator turned it down. They are right. The game is built on writing a program, and an owner with a good idea has to be able to write it on their first day. Locking `threat_count` or `step_clear` behind a drop makes every new resident's program worse than its author, and makes a strong resident a matter of what dropped. The whole language is open to every program (section 7). Nothing of the mechanism is kept.                               |
+| **The horde is the clock**       | Adopted, with one limit | Kept: no countdown, a horde that gathers and crosses the wide view, the city leaving because it arrives, the horde following on the crossing. Limit: set-down stays on the real clock, so the cycle is 20 minutes and only the lift moves. A stream needs a minute people can come back for, and two cities need to be in step. Added: the horde can be slowed by killing its front, so a rearguard buys seconds for those still out. Its distance behind the city, the lead, is earned and lost, and sets how long the next landing is. It is one horde for the whole crossing of a continent. |
+| **Left behind is a story**       | Rejected                | The idea was that a resident who misses the city is stranded, bands with others and survives in a small window until rescued. A draft of this plan adapted it as a walk along the city's trail. The operator turned it down: the reason the world moves round the city is that everyone is always on one screen and the camera never goes anywhere else. A stranded group and an inset window break that. Missing the lift loses the haul and the gear, and the resident is pulled back aboard, as the operator first had it (section 9).                                                       |
+| **The expedition draws the map** | Adapted                 | The idea was blank parchment inked outward as residents explore. A draft of this plan adopted it whole, with programs knowing only inked ground. It now sits where the operator's account of the zoom puts it: the land is inked outward from the city as the frame pulls back at set-down (section 5.4). The whole landing is known from then, because its size and what is on it are what the choice of stop was about. The plate still records what happened on it.                                                                                                                          |
+| **Chat plays the threat**        | Dropped                 | The idea was that viewers without a resident choose what attacks the city. The operator's rule is that one chatter is one player: anyone who chats has a resident (section 11). So there is nobody without one to play the horde, and a chatter voting against their own city is on no side. Threats come from the world, from rival cities, and later from other streams (section 10). The horde's own program decides where it comes from and what it sends.                                                                                                                                  |
+
+What these replaced in the first draft of this plan: a fixed horn at 12:00
+with a dark front; a winch that hauled stragglers home stripped; raiders as
+a separate enemy; a camera that visited parts of the landing in turn; and landings all of
+one size.
+
+## 3. The hook
+
+### Why someone watches for ten minutes
+
+A stream has to answer "what is happening and when does it pay off" within
+seconds of someone arriving. Here the picture answers. If it is tight on a
+crowded machine, the city is travelling and a landing is coming. If it is
+wide, the size of the land says how dangerous this one is. If there is black
+on one side and the frame is closing, the city is about to leave.
+
+Set pieces in a cycle, by the cycle's clock:
+
+| At              | What                                                                                                                                                                                       | How long          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| 00:00           | The reveal. The city settles, the frame pulls back, the land is inked outward as it goes, and it keeps going until the whole landing is there. Then the ramps drop and everyone pours out. | 2 min             |
+| 03:00 to 08:00  | The prize: a lair, wreck or vein at the far side that takes several residents to crack, then the core carried home under escort                                                            | 3 to 5 min        |
+| 06:00 to 09:00  | The horde comes onto the plate, on the side marked from the start                                                                                                                          |                   |
+| 10:00 to 15:00  | The close. The horde crosses, the frame closes with it, the rearguard holds on the lit ground, the run for the ramp, the lift.                                                             | 3 to 5 min        |
+| on the crossing | The vote on the next stop, with the three drawn to scale. The vanguard at the walls when the lead is short.                                                                                | 1 min, and 2 to 4 |
+
+The longest stretch with none of these is about three minutes of sorties
+between the prize and the horde. Any ten minutes holds one set piece and
+usually two.
+
+### The moments
+
+Each is a rule of the game doing its work, so each happens without anyone
+scripting it.
+
+- **The reveal of a valley.** The frame pulls back, and keeps pulling back.
+  The city that filled the screen is an eighth of it, and the land between
+  it and the far edge is thick with marks.
+- **The vote.** Three stops on the route map: a clearing, a glade under fog,
+  a valley with a storm over it. The pennants go up the mast one notch at a
+  time, and the valley's wins by two.
+- **The last seconds at the ramp.** The legend lists everyone still out by
+  how many seconds they have to spare. By then the frame has closed to the
+  city, the ramp, the last runners and the black behind them.
+- **The rearguard.** Six residents stand on the lit ground in front of the
+  black, the bolt throwers fire over their heads, and the whole front stops
+  for five seconds, and five more, while a core carrier crosses behind them.
+- **The winch.** A straggler is pulled off its feet along a line to the
+  city. Its kit stays behind in a heap, and the caption names the best thing
+  in it: "Dara left a rare axe at Brackwater".
+- **Through the line.** A charge goes into a packed line and the front rank
+  goes into the second. A boulder started down a road takes a column. A
+  thrown spear pins a slinger to the rock behind it.
+- **Going back.** A resident on its way home turns round toward the black to
+  get another up. Both get aboard, or both are winched in.
+- **The captain in Dara's helm.** On the next crossing a captain comes over
+  the rail wearing the rare with her name on it, and whoever kills it keeps
+  it.
+- **To stations.** The bell goes and every figure on the decks crosses to a
+  post inside ten seconds.
+- **A new deck.** The hull is rebuilt on a crossing. The frame widens to
+  hold it, twenty berths open, and the names that were waiting come aboard.
+
+### Why someone cares about their resident
+
+- **A result every 20 minutes.** The owner's margin and bearing produce a
+  haul, a time to spare and sometimes a lost kit, each cycle, shown on the
+  stream.
+- **Numbers that are theirs.** Which preset, what margin, what stance. A
+  newcomer who picks well can top a board for a single landing on their
+  first day.
+- **Something to lose.** The kit is at risk every time the horde comes, and
+  more of it in a valley than a clearing.
+- **A say in where it goes.** Everyone votes on the next stop, and everyone
+  lives with it.
+- **Their name on the city.** Districts are lettered with who built them.
+- **They already have one.** Saying anything in chat makes a resident with
+  their name on it. There is nothing to claim and nobody's cast-off to
+  inherit. The first thing a new chatter sees is their own name coming up
+  through a hatch.
+
+## 4. The loop at three timescales
+
+### 4.1 A cycle: 20 minutes, 12,000 ticks
+
+| Cycle clock    | Phase                  | The frame                   | What happens                                                                                                                                   |
+| -------------- | ---------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 00:00          | Set-down               | opens, 6 to 8 s             | Legs fold. The land is revealed. The ramps drop. Newcomers board. Residents draw rations.                                                      |
+| 00:30          | Landed                 | the whole landing, still    | Sorties. A resident goes out, fills its bag, comes back to the hold, goes out again.                                                           |
+| 06:00 to 09:00 | The horde on the plate | closing                     | The black comes on at the far edge, four minutes before it would reach the lamps unopposed. From now `horde_eta` and `lift_eta` have values.   |
+| 10:00 to 15:00 | The lift               | the city and the lit ground | The front reaches the lamps and the bell rings. Twenty seconds later the ramps go up. Whoever is outside is winched aboard without bag or kit. |
+| to 20:00       | Crossing               | the city, still             | Five to ten minutes. The vote on the next stop takes the first minute. With the lead at 4 or less, the vanguard reaches the hull.              |
+
+**The lead** is how far the horde is behind the city, 0 to 6, drawn on the
+route map as the gap between the city's mark and the horde's black.
+Unopposed, the front reaches the lamps at 10:00 plus 30 seconds for each
+point of lead, a minute later on a clearing and a minute sooner in a valley.
+A crossing of the continent starts at 4.
+
+| The lead goes | When                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| up 1          | the vanguard is beaten on a crossing with no leg lost; the horde's front was held for a minute or more in all at the last landing |
+| down 1        | the engine was short of fuel; a leg is dead; the city took a stop two hops off                                                    |
+| to 6          | a gate is forced                                                                                                                  |
+
+**Holding the front.** The front is a line that advances a tile at a time.
+Where ten of the horde die within ten seconds (fewer for a small cast,
+section 11.4), that stretch of the front
+stops for five seconds. The horde's numbers along the front grow as it
+nears the lamps, so it can be held for seconds and never for good, and the
+ramps lift at 15:00 whatever has happened.
+
+The horde is also the best thing on the plate to fight (section 7.4), so
+those who hold it gather the most.
+
+So the length of a landing is something the city earns. A city that fights
+well on the crossing, keeps its legs and holds the line gets 13 minutes and
+more on the ground. One that limps gets 10.
+
+**What makes one cycle differ from the last:**
+
+- **The size.** A clearing, a glade, a vale or a valley (section 5.3). It is
+  the first thing the reveal shows, and it decides how much there is to
+  fight, to carry home and to lose.
+- **The place.** A new map every time. The city never lands on the same stop
+  twice in a crossing.
+- **The condition.** Every stop has one, shown before the vote. Fog: sensors
+  reach 4 tiles. Brood: twice the fodder and twice the parts. Deep seam:
+  nodes far out give double and near ones nothing. Old road: a road to the
+  far side that is walked at three ticks a step. Hunted: a pack of elites
+  roams from set-down. Storm: shots fall short and fires go out. Twelve are
+  planned.
+- **The prize,** and whether its core came home.
+- **The horde:** how far behind, how large, and whose kit its captains are
+  in.
+- **Who was winched in,** and what they left for the horde.
+- **What the city is short of.** Prices follow the hold's stock.
+
+### 4.2 A day: 72 cycles, three great landings
+
+Every 24th cycle is a **great landing**, at 00:00, 08:00 and 16:00 UTC, so
+each part of the world has one in its evening. The page counts down to it.
+
+- If the city has reached the country's border and its rating meets the
+  gate's (section 8), the great landing is the **gate**. A gate takes eight
+  minutes of work at its foot to force, by residents who can do nothing else
+  meanwhile, and the city cannot leave until it is done or the hull gives
+  out. So this is the one landing where the horde arrives and the city
+  stays: the gate crew works, and everyone else holds the lamps. Through the
+  gate, the lead goes to 6 and the horde takes a country's worth of time to
+  find a way round.
+- Otherwise it is the country's **stronghold**: a boss lair that pays three
+  cores and the country's unique items.
+
+A lost gate costs hull and a module tier, and can be tried again eight hours
+later.
+
+So a day has a shape: 23 landings to build, stock and gear up, then one that
+uses it. What an owner finds after a night away: levels, items found and lost, times winched in, tally, what the city built, and whether the gate
+fell.
+
+The game day of 24 minutes goes. Day and night remain as light: a landing
+begins at dawn, the horde brings dusk with it, and the crossing is night.
+
+### 4.3 A month: one crossing of a continent
+
+A continent is six countries in a row, each a tier of monster levels
+(section 8.3). The city starts at the west coast as Hull I, with six
+legs and berths for 40, and reaches the east coast about four weeks later
+as Hull VI, with ten legs, berths for 150 and every district built, if it brings home a core from about one landing in two.
+
+It is the same horde all the way. It grows with each country, it keeps what
+it takes, and its captains keep their names. By the fourth week a viewer
+knows it: the captain in three residents' kit, the one that has carried a
+lost core since the second country.
+
+Expected days in each country, from the cost of tiers in section 8.2: about
+1, 2, 4, 6, 8 and 6.
+
+When the east coast is reached the crossing ends with a last stand: the sea
+is in front, the horde comes with everything it has, and the city holds
+until its boats are away. Then:
+
+- The city's record and its atlas go into the book of crossings.
+- A new continent is generated, with a new horde. The city starts again as
+  Hull I. Skills start again at 1.
+- A resident keeps its name, its look, its lifetime levels (hat height), a
+  hat band for each crossing finished, one item of the owner's choice, and one more locker slot for each crossing finished, up to four.
+
+The reset is the month's loop. What is worth watching over a month is the
+climb from a crowded boat on clearings to a walking town in valleys, and a second
+crossing lets everyone do it again, with newcomers starting level with
+veterans. It is also when city against city is a fair race (section 10).
+
+Turned down: permanent levels on an endless road. A resident a month old
+would have nothing to fight within reach of a new one, and a new owner would
+join a city whose landings kill them for weeks.
+
+## 5. The screen
+
+The operator's reason for the cycle and the zoom is what this section is
+built on: "It gives dynamism like a cosy feel when travelling in a slightly
+cramped machine city (which we can consider allowing upgrades and expansions
+over time). Then on landing, the zoom can expand to a massive valley rich
+with enemies and resources to farm or a small clearing like we have now with
+fewer things but easier."
+
+Two rules follow.
+
+- **Every resident is on screen, all the time.** The world moves round the
+  city so that everyone can be in one picture. There is one frame, no cut,
+  no second window and no inset.
+- **The zoom is the pacing.** The frame is tight on a crossing, opens at a
+  landing, and closes again as the horde comes. How far it opens is how hard
+  and how rich the landing is, and a viewer can read that at a glance.
+
+This replaces the old plan's circuit of stops, its accounting of seconds on
+screen and its guarantees per owner.
+
+### 5.1 One breath a cycle
+
+Sizes are at 1920 by 1080. The picture is one plate in the art bible's
+projection ([art.md](art.md), section 4): ground in plan, everything on it
+in elevation, the city in cut-away with the near wall left off its decks.
+
+| Phase                  | The frame                                                                                                                        | Tile size                                                          | How it moves                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Crossing               | The city, four fifths of the frame's width, hull on the lower third, land sliding by beneath and behind                          | 64 px for the first hull, down to 38 px for the last (section 5.2) | still                                                                                                                    |
+| Set-down               | Pulls back from the city to the whole of the landing                                                                             | from the hull's size to the landing's                              | 6 seconds for a clearing, 8 for a valley, eased, anchored on the lantern mast; the land is inked as the frame reaches it |
+| Landed                 | The whole landing, with the city a third of the way in from the edge away from the horde                                         | 24 px for a clearing, down to 10 px for a valley (section 5.3)     | still, for six to nine minutes                                                                                           |
+| The horde on the plate | Its far edge keeps 6 tiles ahead of the horde's front; the other edges ease in to the residents still out, with 8 tiles to spare | closing, from the landing's size to about 32 px                    | as slowly as the front advances: about four minutes from edge to lamps                                                   |
+| The lift               | The city, the ramp, the lit ground, the last runners and the black                                                               | 32 px                                                              | still, for the 20 seconds of the bell                                                                                    |
+| Away                   | Closes on the city as the legs unfold                                                                                            | to the hull's size                                                 | 4 seconds                                                                                                                |
+
+So in an hour the picture is tight for 15 to 30 minutes and wide for the
+rest, it opens three times and closes three times, and it is otherwise
+still. It never moves fast, and it only moves for a reason a viewer can see:
+the city arrived, the horde is coming, the city left.
+
+How much it opens is the point. The first hull at 64 px a tile opening onto
+a valley at 10 is a pull-back of more than six times: the city goes from
+four fifths of the frame to an eighth of it. The same hull opening onto a
+clearing goes to a third. The viewer knows what the next ten minutes are
+before a single monster has moved.
+
+### 5.2 Home: the city on a crossing
+
+The city is cramped on purpose. Figures are at their largest, stations are
+shoulder to shoulder, and a new chatter appears among people. The frame on a
+crossing is fitted to the hull, so as the hull grows the frame widens, and
+the picture of home changes over a month from a crowded boat to a walking
+town.
+
+| Hull | At a rating of | Width, in tiles | Decks | Berths | Tile size on a crossing | A figure is about |
+| ---- | -------------: | --------------: | ----: | -----: | ----------------------: | ----------------- |
+| I    |             10 |              24 |     2 |     40 |                   64 px | 60 px tall        |
+| II   |             14 |              27 |     3 |     60 |                   57 px | 54 px             |
+| III  |             20 |              30 |     3 |     80 |                   51 px | 48 px             |
+| IV   |             27 |              33 |     4 |    100 |                   46 px | 44 px             |
+| V    |             35 |              36 |     4 |    125 |                   43 px | 40 px             |
+| VI   |             44 |              40 |     5 |    150 |                   38 px | 36 px             |
+
+A hull is rebuilt a size larger when the city's rating (section 8) reaches
+the number shown, which is also what the next country's gate asks for. So
+the city grows, and then it goes somewhere harder.
+
+**Berths are how many chatters the city holds.** A bigger city fits more of
+its chat, which makes the hull the thing a chat builds together and the
+first thing a growing stream wants. Section 11 has what happens when more
+people speak than there are berths.
+
+Between rebuilds the city changes by districts: each module's district is
+added to a deck when it is first built and is redrawn at each tier, as the
+art bible's section 7 has it (timber, then iron, then brass, then carved
+work). A district that is damaged shows it.
+
+### 5.3 The landing: its size is its difficulty
+
+A landing is generated in one of four sizes. The size sets how far the frame
+pulls back, and everything else about the landing follows from it. Counts
+are for a city of 50, and are scaled by the cast as section 11.4 has it:
+a quarter for five residents and under, half up to 25, double from 100.
+
+|                                   | Clearing                         | Glade                                     | Vale                       | Valley                                              |
+| --------------------------------- | -------------------------------- | ----------------------------------------- | -------------------------- | --------------------------------------------------- |
+| Sheet, in tiles                   | 80 by 45                         | 107 by 60                                 | 137 by 77                  | 192 by 108                                          |
+| Tile size, landed                 | 24 px                            | 18 px                                     | 14 px                      | 10 px                                               |
+| The city is, of the frame's width | a third to a half                | a quarter to a third                      | a fifth to a quarter       | an eighth to a fifth                                |
+| A walk to the far edge            | 21 seconds                       | 28                                        | 36                         | 51                                                  |
+| Monsters placed                   | 150                              | 300                                       | 600                        | 1,200                                               |
+| Packs                             | 15, mostly fodder                | 30, half of them with a line and shooters | 50, with brutes and elites | 90, with a tier above the country's at the far edge |
+| Monster levels                    | a tier under the country's       | the country's                             | the country's              | the country's, and above                            |
+| Nodes to gather                   | 20                               | 40                                        | 80                         | 160                                                 |
+| Cores                             | none                             | 1                                         | 1, and an elite's cache    | 2                                                   |
+| Rarity of drops                   | as the tables have it            | 10% more magic and rare                   | 25% more                   | 50% more                                            |
+| The horde                         | half its size, and a minute late | as it is                                  | as it is                   | half as large again, and a minute early             |
+| Bearings                          | 2                                | 3                                         | 4                          | 6                                                   |
+
+A clearing is today's game: one screen, close enough to see every figure, a
+few packs, an easy haul, and little to lose. A valley is the other end. It
+has eight times the monsters on five times the ground, twice the gathering,
+two cores, and a horde that comes sooner and larger across a plate on which
+a resident is 12 px tall and nearly a minute's walk from the ramp.
+
+Size, density and richness are the three dials. They are tuned by country
+and by what the city has built:
+
+- **By country.** The Heath offers clearings and glades. The Marches add
+  vales. From Stonefall on, valleys.
+- **By the city.** The Engine's tier caps the largest landing it can reach:
+  a glade at tier 1, a vale at tier 2, a valley from tier 3. Feet (Legs)
+  open biomes. The Lookout shows more of each stop before the choice.
+- **By condition.** Each stop has one condition (section 4.1) that turns a
+  dial further: brood, fog, deep seam, hunted.
+- **Great landings** (section 4.2) are always valleys.
+
+Every size fits every cast, because the sheet is the frame. A full city on a
+clearing is crowded and safe. A city of five in a valley is a few figures in
+a very large land, which is its own picture.
+
+### 5.4 The reveal
+
+This is where the conductor's fourth idea belongs: the map is drawn as the
+camera pulls back.
+
+The city settles onto its legs over two seconds. The frame begins to widen,
+and the ground is inked outward from the city just inside the frame's edge
+as it goes: contours first, washes half a second behind, standing things
+rising in order of distance, packs last, as marks. Place names are lettered
+when the frame stops. The ramps drop on the last second.
+
+For a clearing that is six seconds and the plate is full. For a valley it is
+eight seconds of land still arriving, with the city shrinking in it the
+whole time. The bruise wash is already on the far margin: the side the horde
+will come from is known from the start.
+
+An earlier draft had residents ink the map as they walked, with programs
+knowing only inked ground. That is dropped. The whole landing is known from
+the reveal, to viewers and to programs, because its size and what is on it
+are what the choice of stop was about.
+
+The plate still records what happened on it. Fights leave blots, as they do
+now. A heap of lost kit is lettered with its owner's name. The core's way
+home is a dotted line. At the lift the plate is kept in the city's atlas.
+
+### 5.5 The close
+
+When the horde's black comes onto the plate the frame starts to close, at
+the pace the front advances. Its far edge stays just ahead of the front, so
+the horde is always the edge of the picture, and the ground behind it is
+gone. The other edges ease in to whoever is still out.
+
+By the time the front reaches the lit ground the frame is the city, the
+ramp, the rearguard and the black, at about 32 px a tile, whatever size the
+landing was. So every landing ends as a clearing: close, crowded, with
+figures large enough to see who is who. The bell rings, the ramps lift, the
+winch lines go out and come back, and the frame closes the last of the way
+onto the city as its legs unfold.
+
+A resident far out when the horde arrives is inside the frame because the
+frame is fitted to it. One resident dawdling at the rim holds that edge of
+the frame out until it comes in or the front passes it.
+
+### 5.6 Choosing the next stop
+
+The choice is made on the crossing, where everyone can see it, and it is the
+chat's.
+
+- **What is shown.** For the first minute of a crossing the route map, a
+  small engraved map in a corner of the plate, opens to a third of the
+  plate's width, and the city sits to one side of it. It shows the trail,
+  the horde's black behind at a distance that is the lead, and the three
+  stops ahead. Each stop is a vignette drawn to scale beside a mark the size
+  of the city: so a clearing is a ring barely wider than the city and a
+  valley dwarfs it. Each carries its biome, its condition (a storm over it,
+  fog in it, a brood's marks), and one tally mark for every hundred
+  monsters.
+- **Who chooses.** The chat. The rules of the vote are chat.md's (section
+  7): one vote for each resident that was awake before the question opened
+  and has been through a lift, cast by typing the stop's number, `!1`, `!2` or `!3`, for 60
+  seconds.
+- **How it reads.** A route is drawn on the map from the city to each stop.
+  Each vote pins a small pennant in the voter's colours to its route, and
+  the voter's figure turns toward the map and raises an arm. The count is
+  lettered at each stop. When the minute is up the winning route is inked
+  solid, the others fade, the legs turn, and the map folds back to its
+  corner. chat.md describes this on "the world map"; the route map opened
+  on the plate is that view, so that nobody leaves the picture for it.
+- **With no votes** the first stop offered stands, and the offer is ordered
+  so that the first is the largest whose monsters are not above the city's
+  median level.
+
+The city walks toward a place everyone has seen and most have voted on. A
+chat that picked the stormy valley spends five minutes forging and stocking
+for it.
+
+### 5.7 What is lettered, by phase
+
+The art bible (section 11) says where lettering sits and how it is drawn: a
+cartouche, a legend, banners and a caption inside the plate's one border,
+with no second column. "The page" elsewhere in this plan means the legend
+and the cartouche. #231's rows become the legend's entries.
+
+- **The cartouche, always:** the stop's name, size and condition, and the
+  phase. No clock is shown on a landing and no bar counts the horde down:
+  how near it is shows in the bruise wash, in the black itself, and in the
+  frame closing.
+- **Landed:** the legend has one entry per bearing (residents out, haul,
+  down), then entries for residents something is happening to, present
+  chatters first.
+- **The horde on the plate:** the legend is the gangway list. Aboard and
+  out, then everyone still out, sorted by seconds to spare: `lift_eta` less
+  the walk home at their load. The seconds move when the front is held.
+- **The lift and reckoning:** aboard and winched in; the take by good; the
+  best item found and by whom; the biggest haul; the closest call; what was
+  left and by whom.
+- **Crossing:** the hold's stock, the district being built and who gave to
+  it, the lead, berths taken and free, and in an assault the hull and each
+  leg.
+- **Banners** go to residents in the news, in the legend or in a fight,
+  present chatters first, and come and go slowly.
+
+The news is the plate's caption: events only, built from state.
+
+### 5.8 Where this meets the art bible
+
+[art.md](art.md) is the standard for how everything is drawn. Its section 12
+is the reveal and the close described above, and this plan now follows it:
+one move out, the land inked as it is revealed, the lantern mast as the
+anchor, one move back. Also taken from it: the projection, the city in
+cut-away, the city parked off-centre away from the horde, the bruise wash in
+place of a countdown bar, lettering as plate furniture, and districts and
+upgrades that are drawn.
+
+Three things here are not yet in it, and are for the art director to settle
+before the pieces that draw them are briefed:
+
+- Its smallest figure is 28 px tall. A vale and a valley need figures of
+  about 17 and 12 px.
+- The close follows the horde over four minutes, where its section 12 has
+  the return as one move of about 4 seconds. Here that move is only the last
+  step, from the lit ground to the city.
+- The route map opened for the vote, with its vignettes and the pennants on
+  the mast, and the gangway list in the legend.
+
+### 5.9 Finding your own
+
+Every resident is in the frame, so the question for an owner is which one is
+theirs.
+
+- A hood and cloak pair of its own, as now.
+- `!me` rings the owner's figure and letters its banner for six seconds at
+  any zoom.
+- A banner whenever it is in the news, the legend or a fight, with present
+  chatters first.
+- A row on the gangway list whenever it is out with the horde on the plate.
+- On every crossing and at the end of every landing it is drawn large.
+
+## 6. The chatter
+
+[chat.md](chat.md) is the design for how a chatter joins and commands their
+citizen, and it owns the commands, what confirms them on screen, speech, and
+moderation. This section says what in the game those commands reach.
+
+The operator's scope for now is that chatters steer through chat alone. They
+do not write programs, and there is no page or editor for them. A resident
+runs one of the preset programs the game ships. Its chatter chooses among
+them and sets their `param`s by typing.
+
+### 6.1 What they see
+
+The stream, and nothing else. So everything a chatter needs to know about
+their own resident is on the plate:
+
+- the resident itself, always in the frame (section 5);
+- its banner, and `!me`;
+- a row on the gangway list when it is out with the horde on the plate;
+- its line in the reckoning at the lift, for the residents with the biggest
+  haul, the closest call and the worst loss, and for anyone who asks with
+  `!me`: sorties, haul, seconds to spare, what was found and what was lost;
+- [chat.md](chat.md), section 4, has how an order is confirmed.
+
+### 6.2 What they decide
+
+| Decision                                                             | How                                                               | How often it is tested     |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------- |
+| Which preset the resident runs                                       | `!run <preset>` (chat.md, section 9)                              | every landing              |
+| The margin                                                           | a `param` of every preset, set by typing                          | every time the horde comes |
+| Stance: gather, fight or keep clear                                  | a `param`                                                         | every sortie               |
+| Where to go: a bearing, a place, a station, a post, another resident | `!go`, which plants a flag the program reads (chat.md, section 3) | when they choose           |
+| Where the city goes next                                             | a vote: `!1`, `!2` or `!3` (section 5.6)                          | every crossing             |
+| Which district is built next                                         | `!pledge <module>`                                                | a standing choice          |
+| Pay a toll or run it; trade, board or run when a rival is alongside  | a vote                                                            | when it comes up           |
+
+What a preset decides for itself, because nobody types that fast: when to
+bank, what to pick up and wear, when to eat, whether to stand or step out of
+a blow or a shot, whether to hold the front, go back for someone or carry a
+core, and which station or post is shortest of hands.
+
+A chat command never moves a resident. It changes something the program
+reads, so two residents given the same order do different things with it,
+and which preset and what numbers a chatter chose is what shows.
+
+### 6.3 The turn-back decision
+
+Three sensors make it.
+
+- `lift_eta`: ticks until the horde's front reaches the lamps, at the pace
+  it is making now. Before the horde is on the plate it has no value, and a
+  comparison on it is false, so the rule below cannot fire early.
+- `horde_eta`: ticks until the front reaches where this resident stands.
+- `way_home`: ticks to walk from here to the nearest ramp at this resident's
+  load, with nothing in the way. It comes from a table worked out at
+  set-down, so it costs nothing to read.
+
+Every preset has this rule above its gathering and fighting rules:
+
+```
+param margin = 250 from 100 to 400
+
+when lift_eta * 100 < way_home * margin  -> go_home
+```
+
+At 100 the resident leaves at the last tick that could work. At 300 it is
+home with minutes in hand and a third less haul. A full bag (five ticks a
+step where an empty one is four), the horde's outrunners and anything on the
+way all eat the margin, and none of them is in `way_home`. And `lift_eta` is
+an estimate: it gets longer when the rearguard holds, and shorter when the
+front breaks through, so a resident that leaves late is betting on other
+people.
+
+A newcomer starts at 250, which is safe. Targets, to be tuned by the
+outrunners' numbers: at 180 a resident is winched in about once in 30
+landings; at 100, one in four; across a city, 2% to 5% of those who went out
+are outside at each lift, and twice that in a valley.
+
+### 6.4 Presets
+
+A preset is a Tactics program in `content/`, with three sections, of which
+the phase picks one: `landing`, `aboard` and `alarm` (and `raid`, from
+M6). The whole language is open to every preset. M1 ships three (section
+13), and more come with weapons and districts. Which presets a stream
+offers, and which one newcomers start on, is the streamer's to set
+(chat.md, section 9).
+
+A preset's `aboard` and `alarm` sections fill whatever is shortest of
+hands, so a chatter who only ever said hello has a resident that is useful
+all cycle.
+
+## 7. Builds and fights
+
+### 7.1 A build
+
+The whole of Tactics is open to every program. Nothing in the language is
+unlocked, found or bought. An earlier draft of this plan made sensors and
+actions into loot, and the operator turned that down: locking them behind
+drops cripples the program writing the game is built on. For now programs
+are the presets the game ships, chosen and tuned from chat (section 6), and
+every one of them may use all of it.
+
+A build is four things:
+
+- **Skills.** Melee, Archery, Hitpoints, Woodcutting, Fishing and Cooking in
+  M1; Mining and Smithing with their biomes and the forge. Each runs from 1
+  to 99 and goes up only by doing that thing. Skills are strength: a blow, a
+  shot, hitpoints, the odds of a try at a node. Archery covers everything
+  that leaves the hand, and the city's bolt throwers and catapults.
+- **Kit.** Six slots. The weapon sets the basic attack.
+
+  | Weapon   | Basic attack                                                                                                  | What it is for                     |
+  | -------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+  | Sword    | an arc of 3 tiles                                                                                             | the line                           |
+  | Axe      | an arc of 5 at 150%, a tick slower                                                                            | fodder                             |
+  | Spear    | a line of 3; thrown, a heavy shot of 6 tiles that knocks back 2                                               | holding a gap; breaking a charge   |
+  | Bow      | an arrow, fast and straight, 12 tiles, through fodder                                                         | the monsters behind the line       |
+  | Sling    | a stone on an arc, 9 tiles, over low cover and over friends                                                   | shooting from the second rank      |
+  | Firepots | lobbed on an arc, 7 tiles, bursting over 9 tiles and burning for 3 seconds; carried in the bag, six to a slot | a packed swarm; a line of shooters |
+
+  The off hand holds a shield, a torch or a quiver. Items roll affixes as in
+  Path of Exile, and some change what a move does.
+- **Moves.** `whirl`, `charge`, `slam`, `guard`, `shove`, `volley` and the
+  rest are in the language for everyone, each on a wait of its own. How far
+  a move reaches and how hard it hits come from the weapon held and the
+  skill behind it. When to use one is the program's business (#318).
+- **The program.** What the resident does with all of that.
+
+So two residents of the same level in the same kit differ by their preset
+and its numbers, and a month-old resident differs from a new one by levels
+and gear and by nothing they are locked out of.
+
+Arrows and firepots are made from the hold's wood, ore and parts, as the
+city's shot is. A city of archers eats its own stock.
+
+### 7.2 Packs
+
+The operator asked for many more packs than there are today, when a region
+holds a handful of monsters. A landing is generated with 150 to 1,200 monsters
+on it by its size (section 5.3), in packs, so that a resident walking outward meets one
+every 8 to 12 tiles, which is every four seconds.
+
+A pack is a formation, set by its monsters' programs:
+
+| Distance from the city         | A pack is                                                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| under 30 tiles                 | 6 to 8 fodder, no order to them                                                                                              |
+| 30 to 70 tiles                 | a line of 4 to 6 that stands and fights, 2 or 3 slingers or archers four to six tiles behind it, and fodder round the flanks |
+| beyond 70 tiles                | a brute at the front, a line either side of it, shooters behind, and one that lobs firepots from the back                    |
+| at the prize, and in the horde | all of that, with an elite or a captain                                                                                      |
+
+Shooters keep the line between themselves and their target, and fall back
+when it breaks. So a pack is a problem with more than one answer: go through
+the line, go round it, shoot over it, or make the shooters hit their own.
+
+### 7.3 Things that fly, and bodies that move
+
+This is #332, an M1 issue, and fights are built on it.
+
+**Projectiles are things in the world.** Each has a position, a speed, a
+lifetime and an owner, in whole numbers, and is moved every tick. There are
+five kinds: the arrow (fast, straight), the thrown spear (slower, heavy),
+the sling stone (an arc that clears low cover and whoever is under it), the
+firepot (an arc, a burst where it lands, fire that stays), and the boulder
+(rolls along a line and hits every body in it once).
+
+**A shot hits the first body in its way.** Stepping off its line dodges it.
+Rocks, trees and walls stop a straight shot, and an arc goes over them. A
+monster's shot hurts a monster, so a pack can be made to shoot its own line.
+A resident's shot that meets another resident is spent and shoves them a
+tile, and does no harm. #332 as filed has it hurt them; this plan changes
+that, because residents have never been able to harm each other and a bow
+would be the way to do it on purpose.
+
+**A hard hit moves the body it lands on,** one or two tiles. A body pushed
+into another body stops, and both are hurt. A body pushed into a wall, a
+rock or a tree is hurt more. A body pushed into water deeper than a ford is
+gone if it is fodder and slowed if it is not. A body pushed off the city's
+rail falls: a monster is dead, and a resident is winched back to the
+infirmary. All of it is settled in a fixed order each tick.
+
+That gives the power fantasy something to do besides numbers. A `charge`
+into packed fodder throws the front rank into the second. A `slam` beside a
+cliff clears it. A spear thrown down a gap goes through the first and pins
+the second to the rock. A boulder started down a road takes a whole column.
+
+**Programs can see it coming.** `incoming` counts the shots that will land
+on this resident's tile; `incoming_ticks` says when the first does;
+`incoming_x` and `incoming_y` say where it comes from; `line_clear(x, y)`
+says whether a shot from here to there meets a friend or a rock first;
+`cover_from(x, y)` gives the nearest tile that puts something solid between
+this resident and that place. With `danger_here` for blows, a good program
+steps out of what it can, takes cover from what it cannot, and never wastes
+a shot on a friend's back.
+
+At the frame's widest, shots are what can still be seen: a flight of arrows
+is a line of ink across a dozen tiles where a sword's arc is three. Ranged
+fights carry the middle of a big landing.
+
+### 7.4 Holding the horde
+
+The operator kept the horde for one reason above the others: "it rewards
+strong players who can hold out and gather more loot." Three rules make that
+true.
+
+- **Time.** Where the horde's front is being killed, it stops (section 4.1).
+  Every second a rearguard holds is a second more for everyone still
+  gathering, themselves included.
+- **The horde pays best.** Its creatures are a tier above the country's, so
+  they give the most experience on the plate and drop from the best tables,
+  and its captains carry what earlier stragglers lost. The richest ground on
+  any landing is the horde's own front, in the last minutes, for those who
+  can stand on it.
+- **A place to stand.** The lamps' ground is under the city's bolt throwers
+  and catapults, which fire on a landing as they do on a crossing. So the
+  end of a landing for a strong city is a fighting withdrawal: a line on the
+  lit ground, shooters behind it and on the rail above, the front stopped
+  again and again, and the last residents backing up the ramp as it lifts.
+
+A weak resident's good margin gets it home early. A strong resident's
+preset and numbers keep it out until the bell, on the best loot there is, with the
+kit to lose if it is wrong.
+
+What the horde takes, it uses. Its captains wear the kit of the residents
+who were winched in, under the owner's name, and drop it when they are
+killed (section 9).
+
+## 8. The city
+
+### 8.1 Modules
+
+The city is a hull with decks, a rail, and legs under it (section 5.2 has
+its six sizes). Each module is a district on a deck. Ten modules,
+each at tier 1 to 5. The city's **rating** is the sum of its tiers, 10 to 50.
+
+| Module    | What it does                                                                                                                                                                                            | A tier adds                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Engine    | Burns fuel on every crossing: 40 logs, and 20 more for each tier of Legs above 1. Sets range. Short of fuel, the lead falls by one.                                                                     | One more hop of range. The largest landing it can reach: a glade at tier 1, a vale at tier 2, a valley from tier 3.                                                                 |
+| Legs      | Carry the hull. Each leg has hitpoints of its own. A dead leg costs a point of lead on every crossing until it is mended.                                                                               | Six legs; eight at tier 3, ten at tier 5. Feet: wide at tier 2 (fen, dunes), claws at 3 (scree, ice), stilts at 4 (shallows). A stop on ground the feet cannot take is not offered. |
+| Plating   | The hull's hitpoints                                                                                                                                                                                    | More of them                                                                                                                                                                        |
+| Guns      | Bolt throwers on the rail, crewed on Archery. A bolt goes 16 tiles through every body in its line and knocks the last one back. They fire on a landing as well as a crossing. Barrels at each leg head. | Two bolt throwers, and two more a tier. A catapult at tier 3 and another at tier 5, which lobs stones or firepots onto marked ground.                                               |
+| Lamps     | The lit ground round a landed city, 20 tiles: where the rearguard stands, and where the horde's arrival is counted from                                                                                 | 5 tiles                                                                                                                                                                             |
+| Hold      | Storage: 500 of each good                                                                                                                                                                               | Double                                                                                                                                                                              |
+| Forge     | Makes plate, shot and gear from ore. Sets the item level of what it makes and of issue kit.                                                                                                             | The next band of item levels                                                                                                                                                        |
+| Galley    | Cooks fish into rations. Each resident draws three at the ramp.                                                                                                                                         | Rations that heal more                                                                                                                                                              |
+| Infirmary | Where the downed wake: 20 seconds                                                                                                                                                                       | 3 seconds less                                                                                                                                                                      |
+| Lookout   | Warning of the horde: it is sighted four minutes before it would reach the lamps. What the vote is shown of each stop.                                                                                  | 20 seconds of warning. At tier 1 a stop's size and biome are shown; at tier 2 its condition; at tier 3 its monsters, as tally marks; at tier 5 its prize.                           |
+
+A new district is added to a deck when its module first passes tier 1, and
+the hull grows a ring when it runs out of room, so the city's outline on
+every view changes over a crossing.
+
+### 8.2 Building
+
+A tier costs goods from the hold and **cores**. A core is the prize of a
+landing: one a landing, three from a stronghold. It has to be carried home.
+It fills the carrier's bag and slows them to six ticks a step, so whoever
+carries it brings nothing else back, and needs others to keep things off
+them. If the carrier goes down the core lies there for anyone to take. A
+core not aboard at the lift is the horde's, and comes back as a captain with
+twice the hitpoints.
+
+| Tier | Cores |
+| ---: | ----: |
+|    2 |    15 |
+|    3 |    25 |
+|    4 |    35 |
+|    5 |    45 |
+
+Goods are set in landings' worth of the hold's intake, measured when M3 is
+built. All ten modules at tier 5 take 1,200 cores. A city that brings home
+one core in two landings gets 36 a day and the strongholds add up to 9. At
+45 a day the gates' ratings are reached after about 1, 3, 7, 13, 21 and 27
+days. Each core is fitted on the next crossing, on screen, and adds a drawn
+part to the district being built.
+
+Which district is built next is decided by pledges. Owners and programs pledge
+tally to a module; the one with most pledged is built, and the tally is
+spent. A finished tier is lettered with the three who pledged or carried
+most toward it.
+
+### 8.3 Where the city can go
+
+| Country     | Tier | Monster levels | Biomes             | Gate needs a rating of |
+| ----------- | ---: | -------------- | ------------------ | ---------------------: |
+| The Heath   |    0 | 1 to 8         | heath, pinewood    |                     14 |
+| The Marches |    1 | 10 to 25       | fen, reed mere     |                     20 |
+| Stonefall   |    2 | 30 to 45       | scree, quarry      |                     27 |
+| The Salt    |    3 | 50 to 65       | salt pan, dunes    |                     35 |
+| The Gloam   |    4 | 70 to 85       | dark wood, hollows |                     44 |
+| The Shelf   |    5 | 90 to 99       | ice, shallows      |  50, at the east coast |
+
+A country is 12 hops deep. Each crossing the city is offered three stops its
+range and feet reach, of the sizes section 5.3 allows, and never three of
+one size. Within a landing the tier runs by distance: inside 30
+tiles of the city there are vermin of levels 1 to 8 in every country,
+because they travel under the city and spill out wherever it sits; from 30
+to 70 tiles monsters are a tier under the country's; beyond that, and at the
+prize, they are the country's own. So a newcomer has something to fight on
+any landing, and the far side is where the strong go.
+
+### 8.4 The shared economy
+
+**Goods belong to the city and items belong to residents.** Wood,
+fish, ore and parts put in the hold become the city's, and the resident is
+paid **tally** at a price that follows the stock:
+`base * 2 * target / (stock + target)`, with `target` four per resident, so
+a good the city is short of pays up to double.
+
+The hold is spent on fuel every crossing, rations at every set-down, plate
+to mend the hull and legs, shot for the guns, tiers of modules, and
+residents' own orders at the forge. Fuel, rations and mending are served
+first: 30% of each stock is held back for them.
+
+Where one resident's interest and the city's pull apart:
+
+- **The bag.** Twelve slots hold goods for the city or items for oneself.
+- **The core.** Carrying it means no haul of one's own. The carrier is paid
+  the tally of a full bag of the scarcest good and credited on the district.
+- **The rearguard.** Standing in front of the horde buys other people time
+  and is the likeliest way to lose a kit.
+- **The margin.** A resident who cuts it fine brings more home most times.
+  When it fails, the horde gets its kit, and uses it on
+  everyone.
+
+- **Tally.** A new sword, or a pledge.
+
+## 9. Loss, and the crossing
+
+### 9.1 What is lost
+
+The operator's rule is kept whole: miss the city, lose the haul and the
+gear, and be pulled back aboard. Nobody is left anywhere. An earlier draft
+had the stranded walk after the city in a window of their own, and the
+operator turned that down: the world moves round the city so that everyone
+is in one picture.
+
+| What happens                                                   | The bag                                       | Worn kit | The locker | The resident                                                                                                                                                                  |
+| -------------------------------------------------------------- | --------------------------------------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Downed outside, the horde's front still more than 30 tiles off | dropped where it fell; it can go back for it  | kept     | safe       | An ally at its side for two seconds gets it up at 30% hitpoints. After 30 seconds a winch line from the city hauls it to the infirmary, and it is out again 20 seconds later. |
+| Downed outside with the front nearer than that                 | as below, unless it is got up and gets aboard | as below | safe       | lies there until an ally gets it up or the lift comes                                                                                                                         |
+| Not aboard at the lift, standing or down                       | left                                          | left     | safe       | hauled aboard by the winch as the ramps go up, stripped, and given issue kit                                                                                                  |
+| Downed aboard, in an assault                                   | kept                                          | kept     | safe       | infirmary for 20 seconds                                                                                                                                                      |
+| On a walker's deck when it breaks away (section 9.3)           | left                                          | left     | safe       | hauled back by the winch, as at a lift                                                                                                                                        |
+
+"Aboard" means standing on a deck or ramp tile on the tick the ramps lift.
+
+The winch is drawn: a line goes out from the city to each resident still
+outside, the figure is pulled off its feet along it, and its kit stays where
+it stood in a heap tagged with its cloak's colour. The caption names the
+best thing in the heap. All of it happens inside the frame, which by then
+has closed to the city and the ground just round it.
+
+**The locker.** Four item slots, safe from everything. A program's `wear`
+rule chooses what goes outside. A fifth to eighth slot can be bought with
+tally, and finished crossings add up to four.
+
+**Issue kit.** A stripped resident is handed plain gear from the armoury, of
+the item level the Forge's tier makes, about two thirds as good as ordinary
+rare gear of that level. So being stripped costs the difference, and a
+better Forge shrinks that for everyone.
+
+**Getting it back.** With drops at the rate #240 aims for, a wearable
+upgrade about every third landing, a stripped resident is back to ordinary
+gear in two or three cycles. A rare with good affixes is the real loss, and
+whether to wear it outside is the decision.
+
+**What the horde takes, it uses.** The heaps are on the ground the horde
+crosses next. Its captains wear the best of what was left, under the owner's
+name, and the total left over the last three landings adds to the vanguard's
+numbers. A captain that is killed drops what it wore for whoever killed it.
+So a city of gamblers is pressed harder, and a lost item has a way back that
+happens on the deck, in the frame.
+
+**No insurance.** Paying tally to get lost gear back was turned down: it is
+a fee nobody sees.
+
+**A way out, on purpose.** A resident downed while the front is still far
+off is hauled home with its kit and without its bag. A program can use that
+to save gear at the cost of the haul. It takes over 30 seconds on the ground
+to work, and the haul is what the sortie was for, so it is left in.
+
+### 9.2 The vanguard, and the city's walls
+
+With the lead at 4 or less when the city lifts, the horde's vanguard reaches
+the hull on the crossing, earlier and in greater numbers the shorter the
+lead. The lookout sights it and the bell rings.
+
+The fight on the walls is the fight of section 7 turned on its side: the
+enemy has to come up, and everything the city has goes down.
+
+| What comes                                                                                                                                                                   | How it is answered                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Boarding hooks.** Thrown from the ground and from skiffs, each one a shot that can be dodged or blocked. A hook that catches the rail holds a line, and boarders climb it. | Cut the line at the rail, which drops everyone on it. Shoot the thrower.                                                                                            |
+| **Climbers.** Fodder in hundreds up the legs, which gnaw the leg they are on.                                                                                                | Barrels rolled down a leg hit every body on it once, as a boulder does. Firepots lobbed onto a leg's foot. Arrows and stones from the rail.                         |
+| **Boarders** over the rail, who make for the hold and carry crates off, 20 goods each, up to 30% of a stock.                                                                 | A line at the rail. `shove` puts a boarder back over it.                                                                                                            |
+| **Shooters** on skiffs alongside, and a walker's catapult, whose stones are marked on the deck before they land.                                                             | Bolt throwers on the rail: a bolt goes through a line of bodies and pins the last. The city's own catapults, on clusters and on skiffs. Step off the marked ground. |
+| **Captains,** in the best of what was left behind.                                                                                                                           | Everyone near. Whoever kills one keeps what it wore.                                                                                                                |
+
+Every program's `alarm` section chooses a post:
+
+| Post                        | What a resident does there                                                    |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Bolt throwers and catapults | Crews one, on its Archery, and chooses what to fire at                        |
+| Rail                        | Fights boarders where they come over, shoves them back, and cuts hooked lines |
+| Leg heads                   | Rolls barrels and lobs pots down the leg below                                |
+| Hold                        | Fights whatever gets through to the crates                                    |
+| Mending                     | Carries plate to a breach or a leg and works on it                            |
+| Infirmary                   | Gets the downed up faster                                                     |
+
+Beating the vanguard, with no leg lost, puts the lead up by one. So a city
+close pressed can fight its way back to long landings, and a city at a lead
+of 5 or 6 has a quiet crossing that it earned.
+
+The whole city and everything climbing it are in the frame, and the figures
+are at their largest. This is where the fights are best seen.
+
+With the hull at no hitpoints the city founders: it goes down where it is,
+the horde arrives in full, the next cycle is spent defending and mending the
+wreck with no landing, and one module loses a tier. A city is never
+destroyed outright. A month of everyone's work would go with it.
+
+### 9.3 Other things on the way
+
+About one crossing in four has something besides the horde. Whatever it is
+draws level with the city and is in the frame with it.
+
+| Event        | What comes                                                                                                                                                                                                                                                                   | What failure costs                   |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| **A walker** | A smaller machine on legs draws level, fires on the hull and lays planks across. Its crew boards, and residents can cross the other way for its crates. It breaks away after three minutes, with a horn 30 seconds before. Anyone on its deck then is winched back stripped. | Hull damage, crates                  |
+| **A toll**   | A fort across the way. The vote is pay 15% of each stock, or run 90 seconds under its guns.                                                                                                                                                                                  | The toll, or hull and districts      |
+| **A storm**  | Lightning on the decks: fires in districts, struck figures knocked down. Fires are put out with water from the galley.                                                                                                                                                       | A district out of use for a crossing |
+| **A trader** | A walker that swaps what the hold has too much of for what it lacks                                                                                                                                                                                                          | Nothing                              |
+
+The vanguard is in M1, in a simple form. The walker and the toll are M3.
+
+### 9.4 When a chatter goes quiet
+
+A resident runs its program whether or not its chatter is watching, and
+loses nothing by their silence that it would not lose with them there. There
+are no streaks and nothing decays. Section 11 has what happens after a long
+silence.
+
+## 10. City against city
+
+One streamer is one machine city, and each chatter is a citizen of it. (This
+plan says "resident", as the code does; a resident is a citizen of its
+stream's city.) The operator: "i feel like the idea of competing machine
+cities in the multiplayer expansion would be sick." It is built after the
+single city works, as M6. Its shape is fixed here so that nothing built
+before it has to be torn out, and section 10.6 lists what M1 to M4 do
+differently because of it.
+
+Until then, threats come from the world: the horde, and what is met on the
+way (section 9.3). An earlier draft had viewers without a resident vote for
+the horde. That is dropped, because everyone who chats has a resident
+(section 11). The horde decides for itself. It follows the city, so it comes
+onto a landing from the side the city came from.
+
+### 10.1 A city has a name and a face
+
+From M1 a city carries its stream's name and two colours, chosen once by the
+streamer.
+
+- The name is lettered on the hull's keel plate and in the cartouche.
+- The colours are the pennants on the mast, the wash on the rail's
+  bulwarks, and a band on the sleeve of every one of its residents.
+- Its districts are its own. Two cities at the same rating look different
+  because their chats pledged differently: one is all bolt throwers and
+  plate, another all lamps and forge.
+- Its record is drawn on it. A rival's pennant hangs under the city's own
+  for each city it has beaten, the keel plate carries a notch for each gate
+  forced, and the hull's size is plain to see.
+
+With one city in the world none of this competes with anything. It is there
+so that a city is somebody's from the first day, and so that a second city
+on the plate can be told from the first at a glance.
+
+### 10.2 One continent, many cities
+
+Every city in a crossing walks the same continent, from the same seed, on
+the same real clock. A stop is the same place for all of them: the same
+map, the same size, the same condition. So cities can be compared, and can
+meet.
+
+The route map shows every city within a country of this one, as a mark in
+its colours with its trail. A board in the legend, shown for ten seconds at
+each reckoning, ranks the cities of the crossing three ways: by hull, by
+depth (country, and hops into it), and by rivals beaten.
+
+A stop a rival has landed on is poorer for it: its nodes and packs come back
+at a tenth an hour, and the vote shows whose pennant was planted there.
+
+### 10.3 Contested landings
+
+A valley shows on every route map within range of it. When two cities vote
+for the same one on the same crossing, they race for it, and both land.
+
+- **The race.** Both arrive at the same set-down, since both are on the
+  clock. The faster walker, by Engine tier and then by legs whole, is first
+  down, and its chat's vote picks one of the landing's two berths. One is
+  the better ground: nearer the prize and the richer bearings. The slower
+  city gets the other. The race is drawn on the route map through the
+  crossing, the two marks closing on one stop.
+- **The landing.** A contested valley is revealed with both cities on it,
+  side by side on the edge away from the hordes, a third of the plate
+  apart. There are two cores, one set of packs and one set of nodes, and
+  what one city takes the other does not get.
+- **Residents of two cities do not harm each other on the ground.** A blow
+  or a shot that meets a rival shoves and does no harm, as between friends.
+  They can be in each other's way, take each other's kills and cores, and
+  push each other into a pack. Getting a rival's downed resident up is
+  allowed, and is news.
+- **Two hordes.** Each city has its own, on the horizon in its own place,
+  as far behind as that city's lead. Each crosses the plate toward its own
+  city. A city leaves when its horde reaches its lamps.
+- **Holding out longest wins most.** The city whose horde arrives first
+  must go first. The other has the valley to itself for as long as it can
+  hold: the remaining packs and nodes, a core still lying where it was
+  dropped, and the heaps the first city's stragglers left. It is declared
+  the winner at its own lift if it brought home more cores, or with cores
+  level, the greater haul.
+- **What winning is worth.** The loser's pennant on the winner's mast, a
+  point of lead, and what it gathered alone. The loser loses nothing but
+  what it left on the ground.
+- **The frame** is the whole valley, as for any landing, so both cities and
+  every resident of both are in it on both streams. Banners and the legend
+  are this stream's own. When this city's horde comes, the frame closes on
+  this city, and the rival, if it is still out there, passes out of the
+  picture as the land behind the black does.
+
+### 10.4 Encounters on a crossing
+
+Two cities within a hop of each other at a lift, and matched by the chart
+(section 10.5), come alongside for three minutes of the crossing. Each chat
+is asked in the first 30 seconds: trade, board, or run. The pennants on both
+masts show it.
+
+| This city | The other       | What happens                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| trade     | trade           | **A trade bridge.** Planks are laid rail to rail. Each hold sells its surplus to the other at the other's price, which is better than either gets at home. Residents may cross and look round. Nobody is harmed.                                                                                                                                                                                                    |
+| board     | board, or trade | **A boarding.** Bolt throwers and catapults fire across, hooks are thrown, and each city's residents go over the other's rail for its crates. The defenders are the other stream's chat: their residents, their programs, their `alarm` rules. A horn sounds at 2:30 and the cities part at 3:00. Anyone on the wrong deck then is winched home without bag or kit, and what they wore is the other city's to wear. |
+| run       | anything        | **A chase.** The runner spends a crossing's fuel over again and a point of lead, takes 30 seconds of bolts, and is gone.                                                                                                                                                                                                                                                                                            |
+
+A boarding is won by crates taken. The winner keeps them, up to 20% of each
+of the loser's stocks, and hangs the loser's pennant. Lockers, modules and
+berths are never at stake, and a city cannot be boarded twice in an hour.
+
+Programs gain a `raid` section for the other city's decks, with the same
+sensors as anywhere, and `lift_eta` there counts down to the parting. So
+the turn-back decision is made on a rival's deck as it is on a landing, and
+a chat that has tuned its margins well loses fewer people to the other
+city.
+
+The frame holds both cities, rail to rail, at about half the tile size of a
+crossing alone. Every resident of this city is in it, on either deck.
+
+Chat commands when cities meet are in chat.md, section 11.
+
+### 10.5 The technical shape
+
+- **One world server for each city,** as now. It runs that city's world
+  from its seed and its inputs, and is the only thing that writes it.
+- **The chart:** one small shared service for a crossing. It holds the
+  continent's seed, and for each city its name, colours, position, hull,
+  rating, lead and record. It takes each city's vote for its next stop at
+  the same tick of the cycle, and answers with who else is going there and
+  in what order they arrive. It pairs cities for encounters. It holds no
+  world state and runs no simulation.
+- **A meeting is one world.** For a contested landing or an encounter, a
+  meeting world is made at a tick both cities have agreed, from the stop's
+  seed and a cut of each city's state: its hull, residents, hold, horde and
+  kit. Both servers run that same world, each feeding it its own chat's
+  inputs.
+- **Lockstep.** In a meeting, an input is applied five ticks after it is
+  made, and is sent to the other server in that half second. Inputs for a
+  tick are applied in a fixed order: by city id, then by the order they
+  were made. Both servers then compute the same ticks, because the
+  simulation is already a pure function of seed, content and inputs, in
+  integers. They compare hashes every 50 ticks.
+- **If they disagree,** or one side stops answering for 30 ticks, the
+  meeting ends there as a draw. Each city carries on alone from its own
+  state at the last tick they agreed on, with a lone copy of the landing.
+  Nothing a city owns is ever in doubt, because each city's state is only
+  ever written from its own server's copy.
+- **Parting.** At the end of a meeting each city's part of the world is cut
+  back out, with what it gained and lost, and its own server goes on with
+  it.
+
+Two cities on one stream's machine, with two scripted crowds and a local
+chart, exercise all of this with nothing deployed. Two streams doing it
+across the internet need the chart hosted, which is outside what the team
+plans; the design does not change when that happens.
+
+### 10.6 What is built ready for it
+
+These cost little in M1 to M4 and are what would otherwise be torn out.
+
+- **Everything belongs to a city.** The world holds a list of cities, of
+  length one until M6. Every resident, hold, heap, horde, captain and input
+  carries a city id. "Friend" in a sensor means "of my city", from the
+  start.
+- **The city is an actor with an identity:** name, colours, hull, rating,
+  lead and record are fields of it, in the snapshot, and drawn (W2, W10).
+- **The cut.** A city's state can be written out and read back on its own,
+  apart from the landing it stands on. Snapshots are laid out that way from
+  W1.
+- **Stops are places, not rolls.** A stop's map comes from the continent's
+  seed and its position, never from the visiting city's state, and its size
+  and condition are fixed with it (W3).
+- **Two berths.** The generator lays out every valley with a second place
+  to park, unused until M6 (W3).
+- **Hordes are per city.** A horde has an owner and a place on the horizon,
+  and the lift is that city's own (W6).
+- **The frame takes a list.** It is fitted to "these cities", which is one
+  city until M6 (W9).
+- **Inputs are already delayed-safe.** Chat reaches the world as logged
+  inputs at tick boundaries (W2), so adding five ticks changes nothing a
+  chatter can see.
+- **The clock.** Every city sets down on the same minutes.
+
+## 11. The cast is the chat
+
+One chatter is one player. Anyone who writes a line in the stream's chat
+has a resident, made at that moment and named by their chat username. There
+is no command to join, nothing to claim, and no resident that belongs to
+nobody: the city holds the people who have spoken, and it grows and shrinks
+with the chat.
+
+[chat.md](chat.md) is the design for this and is where its rules are kept:
+joining (its section 2), going quiet and coming back (section 5), names and
+moderation (section 8), and the scripted crowd that stands in for a chat
+(section 10). What follows is what the rest of this plan relies on, and the
+two places where the plan's own rules meet it.
+
+### 11.1 Arriving
+
+A chatter's first message makes their resident, which climbs out of a hatch
+onto a deck within about a second, with its name lettered. This is the same in every phase. If the city is landed, its preset takes
+it down the ramp like anyone else's; if the horde is on the plate, the
+turn-back rule keeps it aboard. It starts on the shipped preset, with a margin of 250, in issue
+kit.
+
+### 11.2 Going quiet
+
+| The chatter last typed     | The resident                                                                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| under 20 minutes ago       | **Present.** First claim on a banner and a legend entry, and it can vote.                                                                                                                           |
+| 20 minutes to 24 hours ago | **Away.** Runs its preset exactly as before, out on every landing.                                                                                                                                  |
+| over 24 hours ago          | **Below.** It goes down the hatch the next time it is aboard, and is out of the picture and the simulation. Its levels, kit, locker, preset and params are kept, and any message brings it back up. |
+
+An earlier draft of this plan kept a quiet resident out for 3 days and
+aboard for 14. chat.md's 24 hours replaces that: at three days the berths
+fill with residents whose chatters have gone.
+
+**Berths.** chat.md's berth rule is written for a city of 150. Under this
+plan the number is the hull's (section 5.2): 40 for Hull I, 150 for Hull VI.
+When every berth is taken and someone is waiting at the hatch, the resident
+aboard whose chatter has been quiet longest goes below, if that is more than
+20 minutes. A present resident is never sent below. If everyone is present,
+those waiting are counted beside the hatch and come up as berths open, or
+together when the hull is rebuilt.
+
+### 11.3 A newcomer's first cycle
+
+1. **Arriving,** as above. The chatter did nothing but say hello.
+2. **Out.** It has issue kit, three rations and the shipped preset. The
+   preset keeps it within 30 tiles, where vermin of its own level die to one
+   or two blows and come in sixes. It is cutting through packs inside its
+   first minute. Its first bag is home in about 90 seconds.
+3. **A find.** The near ground drops plain gear often enough that a first
+   landing usually ends with something better than issue kit, and the
+   preset's rule for comparing items puts it on.
+4. **The horde.** Its margin is 250, so it is aboard early, and watches the
+   gangway list with everyone else.
+5. **The crossing.** Its `aboard` section takes the station shortest of
+   hands. If the bell rings, its `alarm` section takes it to a post.
+6. **The vote.** It has been through one lift, so it can vote on the next
+   stop.
+
+A resident whose total level is under the city's median earns experience at
+double rate. The experience numbers (#317) are tuned so that a first landing
+ends at Melee 5 or higher.
+
+### 11.4 What chat.md leaves to this plan
+
+**The phase lengths.** chat.md uses three phase names and leaves their
+lengths here.
+
+| chat.md's phase | In this plan                                                 | From                     | Length                                                                                                                              |
+| --------------- | ------------------------------------------------------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| landing         | set-down and landed, until the horde's black is on the plate | 00:00 of the cycle       | 6 to 9 minutes: 6 at a lead of 0, 30 seconds more for each point of lead, a minute more on a clearing and a minute less in a valley |
+| recall          | the horde on the plate, to the lift                          | 06:00 to 09:00           | 4 minutes unopposed, up to 9 with the front held; the lift is never after 15:00                                                     |
+| transit         | the crossing                                                 | the lift, 10:00 to 15:00 | the rest of the 20 minutes: 5 to 10                                                                                                 |
+
+A cycle is 12,000 ticks and set-down is at :00, :20 and :40 on the real
+clock (section 4.1). `lift_eta` has no value during chat.md's landing phase
+and a comparison on it is false, so "turn back" cannot fire before the
+recall.
+
+**A city with nobody awake.** Every resident is below when nobody has typed
+for 24 hours. The city then walks on, dormant:
+
+- it takes the first clearing offered, sets down, and is revealed;
+- nothing wakes, since no resident is near any pack, and the horde crosses
+  and the city lifts on time;
+- it burns no fuel, its hold and lead stay as they were, and the vanguard
+  does not board it;
+- it earns nothing and builds nothing.
+
+So a silent night costs a city nothing but the night, the stream still
+shows a city walking, landing and leaving, and the first message brings
+someone up through the hatch within two seconds into a city exactly as it
+was left.
+
+**A landing with under 15 residents.** Counts in section 5.3 are for a city
+of 50.
+
+| Residents awake | Monsters, nodes and the horde | Kills in ten seconds that stop a stretch of the front | Largest stop offered  | Vanguard                  |
+| --------------- | ----------------------------- | ----------------------------------------------------: | --------------------- | ------------------------- |
+| 1 to 5          | a quarter                     |                                                     2 | a glade               | a quarter, and no captain |
+| 6 to 14         | half                          |                                                     3 | a vale                | half                      |
+| 15 to 25        | half                          |                                                     5 | by country and Engine | half                      |
+| 26 to 99        | by the cast, over 50          |                                                    10 | by country and Engine | by the cast               |
+| 100 and over    | double                        |                                                    10 | by country and Engine | double                    |
+
+Cores are not scaled: a clearing has none and a glade one, whoever lands
+there. A core needs a carrier and one other to be worth going for, so a
+city of one builds by materials alone, slowly, until a second person
+speaks.
+
+**The rest.**
+
+| chat.md asks                                | This plan's answer                                                                                                                                                                            |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| More chatters present than berths           | Those waiting are counted at the hatch and come up as berths open, or together at a rebuild. The first hull has 40.                                                                           |
+| The price of running from a rival           | A crossing's fuel over again, and a point of lead (section 10.4).                                                                                                                             |
+| How chat behaves at a contested landing     | As at any landing. The one new question is asked of the city that arrives first: which of the two berths, by number, for 30 seconds on the crossing.                                          |
+| How chat behaves at a trade bridge          | The question when a rival is in reach has three options here: trade, board, run. A bridge is laid only if both vote trade. Flags may be planted on the other deck's places, as in a boarding. |
+| The world map for the landing question (C9) | The route map opened on the plate (section 5.6).                                                                                                                                              |
+| Where this plan differed                    | It now follows chat.md on arriving by the hatch in every phase, on present and below, on voting by number, on param tokens, and on `!me` for six seconds.                                     |
+
+## 12. What the simulation and the viewer need
+
+### 12.1 The cycle
+
+The world gains a cycle clock: a tick's place in the 12,000, and the phase,
+which changes at fixed ticks for set-down and by world state for the lift.
+`hour` and `minute` go. The server's pacer starts a world so that tick 0 of
+a cycle falls on a 20-minute mark of the real clock, and after a pause runs
+up to a tenth fast until it is back on it. The simulation still never reads
+a clock. A line from a chat username is an input, logged like any other: it
+makes that chatter's resident if there is none, and marks it present.
+
+### 12.2 Generated landings
+
+A landing is a tile map made by a pure function of the continent's seed, the
+stop's place on the route, the biome, the tier and the size, using the
+seeded generator and integers only: ground from integer value noise cut into
+the biome's terrains by a table in `content/biomes/`; one or two rivers or
+ridges with fords and passes, so every bearing reaches the far edge; nodes,
+packs and the prize placed by distance and by the size's counts in section
+5.3; named places from syllable tables per biome; the city a third of the
+way in from the edge away from the horde.
+
+The generator's dials are data: sheet size, monsters, packs and their make
+up, nodes, cores, rarity and the horde's size are one row per size class in
+content, with a multiplier per country and per condition. Tuning difficulty
+is editing that table.
+
+A landing is not stored. A snapshot holds the seed and what has changed:
+nodes worked, monsters killed, things on the ground. The map limits rise
+from 30 by 21 to 192 by 108.
+
+The viewer draws a landing with the pen it has, at tile sizes from 32 px
+down to 10, so the ground needs levels of detail: a wash per terrain,
+hatching for relief, marks standing for many trees, and the art bible's
+figure sizes with smaller ones below them. The reveal draws the same ground
+in order of distance from the city. `ground.ts` already draws from tiles;
+the hand-made maps become four fixtures for tests.
+
+### 12.3 The horde
+
+World state: the side it comes from, the front as a distance for each
+column or row of the landing, its pace, where it is being held, the lead, and
+what it holds (items and cores). Its creatures are monsters on
+programs, placed behind the front and woken as any placement is. Captains
+are named actors that persist in the snapshot from cycle to cycle. Votes are
+inputs, logged like any other.
+
+### 12.4 The city
+
+The city is a tile map built by a pure function of the module tiers: a
+strip of tiles for each deck, three deep, with stairs between decks and the
+rail along the top one.
+Places on it (`hold`, `forge`, `galley`, `ramp`) work as places do today. On
+a landing it sits a third of the way in from the edge, joined by
+its ramps. On a
+crossing the world is the deck and a skirt of 12 tiles round it. The
+simulation does not know the ground is moving; the viewer scrolls it. The
+city has hull hitpoints, legs with hitpoints each, guns that fire when
+crewed, and districts that can be knocked out.
+
+### 12.5 The frame
+
+The frame is worked out from world state by a pure function the viewer and
+the capture tool share. On a crossing it is the hull's. Landed, it is the
+sheet. From the tick the horde's front is on the sheet it is the rectangle
+from 6 tiles beyond the front to the city's far side, eased in at the other
+edges to the residents outside with 8 tiles to spare, and never closer than
+32 px a tile. The moves between are timed as section 5.1 has them. A test
+runs it over seeded landings of every size at 3, 15 and 150 residents and
+fails if any resident is ever outside it.
+
+The city's map is rebuilt when the hull is: wider, with another deck, the
+districts kept. Residents aboard at a rebuild are placed again at their
+stations.
+
+### 12.6 Tactics
+
+Sections (`landing`, `aboard`, `alarm`), of which the phase
+picks one, and `param`. New sensors: `since_setdown`, `lift_eta`,
+`horde_eta`, `way_home`, `load`, `bearing`, `landing_size`, `bearing_crowd(b)`, `need(good)`,
+`station_need(kind)`, `post_need(kind)`, `ally_down_distance`,
+`core_distance`, `carrying_core`, `front_distance`, and for #332
+`incoming`, `incoming_ticks`, `incoming_x`, `incoming_y`, `line_clear(x, y)`
+and `cover_from(x, y)`. New actions:
+`go_home`, `revive`, `take_core`, `drop_bag`, `shoot`, `throw`, `lob`,
+`cut`, `roll`, `work(station)`,
+`take_post(kind)`, `wear(best | spare)`, `pledge(module, n)`. `deposit` at
+the hold pays tally. Every word is open to every program, and the limits of
+63 rules and 2,000 steps stay.
+
+### 12.7 The numbers that carry over
+
+The formulas of the old plan stand: a base blow of `6 + L + L*L/20`,
+hitpoints of `40 + 10*L + L*L/5`, monsters by level and rank (fodder, pack,
+brute, elite, boss) with the gear factors counted in, experience per kill by
+rank and level. A tier is a band of monster levels as before, and it now
+belongs to a country and a distance from the city. Steps of 4 ticks, blows
+of 2 + 3, eight directions and decisions every 2 ticks near an enemy are
+#315's.
+
+### 12.8 Cost at 150 residents
+
+- **Placements.** A monster on a landing is a placement (kind, level, tile)
+  until a resident comes within 24 tiles, when it becomes an actor with a
+  program. It goes back to a placement when nobody has been within 32 tiles
+  for 10 seconds. 1,500 placements cost nothing a tick and 6 bytes each in a
+  snapshot.
+- **A grid.** Actors are kept in cells of 16 by 16 tiles, and sensors, blows
+  and blocking look at their own cell and the eight round it. This replaces
+  the per-region lists #316 was to build.
+- **Projectiles.** They have no program and no sensors, so one costs a
+  move and a look at its own grid cell each tick. The bar below is met with
+  300 in flight.
+- **The way home.** A table of each tile's distance to the ramps, worked
+  out at set-down. `way_home` and `go_home` read it. Other walks
+  search at most 2,000 tiles and fall back on it.
+- **The bar.** A mean tick of 4 ms and a worst of 25 ms, with 150 residents
+  and 400 monsters awake, on a landing and in an assault.
+- **The message.** Through M1 the viewer is sent the snapshot, about 80 KB a
+  tick at 30 residents and 150 monsters awake, plus placements as
+  they change. From M2 it is sent what the frame draws: every resident,
+  the monsters awake in the frame at the fields a frame needs, about 170
+  bytes each when the frame is close and 8 when it is wide, and a line a
+  resident for the legend. The target is 40 KB a tick at 150 residents.
+
+### 12.9 What carries over, changes and goes
+
+| Item                                                                                                                                                                   | What happens to it                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The VM, the compiler, determinism, snapshots, adoption (#311), the server, the capture tool                                                                            | Carry over.                                                                                                                                                                                          |
+| #315 fast time, #317 numbers that grow, #319 blows in the message, #320 hits in ink, #321 off the grid, #322 loot spill, #323 the mow sheet, #324 programs fight packs | Carry over as written. They are what the frame shows when it is close, and they have to read when it is wide.                                                                                        |
+| #318 arcs and moves                                                                                                                                                    | Carries over as written.                                                                                                                                                                             |
+| #332 projectiles and knockback                                                                                                                                         | Carries over, with one change: a resident's shot that meets another resident is spent and shoves them, and does no harm. Fights on landings and on the walls are built on it (sections 7.3 and 9.2). |
+| #316 ranks and fodder                                                                                                                                                  | Carries over, with placements and the grid in place of budgets and per-region lists.                                                                                                                 |
+| #330 and #298, wolves that hunt in packs                                                                                                                               | Carry over. Hunting packs are the horde's outrunners, and the wolf's program needs no change to do it.                                                                                               |
+| #299 residents react: shout and answer                                                                                                                                 | Carries over. A call is how a downed resident and a core carrier get help.                                                                                                                           |
+| #237 trips and death drops                                                                                                                                             | Changes: trips are sorties, the drop is the bag left where a resident fell, and the three trip programs become sortie programs with a margin.                                                        |
+| #238 hauls on screen, #241 drops on screen                                                                                                                             | Carry over.                                                                                                                                                                                          |
+| #240 drops and equipment                                                                                                                                               | Carries over, with the locker and `wear` added.                                                                                                                                                      |
+| #245 the spotlight card                                                                                                                                                | Carries over.                                                                                                                                                                                        |
+| #231 the compact page                                                                                                                                                  | Carries over as the rows; the page gains its phase layouts.                                                                                                                                          |
+| #314 absolute verdicts                                                                                                                                                 | Carries over. The rubric is rewritten for a cycle.                                                                                                                                                   |
+| #300 the hunt on screen                                                                                                                                                | Carries over, for the outrunners.                                                                                                                                                                    |
+| #302 the day's reckoning                                                                                                                                               | Changes: it is the reckoning at the lift.                                                                                                                                                            |
+| #301 the fire burns logs                                                                                                                                               | Goes. Fuel for the engine and the Lamps module do its job.                                                                                                                                           |
+| #326 zoom out, #309 and #328 the region view, #288 regions polish                                                                                                      | Go. The one frame replaces them.                                                                                                                                                                     |
+| #327 monsters in every region, #272 spreading residents, #232 tents                                                                                                    | Go. Biome rosters and bearings replace the first two.                                                                                                                                                |
+| #250, #251, #296 the operator's umbrella issues                                                                                                                        | Close against this plan, with what each asked for and where it now is.                                                                                                                               |
+| #294, #304 polish on figures                                                                                                                                           | Unchanged, with no milestone.                                                                                                                                                                        |
+| The four maps, exits, the atlas of regions, the camp, the bank chest, the fire                                                                                         | Go. The hold replaces the bank and the galley the fire. The maps stay as test fixtures.                                                                                                              |
+| The 24-minute day, the calendar, weather and its vote, works, charting, companies, the store, rings at 99, thirteen-week rounds                                        | Go. Site conditions, modules, pledges, the hold's prices and crossings do their jobs.                                                                                                                |
+| The director's circuit of stops, its frame-time table and the promise of seconds on screen for each owner                                                              | Go. The one frame of section 5 holds every resident, so there is nothing to share out.                                                                                                               |
+| Decisions 0003 (one frame, one map size), 0017 (regions), 0020 (the view follows the spotlight), 0022 and 0023 (the old plan)                                          | Superseded by 0028.                                                                                                                                                                                  |
+
+## 13. The new M1 candidate
+
+The smallest build that shows the breath: Hull I, which does not grow; one
+biome in three sizes (clearing, glade, vale); a scripted crowd of 15
+chatters; packs in formation; the horde; the winch; and the vanguard at the
+walls. No modules and no vote: the city takes the three
+sizes in turn, so an hour of capture has one of each.
+
+At the end of it a viewer sees, in one picture that never cuts: a small
+crowded city walking, with every resident at a station; the frame pull back
+as it sets down, a little for a clearing and a long way for a vale, with the
+land inked as it goes; 15 residents go out through packs that stand in
+lines with shooters behind; bags come home to the hold; a black come onto
+the far side of the plate and the frame begin to close; some residents
+stand in front of it under the city's bolt throwers, and it stop; most get
+aboard, and now and then one is winched in with its kit left in a heap; the
+frame close onto the city as its legs unfold; and on the crossing the
+vanguard throw hooks at the rail, with a captain in the kit that was left.
+
+| Piece                           | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | After          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| W1 The cycle                    | The cycle clock and phases, set-down on the real clock, `since_setdown`. `hour` and the day go. A snapshot taken in each phase resumes to the same hash.                                                                                                                                                                                                                                                                                                                                                                                                                                           |                |
+| W2 The hull and the cast        | The city as an actor with a name, two colours and a record, first in a list of cities, with a city id on everything that is its own. Hull I as a tile map in content: 24 tiles wide, two decks as strips with stairs between, the rail, hold, galley, infirmary, lockers, two ramps, two bolt throwers, six leg heads with barrels, 40 berths. `deposit` at the hold pays tally. The downed wake in the infirmary. The hatch residents arrive by. The cast itself is chat.md's C1, C2, C3 and C8 (inputs and the log, the scripted crowd, joining, quiet and berths), with berths set by the hull. | W1             |
+| W3 Landings by size             | The generator for the heath as a clearing, a glade and a vale, from one table of dials in content (section 5.3): sheet, packs, nodes, cores, rarity. Ground, a river with fords, bearings, named places, the city a third of the way in. A stop's map comes from the continent's seed and its position alone, and a vale is laid out with a second place to park. The map limits rise.                                                                                                                                                                                                             |                |
+| W4 Monsters on a landing        | Placements by distance, in packs that keep a formation (a line, shooters behind it), waking and sleeping, the grid for sensors and blows, and the tick measured at 150 residents and 400 awake. Takes over that part of #316.                                                                                                                                                                                                                                                                                                                                                                      | W3, #316, #332 |
+| W5 Home, the lift and the winch | The way-home table, `way_home`, load, `go_home`. Downs outside, getting someone up, the 30-second haul. The lift: who is aboard; everyone else winched in, bag and worn kit left in a heap, issue kit. Takes over #237.                                                                                                                                                                                                                                                                                                                                                                            | W2, W3, #240   |
+| W6 The horde                    | A horde belonging to a city: the far edge, the front, its pace, its size by the landing's, `horde_eta` and `lift_eta`, holding the front by killing it, its creatures a tier up with the best drops, outrunners, the lift when it reaches the lamps, the lead and what moves it, and the heaps it takes.                                                                                                                                                                                                                                                                                           | W4, #330       |
+| W7 Sortie programs              | Three presets with sections and `margin` as a `param` (chat.md's C5): one that stays near, one that works a bearing with a bow, takes cover from incoming shots and keeps its own line clear, one that goes to the far edge for the prize and stands in the rearguard. Seeded tests that a margin of 100 is winched in more often than one of 250 and brings more home when it is not, that a rearguard delays the lift, and that the same program brings more home from a vale than a clearing and is winched in more often there.                                                                | W5, W6, #324   |
+| W8 The crossing                 | The city and a skirt of ground as the world between landings, fuel burned, rations cooked and drawn, the next landing generated. The vanguard: boarding hooks thrown at the rail and cut, fodder up the legs and barrels rolled down them, boarders after crates, bolt throwers crewed, a captain in the best of what was left, posts and `post_need`, and the lead going up when it is beaten.                                                                                                                                                                                                    | W2, W5, W6     |
+| W9 The breath                   | The frame of sections 5.1 and 12.5, fitted to a list of cities: tight on the hull, the reveal with the land inked as the frame reaches it, the whole landing held still, the close that follows the horde's front, the lift, and away. Figures at every tile size from 64 px down to 14. A test that no resident is ever outside the frame. `look`, with an art brief.                                                                                                                                                                                                                             | W3             |
+| W10 The city drawn              | Hull I in cut-away to the art bible's section 7, with the stream's name on the keel plate and its colours on the mast, the bulwarks and its residents' sleeves: hull, legs, two uneven decks, the mast, stations shoulder to shoulder. The legs walking with the land sliding by, set-down and lift, the winch lines and the heaps, and the route map in its corner. `look`, with an art brief.                                                                                                                                                                                                    | W2, W9         |
+| W11 The lettering by phase      | The cartouche with the landing's size, the legend by bearing, the gangway list, the reckoning, the hold's stock, berths and the lead, as plate furniture. Takes over #302 and #231's layout.                                                                                                                                                                                                                                                                                                                                                                                                       | #231, W5       |
+| W12 Capture a cycle             | A storyboard of one cycle, the frame at the end of each reveal side by side for the three sizes, a burst of the last 30 seconds before a lift, the plate at each lift, and metrics: winched in a landing, seconds to spare, seconds the front was held, hauls by size of landing, the tile size by phase, residents outside the frame (which must be none), the flicker index over the reveal and the close. The rubric rewritten for a cycle.                                                                                                                                                     | W9             |
+
+Beside these, the candidate needs the tempo chain that is already filed
+(#315, #316, #317, #318, #319, #320, #324), #332 for projectiles and
+knockback, #330, #231 and #240, and from chat.md's first slice C1, C2, C3,
+C5 and C8, so that the cast is chatters from the start. W1, W3 and the tempo chain can start at once
+and do not touch the same files.
+
+**M1 is finished when:**
+
+1. `docker compose up server client` shows the city, and a restart loses
+   nothing.
+2. A headless run of 72 cycles ends with no error and no actor stuck, and
+   in every landing at least 80% of residents brought a bag home.
+3. The determinism tests pass, with a snapshot taken in each phase.
+4. Over those 72 cycles, 2% to 10% of those who went out were winched in at
+   a lift, no more than a third of lifts had everyone aboard, and the lift
+   came at between 10:00 and 15:00 with at least two minutes between the
+   earliest and the latest.
+5. A tick averages 4 ms or less and none takes over 25 ms, with 150
+   residents and 400 monsters awake.
+6. **Every resident is inside the frame on every frame of three captured
+   cycles,** at 3, 15 and 40 chatters, and the capture has no cut. This is a
+   hard fail.
+7. A judge watches three cycles of capture, one on each size of landing,
+   from a player's seat (#314). No hard fail. Shown only the frame at the
+   end of each reveal, the judge ranks the three landings by danger and gets
+   it right. With the lettering hidden, the judge can say where the horde is
+   and about how long the city has. The judge says the crossing feels
+   crowded and the glade feels large, and answers yes to "would you stay for
+   the next lift?".
+8. A username that speaks for the first time has a resident on screen within
+   five seconds, in every phase. One that went below after 24 quiet hours comes
+   back on a line with its levels and locker. A 41st chatter takes the berth
+   of the one quiet longest.
+
+## 14. Milestones after M1
+
+Each is filed as at most twelve issues when the one before closes, and goes
+through the fun test below first.
+
+| Milestone                    | What it adds                                                                                                                                                                                                                                                                                                                                                                                                                    | Finished when                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **M2 Chat**                  | The rest of chat.md's first slice on the walking city: speech, the flag and `!go`, orders on screen, questions and the vote on the next stop drawn on the route map, moderation, choosing a preset, the streamer's site. More presets. The director's work moves to the server with the view message. Glades to valleys offered, and the valley generated.                                                                      | chat.md's judge plays a chatter through a landing and a crossing and can tell their preset and numbers made the difference. A scripted crowd of fifty chatters runs 216 cycles with no error, and the input log replays to the same hash. No resident is outside the frame in a valley.                                                    |
+| **M3 The city grows**        | Modules and tiers, districts drawn by tier, cores and the core run, pledges and names on districts. Hulls II and III, with their berths and the list of names waiting. The vote on the next stop, drawn on the route map and the mast. Glades, vales and valleys offered by country and by the Engine. Site conditions, the hold's prices, damage and mending, the horde's numbers from what was left, the walker and the toll. | A city of 40 scripted chatters with 30 more waiting is rebuilt as Hull II with no other input, and those waiting board. A judge shown two crossings a day apart says what the city gained. A scripted crowd's choices of stop are reported with what each size cost and paid. No resident is outside the frame in a valley at 80 chatters. |
+| **M4 The crossing**          | A continent of six countries, ten more biomes, feet and range, great landings every eight hours, strongholds and gates held against the horde, uniques, Hulls IV to VI, the atlas, the last stand and the end of a crossing.                                                                                                                                                                                                    | A scripted city crosses a continent headless and ends as Hull VI. The tick bar holds at 150 residents in a valley. A judge at 150 finds their resident within five seconds and stays for the lift.                                                                                                                                         |
+| **M5 Players among players** | Boards for each landing and day (closest call, biggest haul, longest hold, most got up). Bands that go out under a banner. More presets, and weekly trials at fixed levels and kit. If the operator opens program writing to chatters, it is designed here. Filed when M4 closes.                                                                                                                                               | A trial's winning run replays tick for tick.                                                                                                                                                                                                                                                                                               |
+| **M6 City against city**     | Rivals on the route map and three boards. Contested valleys: two cities and two hordes on one landing. Encounters on a crossing: a trade bridge, a boarding, a chase. A local chart service and meetings run in lockstep. Its section below has its own fun test.                                                                                                                                                               | Two local worlds on one seed contest a valley and fight a boarding with matching hashes throughout, and a meeting cut off at any tick leaves both cities whole.                                                                                                                                                                            |
+
+### M6: City against city
+
+**Aim.** A stream's city meets other streams' cities: on the map, on the
+same valley, and rail to rail.
+
+**The fun test, answered.**
+
+1. _The cycle._ Another city's mark on the route map at every reckoning,
+   and the board of the crossing. A contested valley about one landing in
+   six for two cities in the same country: two cities revealed on one plate,
+   two hordes, and one left alone on the field at the end. An encounter
+   about one crossing in eight: a bridge, a boarding or a chase.
+2. _The frame._ Every resident of this city inside it during a contested
+   landing and an encounter, at 150 against 150, measured. The smallest tile
+   size an encounter reaches is reported.
+3. _A decision with a result._ The chat's stance when alongside, and each
+   owner's margin on a rival's deck. Seeded tests: a city that votes to
+   board a weaker one ends with more crates and one that boards a stronger
+   one with fewer; a resident with a margin of 250 on a raid is never left
+   on the other deck, and one at 100 sometimes is.
+4. _Tomorrow._ Whose pennants hang from the mast, where the city stands on
+   the three boards, and which rival took what from it overnight.
+5. _Played._ Two judges play chatters of two cities through one contested
+   valley and one boarding, on one machine with two scripted crowds. Each
+   says who they thought was winning, when, and why. "I could not tell the
+   cities apart" or "I did not know we had lost" is fixed before it closes.
+6. _Size._ It adds a shared service and a second city in the world. It
+   removes nothing, and it is the last milestone because it needs
+   everything before it.
+
+**Pieces.** The chart, run locally: registry, stop votes and arrival order,
+pairing. Rivals on the route map and the three boards. The meeting world:
+the cut, lockstep, hashes, the fallback to a draw, parting. Contested
+valleys: two berths, two hordes, shoves between cities, the winner. The
+encounter: the vote and pennants, the trade bridge, the boarding with the
+`raid` section, the chase. Trophies on the mast. The frame for two cities.
+Two scripted crowds and the capture of a meeting from both sides.
+
+**Finished when.** Two local worlds on one seed contest a valley and fight
+a boarding in lockstep with matching hashes throughout. A meeting cut off at
+any tick leaves both cities whole. The tick bar holds with 150 residents a
+side. The fun test above passes.
+
+### The fun test
+
+A milestone is filed only when its section answers these, and closes only
+when a judge has checked them from captures.
+
+1. **The cycle.** What someone watching sees in a cycle that they
+   did not see before this milestone, with a rate. Anything rarer than once
+   an hour is not a reason to watch.
+2. **The frame.** No resident outside it, at 15, 50 and 150, measured, with
+   the widest tile size reached. Anything the milestone adds is drawn inside
+   the one picture.
+3. **A decision with a result.** One new decision an owner makes, a seeded
+   test that a different choice changes a measured outcome, and the result
+   visible on the stream at the next landing.
+4. **Tomorrow.** What is new after a night away.
+5. **Played.** A fresh judge plays a chatter: says a line,
+   changes something, leaves, comes back. "Nothing to do" or "I could not
+   see what my change did" is fixed before the milestone closes.
+6. **Size.** A milestone that adds a system says what it removes or shows
+   the need.
+
+## 15. Risks
+
+- **A valley too small to enjoy.** In a valley a figure is 12 px tall and a
+  melee fight is a few tiles of ink, for six to nine minutes. That smallness
+  is how the landing says it is large, and shots help: a flight of arrows is
+  a line a dozen tiles long. But if the judge cannot follow a valley, the
+  largest size comes down to 14 px a tile, and the range between easy and
+  hard narrows with it. M1 has vales, so it tests 14 px and not 10.
+- **A still frame for eight minutes.** The landing is held wide and still,
+  which is calm, and may be flat. The close at the end is the answer, and
+  the judge is asked whether the middle of a vale holds attention.
+- **A horde that can be held too well, or not at all.** If the rearguard
+  always buys the full five minutes, the lift is at 15:00 every time and
+  there is a countdown after all. If it buys nothing, nobody stands. M1's
+  exit check asks for two minutes between the earliest and latest lift.
+- **A chat that always picks the same size.** If valleys are simply better,
+  nobody votes for a clearing, and the dial is wasted. The horde arriving
+  sooner and larger, and kit lost at a higher rate, are meant to make a
+  valley a real risk for a city not built for it. M3's long run reports
+  what a scripted crowd chooses and what it costs.
+- **Berths.** A stream with 300 people in chat starts a crossing with 40
+  berths and a line at the ramp. The first rebuild has to come within hours,
+  and the full-city rule has to feel fair to those waiting. If it does not,
+  the first hull gets more berths before anything else changes.
+- **Residents nobody is watching.** Someone who says one line and leaves has
+  a
+  resident out on landings for 24 hours.
+  Present chatters come first for banners and legend entries, and the quiet
+  give up their berth when the city is full. The 24-hour mark is the lever, and it is chat.md's.
+- **A city of three.** A quiet stream has a handful of residents. Counts are
+  halved for a small cast, but a rearguard of one may not be worth watching,
+  and M1's captures at 3 chatters are the check.
+- **Presets and two numbers.** For now a chatter's whole say is a preset, a
+  margin, a stance and a flag. If that is too little to feel like playing,
+  the answer is more presets and more params before anything else, and
+  chat.md's judge is the check.
+- **Being stripped by a program you did not write.** The shipped preset's margin of
+  250 is what protects people who only said hello.
+- **Telling figures apart.** At 12 px tall, colour is all there is. `!me`,
+  banners and the gangway list are how an owner finds theirs, and every
+  landing ends close.
+- **Drawing a land in eight seconds.** Lines that wobble may crawl during
+  the reveal, and a whole valley inked in one move may shimmer. The flicker
+  index is taken over the reveal and the close in M1.
+- **The clock.** A world that falls behind the real clock by more than the
+  pacer can make up in a cycle skips to the next set-down. What happens to a
+  landing cut short is settled in W1.
+- **The reset.** Owners who do not care for seasons lose a month of levels
+  and all but one item. It can be revisited before the first crossing ends,
+  which is no sooner than M4.
+- **Tick cost.** 400 monsters awake round 150 residents, with shots in
+  flight, is more than anything measured. W4 measures it, and the fallback
+  is fewer placements of higher rank.
+- **Scope of M1.** Twelve new pieces and eleven filed ones. If it runs long,
+  the captain in lost kit moves to M3 and M1 has two sizes of landing.
+
+## 16. What is not planned
+
+Deployment and hosting, which meetings between two streams' cities need, sound, mobile
+layouts, trade between residents, more than 150 residents in a city, a second city for one stream, and
+anything that would put a resident off screen or need a second view.
+Everything about chat runs against a local chat page and a scripted crowd.

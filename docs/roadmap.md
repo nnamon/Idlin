@@ -1,95 +1,106 @@
 # Roadmap
 
-The issue tracker is where the actual work is listed. This page says what each
-milestone is for and how to tell when it's finished. [plan.md](plan.md) has the
-reasoning, the numbers and the pieces of each milestone.
+The issue tracker is where the actual work is listed. This page says what
+each milestone is for and how to tell when it's finished.
+[plan.md](plan.md) has the game, the reasoning, the numbers and the pieces
+of each milestone, and [chat.md](chat.md) has how chat joins and commands
+citizens.
+
+The game is being rebuilt around a walking city with a horde behind it
+([#331](https://github.com/nnamon/Idlin/issues/331),
+[decision 0028](decisions/0028-the-walking-city.md)). Every 20 minutes the
+picture pulls back from a crowded city to the land it has set down on, a
+clearing or a valley, its residents go out into it, and it leaves when the
+horde arrives. Every resident is on screen all the
+time, in one frame that never cuts. What is built so far was built for a fixed
+camp with four regions round it. The table says what of it carries over.
 
 ## M1: First Light
 
-Four regions (the camp's, a pinewood, hills and a lower river), residents on
-three built-in programs, two kinds of monster on programs of their own, and a
-day and night cycle. The aim is something you could leave running on a second
-screen and not get bored of in ten minutes.
+Hull I, which does not grow; one biome in three sizes of landing; a scripted crowd of 15 chatters; packs in formation; the horde; the winch; and the vanguard at the walls. The aim is
+three cycles a viewer would sit through, and stay for the next lift.
 
-| Part                                             | State                                                                                                                         |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Simulation core: map, movement, clock, snapshots | done                                                                                                                          |
-| Bot VM, Tactics and its compiler                 | done                                                                                                                          |
-| Server: real time, snapshots, WebSocket          | done; a content change keeps the world                                                                                        |
-| Regions                                          | done: four maps joined by exits, and the view follows the spotlit resident between them. Only the camp's region has monsters. |
-| Viewer: the map, the figures, day and night      | done                                                                                                                          |
-| Capture tool and metrics                         | done: captures at 15 residents, judged from a player's seat as well as against `main`                                         |
-| Combat                                           | telegraphed blows work and are drawn. One monster at a time, 1.2 s between blows, numbers that never grow                     |
-| Monsters as a threat                             | wolves and goblins exist; hunting packs (#298, #299) and swarms (#316) are not in                                             |
-| Tempo: fast steps and blows, wide attacks, moves | not started (#315 to #324)                                                                                                    |
-| Skills, the bag and the bank                     | experience, gathering, cooking and eating work in the simulation; levels change nothing in a fight until #317                 |
-| Trips, death drops, hauls on screen              | not started (#237, #238); the viewer does not draw gathering                                                                  |
-| Items                                            | the item tables roll; nothing drops and nobody wears anything (#240, #241)                                                    |
-| The page                                         | six large rows; the line under each name comes from the resident's state; the compact page for 15 is #231                     |
-| Spotlight                                        | the director picks a subject and the map follows it; no card drawn (#245)                                                     |
+| Part                                                     | State                                                                                                     | For the walking city                                                                                                        |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Simulation core: tiles, movement, snapshots, determinism | done                                                                                                      | carries over; the 24-minute day becomes the 20-minute cycle (W1)                                                            |
+| Bot VM, Tactics and its compiler                         | done                                                                                                      | carries over; sections and the new sensors come with W5 to W8                                                               |
+| Server: real time, snapshots, WebSocket                  | done; a content change keeps the world                                                                    | carries over; set-down goes on the real clock (W1)                                                                          |
+| Maps                                                     | four hand-made regions joined by exits                                                                    | replaced by generated landings in three sizes (W3) and the city's decks (W2); the four maps stay as test fixtures           |
+| Viewer: the pen, the figures, effects, day and night     | done                                                                                                      | carries over; it gains the one frame and the city in cut-away (W9, W10)                                                     |
+| Capture tool and metrics                                 | done: captures at 15 residents, judged from a player's seat as well as against `main`                     | carries over; it captures a cycle (W12)                                                                                     |
+| Combat                                                   | telegraphed blows work and are drawn. One monster at a time, 1.2 s between blows, numbers that never grow | the tempo chain, #315 to #324, as filed, and projectiles and knockback (#332)                                               |
+| Monsters                                                 | wolves and goblins; hunting packs are in review (#330)                                                    | carry over; they are placed across a site and wake when someone is near (W4), and hunting packs run ahead of the horde (W6) |
+| Skills, the bag and the bank                             | experience, gathering, cooking and eating work in the simulation                                          | carry over; the bank becomes the hold (W2)                                                                                  |
+| Trips and death drops                                    | in progress (#237)                                                                                        | become sorties, the way home and the lift (W5)                                                                              |
+| Items                                                    | the item tables roll; nothing drops and nobody wears anything (#240, #241)                                | carry over, with a locker                                                                                                   |
+| The page                                                 | six large rows; the compact page for 15 is in progress (#231)                                             | carries over as the rows; phase layouts are W11                                                                             |
+| The view                                                 | one region at a time, following the spotlit resident                                                      | replaced by one frame that is tight on a crossing, opens at a landing and closes with the horde (W9)                        |
 
-**The candidate** is the first build worth showing: 15 residents with an aim,
-fast fights against packs with ink on the ground, wolves that hunt, hauls
-carried home, gear worn, and a page that fits everyone. It needs #298,
-#309, #315, #316, #317, #318, #319, #320, #321, #323, #324, #299, #237, #238,
-#240, #231, #314, #326 (a wider view that frames the action, and a measure of
-how long each resident is in the frame), and one issue to be filed that gives
-the other three regions monsters.
+**The candidate** is twelve new pieces, W1 to W12 in
+[plan.md](plan.md), section 13, and eleven issues already filed: #315, #316,
+#317, #318, #319, #320, #324, #332, #330, #231 and #240. It also needs C1,
+C2, C3, C5 and C8 of chat.md's first slice, so that its cast is chatters.
+
+| Piece | What it is                                                                                                                                                                     |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| W1    | The cycle clock and phases, with set-down on the real clock                                                                                                                    |
+| W2    | The city as an actor with a name and colours; Hull I as a tile map of two decks with 40 berths                                                                                 |
+| W3    | The landing generator for the heath in three sizes, clearing, glade and vale, from one table of dials                                                                          |
+| W4    | Monsters placed across a site in packs that keep a formation, waking near residents; the tick measured                                                                         |
+| W5    | The way home, downs, the lift, and the winch: bag and kit left in a heap                                                                                                       |
+| W6    | The horde: its front, holding it, the lift when it reaches the lamps, the lead, and what it takes                                                                              |
+| W7    | Three sortie programs with a margin, one of which stands in the rearguard                                                                                                      |
+| W8    | The crossing, and the vanguard at the walls: hooks, climbers, boarders, bolt throwers, a captain in lost kit                                                                   |
+| W9    | The breath: tight on the hull, the reveal with the land inked as the frame pulls back, the landing held, the close with the horde, with every resident always inside the frame |
+| W10   | The city in cut-away, walking, with the winch and the route map in its corner, to the art bible                                                                                |
+| W11   | The lettering by phase, as plate furniture, with the gangway list                                                                                                              |
+| W12   | Capture of a cycle and each finished map, its metrics, and the rubric for a cycle                                                                                              |
 
 M1 is finished when all of these hold:
 
-1. `docker compose up server client` shows the world at `localhost:4310`, and
-   restarting the server doesn't lose progress.
-2. A headless run of 24 simulated hours finishes with no error and no actor
-   stuck.
-3. The determinism tests pass: the same seed gives the same hash, and a world
-   restored from a snapshot carries on identically.
-4. The watch review ([watch-rubric.md](watch-rubric.md)), taken at 15
-   residents, has no hard fail, each of the first six scores is 3 or more, and
-   their mean is 3.5 or more. Its absolute verdict from a player's seat (#314)
-   has no "no".
-5. On the mow sheet (#323), a judge with the page hidden can say which
-   resident is stronger, and can see afterwards that a fight happened.
-6. A tick averages 4 ms or less, and none takes over 25 ms, with 150
-   residents and four regions at their night budgets.
-7. In an hour of capture at 15 residents, every resident is in the map frame
-   for 240 seconds or more, with no gap over 20 minutes.
-
-A judge also watches that hour and says what minute 50 showed that minute 10
-did not. The answer is written up and doesn't block M1; the calendar in M3 is
-what it is for. The "Mine" score is taken at 15 and 50 residents and written
-up. It doesn't block M1 either, because M1 has no players.
+1. `docker compose up server client` shows the city at `localhost:4310`, and a restart loses
+   nothing.
+2. A headless run of 72 cycles ends with no error and no actor stuck, and
+   in every landing at least 80% of residents brought a bag home.
+3. The determinism tests pass, with a snapshot taken in each phase.
+4. Over those 72 cycles, 2% to 10% of those who went out were winched in at
+   a lift, no more than a third of lifts had everyone aboard, and the lift
+   came at between 10:00 and 15:00 with at least two minutes between the
+   earliest and the latest.
+5. A tick averages 4 ms or less and none takes over 25 ms, with 150
+   residents and 400 monsters awake.
+6. **Every resident is inside the frame on every frame of three captured
+   cycles,** at 3, 15 and 40 chatters, and the capture has no cut. This is a
+   hard fail.
+7. A judge watches three cycles of capture, one on each size of landing,
+   from a player's seat (#314). No hard fail. Shown only the frame at the
+   end of each reveal, the judge ranks the three landings by danger and gets
+   it right. With the lettering hidden, the judge can say where the horde is
+   and about how long the city has. The judge says the crossing feels
+   crowded and the glade feels large, and answers yes to "would you stay for
+   the next lift?".
+8. A username that speaks for the first time has a resident on screen within
+   five seconds, in every phase. One that went below after 24 quiet hours comes
+   back on a line with its levels and locker. A 41st chatter takes the berth
+   of the one quiet longest.
 
 ## After M1
 
 Each milestone is filed as at most twelve issues when the one before it
 closes. The order can change; a change is recorded in `docs/decisions/`.
+Before a milestone is filed, its part of the plan has to pass the fun test
+([plan.md](plan.md), section 14).
 
-Before a milestone is filed, its section of the plan has to pass the fun test
-([plan.md](plan.md), section 4.6): what a viewer sees in an hour and how
-often, how many seconds an hour an owner's resident is on screen, one
-decision with a result the owner can see, what is new after a day away, a
-judge who plays it, and the need for anything it adds. The last column below
-is the least time a present owner's resident is in the map frame, in seconds
-an hour, with the map at about 32 pixels a tile (#326), where the frame
-holds a region and a half each way. It must never go under 240. From M2 an
-owner's own page also shows their resident live.
+| Milestone                    | What it adds                                                                                                                                                                                                                                                                                                                                                               | Finished when                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **M2 Chat**                  | The rest of chat.md's first slice on the walking city: speech, the flag and `!go`, orders on screen, the vote on the next stop drawn on the route map, moderation, choosing a preset, the streamer's site. More presets. Valleys.                                                                                                                                          | A judge plays a chatter through a landing and a crossing and can tell their preset and numbers made the difference. Fifty scripted chatters run 216 cycles with no error and the input log replays to the same hash.                                                                                                                       |
+| **M3 The city grows**        | Modules and tiers, districts drawn by tier, cores and the core run, pledges. Hulls II and III, with more berths. The vote on the next stop, drawn on the route map and the mast. Glades, vales and valleys offered by country and by the Engine. Site conditions, the hold's prices, damage and mending, the walker and the toll.                                          | A city of 40 scripted chatters with 30 more waiting is rebuilt as Hull II with no other input, and those waiting board. A judge shown two crossings a day apart says what the city gained. A scripted crowd's choices of stop are reported with what each size cost and paid. No resident is outside the frame in a valley at 80 chatters. |
+| **M4 The crossing**          | A continent of six countries, ten more biomes, feet and range, great landings every eight hours, strongholds, gates held against the horde, uniques, Hulls IV to VI, the atlas, and the end of a crossing.                                                                                                                                                                 | A scripted city crosses a continent headless and ends as Hull VI. The tick bar holds at 150 residents in a valley. A judge at 150 finds their resident within five seconds and stays for the lift.                                                                                                                                         |
+| **M5 Players among players** | Boards for each landing and day, bands under a banner, more presets, weekly trials. Filed when M4 closes.                                                                                                                                                                                                                                                                  | A trial's winning run replays tick for tick.                                                                                                                                                                                                                                                                                               |
+| **M6 City against city**     | One streamer is one city. Rivals on the route map and three boards (size, depth, rivals beaten). Contested valleys: two cities race for one landing and farm it, each with its own horde. Encounters on a crossing: a trade bridge, a boarding or a chase, chat against chat. A local shared service for the map and meetings, with a meeting run by both servers in step. | Two local worlds on one seed contest a valley and fight a boarding with matching hashes throughout, and a meeting cut off at any tick leaves both cities whole. Its own fun test in the plan passes.                                                                                                                                       |
 
-| Milestone                    | What it adds                                                                                                                                                                                                                                    | Finished when                                                                                                                                                                                                                                                                   | In the frame |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -----------: |
-| **M2 Builds and owners**     | Loadouts of techniques named in the program, weapons that change the basic attack, five starter programs. Claiming a resident from chat, the companion page with the owner's resident drawn live, the editor, the director on the server.       | A judge names each resident's weapon and a technique from a fight sheet without the page. Each starter's main slider changes a measured outcome. 50 scripted owners run 60 game days with no error, and the input log replays to the same hash. Mine is 3 or more at 15 and 50. |          817 |
-| **M3 The year**              | A 64-day year with quarters, weather and a moon, and a vote on the weather each hour. The elk, the wolf winter, the fish run. At least four set pieces an hour. Replays of a resident's best moment, and trying a program before submitting it. | Four quarters can be told apart at 18:00. A judge says what minute 50 of an hour showed that minute 10 did not. Six hours each have four set pieces. A baked moment replays tick for tick.                                                                                      |          817 |
-| **M4 Works and Stonefall**   | Works built from what residents deliver, charting, and the first way down: Stonefall, at tier 2, with the Quarry Troll. The goblins' hoard and raids. A message that carries one frame.                                                         | A fresh world of house residents builds the Hill Road and opens Stonefall with no input. A level-38 resident earns twice as much there as in the Hills and a level-18 one is downed. Five level-45 residents kill the Quarry Troll.                                             |          612 |
-| **M5 The deep**              | Three regions under the Hills down to tier 5, each with a boss. Nests and marches. Uniques. Rings at 99.                                                                                                                                        | For tiers 3 to 5, a resident of the tier clears a pack and one two tiers short is downed. The tick stays at 4 ms with eight regions. A capture at 120 residents holds the frame time.                                                                                           |          612 |
-| **M6 Trades and the store**  | Mining, Smithing, Woodworking, Archery. A store that pays by its stock. Tempering.                                                                                                                                                              | Over 60 game days at 50 residents prices move, two starter programs change what they gather because of them, and no pool of goods grows without limit. A judge says which good is scarce from the piles.                                                                        |          612 |
-| **M7 Players among players** | Companies with their own fire, pitches, boards in bands, weekly trials, thirteen-week rounds with titles, mastery, a library of programs to fork. Filed when M6 closes.                                                                         | A round runs to titles that re-running confirms. A trial's winning run replays on the page.                                                                                                                                                                                     |          612 |
-
-Eight regions are in the milestones above, in a grid three regions tall that
-four positions of the frame cover. Three more (the Mere, the Mire and the
-Barrow Downs) are built only when a running world has more than 12 residents
-for each open region, which brings the frame time to 408. The world holds at
-most 150 residents.
-
-The plan ends with the questions the team settled for itself (section 8).
-Players are a scripted crowd behind a local chat page, and nothing is
-deployed.
+A city holds as many residents as its hull has berths, from 40 to 150, one
+for each person who has chatted.
+Until there is a real chat, a scripted crowd of usernames stands in for it
+behind a local chat page, and nothing is deployed. City against city is built and tested with two cities on one machine;
+hosting the shared service that lets two streams meet is not planned.

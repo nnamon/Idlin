@@ -21,6 +21,11 @@ experience, each character has a bag and a bank, and the page beside the map
 shows hitpoints and skill levels. Gathering, cooking and loot don't exist yet;
 [docs/roadmap.md](docs/roadmap.md) has the order they're planned in.
 
+The game is being rebuilt around a walking city with a horde behind it: a
+machine on legs that sets down on blank paper every 20 minutes, has its
+residents draw the map as they go out, and leaves when the horde arrives.
+None of that is built yet. [docs/plan.md](docs/plan.md) has the plan.
+
 ![Night falling over the camp, at twice the speed](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/clip.gif)
 
 ![Screenshot of the game at night](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
