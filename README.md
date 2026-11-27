@@ -5,9 +5,13 @@ directly. Each character is driven by a small script running in a sandboxed
 VM, and monsters work the same way. The plan is that viewers get to write
 the scripts.
 
-It's early. There's one map, six characters, and a day/night cycle. The
-characters run one of three scripts from `content/bots/`, which tell them where
-to walk, when to go back to camp, and how to fight. Wolves and goblins
+It's early. The world is four regions, six characters and a day/night cycle.
+The camp's region holds the lantern, the wood, the river, the den and the
+meadow, and a pinewood, hills and a lower river lie past its edges. The
+viewer only draws the camp's region so far; a character who walks off it is
+listed faded on the page. The characters run one of three scripts from
+`content/bots/`, which tell them where to walk, when to go back to camp, and
+how to fight. Wolves and goblins
 (`content/monsters/`) fight them in the simulation. The viewer draws the fights,
 but only in a world of its own opened with `?monsters`; the world server
 doesn't run monsters yet. The scripting language is described in

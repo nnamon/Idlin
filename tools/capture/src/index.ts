@@ -174,10 +174,13 @@ async function save(name: string, bytes: Uint8Array): Promise<void> {
 // stream shows about six frames to a tick, so the frames are a sixth of a tick
 // apart.
 // With monsters, the same at the fight the fight sheet shows (FIGHT_HOUR), a
-// few ticks before a blow lands, and at a fight at night.
+// tick before a blow lands, and at a fight at dusk, a tick before its first blow.
+// At seed 1 the fight sheet's fight is the one at 11:15: a wolf downs Birch at
+// tick 3,166 and Fen kills it at 3,210. The dusk fight's first blow lands at
+// tick 8,033.
 const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 20.1, 22];
-const FIGHT_HOUR = 9.475;
-const FLICKER_FIGHTS = [9.488, 22.52];
+const FIGHT_HOUR = 11.25;
+const FLICKER_FIGHTS = [11.2617, 19.385];
 // The figures sheet: when, and the part of the 1920 by 1080 frame round the camp.
 const FIGURES_HOUR = 7;
 const FIGURES_TICKS = 0;
@@ -243,7 +246,7 @@ if (review) {
     if (residents === 6) busiestTick = busiest(record, 20);
     // Three times the population times the dwell, as the rubric asks for this one.
     const watched = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
-    spotlight[residents] = spotlightWait(watched.subjects, watched.names);
+    spotlight[residents] = spotlightWait(watched.subjects, watched.names, watched.away);
   }
 
   // Storyboard: two minutes from 19:20, through the lamps coming on and nightfall.
@@ -267,7 +270,7 @@ if (review) {
   // The resident downed in that fight, half a second apart: the fall, the
   // body lying there, and the fade-in at camp.
   await open(FIGHT_HOUR, 6, true);
-  await advance(96);
+  await advance(13);
   await save("fight-down.png", encodePng(grid(await run(12, 5, 0.5), 4)));
 
   // Day strip: six moments across the day.

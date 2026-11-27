@@ -40,7 +40,7 @@ const MOST_PLACES = 64;
 export function loadMonsters(
   stats: Readonly<Record<string, unknown>>,
   sources: Readonly<Record<string, string>>,
-  map: TileMap,
+  map: Pick<TileMap, "places">,
 ): Monsters {
   const places = placeConstants(map);
   const programs = compileBots(sources, places);

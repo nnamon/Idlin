@@ -1,8 +1,9 @@
 // Where a program meets the world: answers its sensors and carries out the one
 // action it commits. Called when an actor has nothing left to do.
 
+import { linked, pointOf, regionAt, tileAt, walkable } from "./atlas.ts";
 import { atBank, BAG_SLOTS, banked, carrying, deposit, freeSlots, GOODS, withdraw } from "./bag.ts";
-import { isWalkable, NEIGHBOURS, type Point, tileIndex } from "./map.ts";
+import { NEIGHBOURS, type Point } from "./map.ts";
 import { findPath } from "./path.ts";
 import { nextInt } from "./rng.ts";
 import { levelFor, SKILLS } from "./skills.ts";
@@ -13,10 +14,12 @@ import {
   ADVENTURER,
   blockerAt,
   blocks,
+  canStep,
   clock,
   enemies,
   kindOf,
   lineOfAttack,
+  sameRegion,
   type World,
   type WorldEvent,
   walkableFor,
@@ -62,11 +65,11 @@ export function think(world: World, actor: Actor, events: WorldEvent[]): void {
 
 const steps = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
-/** The nearest enemy, the one with the lowest id if several are as near. */
+/** The nearest enemy in this actor's region, the one with the lowest id if several are as near. */
 function threat(world: World, actor: Actor): Actor | undefined {
   let nearest: Actor | undefined;
   for (const other of world.actors) {
-    if (!enemies(actor, other)) continue;
+    if (!enemies(actor, other) || !sameRegion(world, actor, other)) continue;
     if (!nearest || steps(actor, other) < steps(actor, nearest)) nearest = other;
   }
   return nearest;
@@ -90,27 +93,26 @@ function danger(world: World, actor: Actor, x: number, y: number): number {
  * safe or nowhere safe can be reached.
  */
 function wayClear(world: World, actor: Actor): Point[] {
-  const { map } = world;
-  const start = tileIndex(map, actor.x, actor.y);
+  const { atlas } = world;
+  const start = tileAt(atlas, actor.x, actor.y);
   const cameFrom = new Map<number, number>([[start, start]]);
   const queue: Point[] = [{ x: actor.x, y: actor.y }];
   for (let head = 0; head < queue.length; head++) {
     const at = queue[head] as Point;
     if (danger(world, actor, at.x, at.y) === 0) {
       const path: Point[] = [];
-      for (let k = tileIndex(map, at.x, at.y); k !== start; k = cameFrom.get(k) as number) {
-        const x = k % map.width;
-        path.push({ x, y: (k - x) / map.width });
+      for (let k = tileAt(atlas, at.x, at.y); k !== start; k = cameFrom.get(k) as number) {
+        path.push(pointOf(atlas, k));
       }
       return path.reverse();
     }
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;
       const y = at.y + dy;
-      if (!walkableFor(world, actor, x, y) || blockerAt(world, x, y, actor)) continue;
-      const index = tileIndex(map, x, y);
+      if (!canStep(world, actor, at.x, at.y, x, y) || blockerAt(world, x, y, actor)) continue;
+      const index = tileAt(atlas, x, y);
       if (cameFrom.has(index)) continue;
-      cameFrom.set(index, tileIndex(map, at.x, at.y));
+      cameFrom.set(index, tileAt(atlas, at.x, at.y));
       queue.push({ x, y });
     }
   }
@@ -123,8 +125,8 @@ function wayClear(world: World, actor: Actor): Point[] {
  * walk out of a corner instead of pressing into it. [] if nowhere is farther.
  */
 function wayFrom(world: World, actor: Actor, from: Point): Point[] {
-  const { map } = world;
-  const start = tileIndex(map, actor.x, actor.y);
+  const { atlas } = world;
+  const start = tileAt(atlas, actor.x, actor.y);
   const cameFrom = new Map<number, number>([[start, start]]);
   let frontier: Point[] = [{ x: actor.x, y: actor.y }];
   let best: Point = frontier[0] as Point;
@@ -133,11 +135,14 @@ function wayFrom(world: World, actor: Actor, from: Point): Point[] {
     for (const at of frontier) {
       for (const [dx, dy] of NEIGHBOURS) {
         const tile = { x: at.x + dx, y: at.y + dy };
-        if (!walkableFor(world, actor, tile.x, tile.y) || blockerAt(world, tile.x, tile.y, actor))
+        if (
+          !canStep(world, actor, at.x, at.y, tile.x, tile.y) ||
+          blockerAt(world, tile.x, tile.y, actor)
+        )
           continue;
-        const index = tileIndex(map, tile.x, tile.y);
+        const index = tileAt(atlas, tile.x, tile.y);
         if (cameFrom.has(index)) continue;
-        cameFrom.set(index, tileIndex(map, at.x, at.y));
+        cameFrom.set(index, tileAt(atlas, at.x, at.y));
         next.push(tile);
         if (steps(tile, from) > steps(best, from)) best = tile;
       }
@@ -145,9 +150,8 @@ function wayFrom(world: World, actor: Actor, from: Point): Point[] {
     frontier = next;
   }
   const path: Point[] = [];
-  for (let at = tileIndex(map, best.x, best.y); at !== start; at = cameFrom.get(at) as number) {
-    const x = at % map.width;
-    path.push({ x, y: (at - x) / map.width });
+  for (let at = tileAt(atlas, best.x, best.y); at !== start; at = cameFrom.get(at) as number) {
+    path.push(pointOf(atlas, at));
   }
   return path.reverse().slice(0, FLEE_STEPS);
 }
@@ -171,22 +175,22 @@ function attackTiles(world: World, actor: Actor, x: number, y: number): Point[] 
  * [] when there is nowhere nearer to go.
  */
 export function wayTo(world: World, actor: Actor, to: Point): Point[] {
-  const { map } = world;
-  if (!isWalkable(map, to.x, to.y)) return [];
+  const { atlas } = world;
+  if (!walkable(atlas, to.x, to.y)) return [];
   // Everywhere this actor can walk to without stepping on anyone, and how. The
   // search stops as soon as it reaches the goal, if the goal is free.
-  const start = tileIndex(map, actor.x, actor.y);
-  const target = tileIndex(map, to.x, to.y);
+  const start = tileAt(atlas, actor.x, actor.y);
+  const target = tileAt(atlas, to.x, to.y);
   // Tiles that bar the way, and tiles someone already stands on or is making for.
   const barred = new Set<number>();
   const standing = new Set<number>();
   for (const other of world.actors) {
     if (other === actor) continue;
-    standing.add(tileIndex(map, other.x, other.y));
+    standing.add(tileAt(atlas, other.x, other.y));
     // Where someone is already walking to counts as taken too, so two do not make for one tile.
     const end = other.path[other.path.length - 1];
-    if (end) standing.add(tileIndex(map, end.x, end.y));
-    if (blocks(other, actor)) barred.add(tileIndex(map, other.x, other.y));
+    if (end) standing.add(tileAt(atlas, end.x, end.y));
+    if (blocks(other, actor)) barred.add(tileAt(atlas, other.x, other.y));
   }
   // Where someone else has stopped on this tile too, the one deciding walk_to moves
   // off. The one that arrived later often decides again as soon as its walk ends,
@@ -208,20 +212,20 @@ export function wayTo(world: World, actor: Actor, to: Point): Point[] {
     for (const [dx, dy] of NEIGHBOURS) {
       const x = at.x + dx;
       const y = at.y + dy;
-      if (!walkableFor(world, actor, x, y)) continue;
-      const index = tileIndex(map, x, y);
+      if (!canStep(world, actor, at.x, at.y, x, y)) continue;
+      const index = tileAt(atlas, x, y);
       if (cameFrom.has(index) || barred.has(index)) continue;
-      cameFrom.set(index, tileIndex(map, at.x, at.y));
+      cameFrom.set(index, tileAt(atlas, at.x, at.y));
       queue.push({ x, y });
     }
   }
   // The reachable tile nearest `to`, ring by ring outwards from it.
   let goal: number | undefined;
-  const seen = new Set<number>([tileIndex(map, to.x, to.y)]);
+  const seen = new Set<number>([tileAt(atlas, to.x, to.y)]);
   let ring: Point[] = [to];
   while (ring.length > 0 && goal === undefined) {
     for (const at of ring) {
-      const index = tileIndex(map, at.x, at.y);
+      const index = tileAt(atlas, at.x, at.y);
       if (index === start && free(index)) {
         goal = index;
         break;
@@ -234,8 +238,8 @@ export function wayTo(world: World, actor: Actor, to: Point): Point[] {
       for (const [dx, dy] of NEIGHBOURS) {
         const x = at.x + dx;
         const y = at.y + dy;
-        if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
-        seen.add(tileIndex(map, x, y));
+        if (!linked(atlas, at.x, at.y, x, y) || seen.has(tileAt(atlas, x, y))) continue;
+        seen.add(tileAt(atlas, x, y));
         next.push({ x, y });
       }
     }
@@ -244,21 +248,25 @@ export function wayTo(world: World, actor: Actor, to: Point): Point[] {
   if (goal === undefined || goal === start) return [];
   const path: Point[] = [];
   for (let at = goal; at !== start; at = cameFrom.get(at) as number) {
-    const x = at % map.width;
-    path.push({ x, y: (at - x) / map.width });
+    path.push(pointOf(atlas, at));
   }
   return path.reverse();
 }
 
-/** A tile `actor` can stand on, chosen at random with the world's generator. */
+/**
+ * A tile `actor` can stand on in the region it is in, chosen at random with the
+ * world's generator. Wandering is a stroll about where one is; going to another
+ * region is something a program decides to do.
+ */
 function randomWalkableTile(world: World, actor: Actor): Point {
-  const { map } = world;
-  const walkable: Point[] = [];
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++)
-      if (walkableFor(world, actor, x, y)) walkable.push({ x, y });
+  const region = world.atlas.regions[regionAt(world.atlas, actor.x, actor.y)];
+  if (!region) return actor;
+  const tiles: Point[] = [];
+  for (let y = region.y; y < region.y + region.map.height; y++) {
+    for (let x = region.x; x < region.x + region.map.width; x++)
+      if (walkableFor(world, actor, x, y)) tiles.push({ x, y });
   }
-  return walkable[nextInt(world.rng, walkable.length)] as Point;
+  return tiles[nextInt(world.rng, tiles.length)] as Point;
 }
 
 function sense(world: World, actor: Actor, id: number, args: readonly number[]): number {
@@ -274,7 +282,7 @@ function sense(world: World, actor: Actor, id: number, args: readonly number[]):
     case "minute":
       return clock(world).minute;
     case "walkable":
-      return isWalkable(world.map, a, b) ? 1 : 0;
+      return walkable(world.atlas, a, b) ? 1 : 0;
     case "distance":
       // Kept in 64-bit floats until the end, so far-apart coordinates cannot wrap.
       return Math.min(0x7fffffff, Math.abs(a - actor.x) + Math.abs(b - actor.y));
@@ -349,8 +357,8 @@ function act(
       break;
     case "wander":
       actor.path =
-        findPath(world.map, actor, randomWalkableTile(world, actor), (x, y) =>
-          walkableFor(world, actor, x, y),
+        findPath(world.atlas, actor, randomWalkableTile(world, actor), (ax, ay, bx, by) =>
+          canStep(world, actor, ax, ay, bx, by),
         ) ?? [];
       break;
     case "attack": {

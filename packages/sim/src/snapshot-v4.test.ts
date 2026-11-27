@@ -32,7 +32,7 @@ const PROGRAMS = compileBots(SOURCES, placeConstants(MAP));
 const TEXT = readFileSync(new URL("./fixtures/snapshot-v4.json", import.meta.url), "utf8");
 
 describe("a version 4 snapshot", () => {
-  it("restores with the fields version 5 added filled in, and goes on", () => {
+  it("restores with the fields versions 5 to 7 added filled in, and goes on", () => {
     expect(JSON.parse(TEXT).version).toBe(4);
     const world = restore(TEXT, MAP, PROGRAMS, KINDS);
     expect(world.tick).toBe(2402);
@@ -44,7 +44,10 @@ describe("a version 4 snapshot", () => {
     ]);
     // Put in by hand, so it never goes home; nothing has stalled; no group is held back.
     expect(world.actors.every((a) => a.shift === "" && a.stalled === 0)).toBe(true);
-    expect(world.nextSpawn).toBe(world.tick);
+    expect(world.nextSpawn).toEqual([world.tick]);
+    expect(
+      world.actors.every((a) => a.xp.every((n) => n === 0) && a.bank.every((n) => n === 0)),
+    ).toBe(true);
     expect(world.spawns).toEqual([]);
     for (let t = 0; t < 2000; t++) step(world);
     expect(world.tick).toBe(4402);
@@ -58,10 +61,11 @@ describe("a version 4 snapshot", () => {
     // The fixture was saved with only the wolf kind and the two programs above,
     // and those must match, so the spawn table uses them with the shipped
     // goblins' places and group.
-    const [goblins] = shippedMonsters().spawns as [
+    const [goblins] = shippedMonsters(firstLight()).spawns as [
       ReturnType<typeof shippedMonsters>["spawns"][number],
     ];
-    const spawns = [{ ...goblins, kind: "wolf", program: "biter" }];
+    // Two, so that with the wolf already there they fit under a region's cap of three.
+    const spawns = [{ ...goblins, kind: "wolf", program: "biter", group: 2 }];
     const world = restore(TEXT, MAP, PROGRAMS, KINDS, spawns);
     expect(world.spawns).toHaveLength(1);
     const before = world.actors.length;
@@ -86,7 +90,7 @@ describe("a version 4 snapshot", () => {
         path: [],
       });
     expect(() => restore(JSON.stringify(crowded), MAP, PROGRAMS, KINDS)).toThrow(
-      /holds 7 monsters, more than the 6/,
+      /holds 7 monsters, more than the 3 a region now allows/,
     );
     for (const change of [
       { x: 14, y: 9, fromX: 14, fromY: 9, path: [] },

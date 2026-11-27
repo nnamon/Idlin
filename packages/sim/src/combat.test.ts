@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { atlasOf } from "./atlas.ts";
 import { NO_THREAT } from "./brain.ts";
 import { placeConstants } from "./map.ts";
 import { compileBots } from "./tactics.ts";
@@ -643,7 +644,7 @@ describe("fights and determinism", () => {
         try {
           copy.hash = hashWorld({
             ...copy.state,
-            map: MAP,
+            atlas: atlasOf(MAP),
             programs: PROGRAMS,
             kinds: KINDS,
             spawns: [],
@@ -726,7 +727,7 @@ describe("fights and determinism", () => {
     shuffled.state.marks = [a0, b0, a1, b1];
     shuffled.hash = hashWorld({
       ...shuffled.state,
-      map: MAP,
+      atlas: atlasOf(MAP),
       programs: PROGRAMS,
       kinds: KINDS,
       spawns: [],
@@ -746,7 +747,7 @@ describe("fights and determinism", () => {
       Object.assign(who, { x: 15, y: 11, fromX: 15, fromY: 11 });
       copy.hash = hashWorld({
         ...copy.state,
-        map: MAP,
+        atlas: atlasOf(MAP),
         programs: PROGRAMS,
         kinds: KINDS,
         spawns: [],
@@ -762,7 +763,7 @@ describe("fights and determinism", () => {
       empty.state.nextActorId = next;
       empty.hash = hashWorld({
         ...empty.state,
-        map: MAP,
+        atlas: atlasOf(MAP),
         programs: PROGRAMS,
         kinds: KINDS,
         spawns: [],

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { atlasOf } from "./atlas.ts";
 import { isWalkable, MapError, parseMap, place, terrainAt } from "./map.ts";
 import { firstLight, rawFirstLight } from "./testing.ts";
 
@@ -13,7 +14,7 @@ const tiny = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("parseMap", () => {
-  it("loads the shipped map: one frame, with its landmarks where they can be walked to", () => {
+  it("loads the one-map fixture: one frame, with its landmarks where they can be walked to", () => {
     const map = firstLight();
     expect([map.width, map.height]).toEqual([30, 21]);
     expect(map.places.map((p) => p.name)).toEqual([
@@ -66,18 +67,12 @@ describe("parseMap", () => {
       tiny({ places: { camp: { x: 0, y: 0 }, "Old Mill": { x: 1, y: 0 } } }),
       /place name "Old Mill" must be a lower-case letter/,
     ],
-    ["no camp", tiny({ places: { den: { x: 0, y: 0 } } }), /"camp" is required/],
     ["a place on a rock", tiny({ places: { camp: { x: 2, y: 0 } } }), /not on a walkable tile/],
     ["a place off the map", tiny({ places: { camp: { x: 9, y: 9 } } }), /not on a walkable tile/],
     [
       "a place without numbers",
       tiny({ places: { camp: { x: "0", y: 0 } } }),
       /whole-number x and y/,
-    ],
-    [
-      "a walkable pocket cut off from camp",
-      tiny({ rows: [".#.", ".#."] }),
-      /\(2, 0\) cannot be reached from camp/,
     ],
   ];
   for (const [what, raw, message] of rejects) {
@@ -87,9 +82,19 @@ describe("parseMap", () => {
     });
   }
 
-  it("rejects the shipped map once it is damaged", () => {
+  it("leaves camp and reachability to the world, which refuses a map without them", () => {
+    expect(() => parseMap(tiny({ places: { den: { x: 0, y: 0 } } }))).not.toThrow();
+    expect(() => atlasOf(parseMap(tiny({ places: { den: { x: 0, y: 0 } } })))).toThrow(
+      /"camp" is required/,
+    );
+    expect(() => atlasOf(parseMap(tiny({ rows: [".#.", ".#."] })))).toThrow(
+      /\(2, 0\) of "tiny" cannot be reached from camp/,
+    );
+  });
+
+  it("refuses the fixture once it is damaged", () => {
     const raw = rawFirstLight();
     (raw.rows as string[])[8] = "t,,,,,,....:cccLccc:::::~~::::";
-    expect(() => parseMap(raw)).toThrow(/cannot be reached from camp/);
+    expect(() => atlasOf(parseMap(raw))).toThrow(/cannot be reached from camp/);
   });
 });

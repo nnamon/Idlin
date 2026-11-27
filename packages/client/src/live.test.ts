@@ -1,9 +1,8 @@
 // The live client with the browser's WebSocket, page and frame callback
 // replaced by stand-ins, so what it tells the scene can be checked.
-import { readdirSync, readFileSync } from "node:fs";
-import { compileBots, createWorld, parseMap, placeConstants, snapshot, step } from "@idlin/sim";
+import { createWorld, snapshot, step } from "@idlin/sim";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import mapJson from "../../../content/maps/first-light.json";
+import { shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
 import { follow } from "./live.ts";
 
 class FakeSocket {
@@ -20,16 +19,8 @@ class FakeSocket {
   }
 }
 
-const map = parseMap(mapJson);
-const dir = new URL("../../../content/bots/", import.meta.url);
-const programs = compileBots(
-  Object.fromEntries(
-    readdirSync(dir)
-      .filter((file) => file.endsWith(".tac"))
-      .map((file) => [file.slice(0, -4), readFileSync(new URL(file, dir), "utf8")]),
-  ),
-  placeConstants(map),
-);
+const map = shippedWorld();
+const programs = shippedPrograms(map);
 
 beforeEach(() => {
   FakeSocket.made = [];

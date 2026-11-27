@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isWalkable } from "./map.ts";
+import { atlasOf, walkable } from "./atlas.ts";
 import { compileBots } from "./tactics.ts";
-import { firstLight, shippedPrograms } from "./testing.ts";
+import { shippedPrograms, shippedWorld } from "./testing.ts";
 import {
   clock,
   createWorld,
@@ -17,14 +17,14 @@ import {
 } from "./world.ts";
 
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
-const PROGRAMS = shippedPrograms();
+const PROGRAMS = shippedPrograms(shippedWorld());
 const KINDS = { wolf: { hp: 10, damage: 1, windup: 5, recovery: 5, reach: 1 } };
 // For walking tests with a monster in them: the shipped programs fight when an
 // enemy is near, so here everyone runs one that only stands.
 const STILL = compileBots({ still: 'otherwise as "stand" -> wait(100)' });
 
 const newWorld = (seed: number): World => {
-  const world = createWorld(firstLight(), seed, PROGRAMS);
+  const world = createWorld(shippedWorld(), seed, PROGRAMS);
   step(
     world,
     spawnsNearCamp(
@@ -44,7 +44,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("3fae60693fe69f0c");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("5b208ba3c13c2a46");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -63,12 +63,12 @@ describe("world", () => {
   it("a world restored from a snapshot continues exactly as the original", () => {
     const straight = run(newWorld(3), 1500);
     const saved = snapshot(run(newWorld(3), 700));
-    const resumed = restore(saved, firstLight(), PROGRAMS);
+    const resumed = restore(saved, shippedWorld(), PROGRAMS);
     expect(hashWorld(run(resumed, 800))).toBe(hashWorld(straight));
   });
 
   it("refuses snapshots it cannot trust", () => {
-    const map = firstLight();
+    const map = shippedWorld();
     const saved = snapshot(run(newWorld(3), 50));
     const edit = (change: (data: Record<string, unknown>) => void): string => {
       const data = JSON.parse(saved);
@@ -111,7 +111,7 @@ describe("world", () => {
   });
 
   it("refuses snapshots whose contents hash the same but are not a possible world", () => {
-    const map = firstLight();
+    const map = shippedWorld();
     const world = createWorld(map, 3, PROGRAMS);
     step(world, [{ type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" }]);
     const ash = world.actors[0];
@@ -137,7 +137,7 @@ describe("world", () => {
         try {
           data.hash = hashWorld({
             ...(data.state as unknown as World),
-            map,
+            atlas: atlasOf(map),
             programs: PROGRAMS,
             kinds: {},
             spawns: [],
@@ -199,7 +199,7 @@ describe("world", () => {
     for (let i = 0; i < 6000; i++) {
       step(world);
       for (const a of world.actors) {
-        expect(isWalkable(world.map, a.x, a.y)).toBe(true);
+        expect(walkable(world.atlas, a.x, a.y)).toBe(true);
         expect(Math.abs(a.x - a.fromX) + Math.abs(a.y - a.fromY)).toBeLessThanOrEqual(1);
         visited.add(`${a.x},${a.y}`);
       }
@@ -210,7 +210,7 @@ describe("world", () => {
   });
 
   it("takes exactly STEP_TICKS ticks per tile", () => {
-    const world = createWorld(firstLight(), 1, PROGRAMS);
+    const world = createWorld(shippedWorld(), 1, PROGRAMS);
     step(world, [{ type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" }]);
     const actor = world.actors[0];
     if (!actor) throw new Error("no actor");
@@ -229,7 +229,7 @@ describe("world", () => {
   });
 
   it("adventurers walk through each other", () => {
-    const world = createWorld(firstLight(), 1, PROGRAMS);
+    const world = createWorld(shippedWorld(), 1, PROGRAMS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" },
       { type: "spawn", name: "Birch", x: 12, y: 8, program: "wanderer" },
@@ -249,7 +249,7 @@ describe("world", () => {
   });
 
   it("an adventurer held up by a monster waits, then gives up its walk", () => {
-    const world = createWorld(firstLight(), 1, STILL, KINDS);
+    const world = createWorld(shippedWorld(), 1, STILL, KINDS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 13, program: "still" },
       { type: "spawn", name: "Birch", x: 12, y: 13, program: "still", kind: "wolf" },
@@ -267,7 +267,7 @@ describe("world", () => {
   });
 
   it("of two walkers head to head, only the later one turns aside", () => {
-    const world = createWorld(firstLight(), 1, STILL, KINDS);
+    const world = createWorld(shippedWorld(), 1, STILL, KINDS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 11, program: "still" },
       { type: "spawn", name: "Birch", x: 12, y: 11, program: "still", kind: "wolf" },
@@ -292,7 +292,7 @@ describe("world", () => {
   });
 
   it("drops spawn inputs it cannot honour", () => {
-    const world = createWorld(firstLight(), 1, PROGRAMS);
+    const world = createWorld(shippedWorld(), 1, PROGRAMS);
     step(world, [
       { type: "spawn", name: "Ash", x: 14, y: 9, program: "wanderer" },
       { type: "spawn", name: "OnAsh", x: 14, y: 9, program: "wanderer" },
@@ -325,7 +325,7 @@ describe("world", () => {
   });
 
   it("runs, hashes and resumes past the 32-bit tick boundary", () => {
-    const map = firstLight();
+    const map = shippedWorld();
     const world = newWorld(4);
     world.tick = 2 ** 31 - 2;
     const before = hashWorld(world);
@@ -353,7 +353,7 @@ describe("world", () => {
   });
 
   it("starts at dawn and turns a day over every 24 minutes of ticks", () => {
-    const world = createWorld(firstLight(), 1, PROGRAMS);
+    const world = createWorld(shippedWorld(), 1, PROGRAMS);
     expect(clock(world)).toEqual({ day: 0, hour: 6, minute: 0 });
     world.tick = 615;
     expect(clock(world)).toEqual({ day: 0, hour: 7, minute: 1 });

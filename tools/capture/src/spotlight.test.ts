@@ -3,14 +3,25 @@ import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 import { spotlightWait } from "./metrics.ts";
 import { spotlightRun } from "./simrun.ts";
 
-/** Each stretch one subject held the spotlight, in ticks, leaving out the last, which the run's end cuts short. */
-const holds = (subjects: readonly (number | null)[]): number[] => {
+type Away = ReadonlyMap<number, readonly (readonly [number, number])[]>;
+
+/** Whether `id` was off the map at `tick`. */
+const isAway = (away: Away, id: number, tick: number): boolean =>
+  (away.get(id) ?? []).some(([from, to]) => tick >= from && tick < to);
+
+/**
+ * Each stretch one subject held the spotlight, in ticks, leaving out the last,
+ * which the run's end cuts short, and any that ended because the subject left
+ * the map.
+ */
+const holds = (subjects: readonly (number | null)[], away: Away = new Map()): number[] => {
   const out: number[] = [];
   let length = 0;
   subjects.forEach((s, i) => {
     length++;
     if (subjects[i + 1] !== s) {
-      if (i + 1 < subjects.length) out.push(length);
+      const left = s !== null && isAway(away, s, i + 1);
+      if (i + 1 < subjects.length && !left) out.push(length);
       length = 0;
     }
   });
@@ -25,18 +36,22 @@ const LONG = process.env.IDLIN_LONG === "1";
 
 describe("the spotlight over a headless run", () => {
   for (const residents of LONG ? [6, 12, 50] : [6, 12]) {
-    it(`gives each of ${residents} residents a turn within the bound`, {
+    it(`keeps the wait of each of ${residents} residents on the map within the bound`, {
       timeout: RUN_TIMEOUT_MS,
     }, () => {
-      const { subjects, names } = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
+      const { subjects, names, away } = spotlightRun(1, residents, 3 * residents * DWELL_TICKS);
       expect(names.size).toBe(residents);
-      const wait = spotlightWait(subjects, names);
+      const wait = spotlightWait(subjects, names, away);
       expect(wait.limitSeconds).toBe((2 * residents * DWELL_TICKS) / 10);
       expect(wait.hardFails).toEqual([]);
       expect(wait.longestSeconds).toBeLessThanOrEqual(wait.limitSeconds);
-      expect(new Set(subjects)).toEqual(new Set(names.keys()));
-      // Nobody is shown for less than the dwell.
-      expect(Math.min(...holds(subjects))).toBeGreaterThanOrEqual(DWELL_TICKS);
+      // Only residents are shown, only while on the map, and more than half the cast gets a turn.
+      const shown = subjects.filter((s): s is number => s !== null);
+      expect(shown.every((id) => names.has(id))).toBe(true);
+      expect(subjects.some((id, tick) => id !== null && isAway(away, id, tick))).toBe(false);
+      expect(new Set(shown).size).toBeGreaterThan(residents / 2);
+      // Nobody is shown for less than the dwell, unless they walk off the map.
+      expect(Math.min(...holds(subjects, away))).toBeGreaterThanOrEqual(DWELL_TICKS);
     });
   }
 
@@ -67,6 +82,34 @@ describe("spotlightWait", () => {
     // Birch is never shown. The limit for two is 2 × 2 × 45 s = 180 s, or 1800 ticks.
     expect(spotlightWait(Array(100).fill(1), names).hardFails).toEqual([]);
     expect(spotlightWait(Array(1801).fill(1), names).hardFails).toEqual([
+      "spotlight wait over 180 s: Birch",
+    ]);
+  });
+});
+
+describe("spotlightWait with time off the map", () => {
+  const names = new Map([
+    [1, "Ash"],
+    [2, "Birch"],
+  ]);
+
+  it("ends a wait when the actor leaves the map and starts it again on its return", () => {
+    // Ash is shown throughout. Birch is never shown, and is off the map from
+    // tick 1000 to 2500: it waits 1000 ticks, then 1300 to the end at 3800.
+    const subjects = Array(3800).fill(1);
+    const away = new Map([[2, [[1000, 2500] as [number, number]]]]);
+    const wait = spotlightWait(subjects, names, away);
+    expect(wait.perActor).toEqual({ Ash: 0, Birch: 130 });
+    expect(wait.hardFails).toEqual([]);
+    // Counted as on the map throughout, the same run fails Birch.
+    expect(spotlightWait(subjects, names).hardFails).toEqual(["spotlight wait over 180 s: Birch"]);
+  });
+
+  it("still fails a wait over the limit within one stretch on the map", () => {
+    const subjects = Array(4000).fill(1);
+    const away = new Map([[2, [[0, 100] as [number, number]]]]);
+    expect(spotlightWait(subjects, names, away).perActor.Birch).toBe(390);
+    expect(spotlightWait(subjects, names, away).hardFails).toEqual([
       "spotlight wait over 180 s: Birch",
     ]);
   });

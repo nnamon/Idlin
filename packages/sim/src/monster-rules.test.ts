@@ -1,3 +1,4 @@
+import { atlasOf } from "./atlas.ts";
 // The smaller rules around monsters and getting nowhere, each tested where it
 // changes what happens: the residents' and monsters' rules for being stuck, a
 // monster's blow at dusk, keeping off the camp's ground, and the `stalled` count.
@@ -6,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_STALLED } from "./brain.ts";
 import { isWalkable, NEIGHBOURS, type Point, parseMap, place, terrainAt } from "./map.ts";
 import { compileBots } from "./tactics.ts";
-import { firstLight, shippedMonsters, shippedPrograms } from "./testing.ts";
+import { firstLight, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
 import {
   createWorld,
   GROUP_SPREAD,
@@ -23,7 +24,11 @@ import {
   type WorldEvent,
 } from "./world.ts";
 
+// The worlds here are made on the shipped world, as the shipped programs need.
+// Its camp's region, where every monster comes out, is MAP at the same
+// coordinates, so the tests read the ground off MAP.
 const MAP = firstLight();
+const WORLD = shippedWorld();
 const MONSTERS = shippedMonsters();
 const EXTRA = compileBots({
   post: 'otherwise as "stand" -> wait(100)',
@@ -90,7 +95,7 @@ describe("finding another way", () => {
     // and the resident one tile beyond: every step towards the goblin goes nowhere.
     for (const program of ["wanderer", "riverwalker"]) {
       for (const [tip, neck, beyond] of DEAD_ENDS) {
-        const world = createWorld(MAP, 1, ALL, MONSTERS.kinds);
+        const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
         step(world, [
           { type: "spawn", name: "Goblin", program: "post", kind: "goblin", ...tip },
           { type: "spawn", name: "Bryn", program: "post", ...neck },
@@ -108,7 +113,7 @@ describe("finding another way", () => {
 
   it("a hurt goblin cornered at the end of a dead end stabs its way out", () => {
     for (const [tip, neck] of DEAD_ENDS) {
-      const world = createWorld(MAP, 1, ALL, MONSTERS.kinds);
+      const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
       step(world, [
         { type: "spawn", name: "Goblin", program: "goblin", kind: "goblin", ...tip },
         { type: "spawn", name: "Ash", program: "post", ...neck },
@@ -160,7 +165,7 @@ describe("prowling and loitering", () => {
         for (const at of spawn[part]) {
           for (const home of within(at, GROUP_SPREAD)) {
             homes++;
-            const world = createWorld(MAP, 1, ALL, MONSTERS.kinds);
+            const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
             if (part === "night") world.tick = (NIGHT_HOUR - START_HOUR + 1) * TICKS_PER_GAME_HOUR;
             step(world, [
               { type: "spawn", name: "M", program: spawn.program, kind: spawn.kind, ...home },
@@ -184,7 +189,7 @@ describe("prowling and loitering", () => {
 
 describe("going home", () => {
   it("a monster in the middle of a blow at dusk stays until the blow lands", () => {
-    const world = createWorld(MAP, 1, ALL, MONSTERS.kinds);
+    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
     const dusk = (NIGHT_HOUR - START_HOUR) * TICKS_PER_GAME_HOUR;
     world.tick = dusk - 4;
     // A goblin out for the day, alone, that swings at the empty tile beside it.
@@ -211,7 +216,7 @@ describe("the camp's ground", () => {
     // it and on its other three neighbours, so the nearest safe tile is camp.
     const edge = { x: 14, y: 5 };
     expect(terrainAt(MAP, 14, 6)).toBe("camp");
-    const world = createWorld(MAP, 1, ALL, MONSTERS.kinds);
+    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
     step(world, [
       { type: "spawn", name: "Goblin", program: "clear", kind: "goblin", ...edge },
       { type: "spawn", name: "Ash", program: "post", x: 22, y: 3 },
@@ -253,7 +258,7 @@ describe("`stalled`", () => {
   });
 
   it("stops counting at its cap, and a snapshot past the cap is refused", () => {
-    const world = createWorld(MAP, 1, ALL, MONSTERS.kinds);
+    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
     step(world, [{ type: "spawn", name: "Ash", program: "stuck", x: 13, y: 9 }]);
     const ash = world.actors[0] as Actor;
     ash.stalled = MAX_STALLED - 2;
@@ -269,22 +274,22 @@ describe("`stalled`", () => {
     ]);
 
     const saved = snapshot(world);
-    expect(restore(saved, MAP, ALL, MONSTERS.kinds)).toEqual(world);
+    expect(restore(saved, WORLD, ALL, MONSTERS.kinds)).toEqual(world);
     const forge = (stalled: unknown): string => {
       const data = JSON.parse(saved);
       data.state.actors[0].stalled = stalled;
       data.hash = hashWorld({
         ...data.state,
-        map: MAP,
+        atlas: atlasOf(WORLD),
         programs: ALL,
         kinds: MONSTERS.kinds,
         spawns: [],
       });
       return JSON.stringify(data);
     };
-    expect(restore(forge(0), MAP, ALL, MONSTERS.kinds).actors[0]?.stalled).toBe(0);
+    expect(restore(forge(0), WORLD, ALL, MONSTERS.kinds).actors[0]?.stalled).toBe(0);
     for (const bad of [MAX_STALLED + 1, -1, 1.5, "3"]) {
-      expect(() => restore(forge(bad), MAP, ALL, MONSTERS.kinds), `stalled ${bad}`).toThrow(
+      expect(() => restore(forge(bad), WORLD, ALL, MONSTERS.kinds), `stalled ${bad}`).toThrow(
         SnapshotError,
       );
     }
@@ -305,8 +310,8 @@ describe("where a group comes out", () => {
         night: [],
       },
     ];
-    const world = createWorld(MAP, 1, ALL, MONSTERS.kinds, spawns);
-    world.nextSpawn = 2;
+    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, spawns);
+    world.nextSpawn = [2];
     step(world, [{ type: "spawn", name: "Ash", program: "to_wood", x: 3, y: 6 }]);
     const ash = world.actors[0] as Actor;
     expect(ash.path).toEqual([{ x: 4, y: 6 }]);

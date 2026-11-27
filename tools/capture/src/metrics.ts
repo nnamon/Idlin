@@ -17,10 +17,18 @@ export interface ActorSample {
   readonly y: number;
 }
 
-/** One tick of a run: the events `step` returned and where everyone stood afterwards. */
+/**
+ * One tick of a run: the events `step` returned and where everyone stood
+ * afterwards, on the map the viewer shows. `elsewhere` holds the residents
+ * off that map and what they decided there; only the action mix reads it.
+ */
 export interface TickRecord {
   readonly events: readonly WorldEvent[];
   readonly actors: readonly ActorSample[];
+  readonly elsewhere?: {
+    readonly actors: readonly ActorSample[];
+    readonly events: readonly WorldEvent[];
+  };
 }
 
 export interface ActionMix {
@@ -51,8 +59,13 @@ export interface WatchMetrics {
 export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   const seconds = run.length / TICKS_PER_SECOND;
   const names = new Map<number, string>();
-  /** The first and last tick each actor was in the run. */
-  const seen = new Map<number, { first: number; last: number }>();
+  /**
+   * The stretches of ticks each actor was in the run, first to last. An actor
+   * that leaves the map and comes back has one for each time it was there.
+   */
+  const seen = new Map<number, { first: number; last: number }[]>();
+  /** The same for the action mix, which counts a resident off the map as there. */
+  const present = new Map<number, { first: number; last: number }[]>();
   const lastAlive = new Map<number, number>();
   const lastSpot = new Map<number, string>();
   const stuck = new Set<number>();
@@ -63,6 +76,28 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   let deadAirTicks = 0;
   let decisions = 0;
   let faults = 0;
+  const addAction = (actor: number, tick: number, action: string): void => {
+    const list = actions.get(actor) ?? [];
+    list.push({ tick, action });
+    actions.set(actor, list);
+  };
+  /** Adds `tick` to the actor's stretches in `spans`; whether it starts a new one. */
+  const extend = (
+    spans: Map<number, { first: number; last: number }[]>,
+    id: number,
+    tick: number,
+  ): boolean => {
+    const list = spans.get(id) ?? [];
+    spans.set(id, list);
+    const span = list[list.length - 1];
+    if (span && span.last === tick) return false;
+    if (span && span.last === tick - 1) {
+      span.last = tick;
+      return false;
+    }
+    list.push({ first: tick, last: tick });
+    return true;
+  };
 
   run.forEach((record, tick) => {
     let visible = false;
@@ -85,16 +120,21 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
       // The rest lasts until the actor next decides something.
       if (event.action === "wait") resting.add(event.actor);
       else resting.delete(event.actor);
-      const list = actions.get(event.actor) ?? [];
-      list.push({ tick, action: event.action });
-      actions.set(event.actor, list);
+      addAction(event.actor, tick, event.action);
+    }
+    // Off the map nothing is seen, but what residents there decide counts for their action mix.
+    for (const event of record.elsewhere?.events ?? [])
+      if (event.type === "decide") addAction(event.actor, tick, event.action);
+    for (const actor of record.elsewhere?.actors ?? []) {
+      names.set(actor.id, actor.name);
+      extend(present, actor.id, tick);
     }
     for (const actor of record.actors) {
       names.set(actor.id, actor.name);
-      const span = seen.get(actor.id);
-      if (span) span.last = tick;
-      else seen.set(actor.id, { first: tick, last: tick });
+      extend(present, actor.id, tick);
       const spot = `${actor.x},${actor.y}`;
+      // Back after ticks off the map, it is counted from here, as if it had just appeared.
+      if (extend(seen, actor.id, tick)) lastSpot.delete(actor.id);
       if (lastSpot.get(actor.id) !== spot) {
         // Appearing in the world is not a move.
         if (lastSpot.has(actor.id)) visible = true;
@@ -122,18 +162,21 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   };
   for (const [id, name] of names) {
     const list = actions.get(id) ?? [];
-    const { first, last } = seen.get(id) as { first: number; last: number };
-    const end = last + 1;
-    // Whole windows only, counted from when the actor appeared. Someone there for
-    // the whole of a run shorter than one window is judged on the run as a single
-    // window; a monster that came and went before a window was up is not judged.
-    const whole = first === 0 && end === run.length;
     let fewest = Number.POSITIVE_INFINITY;
-    for (let start = first; (whole && start === 0) || start + window <= end; start += window) {
-      const used = new Set(
-        list.filter((a) => a.tick >= start && a.tick < start + window).map((a) => a.action),
-      );
-      fewest = Math.min(fewest, used.size);
+    for (const { first, last } of present.get(id) ?? []) {
+      const end = last + 1;
+      // Whole windows only, each inside one stretch the actor was in the run,
+      // on the map or (a resident) off it, counted from when it appeared.
+      // Someone there for the whole of a run shorter than one window is judged
+      // on the run as a single window; a monster that came and went before a
+      // window was up is not judged.
+      const whole = first === 0 && end === run.length;
+      for (let start = first; (whole && start === 0) || start + window <= end; start += window) {
+        const used = new Set(
+          list.filter((a) => a.tick >= start && a.tick < start + window).map((a) => a.action),
+        );
+        fewest = Math.min(fewest, used.size);
+      }
     }
     if (fewest === Number.POSITIVE_INFINITY) continue;
     actionMix[id] = { name, actions: fewest };
@@ -178,26 +221,50 @@ export interface SpotlightWait {
  * How long each actor went without the spotlight, given who held it on each
  * tick of a run and the actors in it. One never shown waited the whole run.
  *
- * Assumes the population is fixed for the run: every actor in `names` is
- * counted from tick 0 to the end, and the limit uses `names.size`. Once
- * residents can leave or arrive mid-run (despawn), each wait has to count
- * only the ticks that actor was present, against the population at the time.
+ * `away` gives, by actor, the stretches it was off the map (from, to, with
+ * `to` not included). A wait ends when the actor leaves the map and starts
+ * again when it comes back, as the director counts it. The limit uses the
+ * whole cast, `names.size`, even while some of it is away.
  */
 export function spotlightWait(
   subjects: readonly (number | null)[],
   names: ReadonlyMap<number, string>,
+  away: ReadonlyMap<number, readonly (readonly [number, number])[]> = new Map(),
 ): SpotlightWait {
   const gapStart = new Map([...names.keys()].map((id) => [id, 0]));
   const longest = new Map([...names.keys()].map((id) => [id, 0]));
   const close = (id: number, tick: number) => {
     longest.set(id, Math.max(longest.get(id) as number, tick - (gapStart.get(id) as number)));
   };
-  subjects.forEach((subject, tick) => {
-    if (subject === null || !gapStart.has(subject)) return;
+  // By tick, who leaves the map then and who comes back.
+  const leaves = new Map<number, number[]>();
+  const returns = new Map<number, number[]>();
+  const add = (at: Map<number, number[]>, tick: number, id: number) =>
+    at.set(tick, [...(at.get(tick) ?? []), id]);
+  for (const [id, spans] of away) {
+    if (!names.has(id)) continue;
+    for (const [from, to] of spans) {
+      add(leaves, from, id);
+      add(returns, to, id);
+    }
+  }
+  const gone = new Set<number>();
+  for (let tick = 0; tick <= subjects.length; tick++) {
+    for (const id of returns.get(tick) ?? []) {
+      gone.delete(id);
+      gapStart.set(id, tick);
+    }
+    for (const id of leaves.get(tick) ?? []) {
+      close(id, tick);
+      gone.add(id);
+    }
+    if (tick === subjects.length) break;
+    const subject = subjects[tick] ?? null;
+    if (subject === null || !gapStart.has(subject)) continue;
     close(subject, tick);
     gapStart.set(subject, tick + 1);
-  });
-  for (const id of names.keys()) close(id, subjects.length);
+  }
+  for (const id of names.keys()) if (!gone.has(id)) close(id, subjects.length);
 
   const perActor: Record<string, number> = {};
   for (const [id, name] of names) perActor[name] = (longest.get(id) as number) / TICKS_PER_SECOND;

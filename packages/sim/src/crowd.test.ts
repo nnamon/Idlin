@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { wayTo } from "./brain.ts";
 import { placeConstants } from "./map.ts";
 import { compileBots } from "./tactics.ts";
-import { firstLight, shippedPrograms } from "./testing.ts";
+import { firstLight, shippedPrograms, shippedWorld } from "./testing.ts";
 import {
   createWorld,
   hashWorld,
@@ -14,6 +14,8 @@ import {
 } from "./world.ts";
 
 const MAP = firstLight();
+// The shipped world, whose camp region is MAP at the same coordinates, for the shipped programs.
+const SHIPPED = shippedWorld();
 // The full sweep runs in the capture workflow; the gate runs a few of its seeds.
 const LONG = process.env.IDLIN_LONG === "1";
 // Something that stands in the way and never moves.
@@ -156,7 +158,7 @@ describe("crowds", () => {
       [50, LONG ? [1, 2, 3] : [1]],
     ] as const) {
       for (const seed of seeds) {
-        const world = createWorld(MAP, seed, shippedPrograms());
+        const world = createWorld(SHIPPED, seed, shippedPrograms());
         const last = new Map<number, number>();
         let longest = 0;
         let worst = "";
@@ -213,8 +215,10 @@ describe("crowds", () => {
           new Set(sleepersAtMidnight).size,
           `${residents} residents, seed ${seed}: sleepers sharing`,
         ).toBe(sleepersAtMidnight.length);
-        expect(restore(snapshot(world), MAP, shippedPrograms())).toEqual(world);
-        expect(hashWorld(restore(snapshot(world), MAP, shippedPrograms()))).toBe(hashWorld(world));
+        expect(restore(snapshot(world), SHIPPED, shippedPrograms())).toEqual(world);
+        expect(hashWorld(restore(snapshot(world), SHIPPED, shippedPrograms()))).toBe(
+          hashWorld(world),
+        );
       }
     }
   }, 60_000);

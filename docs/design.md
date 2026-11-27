@@ -72,9 +72,9 @@ dangerous part of the day comes.
 
 ### One fixed frame
 
-The whole world fits in one frame and the camera doesn't cut between
-characters. (If the population outgrows one frame, see "One player on a busy
-stream" below.) A panel beside the map will spotlight one character at a time,
+The world is a few regions, each of which fits in one frame, and the camera
+doesn't cut between characters: the stream shows one region at a time (see
+"One player on a busy stream" below). A panel beside the map will spotlight one character at a time,
 changing slowly and preferring whoever something is happening to.
 
 Feedback is small and local: a hop, a lunge, a number that floats up and
@@ -249,6 +249,13 @@ downed goes up at once. The kill goes to the last blow that landed, as in the
 simulation. What monsters decide is not news. Name slips keep clear of
 monsters, as they do of the fire.
 
+The fight is read off the whole world, where walking through an exit is a step
+like any other, so someone who walks off the map is not taken for killed or
+downed. The map draws only what happens in the region it shows: its
+monsters, marked tiles, numbers, blots and rings. The page and the news line
+cover every resident, so one downed in another region is on the news, listed
+as "downed", and fades in at camp.
+
 A few things move while no one does: the river's ripples drift downstream, a
 line of smoke, as heavy as the grass ticks and thinning as it goes, rises
 from the camp fire and leans east, and the tops of the trees lean a little in
@@ -320,18 +327,22 @@ to stay worth watching for someone who owns just one of them. The plan:
    one on their first day while long-time players keep their levels.
 4. **A page of your own.** Each character gets a companion web page: its
    stats, what happened since you last looked, and its program to edit.
-5. **Regions.** A frame only holds as many characters as can be read, and
-   that number will come from the crowd captures. Past it,
-   the world gets more regions. The stream stays on one region at a time and
-   moves to the next slowly, without cutting. Characters elsewhere carry on,
-   and show up in the news line and on their own page.
+5. **Regions.** A frame only holds as many characters as can be read: about
+   12 to 15, or 20 if they spread out, by the crowd captures. So the world is
+   several regions, each a map of one frame, joined by exits, and the number
+   of regions grows with the population. Monsters come into a region only
+   while it is under its crowd target (one actor per 25 walkable tiles, about
+   18). The stream stays on one region at a time and moves to the next
+   slowly, without cutting. Characters elsewhere carry on, and show up in the
+   news line and on their own page.
 
 Whether this is enough is not known. It will be tested by capturing the stream
 with 12, 50 and 150 characters and judging it from one player's point of view
 (the "Mine" score in [watch-rubric.md](watch-rubric.md)). The first milestone
 only builds the frame and the spotlight and measures how many characters fit.
-Points 1, 3 and 4 need real players and are planned for M3; regions are
-planned for M4.
+Points 1, 3 and 4 need real players and are planned for M3. Four regions
+exist in the simulation; the viewer draws only the camp's so far, and moving
+the view between regions is still to be built.
 
 ## What a viewer can do
 

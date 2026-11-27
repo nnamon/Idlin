@@ -1,15 +1,13 @@
-import { readdirSync, readFileSync } from "node:fs";
 import {
   type Actor,
   compileBots,
   createWorld,
-  parseMap,
   placeConstants,
   spawnsNearCamp,
   step,
 } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import mapJson from "../../../content/maps/first-light.json";
+import { botSources, shippedWorld } from "../../sim/src/testing.ts";
 import {
   BEAT_TICKS,
   beat,
@@ -260,13 +258,8 @@ describe("how far into a walk", () => {
 
 describe("effects over a real run", () => {
   it("are a function of the world's history and the time alone", () => {
-    const map = parseMap(mapJson);
-    const dir = new URL("../../../content/bots/", import.meta.url);
-    const sources = Object.fromEntries(
-      readdirSync(dir)
-        .filter((file) => file.endsWith(".tac"))
-        .map((file) => [file.slice(0, -4), readFileSync(new URL(file, dir), "utf8")]),
-    );
+    const map = shippedWorld();
+    const sources = botSources();
     const run = (): string[] => {
       const world = createWorld(map, 1, compileBots(sources, placeConstants(map)));
       const camp = placeConstants(map).camp as { x: number; y: number };

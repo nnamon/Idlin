@@ -72,7 +72,8 @@ export function terrainAt(map: TileMap, x: number, y: number): Terrain {
 export const isWalkable = (map: TileMap, x: number, y: number): boolean =>
   inBounds(map, x, y) && WALKABLE.has(terrainAt(map, x, y));
 
-export function place(map: TileMap, name: string): Point {
+/** A place of a map, or of a world (in world coordinates), by name. */
+export function place(map: Pick<TileMap, "name" | "places">, name: string): Point {
   const found = map.places.find((p) => p.name === name);
   if (!found) throw new RangeError(`map "${map.name}" has no place called "${name}"`);
   return found;
@@ -85,8 +86,9 @@ const isCount = (v: unknown): v is number => typeof v === "number" && Number.isI
 
 /**
  * Turns parsed map content into a TileMap, or throws a MapError that says what
- * is wrong and where. A map must have a place called "camp", and every walkable
- * tile must be reachable from it.
+ * is wrong and where. A map is one region of the world; that the world has a
+ * camp and that all of it can be reached from there is checked when the
+ * regions are put together (see atlas.ts).
  */
 export function parseMap(raw: unknown): TileMap {
   if (!isRecord(raw)) throw new MapError("a map must be an object");
@@ -153,29 +155,6 @@ export function parseMap(raw: unknown): TileMap {
       return fail(`place "${p.name}" at (${p.x}, ${p.y}) is not on a walkable tile`);
     }
   }
-  const camp = placeList.find((p) => p.name === "camp");
-  if (!camp) return fail('a place called "camp" is required');
-
-  // Every walkable tile must be reachable from camp, or an actor could be stranded.
-  const seen = new Set<number>([tileIndex(map, camp.x, camp.y)]);
-  const queue: Point[] = [camp];
-  for (let head = 0; head < queue.length; head++) {
-    const at = queue[head] as Point;
-    for (const [dx, dy] of NEIGHBOURS) {
-      const x = at.x + dx;
-      const y = at.y + dy;
-      if (!isWalkable(map, x, y) || seen.has(tileIndex(map, x, y))) continue;
-      seen.add(tileIndex(map, x, y));
-      queue.push({ x, y });
-    }
-  }
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (isWalkable(map, x, y) && !seen.has(tileIndex(map, x, y))) {
-        return fail(`walkable tile (${x}, ${y}) cannot be reached from camp`);
-      }
-    }
-  }
   return map;
 }
 
@@ -187,7 +166,7 @@ export const NEIGHBOURS: readonly (readonly [number, number])[] = [
   [-1, 0],
 ];
 
-/** The map's places as names a program can use: each stands for its x and y. */
-export function placeConstants(map: TileMap): Record<string, Point> {
+/** The places of a map or a world as names a program can use: each stands for its x and y. */
+export function placeConstants(map: Pick<TileMap, "places">): Record<string, Point> {
   return Object.fromEntries(map.places.map((p) => [p.name, { x: p.x, y: p.y }]));
 }

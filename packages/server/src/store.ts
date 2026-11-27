@@ -107,7 +107,7 @@ export function loadNewest(
       continue;
     }
     try {
-      return { world: restore(text, content.map, content.programs), file };
+      return { world: restore(text, content.atlas, content.programs), file };
     } catch (error) {
       if (!(error instanceof SnapshotError)) {
         // Not a refusal of the file; it may be this build's fault, so the file is left as it is.

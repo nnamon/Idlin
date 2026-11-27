@@ -3,7 +3,7 @@ import {
   compileBots,
   createWorld,
   loadMonsters,
-  parseMap,
+  parseWorld,
   placeConstants,
   START_HOUR,
   spawnsNearCamp,
@@ -12,12 +12,13 @@ import {
   TICKS_PER_SECOND,
   XP_TABLE,
 } from "@idlin/sim";
-import mapJson from "../../../content/maps/first-light.json";
+import worldJson from "../../../content/world.json";
 import { castOf, spreadLevels } from "./cast.ts";
 import { fitFrame } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
 import { follow } from "./live.ts";
 import { Scene } from "./scene.ts";
+import { awayFrom, campRegion, regionNames, regionView, rosterOf } from "./view.ts";
 import "./style.css";
 
 /** Files by their name without the folder or the extension. */
@@ -53,6 +54,10 @@ const monsterFiles = (): { stats: Record<string, unknown>; sources: Record<strin
   ),
 });
 
+/** The shipped map files, parsed, by file name without the extension. */
+const mapFiles = (): Record<string, unknown> =>
+  byName(import.meta.glob("../../../content/maps/*.json", { import: "default", eager: true }));
+
 /** What the page offers a capture tool in capture mode. */
 export interface CaptureApi {
   /** Moves time on by this many ticks (fractions allowed, for frames between ticks) and draws. */
@@ -85,15 +90,22 @@ async function main(): Promise<void> {
 
   const frame = must("frame");
 
-  const map = parseMap(mapJson);
-  const programs = compileBots(botSources(), placeConstants(map));
+  const maps = mapFiles();
+  const atlas = parseWorld(worldJson, maps);
+  const programs = compileBots(botSources(), placeConstants(atlas));
   // `?monsters` lets the shipped monsters into the world, by their spawn table,
   // so that a capture can show fights. The world server does not run them yet.
   const files = params.has("monsters") ? monsterFiles() : null;
-  const monsters = files ? loadMonsters(files.stats, files.sources, map) : null;
+  const monsters = files ? loadMonsters(files.stats, files.sources, atlas) : null;
   const world = monsters
-    ? createWorld(map, seed, { ...programs, ...monsters.programs }, monsters.kinds, monsters.spawns)
-    : createWorld(map, seed, programs);
+    ? createWorld(
+        atlas,
+        seed,
+        { ...programs, ...monsters.programs },
+        monsters.kinds,
+        monsters.spawns,
+      )
+    : createWorld(atlas, seed, programs);
   // `?crowd=50` fills the camp with that many residents, to see how a crowd reads.
   const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
   step(world, spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)));
@@ -106,8 +118,18 @@ async function main(): Promise<void> {
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
 
-  const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
-  const scene = await Scene.create(frame, world.map, labels);
+  // The map shows the camp's region; drawing the others is still to come.
+  const shown = campRegion(world);
+  const region = atlas.regions[shown] as (typeof atlas.regions)[number];
+  const labels = (maps[region.map.name] as { labels?: MapLabel[] }).labels ?? [];
+  const view = (): typeof world => regionView(world, shown);
+  const names = regionNames(atlas, maps);
+  /** Draws the camp's map, and the page listing every resident, those away faded. */
+  const drawAt = (time: number): void => {
+    const map = view();
+    scene.draw(map, time, rosterOf(world), awayFrom(world, map, names));
+  };
+  const scene = await Scene.create(frame, region.map, labels);
   // The frame fills the window: scaled as a whole, and wider or taller than 16:9 where the window is.
   const fit = (): void => {
     const { width, height, scale, below, columns } = fitFrame(
@@ -125,7 +147,7 @@ async function main(): Promise<void> {
   addEventListener("resize", () => {
     fit();
     // In capture mode nothing else would redraw.
-    if (params.has("capture")) scene.draw(world, world.tick);
+    if (params.has("capture")) drawAt(world.tick);
   });
   // By default the page follows the world server (`?server=ws://host:port` for another
   // address). It runs a world of its own for captures, or when the URL asks for one with
@@ -137,16 +159,16 @@ async function main(): Promise<void> {
   ) {
     await document.fonts.ready;
     const server = params.get("server") || `ws://${location.hostname}:4311`;
-    follow(scene, world.map, world.programs, server);
+    follow(scene, atlas, world.programs, server, shown, names);
     return;
   }
 
-  const draw = (fraction: number): void => scene.draw(world, world.tick + fraction);
+  const draw = (fraction: number): void => drawAt(world.tick + fraction);
   const tick = (): void => {
     step(world);
-    scene.observe(world);
+    scene.observe(view(), world, shown);
   };
-  scene.observe(world);
+  scene.observe(view(), world, shown);
   for (let i = 0; i < skip; i++) tick();
   await document.fonts.ready;
 

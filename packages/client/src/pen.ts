@@ -28,8 +28,12 @@ export class Pen {
     return this.state / 4294967296;
   }
 
-  /** Strokes a path through the points: twice, slightly apart, like a nib going over its own line. */
+  /**
+   * Strokes a path through the points: twice, slightly apart, like a nib going
+   * over its own line. Both passes are as faint as the alpha in force allows.
+   */
   line(ctx: Ctx, points: readonly Pt[], width = 2, jitter = 1.2, close = false): void {
+    const base = ctx.globalAlpha;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let pass = 0; pass < 2; pass++) {
@@ -43,10 +47,10 @@ export class Pen {
       });
       if (close) ctx.closePath();
       ctx.lineWidth = pass ? width * 0.45 : width;
-      ctx.globalAlpha = pass ? 0.5 : 0.92;
+      ctx.globalAlpha = base * (pass ? 0.5 : 0.92);
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = base;
   }
 }
 

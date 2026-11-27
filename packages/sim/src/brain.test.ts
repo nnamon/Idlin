@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { atlasOf } from "./atlas.ts";
 import { CONFUSED_TICKS, IDLE_TICKS } from "./brain.ts";
 import { firstLight } from "./testing.ts";
 import { BYTECODE_VERSION, FAULTS, OP, type Program, ProgramError, validateProgram } from "./vm.ts";
@@ -195,8 +196,8 @@ describe("actors run programs", () => {
     expect(before).not.toBe(hashWorld(w));
     expect(Object.keys(w).sort()).toEqual([
       "actors",
+      "atlas",
       "kinds",
-      "map",
       "marks",
       "nextActorId",
       "nextSpawn",
@@ -390,7 +391,7 @@ describe("programs and determinism", () => {
           try {
             data.hash = hashWorld({
               ...(data.state as unknown as World),
-              map,
+              atlas: atlasOf(map),
               programs: PROGRAMS,
               kinds: {},
               spawns: [],

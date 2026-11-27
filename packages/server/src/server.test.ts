@@ -78,7 +78,7 @@ const start = async (
 
 /** The world a new server starts, stepped on to `tick`, without a server. */
 const reference = (tick: number): World => {
-  const world = createWorld(CONTENT.map, SEED, CONTENT.programs);
+  const world = createWorld(CONTENT.atlas, SEED, CONTENT.programs);
   step(world, spawnsNearCamp(world, castOf(RESIDENTS)));
   while (world.tick < tick) step(world);
   return world;
@@ -92,7 +92,7 @@ const viewer = async (port: number, origin?: string) => {
   const worlds: World[] = [];
   const waiting: { tick: number; resolve: () => void }[] = [];
   socket.on("message", (data) => {
-    const world = restore(String(data), CONTENT.map, CONTENT.programs);
+    const world = restore(String(data), CONTENT.atlas, CONTENT.programs);
     worlds.push(world);
     for (const wait of waiting.filter((w) => world.tick >= w.tick)) wait.resolve();
   });
@@ -157,7 +157,7 @@ describe("world server", () => {
     const second = await start(dir, lines);
     expect(lines.slice(0, 3)).toEqual([
       "skipping snapshot world-0000000000000301.json: snapshot is not valid JSON",
-      `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4, 5 or ${SNAPSHOT_VERSION}`,
+      `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4, 5, 6 or ${SNAPSHOT_VERSION}`,
       "resumed world-0000000000000101.json at tick 101",
     ]);
     expect(hashWorld(second.world)).toBe(hashWorld(reference(101)));
@@ -242,7 +242,7 @@ describe("world server", () => {
     expect(listSnapshots(dir)).toEqual([snapshotName(5), snapshotName(1)]);
     expect(
       hashWorld(
-        restore(readFileSync(join(dir, snapshotName(5)), "utf8"), CONTENT.map, CONTENT.programs),
+        restore(readFileSync(join(dir, snapshotName(5)), "utf8"), CONTENT.atlas, CONTENT.programs),
       ),
     ).toBe(hashWorld(later));
   });

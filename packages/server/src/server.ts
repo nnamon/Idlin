@@ -120,7 +120,7 @@ export class WorldServer {
       world = resumed.world;
       options.log(`resumed ${resumed.file} at tick ${world.tick}`);
     } else {
-      world = createWorld(content.map, options.seed, content.programs);
+      world = createWorld(content.atlas, options.seed, content.programs);
       step(world, spawnsNearCamp(world, castOf(options.residents)));
       options.log(`no snapshot to resume; new world from seed ${options.seed}`);
     }

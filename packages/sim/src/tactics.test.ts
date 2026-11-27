@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { regionAt } from "./atlas.ts";
 import { place, placeConstants } from "./map.ts";
 import { createRng, nextInt } from "./rng.ts";
 import { SYSCALLS } from "./syscalls.ts";
 import { BotError, type Compiled, type Constants, compileBots, compileTactics } from "./tactics.ts";
-import { botSources, firstLight } from "./testing.ts";
+import { botSources, firstLight, shippedWorld } from "./testing.ts";
 import {
   type Decision,
   MAX_CODE_LENGTH,
@@ -740,12 +741,12 @@ describe("shipped programs", () => {
   it("every program in content/bots compiles", () => {
     const sources = botSources();
     expect(Object.keys(sources).sort()).toEqual(["homebody", "riverwalker", "wanderer"]);
-    const programs = compileBots(sources, placeConstants(firstLight()));
+    const programs = compileBots(sources, placeConstants(shippedWorld()));
     expect(Object.keys(programs).sort()).toEqual(Object.keys(sources).sort());
   });
 
   it("the shipped programs behave as their labels say, over a full day", () => {
-    const map = firstLight();
+    const map = shippedWorld();
     const world = createWorld(map, 9, compileBots(botSources(), placeConstants(map)));
     step(
       world,
@@ -764,6 +765,7 @@ describe("shipped programs", () => {
     let hobFarthest = 0;
     let rillReachedRiver = false;
     const wrenTiles = new Set<string>();
+    const wrenRegions = new Set<number>();
     const labels = new Set<string>();
     for (let tick = 0; tick < TICKS_PER_DAY; tick++) {
       step(world);
@@ -773,16 +775,21 @@ describe("shipped programs", () => {
       }
       const { hour } = clock(world);
       wrenTiles.add(`${wren.x},${wren.y}`);
+      wrenRegions.add(regionAt(map, wren.x, wren.y));
       if (hour >= 8 && hour < 18) hobFarthest = Math.max(hobFarthest, far(hob, camp));
       if (far(rill, river) === 0) rillReachedRiver = true;
       // Deep in the night both of them are settled near the lantern.
       if (hour === 2) {
         expect(far(hob, camp)).toBeLessThanOrEqual(3);
         expect(far(rill, camp)).toBeLessThanOrEqual(3);
+        // The wanderer strolls about the camp's region, which the viewer shows.
+        expect(regionAt(map, wren.x, wren.y)).toBe(regionAt(map, camp.x, camp.y));
       }
     }
     expect(rillReachedRiver).toBe(true);
     expect(wrenTiles.size).toBeGreaterThan(200);
+    // The wanderer's trips take it through every region of the world in a day.
+    expect(wrenRegions.size).toBe(map.regions.length);
     // The homebody strays, is called back, and never gets across the map.
     expect(hobFarthest).toBeGreaterThan(6);
     expect(hobFarthest).toBeLessThan(30);
@@ -792,6 +799,12 @@ describe("shipped programs", () => {
       "homebody: too far: turn back",
       "riverwalker: night: sleep at camp",
       "riverwalker: to the river and back",
+      "wanderer: back for the night",
+      "wanderer: back to camp",
+      "wanderer: look about",
+      "wanderer: off to the hills",
+      "wanderer: off to the lower river",
+      "wanderer: off to the pinewood",
       "wanderer: stroll, then rest",
     ]);
   });

@@ -69,8 +69,37 @@ things. A decision that is stopped by a mistake changes nothing in memory.
 
 Each map names its places. A place stands for its position, and can be given
 wherever a sensor or an action wants an x and a y: `walk_to(camp)`,
-`distance(river)`. The first map has `camp`, `bank`, `river`, `near_wood`,
-`deep_wood`, `den` and `meadow`.
+`distance(river)`. The shipped world has `camp`, `bank`, `near_wood`,
+`deep_wood`, `den`, `river` and `meadow` in the camp's region, `pinewood` in
+the pinewood, `hills` and `caves` in the hills, and `lower_river` and `reeds`
+by the lower river.
+
+## Regions
+
+The world is several regions, each a map from `content/maps/` set down at its
+own place in one grid of world coordinates, as `content/world.json` lists
+them. Positions, places, `self_x` and `self_y` are all in world coordinates,
+so a program never needs to know which region something is in. The regions
+are joined by exits: pairs of side-by-side tiles on two regions' edges. Every
+other edge is closed, even where two regions touch.
+
+- `walk_to` and `step_to` find the way through exits, so `walk_to(hills)` from
+  camp walks along the road, over the bridge and out of the camp's region at
+  its east edge into the hills.
+- `wander` picks a tile in the region the actor is in. Going somewhere else is
+  something a program decides with `walk_to`.
+- An actor sees only the enemies in its own region (`threat_x`,
+  `threat_distance` and the rest), and blows stop at a region's edge.
+- Monsters keep to the region they came out in: they never cross an exit.
+- `distance` is the straight grid line in world coordinates, straight across
+  closed borders, so it says nothing about how far the walk is. A place in
+  the next region can be close by `distance` and a long way round on foot.
+
+The shipped world is the camp's region at (0, 0), with the pinewood west of
+it, the hills east of it and the lower river south of it, each 30 by 21
+tiles. Each exit is on an edge of the camp's region: the west one through the
+deep wood at (0, 7), the east one at the end of the road at (29, 8), and the
+south one by the river at (12, 20).
 
 ## Sensors and actions
 
@@ -89,7 +118,7 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `idle`              | action | 0     | Do nothing for a moment.                                                                                                                                                                                     |
 | `wait`              | action | 1     | Do nothing for the given number of ticks (5 to 600).                                                                                                                                                         |
 | `walk_to`           | action | 2     | Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.                                                                                                                |
-| `wander`            | action | 0     | Walk to a walkable tile chosen at random.                                                                                                                                                                    |
+| `wander`            | action | 0     | Walk to a walkable tile chosen at random in the region this actor is in.                                                                                                                                     |
 | `hp`                | sensor | 0     | This actor's hitpoints.                                                                                                                                                                                      |
 | `max_hp`            | sensor | 0     | The most hitpoints this actor can have.                                                                                                                                                                      |
 | `threat_x`          | sensor | 0     | The column of the nearest enemy, or this actor's own if there is none.                                                                                                                                       |
@@ -229,23 +258,29 @@ any other, and must not share a name with a program in `content/bots/`.
   spaces.
 - `hp` (1 to 100,000), `damage` (0 to 100,000), `windup` (1 to 100 ticks),
   `recovery` (0 to 100 ticks) and `reach` (1 to 3 tiles): its numbers in a fight.
-- `group`: how many arrive together, 1 to 6.
-- `day` and `night`: the map's places they come out at, by day and from 19:00
-  to 06:00. Either list may be empty.
+- `group`: how many arrive together, 1 to 3.
+- `day` and `night`: the world's places they come out at, by day and from
+  19:00 to 06:00. Either list may be empty, and the places may be in any
+  regions.
 
-Every game hour at most, one group arrives together, all of it on free tiles
-within two steps of one of its places for the time of day, chosen at random.
-At most six monsters are alive at once. A group only comes if all of it fits
-under that cap and near its place; if the place is too crowded, none of it
-comes and the hour starts again. The hour also starts again whenever a monster
-goes down or is put in by hand, and on every tick six are alive, so one that
-dies is replaced an hour later at the earliest. A monster file with a field
+Each region spawns on its own. Every game hour at most, one group arrives in a
+region, all of it on free tiles within two steps of one of its places in that
+region for the time of day, chosen at random. A region holds at most three
+monsters at once, and a group only comes if all of it fits under that cap,
+fits near its place, and leaves the region under its crowd target: one actor,
+resident or monster, for every 25 of its walkable tiles (17 to 19 in the
+shipped regions). If the place is too crowded, none of it comes and the
+region's hour starts again. The hour also starts again whenever a monster in
+the region goes down or is put in by hand, and on every tick it holds three,
+so one that dies is replaced an hour later at the earliest. The shipped wolves
+and goblins come out at `deep_wood`, `den` and `near_wood`, all on the camp's
+map, so the other regions have no monsters yet. A monster file with a field
 missing, out of range or unknown, a list with gaps, or a place the map doesn't
 have, is refused with the file's name, like a program that does not compile.
 
 Monsters from the spawn table go home at the end of the part of the day they
 came out for: day ones at 19:00, night ones at 06:00. Each goes as soon as no
-adventurer is within eight steps of it and it is not in the middle of a blow,
+adventurer in its region is within eight steps of it and it is not in the middle of a blow,
 so one still fighting stays until it is clear. That leaves room for the next
 part of the day's monsters. Monsters never step onto the camp's ground (its
 `camp` tiles), though their blows reach onto it.

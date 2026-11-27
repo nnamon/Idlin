@@ -3,10 +3,8 @@
 // shape of what was asked for. What the picture looks like is checked by eye,
 // on captures.
 
-import { readdirSync, readFileSync } from "node:fs";
 import {
   type Actor,
-  compileBots,
   createWorld,
   parseMap,
   placeConstants,
@@ -15,17 +13,23 @@ import {
   type World,
 } from "@idlin/sim";
 import { beforeAll, describe, expect, it } from "vitest";
-import mapJson from "../../../content/maps/first-light.json";
+// The scene draws the camp's map. The worlds here are the shipped world,
+// whose camp region is that map at (0, 0), so the whole world can be drawn as
+// it is: anyone off the map is outside it, faded out and cut at its rule.
+import mapJson from "../../../content/maps/camp.json";
+import { rawWorld, shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
 import { type Effects, glyphAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
 import { FRAME_HEIGHT, FRAME_WIDTH, ROW_PITCH, spreadPage } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
 import { identity } from "./identity.ts";
 import { css } from "./light.ts";
+import { eat, ROUTE_ROW, routeLine } from "./marks.ts";
 import { DAY, NIGHT } from "./palette.ts";
 import { actorPose } from "./pose.ts";
 import { Scene } from "./scene.ts";
 import { FADE, MIN_HOLD, type Slips, slipAlpha } from "./slips.ts";
 import { type Box, bodyBox, type TagWish } from "./tags.ts";
+import { awayFrom, regionNames, regionView, rosterOf } from "./view.ts";
 
 interface Call {
   readonly op: string;
@@ -66,6 +70,7 @@ function fakeCanvas(): FakeCanvas {
                 : state.fillStyle
               : undefined,
           ...(key === "stroke" ? { alpha: state.globalAlpha ?? 1, ink: state.strokeStyle } : {}),
+          ...(key === "fillText" ? { alpha: state.globalAlpha ?? 1 } : {}),
         });
         // 13 pixels a letter, and the letter spacing in force after each.
         if (key === "measureText")
@@ -103,14 +108,11 @@ const labels = (mapJson as { labels?: MapLabel[] }).labels ?? [];
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
 const PROGRAMS = ["wanderer", "homebody", "riverwalker"];
 
+const WORLD = shippedWorld();
+const SHIPPED = shippedPrograms(WORLD);
+
 function newWorld(residents = 6, seed = 1): World {
-  const dir = new URL("../../../content/bots/", import.meta.url);
-  const sources = Object.fromEntries(
-    readdirSync(dir)
-      .filter((file) => file.endsWith(".tac"))
-      .map((file) => [file.slice(0, -4), readFileSync(new URL(file, dir), "utf8")]),
-  );
-  const world = createWorld(map, seed, compileBots(sources, placeConstants(map)));
+  const world = createWorld(WORLD, seed, SHIPPED);
   step(
     world,
     spawnsNearCamp(
@@ -125,6 +127,26 @@ function newWorld(residents = 6, seed = 1): World {
 }
 
 /** A scene and the four frame-sized sheets it draws on: the frame itself, day, night and the lit mask. */
+/**
+ * `scene`, given a whole world to observe or draw, given the camp's map of it
+ * as main.ts gives it: the actors there, the fight read off the whole world,
+ * and every resident on the page, those away faded. A call that passes the
+ * cut itself goes through as it is.
+ */
+function asMainDrivesIt(scene: Scene): Scene {
+  const observe = scene.observe.bind(scene);
+  const draw = scene.draw.bind(scene);
+  const names = regionNames(WORLD, rawWorld().maps);
+  scene.observe = (world, whole, region) =>
+    whole === undefined ? observe(regionView(world, 0), world, 0) : observe(world, whole, region);
+  scene.draw = (world, time, roster, away) => {
+    if (roster !== undefined) return draw(world, time, roster, away);
+    const view = regionView(world, 0);
+    draw(view, time, rosterOf(world), awayFrom(world, view, names));
+  };
+  return scene;
+}
+
 async function newScene(): Promise<{
   scene: Scene;
   out: FakeCanvas;
@@ -133,10 +155,8 @@ async function newScene(): Promise<{
   night: FakeCanvas;
 }> {
   install();
-  const scene = await Scene.create(
-    { appendChild: () => {} } as unknown as HTMLElement,
-    map,
-    labels,
+  const scene = asMainDrivesIt(
+    await Scene.create({ appendChild: () => {} } as unknown as HTMLElement, map, labels),
   );
   const sheets = canvases.filter((c) => c.width === FRAME_WIDTH && c.height === FRAME_HEIGHT);
   expect(sheets).toHaveLength(4);
@@ -303,14 +323,22 @@ describe("the scene", () => {
   });
 
   it("at full night draws the day sheet only where a lamp reaches", () => {
+    // Two plain clips: first to the lamps' reach, then, inside that, to the map's rule.
     const clips = midnight.daySheet.filter(lampClip);
-    expect(clips).toHaveLength(1);
+    expect(clips).toHaveLength(2);
+    const rule = midnight.daySheet[midnight.daySheet.indexOf(clips[1] as Call) - 1];
+    expect(rule?.op === "rect" && rule.args).toEqual([
+      5,
+      5,
+      map.width * 48 - 10,
+      map.height * 48 - 10,
+    ]);
     const before = midnight.daySheet.slice(0, midnight.daySheet.indexOf(clips[0] as Call));
     // One circle per light: the lantern, the fire and one carried by each resident.
     expect(before.filter((call) => call.op === "arc")).toHaveLength(2 + NAMES.length);
     expect(before.some((call) => call.op === "fillRect" || call.op === "drawImage")).toBe(false);
-    // While the dark is still closing in, all of it is drawn.
-    expect(nightfall.daySheet.some(lampClip)).toBe(false);
+    // While the dark is still closing in, all of it is drawn: the one plain clip is the map's rule.
+    expect(nightfall.daySheet.filter(lampClip)).toHaveLength(1);
     expect(nightfall.daySheet.length).toBeGreaterThan(50);
   });
 
@@ -420,7 +448,13 @@ describe("the scene", () => {
       );
       if (now !== line) [line, lineSince] = [now, crowd.tick];
       if (line === "" || crowd.tick - lineSince <= MIN_HOLD + 2 * FADE) continue;
-      expect(onMap).toContain(line.split(":")[0]);
+      // Someone named on their way off the map ("off to the pinewood") is not
+      // looked for once they have stepped past its edge.
+      const named = line.split(":")[0];
+      const there = crowd.actors.find((a) => a.name === named);
+      if (there && (there.x < 0 || there.x >= map.width || there.y < 0 || there.y >= map.height))
+        continue;
+      expect(onMap).toContain(named);
       found++;
     }
     expect(most).toBeGreaterThan(0);
@@ -515,7 +549,36 @@ describe("the scene", () => {
         );
         expect(feet).toBe(true);
       }
-      expect(ends).toHaveLength(withRoute.filter((a) => named.has(a.name)).length);
+      // What is left of a route all but eaten up can be a pixel long or less, and
+      // is not drawn; every other route of a named walker is. Its line is worked
+      // out as the scene does, from the walker on the map along its path there.
+      const seen = new Map(regionView(twelve, 0).actors.map((a) => [a.id, a]));
+      const longEnough = (a: Actor): boolean => {
+        const route = routeAt(effects, a.id, time);
+        const on = seen.get(a.id);
+        if (!route || !on) return false;
+        const pose = actorPose(on, 0, time);
+        const ahead = on.moveTicksLeft > 0 ? [{ x: on.x, y: on.y }] : [];
+        const line = eat(
+          routeLine(
+            [pose.x * 48, (pose.y - 1 + ROUTE_ROW) * 48],
+            [...ahead, ...on.path],
+            48,
+            on.id,
+            route.lane,
+            route.goal,
+          ),
+          route.eaten,
+        );
+        const [first, end] = [line[0], line[line.length - 1]];
+        return (
+          line.length > 1 &&
+          !!first &&
+          !!end &&
+          Math.hypot(first[0] - end[0], first[1] - end[1]) > 1
+        );
+      };
+      expect(ends).toHaveLength(withRoute.filter((a) => named.has(a.name) && longEnough(a)).length);
       expect(glyphs(frame)).toBe(withGlyph.filter((a) => named.has(a.name)).length);
       routesDrawn += ends.length;
       glyphsDrawn += glyphs(frame);
@@ -730,10 +793,8 @@ describe("the scene", () => {
     for (const residents of [12, 50]) {
       const world = newWorld(residents);
       install();
-      const scene = await Scene.create(
-        { appendChild: () => {} } as unknown as HTMLElement,
-        map,
-        labels,
+      const scene = asMainDrivesIt(
+        await Scene.create({ appendChild: () => {} } as unknown as HTMLElement, map, labels),
       );
       const sheets = canvases.filter((c) => c.width === FRAME_WIDTH && c.height === FRAME_HEIGHT);
       const [out, ...others] = sheets as [FakeCanvas, ...FakeCanvas[]];
@@ -918,6 +979,29 @@ describe("the scene", () => {
     expect(written?.args[2]).toBeLessThan(map.height * 48);
   });
 
+  it("fades the page row of a resident off the map, and writes where they are in place of what they do", async () => {
+    const { scene, day, out } = await newScene();
+    const world = newWorld();
+    const cedar = world.actors.find((a) => a.name === "Cedar") as Actor;
+    const pinewood = placeConstants(WORLD).pinewood as { x: number; y: number };
+    Object.assign(cedar, { x: pinewood.x, y: pinewood.y, fromX: pinewood.x, fromY: pinewood.y });
+    Object.assign(cedar, { path: [], moveTicksLeft: 0 });
+    scene.observe(world);
+    const page = drawn(day, () => scene.draw(world, world.tick)).filter(
+      (c) => c.op === "fillText" && (c.args[1] as number) > map.width * 48,
+    );
+    const written = (text: string) => page.find((c) => c.args[0] === text);
+    expect(written("Cedar")?.alpha).toBe(0.5);
+    expect(written("in the Pinewood")?.alpha).toBe(0.5);
+    // The others are written in full, with what they are doing.
+    for (const name of ["Ash", "Birch", "Dara", "Elm", "Fen"]) expect(written(name)?.alpha).toBe(1);
+    expect(page.filter((c) => String(c.args[0]).startsWith("in the "))).toHaveLength(1);
+    // Nothing of Cedar is on the map: no name slip.
+    const frame = drawn(out, () => scene.draw(world, world.tick));
+    expect(frame.some((c) => c.op === "fillText" && c.args[0] === "Cedar")).toBe(false);
+    expect(frame.some((c) => c.op === "fillText" && c.args[0] === "Ash")).toBe(true);
+  });
+
   it("shows a dash for the time, and no day, while the clock is hidden", async () => {
     const { scene, day } = await newScene();
     const world = newWorld();
@@ -952,6 +1036,11 @@ describe("the scene", () => {
       const calls = drawn(out, () => scene.draw(world, world.tick));
       for (const actor of world.actors) {
         const name = calls.findLast((c) => c.op === "fillText" && c.args[0] === actor.name);
+        // Off the map, nobody's name is written on it.
+        if (!name) {
+          last.delete(actor.id);
+          continue;
+        }
         const now = {
           x: name?.args[1] as number,
           y: name?.args[2] as number,

@@ -1,0 +1,62 @@
+{
+  "name": "camp",
+  "title": "Lantern Camp",
+  "width": 30,
+  "height": 21,
+  "legend": {
+    ".": "grass",
+    ":": "path",
+    "c": "camp",
+    "s": "shore",
+    ",": "deep_grass",
+    "d": "den",
+    "=": "bridge",
+    "T": "tree",
+    "t": "dark_tree",
+    "~": "water",
+    "#": "rock",
+    "L": "lantern",
+    "f": "campfire",
+    "B": "bank",
+    "A": "tent"
+  },
+  "rows": [
+    "tttttttttt,TTTTTTT.T...~~.....",
+    "tt,,t,,tt,,.T..T.....T.~~..T..",
+    "t,,,,,t,,,..TT...T.....~~.....",
+    "tt,,t,,,,....T.T....T..~~s....",
+    "t,,,,,,t,..T.....:.....s~~..T.",
+    "tt,t,,,,....T....:......~~....",
+    "t,,,,t,,.....ccccc......~~s...",
+    ",,,t,,,.....AcfcccA.....~~....",
+    "t,,,,,,....:cccLccc:::::==::::",
+    "tt,,t,,.....ccccBcc.....~~....",
+    "t,,,,,,......ccccA.....s~~..T.",
+    ",,t,,t,,.......:........~~....",
+    "t,,,,,,,...T...:....T...~~s...",
+    "##,,,t,,.......:.......~~~....",
+    "#dd#,,,,,..T...:......~~~..T..",
+    "#ddd,,,t,......:.....s~~......",
+    "#dddd#,,,..T...:::..~~~~...T..",
+    "##ddd#,,,,........:.~~~.......",
+    "#ddd##,t,,,..T....:~~~...T....",
+    "##d##,,,,,.......s~~~~........",
+    "######tt,t,,..T..~~~~....T...."
+  ],
+  "places": {
+    "camp": { "x": 14, "y": 9 },
+    "bank": { "x": 15, "y": 9 },
+    "near_wood": { "x": 14, "y": 3 },
+    "deep_wood": { "x": 4, "y": 6 },
+    "den": { "x": 2, "y": 16 },
+    "river": { "x": 23, "y": 10 },
+    "meadow": { "x": 27, "y": 6 }
+  },
+  "labels": [
+    { "text": "The Deep Wood", "x": 4.3, "y": 3.2, "style": "region" },
+    { "text": "the Den", "x": 2.7, "y": 20.2, "style": "place" },
+    { "text": "the River", "x": 23.3, "y": 14.7, "style": "place" },
+    { "text": "the Meadow", "x": 27.2, "y": 3.5, "style": "place" },
+    { "text": "Lantern Camp", "x": 15.0, "y": 12.2, "style": "town" }
+  ]
+}

@@ -1,48 +1,44 @@
-import { isWalkable, NEIGHBOURS, type Point, type TileMap, tileIndex } from "./map.ts";
+import { type Atlas, linked, pointOf, tileAt, walkable } from "./atlas.ts";
+import { NEIGHBOURS, type Point } from "./map.ts";
 
 /**
- * The shortest walk from `from` to `to` over walkable tiles, as the tiles to
- * step onto in order (ending with `to`, not including `from`). Returns an empty
- * list when already there and null when there is no way. Among equally short
- * walks the result is always the same one: breadth-first search with a fixed
- * neighbour order. Other actors are not obstacles here; they are handled when
- * a step is taken. `walkable` says which tiles may be stepped on; by default
- * every walkable tile.
+ * The shortest walk from `from` to `to`, as the tiles to step onto in order
+ * (ending with `to`, not including `from`), through exits into other regions
+ * where that is the way. Returns an empty list when already there and null
+ * when there is no way. Among equally short walks the result is always the
+ * same one: breadth-first search with a fixed neighbour order. Other actors are
+ * not obstacles here; they are handled when a step is taken. `step` says which
+ * steps may be taken; by default every step between two tiles one step joins.
  */
 export function findPath(
-  map: TileMap,
+  atlas: Atlas,
   from: Point,
   to: Point,
-  walkable = (x: number, y: number): boolean => isWalkable(map, x, y),
+  step = (ax: number, ay: number, bx: number, by: number): boolean => linked(atlas, ax, ay, bx, by),
 ): Point[] | null {
-  if (!walkable(from.x, from.y) || !walkable(to.x, to.y)) return null;
-  const start = tileIndex(map, from.x, from.y);
-  const goal = tileIndex(map, to.x, to.y);
+  if (!walkable(atlas, from.x, from.y) || !walkable(atlas, to.x, to.y)) return null;
+  const start = tileAt(atlas, from.x, from.y);
+  const goal = tileAt(atlas, to.x, to.y);
   if (start === goal) return [];
 
   const cameFrom = new Map<number, number>([[start, start]]);
-  const queue: number[] = [start];
+  const queue: Point[] = [{ x: from.x, y: from.y }];
   for (let head = 0; head < queue.length; head++) {
-    const current = queue[head] as number;
-    if (current === goal) break;
-    const cx = current % map.width;
-    const cy = (current - cx) / map.width;
+    const at = queue[head] as Point;
+    if (tileAt(atlas, at.x, at.y) === goal) break;
     for (const [dx, dy] of NEIGHBOURS) {
-      const x = cx + dx;
-      const y = cy + dy;
-      if (!walkable(x, y)) continue;
-      const next = tileIndex(map, x, y);
+      const x = at.x + dx;
+      const y = at.y + dy;
+      if (!step(at.x, at.y, x, y)) continue;
+      const next = tileAt(atlas, x, y);
       if (cameFrom.has(next)) continue;
-      cameFrom.set(next, current);
-      queue.push(next);
+      cameFrom.set(next, tileAt(atlas, at.x, at.y));
+      queue.push({ x, y });
     }
   }
   if (!cameFrom.has(goal)) return null;
 
   const path: Point[] = [];
-  for (let at = goal; at !== start; at = cameFrom.get(at) as number) {
-    const x = at % map.width;
-    path.push({ x, y: (at - x) / map.width });
-  }
+  for (let at = goal; at !== start; at = cameFrom.get(at) as number) path.push(pointOf(atlas, at));
   return path.reverse();
 }

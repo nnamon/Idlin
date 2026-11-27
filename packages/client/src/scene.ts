@@ -44,7 +44,6 @@ import {
   lyingAt,
   type News,
   NO_FIGHT,
-  nextFight,
   ringShare,
   ringStrength,
   SCRATCH_TICKS,
@@ -110,8 +109,11 @@ import {
   type TagWish,
   tagBox,
 } from "./tags.ts";
+import { edgeFade, fightOn } from "./view.ts";
 
 const FIGURE_SCALE = 1.3;
+/** How strongly a page row is drawn while its resident is off the map. */
+const AWAY_ALPHA = 0.5;
 const TAG_FONT = '27px "Fell SC"';
 const FONTS = ['22px "Fell"', '22px "Fell Italic"', TAG_FONT];
 /** How long a line of news stays up at least, in ticks, so the line can be read. */
@@ -172,11 +174,19 @@ const partsIn = (world: World): ((id: number) => Parts) => {
   return (id) => partsFor(byId.get(id) ?? id);
 };
 
+/** `world` with the actors the page lists, so a resident off the map is drawn there in its own kit. */
+const listing = (world: World, roster: readonly Actor[]): World => ({
+  ...world,
+  actors: [...roster],
+});
+
 interface Walker {
   readonly actor: Actor;
   readonly pose: Pose;
   readonly x: number;
   readonly y: number;
+  /** 1 on the map, falling to 0 as it walks off an edge (see `edgeFade`). */
+  readonly fade: number;
 }
 
 interface Light {
@@ -263,8 +273,14 @@ export class Scene {
   /** The river's outline in frame pixels, rounded as its banks are, and whether a point is on water. */
   private readonly water: Pt[][];
   private readonly wet: (x: number, y: number) => boolean;
-  /** Blows, hurts and the fallen; see fight.ts. */
+  /**
+   * Blows, hurts and the fallen (see fight.ts): `fought` as read off the
+   * whole world, and `fight` as the map shows it (see `fightOn` in view.ts).
+   */
+  private fought: Fight = NO_FIGHT;
   private fight: Fight = NO_FIGHT;
+  /** For the frame being drawn: where each listed resident off the map is (see `draw`). */
+  private away: ReadonlyMap<number, string> = new Map();
   /** Lines of fight news waiting for the line, and whether the line now up is one. */
   private newsQueue: News[] = [];
   private newsFight = false;
@@ -362,8 +378,19 @@ export class Scene {
     }
   }
 
-  /** Draws the world as it is at `time` ticks (the world's tick plus a fraction of the next). */
-  draw(world: World, time: number): void {
+  /**
+   * Draws the world as it is at `time` ticks (the world's tick plus a fraction
+   * of the next). The map shows `world.actors`; the page lists `roster`.
+   * `away` names, by id, the region each listed resident off the map is in,
+   * and the page fades those rows and writes that instead of what they do.
+   */
+  draw(
+    world: World,
+    time: number,
+    roster: readonly Actor[] = world.actors,
+    away: ReadonlyMap<number, string> = new Map(),
+  ): void {
+    this.away = away;
     const fraction = time - world.tick;
     const between = Math.min(1, Math.max(0, fraction));
     const walkers: Walker[] = world.actors.map((actor) => {
@@ -382,7 +409,9 @@ export class Scene {
         stoop,
         squash: push.squash,
       };
-      return { actor, pose, x: pose.x * TILE + push.x, y: pose.y * TILE - 4 + push.y };
+      const x = pose.x * TILE + push.x;
+      const y = pose.y * TILE - 4 + push.y;
+      return { actor, pose, x, y, fade: edgeFade(x, y, this.width, this.height) };
     });
     walkers.sort((a, b) => a.y - b.y || a.actor.id - b.actor.id);
     const { hour, lamps, region, lights, litAt } = this.lighting(walkers, time);
@@ -394,8 +423,12 @@ export class Scene {
     const out = this.out;
     // The names on the map this frame, and what a route breaks around: the
     // place names, and each slip with the glyph beside it.
+    const fades = new Map(walkers.map((walker) => [walker.actor.id, walker.fade]));
     const tags = this.placeNames(walkers).flatMap((tag) => {
-      const alpha = slipAlpha(this.slips, tag.id, time) * arrivalAt(this.fight, tag.id, time);
+      const alpha =
+        slipAlpha(this.slips, tag.id, time) *
+        arrivalAt(this.fight, tag.id, time) *
+        (fades.get(tag.id) ?? 1);
       if (alpha <= 0) return [];
       const glyph = glyphAt(this.effects, tag.id, time);
       const top = tag.y - 21;
@@ -409,11 +442,11 @@ export class Scene {
       return [{ ...tag, alpha, glyph, box }];
     });
     const holes = [...this.labelBoxes, ...tags.map((tag) => tag.box)];
-    if (region.kind !== "all") this.drawSide(this.night, world, walkers, time, holes);
+    if (region.kind !== "all") this.drawSide(this.night, world, roster, walkers, time, holes);
     // In full night the day drawing only shows inside the lamps' reach, so only that much of it is drawn.
     if (region.kind !== "none" || lamps > 0) {
       const only = region.kind === "none" ? lights : null;
-      this.drawSide(this.day, world, walkers, time, holes, only, skyCast(hour));
+      this.drawSide(this.day, world, roster, walkers, time, holes, only, skyCast(hour));
     }
     out.drawImage(region.kind === "all" ? this.day.canvas : this.night.canvas, 0, 0);
 
@@ -452,13 +485,15 @@ export class Scene {
       for (const light of lights) if (!light.carried) paint(light, light.strength);
       // A light someone carries opens only a little of the day drawing over the
       // river: the pale day water would read as fog on the night river. The
-      // lamplight's amber, laid on below, tints the water instead.
+      // lamplight's amber, laid on below, tints the water instead. A carried
+      // light lights only the map, inside its rule, so one taken off the map
+      // lights nothing beside it.
       const carried = lights.filter((light) => light.carried);
       if (carried.length > 0) {
         for (const wet of [false, true]) {
           lit.save();
           lit.beginPath();
-          if (!wet) lit.rect(0 - mx, 0, this.frameWidth, this.height);
+          if (!wet) lit.rect(...this.inRule());
           for (const loop of this.water) {
             trace(lit, loop);
             lit.closePath();
@@ -487,7 +522,7 @@ export class Scene {
         out.fillStyle = css(palette.paper);
         out.fillRect(0, 0, this.frameWidth, this.frameHeight);
         out.translate(mx, 0);
-        this.page(out, world, palette, this.pageStyle(world, palette));
+        this.page(out, world, roster, palette, this.pageStyle(listing(world, roster), palette));
       }
       out.restore();
     }
@@ -498,7 +533,7 @@ export class Scene {
       out.save();
       out.translate(mx, 0);
       out.beginPath();
-      out.rect(0, 0, this.width, this.height);
+      out.rect(...this.inRule());
       out.clip();
       out.globalCompositeOperation = "soft-light";
       for (const light of lights) {
@@ -526,6 +561,10 @@ export class Scene {
     const inkOf = (settled: boolean | undefined, x: number, y: number): Palette =>
       (settled ?? dayInk(litAt(x, y), undefined)) ? DAY : NIGHT;
     out.setTransform(1, 0, 0, 1, mx, 0);
+    out.save();
+    out.beginPath();
+    out.rect(...this.inRule());
+    out.clip();
     out.textAlign = "center";
     out.lineJoin = "round";
     this.labels.forEach((label, index) => {
@@ -605,6 +644,7 @@ export class Scene {
       out.strokeText(`-${floater.damage}`, x, y);
       out.fillText(`-${floater.damage}`, x, y);
     }
+    out.restore();
     out.globalAlpha = 1;
     out.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -645,14 +685,14 @@ export class Scene {
         const breath = 1 + Math.sin(time * 0.21) * 0.02 + Math.sin(time * 0.57 + 1) * 0.012;
         lights.push({ x, y, reach: FIRE_REACH * TILE * breath, strength: lamps * 0.95 });
       }
-      // Residents carry a light; monsters go in the dark.
+      // Residents carry a light; monsters go in the dark. A light carried off the map fades with its bearer.
       for (const walker of walkers) {
-        if (!isResident(walker.actor)) continue;
+        if (!isResident(walker.actor) || walker.fade <= 0) continue;
         lights.push({
           x: walker.x,
           y: walker.y - 22,
           reach: CARRIED_REACH * TILE,
-          strength: lamps * 0.85 * arrivalAt(this.fight, walker.actor.id, time),
+          strength: lamps * 0.85 * arrivalAt(this.fight, walker.actor.id, time) * walker.fade,
           carried: true,
         });
       }
@@ -684,9 +724,11 @@ export class Scene {
    * anything worth a line of news, where each name sits and which ink each
    * piece of lettering is in. Call it after every `step`, drawn or not, so
    * that what a frame shows depends on the world's history and not on which
-   * frames happened to be drawn.
+   * frames happened to be drawn. `world` is what the map shows; `whole` is
+   * the world it was cut from, as region `region` (see view.ts), which the
+   * fight is read off.
    */
-  observe(world: World): void {
+  observe(world: World, whole: World = world, region = 0): void {
     // Each tick is taken note of once: seeing it again changes nothing.
     if (world.tick === this.lastTick) return;
     // A world from earlier than the last (a server restarted from a snapshot) has
@@ -694,6 +736,7 @@ export class Scene {
     // nor who had a slip, where it sat, how far down anyone was sitting, or which
     // ink the place names were in.
     if (world.tick < this.lastTick) {
+      this.fought = NO_FIGHT;
       this.fight = NO_FIGHT;
       this.newsQueue = [];
       this.newsFight = false;
@@ -714,7 +757,9 @@ export class Scene {
     }
     this.lastTick = world.tick;
     this.effects = nextEffects(this.effects, world.actors, world.tick, this.home);
-    this.fight = nextFight(this.fight, world);
+    const fight = fightOn(this.fought, whole, region);
+    this.fought = fight.all;
+    this.fight = fight.shown;
     // Kills, downs and close calls go before what anyone decided. Each stays up
     // long enough to be read; one waiting goes up once the last has had its time.
     // A resident downed goes ahead of the rest, and up at once unless the line
@@ -911,7 +956,10 @@ export class Scene {
     // where it sits. The spot does not move with a figure's step, and the ink
     // only changes once the light is clearly past the middle.
     const { litAt } = this.lighting(
-      standing.map(({ actor, pose }) => ({ actor, pose, x: pose.x * TILE, y: pose.y * TILE - 4 })),
+      standing.map(({ actor, pose }) => {
+        const [x, y] = [pose.x * TILE, pose.y * TILE - 4];
+        return { actor, pose, x, y, fade: edgeFade(x, y, this.width, this.height) };
+      }),
       world.tick,
     );
     for (const { actor, pose } of slipped) {
@@ -1010,6 +1058,7 @@ export class Scene {
   private drawSide(
     side: Side,
     world: World,
+    roster: readonly Actor[],
     walkers: readonly Walker[],
     time: number,
     holes: readonly Box[],
@@ -1052,6 +1101,12 @@ export class Scene {
     });
     ctx.globalAlpha = 1;
 
+    // From here to the map's rule, nothing is drawn outside it.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(...this.inRule());
+    ctx.clip();
+
     // The route of a walk just begun, on the ground under everything that
     // stands, in its walker's cloak colour: from the walker along what is left
     // of its path, through the middle of each tile and so over a bridge's
@@ -1067,7 +1122,7 @@ export class Scene {
       const { actor } = walker;
       const route = routeAt(this.effects, actor.id, time);
       const strength =
-        slipAlpha(this.slips, actor.id, time) * arrivalAt(this.fight, actor.id, time);
+        slipAlpha(this.slips, actor.id, time) * arrivalAt(this.fight, actor.id, time) * walker.fade;
       if (!route || strength <= 0) continue;
       const ahead = actor.moveTicksLeft > 0 ? [{ x: actor.x, y: actor.y }] : [];
       // Once the walk is over only the cross is left, where the walk was going.
@@ -1125,8 +1180,9 @@ export class Scene {
     });
     for (const walker of walkers) {
       upTo(walker.y);
-      // Someone new comes in, and a resident carried back to camp wakes there, fading in.
-      ctx.globalAlpha = arrivalAt(this.fight, walker.actor.id, time);
+      // Someone new comes in, and a resident carried back to camp wakes there,
+      // fading in. Someone walking off an edge fades out into it.
+      ctx.globalAlpha = arrivalAt(this.fight, walker.actor.id, time) * walker.fade;
       if (isResident(walker.actor)) {
         drawFigure(
           ctx,
@@ -1153,6 +1209,7 @@ export class Scene {
       drawFlecks(ctx, walker.x, walker.y - 22, recoil.dx, recoil.dy, t, ink);
     }
     for (const spot of ground.fires) this.smoke(ctx, spot, palette, time);
+    ctx.restore();
 
     // A ruled double border round the map, as round a printed map.
     ctx.strokeStyle = ink;
@@ -1175,7 +1232,7 @@ export class Scene {
       ctx.restore();
     }
 
-    this.page(ctx, world, palette, this.pageStyle(world, palette));
+    this.page(ctx, world, roster, palette, this.pageStyle(listing(world, roster), palette));
     ctx.restore();
   }
 
@@ -1230,7 +1287,7 @@ export class Scene {
     for (const walker of walkers) {
       const id = walker.actor.id;
       const ring = fight.rings.get(id);
-      const shown = arrivalAt(fight, id, time);
+      const shown = arrivalAt(fight, id, time) * walker.fade;
       if (ring) {
         ctx.globalAlpha = shown;
         drawRing(ctx, walker.x, walker.y, ringShare(ring, time), ringStrength(ring, time), ink);
@@ -1330,13 +1387,22 @@ export class Scene {
   }
 
   /**
+   * The map inside its outer rule, in map pixels. Walkers, their names and
+   * lights and the marks of a fight are drawn only here, so nothing that walks
+   * off the map is drawn in the margin or beside the page.
+   */
+  private inRule(): [number, number, number, number] {
+    return [RULE_MARGIN, RULE_MARGIN, this.width - 2 * RULE_MARGIN, this.height - 2 * RULE_MARGIN];
+  }
+
+  /**
    * The part of the frame that is only map, in frame pixels. Beside the map,
    * the thin margin outside its rule belongs to the page; with the page below,
    * the paper either side of the map goes with the map.
    */
   private mapOnly(): [number, number, number, number] {
     if (this.pageBelow) return [0, 0, this.frameWidth, this.height];
-    return [RULE_MARGIN, RULE_MARGIN, this.width - 2 * RULE_MARGIN, this.height - 2 * RULE_MARGIN];
+    return this.inRule();
   }
 
   /** Starts a path round everything that is not only map, to fill or clip "evenodd", in frame pixels. */
@@ -1350,6 +1416,7 @@ export class Scene {
   private page(
     ctx: Ctx,
     world: World,
+    roster: readonly Actor[],
     palette: Palette,
     style: (id: number, scale: number) => Parameters<typeof drawFigure>[4],
   ): void {
@@ -1360,7 +1427,7 @@ export class Scene {
     // is already shifted to where the map is).
     const left = below ? 40 : this.width + 50;
     const right = below ? this.width - 40 : this.frameWidth - 40;
-    const residents = world.actors.filter(isResident);
+    const residents = roster.filter(isResident);
     const listed = residents.slice(0, ROSTER_ROWS);
     const rows = Math.ceil(listed.length / this.columns);
     // In a tall window there can be paper to spare under the page: the rows open
@@ -1419,7 +1486,9 @@ export class Scene {
       ctx.moveTo(x0, top + 0.5);
       ctx.lineTo(x1, top + 0.5);
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      // Someone off the map is listed faded, with where they are in place of what they do.
+      const away = this.away.get(actor.id);
+      ctx.globalAlpha = away === undefined ? 1 : AWAY_ALPHA;
       const feet = top + 90 + Math.round(air * 0.5);
       drawFigure(ctx, x0 + 34, feet, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
       ctx.fillStyle = ink;
@@ -1447,13 +1516,15 @@ export class Scene {
       const label = world.programs[actor.program]?.rules[actor.rule];
       const downed = this.fight.downs.has(actor.id) && actor.wait > 0;
       ctx.font = '31px "Fell Italic"';
+      const doing = downed ? "downed" : actor.fault !== 0 ? "confused" : (label ?? "");
       ctx.fillText(
-        downed ? "downed" : actor.fault !== 0 ? "confused" : (label ?? ""),
+        away === undefined ? doing : `in ${away}`,
         x0 + 86,
         top + ruleLine,
         x1 - x0 - 86,
       );
       drawLevels(ctx, actor, x0 + 86, x1, top + levelLine);
+      ctx.globalAlpha = 1;
     });
     const foot = top0 + PAGE_HEAD + rows * pitch;
     ctx.globalAlpha = 0.45;

@@ -1,19 +1,10 @@
-import {
-  compileBots,
-  createWorld,
-  type Monsters,
-  parseMap,
-  placeConstants,
-  spawnsNearCamp,
-  step,
-  TICKS_PER_DAY,
-  type WorldEvent,
-} from "@idlin/sim";
+import { type Monsters, TICKS_PER_DAY, type WorldEvent } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
 import { castOf } from "../../../packages/client/src/cast.ts";
-import { botSources, rawFirstLight, shippedMonsters } from "../../../packages/sim/src/testing.ts";
+import { botSources, shippedMonsters } from "../../../packages/sim/src/testing.ts";
 import { brightnessGrid, FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
 import { type TickRecord, watchMetrics } from "./metrics.ts";
+import { follow, start } from "./simrun.ts";
 
 const record = (
   events: TickRecord["events"],
@@ -23,31 +14,15 @@ const record = (
   actors: positions.map(([id, name, x, y]) => ({ id, name, x, y })),
 });
 
-/** Runs the shipped map with the given cast for some seconds and records every tick. */
+/** Runs the shipped world with the given cast for some seconds and records the camp's map, as a capture does. */
 const play = (
   cast: { name: string; program: string }[],
   seconds: number,
   sources = botSources(),
   monsters?: Monsters,
 ): TickRecord[] => {
-  const map = parseMap(rawFirstLight());
-  const world = createWorld(
-    map,
-    1,
-    { ...compileBots(sources, placeConstants(map)), ...monsters?.programs },
-    monsters?.kinds,
-    monsters?.spawns,
-  );
-  const run: TickRecord[] = [];
-  let events = step(world, spawnsNearCamp(world, cast));
-  for (let tick = 0; tick < seconds * 10; tick++) {
-    run.push({
-      events,
-      actors: world.actors.map((a) => ({ id: a.id, name: a.name, x: a.x, y: a.y })),
-    });
-    events = step(world);
-  }
-  return run;
+  const { world, events } = start(1, cast, sources, monsters);
+  return follow(world, events, seconds * 10);
 };
 
 describe("watchMetrics", () => {
@@ -121,7 +96,7 @@ describe("watchMetrics", () => {
     expect(metrics.singleActionActors).toEqual(["Ash"]);
     expect(metrics.actionMix).toEqual({
       1: { name: "Ash", actions: 1 },
-      2: { name: "Birch", actions: 2 },
+      2: { name: "Birch", actions: 4 },
     });
     expect(metrics.hardFails).toEqual(["a single action for ten minutes: Ash"]);
   });
@@ -267,6 +242,115 @@ describe("watchMetrics", () => {
     });
     expect(metrics.singleActionActors).toEqual([]);
     expect(metrics.actors).toBe(3);
+  });
+
+  it("counts someone who left the map and came back from their return", () => {
+    // Bryn walks about throughout. Ash stands on (3, 3) for 30 s, is off the map
+    // for 50 s and comes back onto the same tile, where it stands 50 s more.
+    // Nobody is still for over a minute while on the map.
+    const run: TickRecord[] = [];
+    for (let tick = 0; tick < 1300; tick++) {
+      const actors: [number, string, number, number][] = [[2, "Bryn", 5 + (tick % 4), 5]];
+      if (tick < 300 || tick >= 800) actors.push([1, "Ash", 3, 3]);
+      run.push(record([], actors));
+    }
+    expect(watchMetrics(run).stuckActors).toEqual([]);
+    // Standing 61 s after coming back is stuck.
+    for (let tick = 1300; tick < 1420; tick++)
+      run.push(
+        record(
+          [],
+          [
+            [2, "Bryn", 5 + (tick % 4), 5],
+            [1, "Ash", 3, 3],
+          ],
+        ),
+      );
+    expect(watchMetrics(run).stuckActors).toEqual(["Ash"]);
+  });
+
+  it("judges the action mix only on whole windows inside one visit to the map", () => {
+    // Ash does one thing only, but is on the map in two visits of 5000 and 5500
+    // ticks, each shorter than a window, so it is not judged. Birch is there the whole
+    // time with two actions.
+    const run: TickRecord[] = [];
+    for (let tick = 0; tick < 18000; tick++) {
+      const here = tick < 5000 || (tick >= 10000 && tick < 15500);
+      const events: WorldEvent[] = [];
+      if (tick % 100 === 0) {
+        if (here) events.push({ type: "decide", tick, actor: 1, rule: 0, action: "wander" });
+        events.push({
+          type: "decide",
+          tick,
+          actor: 2,
+          rule: 0,
+          action: tick % 200 ? "wait" : "wander",
+        });
+      }
+      const actors: [number, string, number, number][] = [[2, "Birch", tick % 9, 0]];
+      if (here) actors.push([1, "Ash", tick % 7, 2]);
+      run.push(record(events, actors));
+    }
+    const metrics = watchMetrics(run);
+    expect(metrics.actionMix).toEqual({ 2: { name: "Birch", actions: 2 } });
+    expect(metrics.singleActionActors).toEqual([]);
+  });
+
+  it("judges a resident off the map on what it decided there too", () => {
+    // As above, but the records say where Ash is while it is away, and that it
+    // goes on deciding "wander" there. Ash is in the run throughout, with one
+    // action, and is named; Birch is judged as before.
+    const run: TickRecord[] = [];
+    for (let tick = 0; tick < 18000; tick++) {
+      const here = tick < 5000 || (tick >= 10000 && tick < 15500);
+      const mine: WorldEvent[] =
+        tick % 100 === 0 ? [{ type: "decide", tick, actor: 1, rule: 0, action: "wander" }] : [];
+      const events: WorldEvent[] = here ? [...mine] : [];
+      if (tick % 100 === 0)
+        events.push({
+          type: "decide",
+          tick,
+          actor: 2,
+          rule: 0,
+          action: tick % 200 ? "wait" : "wander",
+        });
+      const actors: [number, string, number, number][] = [[2, "Birch", tick % 9, 0]];
+      if (here) actors.push([1, "Ash", tick % 7, 2]);
+      run.push({
+        ...record(events, actors),
+        elsewhere: here
+          ? { actors: [], events: [] }
+          : { actors: [{ id: 1, name: "Ash", x: -5, y: 3 }], events: mine },
+      });
+    }
+    const metrics = watchMetrics(run);
+    expect(metrics.actionMix).toEqual({
+      1: { name: "Ash", actions: 1 },
+      2: { name: "Birch", actions: 2 },
+    });
+    expect(metrics.singleActionActors).toEqual(["Ash"]);
+    // What is done off the map is not something to see, nor a decision on screen.
+    const mapOnly = watchMetrics(run.map((r) => ({ events: r.events, actors: r.actors })));
+    expect(metrics.decisionsPerMinute).toBe(mapOnly.decisionsPerMinute);
+    expect(metrics.deadAirSeconds).toBe(mapOnly.deadAirSeconds);
+    expect(metrics.stuckActors).toEqual([]);
+  });
+
+  it("counts every resident of a shipped game day in the action mix, those who left the map too", () => {
+    const run = play(castOf(6), 1800);
+    const left = new Set(run.flatMap((r) => r.elsewhere?.actors.map((a) => a.name) ?? []));
+    // Some of the cast spent time off the map, and all six are judged.
+    expect(left.size).toBeGreaterThan(0);
+    const mix = watchMetrics(run).actionMix;
+    expect(
+      Object.values(mix)
+        .map((m) => m.name)
+        .sort(),
+    ).toEqual(
+      castOf(6)
+        .map((c) => c.name)
+        .sort(),
+    );
   });
 
   it("keeps actors apart by id, whatever they are called", () => {
