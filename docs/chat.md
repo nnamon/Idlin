@@ -24,17 +24,17 @@ chatters do not submit programs and only the streamer has access to the
 site. So there is no page for a chatter to open, no pairing of a page to an
 account, and no editor. A citizen runs one of the preset programs the game
 ships, and its chatter chooses among them and sets their `param`s by typing.
-"The page" below is the picture that is streamed: the map and the panels
-round it. "The site" is the streamer's (section 9), and no chatter sees it.
+Chatters steer only their own citizens; decisions for the city as a whole
+are the streamer's (section 7). "The page" below is the picture that is
+streamed: the map and the panels round it. "The site" is the streamer's (section 9), and no chatter sees it.
 
 ## 1. The rule everything else follows
 
 **A chat command never moves a citizen. It changes something the citizen's
 program reads.**
 
-Chat can do four things to a citizen: plant its flag (a place it is asked to
-go), change a `param` its program declared, swap its program, and cast its
-vote. The program still makes every decision. Two chatters who type the same
+Chat can do three things to a citizen: plant its flag (a place it is asked to
+go), change a `param` its program declared, and swap its program. The program still makes every decision. Two chatters who type the same
 `!go` get different results, because one program fights its way to the flag
 and comes home loaded and the other walks into a pack. That difference is on
 screen, and it is the reason to choose a preset and set its numbers with
@@ -153,8 +153,7 @@ chat. Everything else is speech (section 6).
 | `!run <preset>` | swaps to that preset at once                                                                                                                             | swaps it when the citizen is next on deck                                     | swaps it when the citizen is next on deck                 | the program               |
 | `!me`           | rings the citizen and letters its name for 6 s, and puts its settings on the order strip: `tim · Melee 12 · stance fight · margin 150 · flag Brackwater` | the same                                                                      | the same                                                  | nothing in the world      |
 
-`!1`, `!2` and `!3` vote when a question is open (section 7). Moderators have
-`!idlin` (section 8). `!run` takes the name of a preset the city offers
+Moderators have `!idlin` (section 8). `!run` takes the name of a preset the city offers
 (section 9), and any other name is refused.
 
 ### 3.2 The flag
@@ -341,7 +340,7 @@ the last message.
 
 | The chatter last typed | The citizen                                                                                                                                                                                                           |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| under 20 minutes ago   | **Present.** First claim on a name slip and on a bubble, first in the close view's turns, can vote.                                                                                                                   |
+| under 20 minutes ago   | **Present.** First claim on a name slip and on a bubble, first in the close view's turns.                                                                                                                             |
 | 20 minutes to 24 hours | **Away.** Runs its program exactly as before, with its params as they stand: goes out, hauls, fights, takes its post. Its flag on a tile came down at the last lift. It yields slips and bubbles to present citizens. |
 | over 24 hours          | **Below.** The next time it is on deck it goes down the hatch. It is off the screen and out of the simulation. Its record is kept: levels, kit, locker, program, params.                                              |
 
@@ -444,58 +443,28 @@ a limit of the typeface, and a fallback face is the fix if it matters.
 Turned down: **a chat log panel** on the page, with every message in a
 scrolling list. Every stream already has one beside it.
 
-## 7. City-wide decisions
+## 7. City decisions
 
-A **question** has two or three options and a window. One is open at a time,
-and at most two in a cycle.
+The streamer owns the city and is the only one who makes its decisions, from
+the site (section 9). Chatters steer only their own citizens. The game runs
+with nobody watching it, so every city decision has an automatic default and
+nothing waits on a person:
 
-- **Who votes.** A citizen that was awake before the question opened and has
-  been through at least one lift. One vote each, with equal weight. `!2`
-  votes, and so does a bare `2` while a question is open. A vote can be
-  changed until the window closes; the last one counts.
-- **Why numbers.** The walking-city draft votes with `!go a`, `!go b` and
-  `!go c`. Here `!go` plants a flag and its word is looked up among places
-  and citizens, so a second meaning would make `!go b` depend on whether a
-  question is open. A number has one meaning, it is what the page letters
-  beside each option, and it works for a question whose options are not
-  places (pay or run, fight or run). The draft's `!wait` has no number
-  because the lift does not wait (below).
-- **The result.** The most votes. A tie goes to the option that reached that
-  count first. With no votes the first option stands.
-- **In the world.** Votes are inputs and the tally is world state, so the
-  result replays.
+| Decision   | The default                                                                                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing    | The navigator picks the next landing from the difficulty tuning: harder and richer sites as the city grows, a gentler stop after a bad landing.                       |
+| Upgrades   | The next bay is built in the order the plan sets.                                                                                                                     |
+| Tuning     | The difficulty tuning the game ships.                                                                                                                                 |
+| Moderation | The channel's own moderation, the speech and name filters and the ignore list (sections 6 and 8). The channel's moderators can use `!idlin` on the streamer's behalf. |
 
-| Question              | When                        | Window | Options               |
-| --------------------- | --------------------------- | -----: | --------------------- |
-| Where the city goes   | every cycle, after the lift |   60 s | the three sites ahead |
-| A toll                | when a fort bars the way    |   30 s | pay, or run its guns  |
-| A rival city in reach | section 11                  |   30 s | fight, or run         |
+The streamer can override any of them on the site, and the override goes in
+as a `mod` input. The world map shows the route to the site the city is
+heading for, with the reason lettered beside it. The navigator also decides
+whether to pay a fort's toll or run its guns, and whether to meet a rival
+city (section 11), and the streamer can override those too.
 
-**How the landing vote shows.** The view is the world map, with a route
-drawn from the city to each of the three sites. Each vote pins a small
-pennant in the voter's colours to its route within a tick. The pennant is the
-vote's mark and stays until the window closes. The newest on each route is
-also lettered with the voter's name, for 2 seconds or until the next vote on
-that route, since at 80 votes a minute a name cannot stand for 6. The routes
-grow
-toward their sites as votes come in, with the count lettered at each site. A
-changed vote moves its pennant. The page shows the three sites with what the
-lookout knows of each, a bar for each count, and the seconds left. When the
-window closes the winning route is inked solid over a second and the others
-fade over three.
-
-**Which bay is built next** is a standing choice and has no window. When the
-plan's modules exist, `!pledge <module>` moves a citizen's pledge, and the
-page's bars show the totals.
-
-Turned down:
-
-- **Votes weighted by level or tally.** The oldest citizens would decide
-  every question.
-- **Programs that vote.** A hundred citizens whose chatters are asleep would
-  outvote the twenty who are watching.
-- **A vote to hold the ramps.** When the city leaves is the one thing chat
-  cannot move. The margin means something only if the lift does not wait.
+When the city lifts is not chat's to move either. The margin means something
+only if the lift does not wait.
 
 ## 8. Abuse and moderation
 
@@ -509,7 +478,6 @@ the viewer can draw them.
 | `!run`                     | Once in 10 minutes.                                                                    | The plan's limit for a program change.                                                                                                                                                  |
 | `!me`                      | Once in 30 s.                                                                          | It letters a name on the stream.                                                                                                                                                        |
 | A bubble                   | Once in 15 s for each citizen.                                                         | Section 6.                                                                                                                                                                              |
-| Votes                      | No limit; the last counts.                                                             |                                                                                                                                                                                         |
 | Any one account            | The adapter drops what is past 5 messages a second.                                    | Flood control before anything is parsed.                                                                                                                                                |
 | Any one account's queue    | At most one waiting input of each kind (below).                                        | Refused orders cannot pile up.                                                                                                                                                          |
 | The world                  | 32 inputs a tick, in arrival order. The rest wait for the next tick.                   | 320 inputs a second is far above what 150 chatters type.                                                                                                                                |
@@ -523,20 +491,20 @@ the queue itself. For each account it holds at most:
 | ---------------------------- | ---------------------- |
 | a flag order, `go` or `free` | 1                      |
 | a change to a param          | 1 for each param, so 8 |
-| `run`, a vote, `me`, speech  | 1 each, so 4           |
+| `run`, `me`, speech          | 1 each, so 3           |
 
 A newer input of the same kind replaces the one waiting and keeps its place
 in the line, so typing faster gains nothing. `heard` rides on the account's
 other input, and is queued alone only for a message that made no other. That
-is 13 waiting for one account at the very most, and 7 on the shipped program
+is 12 waiting for one account at the very most, and 6 on the shipped program
 with its two params.
 
 The numbers. The adapter passes 5 messages a second from an account, and each
 makes one input, so one account takes at most 5 of the 320 places in a
 second. Thirty accounts flooding `!go` take 150, under half, and nobody else
 waits. If every one of 150 citizens floods every command of the shipped
-program at once, 1,050 inputs are waiting and the last of them is applied
-3.3 seconds later. On presets with 8 params each it is 1,950. Past 2,000
+program at once, 900 inputs are waiting and the last of them is applied
+2.8 seconds later. On presets with 8 params each it is 1,800. Past 2,000
 waiting, which the 150 citizens of a full city cannot reach without accounts
 at the hatch flooding too, speech is dropped first, and then orders from whichever
 account has the most waiting, so an account with one order in the line is
@@ -575,8 +543,7 @@ generated one (section 2). The account still plays.
 
 **Floods of new accounts.** The hatch's rate (4 a second) and the berth rule
 (nobody present is displaced) bound what a flood can do. Past that the
-streamer shuts the doors. Vote stuffing with fresh accounts fails on the rule
-that a citizen votes only after its first lift.
+streamer shuts the doors.
 
 ## 9. Programs
 
@@ -646,20 +613,25 @@ submit programs.
 **Choosing by chat.** `!run <preset>` swaps a citizen to another preset the
 city offers, when it is next on deck, once in 10 minutes. The offered names,
 each with its line and its params as chat commands, are lettered on the page
-while the landing vote is open, which is when chatters are reading it. The
+beside the world map after each lift. The
 reckoning letters how many citizens run each: "Longhaul 31, Deckhand 96".
 `!me` names the preset a citizen is on.
 
 **The site** is the streamer's, and it is the only page besides the stream.
 The city's own server serves it to the machine the city runs on, as it
 serves the local chat page (section 10), so it needs no account, no login
-and no secret. It has three parts:
+and no secret. It is where the streamer makes the city decisions of section
+7. Each part has the default that section gives, so the city runs if the
+streamer never opens it:
 
 | Part       | What the streamer sets                                                                                              |
 | ---------- | ------------------------------------------------------------------------------------------------------------------- |
 | Settings   | the channel to read, the accounts to ignore, words added to the blocked list, bubbles on or off, doors open or shut |
 | Moderation | mute, below and allow for a citizen by name, and the hatch cleared: section 8's `!idlin` commands as buttons        |
 | Presets    | which presets the city offers, and which one a newcomer starts on                                                   |
+| Route      | the next landing, a toll, a rival met, in place of the navigator's pick                                             |
+| Upgrades   | which bay is built next                                                                                             |
+| Tuning     | the difficulty tuning the navigator works from                                                                      |
 
 Everything the site changes in the world goes in as a `mod` input, through
 the same queue and log as chat, so it replays. The list of presets on offer
@@ -761,20 +733,19 @@ resolves it the same way.
 **Inputs.** `step(world, inputs)` already takes a list, with `spawn` as its
 one kind. The new kinds:
 
-| Input   | Carries                                      | Effect                                                                                   |
-| ------- | -------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `join`  | account, name, role                          | a new citizen under the hatch                                                            |
-| `wake`  | the citizen's stored record                  | the same, with its record                                                                |
-| `heard` | account                                      | sets the citizen's last-heard tick; carried on the account's other input when it has one |
-| `go`    | account, the word                            | plants the flag, if it resolves and a token is left                                      |
-| `free`  | account                                      | takes the flag down                                                                      |
-| `param` | account, name, value as typed                | sets it, if the program declares it and the value is allowed                             |
-| `run`   | account, preset name                         | swaps to the preset when the citizen is on deck, if the city offers it                   |
-| `vote`  | account, option                              | counts it, if a question is open and the citizen may vote                                |
-| `me`    | account                                      | rings the citizen for 60 ticks, if its 30 seconds are up                                 |
-| `say`   | account, message id, filtered text           | an event for this tick's message to viewers; changes nothing hashed                      |
-| `unsay` | message id                                   | an event; the viewer drops that bubble                                                   |
-| `mod`   | the moderator command, from chat or the site | mute, below, allow, bubbles, doors, clear hatch, the presets on offer                    |
+| Input   | Carries                                      | Effect                                                                                         |
+| ------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `join`  | account, name, role                          | a new citizen under the hatch                                                                  |
+| `wake`  | the citizen's stored record                  | the same, with its record                                                                      |
+| `heard` | account                                      | sets the citizen's last-heard tick; carried on the account's other input when it has one       |
+| `go`    | account, the word                            | plants the flag, if it resolves and a token is left                                            |
+| `free`  | account                                      | takes the flag down                                                                            |
+| `param` | account, name, value as typed                | sets it, if the program declares it and the value is allowed                                   |
+| `run`   | account, preset name                         | swaps to the preset when the citizen is on deck, if the city offers it                         |
+| `me`    | account                                      | rings the citizen for 60 ticks, if its 30 seconds are up                                       |
+| `say`   | account, message id, filtered text           | an event for this tick's message to viewers; changes nothing hashed                            |
+| `unsay` | message id                                   | an event; the viewer drops that bubble                                                         |
+| `mod`   | the moderator command, from chat or the site | mute, below, allow, bubbles, doors, clear hatch, the presets on offer, route, upgrades, tuning |
 
 As today, an input that cannot be honoured is dropped whole and never
 throws.
@@ -887,9 +858,9 @@ raid the defending city's strip names the citizens who held the hold.
   other's, so free text from it is never drawn on their stream.
 - **Names cross,** since a boarder has to be named on the news line. They
   go through the receiving city's name filter.
-- **The question.** When a rival comes within reach each city is asked
-  fight or run, 30 seconds, by section 7's rules. A clash happens if both
-  vote fight. A city that runs pays in fuel, at a price the plan sets.
+- **Fight or run.** When a rival comes within reach, each city's navigator
+  decides, and its streamer can override it (section 7). A clash happens if
+  both cities fight. A city that runs pays in fuel, at a price the plan sets.
 - **Inputs.** #331 gives each city its own world server, with a small shared
   service for meetings. So no third server runs the clash: both servers
   build the same clash world from the two snapshots and step it in lockstep.
@@ -898,34 +869,32 @@ raid the defending city's strip names the citizens who held the hold.
   apply and log the merged line, so both reach the same hash at every tick
   and both can replay it.
 
-Turned down: **letting one chat plant flags for the other's citizens,** or
-vote in the other's questions. It is the first thing a rival chat would
-abuse.
+Turned down: **letting one chat plant flags for the other's citizens.** It
+is the first thing a rival chat would abuse.
 
 ## 12. The first slice
 
-Thirteen issue-sized pieces. Chatters reach all of it through chat; C13 is
-the streamer's site, and no piece builds a page for a chatter, an editor or
-pairing. C1 to C8, C10, C12 and C13 can be built on the world as it is
-today, with the camp's ground standing in for the deck and today's
-places (`river`, `hills`) for a site's. C9 needs the plan's world map. C11
-depends only on C2 and can wait until there is a stream to read.
+Twelve issue-sized pieces, C1 to C13 without C9. Chatters reach all of it
+through chat; C13 is the streamer's site, and no piece builds a page for a
+chatter, an editor or pairing. C1 to C8, C10, C12 and C13 can be built on the
+world as it is today, with the camp's ground standing in for the deck and
+today's places (`river`, `hills`) for a site's. C11 depends only on C2 and
+can wait until there is a stream to read.
 
-| Piece                                  | What to build                                                                                                                                                                                                                                                            | Shown to work by                                                                                                                                                                                                                                                                                                                                                                                                                       | Leaves out                                    | After                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------ |
-| **C1 Inputs and the log**              | The input kinds as types, the queue and its bound for each account, 32 a tick, the log file beside each snapshot, replay on start, pruning.                                                                                                                              | A test that a snapshot plus its log gives the live hash after a crowd of 50 has joined and ordered for 12,000 ticks; a test that a torn last log line is ignored. Hostile inputs (wrong shapes, 10,000 in a tick) change nothing and never throw. A flood test: 30 accounts sending `!go` at 5 a second for a minute never have more than one `go` each waiting, and another account's order sent during it is applied within 2 ticks. | Every input's effect except `join`.           |                          |
-| **C2 The gate and the scripted crowd** | A package with the `ChatEvent` type, the parser, flood control, the ignore list, and the crowd file format as a pure function of file and tick. The capture tool and the viewer's own simulation take `?chat=<file>`.                                                    | Parser tests on garbage, 500-character lines and every command; the same crowd file gives the same inputs twice.                                                                                                                                                                                                                                                                                                                       | The speech filter; a live adapter.            |                          |
-| **C3 Joining**                         | `join` makes a citizen from an account: name rule, colours from the id, the shipped program, a queue under the hatch at one per 5 ticks per hatch. The entrance drawn, the slip lettered, "came aboard" merged on the news line. `look`.                                 | A test that 40 joins in a tick are all on deck 110 ticks later in arrival order; a capture of one arrival and of a raid of 40.                                                                                                                                                                                                                                                                                                         | Berths and going below.                       | C1, C2                   |
-| **C4 Speech**                          | `say` and `unsay` outside the hash, the filter, bubbles with six slots, priority and the 15-second rule, speech ticks, the emote hop. `look`.                                                                                                                            | A test that the hash is the same with and without speech; filter tests; a capture burst at 2 messages a second with the flicker index under its limit.                                                                                                                                                                                                                                                                                 | The blocked-word list beyond a short default. | C3                       |
-| **C5 Params**                          | `param` with `from … to …` and `of …` in Tactics, values on the actor and read at run time, the `param` input, tokens. `stance` and `margin` in the shipped program.                                                                                                     | Compiler tests, including a ninth param and a value out of range; a seeded test that `stance` at `fight` and at `careful` differ in kills and in downs over a landing's length.                                                                                                                                                                                                                                                        | `!run`.                                       | C1                       |
-| **C6 The flag**                        | The `go` and `free` inputs, name lookup in the simulation, `flagged`, `flag`, `flag_age`, `flag_down`, `heard`, the followed bit, an order interrupting the current action. The flag rules in the shipped program.                                                       | A test that an order is decided on within 6 ticks; a test that the same `!go` on two programs gives different hauls; a test that a flag under a winning "turn back" is reported as held; a test that a citizen chopping within 6 tiles of its flag is reported as following; a test that a prefix shared by two places is refused and an exact name is not.                                                                            | Flags on a rival's deck.                      | C5                       |
-| **C7 Orders on screen**                | The slip and its glyph, the flag solid or in outline, the line to a flagged citizen, the order strip with merging, refusals, `!me`. `look`.                                                                                                                              | Captures of an accepted, a held and an ignored order, and of 60 orders in 10 seconds with the strip readable. A judge given a frame names who was ordered where and whose program refused.                                                                                                                                                                                                                                             | The vote display.                             | C6, C3                   |
-| **C8 Quiet and berths**                | Last-heard on the citizen, present and away in slip and bubble priority, going below after 24 hours, the store of records, `wake`, the berth rule, "at the hatch" and "below" counts.                                                                                    | A test that a citizen below and woken has the record it left with and the world's hash matches a replay; a test that a flood of 300 new accounts displaces no present citizen.                                                                                                                                                                                                                                                         | Deleting records after a year.                | C3                       |
-| **C9 Questions**                       | The question as world state, `vote`, who may vote, ties, the landing question, pennants on the routes, the page's bars. `look`.                                                                                                                                          | A test that a changed vote counts once and that a fresh account's vote does not count; a capture of 80 votes in a minute.                                                                                                                                                                                                                                                                                                              | The toll and rival questions.                 | C3, the plan's world map |
-| **C10 Moderation**                     | `delete` and `clear` mirrored, mute, `!idlin` commands by role, the name filter with generated names, the bot ignore list.                                                                                                                                               | Tests for each command from a viewer (refused) and a moderator (applied); a banned account's citizen is below on the next tick.                                                                                                                                                                                                                                                                                                        |                                               | C4, C8                   |
-| **C11 The Twitch adapter**             | Recorded IRC lines to `ChatEvent`s, reconnecting, anonymous and read-only.                                                                                                                                                                                               | Tests on recorded lines only, with no network. A check that the package has no call that sends a chat message.                                                                                                                                                                                                                                                                                                                         | Any other platform.                           | C2                       |
-| **C12 Choosing a preset**              | The presets in `content/` with a name and a line each, the list on offer as world state, `!run <preset>` taking effect on deck, params carried by name, the offered presets and their commands lettered on the page, the count on each in the reckoning. `look`.         | A test that a swap in the middle of a walk waits until the citizen is on deck and keeps `margin`; a test that `!run` with a name not on offer is refused and changes nothing; a seeded test that two presets given the same `!go` differ in haul.                                                                                                                                                                                      | Programs written by chatters.                 | C5                       |
-| **C13 The streamer's site**            | A page served to the local machine only: settings (channel, ignore list, blocked words, bubbles, doors), moderation (mute, below, allow, clear hatch) and the presets on offer with the one newcomers start on. Each control that changes the world sends a `mod` input. | A test that each control sends the same input as its `!idlin` command; a test that a preset taken off the list is refused by `!run` on the next tick and kept by citizens already on it; a test that the site's socket refuses a connection from another address.                                                                                                                                                                      | Any page for chatters; a login.               | C10, C12                 |
+| Piece                                  | What to build                                                                                                                                                                                                                                                            | Shown to work by                                                                                                                                                                                                                                                                                                                                                                                                                       | Leaves out                                    | After    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | -------- |
+| **C1 Inputs and the log**              | The input kinds as types, the queue and its bound for each account, 32 a tick, the log file beside each snapshot, replay on start, pruning.                                                                                                                              | A test that a snapshot plus its log gives the live hash after a crowd of 50 has joined and ordered for 12,000 ticks; a test that a torn last log line is ignored. Hostile inputs (wrong shapes, 10,000 in a tick) change nothing and never throw. A flood test: 30 accounts sending `!go` at 5 a second for a minute never have more than one `go` each waiting, and another account's order sent during it is applied within 2 ticks. | Every input's effect except `join`.           |          |
+| **C2 The gate and the scripted crowd** | A package with the `ChatEvent` type, the parser, flood control, the ignore list, and the crowd file format as a pure function of file and tick. The capture tool and the viewer's own simulation take `?chat=<file>`.                                                    | Parser tests on garbage, 500-character lines and every command; the same crowd file gives the same inputs twice.                                                                                                                                                                                                                                                                                                                       | The speech filter; a live adapter.            |          |
+| **C3 Joining**                         | `join` makes a citizen from an account: name rule, colours from the id, the shipped program, a queue under the hatch at one per 5 ticks per hatch. The entrance drawn, the slip lettered, "came aboard" merged on the news line. `look`.                                 | A test that 40 joins in a tick are all on deck 110 ticks later in arrival order; a capture of one arrival and of a raid of 40.                                                                                                                                                                                                                                                                                                         | Berths and going below.                       | C1, C2   |
+| **C4 Speech**                          | `say` and `unsay` outside the hash, the filter, bubbles with six slots, priority and the 15-second rule, speech ticks, the emote hop. `look`.                                                                                                                            | A test that the hash is the same with and without speech; filter tests; a capture burst at 2 messages a second with the flicker index under its limit.                                                                                                                                                                                                                                                                                 | The blocked-word list beyond a short default. | C3       |
+| **C5 Params**                          | `param` with `from … to …` and `of …` in Tactics, values on the actor and read at run time, the `param` input, tokens. `stance` and `margin` in the shipped program.                                                                                                     | Compiler tests, including a ninth param and a value out of range; a seeded test that `stance` at `fight` and at `careful` differ in kills and in downs over a landing's length.                                                                                                                                                                                                                                                        | `!run`.                                       | C1       |
+| **C6 The flag**                        | The `go` and `free` inputs, name lookup in the simulation, `flagged`, `flag`, `flag_age`, `flag_down`, `heard`, the followed bit, an order interrupting the current action. The flag rules in the shipped program.                                                       | A test that an order is decided on within 6 ticks; a test that the same `!go` on two programs gives different hauls; a test that a flag under a winning "turn back" is reported as held; a test that a citizen chopping within 6 tiles of its flag is reported as following; a test that a prefix shared by two places is refused and an exact name is not.                                                                            | Flags on a rival's deck.                      | C5       |
+| **C7 Orders on screen**                | The slip and its glyph, the flag solid or in outline, the line to a flagged citizen, the order strip with merging, refusals, `!me`. `look`.                                                                                                                              | Captures of an accepted, a held and an ignored order, and of 60 orders in 10 seconds with the strip readable. A judge given a frame names who was ordered where and whose program refused.                                                                                                                                                                                                                                             |                                               | C6, C3   |
+| **C8 Quiet and berths**                | Last-heard on the citizen, present and away in slip and bubble priority, going below after 24 hours, the store of records, `wake`, the berth rule, "at the hatch" and "below" counts.                                                                                    | A test that a citizen below and woken has the record it left with and the world's hash matches a replay; a test that a flood of 300 new accounts displaces no present citizen.                                                                                                                                                                                                                                                         | Deleting records after a year.                | C3       |
+| **C10 Moderation**                     | `delete` and `clear` mirrored, mute, `!idlin` commands by role, the name filter with generated names, the bot ignore list.                                                                                                                                               | Tests for each command from a viewer (refused) and a moderator (applied); a banned account's citizen is below on the next tick.                                                                                                                                                                                                                                                                                                        |                                               | C4, C8   |
+| **C11 The Twitch adapter**             | Recorded IRC lines to `ChatEvent`s, reconnecting, anonymous and read-only.                                                                                                                                                                                               | Tests on recorded lines only, with no network. A check that the package has no call that sends a chat message.                                                                                                                                                                                                                                                                                                                         | Any other platform.                           | C2       |
+| **C12 Choosing a preset**              | The presets in `content/` with a name and a line each, the list on offer as world state, `!run <preset>` taking effect on deck, params carried by name, the offered presets and their commands lettered on the page, the count on each in the reckoning. `look`.         | A test that a swap in the middle of a walk waits until the citizen is on deck and keeps `margin`; a test that `!run` with a name not on offer is refused and changes nothing; a seeded test that two presets given the same `!go` differ in haul.                                                                                                                                                                                      | Programs written by chatters.                 | C5       |
+| **C13 The streamer's site**            | A page served to the local machine only: settings (channel, ignore list, blocked words, bubbles, doors), moderation (mute, below, allow, clear hatch) and the presets on offer with the one newcomers start on. Each control that changes the world sends a `mod` input. | A test that each control sends the same input as its `!idlin` command; a test that a preset taken off the list is refused by `!run` on the next tick and kept by citizens already on it; a test that the site's socket refuses a connection from another address.                                                                                                                                                                      | Any page for chatters; a login.               | C10, C12 |
 
 Three can start at once without touching the same files: C1 is the server
 and the store, C2 is a new package, and C5's `param` syntax and run-time
@@ -972,12 +941,12 @@ The rest are this page's choices and the plan can overrule them:
 
 | Point                     | The draft                                                                                           | This page                                                                         | Why                                                                                                              |
 | ------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Missing the lift          | The stranded walk the trail, and chat can vote `!wait` to slow the city.                            | The lift never waits and nobody is left outside the screen.                       | The operator dropped the stranded: missing the lift loses the haul and the kit and puts the citizen back aboard. |
+| Missing the lift          | The stranded walk the trail, and chat can type `!wait` to slow the city.                            | The lift never waits and nobody is left outside the screen.                       | The operator dropped the stranded: missing the lift loses the haul and the kit and puts the citizen back aboard. |
 | The wrong deck at a break | A captive on the rival's deck.                                                                      | Stripped, and back on its own deck.                                               | Every citizen is always on its own city's screen.                                                                |
 | Owners                    | A companion page for each owner, reached by a link sent in chat, with sliders and a program editor. | No page for chatters. Presets chosen and set by chat; the site is the streamer's. | No user-submitted programs for now, and only the streamer has access to the site.                                |
 | Arriving                  | At the foot of the ramp before the horde is sighted, aboard at a station otherwise.                 | Up through a hatch, in every phase.                                               | One entrance to build and to learn to look at (section 2).                                                       |
 | Going quiet               | Present for 30 minutes; aboard as crew after 3 days; retired after 14.                              | Present for 20 minutes; below after 24 hours.                                     | Section 5.                                                                                                       |
-| The landing vote          | `!go a`, `!go b`, `!go c`.                                                                          | `!1`, `!2`, `!3`.                                                                 | `!go` is the flag (section 7).                                                                                   |
+| The next landing          | Chat picks it with `!go a`, `!go b`, `!go c`.                                                       | The navigator picks it from the difficulty tuning; the streamer can override it.  | The operator ruled out chat choosing for the city (section 7).                                                   |
 | Param changes             | A slider once a minute.                                                                             | Two tokens, one back every 20 s.                                                  | Two changes can go together (section 8).                                                                         |
 | `!me`                     | Lettered for 5 s.                                                                                   | 6 s.                                                                              | The 6-second rule for marks (section 2).                                                                         |
 
