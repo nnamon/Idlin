@@ -3,7 +3,8 @@
 // viewer draws (the window that follows the spotlight, see camera.ts), in
 // world tile coordinates, and what they did. Someone outside the window is
 // not recorded on the map, nor is anything done there, except what residents
-// decide, for the action mix.
+// decide, for the action mix. It also records the line the page shows under
+// each resident it lists, as line.ts builds it.
 
 import {
   ADVENTURER,
@@ -15,11 +16,21 @@ import {
   step,
   type World,
   type WorldEvent,
+  XP_TABLE,
 } from "@idlin/sim";
 import { nextWatch, startWatch, viewAt } from "../../../packages/client/src/camera.ts";
-import { castOf } from "../../../packages/client/src/cast.ts";
-import { campRegion, inWindow, viewSize, windowView } from "../../../packages/client/src/view.ts";
-import { botSources, shippedWorld } from "../../../packages/sim/src/testing.ts";
+import { castOf, spreadDeaths, spreadLevels } from "../../../packages/client/src/cast.ts";
+import { ROSTER_ROWS } from "../../../packages/client/src/frame.ts";
+import { type Lines, NO_LINES, nextLines, pageText } from "../../../packages/client/src/line.ts";
+import {
+  awayFrom,
+  campRegion,
+  inWindow,
+  rosterOf,
+  viewSize,
+  windowView,
+} from "../../../packages/client/src/view.ts";
+import { botSources, shippedMonsters, shippedWorld } from "../../../packages/sim/src/testing.ts";
 import type { TickRecord } from "./metrics.ts";
 
 /**
@@ -51,11 +62,15 @@ export function start(
  * ones by an actor that was on it before or after the step, so one who went
  * down there counts, for a hit, the ones on someone there, and for a node
  * (a tree or a fishing spot), the ones whose tile is in the window. It also gives
- * the watch: the spotlit resident and the camera.
+ * the watch: the spotlit resident and the camera, and the page's line for
+ * each resident it lists.
  */
 function follower(atlas: World["atlas"]) {
   let watch = startWatch(atlas);
+  let lines: Lines = NO_LINES;
   const size = viewSize(atlas, campRegion({ atlas }));
+  // The page names a region off the map; its map's name tells one from another as well.
+  const regions = atlas.regions.map((region) => region.map.name);
   let before = new Set<number>();
   return (world: World, events: readonly WorldEvent[]) => {
     watch = nextWatch(watch, world);
@@ -66,9 +81,23 @@ function follower(atlas: World["atlas"]) {
     const was = before;
     const on = (id: number): boolean => here.has(id) || was.has(id);
     before = here;
+    // Lines only for the residents the page lists, as the page reads them off the whole world.
+    const listed = rosterOf(world).slice(0, ROSTER_ROWS);
+    const ids = new Set(listed.map((a) => a.id));
+    lines = nextLines(
+      lines,
+      { ...world, actors: world.actors.filter((a) => a.kind !== ADVENTURER || ids.has(a.id)) },
+      watch.fight,
+    );
+    const away = awayFrom(world, view, regions);
+    const page = listed.flatMap((a) => {
+      const shown = lines.shown.get(a.id)?.line;
+      return shown ? [{ id: a.id, text: pageText(shown, away.get(a.id)) }] : [];
+    });
     return {
       view,
       at,
+      page,
       events: events.filter((event) =>
         // A node's events have no actor; they belong to the window when the node's tile is in it.
         "actor" in event
@@ -96,7 +125,7 @@ export function follow(
   const run: TickRecord[] = [];
   let last = events;
   for (let tick = 0; tick < ticks; tick++) {
-    const { view, events: seen, at } = shown(world, last);
+    const { view, events: seen, at, page } = shown(world, last);
     const here = new Set(view.actors.map((a) => a.id));
     const away = world.actors.filter((a) => a.kind === ADVENTURER && !here.has(a.id));
     const residents = new Set(world.actors.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
@@ -104,6 +133,7 @@ export function follow(
     run.push({
       events: seen,
       view: at,
+      lines: page,
       actors: view.actors.map((a) => ({ id: a.id, name: a.name, x: a.x, y: a.y })),
       elsewhere: {
         actors: away.map((a) => ({ id: a.id, name: a.name, x: a.x, y: a.y })),
@@ -121,9 +151,103 @@ export function follow(
 }
 
 /** Record `i` is the world at tick `i + 1`: the viewer's world after `i` ticks past its start. */
-export function play(seed: number, residents: number, ticks: number): TickRecord[] {
-  const { world, events } = start(seed, castOf(residents));
+/**
+ * The world the page runs for `?crowd=residents`. With `monsters`, the
+ * shipped monsters are in it (`?monsters`); with `levels`, the residents
+ * have the spread of levels and deaths `?levels&deaths` gives them.
+ */
+export function play(
+  seed: number,
+  residents: number,
+  ticks: number,
+  { monsters = false, levels = false } = {},
+): TickRecord[] {
+  const { world, events } = start(
+    seed,
+    castOf(residents),
+    botSources(),
+    monsters ? shippedMonsters() : undefined,
+  );
+  if (levels) {
+    const cast = world.actors.filter((a) => a.kind === ADVENTURER);
+    spreadLevels(cast, (level) => XP_TABLE[level] ?? 0);
+    spreadDeaths(cast);
+  }
   return follow(world, events, ticks);
+}
+
+/** A fight on the map, as the fight sheets show it: record numbers, each the world after that many ticks. */
+export interface FightMoment {
+  /** A resident going down. */
+  readonly down: number;
+  /** A monster going down near then. */
+  readonly kill: number;
+  /** The last blow that landed on the downed resident, at or before `down`. */
+  readonly blow: number;
+}
+
+/**
+ * The first fight in a run in which a resident goes down on the map and a
+ * monster goes down on it within `near` ticks of that. Null if there is none.
+ */
+export function fightIn(run: readonly TickRecord[], near = 70): FightMoment | null {
+  const downs = (resident: boolean) =>
+    run.flatMap((record, i) =>
+      record.events.some((e) => e.type === "down" && (e.kind === "adventurer") === resident)
+        ? [i]
+        : [],
+    );
+  const kills = downs(false);
+  for (const down of downs(true)) {
+    const kill = kills.find((k) => Math.abs(k - down) <= near);
+    if (kill === undefined) continue;
+    const fell = run[down]?.events.find((e) => e.type === "down" && e.kind === "adventurer");
+    const who = fell?.type === "down" ? fell.actor : -1;
+    let blow = down;
+    for (let i = down; i >= 0; i--)
+      if (run[i]?.events.some((e) => e.type === "hit" && e.target === who)) {
+        blow = i;
+        break;
+      }
+    return { down, kill, blow };
+  }
+  return null;
+}
+
+/** The first record at or after `from` with a blow landing on the map, or null. */
+export function blowAfter(run: readonly TickRecord[], from: number): number | null {
+  for (let i = Math.max(0, from); i < run.length; i++)
+    if (run[i]?.events.some((e) => e.type === "hit")) return i;
+  return null;
+}
+
+/**
+ * The record from `from` to `to` (not included) with the most residents on
+ * the map, the earliest if several tie, and where they stand: the mean of
+ * their tiles, in tiles from the map's top-left. `residents` are their ids.
+ */
+export function crowdedMoment(
+  run: readonly TickRecord[],
+  residents: ReadonlySet<number>,
+  from: number,
+  to: number,
+): { tick: number; count: number; x: number; y: number } {
+  let best = { tick: from, count: -1, x: 0, y: 0 };
+  for (let i = Math.max(0, from); i < Math.min(to, run.length); i++) {
+    const record = run[i] as TickRecord;
+    const here = record.actors.filter((a) => residents.has(a.id));
+    if (here.length <= best.count) continue;
+    const view = record.view ?? { x: 0, y: 0 };
+    const mean = (f: (a: (typeof here)[number]) => number) =>
+      here.reduce((sum, a) => sum + f(a), 0) / Math.max(1, here.length);
+    best = {
+      tick: i,
+      count: here.length,
+      x: mean((a) => a.x - view.x),
+      y: mean((a) => a.y - view.y),
+    };
+  }
+  return best;
 }
 
 /**

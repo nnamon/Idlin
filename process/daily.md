@@ -1,13 +1,13 @@
 # The daily digest
 
 Run once a day by the "Idlin daily digest" schedule. It tells the operator
-where things stand, runs the day's watch review, and checks the swarm is not
+where things stand, runs the day's watch review (a playtest), and checks the swarm is not
 stuck. It builds nothing.
 
 ## 0. Before anything is posted
 
 Section 1 of `AGENTS.md` applies to everything this run sends to GitHub: the
-commit to the `media` branch (images and the watch log), watch findings, issue
+commit to the `media` branch (images and the playtest log), watch findings, issue
 comments and the digest comment. Check each one before it is pushed or posted.
 Disk use, Docker state and local paths go to the thread only.
 
@@ -22,7 +22,7 @@ gh issue list --state open --json number,title,labels,milestone
 gh run list --branch main --limit 3
 ```
 
-## 2. Watch review
+## 2. Watch review: the playtest
 
 If the lock in
 `$(git rev-parse --git-dir)/idlin.lock` is younger than 150 minutes, a cycle
@@ -47,7 +47,13 @@ docker compose run --rm capture captures/daily --review
 
 Release the lock as soon as the capture has finished; nothing after this
 touches the shared checkout. Start the watch judge as described in
-[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline.
+[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline, for a
+playtest ("The playtest" there): it sits in the seat of a viewer who owns one
+resident among the capture's 15 and returns an open-ended list of what that
+player would complain about, one line each with the frame it shows in, worst
+first. It gives no scores and no comparison. It also answers the absolute
+verdict's three questions (find, follow, stay), so the playtests can be
+compared from day to day.
 
 Then publish to the `media` branch (it holds no code and is not protected)
 from a separate worktree, so the shared checkout stays as it is:
@@ -56,15 +62,18 @@ from a separate worktree, so the shared checkout stays as it is:
 git fetch origin media
 git worktree add "$TMP/media" origin/media --detach   # TMP: a fresh temporary directory
 # copy the showcase set into showcase/ under its stable file names;
-# append one line to watch-log.md: date, commit judged, scores, hard fails
-git -C "$TMP/media" add -A && git -C "$TMP/media" commit -m "Showcase and watch log for <sha>"
+# add the playtest to the top of playtest.md, newest first: date, commit
+# judged, the three answers, then the list as the judge wrote it
+git -C "$TMP/media" add -A && git -C "$TMP/media" commit -m "Showcase and playtest for <sha>"
 git -C "$TMP/media" push origin HEAD:media
 git -C "$TMP/media" rev-parse HEAD                    # the media commit to link
 git worktree remove "$TMP/media"
 ```
 
-File each finding as an issue labelled `watch` and `ready`, unless an open
-issue already covers it.
+Every line of the playtest is a fix-now finding. File each as an issue
+labelled `watch` and `ready`, unless an open issue already covers it; then
+comment on that issue instead, as step 7 of [cycle.md](cycle.md) describes
+(`[conductor] raised again:` and a link to the playtest).
 
 ## 3. Health
 
@@ -93,7 +102,8 @@ facts allow:
 
 1. **Merged.** Pull requests merged since the last digest, one line each.
 2. **Now.** The issue each builder is on, and the next two in the queue.
-3. **Watch.** The storyboard, embedded, the scores, and the top finding.
+3. **Playtest.** The storyboard, embedded, the three answers, and the
+   playtest's first five lines.
 4. **Decisions you can veto**: anything added to `docs/decisions/` since the
    last digest, one line each with the alternative.
 5. **Stuck or odd**: only if there is something.

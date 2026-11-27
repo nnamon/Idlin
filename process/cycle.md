@@ -364,10 +364,31 @@ have stalled or are out, no judge is reachable.
 The judge posts its verdict on the pull request itself, as a comment signed
 `[watch judge] <model>` (`gh pr comment <P> -R nnamon/Idlin --body-file -`), and reports the
 comment's URL. The judge looks
-once per pull request. A hard fail or a "worse" verdict sends the change back
-to a builder (step 4), and the judge looks again only at the fixed capture.
-Anything else it finds becomes a follow-up issue and does not hold the
-merge. The conductor takes no captures for a judgement; it only runs the
+once per pull request. Its verdict has two parts: the comparison with `main`
+(better, the same or worse) and the absolute verdict from the seat of a
+viewer who owns one resident among 15 (find, follow, stay: yes or no each),
+as `docs/watch-rubric.md` describes. A hard fail or a "worse" verdict sends
+the change back to a builder (step 4), and the judge looks again only at the
+fixed capture.
+
+The conductor files each fix-now finding (every "no", and anything else the
+judge lists as fix-now, in the change's scope or not) as a `watch` issue
+whose body links the verdict. When an open issue already covers a finding,
+it comments on that issue instead, starting `[conductor] raised again:` and
+linking the verdict. These issues go ahead of polish and new features in the
+queue. A fix-now issue with a "raised again" comment has been raised twice,
+and holds the merge of every `look` pull request until it is closed, except
+a pull request that closes one such issue. The
+conductor checks for one before each `look` merge:
+
+```sh
+gh issue list --label watch --state open --limit 1000 --json number,title,comments \
+  --jq '.[] | select(any(.comments[]; .body | startswith("[conductor] raised again:")))
+        | "\(.number) \(.title)"'
+```
+
+Anything else the judge finds becomes a follow-up issue and does not hold
+the merge. The conductor takes no captures for a judgement; it only runs the
 daily one in `process/daily.md`.
 
 Which checks apply depends on what exists so far; see "What applies when" in

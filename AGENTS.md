@@ -111,7 +111,8 @@ what the capture must show.
 3. An `in-progress` issue: resume it. One that waits only on a review which
    could not be had last cycle gets one new attempt; if that fails too, leave
    it open and take the next item on this list as that slot's issue.
-4. A `bug`, or a `watch` issue that records a hard fail.
+4. A `bug`, or a `watch` issue that records a hard fail or a fix-now
+   finding (see [docs/watch-rubric.md](docs/watch-rubric.md)).
 5. The lowest-numbered `ready` issue in the current milestone whose
    dependencies ("Depends on #N" in the body) are closed.
 6. Nothing left: run the milestone's exit check from
@@ -211,7 +212,8 @@ A pull request is merged only when all of these hold:
   fail without it; viewer code has a test where there is something to compute,
   not for every visual detail;
 - for a `look` change: a capture with no hard fail and no "worse" verdict,
-  and the art director's ART-OK;
+  the art director's ART-OK, and, unless it closes one of them, no open
+  fix-now `watch` issue that judges have raised twice;
 - docs describe the repo as it now is.
 
 Each pull request gets one code review. A finding blocks only if it is a real
@@ -220,8 +222,11 @@ determinism or snapshots, or a security hole. Missing tests and style are
 listed and do not block, except for determinism and saving. Blocking findings
 are fixed once and the pull request merges without another full review,
 unless the fix itself was large or risky. The watch judge looks once per
-`look` pull request; anything short of a hard fail or a "worse" verdict
-becomes a follow-up issue. The art director also looks once. It says ART-REDO
+`look` pull request. Beside the comparison with `main` it gives an absolute
+verdict from the seat of a viewer who owns one resident among 15; each "no"
+in it, and anything else a player would notice, is a fix-now `watch` issue
+that goes ahead of polish, in the change's scope or not. Anything else short
+of a hard fail or a "worse" verdict becomes a follow-up issue. The art director also looks once. It says ART-REDO
 only for a miss on one of the hard items of the checklist in
 [docs/art.md](docs/art.md), section 13, within what the issue set out to
 draw; the builder fixes those once and the art director looks again at the

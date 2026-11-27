@@ -102,25 +102,29 @@ describe("watchMetrics", () => {
   });
 
   it("measures dead air as the longest gap with nothing to see, including at the ends", () => {
-    const decide = (tick: number, rule: number): TickRecord["events"] => [
-      { type: "decide", tick, actor: 1, rule, action: "wait" },
-    ];
+    // The page's line under Ash changes at 100 and at 150. It is set again to the same words at 300, which shows nothing.
+    const text = (tick: number): string =>
+      tick < 100 ? "resting at camp" : tick < 150 ? "walking to the river" : "resting by the river";
     const run: TickRecord[] = [];
     for (let tick = 0; tick < 500; tick++) {
-      // The rule in charge changes at 100 and at 150. At 300 the same rule fires again, which shows nothing.
-      const events =
-        tick === 100
-          ? decide(tick, 0)
-          : tick === 150
-            ? decide(tick, 1)
-            : tick === 300
-              ? decide(tick, 1)
-              : [];
-      run.push(record(events, [[1, "Ash", 4, 0]]));
+      run.push({ ...record([], [[1, "Ash", 4, 0]]), lines: [{ id: 1, text: text(tick) }] });
     }
     // 0-100, 100-150, then 150 to the end at 500: the last gap is the longest.
     expect(watchMetrics(run).deadAirSeconds).toBe(35);
     expect(watchMetrics(run.slice(0, 160)).deadAirSeconds).toBe(10);
+    // A change of the rule in charge, with the line as it was, shows nothing.
+    const rules = run.map((r, tick) => ({
+      ...r,
+      lines: [{ id: 1, text: "resting at camp" }],
+      events:
+        tick % 50 === 0
+          ? [{ type: "decide", tick, actor: 1, rule: tick / 50, action: "wait" } as const]
+          : [],
+    }));
+    expect(watchMetrics(rules).deadAirSeconds).toBe(50);
+    // A resident newly listed is not a change of line.
+    const listed = run.map((r, tick) => (tick < 200 ? { ...r, lines: [] } : r));
+    expect(watchMetrics(listed).deadAirSeconds).toBe(50);
     // Someone changing tile is something to see, whatever the programs decide.
     const walking = run.map((r, tick) => record(r.events, [[1, "Ash", Math.floor(tick / 50), 0]]));
     expect(watchMetrics(walking).deadAirSeconds).toBe(5);

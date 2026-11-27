@@ -18,7 +18,7 @@ screen and not get bored of in ten minutes.
 | Server: real time, snapshots, WebSocket          | done; a content change keeps the world                                                                                        |
 | Regions                                          | done: four maps joined by exits, and the view follows the spotlit resident between them. Only the camp's region has monsters. |
 | Viewer: the map, the figures, day and night      | done                                                                                                                          |
-| Capture tool and metrics                         | done for six residents; judging at 15 from a player's seat is #314                                                            |
+| Capture tool and metrics                         | done: captures at 15 residents, judged from a player's seat as well as against `main`                                         |
 | Combat                                           | telegraphed blows work and are drawn. One monster at a time, 1.2 s between blows, numbers that never grow                     |
 | Monsters as a threat                             | wolves and goblins exist; hunting packs (#298, #299) and swarms (#316) are not in                                             |
 | Tempo: fast steps and blows, wide attacks, moves | not started (#315 to #324)                                                                                                    |

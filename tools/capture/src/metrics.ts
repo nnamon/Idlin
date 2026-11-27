@@ -29,6 +29,8 @@ export interface TickRecord {
   readonly actors: readonly ActorSample[];
   /** Where the map's window was, its top-left in world tiles; the metrics do not read it. */
   readonly view?: { readonly x: number; readonly y: number };
+  /** The line the page shows under each resident it lists, by id. A change in one can be seen. */
+  readonly lines?: readonly { readonly id: number; readonly text: string }[];
   readonly elsewhere?: {
     readonly actors: readonly ActorSample[];
     readonly events: readonly WorldEvent[];
@@ -43,7 +45,7 @@ export interface ActionMix {
 export interface WatchMetrics {
   readonly seconds: number;
   readonly actors: number;
-  /** Longest stretch in which nothing visible happened: nobody changed tile and nobody's rule in charge changed. */
+  /** Longest stretch in which nothing visible happened: nobody changed tile, no blow or down, and no line on the page changed. */
   readonly deadAirSeconds: number;
   /** Actors that at some point neither changed tile nor chose to rest (`wait`) for longer than the limit. */
   readonly stuckActors: readonly string[];
@@ -74,7 +76,7 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   const lastSpot = new Map<number, string>();
   const stuck = new Set<number>();
   const actions = new Map<number, { tick: number; action: string }[]>();
-  const lastRule = new Map<number, number>();
+  const lastLine = new Map<number, string>();
   const resting = new Set<number>();
   let lastVisible = 0;
   let deadAirTicks = 0;
@@ -117,15 +119,21 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
         continue;
       }
       decisions++;
-      // The page shows the rule in charge, so a change of rule can be seen. The same rule firing again cannot.
-      if (lastRule.get(event.actor) !== event.rule) visible = true;
-      lastRule.set(event.actor, event.rule);
+      // A decision is not seen as such: the page's line is read off the
+      // resident's state, so only what the decision does to that line, or a
+      // move, shows.
       // Choosing to rest, or to work a tree, a fishing spot or the fire, is a
       // reason to stand still. Any other choice has to show as movement. The
       // rest lasts until the actor next decides something.
       if (STANDING_WORK.has(event.action)) resting.add(event.actor);
       else resting.delete(event.actor);
       addAction(event.actor, tick, event.action);
+    }
+    // A line on the page that changes can be seen. A resident newly listed has no line before to change from.
+    for (const { id, text } of record.lines ?? []) {
+      const was = lastLine.get(id);
+      if (was !== undefined && was !== text) visible = true;
+      lastLine.set(id, text);
     }
     // Off the map nothing is seen, but what residents there decide counts for their action mix.
     for (const event of record.elsewhere?.events ?? [])

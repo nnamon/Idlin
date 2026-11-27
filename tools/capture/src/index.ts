@@ -9,11 +9,12 @@
 // run forward to before the page draws, `ticks` are stepped after that.
 //
 // `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
-// figures.png and its crops, burst.png, drift.png, fight.png, fight-burst.png, fight-down.png,
-// daystrip.png, crowd-12/50/150.png, crowd-50-levels.png, metrics.json, and a
-// `showcase` folder for the README. With `--baseline`, also compare.png: that
-// folder's storyboard above this one. Everything comes from seed 1, so two
-// runs of the same code give the same files.
+// residents-6.png, figures.png and its crops, burst.png, drift.png, fight.png,
+// fight-burst.png, fight-down.png, daystrip.png, crowd-12/50/150.png,
+// crowd-50-levels.png, metrics.json, and a `showcase` folder for the README.
+// With `--baseline`, also compare.png: that folder's storyboard above this
+// one. Everything comes from seed 1 with 15 residents unless a sheet says
+// otherwise, so two runs of the same code give the same files.
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -22,6 +23,9 @@ import { extname, join } from "node:path";
 import { chromium } from "playwright";
 import { DRIFT_TICKS } from "../../../packages/client/src/camera.ts";
 import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
+import { TILE } from "../../../packages/client/src/ground.ts";
+import { campRegion, viewSize } from "../../../packages/client/src/view.ts";
+import { shippedWorld } from "../../../packages/sim/src/testing.ts";
 import { parseArgs } from "./args.ts";
 import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
 import { spotlightWait, watchMetrics } from "./metrics.ts";
@@ -36,7 +40,18 @@ import {
   type Image,
   stack,
 } from "./sheet.ts";
-import { busiest, drifts, play, spotlightRun } from "./simrun.ts";
+import {
+  blowAfter,
+  busiest,
+  crowdedMoment,
+  drifts,
+  fightIn,
+  play,
+  spotlightRun,
+} from "./simrun.ts";
+
+/** How many residents a capture runs, unless a sheet says otherwise: a crowd a player's one resident is among. */
+const RESIDENTS = 15;
 
 const DIST = new URL("../../../packages/client/dist/", import.meta.url).pathname;
 const TYPES: Record<string, string> = {
@@ -103,7 +118,7 @@ type Idlin = {
  */
 async function open(
   hour: number | string,
-  residents = 6,
+  residents = RESIDENTS,
   monsters = false,
   levels = false,
 ): Promise<void> {
@@ -187,30 +202,39 @@ async function save(name: string, bytes: Uint8Array): Promise<void> {
 // page turn (20:06), late evening. A
 // stream shows about six frames to a tick, so the frames are a sixth of a tick
 // apart.
-// With monsters, the same at the fight the fight sheet shows (FIGHT_HOUR), a
-// tick before a blow lands, and at a fight at dusk, a tick before its first blow.
-// At seed 1 the fight sheet's fight is the one at 11:15: a wolf downs Birch at
-// tick 3,166 and Fen kills it at 3,210. The dusk fight's first blow lands at
-// tick 8,033.
+// With monsters, the same a tick before a blow lands in the fight the fight
+// sheets show, and a tick before the first blow on the map after 19:00. Both
+// are found in a day of the world with its monsters, as the page runs it, so
+// a change to the world moves them with it.
 const FLICKER_HOURS = [0, 5.9, 6.6, 12, 18.5, 20.05, 20.1, 22];
-const FIGHT_HOUR = 11.25;
-const FLICKER_FIGHTS = [11.2617, 19.385];
-// The figures sheet: when, and the part of the 1920 by 1080 frame round the camp.
-const FIGURES_HOUR = 7;
-const FIGURES_TICKS = 0;
-const FIGURES_CROP = [480, 300, 720, 405] as const;
+const DAY = 24 * 600;
+/** Ticks from the page's start at 06:00 to `hour` the same day or, before 06:00, the next. */
+const ticksTo = (hour: number): number => Math.round(((((hour - 6) % 24) + 24) % 24) * 600);
+const fightRun = play(1, RESIDENTS, DAY, { monsters: true });
+const fight = fightIn(fightRun);
+const duskBlow = blowAfter(fightRun, ticksTo(19));
+// Each moment is a hour for the page (`?hour=`) or a number of ticks from 06:00.
+const flickerAt: { at: number; ticks: boolean; monsters: boolean }[] = [
+  ...FLICKER_HOURS.map((hour) => ({ at: hour, ticks: false, monsters: false })),
+  ...[fight?.blow, duskBlow].flatMap((blow) =>
+    blow === undefined || blow === null
+      ? []
+      : [{ at: Math.max(0, blow - 1), ticks: true, monsters: true }],
+  ),
+];
+// The figures sheet: from 07:00 to 09:00, the moment the map shows the most residents.
+const FIGURES_SIZE = [720, 405] as const;
 await page.setViewportSize({ width: 1920, height: 1080 });
-let worst = { index: 0, hour: 0 };
-for (const [hour, monsters] of [
-  ...FLICKER_HOURS.map((hour) => [hour, false] as const),
-  ...FLICKER_FIGHTS.map((hour) => [hour, true] as const),
-]) {
-  await open(hour, 6, monsters);
+let worst = { index: 0, at: "" };
+for (const { at, ticks, monsters } of flickerAt) {
+  await open(ticks ? 6 : at, RESIDENTS, monsters);
+  if (ticks) await advance(at);
   const index = flickerIndex(await grids());
-  if (index > worst.index) worst = { index, hour };
+  const when = ticks ? `tick ${at} with monsters` : `${at}:00`;
+  if (index > worst.index) worst = { index, at: when };
 }
 console.log(
-  `flicker index: ${(worst.index * 100).toFixed(2)}% of the frame at the worst hour (${worst.hour}:00)`,
+  `flicker index: ${(worst.index * 100).toFixed(2)}% of the frame at worst (${worst.at})`,
 );
 const flickerFail =
   worst.index > FLICKER_LIMIT
@@ -218,20 +242,42 @@ const flickerFail =
     : [];
 
 if (review) {
-  // Figures: twelve residents with a spread of levels and deaths, in the morning: the
-  // whole frame, a close crop of the camp twice as large, and the same as a
+  // Figures: the residents with a spread of levels and deaths, at the moment
+  // from 07:00 to 09:00 when the map shows the most of them: the whole frame,
+  // a crop round where they stand at twice the size, and the same as a
   // 640-wide window shows it, with its crop four times as large.
-  await open(FIGURES_HOUR, 12, false, true);
-  await advance(FIGURES_TICKS);
+  const figuresRun = play(1, RESIDENTS, ticksTo(9), { monsters: false, levels: true });
+  // A world without monsters has only residents in it.
+  const first = figuresRun[0];
+  const cast = new Set(
+    [...(first?.actors ?? []), ...(first?.elsewhere?.actors ?? [])].map((a) => a.id),
+  );
+  const crowded = crowdedMoment(figuresRun, cast, ticksTo(7), ticksTo(9));
+  const atlas = shippedWorld();
+  const mapSize = viewSize(atlas, campRegion({ atlas }));
+  const [cropWidth, cropHeight] = FIGURES_SIZE;
+  const centre = (tiles: number, span: number, room: number): number =>
+    Math.max(0, Math.min(room * TILE - span, Math.round(tiles * TILE + TILE / 2 - span / 2)));
+  const figuresCrop = [
+    centre(crowded.x, cropWidth, mapSize.width),
+    centre(crowded.y, cropHeight, mapSize.height),
+    cropWidth,
+    cropHeight,
+  ] as const;
+  console.log(
+    `figures: ${crowded.count} of ${RESIDENTS} residents on the map, ${crowded.tick} ticks after 06:00`,
+  );
+  await open(6, RESIDENTS, false, true);
+  await advance(crowded.tick);
   const figures = await frame(1);
   await save("figures.png", encodePng(figures));
-  await save("figures-crop.png", encodePng(enlarge(crop(figures, ...FIGURES_CROP), 2)));
+  await save("figures-crop.png", encodePng(enlarge(crop(figures, ...figuresCrop), 2)));
   await page.setViewportSize({ width: 640, height: 360 });
-  await open(FIGURES_HOUR, 12, false, true);
-  await advance(FIGURES_TICKS);
+  await open(6, RESIDENTS, false, true);
+  await advance(crowded.tick);
   const small = decodePng(await page.screenshot());
   await save("figures-640.png", encodePng(small));
-  const [left, top, width, height] = FIGURES_CROP.map((n) => n / 3) as [
+  const [left, top, width, height] = figuresCrop.map((n) => n / 3) as [
     number,
     number,
     number,
@@ -240,17 +286,19 @@ if (review) {
   await save("figures-640-crop.png", encodePng(enlarge(crop(small, left, top, width, height), 4)));
   await page.setViewportSize({ width: 1920, height: 1080 });
 
-  const DAY = 24 * 600;
   // The world the page shows, run here as well for the numbers the picture cannot give.
   const sim: Record<string, ReturnType<typeof watchMetrics>> = {};
   const spotlight: Record<string, ReturnType<typeof spotlightWait>> = {};
   let busiestTick = 0;
   let firstDrift: { from: number; to: number } | undefined;
-  for (const residents of [6, 12, 50, 150]) {
+  for (const residents of [6, 12, RESIDENTS, 50, 150]) {
     const record = play(1, residents, DAY);
     sim[residents] = watchMetrics(record);
-    if (residents === 6) {
-      busiestTick = busiest(record, 20);
+    if (residents === RESIDENTS) {
+      // The burst is two ticks long, so it is the busiest two ticks, from 07:00
+      // on: in the first minutes everyone leaves camp at once, which a viewer
+      // sees only once a day.
+      busiestTick = ticksTo(7) + busiest(record.slice(ticksTo(7)), 2);
       firstDrift = drifts(record)[0];
     }
     // Three times the population times the dwell, as the rubric asks for this one.
@@ -283,25 +331,38 @@ if (review) {
   await open(19.33);
   const storyboard = grid(await run(12, 100, 0.5), 4);
   await save("storyboard.png", encodePng(storyboard));
+  // The first of those frames, full size, with the six residents the page was first built for.
+  await open(19.33, 6);
+  await save("residents-6.png", encodePng(await frame(1)));
 
-  // Burst: twelve rendered frames in a row from the busiest two seconds of the day.
+  // Burst: twelve rendered frames in a row from the busiest two ticks of the
+  // day. Twelve frames that are all the same show no motion, and are reported.
   await open(6);
   await advance(busiestTick);
-  await save("burst.png", encodePng(grid(await run(12, 1 / 6, 0.5), 4)));
+  const burst = await run(12, 1 / 6, 0.5);
+  await save("burst.png", encodePng(grid(burst, 4)));
+  const same = (a: Image, b: Image): boolean =>
+    a.data.length === b.data.length && a.data.every((value, i) => value === b.data[i]);
+  const burstStill = burst.every((f) => same(f, burst[0] as Image));
+  if (burstStill) console.log("the burst's twelve frames are all the same");
 
-  // Fight: the world with its monsters, over twelve seconds of a fight in the
-  // morning with a kill and a resident downed in it; then twelve frames half a
-  // tick apart round a blow landing.
-  await open(FIGHT_HOUR, 6, true);
-  await save("fight.png", encodePng(grid(await run(12, 10, 0.5), 4)));
-  await open(FIGHT_HOUR, 6, true);
-  await advance(6);
-  await save("fight-burst.png", encodePng(grid(await run(12, 1 / 2, 0.5), 4)));
-  // The resident downed in that fight, half a second apart: the fall, the
-  // body lying there, and the fade-in at camp.
-  await open(FIGHT_HOUR, 6, true);
-  await advance(13);
-  await save("fight-down.png", encodePng(grid(await run(12, 5, 0.5), 4)));
+  // Fight: the world with its monsters, over twelve seconds of the first fight
+  // in the day with a resident downed and a kill close together; then twelve
+  // frames half a tick apart round the last blow on that resident, and twelve
+  // half a second apart from its fall: the body lying there, and the fade-in
+  // at camp.
+  if (fight) {
+    const sheets = [
+      ["fight.png", Math.max(0, Math.min(fight.down, fight.kill) - 20), 10],
+      ["fight-burst.png", Math.max(0, fight.blow - 3), 1 / 2],
+      ["fight-down.png", Math.max(0, fight.down - 2), 5],
+    ] as const;
+    for (const [name, from, every] of sheets) {
+      await open(6, RESIDENTS, true);
+      await advance(from);
+      await save(name, encodePng(grid(await run(12, every, 0.5), 4)));
+    }
+  } else console.log("no fight with a resident downed and a kill in the day: no fight sheets");
 
   // Day strip: six moments across the day.
   const strip: Image[] = [];
@@ -341,27 +402,38 @@ if (review) {
 
   if (before) await save("compare.png", encodePng(stack([before, storyboard])));
 
-  // Hard fails are judged on the world as it ships, with six residents. What
-  // goes wrong in a crowd is reported beside them: it answers how many
-  // residents one frame can hold, and blocks nothing.
+  // Hard fails are judged with 15 residents, the crowd the captures show, and
+  // with six, the world as it ships. What goes wrong in a larger or smaller
+  // crowd is reported beside them: it answers how many residents one frame
+  // can hold, and blocks nothing.
+  const failsAt = (residents: number): string[] => [
+    ...(sim[residents]?.hardFails ?? []),
+    ...(spotlight[residents]?.hardFails ?? []),
+  ];
   const hardFails = [
     ...flickerFail,
     ...driftFail,
     ...problems.map((problem) => `page error: ${problem}`),
-    ...(sim[6]?.hardFails ?? []),
-    ...(spotlight[6]?.hardFails ?? []),
+    ...[RESIDENTS, 6].flatMap((residents) =>
+      failsAt(residents).map((fail) => `${residents} residents: ${fail}`),
+    ),
   ];
   const crowdFindings = [12, 50, 150].flatMap((residents) =>
-    [...(sim[residents]?.hardFails ?? []), ...(spotlight[residents]?.hardFails ?? [])].map(
-      (fail) => `${residents} residents: ${fail}`,
-    ),
+    failsAt(residents).map((fail) => `${residents} residents: ${fail}`),
   );
   const metrics = {
     seed: 1,
-    flicker: { index: worst.index, worstHour: worst.hour, limit: FLICKER_LIMIT },
+    residents: RESIDENTS,
+    flicker: { index: worst.index, worstAt: worst.at, limit: FLICKER_LIMIT },
     busiestTick,
-    // Ticks from the start at six residents: the first drift between regions, and the flicker index in it.
+    burstStill,
+    // Ticks from 06:00 with 15 residents: the first drift between regions, and the flicker index in it.
     drift: firstDrift ? { ...firstDrift, flicker: driftFlicker } : null,
+    // Ticks from 06:00, in the world with its monsters: the fight the fight sheets show, the first blow after 19:00.
+    fight,
+    duskBlow,
+    // The figures sheet's moment, in ticks from 06:00, and how many residents the map shows then.
+    figures: { tick: crowded.tick, onMap: crowded.count },
     // One game day per population.
     sim,
     pacing: "n/a: there are no trips, deaths or drops yet (#195, #196, #197)",
