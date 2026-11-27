@@ -78,17 +78,21 @@ export class WorldServer {
   private readonly now: () => number;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private savedTick: number;
+  /** Refused snapshots that could not be set aside; saves neither replace nor delete them. */
+  private readonly stuck: ReadonlySet<string>;
 
   private constructor(
     world: World,
     options: ServerOptions,
     http: Server,
     sockets: WebSocketServer,
+    stuck: ReadonlySet<string>,
   ) {
     this.world = world;
     this.options = options;
     this.http = http;
     this.sockets = sockets;
+    this.stuck = stuck;
     this.now = options.now ?? (() => performance.now());
     this.savedTick = world.tick;
     sockets.on("connection", (socket) => {
@@ -114,7 +118,8 @@ export class WorldServer {
   static async start(options: ServerOptions): Promise<WorldServer> {
     const content = options.content ?? loadContent();
     mkdirSync(options.dataDir, { recursive: true });
-    const resumed = loadNewest(options.dataDir, content, options.log);
+    const stuck = new Set<string>();
+    const resumed = loadNewest(options.dataDir, content, options.log, stuck);
     let world: World;
     if (resumed) {
       world = resumed.world;
@@ -153,7 +158,7 @@ export class WorldServer {
         resolve();
       });
     });
-    return new WorldServer(world, options, http, sockets);
+    return new WorldServer(world, options, http, sockets, stuck);
   }
 
   get port(): number {
@@ -198,7 +203,7 @@ export class WorldServer {
   save(): boolean {
     this.savedTick = this.world.tick;
     try {
-      saveSnapshot(this.options.dataDir, this.world, this.options.log);
+      saveSnapshot(this.options.dataDir, this.world, this.options.log, this.stuck);
       return true;
     } catch (error) {
       this.options.log(`snapshot at tick ${this.world.tick} failed: ${String(error)}`);

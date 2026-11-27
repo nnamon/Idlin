@@ -27,7 +27,7 @@ import {
   TICKS_PER_DAY,
   type World,
 } from "@idlin/sim";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { castOf } from "../../client/src/cast.ts";
 import { shippedPrograms as botPrograms } from "../../sim/src/testing.ts";
@@ -42,6 +42,21 @@ import {
 } from "./server.ts";
 import { listSnapshots, saveSnapshot, snapshotName } from "./store.ts";
 
+/** Set to make every link and copy fail, so no snapshot can be set aside. */
+const refuse = vi.hoisted(() => ({ setAside: false }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  const refused = (): never => {
+    throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+  };
+  const linkSync: typeof fs.linkSync = (from, to) =>
+    refuse.setAside ? refused() : fs.linkSync(from, to);
+  const copyFileSync: typeof fs.copyFileSync = (from, to, mode) =>
+    refuse.setAside ? refused() : fs.copyFileSync(from, to, mode);
+  return { ...fs, default: { ...fs, linkSync, copyFileSync }, linkSync, copyFileSync };
+});
+
 const CONTENT = loadContent();
 /** A snapshot read with the shipped content, as the server and the viewer read it. */
 const read = (text: string): World =>
@@ -52,6 +67,7 @@ const RESIDENTS = 6;
 const dirs: string[] = [];
 const servers: WorldServer[] = [];
 afterEach(async () => {
+  refuse.setAside = false;
   for (const server of servers.splice(0)) await server.stop({ save: false });
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -192,7 +208,7 @@ describe("world server", () => {
     expect(second.world.tick).toBe(101);
   });
 
-  it("goes on to an older snapshot when a bad one cannot be set aside", async () => {
+  it("goes on to an older snapshot when a bad one cannot be set aside, and does not save over it", async () => {
     const dir = tempDir();
     const first = await start(dir);
     first.advance(250);
@@ -200,8 +216,7 @@ describe("world server", () => {
     servers.length = 0;
     const [newest] = listSnapshots(dir) as [string];
     writeFileSync(join(dir, newest), "{ not a snapshot");
-    // A directory where the `.bad` copy would go: the rename fails.
-    mkdirSync(join(dir, `${newest}.bad`, "inside"), { recursive: true });
+    refuse.setAside = true;
 
     const lines: string[] = [];
     const second = await start(dir, lines);
@@ -209,27 +224,15 @@ describe("world server", () => {
     expect(lines[1]).toMatch(new RegExp(`^could not set ${newest} aside as ${newest}\\.bad: `));
     expect(lines[2]).toBe("resumed world-0000000000000101.json at tick 101");
     expect(hashWorld(second.world)).toBe(hashWorld(reference(101)));
+    // The save that lands on its name is refused and logged; the world runs on.
+    second.advance(100);
+    expect(lines[3]).toBe(
+      `snapshot at tick 201 failed: Error: ${newest} holds a refused snapshot that could not be set aside`,
+    );
+    expect(readFileSync(join(dir, newest), "utf8")).toBe("{ not a snapshot");
   });
 
-  it("keeps the snapshot it writes when later ones it could not read are on disk", async () => {
-    const dir = tempDir();
-    // Three later snapshots that cannot be restored or set aside: each stays where it is.
-    for (const tick of [10001, 10002, 10003]) {
-      writeFileSync(join(dir, snapshotName(tick)), "{ not a snapshot");
-      mkdirSync(join(dir, `${snapshotName(tick)}.bad`, "inside"), { recursive: true });
-    }
-    const first = await start(dir);
-    expect(first.world.tick).toBe(1);
-    first.advance(150);
-    expect(await first.stop()).toBe(true);
-    servers.length = 0;
-    expect(listSnapshots(dir).map(tickOf)).toEqual([10003, 10002, 10001, 151, 101]);
-
-    const lines: string[] = [];
-    const second = await start(dir, lines);
-    expect(lines[6]).toBe("resumed world-0000000000000151.json at tick 151");
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(151)));
-  });
+  // Other ways setting aside can fail are tested in store.test.ts.
 
   it("takes only plain files as snapshots, and writes through no symlink", async () => {
     const dir = tempDir();

@@ -35,8 +35,12 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   minute of real time) and when the service stops, and sends the whole world to each viewer
   after every tick. A snapshot it cannot use is skipped with the reason in the
   log. One the simulation refuses (cut short, damaged, or of another version)
-  is also renamed to end in `.bad`; one that cannot be read from disk at all is
-  left where it is. After each save it keeps the newest three snapshots up to
+  is also renamed to end in `.bad` (`.1.bad`, `.2.bad` and so on if that name is
+  taken, so nothing set aside is replaced). The new name is a hard link, or a
+  copy where links are refused, and the old name is removed only after that
+  works. If neither works, the file stays under its own name and that run of
+  the server neither saves over it nor deletes it. One that cannot be read from
+  disk at all is left where it is. After each save it keeps the newest three snapshots up to
   the current tick and deletes the rest; snapshots at a later tick, which it
   could not resume from, are never deleted. An old snapshot that cannot be
   deleted is logged and left.
