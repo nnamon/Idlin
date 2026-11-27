@@ -29,6 +29,7 @@ import { campRegion, viewSize } from "../../../packages/client/src/view.ts";
 import { shippedWorld } from "../../../packages/sim/src/testing.ts";
 import { parseArgs } from "./args.ts";
 import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
+import { captureLookdev, LOOKDEV_SCENES } from "./lookdev.ts";
 import { spotlightWait, watchMetrics } from "./metrics.ts";
 import {
   crop,
@@ -69,7 +70,7 @@ if (typeof args === "string") {
   console.error(args);
   process.exit(2);
 }
-const { outDir, review, baseline, shots: wanted } = args;
+const { outDir, review, baseline, shots: wanted, lookdev, stills } = args;
 // Read the baseline before anything else, so a wrong folder fails at once and not after the run.
 const before = baseline ? decodePng(await readFile(join(baseline, "storyboard.png"))) : null;
 
@@ -128,6 +129,19 @@ async function open(
   await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
   const failure = await page.evaluate(() => document.body.dataset.error ?? null);
   if (failure !== null) throw new Error(`the viewer failed to start: ${failure}`);
+}
+
+// The look-development scenes have no world behind them, so they are a run of their own.
+if (lookdev !== null) {
+  const scenes = lookdev.includes("all") ? LOOKDEV_SCENES : lookdev;
+  await captureLookdev(page, origin, scenes, stills, async (name, bytes) => {
+    await writeFile(join(outDir, name), bytes);
+    console.log(`saved ${join(outDir, name)}`);
+  });
+  await browser.close();
+  server.close();
+  if (problems.length > 0) console.error(`page errors:\n${problems.join("\n")}`);
+  process.exit(problems.length > 0 ? 1 : 0);
 }
 
 for (const shot of wanted) {

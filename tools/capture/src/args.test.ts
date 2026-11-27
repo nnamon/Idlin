@@ -8,6 +8,8 @@ describe("the capture command's arguments", () => {
       shots: ["dawn:6", "noon:12"],
       review: false,
       baseline: null,
+      lookdev: null,
+      stills: false,
     });
     expect(parseArgs(["captures/now", "dawn:6"])).toMatchObject({ shots: ["dawn:6"] });
   });
@@ -29,13 +31,33 @@ describe("the capture command's arguments", () => {
       shots: [],
       review: true,
       baseline: null,
+      lookdev: null,
+      stills: false,
     });
     expect(parseArgs(["--baseline", "before", "out", "--review", "extra:9"])).toEqual({
       outDir: "out",
       shots: ["extra:9"],
       review: true,
       baseline: "before",
+      lookdev: null,
+      stills: false,
     });
+  });
+
+  it("takes the look-development scenes to shoot, and adds no shots of the game to them", () => {
+    expect(parseArgs(["out", "--lookdev", "deck,fight", "--stills"])).toEqual({
+      outDir: "out",
+      shots: [],
+      review: false,
+      baseline: null,
+      lookdev: ["deck", "fight"],
+      stills: true,
+    });
+    expect(parseArgs(["out", "--lookdev"])).toBe("--lookdev needs scene names, or all");
+    expect(parseArgs(["out", "--lookdev", "all", "--review"])).toBe(
+      "--lookdev and --review are separate runs",
+    );
+    expect(parseArgs(["out", "--stills"])).toBe("--stills only works with --lookdev");
   });
 
   it("says what is wrong instead of guessing", () => {

@@ -25,6 +25,7 @@ docker compose up server client                                # the world serve
 docker compose run --rm dev pnpm --filter @idlin/client build  # build the viewer for captures
 docker compose run --rm capture captures/now                   # frames at dawn, noon, dusk and midnight
 docker compose run --rm capture captures/review --review       # the watch-review set (docs/watch-rubric.md)
+docker compose run --rm capture captures/look --lookdev all    # the look-development scenes, and the renderer bench
 ```
 
 - `dev` is `node:24-slim` with pnpm baked in; the repo is bind-mounted, so
@@ -67,6 +68,20 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   capture mode (`?capture`: the page draws only when told to, so a frame is a
   pure function of seed and tick) and saves frames. Arguments after the output
   folder are `name:hour[:ticks[:width[:height]]]`. It also prints a flicker index.
+  With `--lookdev <scenes>` (`all`, or names separated by commas) it shoots the
+  look-development page instead: for each scene, stills at 1920 and the same
+  frames averaged down to 640, a sheet of twelve frames a sixtieth of a second
+  apart, a storyboard, and a short GIF; then `bench.json`, the frame times of
+  the bench scene on WebGL and on Canvas 2D. `--stills` leaves out everything
+  but the stills.
+- The look-development page is the viewer opened with `?lookdev=<scene>`
+  (`packages/client/src/lookdev/`). It has no world behind it: `deck`,
+  `reveal`, `fight`, their `150` variants, `bench`, `figures` and `scale` are
+  scripted scenes, each a function of time, drawn with WebGL 2 through one
+  pen. It is the target the game's own drawing is to be rebuilt to (#362);
+  the game itself still draws with Canvas 2D.
+  [decisions/0030](decisions/0030-renderer-and-scale.md) has the renderer
+  measurements and the smallest scale a citizen reads at.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.
 
