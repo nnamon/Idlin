@@ -5,6 +5,7 @@ build is, how players own residents, how the world grows, and the milestones
 that get there. [roadmap.md](roadmap.md) is the short version.
 [design.md](design.md) still describes the frame, the look and the program
 model, and nothing here changes those.
+[chat.md](chat.md) is the design for how chat joins and commands citizens.
 
 It was written from three proposals on
 [#313](https://github.com/nnamon/Idlin/issues/313): progression and builds

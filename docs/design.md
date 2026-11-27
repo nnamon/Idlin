@@ -413,7 +413,8 @@ them.
 In the first milestone, only watch; the programs are built in. Later: claim an
 adventurer, read its program, edit it in the browser, and see how it does
 against the others. That part starts in M2; [plan.md](plan.md) has it in
-full, with builds, the store and how the world grows.
+full, with builds, the store and how the world grows. [chat.md](chat.md) is
+the design for how a stream's chat joins and commands its citizens.
 
 ## Not planned yet
 
