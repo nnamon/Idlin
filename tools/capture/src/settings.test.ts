@@ -4,10 +4,20 @@ import { describe, expect, it } from "vitest";
 // .claude/settings.json keeps agent sessions from running interpreters and
 // in-place editors on the host (AGENTS.md section 1). This reads the file and
 // checks which commands its deny rules catch, matching a rule the way Claude
-// Code does for Bash: `*` stands for any run of characters.
+// Code does for Bash: `*` stands for any run of characters. It also checks
+// that sessions run with TZ=UTC, so every commit they make is dated +0000.
 
 const file = new URL("../../../.claude/settings.json", import.meta.url);
-const settings = JSON.parse(readFileSync(file, "utf8")) as { permissions: { deny: string[] } };
+const settings = JSON.parse(readFileSync(file, "utf8")) as {
+  env?: Record<string, string>;
+  permissions: { deny: string[] };
+};
+
+describe("the environment in .claude/settings.json", () => {
+  it("sets TZ to UTC", () => {
+    expect(settings.env?.TZ).toBe("UTC");
+  });
+});
 
 function denied(command: string): boolean {
   return settings.permissions.deny.some((rule) => {
