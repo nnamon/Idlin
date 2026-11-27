@@ -181,12 +181,17 @@ ladle, pan, pot. At 60 a pennant is tied to the tool, and at 80 it becomes a
 long swallowtail. Someone with every trade still at level 1 carries a staff, a
 pack or nothing, by id. A newcomer bobs on short steps; as the total of its
 levels nears 200 it walks lower, leaning into a longer stride, easing into the
-lean as it sets off and out of it as it stops. The hat is how far along a
-resident is: every hood shape starts within a few units of the same height,
-and the cowl's peak, the round hood's dome, the point and the hat's crown all
-rise with the total of every level, up to 16 units at 99 in all five skills.
-It rises fastest early, so the first levels show, and never goes down, so a
-taller hat always means more levels; the tool says which trade. What differs
+lean as it sets off and out of it as it stops, and standing upright while it
+waits for the way ahead to clear. The hat is how far along a resident is:
+every hood shape's top is 43 units above the feet on a newcomer, and the
+cowl's peak, the round hood's cap, the point and the hat's crown all rise to
+the same height for the same total of every level, up to 15 units at 99 in all
+five skills, so the tallest hat still fits its row on the page. It rises on a
+log scale, about 5 units by a total of 28 and 8 by 57, so the first levels
+show, and never goes down, so a taller hat always means more levels whatever
+its shape. A newcomer's point trails back behind its head and stands up as it
+grows. The hat also gets a band in the paper's colour at totals of 20, 50,
+100 and 200, the same on every shape. The tool says which trade. What differs
 sits above or outside the outline so that it still reads on a figure about 13
 pixels tall in a 640-wide window, and a name slip sits above the figure's own
 top. Stitched patches for deaths wait for the world to count deaths (#279).

@@ -234,7 +234,7 @@ describe("the three beats", () => {
 
 describe("how far into a walk", () => {
   it("eases in over the beats on setting off and out over them on pulling up", () => {
-    const east = { path: [{ x: 6, y: 5 }] };
+    const east = { x: 6, fromX: 5, moveTicksLeft: 5, path: [{ x: 7, y: 5 }] };
     const start = history([{}, east]);
     expect(walkAt(start, 1, 2)).toBe(0);
     expect(walkAt(start, 1, 2 + BEAT_TICKS / 2)).toBeCloseTo(0.5);
@@ -246,13 +246,43 @@ describe("how far into a walk", () => {
     }
     // Walking on, long after setting off: all the way in.
     expect(walkAt(history([east, east, east, east, east, east, east, east, east]), 1, 9.5)).toBe(1);
-    const stop = history([{}, { x: 4, fromX: 5, moveTicksLeft: 1 }, { x: 4, fromX: 4 }]);
-    expect(walkAt(stop, 1, 3)).toBe(1);
-    expect(walkAt(stop, 1, 3 + BEAT_TICKS / 2)).toBeCloseTo(0.5);
-    expect(walkAt(stop, 1, 3 + BEAT_TICKS)).toBe(0);
+    // Seen first mid-walk, then stopping: all the way out from all the way in.
+    const stop = history([
+      { x: 4, fromX: 5, moveTicksLeft: 1 },
+      { x: 4, fromX: 4 },
+    ]);
+    expect(walkAt(stop, 1, 2)).toBe(1);
+    expect(walkAt(stop, 1, 2 + BEAT_TICKS / 2)).toBeCloseTo(0.5);
+    expect(walkAt(stop, 1, 2 + BEAT_TICKS)).toBe(0);
     // Standing still, and someone never seen.
     expect(walkAt(history([{}, {}]), 1, 2.5)).toBe(0);
     expect(walkAt(start, 99, 2.5)).toBe(0);
+  });
+
+  it("stands upright while held up on a walk, though the walk still has a goal", () => {
+    const stepping = { x: 6, fromX: 5, moveTicksLeft: 3, path: [{ x: 7, y: 5 }] };
+    // The step ends and the next tile is taken: it waits there, its path intact.
+    const held = { x: 6, fromX: 6, moveTicksLeft: 0, path: [{ x: 7, y: 5 }] };
+    const states = [stepping, stepping, ...Array.from({ length: 12 }, () => held)];
+    const effects = history(states);
+    expect(effects.seen.get(1)?.goal).toBe("7,5");
+    expect(walkAt(effects, 1, states.length + 0.5)).toBe(0);
+  });
+
+  it("carries on from where the ease had got to when a walk starts again soon after stopping", () => {
+    const stepping = { x: 6, fromX: 5, moveTicksLeft: 3, path: [{ x: 7, y: 5 }] };
+    const standing = { x: 6, fromX: 6 };
+    // Walking, stopped at tick 9, off again at tick 12.
+    const states = [...Array.from({ length: 8 }, () => stepping), standing, standing, standing];
+    const stopped = history(states);
+    const at = walkAt(stopped, 1, 12);
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThan(1);
+    const again = history([...states, stepping]);
+    // No jump at the restart, and back up from there.
+    expect(walkAt(again, 1, 12)).toBeCloseTo(at);
+    expect(walkAt(again, 1, 12.5)).toBeGreaterThan(at);
+    expect(walkAt(again, 1, 12 + BEAT_TICKS)).toBe(1);
   });
 });
 

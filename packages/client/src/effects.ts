@@ -49,6 +49,18 @@ interface Seen {
   readonly goal: string;
   /** Which way across the map it last went: 1 east, -1 west. */
   readonly dir: 1 | -1;
+  /** Whether it is in the middle of a step, rather than standing (perhaps held up on its walk). */
+  readonly stepping: boolean;
+}
+
+/** A change between standing and stepping, for a veteran's lean into its stride. */
+export interface Stride {
+  /** The tick it began. */
+  readonly since: number;
+  /** How far into its walk the figure was then, 0 to 1 (see `walkAt`). */
+  readonly from: number;
+  /** 1 when it began stepping, 0 when it stopped. */
+  readonly to: 0 | 1;
 }
 
 /** A route under way. */
@@ -71,6 +83,8 @@ export interface Effects {
   readonly routes: ReadonlyMap<number, Route>;
   /** Each resident setting off or pulling up: the tick it began, and which way it was going. */
   readonly beats: ReadonlyMap<number, { readonly since: number; readonly dir: 1 | -1 }>;
+  /** Each resident that began or stopped stepping in the last BEAT_TICKS. */
+  readonly strides: ReadonlyMap<number, Stride>;
   readonly seen: ReadonlyMap<number, Seen>;
 }
 
@@ -79,6 +93,7 @@ export const NO_EFFECTS: Effects = {
   glyphs: new Map(),
   routes: new Map(),
   beats: new Map(),
+  strides: new Map(),
   seen: new Map(),
 };
 
@@ -117,6 +132,7 @@ export function nextEffects(
   const glyphs = new Map<number, { glyph: Glyph; since: number }>();
   const routes = new Map<number, Route>();
   const beats = new Map<number, { since: number; dir: 1 | -1 }>();
+  const strides = new Map<number, Stride>();
   const seen = new Map<number, Seen>();
   const followsOn = previous.tick === tick - 1;
   // Lanes held by routes still drawn, so that a new route takes one that is free.
@@ -137,11 +153,14 @@ export function nextEffects(
           ? next.x - actor.x
           : 0;
     const dir: 1 | -1 = step > 0 ? 1 : step < 0 ? -1 : (previous.seen.get(id)?.dir ?? 1);
-    seen.set(id, { rule: actor.rule, fault: actor.fault, goal, dir });
+    const stepping = actor.moveTicksLeft > 0;
+    seen.set(id, { rule: actor.rule, fault: actor.fault, goal, dir, stepping });
     const glyph = previous.glyphs.get(id);
     const beat = previous.beats.get(id);
+    const stride = previous.strides.get(id);
     if (glyph && tick - glyph.since < GLYPH_TICKS) glyphs.set(id, glyph);
     if (beat && tick - beat.since < BEAT_TICKS) beats.set(id, beat);
+    if (stride && tick - stride.since < BEAT_TICKS) strides.set(id, stride);
     let route = previous.routes.get(id);
     if (route && route.stopped === null && goal !== `${route.goal.x},${route.goal.y}`) {
       route = { ...route, stopped: tick };
@@ -166,8 +185,13 @@ export function nextEffects(
     if ((goal === "") !== (was.goal === "")) {
       beats.set(id, { since: tick, dir });
     }
+    // The lean into a stride eases from wherever it had got to, so a walk that
+    // starts again a tick or two after stopping carries on from there.
+    if (stepping !== was.stepping) {
+      strides.set(id, { since: tick, from: walkAt(previous, id, tick), to: stepping ? 1 : 0 });
+    }
   }
-  return { tick, glyphs, routes, beats, seen };
+  return { tick, glyphs, routes, beats, strides, seen };
 }
 
 const smooth = (t: number): number => {
@@ -249,12 +273,12 @@ export function leanAt(effects: Effects, id: number, time: number): number {
 
 /**
  * 0 to 1: how far into its walk resident `id` is at `time`, for a veteran's
- * lean into its stride. 1 while it walks and 0 while it stands, easing from
- * one to the other over BEAT_TICKS as it sets off or pulls up.
+ * lean into its stride. 1 while it steps and 0 while it stands, including
+ * when it stands held up on a walk, easing from where it was to the other
+ * over BEAT_TICKS as it starts or stops stepping.
  */
 export function walkAt(effects: Effects, id: number, time: number): number {
-  const walking = (effects.seen.get(id)?.goal ?? "") !== "";
-  const b = effects.beats.get(id);
-  const eased = b ? smooth((time - b.since) / BEAT_TICKS) : 1;
-  return walking ? eased : 1 - eased;
+  const s = effects.strides.get(id);
+  if (s) return s.from + (s.to - s.from) * smooth((time - s.since) / BEAT_TICKS);
+  return effects.seen.get(id)?.stepping ? 1 : 0;
 }

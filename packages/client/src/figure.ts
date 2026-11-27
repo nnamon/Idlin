@@ -6,7 +6,7 @@
 // tool over the shoulder, a shield or a pot on the back. The pattern and the
 // mark on the cloak read on the page, where the figure is drawn larger.
 
-import type { HoodShape, Kit, Looks, Parts } from "./looks.ts";
+import type { Kit, Looks, Parts } from "./looks.ts";
 import type { Ctx } from "./pen.ts";
 import type { Pose } from "./pose.ts";
 
@@ -240,11 +240,17 @@ const HAFTS: Readonly<Record<string, readonly [number, number, number]>> = {
 };
 
 /**
- * How far above its feet the top of each hood shape reaches on a newcomer.
- * They are kept within a few units of each other, so that only the rise with
- * level (`riseFor` in looks.ts) makes one hat stand taller than another.
+ * How far above its feet the top of a newcomer's hood reaches, whatever its
+ * shape. Every shape's top is `HOOD_TOP + rise` (`riseFor` in looks.ts), so
+ * the height of the hat ranks residents across shapes; the shapes differ in
+ * how they get there.
  */
-const HOOD_TOPS: Readonly<Record<HoodShape, number>> = { point: 46, round: 42, brim: 44, cowl: 44 };
+export const HOOD_TOP = 43;
+
+/** The bands on a hat (`bandsFor` in looks.ts): the lowest one's foot above the feet, each one's height, and the step between them. */
+export const BAND_FOOT = 41.5;
+export const BAND_HEIGHT = 2;
+export const BAND_PITCH = 3.2;
 
 /**
  * How far above its feet a standing figure reaches, in its own units: at least
@@ -252,10 +258,10 @@ const HOOD_TOPS: Readonly<Record<HoodShape, number>> = { point: 46, round: 42, b
  * more for a tall hat or a tool held high.
  */
 export function figureTop(parts: Parts): number {
-  const { kit, looks, rise } = parts;
+  const { kit, rise } = parts;
   const tool =
     kit.trade === null ? 0 : -(HAFTS[`${kit.trade}${Math.min(2, kit.tier)}`]?.[1] ?? 0) + 4;
-  return Math.max(46, HOOD_TOPS[looks.hood] + rise + 1, tool);
+  return Math.max(46, HOOD_TOP + rise + 1, tool);
 }
 
 /** How far a figure is lifted off the ground in the middle of a step: a newcomer bobs higher. */
@@ -404,57 +410,77 @@ function drawBack(ctx: Ctx, kit: Kit, style: FigureStyle): void {
 }
 
 /**
- * The hood over the head, in its shape, `rise` units taller than a
- * newcomer's: the cowl's peak, the dome of the round hood, the point and the
- * crown of the hat all go up by that much.
+ * The hood over the head, in its shape, its top `rise` units above a
+ * newcomer's HOOD_TOP whatever the shape, with `bands` stripes of the paper's
+ * colour round the part that rises: the cowl's peak, the round hood's cap,
+ * the point and the hat's crown.
  */
-function drawHood(ctx: Ctx, looks: Looks, hood: string, rise: number): void {
+function drawHood(ctx: Ctx, parts: Parts, hood: string, paper: string): void {
+  const { looks, rise, bands } = parts;
+  const top = -(HOOD_TOP + rise);
   ctx.fillStyle = hood;
   ctx.lineWidth = 2;
+  // Fills the path just drawn, bands it, then inks its outline over the bands' ends.
+  const banded = (): void => {
+    ctx.fill();
+    if (bands > 0) {
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = paper;
+      for (let i = 0; i < bands; i++)
+        ctx.fillRect(-20, -(BAND_FOOT + BAND_HEIGHT + i * BAND_PITCH), 40, BAND_HEIGHT);
+      ctx.restore();
+    }
+    ctx.stroke();
+  };
   if (looks.hood === "cowl") {
     // A cowl: wide, falling to the shoulders behind the head, its peak drawn up and back.
     ctx.beginPath();
     ctx.moveTo(8, -32);
-    ctx.quadraticCurveTo(5, -44 - rise, -3 - 0.3 * rise, -43 - rise);
+    ctx.quadraticCurveTo(5, top, -3 - 0.3 * rise, top);
     ctx.quadraticCurveTo(-13, -41 - 0.5 * rise, -12.5, -26);
     ctx.lineTo(-5, -26);
     ctx.quadraticCurveTo(-7, -34, 0, -38);
     ctx.quadraticCurveTo(5, -38, 8, -32);
     ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    banded();
     return;
   }
   ctx.beginPath();
   if (looks.hood === "round") {
-    // A dome over the head, drawn up into a taller cap.
-    ctx.moveTo(-7.9, -35.3);
-    ctx.bezierCurveTo(-8.5, -44.3 - (4 / 3) * rise, 8.5, -44.3 - (4 / 3) * rise, 7.9, -35.4);
+    // A dome over the head, drawn up into a taller cap. Both handles at one
+    // height put the curve's top at 3/4 of theirs plus 1/8 of each end's.
+    const ends = [-35.3, -35.4] as const;
+    const handle = (top - (ends[0] + ends[1]) / 8) / 0.75;
+    ctx.moveTo(-7.9, ends[0]);
+    ctx.bezierCurveTo(-8.5, handle, 8.5, handle, 7.9, ends[1]);
   } else {
     ctx.arc(0, -34, 8, 3.3, 6.1);
   }
   ctx.lineTo(8, -32);
   ctx.quadraticCurveTo(0, -40, -8, -33);
   ctx.closePath();
+  if (looks.hood === "round") {
+    banded();
+    return;
+  }
   ctx.fill();
   ctx.stroke();
   if (looks.hood === "point") {
-    // A point, falling further back the taller it is.
+    // A point: trailing back on a newcomer, standing up the taller it gets.
     ctx.beginPath();
     ctx.moveTo(-7, -38);
-    ctx.lineTo(-10 - 0.35 * rise, -45 - rise);
+    ctx.lineTo(-16 + 0.45 * rise, top);
     ctx.lineTo(2, -41.8);
-    ctx.fill();
-    ctx.stroke();
+    banded();
   } else if (looks.hood === "brim") {
     // A hat: a flat crown and a brim wider than the head.
     ctx.beginPath();
     ctx.moveTo(-6, -38);
-    ctx.lineTo(-5, -43 - rise);
-    ctx.lineTo(5, -43 - rise);
+    ctx.lineTo(-5, top);
+    ctx.lineTo(5, top);
     ctx.lineTo(6, -38);
-    ctx.fill();
-    ctx.stroke();
+    banded();
     ctx.beginPath();
     ctx.ellipse(0, -38, 13.5, 2.6, 0, 0, 7);
     ctx.fill();
@@ -586,7 +612,7 @@ export function drawFigure(
   ctx.arc(0, -33, 7.5, 0, 7);
   ctx.fill();
   ctx.stroke();
-  drawHood(ctx, looks, hood, style.rise);
+  drawHood(ctx, style, hood, style.face ?? paper);
   ctx.fillStyle = style.eye ?? ink;
   ctx.strokeStyle = style.eye ?? ink;
   if (sitting > 0.5) {

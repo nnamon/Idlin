@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { castOf, SPREAD, spreadLevels } from "./cast.ts";
 import { figureTop } from "./figure.ts";
 import {
+  BAND_TOTALS,
+  bandsFor,
   gaitFor,
   HOOD_SHAPES,
   kitFor,
@@ -105,11 +107,13 @@ describe("kit tier by level", () => {
 });
 
 describe("how tall a figure stands, for the name slip over it", () => {
-  it("keeps a plain figure at 46 and raises it for a tall hood and for higher kit", () => {
+  it("keeps a plain figure at 46 and raises it for a tall hat and for higher kit", () => {
     const plain = partsFor(2); // a round hood, nothing over the shoulder
     expect(plain.looks.hood).toBe("round");
     expect(figureTop(plain)).toBe(46);
-    expect(figureTop(partsFor(1))).toBeGreaterThan(46); // a pointed hood
+    // Every newcomer's hood is the same height, whatever its shape.
+    for (const id of [1, 3, 4]) expect(figureTop({ ...partsFor(id), kit: plain.kit })).toBe(46);
+    expect(figureTop({ ...plain, rise: RISE_MAX })).toBeGreaterThan(46);
     for (const trade of ["woodcutting", "fishing"] as const) {
       const tops = [2, 20, 40, 60, 80].map((level) =>
         figureTop({ ...plain, kit: kitFor(2, xpAt({ [trade]: level })) }),
@@ -159,6 +163,22 @@ describe("the hat, by total level", () => {
     });
     // The same total gives the same hat, whichever skills it is in.
     expect(riseFor(xpAt({ fishing: 41 }))).toBeCloseTo(riseFor(xpAt({ melee: 21, cooking: 21 })));
+  });
+
+  it("takes its largest steps over the first levels, and bands them too", () => {
+    // The figures sheet's three lowest: a newcomer, and best trades at 12 and 25
+    // with every other skill at a third of that (totals 5, 28 and 57).
+    const fresh = xpAt({});
+    const early = xpAt({ melee: 4, hitpoints: 4, woodcutting: 4, fishing: 12, cooking: 4 });
+    const next = xpAt({ melee: 8, hitpoints: 8, woodcutting: 8, fishing: 25, cooking: 8 });
+    expect([fresh, early, next].map(totalLevel)).toEqual([5, 28, 57]);
+    // On the map at 640 wide a figure unit is about 0.43 pixels.
+    expect(riseFor(early) - riseFor(fresh)).toBeGreaterThan(5);
+    expect(riseFor(next) - riseFor(early)).toBeGreaterThan(2);
+    expect([fresh, early, next].map(bandsFor)).toEqual([0, 1, 2]);
+    // The rest of the bands come at the totals that follow.
+    expect(bandsFor(xpAt({ melee: 99, woodcutting: 99, fishing: 3 }))).toBe(4);
+    expect(BAND_TOTALS).toHaveLength(4);
   });
 
   it("orders the capture's twelve by their total level, and the figure's top with it", () => {
