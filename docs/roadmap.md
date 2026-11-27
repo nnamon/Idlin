@@ -25,7 +25,7 @@ screen and not get bored of in ten minutes.
 | Skills, the bag and the bank                     | experience, gathering, cooking and eating work in the simulation; levels change nothing in a fight until #317                 |
 | Trips, death drops, hauls on screen              | not started (#237, #238); the viewer does not draw gathering                                                                  |
 | Items                                            | the item tables roll; nothing drops and nobody wears anything (#240, #241)                                                    |
-| The page                                         | six large rows; the line under each name comes from the resident's state; the compact page for 15 is #231                     |
+| The page                                         | one 30 px line per resident, up to 20, read off its state, with total level; past 20, the most lately changed and a count     |
 | Spotlight                                        | the director picks a subject and the map follows it; no card drawn (#245)                                                     |
 
 **The candidate** is the first build worth showing: 15 residents with an aim,

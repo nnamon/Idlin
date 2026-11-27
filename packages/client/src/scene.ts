@@ -56,7 +56,7 @@ import {
   shove,
   stoopAt,
 } from "./fight.ts";
-import { drawFigure, drawMarkGlyph, type FigureStyle, figureTop, liftOf } from "./figure.ts";
+import { drawFigure, type FigureStyle, figureTop, liftOf } from "./figure.ts";
 import {
   FRAME_HEIGHT,
   FRAME_WIDTH,
@@ -64,7 +64,6 @@ import {
   ROSTER_ROWS,
   ROW_PITCH,
   spreadPage,
-  TIGHT_PITCH,
 } from "./frame.ts";
 import { drawGround, type Ground, type MapLabel, type Standing, TILE } from "./ground.ts";
 import { identity } from "./identity.ts";
@@ -84,8 +83,8 @@ import {
   rgb,
   skyCast,
 } from "./light.ts";
-import { type Lines, NO_LINES, newsNow, nextLines, pageText, quietNews } from "./line.ts";
-import { looks, type Parts, partsFor } from "./looks.ts";
+import { type Lines, NO_LINES, newsNow, nextLines, pageParts, quietNews } from "./line.ts";
+import { type Parts, partsFor } from "./looks.ts";
 import {
   drawBlot,
   drawDust,
@@ -102,11 +101,20 @@ import {
   routePoint,
 } from "./marks.ts";
 import { type Pt, regionLoops, smoothLoop } from "./outline.ts";
-import { DAY, NIGHT, PAGE_CAST, type Palette, pagePalette } from "./palette.ts";
+import { DAY, FAINT, NIGHT, PAGE_CAST, type Palette, pagePalette } from "./palette.ts";
 import { type Ctx, newCanvas, trace } from "./pen.ts";
 import { actorPose, easeSit, type Pose } from "./pose.ts";
+import {
+  type Changes,
+  LIST_TICKS,
+  markAt,
+  NO_CHANGES,
+  nextChanges,
+  pickListed,
+  totalLevel,
+} from "./roster.ts";
 import { letGo, NO_SLIPS, nextSlips, type Slips, slipAlpha } from "./slips.ts";
-import { drawHp, drawLevels, hpWidth } from "./stats.ts";
+import { BAR_WIDTH, drawHp } from "./stats.ts";
 import {
   type Box,
   bodyBox,
@@ -129,8 +137,26 @@ import {
 } from "./view.ts";
 
 const FIGURE_SCALE = 1.3;
-/** How strongly a page row is drawn while its resident is off the map. */
+/** How strongly a page row's bust is drawn while its resident is off the map; its lettering goes to FAINT. */
 const AWAY_ALPHA = 0.5;
+/**
+ * A page row, laid out left to right: the bust in a square as wide as the
+ * row is high, drawn at BUST_SCALE with the top of its hat near the row's top
+ * and cut off at the row's foot; the name, in a column as wide as the widest
+ * listed name up to NAME_MAX; the hitpoint bar; what the resident is doing;
+ * its total level at the right.
+ */
+const BUST_ROOM = 30;
+const BUST_SCALE = 0.68;
+const NAME_MAX = 120;
+const NAME_FONT = '20px "Fell SC"';
+const LINE_FONT = '19px "Fell Italic"';
+const NUMBER_FONT = '20px "Fell"';
+const CAPTION_FONT = '16px "Fell Italic"';
+/** From a row's top to its baseline, before any opening out. */
+const ROW_BASELINE = 21;
+/** A faint rule after every this many rows, as in a ledger, to keep the eye on its line. */
+const RULE_EVERY = 5;
 const TAG_FONT = '27px "Fell SC"';
 const FONTS = ['22px "Fell"', '22px "Fell Italic"', TAG_FONT];
 /** How long a line of news stays up at least, in ticks, so the line can be read. */
@@ -182,14 +208,37 @@ const BLOT_SIZE: Readonly<Record<string, number>> = { wolf: 50, goblin: 36, [ADV
 /** The most lines of fight news waiting their turn; older ones give way to newer. */
 const NEWS_QUEUE = 3;
 /**
- * The overview of the world at the head of the page: the most room it takes,
- * beside the clock and above the day's line, the most pixels it gives a tile,
- * and how far below the page's top it starts.
+ * The overview of the world at the head of the page, under the day's line and
+ * centred over the rows: the most room it takes, the most pixels it gives a
+ * tile, and how far below the page's top it starts.
  */
-const OVERVIEW_WIDTH = 170;
-const OVERVIEW_HEIGHT = 80;
-const OVERVIEW_SCALE = 3;
-const OVERVIEW_TOP = 142;
+const OVERVIEW_WIDTH = 420;
+const OVERVIEW_HEIGHT = 140;
+const OVERVIEW_SCALE = 4;
+const OVERVIEW_TOP = 126;
+
+/** `text`, cut short with an ellipsis if it is wider than `room` in the context's font. */
+function fitText(ctx: Ctx, text: string, room: number): string {
+  if (ctx.measureText(text).width <= room) return text;
+  for (let cut = text.length - 1; cut > 0; cut--) {
+    const short = `${text.slice(0, cut).trimEnd()}…`;
+    if (ctx.measureText(short).width <= room) return short;
+  }
+  return "";
+}
+
+/**
+ * `words` and then `number` in `room`: whole if they fit, else the words cut
+ * short so the number stays whole, as long as the number takes no more than
+ * two thirds of the room; past that, the two cut short together.
+ */
+export function fitLine(ctx: Ctx, words: string, number: string, room: number): string {
+  const whole = words + number;
+  if (ctx.measureText(whole).width <= room) return whole;
+  const kept = ctx.measureText(number).width;
+  if (number === "" || kept > (room * 2) / 3) return fitText(ctx, whole, room);
+  return fitText(ctx, words, room - kept) + number;
+}
 
 const isResident = (actor: Actor): boolean => actor.kind === ADVENTURER;
 
@@ -348,6 +397,11 @@ export class Scene {
   private newsWho = -1;
   /** The line each resident's page row shows (see line.ts). */
   private lines: Lines = NO_LINES;
+  /** When each resident's row last changed, for its mark (see roster.ts). */
+  private changes: Changes = NO_CHANGES;
+  /** Whom the page lists, by id, and in which LIST_TICKS period they were chosen. */
+  private listed: number[] = [];
+  private listPeriod = Number.NaN;
   /** The line of news now up, as it was queued. */
   private newsItem: News | null = null;
   /** With no news up, the resident the line tells of instead, and what it says (see line.ts). */
@@ -707,7 +761,14 @@ export class Scene {
         out.fillStyle = css(palette.paper);
         out.fillRect(0, 0, this.frameWidth, this.frameHeight);
         out.translate(mx, 0);
-        this.page(out, world, roster, palette, this.pageStyle(listing(world, roster), palette));
+        this.page(
+          out,
+          world,
+          roster,
+          palette,
+          this.pageStyle(listing(world, roster), palette),
+          time,
+        );
       }
       out.restore();
     }
@@ -956,6 +1017,8 @@ export class Scene {
       this.fading.clear();
       this.labelDay.length = 0;
       this.effects = NO_EFFECTS;
+      this.changes = NO_CHANGES;
+      this.listPeriod = Number.NaN;
     }
     this.lastTick = whole.tick;
     this.watch = nextWatch(this.watch, whole);
@@ -972,6 +1035,21 @@ export class Scene {
       bottom: box.bottom - seen.y,
     });
     this.lines = nextLines(this.lines, whole, this.fight);
+    this.changes = nextChanges(this.changes, whole, this.fight);
+    // With more residents than rows, whom the page lists is chosen again once
+    // every LIST_TICKS, so rows do not trade places at every hurt; at once when
+    // someone listed has left, and always everyone while all of them fit.
+    const residents = whole.actors.filter(isResident);
+    const period = Math.floor(whole.tick / LIST_TICKS);
+    const present = new Set(residents.map((actor) => actor.id));
+    if (
+      period !== this.listPeriod ||
+      residents.length <= ROSTER_ROWS ||
+      this.listed.some((id) => !present.has(id))
+    ) {
+      this.listed = pickListed(residents, this.changes.at, ROSTER_ROWS);
+      this.listPeriod = period;
+    }
     // The news tells only of what happened: kills, downs, close calls, a fight
     // starting, someone running. Each stays up long enough to be read; one
     // waiting goes up once the last has had its time.
@@ -1025,8 +1103,7 @@ export class Scene {
     }
     // With no news up, the line tells what one resident the page does not list
     // is doing, and that resident has a claim to a slip like anyone in the news.
-    const residents = whole.actors.filter(isResident);
-    const listed = new Set(residents.slice(0, ROSTER_ROWS).map((actor) => actor.id));
+    const listed = new Set(this.listedOf(residents).map((actor) => actor.id));
     this.quiet = this.news === "" ? quietNews(this.lines, residents, listed, world.tick) : null;
     if (this.quiet) this.newsWho = this.quiet.who;
     const alive = new Set<number>();
@@ -1499,7 +1576,7 @@ export class Scene {
       ctx.restore();
     }
 
-    this.page(ctx, world, roster, palette, this.pageStyle(listing(world, roster), palette));
+    this.page(ctx, world, roster, palette, this.pageStyle(listing(world, roster), palette), time);
     ctx.restore();
   }
 
@@ -1685,23 +1762,41 @@ export class Scene {
     ctx.rect(...this.mapOnly());
   }
 
-  /** The page beside the map and the line beneath it. */
+  /**
+   * Whom the page lists of `residents`, in id order: everyone while they fit,
+   * else those chosen in `observe`, or before any were chosen the first.
+   */
+  private listedOf(residents: readonly Actor[]): readonly Actor[] {
+    if (residents.length <= ROSTER_ROWS) return residents;
+    const ids = new Set(this.listed);
+    const chosen = residents.filter((actor) => ids.has(actor.id));
+    return (chosen.length > 0 ? chosen : residents).slice(0, ROSTER_ROWS);
+  }
+
+  /**
+   * The page beside the map and the line beneath it. At its head the title and
+   * the clock, the day, and the overview; under them one line per resident
+   * listed, up to ROSTER_ROWS: bust, name, hitpoints, what it is doing (see
+   * line.ts) and total level, with an underline under the name of anyone
+   * whose row just changed (see roster.ts).
+   */
   private page(
     ctx: Ctx,
     world: World,
     roster: readonly Actor[],
     palette: Palette,
     style: (id: number, scale: number) => Parameters<typeof drawFigure>[4],
+    time: number,
   ): void {
     const ink = css(palette.ink);
     const below = this.pageBelow;
     // The page's own corner, and the edges its lines run between.
     // Below the map, the page is as wide as the map and drawn under it (the sheet
     // is already shifted to where the map is).
-    const left = below ? 40 : this.width + 50;
-    const right = below ? this.width - 40 : this.frameWidth - 40;
+    const left = below ? 40 : this.width + 24;
+    const right = below ? this.width - 40 : this.frameWidth - 20;
     const residents = roster.filter(isResident);
-    const listed = residents.slice(0, ROSTER_ROWS);
+    const listed = this.listedOf(residents);
     const rows = Math.ceil(listed.length / this.columns);
     // In a tall window there can be paper to spare under the page: the rows open
     // out a little and the rest goes above and below what is written.
@@ -1713,93 +1808,132 @@ export class Scene {
     ctx.strokeStyle = ink;
     ctx.textAlign = "left";
 
-    ctx.font = '76px "Fell SC"';
-    ctx.fillText("Idlin", left, top0 + 100);
+    ctx.font = '52px "Fell SC"';
+    ctx.fillText("Idlin", left, top0 + 60);
+    ctx.font = '52px "Fell"';
+    ctx.textAlign = "right";
+    ctx.fillText(this.clockShown ? `${two(hour)}:${two(minute)}` : "—", right, top0 + 60);
+    ctx.textAlign = "left";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(left, top0 + 124);
-    ctx.lineTo(right, top0 + 124);
+    ctx.moveTo(left, top0 + 78);
+    ctx.lineTo(right, top0 + 78);
     ctx.stroke();
-    ctx.font = '72px "Fell"';
-    ctx.fillText(this.clockShown ? `${two(hour)}:${two(minute)}` : "—", left, top0 + 208);
     if (this.clockShown) {
-      ctx.font = '30px "Fell Italic"';
-      ctx.fillText(`Day ${day + 1}, ${part}`, left + 2, top0 + 252);
+      ctx.font = '26px "Fell Italic"';
+      ctx.fillText(`Day ${day + 1}, ${part}`, left, top0 + 110);
     }
     if (this.notice !== "") {
-      ctx.font = '27px "Fell Italic"';
+      ctx.font = '26px "Fell Italic"';
       ctx.textAlign = "right";
-      ctx.globalAlpha = 0.7;
-      ctx.fillText(this.notice, right, top0 + 208);
+      ctx.globalAlpha = FAINT;
+      ctx.fillText(this.notice, right, top0 + 110);
       ctx.globalAlpha = 1;
       ctx.textAlign = "left";
-    } else if (this.whole) this.overview(ctx, palette, right, top0 + OVERVIEW_TOP);
+    } else if (this.whole) this.overview(ctx, palette, left, right, top0 + OVERVIEW_TOP);
 
     // Beside the map, the line of news goes below the map if there is room
-    // there. In a frame only as tall as the map it goes at the foot of the
-    // page, and the rows close up to leave it room.
+    // there. In a frame only as tall as the map it goes at the foot of the page.
     const strip = !below && this.frameHeight - this.height >= NEWS_STRIP;
-    const pitch = (below || strip ? ROW_PITCH : TIGHT_PITCH) + spread.open;
-    // A row's three lines sit closest in a tight row, and spread apart as it gets taller.
-    const air = Math.min(20, pitch - TIGHT_PITCH);
-    // The rule line sits nearer the name than the levels, so its descenders keep clear of the marks.
-    const nameLine = 36 + Math.round(air * 0.3);
-    const ruleLine = 62 + Math.round(air * 0.7);
-    const levelLine = 95 + Math.round(air * 0.95);
+    const pitch = ROW_PITCH + spread.open;
+    const baseline = ROW_BASELINE + Math.round(spread.open / 2);
     const gap = 40;
     const columnWidth = (right - left + gap) / this.columns;
-    listed.forEach((actor, index) => {
-      const column = index % this.columns;
-      const x0 = left + column * columnWidth;
-      const x1 = x0 + columnWidth - gap;
-      const top = top0 + PAGE_HEAD + Math.floor(index / this.columns) * pitch;
-      ctx.globalAlpha = 0.45;
+    // One width for every name, so the bars and lines below each other line up.
+    ctx.font = NAME_FONT;
+    const nameWidth = Math.min(
+      NAME_MAX,
+      Math.max(0, ...listed.map((actor) => ctx.measureText(actor.name).width)),
+    );
+    ctx.font = NUMBER_FONT;
+    const numberWidth = ctx.measureText("000").width;
+    const head = top0 + PAGE_HEAD;
+    // A faint rule under the head of each column, with what its number is over it.
+    const faintRule = (x0: number, x1: number, y: number): void => {
+      ctx.globalAlpha = FAINT;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(x0, top + 0.5);
-      ctx.lineTo(x1, top + 0.5);
+      ctx.moveTo(x0, y + 0.5);
+      ctx.lineTo(x1, y + 0.5);
       ctx.stroke();
-      // Someone off the map is listed faded, with where they are in place of what they do.
+      ctx.globalAlpha = 1;
+    };
+    for (let column = 0; column < Math.min(this.columns, listed.length); column++) {
+      const x0 = left + column * columnWidth;
+      const x1 = x0 + columnWidth - gap;
+      ctx.font = CAPTION_FONT;
+      ctx.textAlign = "right";
+      ctx.globalAlpha = FAINT;
+      ctx.fillText("total level", x1, head - 7);
+      ctx.textAlign = "left";
+      faintRule(x0, x1, head - 1);
+    }
+    const hurt = css(palette.wash.hatch);
+    listed.forEach((actor, index) => {
+      const column = index % this.columns;
+      const row = Math.floor(index / this.columns);
+      const x0 = left + column * columnWidth;
+      const x1 = x0 + columnWidth - gap;
+      const top = head + row * pitch;
+      const y = top + baseline;
+      if (row % RULE_EVERY === RULE_EVERY - 1 && index + this.columns < listed.length)
+        faintRule(x0, x1, top + pitch - 1);
+      // Someone off the map is listed in the faint ink, with where they are in front of what they do.
       const away = this.away.get(actor.id);
+      const strength = away === undefined ? 1 : FAINT;
+      // The bust: the figure from the top of its hat down, cut off at the row's foot.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0 - 4, top, BUST_ROOM + 4, pitch);
+      ctx.clip();
       ctx.globalAlpha = away === undefined ? 1 : AWAY_ALPHA;
-      const feet = top + 90 + Math.round(air * 0.5);
-      drawFigure(ctx, x0 + 34, feet, STANDING, { ...style(actor.id, 1.5), facing: 1 }, 0);
+      const feet = top + 3 + figureTop(partsFor(actor)) * BUST_SCALE;
+      drawFigure(
+        ctx,
+        x0 + BUST_ROOM / 2,
+        feet,
+        STANDING,
+        { ...style(actor.id, BUST_SCALE), facing: 1 },
+        0,
+      );
+      ctx.restore();
+      ctx.globalAlpha = strength;
       ctx.fillStyle = ink;
-      // Hitpoints at the end of the name's line; the name keeps clear of them.
-      const max = kindOf(world, actor).hp;
-      const hpRoom = hpWidth(ctx, actor.hp, max) + 16;
-      drawHp(ctx, actor.hp, max, x1, top + nameLine);
-      ctx.font = '42px "Fell SC"';
-      const nameRoom = Math.max(40, x1 - x0 - 86 - hpRoom);
-      ctx.fillText(actor.name, x0 + 86, top + nameLine, nameRoom);
-      // The resident's mark after its name, where there is room for it.
-      const nameEnd = Math.min(ctx.measureText(actor.name).width, nameRoom);
-      if (nameEnd + 40 <= nameRoom)
-        drawMarkGlyph(
-          ctx,
-          looks(actor.id).mark,
-          x0 + 86 + nameEnd + 22,
-          top + nameLine - 14,
-          22,
-          ink,
-          2.4,
-        );
-      // What the resident is doing, read off its state (see line.ts).
+      ctx.strokeStyle = ink;
+      const nameX = x0 + BUST_ROOM + 8;
+      ctx.font = NAME_FONT;
+      ctx.fillText(actor.name, nameX, y, nameWidth);
+      // A row that just changed has its name underlined, fading out over its last second.
+      const mark = markAt(this.changes, actor.id, time);
+      if (mark > 0) {
+        ctx.globalAlpha = strength * mark;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(nameX, y + 5);
+        ctx.lineTo(nameX + Math.min(nameWidth, ctx.measureText(actor.name).width), y + 5);
+        ctx.stroke();
+        ctx.globalAlpha = strength;
+      }
+      const barX = nameX + nameWidth + 10;
+      drawHp(ctx, actor.hp, kindOf(world, actor).hp, barX, y - 1, ink, hurt);
+      ctx.fillStyle = ink;
+      ctx.font = NUMBER_FONT;
+      ctx.textAlign = "right";
+      ctx.fillText(String(totalLevel(actor)), x1, y);
+      ctx.textAlign = "left";
+      // What the resident is doing, read off its state (see line.ts). Short of
+      // room, the words are cut and the number is kept.
       const shown = this.lines.shown.get(actor.id)?.line;
-      ctx.font = '31px "Fell Italic"';
-      const doing = shown ? pageText(shown, away) : away === undefined ? "" : `in ${away}`;
-      ctx.fillText(doing, x0 + 86, top + ruleLine, x1 - x0 - 86);
-      drawLevels(ctx, actor, x0 + 86, x1, top + levelLine);
+      const [words, number] = shown
+        ? pageParts(shown, away)
+        : [away === undefined ? "" : `in ${away}`, ""];
+      const lineX = barX + BAR_WIDTH + 10;
+      ctx.font = LINE_FONT;
+      ctx.fillText(fitLine(ctx, words, number, x1 - numberWidth - 10 - lineX), lineX, y);
       ctx.globalAlpha = 1;
     });
-    const foot = top0 + PAGE_HEAD + rows * pitch;
-    ctx.globalAlpha = 0.45;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(left, foot + 0.5);
-    ctx.lineTo(right, foot + 0.5);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    const foot = head + rows * pitch;
+    faintRule(left, right, foot);
     const more =
       residents.length > listed.length ? `and ${residents.length - listed.length} more` : "";
 
@@ -1817,28 +1951,28 @@ export class Scene {
       ctx.fillText(line, left, y, right - left - (below && more ? 240 : 0));
     }
     if (more) {
-      ctx.font = '30px "Fell Italic"';
+      ctx.font = '26px "Fell Italic"';
       if (below) {
         ctx.textAlign = "right";
         ctx.fillText(more, right, foot + 62);
         ctx.textAlign = "left";
-      } else ctx.fillText(more, left, foot + 40);
+      } else ctx.fillText(more, left, foot + 36);
     }
   }
 
   /**
-   * A small map of the whole world at the head of the page, its right edge at
-   * `right` and its top at `top`: each region's ground, small, ruled round as
-   * it lies, a heavier rule round the part the map shows, which moves as the
-   * view drifts, a dot in its cloak's colour for each resident and a cross for
-   * each group of monsters.
+   * A small map of the whole world at the head of the page, centred between
+   * `left` and `right` with its top at `top`: each region's ground, small,
+   * ruled round as it lies, a heavier rule round the part the map shows, which
+   * moves as the view drifts, a dot in its cloak's colour for each resident
+   * and a cross for each group of monsters.
    */
-  private overview(ctx: Ctx, palette: Palette, right: number, top: number): void {
+  private overview(ctx: Ctx, palette: Palette, from: number, to: number, top: number): void {
     const whole = this.whole;
     if (!whole) return;
     const atlas = this.atlas;
     const scale = this.miniScale;
-    const left = right - atlas.width * scale;
+    const left = Math.round((from + to - atlas.width * scale) / 2);
     const at = (x: number, y: number): [number, number] => [
       left + (x - atlas.left) * scale,
       top + (y - atlas.top) * scale,
@@ -1850,7 +1984,7 @@ export class Scene {
     ctx.drawImage(mini, left, top);
     ctx.strokeStyle = ink;
     ctx.lineJoin = "round";
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = FAINT;
     ctx.lineWidth = 1;
     for (const region of atlas.regions)
       ctx.strokeRect(
@@ -1859,25 +1993,25 @@ export class Scene {
         (region.map.height - 0.2) * scale,
       );
     ctx.globalAlpha = 1;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     const { window } = this.seen;
     ctx.strokeRect(...at(window.x, window.y), window.width * scale, window.height * scale);
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 2;
     for (const group of monsterGroups(whole)) {
       const [x, y] = at(group.x + 0.5, group.y + 0.5);
       ctx.beginPath();
-      ctx.moveTo(x - 3, y - 3);
-      ctx.lineTo(x + 3, y + 3);
-      ctx.moveTo(x + 3, y - 3);
-      ctx.lineTo(x - 3, y + 3);
+      ctx.moveTo(x - 4.5, y - 4.5);
+      ctx.lineTo(x + 4.5, y + 4.5);
+      ctx.moveTo(x + 4.5, y - 4.5);
+      ctx.lineTo(x - 4.5, y + 4.5);
       ctx.stroke();
     }
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.2;
     for (const actor of rosterOf(whole)) {
       const [x, y] = at(actor.x + 0.5, actor.y + 0.5);
       ctx.fillStyle = identity(actor.id).cloak;
       ctx.beginPath();
-      ctx.arc(x, y, 2.6, 0, 7);
+      ctx.arc(x, y, 3.6, 0, 7);
       ctx.fill();
       ctx.stroke();
     }

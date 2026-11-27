@@ -1,8 +1,11 @@
 import {
   type Actor,
+  COOK_TICKS,
   compileBots,
   createWorld,
   DOWN_TICKS,
+  GATHER_TICKS,
+  type Good,
   goodId,
   placeConstants,
   step,
@@ -10,7 +13,7 @@ import {
   type World,
 } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { shippedWorld } from "../../sim/src/testing.ts";
+import { shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
 import { type Fight, NO_FIGHT, nextFight } from "./fight.ts";
 import {
   bagList,
@@ -23,6 +26,7 @@ import {
   newsText,
   nextLines,
   nextWalk,
+  nextWorking,
   pageText,
   QUIET_TICKS,
   quietNews,
@@ -74,11 +78,10 @@ const fighting = (world: World, ...ids: number[]): Fight => ({
 });
 
 // The design direction's table (#296), every row the world can show today.
-// Left out until what they need exists: fishing, chopping, cooking and banking
-// (#236), coming home with a haul and its count (#236; the bag's count is
-// tested below), answering a call (#299), going back for a drop and the
-// "dropped 9 fish" after a down (#237), and "chopping, 5 logs" in another
-// region (#236), which is shown here with what a resident does there today.
+// Left out until what they need exists: banking, coming home with a haul and
+// its count (the bag's count is tested below), answering a call (#299), going
+// back for a drop and the "dropped 9 fish" after a down (#237). Chopping,
+// fishing and cooking follow the table.
 describe("the line under a resident's name", () => {
   const rows: [string, () => string][] = [
     [
@@ -207,6 +210,93 @@ describe("the line under a resident's name", () => {
   ];
   for (const [expected, make] of rows)
     it(`reads "${expected}"`, () => expect(make()).toBe(expected));
+
+  // At work: a try at a tree or a fishing spot leaves the resident standing for
+  // GATHER_TICKS, a fish on the fire for COOK_TICKS, and that is how it is read.
+  const fill = (actor: Actor, good: Good, from: number, count: number): void => {
+    for (let i = from; i < from + count; i++) actor.bag[i] = goodId(good);
+  };
+  const work: [string, () => string][] = [
+    [
+      "chopping in the near wood · 5 logs",
+      () => {
+        const { world, ash } = scene(10);
+        put(ash, 14, 3);
+        ash.wait = GATHER_TICKS;
+        fill(ash, "logs", 0, 5);
+        return pageText(
+          lineFor(world, ash, NO_FIGHT, undefined, nextWorking(world, ash, undefined)),
+        );
+      },
+    ],
+    [
+      "fishing at the river · 7 fish",
+      () => {
+        const { world, ash } = scene(10);
+        put(ash, 23, 10);
+        ash.wait = GATHER_TICKS;
+        fill(ash, "raw_fish", 0, 7);
+        return pageText(
+          lineFor(world, ash, NO_FIGHT, undefined, nextWorking(world, ash, undefined)),
+        );
+      },
+    ],
+    [
+      // Three cooked fish were in the bag from before; two more are done, two to go.
+      "cooking at the fire · 2 of 4 done",
+      () => {
+        const { world, ash } = scene(10);
+        put(ash, 14, 8);
+        ash.wait = COOK_TICKS;
+        fill(ash, "cooked_fish", 0, 5);
+        fill(ash, "raw_fish", 5, 2);
+        fill(ash, "logs", 7, 2);
+        const working = { work: "cooking", x: 14, y: 8, wait: COOK_TICKS + 1, before: 3 } as const;
+        return pageText(lineFor(world, ash, NO_FIGHT, undefined, nextWorking(world, ash, working)));
+      },
+    ],
+    [
+      "in the Pinewood · chopping, 5 logs",
+      () => {
+        const { world, ash } = scene(10);
+        put(ash, 14, 3);
+        ash.wait = GATHER_TICKS;
+        fill(ash, "logs", 0, 5);
+        const shown = lineFor(world, ash, NO_FIGHT, undefined, nextWorking(world, ash, undefined));
+        return pageText(shown, "the Pinewood");
+      },
+    ],
+  ];
+  for (const [expected, make] of work)
+    it(`reads "${expected}"`, () => expect(make()).toBe(expected));
+
+  it("reads work only from a try: a plain wait beside a tree is resting", () => {
+    const { world, ash } = scene(10);
+    put(ash, 14, 3);
+    ash.wait = 50;
+    expect(nextWorking(world, ash, undefined)).toBeUndefined();
+    expect(pageText(lineFor(world, ash, NO_FIGHT, undefined))).toBe("resting at the near wood");
+    // A try's wait running down keeps it at work, to the last tick of it.
+    ash.wait = GATHER_TICKS;
+    let working = nextWorking(world, ash, undefined);
+    for (let left = GATHER_TICKS - 1; left >= 0; left--) {
+      ash.wait = left;
+      working = nextWorking(world, ash, working);
+      expect(working?.work).toBe("chopping");
+    }
+    // Then a wait of another length begins: no longer at work.
+    ash.wait = 30;
+    expect(nextWorking(world, ash, working)).toBeUndefined();
+    // Nor once it walks off.
+    ash.wait = GATHER_TICKS;
+    working = nextWorking(world, ash, undefined);
+    put(ash, 14, 3, [{ x: 14, y: 4 }]);
+    expect(nextWorking(world, ash, working)).toBeUndefined();
+    // A wait of the cooking length away from the fire is not cooking.
+    put(ash, 22, 10);
+    ash.wait = COOK_TICKS;
+    expect(nextWorking(world, ash, undefined)).toBeUndefined();
+  });
 
   it("names where a walk ends: a place within 4 tiles, else the nearest with near in front", () => {
     const { world, ash } = scene(9);
@@ -561,6 +651,21 @@ describe("the line in a running world", () => {
     expect(news).toContain("Ash is fighting a wolf, wolf 24/24");
     // No row ever shows a rule's name.
     for (const line of seen) expect(line).not.toMatch(/still|biter|threat/);
+  });
+
+  it("says what the shipped programs gather and cook, with what is in the bag", () => {
+    const world = createWorld(atlas, 1, shippedPrograms(atlas));
+    world.tick = at(9);
+    step(world, [
+      { type: "spawn", name: "Birch", program: "homebody", x: 14, y: 6 },
+      { type: "spawn", name: "Cedar", program: "riverwalker", x: 21, y: 9 },
+    ]);
+    const { rows } = play(world, 4000);
+    const seen = new Set(rows.flat());
+    const some = (pattern: RegExp): boolean => [...seen].some((l) => pattern.test(l));
+    expect(some(/^chopping (in|by|near) the near wood · \d+ logs?$/)).toBe(true);
+    expect(some(/^fishing (at|near) the river · \d+ fish$/)).toBe(true);
+    expect(some(/^cooking at the fire · [1-4] of 4 done$/)).toBe(true);
   });
 
   it("runs from a monster and says how far camp is", () => {

@@ -106,16 +106,48 @@ export function contrast(a: Rgb, b: Rgb): number {
 }
 
 /**
+ * How strongly the page's secondary lettering and rules are drawn: their ink's
+ * alpha over the paper. Secondary is anything a viewer reads second, such as
+ * the row of someone off the map or the caption over a column.
+ */
+export const FAINT = 0.74;
+/** The least contrast to its paper of the page's ink, and of its secondary lettering. */
+export const INK_CONTRAST = 7;
+export const FAINT_CONTRAST = 4.5;
+
+/** Secondary lettering on `palette`'s paper: its ink at FAINT over the paper, as the page draws it. */
+export const faintInk = (palette: Palette): Rgb => mix(palette.paper, palette.ink, FAINT);
+
+/** Whether `ink` and its secondary lettering read on `paper`, by INK_CONTRAST and FAINT_CONTRAST. */
+const readable = (ink: Rgb, paper: Rgb): boolean =>
+  contrast(ink, paper) >= INK_CONTRAST && contrast(mix(paper, ink, FAINT), paper) >= FAINT_CONTRAST;
+
+/**
  * The inks of the page beside the map at this hour. Its paper is the day
  * paper, with a little of the sky's colour on it, or the night paper, or
- * partway between the two while the page turns. The ink is whichever of the
- * day and night inks reads better on that paper, so it changes over in one
- * step when the paper is halfway, and the lettering never fades into it.
+ * partway between the two while the page turns. The ink changes over in one
+ * step when the turn is halfway. A paper halfway between cream and navy reads
+ * with neither ink, so while the page turns its paper goes only as far from
+ * its own side as keeps the ink at INK_CONTRAST and the secondary lettering at
+ * FAINT_CONTRAST, and makes the rest of the change in that one step.
  */
 export function pagePalette(hour: number): Palette {
   const cast = skyCast(hour);
   const dayPaper = mix(DAY.paper, cast.color, cast.alpha * PAGE_CAST);
-  const paper = mix(NIGHT.paper, dayPaper, pageDay(hour));
-  const inks = contrast(paper, DAY.ink) >= contrast(paper, NIGHT.ink) ? DAY : NIGHT;
-  return { ...inks, paper };
+  const turn = pageDay(hour);
+  const inks = turn >= 0.5 ? DAY : NIGHT;
+  const paperAt = (t: number): Rgb => mix(NIGHT.paper, dayPaper, t);
+  // The day side reads better the lighter its paper, the night side the darker,
+  // so the paper nearest the turn's that reads is found by halving the gap.
+  const side = inks === DAY ? 1 : 0;
+  let [near, far] = [turn, side];
+  if (!readable(inks.ink, paperAt(near))) {
+    for (let i = 0; i < 24; i++) {
+      const mid = (near + far) / 2;
+      if (readable(inks.ink, paperAt(mid))) far = mid;
+      else near = mid;
+    }
+    near = far;
+  }
+  return { ...inks, paper: paperAt(near) };
 }

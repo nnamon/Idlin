@@ -25,9 +25,9 @@ import type { MapLabel } from "./ground.ts";
 import { identity } from "./identity.ts";
 import { css } from "./light.ts";
 import { eat, ROUTE_ROW, routeLine } from "./marks.ts";
-import { DAY, NIGHT } from "./palette.ts";
+import { DAY, FAINT, NIGHT } from "./palette.ts";
 import { actorPose } from "./pose.ts";
-import { NEWS_STALE, Scene } from "./scene.ts";
+import { fitLine, NEWS_STALE, Scene } from "./scene.ts";
 import { FADE, MIN_HOLD, type Slips, slipAlpha } from "./slips.ts";
 import { type Box, bodyBox, type TagWish } from "./tags.ts";
 import { edgeFade, type Window, windowView } from "./view.ts";
@@ -40,6 +40,8 @@ interface Call {
   /** For strokes, the alpha and the stroke colour in force. */
   readonly alpha?: unknown;
   readonly ink?: unknown;
+  /** For lettering, the font in force. */
+  readonly font?: unknown;
 }
 
 interface FakeCanvas {
@@ -71,7 +73,7 @@ function fakeCanvas(): FakeCanvas {
                 : state.fillStyle
               : undefined,
           ...(key === "stroke" ? { alpha: state.globalAlpha ?? 1, ink: state.strokeStyle } : {}),
-          ...(key === "fillText" ? { alpha: state.globalAlpha ?? 1 } : {}),
+          ...(key === "fillText" ? { alpha: state.globalAlpha ?? 1, font: state.font } : {}),
         });
         // 13 pixels a letter, and the letter spacing in force after each.
         if (key === "measureText")
@@ -216,6 +218,12 @@ const lampClip = (call: Call): boolean => call.op === "clip" && call.args.length
 const sheetClips = (calls: readonly Call[]): Call[] =>
   calls.filter((call, i) => lampClip(call) && calls[i - 1]?.op !== "save");
 
+/** A sheet's calls up to where the page beside the map starts: its title. */
+const beforePage = (calls: readonly Call[]): Call[] => {
+  const title = calls.findIndex((call) => call.op === "fillText" && call.args[0] === "Idlin");
+  return calls.slice(0, title < 0 ? calls.length : title);
+};
+
 /** Glyphs drawn on slips: each is drawn moved into place, among the lettering. */
 function glyphs(calls: readonly Call[]): number {
   const lettering = calls.findIndex((call) => call.op === "fillText");
@@ -342,7 +350,8 @@ describe("the scene", () => {
     // Three plain clips: first to the lamps' reach, then, inside that, the
     // ground to the map, and what stands on it to the map's rule. The world
     // is drawn moved by where the window is, so the rule is in world pixels.
-    const clips = sheetClips(midnight.daySheet);
+    // The page goes on last, its busts each cut to their row; only the sheet's own clips are counted.
+    const clips = sheetClips(beforePage(midnight.daySheet));
     expect(clips).toHaveLength(3);
     const at = (clip: Call) => midnight.daySheet[midnight.daySheet.indexOf(clip) - 1];
     const ground = at(clips[1] as Call) as Call;
@@ -361,7 +370,7 @@ describe("the scene", () => {
     expect(before.filter((call) => call.op === "arc")).toHaveLength(2 + NAMES.length);
     expect(before.some((call) => call.op === "fillRect" || call.op === "drawImage")).toBe(false);
     // While the dark is still closing in, all of it is drawn: the plain clips are the map's.
-    expect(sheetClips(nightfall.daySheet)).toHaveLength(2);
+    expect(sheetClips(beforePage(nightfall.daySheet))).toHaveLength(2);
     expect(nightfall.daySheet.length).toBeGreaterThan(50);
   });
 
@@ -372,10 +381,10 @@ describe("the scene", () => {
     const reach = (calls: Call[]): number =>
       Math.max(...calls.filter((c) => c.op === "lineTo").map((c) => c.args[0] as number));
     const plain = reach(drawn(day, () => scene.draw(world, world.tick)));
-    expect(plain).toBe(FRAME_WIDTH - 40);
+    expect(plain).toBe(FRAME_WIDTH - 20);
     scene.resize(2200, FRAME_HEIGHT);
     expect([out.width, out.height, day.width]).toEqual([2200, FRAME_HEIGHT, 2200]);
-    expect(reach(drawn(day, () => scene.draw(world, world.tick)))).toBe(2200 - 40);
+    expect(reach(drawn(day, () => scene.draw(world, world.tick)))).toBe(2200 - 20);
     // Everything that paints or copies the whole frame follows its new size.
     const paper = (calls: Call[]): Call | undefined => calls.find((c) => c.op === "fillRect");
     expect(paper(drawn(day, () => scene.draw(world, world.tick)))?.args).toEqual([
@@ -386,7 +395,7 @@ describe("the scene", () => {
     ]);
     // 06:00 has a rose cast, laid on the day drawing of the map inside the paper
     // round its rule, and more lightly on the page and that paper.
-    const calls = drawn(day, () => scene.draw(world, world.tick));
+    const calls = beforePage(drawn(day, () => scene.draw(world, world.tick)));
     const tint = calls.findLast((c) => c.op === "fillRect");
     expect(tint?.args).toEqual([5, 5, map.width * 48 - 10, map.height * 48 - 10]);
     const pageTint = calls.slice(calls.indexOf(tint as Call)).find((c) => c.op === "fill");
@@ -420,23 +429,23 @@ describe("the scene", () => {
     expect(news(under)?.args[2]).toBeGreaterThan(map.height * 48);
     scene.resize(FRAME_WIDTH, FRAME_HEIGHT);
     const below = news(drawn(day, () => scene.draw(world, world.tick)));
-    // In a map-high frame with more residents than the page lists, the rows close up so
-    // that "and N more" and the line of news, written one under the other, do not touch.
-    const crowd = newWorld(12);
+    // In a map-high frame with more residents than the page lists, "and N more"
+    // and the line of news, written one under the other, do not touch.
+    const crowd = newWorld(25);
     const crowded = await newScene();
     crowded.scene.observe(crowd);
     crowded.scene.resize(2200, map.height * 48);
     const foot = drawn(crowded.day, () => crowded.scene.draw(crowd, crowd.tick));
-    const more = foot.find((c) => c.op === "fillText" && c.args[0] === "and 6 more");
+    const more = foot.find((c) => c.op === "fillText" && c.args[0] === "and 5 more");
     const line = news(foot);
-    // Nothing has happened yet, so it tells of one of the six the page does not list.
+    // Nothing has happened yet, so it tells of one of the five the page does not list.
     const listed = foot.filter(
       (c) =>
         c.op === "fillText" &&
         (c.args[1] as number) > map.width * 48 &&
         crowd.actors.some((a) => a.name === c.args[0]),
     );
-    expect(listed).toHaveLength(6);
+    expect(listed).toHaveLength(20);
     const told = String(line?.args[0]).split(" is ")[0];
     expect(crowd.actors.map((a) => a.name)).toContain(told);
     expect(listed.map((c) => c.args[0])).not.toContain(told);
@@ -918,7 +927,7 @@ describe("the scene", () => {
     expect(names.map((c) => c.args[0]).sort()).toEqual([...NAMES].sort());
   });
 
-  it("writes each listed resident's hitpoints and its level in every skill on the page", async () => {
+  it("writes each listed resident's hitpoints as a bar and its total level on the page", async () => {
     const six = newWorld(6);
     const [ash, birch] = six.actors as [Actor, Actor];
     ash.hp = 7;
@@ -926,20 +935,109 @@ describe("the scene", () => {
     ash.xp = [1_154, 0, 0, 0, 13_034_431];
     const { scene, day } = await newScene();
     scene.observe(six);
-    const texts = drawn(day, () => scene.draw(six, six.tick)).filter((c) => c.op === "fillText");
+    const calls = drawn(day, () => scene.draw(six, six.tick));
+    const texts = calls.filter((c) => c.op === "fillText");
     const words = texts.map((c) => String(c.args[0]));
-    expect(words.filter((w) => w === "20/20")).toHaveLength(5);
-    expect(words).toContain("7/20");
-    // The levels follow the name and its rule.
-    const after = (name: string): string[] => {
-      const at = words.lastIndexOf(name);
-      return words.slice(at + 2, at + 2 + 5);
-    };
-    expect(after(ash.name)).toEqual(["10", "1", "1", "1", "99"]);
-    expect(after(birch.name)).toEqual(["1", "1", "1", "1", "1"]);
+    // One number per row, the total level, on the name's line at the row's right.
+    const ashAt = texts.find((c) => c.args[0] === ash.name) as Call;
+    const birchAt = texts.find((c) => c.args[0] === birch.name) as Call;
+    const onLine = (name: Call) =>
+      texts.filter((c) => c.args[2] === name.args[2] && /^\d+$/.test(String(c.args[0])));
+    expect(onLine(ashAt).map((c) => c.args[0])).toEqual([String(10 + 1 + 1 + 1 + 99)]);
+    expect(onLine(birchAt).map((c) => c.args[0])).toEqual(["5"]);
+    expect(onLine(ashAt)[0]?.args[1]).toBe(FRAME_WIDTH - 20);
+    // No hitpoints written out and no level per skill.
+    expect(words.some((w) => /^\d+\/\d+$/.test(w))).toBe(false);
+    expect(words.filter((w) => w === "1")).toEqual([]);
+    // The bars: full ones filled solid in ink, Ash's 7 of 20 filled 14 of 40 pixels in the hurt colour.
+    const bars = calls.filter((c) => c.op === "fillRect" && c.args[3] === 9);
+    expect(bars).toHaveLength(6);
+    const hurt = bars.filter((c) => c.args[2] === 14);
+    expect(hurt).toHaveLength(1);
+    expect(hurt[0]?.fill).toBe(css(DAY.wash.hatch));
+    const full = bars.filter((c) => c.args[2] === 40);
+    expect(full).toHaveLength(5);
+    for (const bar of full) expect(bar.fill).toBe(css(DAY.ink));
     // The page is beside the map, to the right of it.
-    const ashAt = texts.find((c) => c.args[0] === ash.name);
-    expect(ashAt?.args[1] as number).toBeGreaterThan(FRAME_WIDTH - 480);
+    expect(ashAt.args[1] as number).toBeGreaterThan(FRAME_WIDTH - 480);
+  });
+
+  it("lists 15 and 20 residents at 1920 by 1080, every name whole, one line each, in id order", async () => {
+    for (const count of [15, 20]) {
+      const world = newWorld(count);
+      const { scene, day } = await newScene();
+      scene.observe(world);
+      const calls = drawn(day, () => scene.draw(world, world.tick));
+      const names = world.actors.map((actor) => actor.name);
+      const onPage = calls.filter(
+        (c) =>
+          c.op === "fillText" &&
+          (c.args[1] as number) > map.width * 48 &&
+          names.includes(String(c.args[0])),
+      );
+      expect(onPage.map((c) => c.args[0])).toEqual(names);
+      // A name is never squeezed: the width it may take is at least its own.
+      for (const name of onPage)
+        expect(name.args[3] as number).toBeGreaterThanOrEqual(String(name.args[0]).length * 13);
+      // One row each, ROW_PITCH apart, all of them inside the frame beside the map.
+      const ys = onPage.map((c) => c.args[2] as number);
+      expect(ys.slice(1).map((y, i) => y - (ys[i] as number))).toEqual(
+        Array(count - 1).fill(ROW_PITCH),
+      );
+      expect(Math.max(...ys)).toBeLessThan(map.height * 48 - 40);
+      for (const name of onPage) {
+        expect(name.args[1] as number).toBeGreaterThan(map.width * 48);
+        expect((name.args[1] as number) + (name.args[3] as number)).toBeLessThan(FRAME_WIDTH);
+      }
+      // Sized for 1080p: rows of 26 to 30 pixels, names and lines in 18 to 21 pixel type.
+      expect(ROW_PITCH).toBeGreaterThanOrEqual(26);
+      expect(ROW_PITCH).toBeLessThanOrEqual(30);
+      const size = (c: Call | undefined): number => Number(/^(\d+)px/.exec(String(c?.font))?.[1]);
+      for (const name of onPage) {
+        expect(size(name)).toBeGreaterThanOrEqual(18);
+        expect(size(name)).toBeLessThanOrEqual(21);
+      }
+      const doing = calls.filter(
+        (c) => c.op === "fillText" && /^(resting|walking)/.test(String(c.args[0])),
+      );
+      expect(doing.length).toBeGreaterThan(0);
+      for (const line of doing) expect(size(line)).toBeGreaterThanOrEqual(18);
+      // Everyone is listed: nobody left over to count.
+      expect(calls.some((c) => c.op === "fillText" && / more$/.test(String(c.args[0])))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("underlines the name of a resident whose row just changed, and lets it go after five seconds", async () => {
+    const six = newWorld(6);
+    const { scene, day } = await newScene();
+    scene.observe(six);
+    const birch = six.actors[1] as Actor;
+    const underlines = (): Call[] => {
+      const calls = drawn(day, () => scene.draw(six, six.tick));
+      const name = calls.findIndex((c) => c.op === "fillText" && c.args[0] === birch.name);
+      const at = calls[name] as Call;
+      // A stroke from the name's start, a few pixels under its baseline.
+      return calls
+        .slice(name)
+        .filter(
+          (c) =>
+            c.op === "moveTo" &&
+            c.args[0] === at.args[1] &&
+            c.args[1] === (at.args[2] as number) + 5,
+        );
+    };
+    expect(underlines()).toHaveLength(0);
+    step(six);
+    birch.hp -= 5;
+    scene.observe(six);
+    expect(underlines()).toHaveLength(1);
+    for (let i = 0; i < 50; i++) {
+      step(six);
+      scene.observe(six);
+    }
+    expect(underlines()).toHaveLength(0);
   });
 
   it("ties every slip moved off its figure back to it with a stroke, in a crowd too", async () => {
@@ -1021,7 +1119,8 @@ describe("the scene", () => {
 
   it("takes a line of news down after ten seconds with nothing after it, and tells of a resident instead", async () => {
     const { scene, day } = await newScene();
-    const world = newWorld(12);
+    // More than the page's twenty rows, so some are not listed.
+    const world = newWorld(25);
     scene.observe(world);
     const ash = world.actors.find((a) => a.name === "Ash") as World["actors"][number];
     (scene as unknown as { newsQueue: unknown[] }).newsQueue = [
@@ -1043,9 +1142,9 @@ describe("the scene", () => {
     expect(seen[NEWS_STALE - 1]).toBe("Ash killed a wolf");
     const after = seen.at(-1) as string;
     expect(after).not.toBe("Ash killed a wolf");
-    // One of the six the page does not list.
+    // One of the five the page does not list: nobody's row has changed, so it lists the first twenty.
     const told = after.split(" is ")[0];
-    expect(world.actors.slice(6).map((a) => a.name)).toContain(told);
+    expect(world.actors.slice(20).map((a) => a.name)).toContain(told);
   });
 
   it("writes a notice on the page beside the map, not over it", async () => {
@@ -1057,7 +1156,7 @@ describe("the scene", () => {
     expect(notice(drawn(day, () => scene.draw(world, world.tick)))).toBeUndefined();
     scene.notice = "waiting for the world";
     const written = notice(drawn(day, () => scene.draw(world, world.tick)));
-    expect(written?.args[1]).toBe(FRAME_WIDTH - 40);
+    expect(written?.args[1]).toBe(FRAME_WIDTH - 20);
     expect(written?.args[2]).toBeLessThan(map.height * 48);
   });
 
@@ -1073,8 +1172,14 @@ describe("the scene", () => {
       (c) => c.op === "fillText" && (c.args[1] as number) > map.width * 48,
     );
     const written = (text: string) => page.find((c) => c.args[0] === text);
-    expect(written("Cedar")?.alpha).toBe(0.5);
-    expect(written("in the Pinewood · resting")?.alpha).toBe(0.5);
+    // In the page's secondary ink, which still reads (see palette.test.ts). The
+    // stand-in measures wide letters, so the line may be cut short with an ellipsis.
+    expect(written("Cedar")?.alpha).toBe(FAINT);
+    const where = page.find((c) => String(c.args[0]).startsWith("in the Pine"));
+    expect(where?.alpha).toBe(FAINT);
+    expect("in the Pinewood · resting".startsWith(String(where?.args[0]).replace("…", ""))).toBe(
+      true,
+    );
     // The others are written in full, with what they are doing.
     for (const name of ["Ash", "Birch", "Dara", "Elm", "Fen"]) expect(written(name)?.alpha).toBe(1);
     expect(page.filter((c) => String(c.args[0]).startsWith("in the "))).toHaveLength(1);
@@ -1352,7 +1457,7 @@ describe("the scene", () => {
     expect(open).toBeGreaterThan(0);
     expect(shift).toBeGreaterThan(0);
     const title = calls.find((c) => c.op === "fillText" && c.args[0] === "Idlin");
-    expect(title?.args[2]).toBe(mapHeight + shift + 100);
+    expect(title?.args[2]).toBe(mapHeight + shift + 60);
     const rows = [
       ...new Set(
         calls
@@ -1389,5 +1494,30 @@ describe("the scene", () => {
     // The river leaves the map at the top and at the bottom; its outline is traced a tile beyond both.
     expect(Math.min(...ys)).toBeLessThan(-40);
     expect(Math.max(...ys)).toBeGreaterThan(map.height * 48 + 40);
+  });
+});
+
+describe("a page line short of room", () => {
+  // Ten pixels a letter.
+  const ctx = {
+    measureText: (text: string) => ({ width: text.length * 10 }),
+  } as unknown as Parameters<typeof fitLine>[0];
+
+  it("is written whole when it fits", () => {
+    expect(fitLine(ctx, "walking to camp", " · 4 logs", 300)).toBe("walking to camp · 4 logs");
+  });
+
+  it("cuts the words and keeps the number", () => {
+    // 20 letters of room: the number takes 9, the words get 10 and the ellipsis.
+    expect(fitLine(ctx, "walking to the river", " · 4 logs", 200)).toBe("walking to… · 4 logs");
+    expect(fitLine(ctx, "in the Lower River · chopping", ", 3 logs", 200)).toBe(
+      "in the Lowe…, 3 logs",
+    );
+  });
+
+  it("cuts both when the number alone would take most of the room", () => {
+    const line = fitLine(ctx, "walking to camp", " · 4 fish, 3 cooked fish", 200);
+    expect(line).toBe("walking to camp · 4…");
+    expect(fitLine(ctx, "resting at the river", "", 100)).toBe("resting a…");
   });
 });

@@ -10,11 +10,17 @@ import {
   type Actor,
   ADVENTURER,
   type Atlas,
+  atFire,
   BAG_SLOTS,
+  COOK_TICKS,
+  carrying,
   clock,
+  GATHER_TICKS,
   GOODS,
+  goodId,
   isNight,
   kindOf,
+  nodeKind,
   type Point,
   regionAt,
   type World,
@@ -48,8 +54,27 @@ export type Doing =
   | "towards"
   | "followed"
   | "walking"
+  | "chopping"
+  | "fishing"
+  | "cooking"
   | "asleep"
   | "resting";
+
+/** The work a resident can be at, standing in one place: a `chop`, a `fish` or a `cook`. */
+export type Work = "chopping" | "fishing" | "cooking";
+
+/**
+ * Work in progress, as seen from the tick its latest try began: the tile it
+ * stands on, the wait it has left, and for cooking, how many cooked or burnt
+ * fish were in the bag before this round of cooking began.
+ */
+export interface Working {
+  readonly work: Work;
+  readonly x: number;
+  readonly y: number;
+  readonly wait: number;
+  readonly before: number;
+}
 
 export interface Line {
   readonly doing: Doing;
@@ -72,6 +97,8 @@ export interface Walk {
 export interface Lines {
   readonly tick: number;
   readonly walks: ReadonlyMap<number, Walk>;
+  /** Who is at work, standing at a tree, a fishing spot or the fire. */
+  readonly work: ReadonlyMap<number, Working>;
   /** The line each resident's row shows, and since when. */
   readonly shown: ReadonlyMap<number, { readonly line: Line; readonly since: number }>;
   /** Lines of news from this tick. */
@@ -81,6 +108,7 @@ export interface Lines {
 export const NO_LINES: Lines = {
   tick: Number.NEGATIVE_INFINITY,
   walks: new Map(),
+  work: new Map(),
   shown: new Map(),
   news: [],
 };
@@ -138,7 +166,11 @@ function placeAt(atlas: Atlas, p: Point): { name: string; at: boolean; region: n
  * the region the place is in. A place whose own name starts with "near" is
  * one a walk goes by, so a walk is never "near the near wood".
  */
-function where(atlas: Atlas, p: Point, at: "to" | "at"): { words: string; region: number } | null {
+function where(
+  atlas: Atlas,
+  p: Point,
+  at: "to" | "at" | "in",
+): { words: string; region: number } | null {
   const found = placeAt(atlas, p);
   if (!found) return null;
   const name = placeName(found.name);
@@ -193,6 +225,74 @@ export function nextWalk(world: World, actor: Actor, walk: Walk | undefined): Wa
   };
 }
 
+const LOGS = goodId("logs");
+const RAW = goodId("raw_fish");
+/** Cooked fish and burnt ones: what a fish on the fire comes out as. */
+const cookedIn = (actor: Actor): number =>
+  carrying(actor, goodId("cooked_fish")) + carrying(actor, goodId("burnt_fish"));
+
+const WORK_OF = { woodcutting: "chopping", fishing: "fishing" } as const;
+
+/**
+ * The work `actor` began at this tick, if any. A `chop` or `fish` that got a
+ * try leaves it standing for exactly GATHER_TICKS, beside a node of that
+ * kind, and a `cook` for exactly COOK_TICKS, at the fire. The sim does not
+ * say which action was taken, so this is read from those. Standing beside a
+ * tree and a fishing spot at once, the first of them in the atlas's order is
+ * taken for the one worked.
+ */
+function workBegun(world: World, actor: Actor): Work | null {
+  if (walking(actor)) return null;
+  if (actor.wait === COOK_TICKS && atFire(world, actor)) return "cooking";
+  if (actor.wait !== GATHER_TICKS) return null;
+  const region = regionAt(world.atlas, actor.x, actor.y);
+  for (const node of world.atlas.nodes) {
+    if (steps(node, actor) !== 1 || regionAt(world.atlas, node.x, node.y) !== region) continue;
+    const kind = nodeKind(node.kind);
+    if (kind) return WORK_OF[kind.skill];
+  }
+  return null;
+}
+
+/**
+ * The work `actor` is at after this tick, given what it was at: a try that
+ * began now, or the last one while its wait runs down on the same tile. A
+ * wait that starts over without a try (a `wait`, a fault, a down) ends it.
+ */
+export function nextWorking(
+  world: World,
+  actor: Actor,
+  was: Working | undefined,
+): Working | undefined {
+  const here = was !== undefined && was.x === actor.x && was.y === actor.y;
+  const begun = workBegun(world, actor);
+  if (begun) {
+    const before =
+      begun !== "cooking"
+        ? 0
+        : here && was.work === "cooking"
+          ? was.before
+          : Math.max(0, cookedIn(actor) - 1);
+    return { work: begun, x: actor.x, y: actor.y, wait: actor.wait, before };
+  }
+  if (here && !walking(actor) && actor.wait === was.wait - 1) return { ...was, wait: actor.wait };
+  return undefined;
+}
+
+/** "5 logs" while chopping, "7 fish" while fishing: what the work has put in the bag so far, or "" for none. */
+function workNumber(actor: Actor, work: "chopping" | "fishing"): string {
+  const n = carrying(actor, work === "chopping" ? LOGS : RAW);
+  if (n === 0) return "";
+  return work === "chopping" ? plural(n, "log", "logs") : `${n} fish`;
+}
+
+/** "4 of 9 done": the fish cooked since this round at the fire began, of those it can cook. */
+function cookNumber(actor: Actor, working: Working): string {
+  const done = Math.max(0, cookedIn(actor) - working.before);
+  const left = Math.min(carrying(actor, RAW), carrying(actor, LOGS));
+  return `${done} of ${done + left} done`;
+}
+
 const line = (doing: Doing, text: string, number = "", bare = text): Line => ({
   doing,
   text,
@@ -236,9 +336,16 @@ function downedAt(fight: Fight, actor: Actor, tick: number): Fight["fallen"][num
  * The line for resident `actor` in `world` (the whole world, in world
  * coordinates), from `fight` read off the same world and the walk it is on.
  * The first of these that holds: downed, mending, stopped, fighting, running,
- * walking towards an enemy, followed by one, walking, asleep, resting.
+ * walking towards an enemy, followed by one, walking, at work (`working`),
+ * asleep, resting.
  */
-export function lineFor(world: World, actor: Actor, fight: Fight, walk: Walk | undefined): Line {
+export function lineFor(
+  world: World,
+  actor: Actor,
+  fight: Fight,
+  walk: Walk | undefined,
+  working?: Working,
+): Line {
   const { atlas } = world;
   const camp = atlas.places.find((p) => p.name === "camp") as Point;
   const fell = downedAt(fight, actor, world.tick);
@@ -278,6 +385,13 @@ export function lineFor(world: World, actor: Actor, fight: Fight, walk: Walk | u
     const number = bag !== "" ? bag : leaving ? `bag 0/${BAG_SLOTS}` : "";
     return line("walking", text, number, place && place.region !== region ? text : "walking");
   }
+  if (working?.work === "cooking")
+    return line("cooking", "cooking at the fire", cookNumber(actor, working), "cooking");
+  if (working) {
+    const { work } = working;
+    const at = where(atlas, actor, work === "chopping" ? "in" : "at");
+    return line(work, at ? `${work} ${at.words}` : work, workNumber(actor, work), work);
+  }
   const place = where(atlas, actor, "at");
   if (isNight(world) && place?.words === "at camp") return line("asleep", "asleep at camp");
   return line("resting", place ? `resting ${place.words}` : "resting", "", "resting");
@@ -285,9 +399,18 @@ export function lineFor(world: World, actor: Actor, fight: Fight, walk: Walk | u
 
 /** How the page writes a line: "walking to the river · bag 0/12", or for someone in another region, "in the Pinewood · walking". */
 export function pageText(shown: Line, away?: string): string {
+  return pageParts(shown, away).join("");
+}
+
+/**
+ * The same, in two parts: the words, and the number with what goes before it
+ * (" · bag 0/12", ", 5 logs"), or "" for none. A page row short of room cuts
+ * the words and keeps the number.
+ */
+export function pageParts(shown: Line, away?: string): [string, string] {
   if (away !== undefined)
-    return `in ${away} · ${shown.bare}${shown.number ? `, ${shown.number}` : ""}`;
-  return shown.number ? `${shown.text} · ${shown.number}` : shown.text;
+    return [`in ${away} · ${shown.bare}`, shown.number ? `, ${shown.number}` : ""];
+  return [shown.text, shown.number ? ` · ${shown.number}` : ""];
 }
 
 /** How the news tells of a line: "Dara is running from 2 wolves, 9 tiles to camp". */
@@ -304,7 +427,13 @@ const AT_ONCE: ReadonlySet<Doing> = new Set(["downed", "fighting"]);
  * The number for `held`'s words as the world is now, or null if the words are
  * no longer true: a line about a monster when none is within NEAR_ENEMY.
  */
-export function numberNow(world: World, actor: Actor, held: Line, fight: Fight): string | null {
+export function numberNow(
+  world: World,
+  actor: Actor,
+  held: Line,
+  fight: Fight,
+  working?: Working,
+): string | null {
   const near = enemiesNear(world, actor, NEAR_ENEMY);
   const close = near[0];
   switch (held.doing) {
@@ -321,6 +450,11 @@ export function numberNow(world: World, actor: Actor, held: Line, fight: Fight):
       const bag = bagList(actor.bag);
       return bag !== "" ? bag : held.number;
     }
+    case "chopping":
+    case "fishing":
+      return workNumber(actor, held.doing);
+    case "cooking":
+      return working?.work === "cooking" ? cookNumber(actor, working) : held.number;
     default:
       return held.number;
   }
@@ -338,13 +472,16 @@ export function numberNow(world: World, actor: Actor, held: Line, fight: Fight):
 export function nextLines(previous: Lines, world: World, fight: Fight): Lines {
   const followsOn = previous.tick === world.tick - 1;
   const walks = new Map<number, Walk>();
+  const work = new Map<number, Working>();
   const shown = new Map<number, { line: Line; since: number }>();
   const news: News[] = [];
   for (const actor of world.actors) {
     if (actor.kind !== ADVENTURER) continue;
     const walk = nextWalk(world, actor, followsOn ? previous.walks.get(actor.id) : undefined);
     if (walk) walks.set(actor.id, walk);
-    const next = lineFor(world, actor, fight, walk);
+    const working = nextWorking(world, actor, followsOn ? previous.work.get(actor.id) : undefined);
+    if (working) work.set(actor.id, working);
+    const next = lineFor(world, actor, fight, walk, working);
     const was = previous.shown.get(actor.id);
     if (was && was.line.text === next.text) {
       shown.set(actor.id, { line: next, since: was.since });
@@ -353,7 +490,7 @@ export function nextLines(previous: Lines, world: World, fight: Fight): Lines {
     const atOnce = AT_ONCE.has(next.doing) && was?.line.doing !== next.doing;
     const number =
       was && world.tick - was.since < HOLD_TICKS && !atOnce
-        ? numberNow(world, actor, was.line, fight)
+        ? numberNow(world, actor, was.line, fight, working)
         : null;
     if (was && number !== null) {
       shown.set(actor.id, { line: { ...was.line, number }, since: was.since });
@@ -363,7 +500,7 @@ export function nextLines(previous: Lines, world: World, fight: Fight): Lines {
     if (was && NEWSWORTHY.has(next.doing) && was.line.doing !== next.doing)
       news.push({ text: newsText(actor.name, next), who: actor.id, doing: next.doing });
   }
-  return { tick: world.tick, walks, shown, news };
+  return { tick: world.tick, walks, work, shown, news };
 }
 
 /**

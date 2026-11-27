@@ -5,6 +5,7 @@ import {
   fitFrame,
   MAX_FRAME_HEIGHT,
   MAX_FRAME_WIDTH,
+  MAX_OPEN,
   PAGE_FOOT,
   PAGE_HEAD,
   pageHeight,
@@ -47,16 +48,18 @@ describe("fitting the frame to a window", () => {
     const square = fit(1200, 1200);
     expect(square).toMatchObject({ below: true, columns: 3 });
     expect(square.height).toBeGreaterThanOrEqual(MAP[1] + pageHeight(3));
-    const tall = fit(1000, 1400);
+    const tall = fit(1000, 1200);
     expect(tall).toMatchObject({ below: true, columns: 2, width: 1440 });
     expect(tall.scale).toBeCloseTo(1000 / 1440);
     const phone = fit(390, 844);
     expect(phone).toMatchObject({ below: true, columns: 1, width: 1440 });
+    // Taller still, the twenty rows go in one column.
+    expect(fit(1000, 1400)).toMatchObject({ below: true, columns: 1 });
     // The map is larger than it would be with the page beside it.
     expect(tall.scale).toBeGreaterThan(1000 / 1920);
-    // One column would not fit at that size; two leave about a seventh of the window empty.
-    expect((MAP[1] + pageHeight(1)) * tall.scale).toBeGreaterThan(1400);
-    expect((MAP[1] + pageHeight(2)) * tall.scale).toBeGreaterThan(1400 * 0.84);
+    // One column would not fit at that size; two leave less than a sixth of the window empty.
+    expect((MAP[1] + pageHeight(1)) * tall.scale).toBeGreaterThan(1200);
+    expect((MAP[1] + pageHeight(2)) * tall.scale).toBeGreaterThan(1200 * 0.84);
   });
 
   it("always covers the window, with no more than a pixel to spare", () => {
@@ -118,17 +121,18 @@ describe("spreading the page into spare room below the map", () => {
     expect(spreadPage(used(3) - 50, 3)).toEqual({ open: 0, shift: 0 });
   });
 
-  it("opens the rows out, at most 40 pixels each, and moves the rest of the spare room a third above", () => {
-    // A 1000 by 1400 window: the frame is 2016 tall and the map 1008, with two columns of three rows.
-    const tall = fit(1000, 1400);
+  it("opens the rows out, at most MAX_OPEN pixels each, and moves the rest of the spare room a third above", () => {
+    // A 1000 by 1800 window: the frame is 2592 tall and the map 1008, with one column of twenty rows.
+    const tall = fit(1000, 1800);
+    expect(tall.columns).toBe(1);
     const room = tall.height - MAP[1];
-    const { open, shift } = spreadPage(room, 3);
-    expect(open).toBe(40);
-    const left = room - used(3) - open * 3;
+    const { open, shift } = spreadPage(room, 20);
+    expect(open).toBe(MAX_OPEN);
+    const left = room - used(20) - open * 20;
     expect(shift).toBe(Math.floor(left / 3));
     expect(shift).toBeGreaterThan(0);
     // A little spare room is shared out between the rows and the gaps above and below.
-    expect(spreadPage(used(3) + 40, 3)).toEqual({ open: 10, shift: 3 });
+    expect(spreadPage(used(3) + 20, 3)).toEqual({ open: 5, shift: 1 });
   });
 
   it("never pushes the page past the foot of the frame", () => {

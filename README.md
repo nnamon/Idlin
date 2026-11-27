@@ -17,9 +17,10 @@ how to fight. Wolves and goblins
 fights, both in the world server's world and in a world of its own opened with
 `?monsters`. The scripting language is described in
 [docs/tactics.md](docs/tactics.md). Fighting earns Melee and Hitpoints
-experience, each character has a bag and a bank, and the page beside the map
-shows hitpoints and skill levels. Gathering, cooking and loot don't exist yet;
-[docs/roadmap.md](docs/roadmap.md) has the order they're planned in.
+experience, each character has a bag and a bank, and residents chop, fish and
+cook. The page beside the map lists up to 20 residents, a line each: hitpoints,
+what they are doing and their total level. Loot doesn't exist yet;
+[docs/roadmap.md](docs/roadmap.md) has the order it's planned in.
 
 ![Night falling over the camp, at twice the speed](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/clip.gif)
 

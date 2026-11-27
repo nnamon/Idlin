@@ -15,14 +15,17 @@ export const FRAME_WIDTH = 1920;
 export const FRAME_HEIGHT = 1080;
 /** The least width the page needs beside the map. */
 export const PAGE_WIDTH = 480;
-/** From the top of the page to the first resident's row. */
-export const PAGE_HEAD = 294;
-/** The height of a resident's row: its name and hitpoints, what it is doing, its levels. */
-export const ROW_PITCH = 120;
-/** A row closed up, beside the map in a frame only as tall as the map, where the news goes under the rows. */
-export const TIGHT_PITCH = 100;
-/** Room under the residents for the line of news. */
+/** From the top of the page to the first resident's row: the title and clock, the day, the overview. */
+export const PAGE_HEAD = 300;
+/**
+ * The height of a resident's row, which is one line: bust, name, hitpoints,
+ * what it is doing, total level. Sized for a 1080p stream seen full screen.
+ */
+export const ROW_PITCH = 30;
+/** Room under the residents for "and N more" and the line of news. */
 export const PAGE_FOOT = 96;
+/** The most a row opens out by when the page below the map has paper to spare. */
+export const MAX_OPEN = 8;
 /**
  * The frame never grows past this. A window more extreme than that gets a bar
  * after all; four canvases of the frame's size are kept, and a browser will
@@ -31,7 +34,7 @@ export const PAGE_FOOT = 96;
 export const MAX_FRAME_WIDTH = 3840;
 export const MAX_FRAME_HEIGHT = 4320;
 /** How many residents the page lists by name. */
-export const ROSTER_ROWS = 6;
+export const ROSTER_ROWS = 20;
 
 export interface Fit {
   /** The frame's size in its own pixels. */
@@ -52,13 +55,13 @@ export const pageHeight = (columns: number): number =>
 /**
  * How to use paper left over under the page when it sits below the map.
  * `room` is the height from the map's foot to the frame's foot, `rows` the
- * rows of residents. Each row opens out by `open` (up to 40 pixels) and the
- * page's content moves down by `shift`: a third of what is left goes above
- * it and the rest below.
+ * rows of residents. Each row opens out by `open` (up to MAX_OPEN pixels)
+ * and the page's content moves down by `shift`: a third of what is left goes
+ * above it and the rest below.
  */
 export function spreadPage(room: number, rows: number): { open: number; shift: number } {
   const spare = Math.max(0, room - (PAGE_HEAD + rows * ROW_PITCH + PAGE_FOOT));
-  const open = Math.min(40, Math.floor(spare / (rows + 1)));
+  const open = Math.min(MAX_OPEN, Math.floor(spare / (rows + 1)));
   return { open, shift: Math.floor((spare - open * rows) / 3) };
 }
 
