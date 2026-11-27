@@ -21,8 +21,9 @@ that folder's storyboard above the new one.
   motion, and exposes flicker.
 - **drift**: 12 frames from the first time in the day the view pans to
   another region to when it gets there. The flicker index is also taken in
-  the middle of that pan, where it goes fastest, and a day in which the view
-  never pans is a hard fail.
+  the middle of that pan, where it goes fastest. A day in which the view
+  never pans has no drift sheet; a view that fails to follow its resident is
+  caught by the out-of-sight metric.
 - **day strip**: 6 frames across a full day. Shows the light changing.
 - **figures**: 12 residents at 07:00 with a spread of levels (`?levels`, which
   only a capture's own world takes), so every kit tier and walk can be seen:
@@ -65,6 +66,7 @@ character, 45 seconds.
 | trips, deaths and drops by rarity, per hour | pacing                                                                                                                                                                                   | none; tracked over time                                                                               |
 | console errors                              | errors in the page during the capture                                                                                                                                                    | any                                                                                                   |
 | acknowledgment                              | per character, how often it was named on screen (the news line, a caption or the spotlight)                                                                                              | at 50 characters over 60 minutes, a character that finished a trip and was never named                |
+| out of sight                                | longest stretch, over the same game day as dead air, in which the spotlit character (the same one throughout) has something to show and is not on the map the viewer shows               | over 86 s: a 60 s hold, the 2 s wait, two regions of pan and the 8 s held back when a dwell is ending |
 | spotlight wait                              | per character, its longest stretch without the spotlight, counting from the start of the run and up to its end, over a run three times as long as the population times the minimum dwell | any character over twice the population times the minimum dwell (one never shown fails by definition) |
 
 How the tool reads these: something visible is a character changing tile or

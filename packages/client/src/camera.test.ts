@@ -9,22 +9,28 @@ import {
   type World,
 } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { botSources, shippedWorld } from "../../sim/src/testing.ts";
+import { botSources, shippedMonsters, shippedWorld } from "../../sim/src/testing.ts";
 import {
   arrival,
   type Camera,
   cameraOn,
   DRIFT_TICKS,
   FOLLOW_TICKS,
+  HOLD_TICKS,
   legAt,
   nextCamera,
   nextWatch,
   noticesOf,
+  REASON,
+  reasonLine,
+  reasonOf,
   regionOf,
   routeBetween,
+  STAY_TICKS,
   startWatch,
   viewAt,
   type Watch,
+  wantedRegion,
 } from "./camera.ts";
 import { castOf } from "./cast.ts";
 import { NO_FIGHT } from "./fight.ts";
@@ -86,6 +92,124 @@ describe("which region the view is on", () => {
     expect(stuck.route).toEqual([CAMP]);
   });
 
+  it("leaves a region nobody is in without waiting", () => {
+    // On the hills with nobody there, the camp wanted from tick 10: it sets out at once.
+    const camera = nextCamera(cameraOn(HILLS), atlas, CAMP, 10, true);
+    expect([camera.route, camera.since]).toEqual([[HILLS, CAMP], 10]);
+    // With someone there it waits FOLLOW_TICKS as usual.
+    expect(nextCamera(cameraOn(HILLS), atlas, CAMP, 10, false).route).toEqual([HILLS]);
+  });
+
+  it("turns back part-way, without a jolt, when the region it is going to empties", () => {
+    const out: Camera = { route: [CAMP, HILLS], since: 0, wanted: { region: HILLS, since: 0 } };
+    // Someone is still in the hills: it carries on.
+    expect(nextCamera(out, atlas, CAMP, 30, false).route).toEqual([CAMP, HILLS]);
+    // The hills have emptied and the camp is wanted: it turns at tick 30.
+    const back = nextCamera(out, atlas, CAMP, 30, true);
+    expect([back.route, back.since, regionOf(back), arrival(back)]).toEqual([
+      [HILLS, CAMP],
+      30,
+      CAMP,
+      30 + DRIFT_TICKS,
+    ]);
+    // Wanting a region that lies on ahead does not turn it.
+    const pine: Camera = { route: [PINE, CAMP], since: 0, wanted: { region: CAMP, since: 0 } };
+    expect(nextCamera(pine, atlas, HILLS, 30, true).route).toEqual([PINE, CAMP]);
+    // Frame by frame at six a tick across the turn: no jump where it turns,
+    // the same speed either side of it, then slowing to rest on the camp.
+    const at = (time: number) => (time < 30 ? viewAt(out, atlas, time) : viewAt(back, atlas, time));
+    const frames = Array.from({ length: 6 * (DRIFT_TICKS + 20) }, (_, i) => at(20 + i / 6).x);
+    const steps = frames.slice(1).map((x, i) => x - (frames[i] as number));
+    const mean = 30 / (6 * DRIFT_TICKS);
+    const turn = 6 * 10;
+    expect(Math.abs((steps[turn] as number) - (steps[turn - 1] as number))).toBeLessThan(mean / 10);
+    expect(Math.max(...steps.map(Math.abs))).toBeLessThanOrEqual(2 * mean);
+    // It goes on a little further, comes about once, and ends at the camp.
+    expect(
+      steps.slice(turn).filter((d, i) => i > 0 && d * (steps[turn + i - 1] as number) < 0),
+    ).toHaveLength(1);
+    expect(at(30 + DRIFT_TICKS)).toEqual({ x: 0, y: 0 });
+    expect(viewAt(back, atlas, 1e9)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("does not set out for a region its subject is leaving, nor for a dwell about to end", () => {
+    const long = 450;
+    const standing = (x: number, y: number) => ({ x, y, path: [] });
+    const walking = (x: number, y: number, to: { x: number; y: number }) => ({
+      x,
+      y,
+      path: [to],
+    });
+    // The subject has a haul to show (weight 2) unless said otherwise.
+    const want = (
+      subject: Parameters<typeof wantedRegion>[1],
+      here: number,
+      empty: boolean,
+      left: number,
+      weight = REASON.haul,
+      bar = 0,
+    ) => wantedRegion(atlas, subject, { here, empty, left, weight, bar, camp: CAMP });
+    // In the hills, staying there: the view goes there.
+    expect(want(standing(40, 10), CAMP, false, long)).toBe(HILLS);
+    expect(want(walking(40, 10, { x: 50, y: 12 }), CAMP, false, long)).toBe(HILLS);
+    // In the hills but walking back into the camp, where the view is: it stays.
+    expect(want(walking(31, 10, { x: 10, y: 10 }), CAMP, false, long)).toBe(CAMP);
+    // In the hills, walking on to the pinewood: not the hills, and from a
+    // camp with people in it, nowhere yet.
+    const through = walking(31, 10, { x: -10, y: 10 });
+    expect(want(through, CAMP, false, long)).toBe(-1);
+    // From the river with nobody in it, on ahead to where the walk ends.
+    expect(want(through, RIVER, true, long)).toBe(PINE);
+    // On the view's region, walking out of it: the view stays with it until it is out.
+    expect(want(walking(10, 10, { x: 40, y: 10 }), CAMP, false, long)).toBe(CAMP);
+    // Too little of the dwell left to get there and show it for STAY_TICKS: it stays.
+    const hills = standing(40, 10);
+    expect(want(hills, CAMP, false, DRIFT_TICKS + STAY_TICKS)).toBe(HILLS);
+    expect(want(hills, CAMP, false, DRIFT_TICKS + STAY_TICKS - 1)).toBe(-1);
+    // Two regions away it takes two drifts.
+    expect(want(standing(-10, 10), HILLS, false, 2 * DRIFT_TICKS + STAY_TICKS - 1)).toBe(-1);
+    // Unless the view is on an empty region, where staying shows nothing.
+    expect(want(hills, RIVER, true, 1)).toBe(HILLS);
+  });
+
+  it("says on the news line why it sets out", () => {
+    const bag = (...goods: number[]) => [...goods, ...Array(12 - goods.length).fill(0)];
+    expect(reasonLine("haul", { name: "Ash", bag: bag(1, 1, 1, 1, 1) }, "the Pinewood")).toBe(
+      "Ash is chopping in the Pinewood, 5 logs",
+    );
+    expect(reasonLine("haul", { name: "Ash", bag: bag(1) }, "the Pinewood")).toBe(
+      "Ash is chopping in the Pinewood, 1 log",
+    );
+    expect(reasonLine("haul", { name: "Elm", bag: bag(2, 2, 2) }, "the Lower River")).toBe(
+      "Elm is fishing in the Lower River, 3 fish",
+    );
+    // A fight is told by the resident's own line, and a down by the fight's news.
+    expect(reasonLine("fight", { name: "Fen", bag: bag() }, "the Hills")).toBeNull();
+    expect(reasonLine("down", { name: "Fen", bag: bag() }, "Lantern Camp")).toBeNull();
+  });
+
+  it("goes to another region only for a reason, and holds there against anything no stronger", () => {
+    const hills = { x: 40, y: 10, path: [] };
+    const want = (here: number, empty: boolean, weight: number, bar = 0) =>
+      wantedRegion(atlas, hills, { here, empty, left: 450, weight, bar, camp: CAMP });
+    // A quiet resident's turn in the hills does not move the view off the camp.
+    expect(want(CAMP, false, 0)).toBe(-1);
+    // A haul, a fight or a down there does.
+    expect(want(CAMP, false, REASON.haul)).toBe(HILLS);
+    expect(want(CAMP, false, REASON.fight)).toBe(HILLS);
+    // Just arrived at the river for a fight, the view holds against a haul
+    // or another fight in the hills, and goes for a down.
+    expect(want(RIVER, false, REASON.haul, REASON.fight)).toBe(-1);
+    expect(want(RIVER, false, REASON.fight, REASON.fight)).toBe(-1);
+    expect(want(RIVER, false, REASON.down, REASON.fight)).toBe(HILLS);
+    // On a region nobody is left in it goes all the same: to the camp for a
+    // quiet subject, to the subject for one with a reason, and from an empty
+    // camp to the subject.
+    expect(want(RIVER, true, 0, REASON.fight)).toBe(CAMP);
+    expect(want(RIVER, true, REASON.haul, REASON.fight)).toBe(HILLS);
+    expect(want(CAMP, true, 0)).toBe(HILLS);
+  });
+
   it("moves without a cut: eased from rest to rest, never faster than half again its mean", () => {
     const camera: Camera = {
       route: [PINE, CAMP, HILLS],
@@ -136,32 +260,19 @@ describe("the watch over the shipped world", () => {
     return watches;
   }
 
-  it("follows the spotlit resident to its region, and drifts there in the day", () => {
+  // How long the view may leave a spotlit resident with something to show
+  // out of sight is checked over game days below (`longestAway`).
+  it("starts on the camp and drifts out and back in the day", () => {
     const world = createShipped();
     let watch = startWatch(world.atlas);
     expect(regionOf(watch.camera)).toBe(CAMP);
-    // How long the spotlit resident has been in the region it is in.
-    let since = 0;
-    let last: { subject: number | null; region: number } | null = null;
     let drifts = 0;
-    let lagging = 0;
-    // A drift under way, of two regions at most, then FOLLOW_TICKS of wanting.
-    const settle = 2 * DRIFT_TICKS + FOLLOW_TICKS + 1;
     for (let tick = 0; tick < 24 * 600; tick++) {
       const before = watch.camera.since;
       watch = nextWatch(watch, world);
       if (watch.camera.since !== before) drifts++;
-      const subject = world.actors.find((a) => a.id === watch.subject && a.kind === ADVENTURER);
-      const region = subject ? regionAt(world.atlas, subject.x, subject.y) : -1;
-      if (!last || last.subject !== watch.subject || last.region !== region) since = tick;
-      last = { subject: watch.subject, region };
-      // Once the same resident has been in one region for long enough to get
-      // there from anywhere, the view is on that region.
-      if (subject && tick - since >= settle && regionOf(watch.camera) !== region) lagging++;
       step(world);
     }
-    expect(lagging).toBe(0);
-    // At least one trip out of the camp and back, so the view did follow someone.
     expect(drifts).toBeGreaterThanOrEqual(2);
   }, 60_000);
 
@@ -177,6 +288,23 @@ describe("the watch over the shipped world", () => {
     const notices = noticesOf(world, { ...NO_FIGHT, downs: new Map([[birch.id, world.tick]]) });
     expect(notices).toContainEqual({ type: "decide", actor: ash.id, rule: ash.rule });
     expect(notices).toContainEqual({ type: "down", actor: birch.id, by: birch.id });
+    // A bag with more goods in it than at the tick before is a haul; the same or fewer is not.
+    ash.bag[0] = 1;
+    const carried = new Map([
+      [ash.id, 0],
+      [birch.id, 0],
+    ]);
+    expect(noticesOf(world, NO_FIGHT, carried)).toContainEqual({ type: "haul", actor: ash.id });
+    expect(noticesOf(world, NO_FIGHT, carried)).not.toContainEqual({
+      type: "haul",
+      actor: birch.id,
+    });
+    expect(noticesOf(world, NO_FIGHT, new Map([[ash.id, 1]])).some((n) => n.type === "haul")).toBe(
+      false,
+    );
+    // Nothing known of the tick before, nothing to compare with.
+    expect(noticesOf(world, NO_FIGHT).some((n) => n.type === "haul")).toBe(false);
+    ash.bag[0] = 0;
     // Downed at an earlier tick is not news now.
     const later = noticesOf(world, { ...NO_FIGHT, downs: new Map([[birch.id, world.tick - 1]]) });
     expect(later.some((n) => n.type === "down")).toBe(false);
@@ -187,9 +315,169 @@ describe("the watch over the shipped world", () => {
   });
 });
 
-/** The shipped world with six residents just spawned at camp, as the viewer starts it for seed 1. */
-function createShipped(): World {
-  const world = createWorld(atlas, 1, compileBots(botSources(), placeConstants(atlas)));
-  step(world, spawnsNearCamp(world, castOf(6)));
+const LONG = process.env.IDLIN_LONG === "1";
+
+describe("the pans over game days", () => {
+  /**
+   * Watches `days` game days of the shipped world at `residents` and counts
+   * the pans, the pans that turned back part-way (`turns`), and the pans that
+   * go out and straight back: the next pan sets out within 10 s of this one's
+   * arrival and goes back to where this one began. Of those and the turns,
+   * `bounces` are the ones the view should not have made:
+   * the resident it went for was already walking out of that region, or was
+   * no longer spotlit when the view came back. The rest follow the same
+   * resident walking back. Also counts the times the view got to a region
+   * with no resident in it, the ticks it spent at rest on one, and the
+   * longest the spotlit resident was in a region the view was not on or
+   * drifting to.
+   */
+  function pans(days: number, residents: number, monsters: boolean) {
+    const world = createShipped(residents, monsters);
+    let watch = startWatch(world.atlas);
+    const drifts: {
+      start: number;
+      end: number;
+      set: number;
+      there: number;
+      subject: number | null;
+      leaving: boolean;
+      turned: boolean;
+      /** Why it went: the subject's reason, or none for a view leaving an empty region. */
+      why: string | null;
+      fromEmpty: boolean;
+      weight: number;
+    }[] = [];
+    let emptyArrivals = 0;
+    let emptyTicks = 0;
+    let away = 0;
+    let longestAway = 0;
+    let offCamp = 0;
+    let someoneAway = 0;
+    const residentsIn = () =>
+      new Set(
+        world.actors
+          .filter((a) => a.kind === ADVENTURER)
+          .map((a) => regionAt(world.atlas, a.x, a.y)),
+      );
+    for (let tick = 0; tick < days * 24 * 600; tick++) {
+      const before = watch.camera;
+      const wasEmpty = !residentsIn().has(regionOf(before));
+      watch = nextWatch(watch, world);
+      const { camera } = watch;
+      const subject = world.actors.find((a) => a.id === watch.subject);
+      if (camera.since !== before.since) {
+        const end = subject?.path.at(-1);
+        drifts.push({
+          why: watch.reason?.kind ?? null,
+          fromEmpty: wasEmpty,
+          weight: before.route.length > 1 ? (before.weight ?? 0) : 0,
+          start: camera.route[0] as number,
+          end: regionOf(camera),
+          set: camera.since,
+          there: arrival(camera),
+          subject: watch.subject,
+          leaving: end !== undefined && regionAt(world.atlas, end.x, end.y) !== regionOf(camera),
+          turned: camera.turned !== undefined,
+        });
+      }
+      const occupied = residentsIn();
+      // Got there this tick, whether or not it sets out again at once.
+      if (world.tick === arrival(before) && !occupied.has(regionOf(before))) emptyArrivals++;
+      if (world.tick >= arrival(camera) && !occupied.has(regionOf(camera))) emptyTicks++;
+      // Out of sight while it has something to show.
+      const there = subject ? regionAt(world.atlas, subject.x, subject.y) : -1;
+      const busy = reasonOf(watch, watch.subject) !== null;
+      away = subject && busy && there !== regionOf(camera) ? away + 1 : 0;
+      longestAway = Math.max(longestAway, away);
+      if (regionOf(camera) !== CAMP || world.tick < arrival(camera)) offCamp++;
+      if ([...occupied].some((region) => region !== CAMP)) someoneAway++;
+      step(world);
+    }
+    // Pans that turned back part-way, and the pans they cut short.
+    const turns = drifts.filter((drift) => drift.turned).length;
+    const backs = drifts.flatMap((drift, i) => {
+      const next = drifts[i + 1];
+      return next && next.set - drift.there <= 100 && next.end === drift.start
+        ? [{ drift, next }]
+        : [];
+    });
+    const bounces = backs.filter(
+      ({ drift, next }) => drift.leaving || next.subject !== drift.subject,
+    );
+    const set = drifts.filter((drift) => !drift.turned);
+    // A pan that set out within HOLD_TICKS of getting somewhere, for a reason
+    // no stronger than the one it went there for, from a region with people in it.
+    const unheld = set.filter((drift, i) => {
+      const last = set[i - 1];
+      return (
+        last !== undefined &&
+        !drift.fromEmpty &&
+        drift.set < last.there + HOLD_TICKS &&
+        (drift.why === null || REASON[drift.why as keyof typeof REASON] <= drift.weight)
+      );
+    });
+    return {
+      pansPerHour: Math.round((10 * set.length) / (days * 24)) / 10,
+      withReason: set.filter((drift) => drift.why !== null).length,
+      unexplained: set.filter((drift) => drift.why === null && !drift.fromEmpty).length,
+      emptied: set.filter((drift) => drift.fromEmpty).length,
+      unheld: unheld.length,
+      pans: drifts.length - turns,
+      turns,
+      backs: backs.filter(({ next }) => !next.turned).length,
+      bounces: bounces.length,
+      emptyArrivals,
+      emptyTicks,
+      longestAway,
+      leavesCamp: drifts.filter((drift) => drift.start === CAMP).length,
+      offCampShare: Math.round((100 * offCamp) / (days * 24 * 600)),
+      someoneAwayShare: Math.round((100 * someoneAway) / (days * 24 * 600)),
+    };
+  }
+
+  // Three game days at six residents and one at fifteen in the gate; with
+  // monsters, and at twelve, in the capture workflow.
+  const runs: [number, number, boolean][] = [
+    [3, 6, false],
+    [1, 15, false],
+    ...(LONG
+      ? ([
+          [3, 6, true],
+          [2, 12, true],
+          [3, 15, false],
+          [3, 15, true],
+        ] as [number, number, boolean][])
+      : []),
+  ];
+  for (const [days, residents, monsters] of runs)
+    it(`pans only for a reason, never for a resident leaving, nor rests on an empty region: ${days} days, ${residents} residents${monsters ? ", monsters" : ""}`, () => {
+      const counted = pans(days, residents, monsters);
+      console.log(JSON.stringify({ days, residents, monsters, ...counted }));
+      expect(counted.pans).toBeGreaterThanOrEqual(2 * days);
+      // Every pan has a reason, or leaves a region nobody is left in.
+      expect(counted.unexplained).toBe(0);
+      expect(counted.unheld).toBe(0);
+      expect(counted.bounces).toBe(0);
+      expect(counted.emptyArrivals).toBe(0);
+      expect(counted.emptyTicks).toBe(0);
+      // A subject with something to show is out of sight no longer than the
+      // hold, the wait and two regions of pan.
+      expect(counted.longestAway).toBeLessThanOrEqual(
+        HOLD_TICKS + FOLLOW_TICKS + 2 * DRIFT_TICKS + STAY_TICKS,
+      );
+    }, 600_000);
+});
+
+/** The shipped world with `residents` just spawned at camp, as the viewer starts it for seed 1. */
+function createShipped(residents = 6, monsters = false): World {
+  const loaded = monsters ? shippedMonsters(atlas) : undefined;
+  const world = createWorld(
+    atlas,
+    1,
+    { ...compileBots(botSources(), placeConstants(atlas)), ...loaded?.programs },
+    loaded?.kinds,
+    loaded?.spawns,
+  );
+  step(world, spawnsNearCamp(world, castOf(residents)));
   return world;
 }

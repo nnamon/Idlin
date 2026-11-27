@@ -19,6 +19,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 // map's. The view moves only once the spotlight goes to another region.
 import mapJson from "../../../content/maps/camp.json";
 import { rawWorld, shippedMonsters, shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
+import type { Watch } from "./camera.ts";
 import { type Effects, glyphAt, NO_EFFECTS, nextEffects, routeAt } from "./effects.ts";
 import { FRAME_HEIGHT, FRAME_WIDTH, ROW_PITCH, spreadPage } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
@@ -608,14 +609,25 @@ describe("the scene", () => {
       expect(glyphs(frame)).toBe(withGlyph.filter((a) => named.has(a.name)).length);
       routesDrawn += ends.length;
       glyphsDrawn += glyphs(frame);
-      // Both fade with the slip: the alpha each is stroked at carries the slip's.
+      // Both fade with the slip: the alpha each is stroked at carries the slip's,
+      // and the edge's for a figure the window has drifted towards the edge of.
       frame.forEach((call, at) => {
         if (call.op !== "translate" || at < frame.findIndex((c) => c.op === "fillText")) return;
         const name = frame.slice(0, at).findLast((c) => c.op === "fillText")?.args[0];
         const who = twelve.actors.find((a) => a.name === name) as Actor;
         const stroke = frame.slice(at).find((c) => c.op === "stroke") as Call;
         const slip = slipAlpha(slips, who.id, time);
-        expect(stroke.alpha).toBeCloseTo(slip * (glyphAt(effects, who.id, time)?.alpha ?? 0));
+        const pose = actorPose(who, 0, time);
+        const { x, y } = seenOf(scene);
+        const edge = edgeFade(
+          pose.x * 48 - x,
+          pose.y * 48 - 4 - y,
+          map.width * 48,
+          map.height * 48,
+        );
+        expect(stroke.alpha).toBeCloseTo(
+          slip * edge * (glyphAt(effects, who.id, time)?.alpha ?? 0),
+        );
         if (slip < 1) fading++;
       });
       const dashed = day.calls.flatMap((call, at) =>
@@ -626,9 +638,19 @@ describe("the scene", () => {
       for (const stroke of dashed) {
         // A route is in its walker's cloak colour, at 0.75 of the slip's alpha at most.
         const owners = withRoute.filter((a) => identity(a.id).cloak === stroke.ink);
-        const expected = owners.map(
-          (a) => 0.75 * slipAlpha(slips, a.id, time) * (routeAt(effects, a.id, time)?.line ?? 0),
-        );
+        const { x, y } = seenOf(scene);
+        const expected = owners.map((a) => {
+          const pose = actorPose(a, 0, time);
+          const edge = edgeFade(
+            pose.x * 48 - x,
+            pose.y * 48 - 4 - y,
+            map.width * 48,
+            map.height * 48,
+          );
+          return (
+            0.75 * slipAlpha(slips, a.id, time) * edge * (routeAt(effects, a.id, time)?.line ?? 0)
+          );
+        });
         expect(expected.some((e) => Math.abs(e - (stroke.alpha as number)) < 1e-9)).toBe(true);
         if (owners.some((a) => slipAlpha(slips, a.id, time) < 1)) fading++;
       }
@@ -1252,6 +1274,30 @@ describe("the scene", () => {
     }
     expect(partway).toBeGreaterThan(2);
   }, 120_000);
+
+  it("closes the dark in to the camp's lantern wherever the view is, mid-pan too", async () => {
+    const { scene, lit } = await newScene();
+    const world = newWorld();
+    scene.observe(world);
+    world.tick = TO_NIGHTFALL;
+    // The middle of the last of the daylight, in world pixels.
+    const middle = (): unknown[] =>
+      (
+        drawn(lit, () => scene.draw(world, world.tick)).find((c) => c.op === "createRadialGradient")
+          ?.args ?? []
+      ).slice(0, 2);
+    const atCamp = middle();
+    expect(atCamp).toHaveLength(2);
+    // Halfway down to the lower river, the window has moved and the middle has not.
+    const inside = scene as unknown as { watch: Watch };
+    inside.watch = {
+      ...inside.watch,
+      camera: { route: [0, 3], since: TO_NIGHTFALL - 40, wanted: { region: 3, since: 0 } },
+    };
+    const mid = middle();
+    expect(seenOf(scene).y).toBeGreaterThan(0);
+    expect(mid).toEqual(atCamp);
+  });
 
   it("with the page below the map, darkens the paper either side of the map with the map", async () => {
     const { scene, out, lit } = await newScene();

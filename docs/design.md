@@ -75,11 +75,16 @@ dangerous part of the day comes.
 The world is a few regions, each of which fits in one frame, and the camera
 doesn't cut between characters: the stream shows one region at a time (see
 "One player on a busy stream" below). The spotlight is on one character at a
-time, changing slowly and preferring whoever something is happening to, and
-the map shows the region that character is in. When that character has been
-in another region for two seconds, as when the spotlight goes to someone
-elsewhere or its subject walks through an exit, the map pans there over
-eight seconds, region by region along the exits, easing in and out. A small map at the head of the page shows every
+time, changing slowly and preferring whoever something is happening to, most
+of all away from the camp. The map moves to another region only for a reason
+worth showing: the spotlit character cutting wood or fishing there, fighting
+or downed, in the last fifteen seconds. A quiet character's turn elsewhere
+leaves the map where it is, and the page and the small map say where that
+character is. When the character has been in the other region for two
+seconds, the map pans there over eight seconds, region by region along the
+exits, easing in and out, and the news line says why ("Ash is chopping in the
+Pinewood, 5 logs"). Once there it stays at least a minute unless something
+stronger happens elsewhere, or nobody is left in the region. A small map at the head of the page shows every
 region, a frame round the part on screen that moves with the pan, a dot in
 each resident's cloak colour and a cross for each group of monsters. A panel
 beside the map will show the spotlit character up close.

@@ -16,7 +16,7 @@ import {
   type World,
   type WorldEvent,
 } from "@idlin/sim";
-import { nextWatch, startWatch, viewAt } from "../../../packages/client/src/camera.ts";
+import { nextWatch, reasonOf, startWatch, viewAt } from "../../../packages/client/src/camera.ts";
 import { castOf } from "../../../packages/client/src/cast.ts";
 import { campRegion, inWindow, viewSize, windowView } from "../../../packages/client/src/view.ts";
 import { botSources, shippedWorld } from "../../../packages/sim/src/testing.ts";
@@ -51,7 +51,7 @@ export function start(
  * ones by an actor that was on it before or after the step, so one who went
  * down there counts, for a hit, the ones on someone there, and for a node
  * (a tree or a fishing spot), the ones whose tile is in the window. It also gives
- * the watch: the spotlit resident and the camera.
+ * where the window is and the spotlit resident.
  */
 function follower(atlas: World["atlas"]) {
   let watch = startWatch(atlas);
@@ -69,6 +69,8 @@ function follower(atlas: World["atlas"]) {
     return {
       view,
       at,
+      subject: watch.subject,
+      busy: reasonOf(watch, watch.subject) !== null,
       events: events.filter((event) =>
         // A node's events have no actor; they belong to the window when the node's tile is in it.
         "actor" in event
@@ -96,7 +98,7 @@ export function follow(
   const run: TickRecord[] = [];
   let last = events;
   for (let tick = 0; tick < ticks; tick++) {
-    const { view, events: seen, at } = shown(world, last);
+    const { view, events: seen, at, subject, busy } = shown(world, last);
     const here = new Set(view.actors.map((a) => a.id));
     const away = world.actors.filter((a) => a.kind === ADVENTURER && !here.has(a.id));
     const residents = new Set(world.actors.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
@@ -104,6 +106,8 @@ export function follow(
     run.push({
       events: seen,
       view: at,
+      subject,
+      busy,
       actors: view.actors.map((a) => ({ id: a.id, name: a.name, x: a.x, y: a.y })),
       elsewhere: {
         actors: away.map((a) => ({ id: a.id, name: a.name, x: a.x, y: a.y })),

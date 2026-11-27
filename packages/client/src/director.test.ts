@@ -1,6 +1,6 @@
 import type { WorldEvent } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { createDirector, DWELL_TICKS, direct } from "./director.ts";
+import { createDirector, DWELL_TICKS, direct, type Notice } from "./director.ts";
 
 const down = (tick: number, actor: number, by = 99): WorldEvent => ({
   type: "down",
@@ -21,16 +21,18 @@ const decide = (tick: number, actor: number, rule: number): WorldEvent => ({
   action: "wait",
 });
 
-/** Runs a director over `ticks` ticks; `at` gives the events and residents for each. */
+const haul = (actor: number): Notice => ({ type: "haul", actor });
+
+/** Runs a director over `ticks` ticks; `at` gives the events, the residents and those away from camp for each. */
 const run = (
   ticks: number,
-  at: (tick: number) => { events?: WorldEvent[]; present: number[] },
+  at: (tick: number) => { events?: (WorldEvent | Notice)[]; present: number[]; away?: number[] },
 ): (number | null)[] => {
   const director = createDirector();
   const subjects: (number | null)[] = [];
   for (let tick = 1; tick <= ticks; tick++) {
-    const { events = [], present } = at(tick);
-    subjects.push(direct(director, tick, events, present));
+    const { events = [], present, away = [] } = at(tick);
+    subjects.push(direct(director, tick, events, present, new Set(away)));
   }
   return subjects;
 };
@@ -180,6 +182,70 @@ describe("spotlight director", () => {
       present: [1, 2, 3],
     }));
     expect(subjects[DWELL_TICKS]).toBe(2);
+  });
+
+  it("prefers something happening away from the camp to anything at it", () => {
+    // Resident 2 goes down at camp; resident 3, away in another region, cuts a log.
+    const subjects = run(DWELL_TICKS + 1, (tick) => ({
+      events: tick === 50 ? [down(tick, 2), haul(3)] : [],
+      present: [1, 2, 3],
+      away: [3],
+    }));
+    expect(subjects[DWELL_TICKS]).toBe(3);
+    // A haul beats a change of rule, at camp as away.
+    const atCamp = run(DWELL_TICKS + 1, (tick) => ({
+      events: tick === 50 ? [decide(tick, 2, 0), decide(tick, 2, 1), haul(3)] : [],
+      present: [1, 2, 3],
+    }));
+    expect(atCamp[DWELL_TICKS]).toBe(3);
+    // Quiet away counts for nothing: resident 3 is away with no news, so
+    // resident 2's change of rule at camp wins.
+    const quiet = run(DWELL_TICKS + 1, (tick) => ({
+      events: tick === 50 ? [decide(tick, 2, 0), decide(tick, 2, 1)] : [],
+      present: [1, 2, 3],
+      away: [3],
+    }));
+    expect(quiet[DWELL_TICKS]).toBe(2);
+  });
+
+  it("goes by where a resident is when it picks, not where the news was", () => {
+    // Resident 3 hauled away from camp and has walked back; resident 2 went down at camp.
+    const subjects = run(DWELL_TICKS + 1, (tick) => ({
+      events: tick === 50 ? [down(tick, 2), haul(3)] : [],
+      present: [1, 2, 3],
+      away: tick <= 50 ? [3] : [],
+    }));
+    expect(subjects[DWELL_TICKS]).toBe(2);
+  });
+
+  it("lets news newer than a dwell replace older news it is weaker than", () => {
+    // Residents 2 (away) and 3 (at camp) go down at tick 10; 2 wins the first
+    // pick. Resident 3's down is too old by the second, but it cut a log at
+    // tick 600, and that is news: it goes ahead of resident 1, who has waited
+    // as long and has the lower id.
+    const subjects = run(2 * DWELL_TICKS + 1, (tick) => ({
+      events: tick === 10 ? [down(tick, 2), down(tick, 3)] : tick === 600 ? [haul(3)] : [],
+      present: [1, 2, 3],
+      away: [2],
+    }));
+    expect(subjects[DWELL_TICKS]).toBe(2);
+    expect(subjects[2 * DWELL_TICKS]).toBe(3);
+  });
+
+  it("still gives a resident who has waited too long its turn, however much happens away", () => {
+    // Residents 1 and 2 are away and haul every tick; 3 and 4 sit at camp doing nothing.
+    const ids = [1, 2, 3, 4];
+    const subjects = run(3 * ids.length * DWELL_TICKS, () => ({
+      events: [haul(1), haul(2)],
+      present: ids,
+      away: [1, 2],
+    }));
+    const limit = 2 * ids.length * DWELL_TICKS;
+    for (const wait of longestWaits(subjects, ids)) expect(wait).toBeLessThanOrEqual(limit);
+    expect(new Set(subjects)).toEqual(new Set(ids));
+    // And the busy residents away get more of the turns than the quiet ones.
+    const turns = (id: number) => holds(subjects).filter(([s]) => s === id).length;
+    expect(turns(1) + turns(2)).toBeGreaterThan(turns(3) + turns(4));
   });
 
   it("does not depend on the order residents are listed in", () => {

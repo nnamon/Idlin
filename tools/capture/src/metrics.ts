@@ -3,6 +3,12 @@
 // of stream time. Thresholds follow docs/watch-rubric.md.
 
 import type { WorldEvent } from "@idlin/sim";
+import {
+  DRIFT_TICKS,
+  FOLLOW_TICKS,
+  HOLD_TICKS,
+  STAY_TICKS,
+} from "../../../packages/client/src/camera.ts";
 import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 
 export const TICKS_PER_SECOND = 10;
@@ -29,6 +35,10 @@ export interface TickRecord {
   readonly actors: readonly ActorSample[];
   /** Where the map's window was, its top-left in world tiles; the metrics do not read it. */
   readonly view?: { readonly x: number; readonly y: number };
+  /** The spotlit resident, or null; only `outOfSight` reads it. */
+  readonly subject?: number | null;
+  /** Whether the spotlit resident had something to show (see `reasonOf` in camera.ts); only `outOfSight` reads it. */
+  readonly busy?: boolean;
   readonly elsewhere?: {
     readonly actors: readonly ActorSample[];
     readonly events: readonly WorldEvent[];
@@ -213,6 +223,48 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
   };
 }
 
+/**
+ * The longest the view may leave a subject with something to show off the
+ * map: long enough to finish its hold on another region, wait FOLLOW_TICKS,
+ * drift two regions, and hold back for STAY_TICKS when the subject's dwell
+ * is ending. 86 s.
+ */
+export const OUT_OF_SIGHT_LIMIT_SECONDS =
+  (HOLD_TICKS + FOLLOW_TICKS + 2 * DRIFT_TICKS + STAY_TICKS) / TICKS_PER_SECOND;
+
+/**
+ * The longest stretch of a run in which the spotlit resident had something
+ * to show and was not on the map the viewer shows, the same resident
+ * throughout, in seconds. A view that does not follow its subject fails here.
+ */
+export function outOfSight(run: readonly TickRecord[]): {
+  readonly longestSeconds: number;
+  readonly limitSeconds: number;
+  readonly hardFails: readonly string[];
+} {
+  let longest = 0;
+  let stretch = 0;
+  let last: number | null = null;
+  for (const record of run) {
+    const subject = record.subject ?? null;
+    // A quiet subject's turn elsewhere does not move the view, by design.
+    const shown =
+      subject === null ||
+      record.busy === false ||
+      record.actors.some((actor) => actor.id === subject);
+    stretch = shown ? 0 : subject === last ? stretch + 1 : 1;
+    last = subject;
+    longest = Math.max(longest, stretch);
+  }
+  const longestSeconds = longest / TICKS_PER_SECOND;
+  const limitSeconds = OUT_OF_SIGHT_LIMIT_SECONDS;
+  const hardFails =
+    longestSeconds > limitSeconds
+      ? [`the spotlit resident was off the map for ${longestSeconds} s, over ${limitSeconds} s`]
+      : [];
+  return { longestSeconds, limitSeconds, hardFails };
+}
+
 export interface SpotlightWait {
   /** Per actor, its longest stretch out of the spotlight, from the start of the run to its end. */
   readonly perActor: Readonly<Record<string, number>>;
@@ -225,51 +277,24 @@ export interface SpotlightWait {
 /**
  * How long each actor went without the spotlight, given who held it on each
  * tick of a run and the actors in it. One never shown waited the whole run.
- *
- * `away` gives, by actor, the stretches it was off the map (from, to, with
- * `to` not included). A wait ends when the actor leaves the map and starts
- * again when it comes back, as the director counts it. The limit uses the
- * whole cast, `names.size`, even while some of it is away.
+ * The director picks among every resident wherever it is, so a wait runs on
+ * while a resident is off the map. The limit uses the whole cast.
  */
 export function spotlightWait(
   subjects: readonly (number | null)[],
   names: ReadonlyMap<number, string>,
-  away: ReadonlyMap<number, readonly (readonly [number, number])[]> = new Map(),
 ): SpotlightWait {
   const gapStart = new Map([...names.keys()].map((id) => [id, 0]));
   const longest = new Map([...names.keys()].map((id) => [id, 0]));
   const close = (id: number, tick: number) => {
     longest.set(id, Math.max(longest.get(id) as number, tick - (gapStart.get(id) as number)));
   };
-  // By tick, who leaves the map then and who comes back.
-  const leaves = new Map<number, number[]>();
-  const returns = new Map<number, number[]>();
-  const add = (at: Map<number, number[]>, tick: number, id: number) =>
-    at.set(tick, [...(at.get(tick) ?? []), id]);
-  for (const [id, spans] of away) {
-    if (!names.has(id)) continue;
-    for (const [from, to] of spans) {
-      add(leaves, from, id);
-      add(returns, to, id);
-    }
-  }
-  const gone = new Set<number>();
-  for (let tick = 0; tick <= subjects.length; tick++) {
-    for (const id of returns.get(tick) ?? []) {
-      gone.delete(id);
-      gapStart.set(id, tick);
-    }
-    for (const id of leaves.get(tick) ?? []) {
-      close(id, tick);
-      gone.add(id);
-    }
-    if (tick === subjects.length) break;
-    const subject = subjects[tick] ?? null;
-    if (subject === null || !gapStart.has(subject)) continue;
+  subjects.forEach((subject, tick) => {
+    if (subject === null || !gapStart.has(subject)) return;
     close(subject, tick);
     gapStart.set(subject, tick + 1);
-  }
-  for (const id of names.keys()) if (!gone.has(id)) close(id, subjects.length);
+  });
+  for (const id of names.keys()) close(id, subjects.length);
 
   const perActor: Record<string, number> = {};
   for (const [id, name] of names) perActor[name] = (longest.get(id) as number) / TICKS_PER_SECOND;

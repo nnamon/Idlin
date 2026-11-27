@@ -25,7 +25,7 @@ import {
   type World,
 } from "@idlin/sim";
 import { drawBeast } from "./beasts.ts";
-import { legAt, nextWatch, startWatch, viewAt, type Watch } from "./camera.ts";
+import { nextWatch, reasonLine, startWatch, viewAt, type Watch } from "./camera.ts";
 import {
   type Effects,
   glyphAt,
@@ -84,7 +84,7 @@ import {
   rgb,
   skyCast,
 } from "./light.ts";
-import { type Lines, NO_LINES, newsNow, nextLines, pageText, quietNews } from "./line.ts";
+import { type Lines, NO_LINES, newsNow, newsText, nextLines, pageText, quietNews } from "./line.ts";
 import { looks, type Parts, partsFor } from "./looks.ts";
 import {
   drawBlot,
@@ -322,10 +322,12 @@ export class Scene {
   private readonly named = new Map<number, number>();
   private readonly tagWidths = new Map<string, number>();
   /**
-   * Per region, in world pixels, where the dark closes in to at dusk while the
-   * view is on it: its first lantern, or its middle.
+   * Where the dark closes in to at dusk, and opens out from at dawn, in world
+   * pixels, wherever the view is: the camp's first lantern, or the camp's
+   * middle. It stays put on the world plane, so a pan never moves the last of
+   * the day off a lamp and onto open ground.
    */
-  private readonly hearths: readonly Pt[];
+  private readonly hearth: Pt;
   /** Every region's lanterns, in world pixels. */
   private readonly lanterns: readonly Pt[];
   /** Every region's place labels, at their places in world tiles. */
@@ -453,12 +455,11 @@ export class Scene {
     this.night = side(NIGHT);
     this.lit = newCanvas(FRAME_WIDTH, FRAME_HEIGHT);
     this.lanterns = this.day.grounds.flatMap((ground) => ground.lanterns);
-    this.hearths = this.day.grounds.map((ground) => {
-      const lantern = ground.lanterns[0];
-      return lantern
-        ? [lantern[0], lantern[1] + 28]
-        : [ground.x + ground.width / 2, ground.y + ground.height / 2];
-    });
+    const campGround = this.day.grounds[campAt] as Placed;
+    const lantern = campGround.lanterns[0];
+    this.hearth = lantern
+      ? [lantern[0], lantern[1] + 28]
+      : [campGround.x + campGround.width / 2, campGround.y + campGround.height / 2];
     this.watch = startWatch(atlas);
     this.seen = { x: 0, y: 0, window: { x: 0, y: 0, ...this.tiles } };
     const labels = atlas.regions.flatMap((region) =>
@@ -506,27 +507,18 @@ export class Scene {
     return new Scene(host, atlas, maps);
   }
 
-  /** Where the window is at `time` (see camera.ts). */
+  /**
+   * Where the window is at `time` (see camera.ts). The map is drawn moved by
+   * whole pixels, so a pan never resamples the ink lines and they stay sharp;
+   * `window` keeps the fraction, for who is in view and the overview's box.
+   */
   private seenAt(time: number): Seen {
     const at = viewAt(this.watch.camera, this.atlas, time);
-    return { x: at.x * TILE, y: at.y * TILE, window: { ...at, ...this.tiles } };
-  }
-
-  /**
-   * Where the dark closes in to at `time`, in world pixels. On a drift it
-   * moves across the window from where the hearth of the region left behind
-   * sits in it to where the next region's will, so the dark never jumps.
-   */
-  private hearthAt(time: number, seen: Seen): Pt {
-    const { from, to, share } = legAt(this.watch.camera, time);
-    const within = (index: number): Pt => {
-      const [x, y] = this.hearths[index] ?? [this.width / 2, this.height / 2];
-      const region = this.atlas.regions[index];
-      return [x - (region?.x ?? 0) * TILE, y - (region?.y ?? 0) * TILE];
+    return {
+      x: Math.round(at.x * TILE),
+      y: Math.round(at.y * TILE),
+      window: { ...at, ...this.tiles },
     };
-    const [ax, ay] = within(from);
-    const [bx, by] = within(to);
-    return [seen.x + ax + (bx - ax) * share, seen.y + ay + (by - ay) * share];
   }
 
   /** The grounds of the regions any of which can be seen in the window, in one palette. */
@@ -853,7 +845,7 @@ export class Scene {
   } {
     const hour = (((time / TICKS_PER_GAME_HOUR + START_HOUR) % 24) + 24) % 24;
     const lamps = lampStrength(hour);
-    const hearth = this.hearthAt(time, seen);
+    const hearth = this.hearth;
     const [hx, hy] = hearth;
     // The dark closes in over the map only, from the map's own corners; the page changes separately.
     // With the page below, the paper either side of the map goes dark with it.
@@ -972,6 +964,26 @@ export class Scene {
       bottom: box.bottom - seen.y,
     });
     this.lines = nextLines(this.lines, whole, this.fight);
+    // The view setting out for another region says why, ahead of other waiting
+    // news: a fight as the resident's line tells it, unless that is already up
+    // or waiting, and a haul as `reasonLine` does.
+    const why = this.watch.reason;
+    const goer = why && whole.actors.find((actor) => actor.id === why.actor);
+    if (why && goer) {
+      let reason: News | null = null;
+      if (why.kind === "fight") {
+        const shown = this.lines.shown.get(why.actor)?.line;
+        const told = [this.newsItem, ...this.newsQueue, ...this.lines.news].some(
+          (item) => item?.who === why.actor && item.doing === "fighting",
+        );
+        if (shown?.doing === "fighting" && !told)
+          reason = { text: newsText(goer.name, shown), who: why.actor, doing: "fighting" };
+      } else {
+        const text = reasonLine(why.kind, goer, this.names[why.region] ?? "");
+        if (text) reason = { text, who: why.actor };
+      }
+      if (reason) this.newsQueue.unshift(reason);
+    }
     // The news tells only of what happened: kills, downs, close calls, a fight
     // starting, someone running. Each stays up long enough to be read; one
     // waiting goes up once the last has had its time.

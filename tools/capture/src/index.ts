@@ -24,7 +24,7 @@ import { DRIFT_TICKS } from "../../../packages/client/src/camera.ts";
 import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 import { parseArgs } from "./args.ts";
 import { FLICKER_LIMIT, flickerIndex } from "./flicker.ts";
-import { spotlightWait, watchMetrics } from "./metrics.ts";
+import { outOfSight, spotlightWait, watchMetrics } from "./metrics.ts";
 import {
   crop,
   decodePng,
@@ -245,10 +245,12 @@ if (review) {
   const sim: Record<string, ReturnType<typeof watchMetrics>> = {};
   const spotlight: Record<string, ReturnType<typeof spotlightWait>> = {};
   let busiestTick = 0;
+  const sight: Record<string, ReturnType<typeof outOfSight>> = {};
   let firstDrift: { from: number; to: number } | undefined;
   for (const residents of [6, 12, 50, 150]) {
     const record = play(1, residents, DAY);
     sim[residents] = watchMetrics(record);
+    sight[residents] = outOfSight(record);
     if (residents === 6) {
       busiestTick = busiest(record, 20);
       firstDrift = drifts(record)[0];
@@ -261,7 +263,8 @@ if (review) {
   // Drift: the first time in the day the view drifts to another region, as
   // twelve frames from when it sets out to when it gets there, and the
   // flicker index over a sixth of a tick apart at the middle of its first
-  // leg, where it goes fastest.
+  // leg, where it goes fastest. A day in which nobody leaves the camp has no
+  // drift to judge; a view that fails to follow is caught by `outOfSight`.
   const driftFail: string[] = [];
   let driftFlicker: { index: number; tick: number } | null = null;
   if (firstDrift) {
@@ -277,7 +280,7 @@ if (review) {
     console.log(`flicker index during a drift: ${(index * 100).toFixed(2)}% of the frame`);
     if (index > FLICKER_LIMIT)
       driftFail.push(`flicker index ${index} during a drift is over ${FLICKER_LIMIT} of the frame`);
-  } else driftFail.push("the view never drifted to another region in the day");
+  } else console.log("the view did not drift to another region in the day: no drift sheet");
 
   // Storyboard: two minutes from 19:20, through the lamps coming on and nightfall.
   await open(19.33);
@@ -349,12 +352,15 @@ if (review) {
     ...driftFail,
     ...problems.map((problem) => `page error: ${problem}`),
     ...(sim[6]?.hardFails ?? []),
+    ...(sight[6]?.hardFails ?? []),
     ...(spotlight[6]?.hardFails ?? []),
   ];
   const crowdFindings = [12, 50, 150].flatMap((residents) =>
-    [...(sim[residents]?.hardFails ?? []), ...(spotlight[residents]?.hardFails ?? [])].map(
-      (fail) => `${residents} residents: ${fail}`,
-    ),
+    [
+      ...(sim[residents]?.hardFails ?? []),
+      ...(sight[residents]?.hardFails ?? []),
+      ...(spotlight[residents]?.hardFails ?? []),
+    ].map((fail) => `${residents} residents: ${fail}`),
   );
   const metrics = {
     seed: 1,
@@ -364,6 +370,8 @@ if (review) {
     drift: firstDrift ? { ...firstDrift, flicker: driftFlicker } : null,
     // One game day per population.
     sim,
+    // Over the same day: the longest the spotlit resident was off the map.
+    outOfSight: sight,
     pacing: "n/a: there are no trips, deaths or drops yet (#195, #196, #197)",
     acknowledgment: "n/a: no ticker, caption or spotlight names anyone on screen yet (#198)",
     // The director picks the subject and the map follows its region. Per population, a run of three times the population times the dwell.
