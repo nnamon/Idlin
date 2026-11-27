@@ -28,6 +28,17 @@ export {
   withdraw,
 } from "./bag.ts";
 export { CONFUSED_TICKS, FLEE_STEPS, IDLE_TICKS, NO_THREAT } from "./brain.ts";
+export {
+  atFire,
+  burnOdds,
+  COOK_TICKS,
+  COOK_XP,
+  EAT_HEAL,
+  GATHER_TICKS,
+  gatherOdds,
+  NO_NODE,
+  type NodeState,
+} from "./gather.ts";
 export { hashInts } from "./hash.ts";
 export {
   type Affix,
@@ -56,8 +67,10 @@ export {
   inBounds,
   isWalkable,
   MAX_MAP_HEIGHT,
+  MAX_MAP_NODES,
   MAX_MAP_WIDTH,
   MapError,
+  type MapNode,
   type Point,
   parseMap,
   place,
@@ -68,6 +81,7 @@ export {
   terrainAt,
 } from "./map.ts";
 export { loadMonsters, type Monsters } from "./monsters.ts";
+export { NODE_KINDS, type NodeKind, nodeKind, nodeKindId } from "./nodes.ts";
 export { findPath } from "./path.ts";
 export { chance, createRng, nextInt, nextU32, type Rng } from "./rng.ts";
 export {

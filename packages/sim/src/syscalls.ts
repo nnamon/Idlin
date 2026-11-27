@@ -183,7 +183,7 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "sensor",
     args: 1,
     about:
-      "How many of a good (`logs`, `raw_fish` or `cooked_fish`) are in the bag; 0 for anything else.",
+      "How many of a good (`logs`, `raw_fish`, `cooked_fish` or `burnt_fish`) are in the bag; 0 for anything else.",
   },
   {
     id: 28,
@@ -222,6 +222,66 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "action",
     args: 0,
     about: "At the bank, put everything in the bag into the bank.",
+  },
+  {
+    id: 33,
+    name: "node_distance",
+    kind: "sensor",
+    args: 1,
+    about:
+      "Steps in a straight grid line to the nearest free tile beside a node of a kind (`tree`, `old_tree`, `fishing_spot` or `deep_pool`) that stands, is in this actor's region and that its level allows: 0 when it is standing on one. 9999 if there is none.",
+  },
+  {
+    id: 34,
+    name: "node_x",
+    kind: "sensor",
+    args: 1,
+    about: "The column of the tile `node_distance` measures to, or this actor's own if none.",
+  },
+  {
+    id: 35,
+    name: "node_y",
+    kind: "sensor",
+    args: 1,
+    about: "The row of the tile `node_distance` measures to, or this actor's own if none.",
+  },
+  {
+    id: 36,
+    name: "chop",
+    kind: "action",
+    args: 0,
+    about:
+      "Beside a tree this adventurer may cut, try for a log, then stand for 12 ticks. Without one, or with a full bag, nothing happens.",
+  },
+  {
+    id: 37,
+    name: "fish",
+    kind: "action",
+    args: 0,
+    about: "Beside a fishing spot this adventurer may fish, try for a raw fish, as `chop` does.",
+  },
+  {
+    id: 38,
+    name: "at_fire",
+    kind: "sensor",
+    args: 0,
+    about: "1 if this actor stands within two steps of the camp fire, where it can cook, else 0.",
+  },
+  {
+    id: 39,
+    name: "cook",
+    kind: "action",
+    args: 0,
+    about:
+      "At the fire, cook a raw fish from the bag over a log from the bag, then stand for 18 ticks. The log burns up and the fish comes out cooked, or burnt.",
+  },
+  {
+    id: 40,
+    name: "eat",
+    kind: "action",
+    args: 0,
+    about:
+      "Eat a cooked fish from the bag for up to 6 hitpoints. At full hitpoints, or with none, nothing happens.",
   },
 ];
 

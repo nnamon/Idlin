@@ -1,6 +1,7 @@
 // The tile map: loaded from content, validated once, then read-only.
 
 import { show } from "./hash.ts";
+import { NODE_KINDS } from "./nodes.ts";
 
 /** Every terrain a map may use. The order is part of the world hash; append only. */
 export const TERRAINS = [
@@ -46,7 +47,17 @@ export interface TileMap {
   readonly tiles: readonly number[];
   /** Named places, sorted by name so iteration order never depends on the file. */
   readonly places: readonly (Point & { readonly name: string })[];
+  /** Resource nodes, in the file's order, each a kind's id (see NODE_KINDS) on its tile. None if left out. */
+  readonly nodes?: readonly MapNode[];
 }
+
+/** A tree or fishing spot of a map: the id of its kind in NODE_KINDS, and its tile. */
+export interface MapNode extends Point {
+  readonly kind: number;
+}
+
+/** The most nodes one map may list. */
+export const MAX_MAP_NODES = 64;
 
 /** The largest map that still fits the fixed frame (see docs/decisions/0003). */
 export const MAX_MAP_WIDTH = 30;
@@ -149,13 +160,45 @@ export function parseMap(raw: unknown): TileMap {
       return { name: placeName, x: at.x as number, y: at.y as number };
     });
 
-  const map: TileMap = { name, width, height, tiles, places: placeList };
+  const ground: TileMap = { name, width, height, tiles, places: placeList };
   for (const p of placeList) {
-    if (!isWalkable(map, p.x, p.y)) {
+    if (!isWalkable(ground, p.x, p.y)) {
       return fail(`place "${p.name}" at (${p.x}, ${p.y}) is not on a walkable tile`);
     }
   }
-  return map;
+  return { ...ground, nodes: parseNodes(ground, raw.nodes, fail) };
+}
+
+/**
+ * A map's `nodes`: a list of { kind, x, y }, each on its kind's terrain, with a
+ * walkable tile beside it to work it from, and no two on one tile. Left out, none.
+ */
+function parseNodes(map: TileMap, raw: unknown, fail: (message: string) => never): MapNode[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_MAP_NODES)
+    return fail(`nodes must be a list of at most ${MAX_MAP_NODES}`);
+  const taken = new Set<number>();
+  const nodes: MapNode[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const node: unknown = Object.hasOwn(raw, i) ? raw[i] : undefined;
+    if (!isRecord(node)) return fail(`node ${i} must be an object with kind, x and y`);
+    const { kind, x, y } = node;
+    const id = NODE_KINDS.findIndex((k) => k.name === kind) + 1;
+    const type = NODE_KINDS[id - 1];
+    if (!type) return fail(`node ${i}: there is no kind of node called ${show(kind).slice(0, 40)}`);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || !inBounds(map, x as number, y as number))
+      return fail(`node ${i} needs whole-number x and y on the map`);
+    const at = { x: x as number, y: y as number };
+    if (terrainAt(map, at.x, at.y) !== type.terrain)
+      return fail(`node ${i}: a ${type.name} must stand on ${type.terrain}`);
+    if (!NEIGHBOURS.some(([dx, dy]) => isWalkable(map, at.x + dx, at.y + dy)))
+      return fail(`node ${i} at (${at.x}, ${at.y}) has no walkable tile beside it`);
+    const index = tileIndex(map, at.x, at.y);
+    if (taken.has(index)) return fail(`node ${i}: two nodes on (${at.x}, ${at.y})`);
+    taken.add(index);
+    nodes.push({ kind: id, ...at });
+  }
+  return nodes;
 }
 
 /** Neighbour order is fixed (north, east, south, west); pathfinding ties depend on it. */

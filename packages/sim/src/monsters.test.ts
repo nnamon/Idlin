@@ -249,9 +249,10 @@ describe("three ways to fight", () => {
   it("over 100 fights against a wolf, the dodging program wins more often than the standing one", () => {
     expect(dodging.won).toBeGreaterThan(standing.won);
     expect(dodging.lost).toBeLessThan(standing.lost);
-    // The one that keeps its distance loses least of all. It is slow to win: many
-    // of its fights run out of time while it waits for an opening.
-    expect(keeping.lost).toBeLessThan(dodging.lost);
+    // The one that keeps its distance loses least of all, which may be none, as
+    // the dodger can. It is slow to win: many of its fights run out of time
+    // while it waits for an opening.
+    expect(keeping.lost).toBeLessThanOrEqual(dodging.lost);
     expect(keeping.won).toBeGreaterThan(keeping.lost);
     expect(keeping.won).toBeGreaterThan(0);
   });

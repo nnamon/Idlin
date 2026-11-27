@@ -34,5 +34,13 @@
   "places": {
     "pinewood": { "x": 13, "y": 10 }
   },
+  "nodes": [
+    { "kind": "old_tree", "x": 14, "y": 6 },
+    { "kind": "old_tree", "x": 11, "y": 8 },
+    { "kind": "old_tree", "x": 13, "y": 4 },
+    { "kind": "old_tree", "x": 10, "y": 5 },
+    { "kind": "old_tree", "x": 8, "y": 7 },
+    { "kind": "old_tree", "x": 16, "y": 9 }
+  ],
   "labels": [{ "text": "the Pinewood", "x": 15.0, "y": 3.2, "style": "region" }]
 }

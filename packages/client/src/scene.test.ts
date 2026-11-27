@@ -6,6 +6,7 @@
 import {
   type Actor,
   createWorld,
+  levelFor,
   parseMap,
   placeConstants,
   spawnsNearCamp,
@@ -200,6 +201,13 @@ const isSlip = (call: Call): boolean => call.op === "roundRect" && typeof call.a
 
 /** The clip that keeps the day sheet to the lamps' reach; a route's clip around lettering is even-odd. */
 const lampClip = (call: Call): boolean => call.op === "clip" && call.args.length === 0;
+/**
+ * The plain clips of the sheet itself, to the lamps' reach and the map's
+ * rule; not those that band a ranked figure's hood, which come straight
+ * after a `save`.
+ */
+const sheetClips = (calls: readonly Call[]): Call[] =>
+  calls.filter((call, i) => lampClip(call) && calls[i - 1]?.op !== "save");
 
 /** Glyphs drawn on slips: each is drawn moved into place, among the lettering. */
 function glyphs(calls: readonly Call[]): number {
@@ -324,7 +332,7 @@ describe("the scene", () => {
 
   it("at full night draws the day sheet only where a lamp reaches", () => {
     // Two plain clips: first to the lamps' reach, then, inside that, to the map's rule.
-    const clips = midnight.daySheet.filter(lampClip);
+    const clips = sheetClips(midnight.daySheet);
     expect(clips).toHaveLength(2);
     const rule = midnight.daySheet[midnight.daySheet.indexOf(clips[1] as Call) - 1];
     expect(rule?.op === "rect" && rule.args).toEqual([
@@ -338,7 +346,7 @@ describe("the scene", () => {
     expect(before.filter((call) => call.op === "arc")).toHaveLength(2 + NAMES.length);
     expect(before.some((call) => call.op === "fillRect" || call.op === "drawImage")).toBe(false);
     // While the dark is still closing in, all of it is drawn: the one plain clip is the map's rule.
-    expect(nightfall.daySheet.filter(lampClip)).toHaveLength(1);
+    expect(sheetClips(nightfall.daySheet)).toHaveLength(1);
     expect(nightfall.daySheet.length).toBeGreaterThan(50);
   });
 
@@ -1024,7 +1032,15 @@ describe("the scene", () => {
     scene.observe(world);
     const last = new Map<
       number,
-      { x: number; y: number; tileX: number; tileY: number; still: boolean; resting: boolean }
+      {
+        x: number;
+        y: number;
+        tileX: number;
+        tileY: number;
+        still: boolean;
+        resting: boolean;
+        levels: number;
+      }
     >();
     let changes = 0;
     let largest = 0;
@@ -1048,12 +1064,15 @@ describe("the scene", () => {
           tileY: actor.y,
           still: actor.moveTicksLeft === 0,
           resting: actorPose(actor, 0, world.tick).resting,
+          levels: actor.xp.reduce((sum, xp) => sum + levelFor(xp), 0),
         };
         const before = last.get(actor.id);
         last.set(actor.id, now);
         // Only while the figure stands on one tile and its name keeps its place beside it.
         if (!before?.still || !now.still || before.x !== now.x) continue;
         if (before.tileX !== now.tileX || before.tileY !== now.tileY) continue;
+        // A level gained, chopping or fishing on the spot, can raise the hood and the name with it.
+        if (before.levels !== now.levels) continue;
         // A name that moves to another spot above or below jumps 30 pixels or more; that is not sitting.
         const moved = Math.abs(now.y - before.y);
         if (moved >= 25) continue;

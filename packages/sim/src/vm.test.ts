@@ -76,6 +76,14 @@ describe("the system call table", () => {
       "30 deposit action 2",
       "31 withdraw action 2",
       "32 bank_all action 0",
+      "33 node_distance sensor 1",
+      "34 node_x sensor 1",
+      "35 node_y sensor 1",
+      "36 chop action 0",
+      "37 fish action 0",
+      "38 at_fire sensor 0",
+      "39 cook action 0",
+      "40 eat action 0",
     ]);
   });
 

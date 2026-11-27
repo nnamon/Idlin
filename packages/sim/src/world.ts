@@ -15,8 +15,10 @@ import {
 } from "./atlas.ts";
 import { BAG_SLOTS, emptyBag, emptyBank, GOODS, MAX_BANKED } from "./bag.ts";
 import { MAX_STALLED, think, wayTo } from "./brain.ts";
+import { fullNodes, type NodeState, regrowNodes } from "./gather.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
+import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
 import { gainXp, MAX_XP, noXp, SKILLS, type Skill, XP_PER_DAMAGE } from "./skills.ts";
 import {
@@ -381,6 +383,8 @@ export interface World {
   marks: Mark[];
   /** Per region, in the atlas's order, the tick from which the next group of monsters may arrive there. */
   nextSpawn: number[];
+  /** What each of the atlas's nodes has left, in the atlas's order. */
+  nodes: NodeState[];
 }
 
 export type Input = {
@@ -439,6 +443,7 @@ export function createWorld(
     actors: [],
     marks: [],
     nextSpawn: atlas.regions.map(() => 0),
+    nodes: fullNodes(atlas),
   };
 }
 
@@ -570,6 +575,39 @@ export type WorldEvent =
       /** A name from GOODS. */
       readonly good: string;
       readonly count: number;
+    }
+  | {
+      /** An adventurer's `chop` or `fish` got a good from a node. */
+      readonly type: "gather";
+      readonly tick: number;
+      readonly actor: number;
+      /** Index of the node, into the atlas's nodes. */
+      readonly node: number;
+      /** A name from GOODS. */
+      readonly good: string;
+    }
+  | {
+      /** A node gave its last good (`deplete`), or stands again with its full yield (`regrow`). */
+      readonly type: "deplete" | "regrow";
+      readonly tick: number;
+      readonly node: number;
+      readonly x: number;
+      readonly y: number;
+    }
+  | {
+      /** An adventurer cooked a fish at the fire; `good` is `cooked_fish` or `burnt_fish`. */
+      readonly type: "cook";
+      readonly tick: number;
+      readonly actor: number;
+      readonly good: string;
+    }
+  | {
+      /** An adventurer ate a cooked fish. */
+      readonly type: "eat";
+      readonly tick: number;
+      readonly actor: number;
+      /** Its hitpoints afterwards. */
+      readonly hp: number;
     };
 
 /**
@@ -580,6 +618,7 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
   const events: WorldEvent[] = [];
   for (const input of inputs) applyInput(world, input);
   world.tick++;
+  regrowNodes(world, events);
   sendHome(world, events);
   spawnMonsters(world);
   landAttacks(world, events);
@@ -1077,14 +1116,16 @@ const halves = (n: number): number[] => [
  * The hash a snapshot of `version` stored. Versions 4 to 6 ran on one map, so
  * they hashed that map and, in versions 5 and 6, one `nextSpawn`. Version 4
  * had no spawn table, no `nextSpawn`, and no `shift` or `stalled` on actors,
- * versions 4 and 5 had no experience, bag or bank, and versions before 8 no
- * death count, so those are left out.
+ * versions 4 and 5 had no experience, bag or bank, versions before 8 no
+ * death count, and versions before 9 no nodes, so those are left out. Banks
+ * before version 9 held the first V8_GOODS goods only.
  */
 function hashWorldAs(world: World, version: number): string {
   const { rng, atlas } = world;
   const v4 = version === 4;
   const before6 = version < 6;
   const before8 = version < 8;
+  const before9 = version < 9;
   const ground = version >= 7 ? hashAtlas(atlas) : hashMap((atlas.regions[0] as Region).map);
   return hashInts([
     ...stringInts(ground),
@@ -1119,7 +1160,7 @@ function hashWorldAs(world: World, version: number): string {
       a.windup,
       a.recover,
       ...(v4 ? [] : [SHIFTS.indexOf(a.shift), a.stalled]),
-      ...(before6 ? [] : [...a.xp, ...a.bag, ...a.bank]),
+      ...(before6 ? [] : [...a.xp, ...a.bag, ...(before9 ? a.bank.slice(0, V8_GOODS) : a.bank)]),
       ...(before8 ? [] : [a.deaths]),
     ]),
     world.marks.length,
@@ -1130,6 +1171,9 @@ function hashWorldAs(world: World, version: number): string {
       : version < 7
         ? halves(world.nextSpawn[0] as number)
         : [world.nextSpawn.length, ...world.nextSpawn.flatMap(halves)]),
+    ...(before9
+      ? []
+      : [world.nodes.length, ...world.nodes.flatMap((n) => [n.left, ...halves(n.back)])]),
   ]);
 }
 
@@ -1150,7 +1194,9 @@ export function hashSpawns(spawns: Spawns): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 8;
+export const SNAPSHOT_VERSION = 9;
+/** How many goods there were up to version 8: `logs`, `raw_fish` and `cooked_fish`. */
+const V8_GOODS = 3;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -1183,7 +1229,8 @@ export function snapshot(world: World): string {
  * their own, has no spawn table to compare and takes on the spawns passed in.
  * In a version 4 or 5 snapshot, from before skills and the bank, everyone
  * starts with no experience, an empty bag and an empty bank. In a snapshot
- * from before version 8, nobody has died yet.
+ * from before version 8, nobody has died yet. In one from before version 9,
+ * every node stands with its full yield and nobody has a burnt fish.
  */
 export function restore(
   text: string,
@@ -1211,7 +1258,12 @@ export function restore(
     hash,
     state,
   } = data as Record<string, unknown>;
-  if (version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8) {
+  if (
+    typeof version !== "number" ||
+    !Number.isInteger(version) ||
+    version < 4 ||
+    version > SNAPSHOT_VERSION
+  ) {
     throw new SnapshotError(`snapshot version ${show(version)} is not 4 to ${SNAPSHOT_VERSION}`);
   }
   // Versions 4 to 6 come from before regions.
@@ -1243,7 +1295,8 @@ export function restore(
   const v5 = version === 4 ? fromVersion4(state) : state;
   const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
   const v7 = old ? fromVersion6(v6) : v6;
-  const current = version < 8 ? fromVersion7(v7) : v7;
+  const v8 = version < 8 ? fromVersion7(v7) : v7;
+  const current = version < 9 ? fromVersion8(v8, atlas) : v8;
   const world = readState(current, atlas, table, kindTable, spawnTable);
   if (!world || hashWorldAs(world, version) !== hash)
     throw new SnapshotError("snapshot contents are damaged");
@@ -1315,7 +1368,7 @@ function fromVersion5(state: unknown): unknown {
     ...state,
     actors: actors.map((actor: unknown) =>
       typeof actor === "object" && actor !== null
-        ? { ...actor, xp: noXp(), bag: emptyBag(), bank: emptyBank() }
+        ? { ...actor, xp: noXp(), bag: emptyBag(), bank: new Array<number>(V8_GOODS).fill(0) }
         : actor,
     ),
   };
@@ -1353,6 +1406,58 @@ function fromVersion7(state: unknown): unknown {
   };
 }
 
+/**
+ * A version 8 world's state with what version 9 added: every node stands with
+ * its full yield, and each bank gets a count of 0 for every good added since.
+ * A version 8 bag or bank that holds anything but the goods of its day is
+ * made unreadable, so readState refuses it, as nothing then could have made it.
+ */
+function fromVersion8(state: unknown, atlas: Atlas): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return state;
+  const old = (value: unknown, length: number, most: number): boolean =>
+    counts(value, length, most) !== null;
+  return {
+    ...state,
+    nodes: fullNodes(atlas),
+    actors: actors.map((actor: unknown) => {
+      if (typeof actor !== "object" || actor === null) return actor;
+      const { bag, bank } = actor as Record<string, unknown>;
+      return {
+        ...actor,
+        bag: old(bag, BAG_SLOTS, V8_GOODS) ? bag : null,
+        bank: old(bank, V8_GOODS, MAX_BANKED)
+          ? [...(bank as number[]), ...new Array<number>(GOODS.length - V8_GOODS).fill(0)]
+          : null,
+      };
+    }),
+  };
+}
+
+/**
+ * A copy of the world's node states if `value` is one per node of the atlas,
+ * each with between 0 and its kind's yield left, standing (`back` 0) while it
+ * has any, and otherwise due back within its regrow time after `tick`; else null.
+ */
+function readNodes(value: unknown, atlas: Atlas, tick: number): NodeState[] | null {
+  const list = plainList(value, atlas.nodes.length);
+  if (!list || list.length !== atlas.nodes.length) return null;
+  const nodes: NodeState[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (!isPlainObject(item)) return null;
+    const left = own(item, "left");
+    const back = own(item, "back");
+    const kind = NODE_KINDS[(atlas.nodes[i] as (typeof atlas.nodes)[number]).kind - 1] as NodeKind;
+    if (!isInt32(left) || left < 0 || left > kind.yield) return null;
+    if (typeof back !== "number" || !Number.isSafeInteger(back)) return null;
+    if (left > 0 ? back !== 0 : back <= tick || back > tick + kind.regrow) return null;
+    nodes.push({ left, back });
+  }
+  return nodes;
+}
+
 const MAX_WAIT_TICKS = 1_000_000;
 
 /**
@@ -1368,8 +1473,18 @@ function readState(
   spawns: Spawns,
 ): World | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { tick, rng, nextActorId, actors, marks, nextSpawn } = raw as Record<string, unknown>;
+  const {
+    tick,
+    rng,
+    nextActorId,
+    actors,
+    marks,
+    nextSpawn,
+    nodes: rawNodes,
+  } = raw as Record<string, unknown>;
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
+  const nodes = readNodes(rawNodes, atlas, tick);
+  if (!nodes) return null;
   // One arrival time per region, each set RESPAWN_TICKS ahead, and only ever from a tick already reached.
   if (!Array.isArray(nextSpawn) || nextSpawn.length !== atlas.regions.length) return null;
   const arrivals: number[] = [];
@@ -1396,6 +1511,7 @@ function readState(
     actors: [],
     marks: [],
     nextSpawn: arrivals,
+    nodes,
   };
   // Monsters a region holds, by region.
   const monsters = new Map<number, number>();

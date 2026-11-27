@@ -36,14 +36,14 @@ const SOURCES: Record<string, string> = {
 };
 const hostile = [
   "deposit(0, 5)",
-  "deposit(4, 5)",
+  "deposit(5, 5)",
   "deposit(0 - 1, 5)",
   "deposit(2147483647, 2147483647)",
   "deposit(logs, 0)",
   "deposit(logs, 0 - 5)",
   "deposit(logs, 0 - 2147483647)",
   "withdraw(0, 5)",
-  "withdraw(4, 100)",
+  "withdraw(5, 100)",
   "withdraw(cooked_fish, 0)",
   "withdraw(cooked_fish, 0 - 2147483647)",
   "withdraw(0 - 2147483647, 2147483647)",
@@ -77,54 +77,54 @@ describe("the bag and the bank", () => {
     ash.bag = [FISH, LOGS, LOGS, 0, LOGS, 0, 0, 0, 0, 0, 0, 0];
     const events = decide(world);
     expect(ash.bag).toEqual([FISH, 0, 0, 0, LOGS, 0, 0, 0, 0, 0, 0, 0]);
-    expect(ash.bank).toEqual([2, 0, 0]);
+    expect(ash.bank).toEqual([2, 0, 0, 0]);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "deposit", good: "logs", count: 2 }),
     );
     decide(world);
     // Only one left to move; a third time there are none and nothing is reported.
-    expect(ash.bank).toEqual([3, 0, 0]);
+    expect(ash.bank).toEqual([3, 0, 0, 0]);
     expect(decide(world).some((e) => e.type === "deposit")).toBe(false);
-    expect(ash.bank).toEqual([3, 0, 0]);
+    expect(ash.bank).toEqual([3, 0, 0, 0]);
   });
 
   it("withdraws only as many as there are empty slots for, and nothing into a full bag", () => {
     const { world, ash } = withOne("withdraw100");
-    ash.bank = [0, 0, 30];
+    ash.bank = [0, 0, 30, 0];
     ash.bag[3] = LOGS;
     const events = decide(world);
     expect(ash.bag.filter((g) => g === COOKED)).toHaveLength(BAG_SLOTS - 1);
     expect(ash.bag[3]).toBe(LOGS);
-    expect(ash.bank).toEqual([0, 0, 30 - (BAG_SLOTS - 1)]);
+    expect(ash.bank).toEqual([0, 0, 30 - (BAG_SLOTS - 1), 0]);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "withdraw", count: BAG_SLOTS - 1 }),
     );
     // The bag is full now: the next withdraw moves nothing.
     expect(decide(world).some((e) => e.type === "withdraw")).toBe(false);
-    expect(ash.bank).toEqual([0, 0, 19]);
+    expect(ash.bank).toEqual([0, 0, 19, 0]);
   });
 
   it("takes out no more than is banked", () => {
     const { world, ash } = withOne("withdraw100");
-    ash.bank = [0, 0, 3];
+    ash.bank = [0, 0, 3, 0];
     decide(world);
     expect(ash.bag.filter((g) => g === COOKED)).toHaveLength(3);
-    expect(ash.bank).toEqual([0, 0, 0]);
+    expect(ash.bank).toEqual([0, 0, 0, 0]);
   });
 
   it("banks everything with bank_all", () => {
     const { world, ash } = withOne("bankall");
     ash.bag = [LOGS, FISH, COOKED, LOGS, FISH, LOGS, 0, 0, 0, 0, 0, LOGS];
-    ash.bank = [1, 1, 1];
+    ash.bank = [1, 1, 1, 0];
     decide(world);
     expect(ash.bag.every((g) => g === 0)).toBe(true);
-    expect(ash.bank).toEqual([5, 3, 2]);
+    expect(ash.bank).toEqual([5, 3, 2, 0]);
   });
 
   it("keeps in the bag what the bank has no room for", () => {
     const { world, ash } = withOne("depositall");
     ash.bag = [LOGS, LOGS, LOGS, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    ash.bank = [MAX_BANKED - 1, 0, 0];
+    ash.bank = [MAX_BANKED - 1, 0, 0, 0];
     decide(world);
     expect(ash.bank[0]).toBe(MAX_BANKED);
     expect(ash.bag.filter((g) => g === LOGS)).toHaveLength(2);
@@ -134,12 +134,12 @@ describe("the bag and the bank", () => {
     for (const program of ["deposit2", "depositall", "withdraw100", "bankall"]) {
       const { world, ash } = withOne(program, AWAY);
       ash.bag = [LOGS, LOGS, FISH, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-      ash.bank = [4, 4, 4];
+      ash.bank = [4, 4, 4, 0];
       const before = hashWorld(world);
       const events = decide(world);
       expect(events.some((e) => e.type === "deposit" || e.type === "withdraw")).toBe(false);
       expect(ash.bag).toEqual([LOGS, LOGS, FISH, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-      expect(ash.bank).toEqual([4, 4, 4]);
+      expect(ash.bank).toEqual([4, 4, 4, 0]);
       expect(hashWorld(world)).not.toBe(before);
     }
   });
@@ -148,7 +148,7 @@ describe("the bag and the bank", () => {
     hostile.forEach((call, i) => {
       const { world, ash } = withOne(`hostile${i}`);
       ash.bag = [LOGS, FISH, COOKED, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-      ash.bank = [7, 7, 7];
+      ash.bank = [7, 7, 7, 0];
       for (let k = 0; k < 3; k++) {
         const events = decide(world);
         expect(
@@ -161,14 +161,14 @@ describe("the bag and the bank", () => {
         ).toBe(false);
       }
       expect(ash.bag, call).toEqual([LOGS, FISH, COOKED, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-      expect(ash.bank, call).toEqual([7, 7, 7]);
+      expect(ash.bank, call).toEqual([7, 7, 7, 0]);
     });
   });
 
   it("is read by carrying, banked, bag_free and at_bank", () => {
     const { world, ash } = withOne("reader");
     ash.bag = [LOGS, LOGS, FISH, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    ash.bank = [0, 0, 9];
+    ash.bank = [0, 0, 9, 0];
     decide(world);
     expect(ash.memory.slice(0, 5)).toEqual([2, 9, BAG_SLOTS - 3, 1, 0]);
     const away = withOne("reader", AWAY);
@@ -183,7 +183,7 @@ describe("a snapshot with skills, a bag and a bank", () => {
     step(world, [{ type: "spawn", name: "Wolf", program: "stander", x: 22, y: 13, kind: "wolf" }]);
     ash.xp = [83, 1_154, 0, 5, 13_034_431];
     ash.bag = [LOGS, 0, FISH, 0, 0, 0, 0, 0, 0, 0, 0, COOKED];
-    ash.bank = [10, 0, MAX_BANKED];
+    ash.bank = [10, 0, MAX_BANKED, 0];
     return world;
   }
 
@@ -192,7 +192,7 @@ describe("a snapshot with skills, a bag and a bank", () => {
     const copy = restore(snapshot(world), MAP, PROGRAMS, KINDS);
     expect(copy.actors[0]?.xp).toEqual([83, 1_154, 0, 5, 13_034_431]);
     expect(copy.actors[0]?.bag).toEqual(world.actors[0]?.bag);
-    expect(copy.actors[0]?.bank).toEqual([10, 0, MAX_BANKED]);
+    expect(copy.actors[0]?.bank).toEqual([10, 0, MAX_BANKED, 0]);
     expect(hashWorld(copy)).toBe(hashWorld(world));
     for (let i = 0; i < 300; i++) {
       step(world);
@@ -208,7 +208,7 @@ describe("a snapshot with skills, a bag and a bank", () => {
       (a) => ((a[0] as { xp: number[] }).xp[0] = 200_000_001),
       (a) => ((a[0] as { xp: unknown[] }).xp[0] = "83"),
       (a) => (a[0] as { xp: number[] }).xp.push(0),
-      (a) => ((a[0] as { bag: number[] }).bag[0] = 4),
+      (a) => ((a[0] as { bag: number[] }).bag[0] = 5),
       (a) => (a[0] as { bag: number[] }).bag.pop(),
       (a) => ((a[0] as { bank: number[] }).bank[0] = -3),
       (a) => ((a[0] as { bank: number[] }).bank[1] = 1.5),

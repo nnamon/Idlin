@@ -8,6 +8,8 @@ import { DWELL_TICKS } from "../../../packages/client/src/director.ts";
 export const TICKS_PER_SECOND = 10;
 export const DEAD_AIR_LIMIT_SECONDS = 20;
 export const STUCK_LIMIT_SECONDS = 60;
+/** Decisions to stand still on purpose: `wait`, and working a node or the fire. */
+const STANDING_WORK: ReadonlySet<string> = new Set(["wait", "chop", "fish", "cook"]);
 const ACTION_MIX_WINDOW_SECONDS = 600;
 
 export interface ActorSample {
@@ -116,9 +118,10 @@ export function watchMetrics(run: readonly TickRecord[]): WatchMetrics {
       // The page shows the rule in charge, so a change of rule can be seen. The same rule firing again cannot.
       if (lastRule.get(event.actor) !== event.rule) visible = true;
       lastRule.set(event.actor, event.rule);
-      // Choosing to rest is a reason to stand still. Any other choice has to show as movement.
-      // The rest lasts until the actor next decides something.
-      if (event.action === "wait") resting.add(event.actor);
+      // Choosing to rest, or to work a tree, a fishing spot or the fire, is a
+      // reason to stand still. Any other choice has to show as movement. The
+      // rest lasts until the actor next decides something.
+      if (STANDING_WORK.has(event.action)) resting.add(event.actor);
       else resting.delete(event.actor);
       addAction(event.actor, tick, event.action);
     }

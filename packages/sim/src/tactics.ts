@@ -6,6 +6,7 @@
 
 import { GOODS, goodId } from "./bag.ts";
 import { isInt32 } from "./hash.ts";
+import { NODE_KINDS } from "./nodes.ts";
 import { SKILLS } from "./skills.ts";
 import { SYSCALLS, type Syscall } from "./syscalls.ts";
 import {
@@ -798,12 +799,14 @@ class Generator {
 
 /**
  * Names every program knows: each skill stands for its position in SKILLS,
- * for `level` and `xp`, and each good for its id, for the bag and bank calls.
+ * for `level` and `xp`, each good for its id, for the bag and bank calls, and
+ * each kind of node for its id, for the node sensors.
  */
 const BUILT_IN: Constants = Object.freeze(
   Object.fromEntries([
     ...SKILLS.map((skill, index) => [skill, index] as const),
     ...GOODS.map((good) => [good, goodId(good)] as const),
+    ...NODE_KINDS.map((kind, index) => [kind.name, index + 1] as const),
   ]),
 );
 
@@ -818,7 +821,7 @@ function constantsProblem(constants: Constants): string | null {
       return `"${name}" is already a sensor or an action, so nothing else can have that name`;
     }
     if (Object.hasOwn(BUILT_IN, name)) {
-      return `"${name}" is already a skill or a good, so nothing else can have that name`;
+      return `"${name}" is already a skill, a good or a kind of node, so nothing else can have that name`;
     }
     const numbers = typeof value === "number" ? [value] : [value?.x, value?.y];
     if (!numbers.every(isInt32))

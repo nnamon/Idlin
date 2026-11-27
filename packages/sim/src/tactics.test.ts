@@ -256,8 +256,8 @@ describe("errors", () => {
         /^1:6 I do not know what "mana" is\. Sensors: self_x, .* set mana = 0/,
       ],
       [
-        "otherwise -> chop",
-        /^1:14 there is no action called "chop"\. Actions: idle, wait, walk_to, wander/,
+        "otherwise -> dance",
+        /^1:14 there is no action called "dance"\. Actions: idle, wait, walk_to, wander/,
       ],
       ["otherwise -> hour", /"hour" is a sensor: it reads, it does not act/],
       ["when wander -> idle", /^1:6 "wander" is an action: it can only come after ->/],
@@ -367,9 +367,9 @@ describe("errors", () => {
 
   it("reports several mistakes at once, each on its own line, and stops at ten", () => {
     // Line 1 and line 3 cannot be parsed; line 2 parses but names an action that does not exist.
-    const errors = errorsOf("when hour > -> idle\nwhen hour == 2 -> chop\nwhen -> idle\n");
+    const errors = errorsOf("when hour > -> idle\nwhen hour == 2 -> dance\nwhen -> idle\n");
     expect(errors.map((e) => e.split(":")[0])).toEqual(["1", "2", "3"]);
-    expect(errors[1]).toMatch(/no action called "chop"/);
+    expect(errors[1]).toMatch(/no action called "dance"/);
     const many = Array.from({ length: 40 }, () => "nonsense here").join("\n");
     expect(errorsOf(many)).toHaveLength(10);
   });
@@ -788,25 +788,28 @@ describe("shipped programs", () => {
     }
     expect(rillReachedRiver).toBe(true);
     expect(wrenTiles.size).toBeGreaterThan(200);
-    // The wanderer's trips take it through every region of the world in a day.
-    expect(wrenRegions.size).toBe(map.regions.length);
-    // The homebody strays, is called back, and never gets across the map.
+    // The wanderer's bags come from the camp's trees and the lower river's, and
+    // once it can cut old trees, the pinewood's, which it cannot on its first
+    // day. The hills have no trees.
+    const region = (name: string): number => map.regions.findIndex((r) => r.map.name === name);
+    expect([...wrenRegions].sort()).toEqual([region("camp"), region("lower-river")].sort());
+    // The homebody goes to the trees near camp and never gets across the map.
     expect(hobFarthest).toBeGreaterThan(6);
     expect(hobFarthest).toBeLessThan(30);
-    expect([...labels].sort()).toEqual([
-      "homebody: night: stay by the fire",
-      "homebody: potter about",
-      "homebody: too far: turn back",
-      "riverwalker: night: sleep at camp",
-      "riverwalker: to the river and back",
-      "wanderer: back for the night",
-      "wanderer: back to camp",
-      "wanderer: look about",
-      "wanderer: off to the hills",
+    // Every gathering rule is used at least once in the day.
+    const used = [...labels];
+    for (const label of [
+      "homebody: chop",
+      "homebody: bank the logs",
+      "riverwalker: fish",
+      "riverwalker: chop",
+      "riverwalker: cook",
+      "riverwalker: bank",
+      "wanderer: chop",
+      "wanderer: bank the logs",
       "wanderer: off to the lower river",
-      "wanderer: off to the pinewood",
-      "wanderer: stroll, then rest",
-    ]);
+    ])
+      expect(used).toContain(label);
   });
 
   it("a map whose place names no program could use is blamed, not the programs", () => {

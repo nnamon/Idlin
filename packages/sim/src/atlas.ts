@@ -7,6 +7,7 @@ import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import {
   isWalkable,
   MapError,
+  type MapNode,
   NEIGHBOURS,
   type Point,
   parseMap,
@@ -35,6 +36,12 @@ export interface Atlas {
   readonly exits: readonly Exit[];
   /** Every region's places, in world coordinates, sorted by name. Names are unique across regions. */
   readonly places: readonly (Point & { readonly name: string })[];
+  /**
+   * Every region's resource nodes, in world coordinates: the regions in order,
+   * and each region's in its file's order. A node's index here is how the world
+   * refers to it.
+   */
+  readonly nodes: readonly MapNode[];
   /** The box round every region: its top-left in world coordinates, and its size in tiles. */
   readonly left: number;
   readonly top: number;
@@ -223,6 +230,9 @@ function buildAtlas(
     regions: placed.map(({ map, x, y }, r) => ({ map, x, y, walkable: counts[r] as number })),
     exits,
     places,
+    nodes: placed.flatMap(({ map, x, y }) =>
+      (map.nodes ?? []).map((node) => ({ kind: node.kind, x: x + node.x, y: y + node.y })),
+    ),
     left,
     top,
     width,
@@ -284,12 +294,15 @@ export function hashAtlas(atlas: Atlas): string {
   ]);
 }
 
+/** A fingerprint of one map. A map with no nodes hashes as maps did before there were any. */
 export function hashMap(map: TileMap): string {
+  const nodes = map.nodes ?? [];
   return hashInts([
     ...stringInts(map.name),
     map.width,
     map.height,
     ...map.tiles,
     ...map.places.flatMap((p) => [...stringInts(p.name), p.x, p.y]),
+    ...(nodes.length === 0 ? [] : [nodes.length, ...nodes.flatMap((n) => [n.kind, n.x, n.y])]),
   ]);
 }

@@ -10,6 +10,7 @@ import {
   createWorld,
   type Monsters,
   placeConstants,
+  regionAt,
   spawnsNearCamp,
   step,
   type World,
@@ -59,8 +60,11 @@ function follower(region: number) {
     before = here;
     return {
       view,
-      events: events.filter(
-        (event) => on(event.actor) || (event.type === "hit" && on(event.target)),
+      events: events.filter((event) =>
+        // A node's events have no actor; they belong to the region the node is in.
+        "actor" in event
+          ? on(event.actor) || (event.type === "hit" && on(event.target))
+          : regionAt(world.atlas, event.x, event.y) === region,
       ),
     };
   };

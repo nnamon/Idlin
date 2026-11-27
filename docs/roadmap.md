@@ -11,19 +11,19 @@ on three built-in programs, two kinds of monster on programs of their own,
 and a day/night cycle. The aim is something you could leave running on a
 second screen and not get bored of in ten minutes.
 
-| Part                                                                     | State                                                                                                                               |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Simulation core: map, movement, clock, replay, snapshots                 | done                                                                                                                                |
-| Regions: four maps joined by exits, monsters per region                  | done in the simulation; the viewer draws only the camp's                                                                            |
-| Bot VM                                                                   | done                                                                                                                                |
-| Tactics, the scripting language, and its compiler                        | done                                                                                                                                |
-| Viewer: the map, the characters, day and night                           | done                                                                                                                                |
-| Capture tool and the metrics for judging how it watches                  | done, except acknowledgment and the metrics that need trips                                                                         |
-| Combat with telegraphed attacks; monsters as scripted content            | done; the viewer draws fights only in a world of its own (`?monsters`), as the world server doesn't run monsters yet                |
-| Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | experience from fighting, the bag and the bank, and levels on the page are done; gathering, cooking and death drops are not started |
-| Items with rarity and rolled affixes; bots that choose what to wear      | not started                                                                                                                         |
-| Spotlight panel and a real news line                                     | the director that picks the subject is done; nothing drawn                                                                          |
-| Server: the world running in real time, snapshots, WebSocket             | done                                                                                                                                |
+| Part                                                                     | State                                                                                                                                                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Simulation core: map, movement, clock, replay, snapshots                 | done                                                                                                                                                                                        |
+| Regions: four maps joined by exits, monsters per region                  | done in the simulation; the viewer draws only the camp's                                                                                                                                    |
+| Bot VM                                                                   | done                                                                                                                                                                                        |
+| Tactics, the scripting language, and its compiler                        | done                                                                                                                                                                                        |
+| Viewer: the map, the characters, day and night                           | done                                                                                                                                                                                        |
+| Capture tool and the metrics for judging how it watches                  | done, except acknowledgment and the metrics that need trips                                                                                                                                 |
+| Combat with telegraphed attacks; monsters as scripted content            | done; the viewer draws fights only in a world of its own (`?monsters`), as the world server doesn't run monsters yet                                                                        |
+| Skills (Melee, Woodcutting, Fishing, Cooking, Hitpoints), banking, death | experience, the bag and the bank, levels on the page, and gathering, cooking and eating in the simulation are done; the viewer does not draw gathering yet, and death drops are not started |
+| Items with rarity and rolled affixes; bots that choose what to wear      | not started                                                                                                                                                                                 |
+| Spotlight panel and a real news line                                     | the director that picks the subject is done; nothing drawn                                                                                                                                  |
+| Server: the world running in real time, snapshots, WebSocket             | done                                                                                                                                                                                        |
 
 M1 is finished when all of these hold:
 

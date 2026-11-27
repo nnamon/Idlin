@@ -41,7 +41,7 @@ describe("a version 5 snapshot", () => {
     for (const actor of world.actors) {
       expect(actor.xp).toEqual([0, 0, 0, 0, 0]);
       expect(actor.bag.every((slot) => slot === 0)).toBe(true);
-      expect(actor.bank).toEqual([0, 0, 0]);
+      expect(actor.bank).toEqual([0, 0, 0, 0]);
     }
     // The strollers walk to the deep wood, where the wolves come out, and learn from it.
     for (let t = 0; t < 3000; t++) step(world);

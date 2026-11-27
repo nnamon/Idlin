@@ -92,12 +92,12 @@ describe("the shipped world", () => {
       expect(region.map.height).toBeLessThanOrEqual(MAX_MAP_HEIGHT);
     }
     // The camp's region is the one map the world was before, tile for tile, at
-    // the same coordinates and with the same places.
+    // the same coordinates and with the same places, and one more by the fire.
     const old = firstLight();
     const camp = WORLD.regions[CAMP] as Atlas["regions"][number];
     expect([camp.x, camp.y]).toEqual([0, 0]);
     expect(camp.map.tiles).toEqual(old.tiles);
-    expect(camp.map.places).toEqual(old.places);
+    expect(camp.map.places.filter((p) => p.name !== "fire")).toEqual(old.places);
     // More than three times the walkable ground of that map.
     const one = atlasOf(old).regions[0]?.walkable ?? 0;
     const all = WORLD.regions.reduce((sum, r) => sum + r.walkable, 0);
@@ -365,8 +365,9 @@ describe("snapshots of a world of regions", () => {
     const occupied = (): number =>
       new Set(world.actors.filter((a) => a.kind === ADVENTURER).map((a) => regionOf(world, a)))
         .size;
-    for (let t = 0; t < 8000 && occupied() < 3; t++) step(world);
-    expect(occupied()).toBeGreaterThanOrEqual(3);
+    // The wanderers take the lower river's trees in turn with the camp's.
+    for (let t = 0; t < 8000 && occupied() < 2; t++) step(world);
+    expect(occupied()).toBeGreaterThanOrEqual(2);
     return world;
   };
 

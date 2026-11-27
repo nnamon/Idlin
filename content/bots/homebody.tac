@@ -13,7 +13,15 @@ when threat_distance <= 1 as "keep away" -> flee(threat_x, threat_y)
 when threat_distance <= 6 and watched < 40 as "watch it" -> set watched = watched + 1; wait(5)
 when threat_distance <= 6 as "back off" -> set watched = 0; flee(threat_x, threat_y)
 
-# Never strays far from the lantern, and sits by the fire all night.
+# Sits by the fire all night.
 when hour >= 19 or hour < 6 as "night: stay by the fire" -> walk_to(camp); wait(120)
+
+# By day it cuts the trees near camp and banks the logs a bagful at a time. It
+# goes to a tree only while it is within 8 tiles of camp, so it never strays far.
+when at_bank and bag_free < 12 as "bank the logs" -> bank_all
+when bag_free == 0 as "home with the logs" -> walk_to(bank)
+when node_distance(tree) == 0 as "chop" -> chop
+when node_distance(tree) <= 10 and distance(camp) <= 8 as "to a tree" ->
+  walk_to(node_x(tree), node_y(tree))
 when distance(camp) > 6 as "too far: turn back" -> walk_to(camp)
 otherwise as "potter about" -> wander; wait(30)

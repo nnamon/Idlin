@@ -69,7 +69,7 @@ things. A decision that is stopped by a mistake changes nothing in memory.
 
 Each map names its places. A place stands for its position, and can be given
 wherever a sensor or an action wants an x and a y: `walk_to(camp)`,
-`distance(river)`. The shipped world has `camp`, `bank`, `near_wood`,
+`distance(river)`. The shipped world has `camp`, `bank`, `fire`, `near_wood`,
 `deep_wood`, `den`, `river` and `meadow` in the camp's region, `pinewood` in
 the pinewood, `hills` and `caves` in the hills, and `lower_river` and `reeds`
 by the lower river.
@@ -107,41 +107,49 @@ Sensors read the world; they go in conditions and values. Actions do something;
 they go after `->`. A sensor that takes no values is written without brackets.
 
 <!-- generated: system calls -->
-| Name                | Kind   | Takes | What it does                                                                                                                                                                                                 |
-| ------------------- | ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `self_x`            | sensor | 0     | The tile column this actor stands on.                                                                                                                                                                        |
-| `self_y`            | sensor | 0     | The tile row this actor stands on.                                                                                                                                                                           |
-| `hour`              | sensor | 0     | The game hour, 0 to 23.                                                                                                                                                                                      |
-| `minute`            | sensor | 0     | The game minute, 0 to 59.                                                                                                                                                                                    |
-| `walkable`          | sensor | 2     | 1 if tile (x, y) can be walked on, else 0.                                                                                                                                                                   |
-| `distance`          | sensor | 2     | Steps in a straight grid line from here to (x, y).                                                                                                                                                           |
-| `idle`              | action | 0     | Do nothing for a moment.                                                                                                                                                                                     |
-| `wait`              | action | 1     | Do nothing for the given number of ticks (5 to 600).                                                                                                                                                         |
-| `walk_to`           | action | 2     | Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.                                                                                                                |
-| `wander`            | action | 0     | Walk to a walkable tile chosen at random in the region this actor is in.                                                                                                                                     |
-| `hp`                | sensor | 0     | This actor's hitpoints.                                                                                                                                                                                      |
-| `max_hp`            | sensor | 0     | The most hitpoints this actor can have.                                                                                                                                                                      |
-| `threat_x`          | sensor | 0     | The column of the nearest enemy, or this actor's own if there is none.                                                                                                                                       |
-| `threat_y`          | sensor | 0     | The row of the nearest enemy, or this actor's own if there is none.                                                                                                                                          |
-| `threat_distance`   | sensor | 0     | Steps in a straight grid line to the nearest enemy, or 9999 if there is none.                                                                                                                                |
-| `threat_hp`         | sensor | 0     | The nearest enemy's hitpoints, or 0 if there is none.                                                                                                                                                        |
-| `danger`            | sensor | 2     | Ticks until an enemy's attack lands on tile (x, y), or 0 if none is coming.                                                                                                                                  |
-| `danger_here`       | sensor | 0     | Ticks until an enemy's attack lands where this actor stands, or 0.                                                                                                                                           |
-| `attack`            | action | 2     | Wind up and strike in a line out from this actor, in the direction of (x, y).                                                                                                                                |
-| `step_clear`        | action | 0     | Walk to the nearest tile no enemy attack is about to land on; an ally may be standing there.                                                                                                                 |
-| `flee`              | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster). |
-| `threat_recovering` | sensor | 0     | Ticks after this one that the nearest enemy still needs to get its balance back after its last blow: 0 if it can act on the next tick, or if there is no enemy.                                              |
-| `step_to`           | action | 2     | Take the first step of the way `walk_to` would go to tile (x, y).                                                                                                                                            |
-| `stalled`           | sensor | 0     | How many decisions in a row, up to 1000, chose to move (`walk_to`, `wander`, `step_clear`, `flee` or `step_to`) and found nowhere to go. 0 after any other decision.                                         |
-| `level`             | sensor | 1     | This adventurer's level, 1 to 99, in a skill: `melee`, `hitpoints`, `woodcutting`, `fishing` or `cooking`. 0 for anything else, and for a monster.                                                           |
-| `xp`                | sensor | 1     | This adventurer's experience in a skill, as for `level`; 0 for anything else.                                                                                                                                |
-| `bag_free`          | sensor | 0     | How many of the bag's 12 slots are empty.                                                                                                                                                                    |
-| `carrying`          | sensor | 1     | How many of a good (`logs`, `raw_fish` or `cooked_fish`) are in the bag; 0 for anything else.                                                                                                                |
-| `banked`            | sensor | 1     | How many of a good are in this adventurer's bank, as for `carrying`.                                                                                                                                         |
-| `at_bank`           | sensor | 0     | 1 if this actor stands next to the bank chest, where it can deposit and withdraw, else 0.                                                                                                                    |
-| `deposit`           | action | 2     | At the bank, put up to the given number of a good from the bag into the bank: deposit(logs, 5). Away from it, nothing happens.                                                                               |
-| `withdraw`          | action | 2     | At the bank, take up to the given number of a good out of the bank, as many as there are empty slots for.                                                                                                    |
-| `bank_all`          | action | 0     | At the bank, put everything in the bag into the bank.                                                                                                                                                        |
+| Name                | Kind   | Takes | What it does                                                                                                                                                                                                                                              |
+| ------------------- | ------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `self_x`            | sensor | 0     | The tile column this actor stands on.                                                                                                                                                                                                                     |
+| `self_y`            | sensor | 0     | The tile row this actor stands on.                                                                                                                                                                                                                        |
+| `hour`              | sensor | 0     | The game hour, 0 to 23.                                                                                                                                                                                                                                   |
+| `minute`            | sensor | 0     | The game minute, 0 to 59.                                                                                                                                                                                                                                 |
+| `walkable`          | sensor | 2     | 1 if tile (x, y) can be walked on, else 0.                                                                                                                                                                                                                |
+| `distance`          | sensor | 2     | Steps in a straight grid line from here to (x, y).                                                                                                                                                                                                        |
+| `idle`              | action | 0     | Do nothing for a moment.                                                                                                                                                                                                                                  |
+| `wait`              | action | 1     | Do nothing for the given number of ticks (5 to 600).                                                                                                                                                                                                      |
+| `walk_to`           | action | 2     | Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.                                                                                                                                                             |
+| `wander`            | action | 0     | Walk to a walkable tile chosen at random in the region this actor is in.                                                                                                                                                                                  |
+| `hp`                | sensor | 0     | This actor's hitpoints.                                                                                                                                                                                                                                   |
+| `max_hp`            | sensor | 0     | The most hitpoints this actor can have.                                                                                                                                                                                                                   |
+| `threat_x`          | sensor | 0     | The column of the nearest enemy, or this actor's own if there is none.                                                                                                                                                                                    |
+| `threat_y`          | sensor | 0     | The row of the nearest enemy, or this actor's own if there is none.                                                                                                                                                                                       |
+| `threat_distance`   | sensor | 0     | Steps in a straight grid line to the nearest enemy, or 9999 if there is none.                                                                                                                                                                             |
+| `threat_hp`         | sensor | 0     | The nearest enemy's hitpoints, or 0 if there is none.                                                                                                                                                                                                     |
+| `danger`            | sensor | 2     | Ticks until an enemy's attack lands on tile (x, y), or 0 if none is coming.                                                                                                                                                                               |
+| `danger_here`       | sensor | 0     | Ticks until an enemy's attack lands where this actor stands, or 0.                                                                                                                                                                                        |
+| `attack`            | action | 2     | Wind up and strike in a line out from this actor, in the direction of (x, y).                                                                                                                                                                             |
+| `step_clear`        | action | 0     | Walk to the nearest tile no enemy attack is about to land on; an ally may be standing there.                                                                                                                                                              |
+| `flee`              | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster).                                              |
+| `threat_recovering` | sensor | 0     | Ticks after this one that the nearest enemy still needs to get its balance back after its last blow: 0 if it can act on the next tick, or if there is no enemy.                                                                                           |
+| `step_to`           | action | 2     | Take the first step of the way `walk_to` would go to tile (x, y).                                                                                                                                                                                         |
+| `stalled`           | sensor | 0     | How many decisions in a row, up to 1000, chose to move (`walk_to`, `wander`, `step_clear`, `flee` or `step_to`) and found nowhere to go. 0 after any other decision.                                                                                      |
+| `level`             | sensor | 1     | This adventurer's level, 1 to 99, in a skill: `melee`, `hitpoints`, `woodcutting`, `fishing` or `cooking`. 0 for anything else, and for a monster.                                                                                                        |
+| `xp`                | sensor | 1     | This adventurer's experience in a skill, as for `level`; 0 for anything else.                                                                                                                                                                             |
+| `bag_free`          | sensor | 0     | How many of the bag's 12 slots are empty.                                                                                                                                                                                                                 |
+| `carrying`          | sensor | 1     | How many of a good (`logs`, `raw_fish`, `cooked_fish` or `burnt_fish`) are in the bag; 0 for anything else.                                                                                                                                               |
+| `banked`            | sensor | 1     | How many of a good are in this adventurer's bank, as for `carrying`.                                                                                                                                                                                      |
+| `at_bank`           | sensor | 0     | 1 if this actor stands next to the bank chest, where it can deposit and withdraw, else 0.                                                                                                                                                                 |
+| `deposit`           | action | 2     | At the bank, put up to the given number of a good from the bag into the bank: deposit(logs, 5). Away from it, nothing happens.                                                                                                                            |
+| `withdraw`          | action | 2     | At the bank, take up to the given number of a good out of the bank, as many as there are empty slots for.                                                                                                                                                 |
+| `bank_all`          | action | 0     | At the bank, put everything in the bag into the bank.                                                                                                                                                                                                     |
+| `node_distance`     | sensor | 1     | Steps in a straight grid line to the nearest free tile beside a node of a kind (`tree`, `old_tree`, `fishing_spot` or `deep_pool`) that stands, is in this actor's region and that its level allows: 0 when it is standing on one. 9999 if there is none. |
+| `node_x`            | sensor | 1     | The column of the tile `node_distance` measures to, or this actor's own if none.                                                                                                                                                                          |
+| `node_y`            | sensor | 1     | The row of the tile `node_distance` measures to, or this actor's own if none.                                                                                                                                                                             |
+| `chop`              | action | 0     | Beside a tree this adventurer may cut, try for a log, then stand for 12 ticks. Without one, or with a full bag, nothing happens.                                                                                                                          |
+| `fish`              | action | 0     | Beside a fishing spot this adventurer may fish, try for a raw fish, as `chop` does.                                                                                                                                                                       |
+| `at_fire`           | sensor | 0     | 1 if this actor stands within two steps of the camp fire, where it can cook, else 0.                                                                                                                                                                      |
+| `cook`              | action | 0     | At the fire, cook a raw fish from the bag over a log from the bag, then stand for 18 ticks. The log burns up and the fish comes out cooked, or burnt.                                                                                                     |
+| `eat`               | action | 0     | Eat a cooked fish from the bag for up to 6 hitpoints. At full hitpoints, or with none, nothing happens.                                                                                                                                                   |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
@@ -198,8 +206,16 @@ take turns with a `wait`, and a `wait` sets `stalled` back to 0.
 
 The three resident programs fight in different ways. `wanderer` walks up to an
 enemy and trades blows. `riverwalker` steps out of every blow it sees coming and
-hits back in between. `homebody` keeps out of reach and only goes in while the
-monster is recovering.
+hits back in between, and eats a cooked fish once it is 7 hitpoints down.
+`homebody` keeps out of reach and only goes in while the monster is recovering.
+
+By day they gather. `homebody` cuts the trees within a few tiles of camp and
+banks the logs a bagful at a time. `wanderer` does the same, with its bags
+taken in turn from the camp's trees and the lower river's, and from the
+pinewood's old trees once it reaches Woodcutting 15; it leaves for another
+region only before 17:00. `riverwalker` catches four fish, cuts a log for each,
+cooks them at the fire, and banks the burnt ones and every cooked fish past
+three, which it keeps in the bag to eat in a fight.
 
 ## Skills and the bank
 
@@ -213,11 +229,13 @@ Experience only comes from doing the thing. Every hitpoint an adventurer's
 blow takes off a monster is 4 Melee experience, and every hitpoint a
 monster's blow takes off an adventurer is 4 Hitpoints experience. A blow that
 finishes a monster with 2 hitpoints left counts 2, whatever it would have
-done. Nothing gives Woodcutting, Fishing or Cooking experience yet. Levels do
-not change anything else yet either.
+done. Woodcutting, Fishing and Cooking experience come from gathering and
+cooking, below. Besides what can be gathered and the odds of a try, levels
+change nothing yet.
 
-Skill and good names are known to every program, so they can be passed to the
-sensors and actions above: `level(melee)`, `carrying(logs)`.
+Skill, good and node names are known to every program, so they can be passed
+to the sensors and actions above: `level(melee)`, `carrying(logs)`,
+`node_distance(tree)`.
 
 The bag has 12 slots, and each slot holds one good. Each adventurer also has
 its own bank, which holds any number of each good. Banking is done standing
@@ -232,6 +250,57 @@ not a good, nothing happens. Either way the actor then stands for five ticks.
 when bag_free == 0 and at_bank == 0 as "bag full" -> walk_to(bank)
 when at_bank and bag_free < 12 as "banking" -> bank_all
 ```
+
+## Gathering, cooking and eating
+
+The goods are `logs`, `raw_fish`, `cooked_fish` and `burnt_fish`. Logs and raw
+fish come from nodes: trees and fishing spots that each map lists under
+`nodes`, by kind and tile.
+
+| Kind           | Stands on   | Worked with | Level | Gives      | Experience each | Gives before it runs out | Back after   |
+| -------------- | ----------- | ----------- | ----- | ---------- | --------------- | ------------------------ | ------------ |
+| `tree`         | a tree      | `chop`      | 1     | `logs`     | 25 Woodcutting  | 6                        | 2 game hours |
+| `old_tree`     | a dark tree | `chop`      | 15    | `logs`     | 60 Woodcutting  | 10                       | 3 game hours |
+| `fishing_spot` | water       | `fish`      | 1     | `raw_fish` | 20 Fishing      | 8                        | 1 game hour  |
+| `deep_pool`    | water       | `fish`      | 15    | `raw_fish` | 50 Fishing      | 10                       | 2 game hours |
+
+A node is worked from a walkable tile beside it. `chop` beside a tree, or
+`fish` beside a fishing spot, is one try: with a chance of 25 in 100 at the
+level the node needs, 3 more for each level above that, up to 90, one good
+goes into the bag and the experience is gained. Either way the actor then
+stands for 12 ticks. A node that has given all it has stands empty until it
+comes back with its full yield. Without a node beside it that it has the
+level for, or with a full bag, a try does nothing and the actor stands for
+five ticks.
+
+`node_distance(kind)` is the number of steps to the nearest tile to work a
+node of that kind from: beside one that stands, is in this actor's region and
+its level allows, and that nobody else stands on or is walking to. It is 0 when
+the actor already stands on one, and 9999 when there is none. `node_x(kind)`
+and `node_y(kind)` give that tile, so a program can walk to it:
+
+```
+when node_distance(tree) == 0 as "chop" -> chop
+when node_distance(tree) < 9999 as "to a tree" -> walk_to(node_x(tree), node_y(tree))
+```
+
+The camp's region has twelve trees in the near wood and round the camp, three
+old trees in the deep wood, and five fishing spots on the river. The lower
+river has six trees, three fishing spots and three deep pools, and the
+pinewood six old trees. The hills have none.
+
+`cook`, within two steps of the camp fire (`at_fire`, and the `fire` place
+beside it), cooks the bag's first raw fish over its first log. The log burns
+up, and the fish comes out cooked, or burnt with a chance of 30 in 100 at
+Cooking level 1 and 2 fewer for each level, so none burn from level 16. A
+cooked fish gives 30 Cooking experience and a burnt one none. The actor then
+stands for 18 ticks. Without a raw fish and a log, or away from the fire,
+nothing happens.
+
+`eat` eats the bag's first cooked fish and gives back up to 6 hitpoints. It is
+over as quickly as any action that ends at once, so it can be done between
+blows in a fight. At full hitpoints, or with no cooked fish, nothing happens
+and the fish is kept. A burnt fish cannot be eaten.
 
 ## Monsters
 

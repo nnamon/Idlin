@@ -61,20 +61,17 @@ const DEAD_ENDS: readonly (readonly [Point, Point, Point])[] = [
     { x: 14, y: 2 },
   ],
 ];
-/** The longest run of ticks `actor` stood on one tile, over `ticks` ticks. */
-function longestStand(world: World, actor: Actor, ticks: number): number {
-  let here = `${actor.x},${actor.y}`;
-  let since = world.tick;
+/**
+ * The most moves in a row that went nowhere (`stalled`) for `actor`, over
+ * `ticks` ticks. Standing to chop a tree is not counted: only moves are.
+ */
+function longestStall(world: World, actor: Actor, ticks: number): number {
   let longest = 0;
   for (let t = 0; t < ticks; t++) {
     step(world);
-    if (`${actor.x},${actor.y}` !== here) {
-      longest = Math.max(longest, world.tick - since);
-      here = `${actor.x},${actor.y}`;
-      since = world.tick;
-    }
+    longest = Math.max(longest, actor.stalled);
   }
-  return Math.max(longest, world.tick - since);
+  return longest;
 }
 
 describe("the dead ends", () => {
@@ -102,11 +99,11 @@ describe("finding another way", () => {
           { type: "spawn", name: "Ash", program, ...beyond },
         ]);
         const ash = world.actors[2] as Actor;
-        // Without the rule, Ash repeats step_to for all 1,500 ticks.
+        // Without the rule, Ash repeats step_to and gets nowhere, dozens of times in a row.
         expect(
-          longestStand(world, ash, 1500),
+          longestStall(world, ash, 1500),
           `${program} at ${beyond.x},${beyond.y}`,
-        ).toBeLessThan(100);
+        ).toBeLessThanOrEqual(3);
       }
     }
   });

@@ -201,6 +201,7 @@ describe("actors run programs", () => {
       "marks",
       "nextActorId",
       "nextSpawn",
+      "nodes",
       "programs",
       "rng",
       "spawns",

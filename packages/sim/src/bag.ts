@@ -10,7 +10,7 @@ import type { Actor, World } from "./world.ts";
  * Every good, by id: a good's id is its position here plus 1, and 0 is an
  * empty slot. Programs name goods by id, so the order is permanent: append only.
  */
-export const GOODS = ["logs", "raw_fish", "cooked_fish"] as const;
+export const GOODS = ["logs", "raw_fish", "cooked_fish", "burnt_fish"] as const;
 export type Good = (typeof GOODS)[number];
 
 export const BAG_SLOTS = 12;

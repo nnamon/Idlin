@@ -3,6 +3,16 @@
 
 import { linked, pointOf, regionAt, tileAt, walkable } from "./atlas.ts";
 import { atBank, BAG_SLOTS, banked, carrying, deposit, freeSlots, GOODS, withdraw } from "./bag.ts";
+import {
+  atFire,
+  COOK_TICKS,
+  cook,
+  eat,
+  GATHER_TICKS,
+  NO_NODE,
+  nearestNode,
+  work,
+} from "./gather.ts";
 import { NEIGHBOURS, type Point } from "./map.ts";
 import { findPath } from "./path.ts";
 import { nextInt } from "./rng.ts";
@@ -329,6 +339,16 @@ function sense(world: World, actor: Actor, id: number, args: readonly number[]):
       return banked(actor, a);
     case "at_bank":
       return atBank(world, actor) ? 1 : 0;
+    case "node_distance": {
+      const side = nearestNode(world, actor, a);
+      return side ? steps(actor, side) : NO_NODE;
+    }
+    case "node_x":
+      return (nearestNode(world, actor, a) ?? actor).x;
+    case "node_y":
+      return (nearestNode(world, actor, a) ?? actor).y;
+    case "at_fire":
+      return atFire(world, actor) ? 1 : 0;
     default:
       return 0;
   }
@@ -410,6 +430,24 @@ function act(
             count: moved,
           });
       }
+      break;
+    case "chop":
+    case "fish":
+      // A try takes a moment, whatever it gives; with no node beside it or no room, it is a pause.
+      if (work(world, actor, name === "chop" ? "woodcutting" : "fishing", events)) {
+        actor.wait = GATHER_TICKS;
+        return;
+      }
+      break;
+    case "cook":
+      if (cook(world, actor, events)) {
+        actor.wait = COOK_TICKS;
+        return;
+      }
+      break;
+    case "eat":
+      // Quick enough to do between blows: the same short pause as any action that ends at once.
+      eat(world, actor, events);
       break;
     default:
       // `idle`, and any action this build does not know.
