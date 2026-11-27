@@ -82,7 +82,7 @@ owner's own page also shows their resident live.
 | **M4 Works and Stonefall**   | Works built from what residents deliver, charting, and the first way down: Stonefall, at tier 2, with the Quarry Troll. The goblins' hoard and raids. A message that carries one frame.                                                         | A fresh world of house residents builds the Hill Road and opens Stonefall with no input. A level-38 resident earns twice as much there as in the Hills and a level-18 one is downed. Five level-45 residents kill the Quarry Troll.                                             |          612 |
 | **M5 The deep**              | Three regions under the Hills down to tier 5, each with a boss. Nests and marches. Uniques. Rings at 99.                                                                                                                                        | For tiers 3 to 5, a resident of the tier clears a pack and one two tiers short is downed. The tick stays at 4 ms with eight regions. A capture at 120 residents holds the frame time.                                                                                           |          612 |
 | **M6 Trades and the store**  | Mining, Smithing, Woodworking, Archery. A store that pays by its stock. Tempering.                                                                                                                                                              | Over 60 game days at 50 residents prices move, two starter programs change what they gather because of them, and no pool of goods grows without limit. A judge says which good is scarce from the piles.                                                                        |          612 |
-| **M7 Players among players** | Companies with their own fire, pitches, boards in bands, weekly trials, thirteen-week rounds with titles, mastery, a library of programs to fork. Not filed until the operator has answered on hosting.                                         | A round runs to titles that re-running confirms. A trial's winning run replays on the page.                                                                                                                                                                                     |          612 |
+| **M7 Players among players** | Companies with their own fire, pitches, boards in bands, weekly trials, thirteen-week rounds with titles, mastery, a library of programs to fork. Filed when M6 closes.                                                                         | A round runs to titles that re-running confirms. A trial's winning run replays on the page.                                                                                                                                                                                     |          612 |
 
 Eight regions are in the milestones above, in a grid three regions tall that
 four positions of the frame cover. Three more (the Mere, the Mire and the
@@ -90,6 +90,6 @@ Barrow Downs) are built only when a running world has more than 12 residents
 for each open region, which brings the frame time to 408. The world holds at
 most 150 residents.
 
-The plan ends with a short list of what is the operator's to decide, hosting
-among them. Until they answer on hosting, players are a scripted crowd behind
-a local chat page, and nothing is deployed.
+The plan ends with the questions the team settled for itself (section 8).
+Players are a scripted crowd behind a local chat page, and nothing is
+deployed.

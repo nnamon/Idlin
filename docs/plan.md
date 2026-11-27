@@ -424,9 +424,9 @@ The store and the trades are M6. Works come first, in M4.
 - Boards are per game day and per real week, in three bands by lifetime
   levels (under 12% of the maximum, 12% to 40%, above). A round ends with
   titles, checked by re-running the entries. Companies, boards, trials and
-  rounds are M7, which is not filed until the operator has answered on
-  hosting: they are play among players, and a scripted crowd can't say
-  whether they are any good.
+  rounds are M7, filed when M6 closes. They are play among players, and a
+  scripted crowd can't say whether they are any good, so M7 goes through the
+  fun test again then (section 8).
 - Nothing is lost by being away: no streaks, no decay, no login reward, no
   pings, nothing to buy.
 - Nothing a viewer types reaches the stream except a resident's or company's
@@ -623,8 +623,8 @@ and after the change of scale.
 
 **Past 150 residents** the question is whether a frame and a page can show
 more, and after that whether a second view of the same world is wanted. That
-is a hosting question (section 8). Until it is answered the world does not
-grow past 150.
+only matters for a hosted game that fills (section 8). Until then the world
+does not grow past 150.
 
 Turned down: a queue of residents with the view following each one, as the
 first version had it; a cap of 3 minutes an hour; highlights on the stream in
@@ -1137,12 +1137,12 @@ fight.
 
 **Aim.** Owners can band together and compete on their programs.
 
-This milestone is not filed until the operator has answered on hosting
-(section 8). It is play among players, and a scripted crowd cannot found a
-company or be proud of a title. When it is filed it goes through the fun test
-again with what real owners said about M2 to M6. If there are to be no
-players beyond the operator, it shrinks to trials, mastery and boards against
-the house residents.
+This milestone is filed when M6 closes (section 8). It is play among players,
+and a scripted crowd cannot found a company or be proud of a title, so it goes
+through the fun test again then, with whatever owners have said about M2 to
+M6. While the game is not hosted it is judged against the house residents and
+the scripted crowd, and shrinks to trials, mastery and boards if that is all
+they can show.
 
 **Why it's fun.**
 
@@ -1253,37 +1253,26 @@ proposed again through the test.
   scripted crowd and on a judge playing an owner. Some of it will be wrong in
   ways only real chat shows.
 
-## 8. For the operator
+## 8. Settled by the team
 
-These are yours to decide. The plan works whichever way each one goes, and
-says what changes.
+The first version of this section asked the operator six questions. They are
+the team's to answer, and these are the answers.
 
-1. **When to talk about hosting.** The first version said after M5. The audit
-   says straight after M2, because everything later is designed for players
-   nobody has met and you may prefer to say no early. The plan is ordered so
-   that M3 to M6 make the local stream better with or without players, and
-   M7 and the crowd regions are not filed until you have answered. Nothing is
-   deployed before then.
-2. **Playing M2 yourself.** The played test is done by a judge model. You are
-   the only person who can play it. If you claim a resident when M2 is up,
-   what you say outranks the judge.
-3. **The live window.** An owner's page will draw their own resident live.
-   That changes a line you wrote the game around: "no viewer has their own
-   camera". Decision 0023 takes it, because at 150 residents an owner's
-   resident is on the stream for about 7 minutes of an hour, and with the
-   map zoomed out it is small when it is there. Say so if you would rather
-   the stream stayed the only picture.
-4. **How far out to zoom.** The figures in this plan assume 32 pixels a tile,
-   as #326 says. At that scale opening the regions under the Hills costs an
-   owner a quarter of their frame time once (817 seconds an hour to 612) and
-   nothing after. Closer than 32 and it costs more; further out and figures
-   get hard to tell apart. If the captures for #326 look wrong to you, the
-   scale is the thing to say.
-5. **The cuts.** Three regions, three skills, the map notes and the Stones
-   are gone (end of section 6). The wider view means frame time no longer
-   forbids them, so they are cut only for adding nothing new to watch. Say so
-   if one of them mattered to you.
-6. **Past 150 residents.** Frame time allows more regions than the plan has.
-   What holds the world at 150 is the brief, the page, and whether a frame
-   can show more than about 34 figures. It only matters if the game is hosted
-   and fills.
+1. **Hosting.** The plan builds for the local stream. The owner features run
+   against a scripted crowd standing in for chat, and nothing is deployed, as
+   section 1 of `AGENTS.md` says. Hosting is raised with the operator only
+   when there is a build worth putting in front of people. M3 to M6 make the
+   local stream better with or without players, and M7 is filed when M6
+   closes.
+2. **The played test.** A judge plays M2 from an owner's seat, in
+   absolute terms (#314). The operator's feedback outranks
+   it whenever they give it.
+3. **The live window.** Taken, as decision 0023 says: at 150 residents an
+   owner's resident is on the stream for about 7 minutes of an hour, and
+   small when it is there, so the owner's page draws it live.
+4. **The scale.** 32 pixels a tile, as #326 says, checked by the judge on
+   #326's captures. If figures don't read at that scale, the fix is fewer
+   residents to a region before a closer view.
+5. **The cuts.** They stand: three regions, three skills, the map notes and
+   the Stones add nothing new to watch.
+6. **Past 150 residents.** Not planned until a hosted game fills.
