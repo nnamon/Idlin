@@ -1070,24 +1070,27 @@ export function clock(world: World): Clock {
   };
 }
 
+const programInts = (name: string, program: Program): number[] => [
+  ...stringInts(name),
+  program.version,
+  program.code.length,
+  ...program.code,
+  program.rules.length,
+  ...program.rules.flatMap(stringInts),
+];
+
 /** A fingerprint of the program table: names in order, with each program's code and rule labels. */
 export function hashPrograms(programs: Programs): string {
   return hashInts(
     Object.keys(programs)
       .sort()
-      .flatMap((name) => {
-        const program = programs[name] as Program;
-        return [
-          ...stringInts(name),
-          program.version,
-          program.code.length,
-          ...program.code,
-          program.rules.length,
-          ...program.rules.flatMap(stringInts),
-        ];
-      }),
+      .flatMap((name) => programInts(name, programs[name] as Program)),
   );
 }
+
+/** A fingerprint of one program under its name, so a snapshot can say which programs it ran. */
+export const hashProgram = (name: string, program: Program): string =>
+  hashInts(programInts(name, program));
 
 /** A fingerprint of the monster kinds: names in order, with each one's numbers. */
 export function hashKinds(kinds: Kinds): string {
@@ -1121,16 +1124,39 @@ const halves = (n: number): number[] => [
  * before version 9 held the first V8_GOODS goods only.
  */
 function hashWorldAs(world: World, version: number): string {
-  const { rng, atlas } = world;
+  const { atlas } = world;
+  return hashStateAs(world, version, {
+    map: version >= 7 ? hashAtlas(atlas) : hashMap((atlas.regions[0] as Region).map),
+    programs: hashPrograms(world.programs),
+    kinds: hashKinds(world.kinds),
+    spawns: hashSpawns(world.spawns),
+  });
+}
+
+/** The fingerprints of a world's content, as a snapshot of it stores them. */
+export interface Prints {
+  readonly map: string;
+  readonly programs: string;
+  readonly kinds: string;
+  /** Not hashed in version 4, which had no spawn table. */
+  readonly spawns: string;
+}
+
+/**
+ * The hash a snapshot of `version` stored, with the content given by its
+ * fingerprints only. `adopt` uses it to check a snapshot taken with content
+ * it no longer has; the world's own atlas, programs, kinds and spawns are not read.
+ */
+export function hashStateAs(world: World, version: number, prints: Prints): string {
+  const { rng } = world;
   const v4 = version === 4;
   const before6 = version < 6;
   const before8 = version < 8;
   const before9 = version < 9;
-  const ground = version >= 7 ? hashAtlas(atlas) : hashMap((atlas.regions[0] as Region).map);
   return hashInts([
-    ...stringInts(ground),
-    ...stringInts(hashPrograms(world.programs)),
-    ...stringInts(hashKinds(world.kinds)),
+    ...stringInts(prints.map),
+    ...stringInts(prints.programs),
+    ...stringInts(prints.kinds),
     // The tick outgrows 32 bits after some years of uptime, so both halves are hashed.
     ...halves(world.tick),
     rng.a,
@@ -1165,7 +1191,7 @@ function hashWorldAs(world: World, version: number): string {
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
-    ...(v4 ? [] : stringInts(hashSpawns(world.spawns))),
+    ...(v4 ? [] : stringInts(prints.spawns)),
     ...(v4
       ? []
       : version < 7
@@ -1202,13 +1228,22 @@ export class SnapshotError extends Error {
   override name = "SnapshotError";
 }
 
-/** The world as text. The maps are not stored, only a fingerprint of the regions and exits. */
+/**
+ * The world as text. The maps are not stored, only a fingerprint of the regions
+ * and exits. `byProgram` holds a fingerprint of each program by name, so that
+ * `adopt` can tell which programs changed; it is not part of the hash.
+ */
 export function snapshot(world: World): string {
   const { atlas, programs, kinds, spawns, ...state } = world;
   return JSON.stringify({
     version: SNAPSHOT_VERSION,
     map: hashAtlas(atlas),
     programs: hashPrograms(programs),
+    byProgram: Object.fromEntries(
+      Object.keys(programs)
+        .sort()
+        .map((name) => [name, hashProgram(name, programs[name] as Program)]),
+    ),
     kinds: hashKinds(kinds),
     spawns: hashSpawns(spawns),
     hash: hashWorld(world),
@@ -1216,12 +1251,84 @@ export function snapshot(world: World): string {
   });
 }
 
+/** A snapshot's text, parsed, with its version checked and nothing else. */
+export interface Saved {
+  readonly version: number;
+  readonly map: unknown;
+  readonly programs: unknown;
+  readonly byProgram: unknown;
+  readonly kinds: unknown;
+  readonly spawns: unknown;
+  readonly hash: unknown;
+  readonly state: unknown;
+}
+
+/** Parses a snapshot and checks its version. Throws a SnapshotError if either fails. */
+export function parseSnapshot(text: string): Saved {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new SnapshotError("snapshot is not valid JSON");
+  }
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    throw new SnapshotError("snapshot is not an object");
+  }
+  const { version, map, programs, byProgram, kinds, spawns, hash, state } = data as Record<
+    string,
+    unknown
+  >;
+  if (
+    typeof version !== "number" ||
+    !Number.isInteger(version) ||
+    version < 4 ||
+    version > SNAPSHOT_VERSION
+  ) {
+    throw new SnapshotError(`snapshot version ${show(version)} is not 4 to ${SNAPSHOT_VERSION}`);
+  }
+  return { version, map, programs, byProgram, kinds, spawns, hash, state };
+}
+
+/**
+ * Whether a snapshot's map fingerprint is that of `atlas`. Versions 4 to 6,
+ * from before regions, ran on one map, so the atlas must be that map alone at (0, 0).
+ */
+export function sameGround(version: number, mapHash: unknown, atlas: Atlas): boolean {
+  if (version >= 7) return mapHash === hashAtlas(atlas);
+  const only = atlas.regions[0] as Region;
+  return (
+    atlas.regions.length === 1 &&
+    only.x === 0 &&
+    only.y === 0 &&
+    atlas.exits.length === 0 &&
+    mapHash === hashMap(only.map)
+  );
+}
+
+/**
+ * A snapshot's state brought up to the current version, each older version to
+ * the next in order. Throws a SnapshotError for old monsters that today's
+ * rules do not allow (see refuseOldMonsters); anything else is left for
+ * readState to judge.
+ */
+export function migrate(version: number, state: unknown, atlas: Atlas): unknown {
+  const old = version < 7;
+  if (old) refuseOldMonsters(state, atlas);
+  const v5 = version === 4 ? fromVersion4(state) : state;
+  const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
+  const v7 = old ? fromVersion6(v6) : v6;
+  const v8 = version < 8 ? fromVersion7(v7) : v7;
+  return version < 9 ? fromVersion8(v8, atlas) : v8;
+}
+
 /**
  * Rebuilds a world from a snapshot and the content it was taken with. Refuses,
  * with a SnapshotError, anything it cannot be sure it reads correctly: another
  * version, other maps or exits, other programs, monster kinds or spawns, or
  * contents that do not hash to what was saved. Throws a ProgramError, KindError
- * or MapError instead if the content passed in is itself invalid.
+ * or MapError instead if the content passed in is itself invalid. This is the
+ * strict path, which tests and the viewer use; `adopt` carries a world over
+ * to content that has changed.
  *
  * Versions 4 to 6, from before regions, are read too, into a world of the one
  * map they ran on (which must be passed in as that map, or as a world of that
@@ -1240,15 +1347,6 @@ export function restore(
   spawns: Spawns = [],
 ): World {
   const atlas = atlasOf(ground);
-  let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new SnapshotError("snapshot is not valid JSON");
-  }
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    throw new SnapshotError("snapshot is not an object");
-  }
   const {
     version,
     map: mapHash,
@@ -1257,26 +1355,9 @@ export function restore(
     spawns: spawnsHash,
     hash,
     state,
-  } = data as Record<string, unknown>;
-  if (
-    typeof version !== "number" ||
-    !Number.isInteger(version) ||
-    version < 4 ||
-    version > SNAPSHOT_VERSION
-  ) {
-    throw new SnapshotError(`snapshot version ${show(version)} is not 4 to ${SNAPSHOT_VERSION}`);
-  }
-  // Versions 4 to 6 come from before regions.
-  const old = version < 7;
-  const only = atlas.regions[0] as Region;
-  const sameGround = old
-    ? atlas.regions.length === 1 &&
-      only.x === 0 &&
-      only.y === 0 &&
-      atlas.exits.length === 0 &&
-      mapHash === hashMap(only.map)
-    : mapHash === hashAtlas(atlas);
-  if (!sameGround) throw new SnapshotError("snapshot was taken on a different map");
+  } = parseSnapshot(text);
+  if (!sameGround(version, mapHash, atlas))
+    throw new SnapshotError("snapshot was taken on a different map");
   const table = checkPrograms(programs);
   if (programsHash !== hashPrograms(table)) {
     throw new SnapshotError("snapshot was taken with different programs");
@@ -1290,14 +1371,7 @@ export function restore(
   if (version !== 4 && spawnsHash !== hashSpawns(spawnTable)) {
     throw new SnapshotError("snapshot was taken with different spawns");
   }
-  if (old) refuseOldMonsters(state, atlas);
-  // Each older version is brought up to the next, in order.
-  const v5 = version === 4 ? fromVersion4(state) : state;
-  const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
-  const v7 = old ? fromVersion6(v6) : v6;
-  const v8 = version < 8 ? fromVersion7(v7) : v7;
-  const current = version < 9 ? fromVersion8(v8, atlas) : v8;
-  const world = readState(current, atlas, table, kindTable, spawnTable);
+  const world = readState(migrate(version, state, atlas), atlas, table, kindTable, spawnTable);
   if (!world || hashWorldAs(world, version) !== hash)
     throw new SnapshotError("snapshot contents are damaged");
   return world;
@@ -1465,7 +1539,7 @@ const MAX_WAIT_TICKS = 1_000_000;
  * a world could hold. The hash alone is not trusted for this: it folds every
  * value to 32 bits, so it cannot tell a number from a string that reads the same.
  */
-function readState(
+export function readState(
   raw: unknown,
   atlas: Atlas,
   programs: Programs,

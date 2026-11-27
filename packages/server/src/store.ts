@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { restore, SnapshotError, snapshot, type World } from "@idlin/sim";
+import { adopt, SnapshotError, snapshot, type World } from "@idlin/sim";
 import type { Content } from "./content.ts";
 
 /**
@@ -97,8 +97,10 @@ export function saveSnapshot(
 
 /**
  * The world from the newest snapshot in `dir` that restores, or null if none
- * does. Each snapshot that fails is logged with the reason and the next older
- * one is tried. One the sim refuses is set aside under a name ending in `.bad`,
+ * does. A snapshot taken with other content than `content` is adopted (see
+ * `adopt` in the sim) and what that changed is logged. Each snapshot that fails
+ * is logged with the reason and the next older one is tried. One the sim
+ * refuses (unreadable, damaged, or another version) is set aside under a name ending in `.bad`,
  * so it is kept to look at and never tried again; if that fails too, that is
  * logged, its name is added to `stuck`, and the search goes on. The caller
  * passes `stuck` to saveSnapshot as `keep`, so that file is not lost.
@@ -119,7 +121,12 @@ export function loadNewest(
     }
     try {
       const { atlas, programs, kinds, spawns } = content;
-      return { world: restore(text, atlas, programs, kinds, spawns), file };
+      const { world, changes } = adopt(text, atlas, programs, kinds, spawns);
+      if (changes.length > 0) {
+        log(`snapshot ${file} was taken with other content; keeping its world:`);
+        for (const change of changes) log(`  ${change}`);
+      }
+      return { world, file };
     } catch (error) {
       if (!(error instanceof SnapshotError)) {
         // Not a refusal of the file; it may be this build's fault, so the file is left as it is.

@@ -33,7 +33,11 @@ docker compose run --rm capture captures/review --review       # the watch-revie
 - `server` runs the world server (`packages/server/src/main.ts`) on port 4311.
   It resumes from the newest valid snapshot in `data/`, saves one every 600 ticks (a
   minute of real time) and when the service stops, and sends the whole world to each viewer
-  after every tick. A snapshot it cannot use is skipped with the reason in the
+  after every tick. A snapshot taken with other programs, monsters or maps
+  than the server now has is adopted: the world goes on with the new content,
+  and the log lists what that changed (actors removed or moved, memory
+  cleared; see `docs/decisions/0021-keeping-the-world-through-content-changes.md`).
+  A snapshot it cannot use is skipped with the reason in the
   log. One the simulation refuses (cut short, damaged, or of another version)
   is also renamed to end in `.bad` (`.1.bad`, `.2.bad` and so on if that name is
   taken, so nothing set aside is replaced). The new name is a hard link, or a

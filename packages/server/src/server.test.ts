@@ -17,9 +17,11 @@ import { runInNewContext } from "node:vm";
 import {
   type Actor,
   ADVENTURER,
+  compileBots,
   createWorld,
   GROUP_SPREAD,
   hashWorld,
+  placeConstants,
   restore,
   SNAPSHOT_VERSION,
   spawnsNearCamp,
@@ -30,7 +32,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { castOf } from "../../client/src/cast.ts";
-import { shippedPrograms as botPrograms } from "../../sim/src/testing.ts";
+import { shippedPrograms as botPrograms, botSources } from "../../sim/src/testing.ts";
 import { loadContent } from "./content.ts";
 import {
   CLOSE_DEADLINE_MS,
@@ -306,7 +308,7 @@ describe("world server", () => {
     watcher.close();
   });
 
-  it("sets aside a snapshot saved without monsters and starts a new world with them", async () => {
+  it("keeps the residents of a snapshot saved without monsters, and monsters come", async () => {
     const dir = tempDir();
     const without = createWorld(CONTENT.atlas, SEED, botPrograms());
     step(without, spawnsNearCamp(without, castOf(RESIDENTS)));
@@ -315,12 +317,59 @@ describe("world server", () => {
 
     const lines: string[] = [];
     const server = await start(dir, lines);
-    expect(lines.slice(0, 2)).toEqual([
-      "skipping snapshot world-0000000000000500.json: snapshot was taken with different programs",
-      `no snapshot to resume; new world from seed ${SEED}`,
+    expect(lines).toEqual([
+      "snapshot world-0000000000000500.json was taken with other content; keeping its world:",
+      "  the programs have changed",
+      "  the monster kinds have changed",
+      "  the spawns have changed",
+      "resumed world-0000000000000500.json at tick 500",
     ]);
-    expect(readdirSync(dir)).toContain("world-0000000000000500.json.bad");
-    expect(hashWorld(server.world)).toBe(hashWorld(reference(1)));
+    expect(readdirSync(dir)).toEqual(["world-0000000000000500.json"]);
+    expect(server.world.actors).toEqual(without.actors);
+    expect(server.world.spawns).toEqual(CONTENT.spawns);
+    while (server.world.tick <= TICKS_PER_DAY && server.world.actors.length === RESIDENTS)
+      server.advance(1);
+    expect(server.world.actors.some((actor) => actor.kind !== ADVENTURER)).toBe(true);
+  });
+
+  it("keeps a world through a program edit: residents keep their places and levels", async () => {
+    const dir = tempDir();
+    const world = reference(3000);
+    // Levels from a long life, so there is something to lose.
+    world.actors.forEach((actor, n) => {
+      if (actor.kind === ADVENTURER) actor.xp = actor.xp.map((_, skill) => 1000 * (n + skill + 1));
+    });
+    saveSnapshot(dir, world);
+    const sources = botSources();
+    const edited = sources.homebody?.replace("wander; wait(30)", "wander; wait(31)") as string;
+    expect(edited).not.toBe(sources.homebody);
+    const content = {
+      ...CONTENT,
+      programs: {
+        ...CONTENT.programs,
+        ...compileBots({ homebody: edited }, placeConstants(CONTENT.atlas)),
+      },
+    };
+    const homebodies = world.actors.filter((actor) => actor.program === "homebody").length;
+    expect(homebodies).toBeGreaterThan(0);
+
+    const lines: string[] = [];
+    const server = await start(dir, lines, 100, { content });
+    expect(lines).toEqual([
+      "snapshot world-0000000000003000.json was taken with other content; keeping its world:",
+      "  the programs have changed",
+      `  cleared the memory and rule of ${homebodies} actor(s) running "homebody"`,
+      "resumed world-0000000000003000.json at tick 3000",
+    ]);
+    expect(server.world.tick).toBe(3000);
+    const kept = (actor: Actor) => [actor.id, actor.name, actor.x, actor.y, actor.hp, actor.xp];
+    expect(server.world.actors.map(kept)).toEqual(world.actors.map(kept));
+    expect(server.world.actors.filter((a) => a.kind === ADVENTURER).length).toBe(RESIDENTS);
+    // It runs on and saves with the new content.
+    server.advance(100);
+    const saved = readFileSync(join(dir, snapshotName(3100)), "utf8");
+    const { atlas, programs, kinds, spawns } = content;
+    expect(hashWorld(restore(saved, atlas, programs, kinds, spawns))).toBe(hashWorld(server.world));
   });
 
   it("sends the world on connect and after every tick; a late viewer sees what an early one sees", async () => {

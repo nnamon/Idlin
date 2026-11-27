@@ -1,3 +1,4 @@
+export { type Adopted, adopt } from "./adopt.ts";
 export {
   type Atlas,
   atlasOf,
