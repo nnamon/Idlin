@@ -97,7 +97,8 @@ type Idlin = {
  * Opens the viewer in capture mode at a game hour and waits until it has
  * drawn its first frame. With `monsters`, the world has the shipped monsters
  * in it, as it does not yet by default. With `levels`, the residents are given
- * a spread of levels (a viewer from before `?levels` ignores it).
+ * a spread of levels and of death counts, for the figures' kit and patches (a
+ * viewer from before `?levels` or `?deaths` ignores it).
  */
 async function open(
   hour: number | string,
@@ -105,7 +106,7 @@ async function open(
   monsters = false,
   levels = false,
 ): Promise<void> {
-  const fight = `${monsters ? "&monsters" : ""}${levels ? "&levels" : ""}`;
+  const fight = `${monsters ? "&monsters" : ""}${levels ? "&levels&deaths" : ""}`;
   await page.goto(`${origin}/?capture&seed=1&hour=${hour}&crowd=${residents}${fight}`);
   await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
   const failure = await page.evaluate(() => document.body.dataset.error ?? null);
@@ -213,7 +214,7 @@ const flickerFail =
     : [];
 
 if (review) {
-  // Figures: twelve residents with a spread of levels, in the morning: the
+  // Figures: twelve residents with a spread of levels and deaths, in the morning: the
   // whole frame, a close crop of the camp twice as large, and the same as a
   // 640-wide window shows it, with its crop four times as large.
   await open(FIGURES_HOUR, 12, false, true);

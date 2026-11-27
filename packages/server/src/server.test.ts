@@ -180,7 +180,7 @@ describe("world server", () => {
     const second = await start(dir, lines);
     expect(lines.slice(0, 3)).toEqual([
       "skipping snapshot world-0000000000000301.json: snapshot is not valid JSON",
-      `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4, 5, 6 or ${SNAPSHOT_VERSION}`,
+      `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4 to ${SNAPSHOT_VERSION}`,
       "resumed world-0000000000000101.json at tick 101",
     ]);
     expect(hashWorld(second.world)).toBe(hashWorld(reference(101)));

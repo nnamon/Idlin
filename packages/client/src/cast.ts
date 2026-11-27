@@ -44,6 +44,20 @@ export function spreadLevels(
   });
 }
 
+/** The death counts `spreadDeaths` hands out, one per resident in turn. The last is past the most patches drawn. */
+export const DEATH_SPREAD = [0, 1, 3, 5, 9] as const;
+
+/**
+ * For captures only (`?deaths`): gives the residents of a world of the
+ * viewer's own a spread of death counts, so that figures with no patches up
+ * to the most can be seen side by side. The world server never does this.
+ */
+export function spreadDeaths(actors: readonly { deaths: number }[]): void {
+  actors.forEach((actor, n) => {
+    actor.deaths = DEATH_SPREAD[n % DEATH_SPREAD.length] as number;
+  });
+}
+
 export function castOf(count: number): { name: string; program: string }[] {
   const size = Math.max(1, Math.min(MAX_CAST, Math.floor(count)));
   return Array.from({ length: size }, (_, i) => ({

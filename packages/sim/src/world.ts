@@ -44,6 +44,8 @@ export const MAX_NAME_LENGTH = 16;
 export const MAX_ACTOR_ID = 0x7fffffff;
 /** Ticks an adventurer rests at camp after being struck down, before its program runs again. */
 export const DOWN_TICKS = 150;
+/** An adventurer's death count stops here. */
+export const MAX_DEATHS = 0x7fffffff;
 
 /** What a kind of actor can take and deal in a fight. Content, like programs: fixed for the life of a world. */
 export interface Kind {
@@ -354,6 +356,8 @@ export interface Actor {
   bag: number[];
   /** How many of each good this actor has banked, in GOODS order. Always 0 for a monster. */
   bank: number[];
+  /** Times this adventurer has been struck down, up to MAX_DEATHS. Always 0 for a monster, which leaves the world. */
+  deaths: number;
 }
 
 export type Shift = "" | "day" | "night";
@@ -656,6 +660,7 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     actor.recover = 0;
     actor.wait = DOWN_TICKS;
     actor.hp = ADVENTURER_KIND.hp;
+    actor.deaths = Math.min(MAX_DEATHS, actor.deaths + 1);
   }
 }
 
@@ -919,6 +924,7 @@ function addActor(
     xp: noXp(),
     bag: emptyBag(),
     bank: emptyBank(),
+    deaths: 0,
   });
 }
 
@@ -1071,12 +1077,14 @@ const halves = (n: number): number[] => [
  * The hash a snapshot of `version` stored. Versions 4 to 6 ran on one map, so
  * they hashed that map and, in versions 5 and 6, one `nextSpawn`. Version 4
  * had no spawn table, no `nextSpawn`, and no `shift` or `stalled` on actors,
- * and versions 4 and 5 had no experience, bag or bank, so those are left out.
+ * versions 4 and 5 had no experience, bag or bank, and versions before 8 no
+ * death count, so those are left out.
  */
 function hashWorldAs(world: World, version: number): string {
   const { rng, atlas } = world;
   const v4 = version === 4;
   const before6 = version < 6;
+  const before8 = version < 8;
   const ground = version >= 7 ? hashAtlas(atlas) : hashMap((atlas.regions[0] as Region).map);
   return hashInts([
     ...stringInts(ground),
@@ -1112,6 +1120,7 @@ function hashWorldAs(world: World, version: number): string {
       a.recover,
       ...(v4 ? [] : [SHIFTS.indexOf(a.shift), a.stalled]),
       ...(before6 ? [] : [...a.xp, ...a.bag, ...a.bank]),
+      ...(before8 ? [] : [a.deaths]),
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
@@ -1141,7 +1150,7 @@ export function hashSpawns(spawns: Spawns): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 7;
+export const SNAPSHOT_VERSION = 8;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -1173,7 +1182,8 @@ export function snapshot(world: World): string {
  * map alone at (0, 0)). A version 4 snapshot, from before monsters spawned on
  * their own, has no spawn table to compare and takes on the spawns passed in.
  * In a version 4 or 5 snapshot, from before skills and the bank, everyone
- * starts with no experience, an empty bag and an empty bank.
+ * starts with no experience, an empty bag and an empty bank. In a snapshot
+ * from before version 8, nobody has died yet.
  */
 export function restore(
   text: string,
@@ -1201,12 +1211,11 @@ export function restore(
     hash,
     state,
   } = data as Record<string, unknown>;
-  if (version !== SNAPSHOT_VERSION && version !== 4 && version !== 5 && version !== 6) {
-    throw new SnapshotError(
-      `snapshot version ${show(version)} is not 4, 5, 6 or ${SNAPSHOT_VERSION}`,
-    );
+  if (version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8) {
+    throw new SnapshotError(`snapshot version ${show(version)} is not 4 to ${SNAPSHOT_VERSION}`);
   }
-  const old = version !== SNAPSHOT_VERSION;
+  // Versions 4 to 6 come from before regions.
+  const old = version < 7;
   const only = atlas.regions[0] as Region;
   const sameGround = old
     ? atlas.regions.length === 1 &&
@@ -1233,7 +1242,8 @@ export function restore(
   // Each older version is brought up to the next, in order.
   const v5 = version === 4 ? fromVersion4(state) : state;
   const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
-  const current = old ? fromVersion6(v6) : state;
+  const v7 = old ? fromVersion6(v6) : v6;
+  const current = version < 8 ? fromVersion7(v7) : v7;
   const world = readState(current, atlas, table, kindTable, spawnTable);
   if (!world || hashWorldAs(world, version) !== hash)
     throw new SnapshotError("snapshot contents are damaged");
@@ -1330,6 +1340,19 @@ function fromVersion6(state: unknown): unknown {
   return { ...state, nextSpawn: [nextSpawn] };
 }
 
+/** A version 7 world's state with the field version 8 added: nobody has died yet. */
+function fromVersion7(state: unknown): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return state;
+  return {
+    ...state,
+    actors: actors.map((actor: unknown) =>
+      typeof actor === "object" && actor !== null ? { ...actor, deaths: 0 } : actor,
+    ),
+  };
+}
+
 const MAX_WAIT_TICKS = 1_000_000;
 
 /**
@@ -1403,6 +1426,7 @@ function readState(
       xp: rawXp,
       bag: rawBag,
       bank: rawBank,
+      deaths,
     } = item as Record<string, unknown>;
     const xp = counts(rawXp, SKILLS.length, MAX_XP);
     const bag = counts(rawBag, BAG_SLOTS, GOODS.length);
@@ -1410,6 +1434,9 @@ function readState(
     if (!xp || !bag || !bank) return null;
     // A monster has no skills and carries and keeps nothing.
     if (kind !== ADVENTURER && [...xp, ...bag, ...bank].some((n) => n !== 0)) return null;
+    // A monster that dies leaves the world, so only an adventurer counts deaths.
+    if (!isInt32(deaths) || deaths < 0 || deaths > MAX_DEATHS) return null;
+    if (kind !== ADVENTURER && deaths !== 0) return null;
     if (!isInt32(id) || id <= lastId || id >= nextActorId) return null;
     lastId = id;
     if (typeof kind !== "string") return null;
@@ -1486,6 +1513,7 @@ function readState(
       xp,
       bag,
       bank,
+      deaths,
     });
   }
   // Only adventurers share a tile.

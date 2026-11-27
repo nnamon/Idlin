@@ -13,7 +13,7 @@ import {
   XP_TABLE,
 } from "@idlin/sim";
 import worldJson from "../../../content/world.json";
-import { castOf, spreadLevels } from "./cast.ts";
+import { castOf, spreadDeaths, spreadLevels } from "./cast.ts";
 import { fitFrame } from "./frame.ts";
 import type { MapLabel } from "./ground.ts";
 import { follow } from "./live.ts";
@@ -116,6 +116,8 @@ async function main(): Promise<void> {
       world.actors.filter((actor) => actor.kind === ADVENTURER),
       (level) => XP_TABLE[level] ?? 0,
     );
+  // `?deaths` gives the residents a spread of death counts, so a capture can show the patches.
+  if (params.has("deaths")) spreadDeaths(world.actors.filter((actor) => actor.kind === ADVENTURER));
   // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
   const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
 
@@ -154,7 +156,7 @@ async function main(): Promise<void> {
   // address). It runs a world of its own for captures, or when the URL asks for one with
   // `?local` or any of the settings only a world of its own can take.
   if (
-    !["capture", "local", "seed", "hour", "crowd", "monsters", "levels"].some((name) =>
+    !["capture", "local", "seed", "hour", "crowd", "monsters", "levels", "deaths"].some((name) =>
       params.has(name),
     )
   ) {

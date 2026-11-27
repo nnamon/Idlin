@@ -169,9 +169,12 @@ const isResident = (actor: Actor): boolean => actor.kind === ADVENTURER;
  * The parts each resident's figure is drawn from, by id; by its id alone if it
  * has left the world. Make one per draw: it looks the actors up once.
  */
-const partsIn = (world: World): ((id: number) => Parts) => {
+const partsIn = (world: World): ((id: number) => Parts & { deaths: number }) => {
   const byId = new Map(world.actors.map((actor) => [actor.id, actor]));
-  return (id) => partsFor(byId.get(id) ?? id);
+  return (id) => {
+    const actor = byId.get(id);
+    return { ...partsFor(actor ?? id), deaths: actor?.deaths ?? 0 };
+  };
 };
 
 /** `world` with the actors the page lists, so a resident off the map is drawn there in its own kit. */

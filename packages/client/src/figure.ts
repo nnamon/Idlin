@@ -21,6 +21,62 @@ export interface FigureStyle extends Parts {
   /** 1 faces right, -1 faces left. */
   readonly facing: 1 | -1;
   readonly scale: number;
+  /** Times the resident has been struck down; one patch is sewn on the cloak for each, up to MAX_PATCHES. */
+  readonly deaths?: number;
+}
+
+export const MAX_PATCHES = 5;
+
+/** How many patches a resident struck down `deaths` times wears. */
+export const patchesFor = (deaths: number | undefined): number =>
+  Number.isFinite(deaths) ? Math.min(MAX_PATCHES, Math.max(0, Math.floor(deaths as number))) : 0;
+
+/**
+ * Where each patch sits, in the order they are sewn on: its centre, on the
+ * cloak's outline so that it breaks the silhouette, and how far it is turned.
+ * The front edge by the hem, the back edge by the hem, the middle of the hem,
+ * then higher up the front and the back. The y of each is where the cloak's
+ * outline passes, and its x moves with the sway by as much as the outline does there.
+ */
+export const PATCH_SPOTS: readonly { x: number; y: number; turn: number }[] = [
+  { x: 10.8, y: -11, turn: 0.3 },
+  { x: -10.8, y: -11, turn: -0.25 },
+  { x: 0, y: -7, turn: 0.15 },
+  { x: 9.6, y: -19, turn: -0.3 },
+  { x: -10.2, y: -19, turn: 0.25 },
+];
+
+/**
+ * The patches: small squares of paper sewn over the cloak's edge, each with
+ * its border stitched in ink, so that even where the figure is a dozen pixels
+ * tall they show as light notches in its outline.
+ */
+function drawPatches(ctx: Ctx, count: number, sway: number, ink: string, paper: string): void {
+  const half = 3.2;
+  for (const spot of PATCH_SPOTS.slice(0, count)) {
+    // The outline sways fully at the hem (y = -7) and not at all at the shoulders (y = -27).
+    const swayHere = sway * ((spot.y + 27) / 20);
+    ctx.save();
+    ctx.translate(spot.x - swayHere, spot.y);
+    ctx.rotate(spot.turn);
+    ctx.fillStyle = paper;
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1.6;
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    ctx.rect(-half, -half, 2 * half, 2 * half);
+    ctx.fill();
+    ctx.stroke();
+    // A running stitch just inside the edge.
+    const inset = half - 1.3;
+    ctx.lineWidth = 0.8;
+    ctx.lineCap = "butt";
+    ctx.setLineDash([1.2, 1]);
+    ctx.beginPath();
+    ctx.rect(-inset, -inset, 2 * inset, 2 * inset);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 type Shape = {
@@ -573,6 +629,7 @@ export function drawFigure(
   ctx.globalAlpha = base;
   // The mark, on the cloak's back in the paper's colour.
   drawMarkGlyph(ctx, looks.mark, -4.5 - sway * 0.5, -18, 6.5, paper, 1.3);
+  drawPatches(ctx, patchesFor(style.deaths), sway, ink, paper);
   if (pose.stoop > 0) {
     // Ragged: the hem torn in three places, and the head hung low.
     ctx.globalAlpha = base * pose.stoop;

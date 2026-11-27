@@ -44,7 +44,7 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("5b208ba3c13c2a46");
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("2e769653685f4a7e");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
