@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { emptyBag, emptyBank } from "./bag.ts";
-import { blow } from "./hit.ts";
+import { blow, rollCrit } from "./hit.ts";
 import { isWalkable, type Point, placeConstants } from "./map.ts";
 import { MAX_LEVEL, noXp, XP_TABLE } from "./skills.ts";
 import { compileBots } from "./tactics.ts";
@@ -603,6 +603,51 @@ describe("the flask", () => {
     expect(log.some((e) => e.type === "down" && e.actor === ash.id)).toBe(true);
     expect([ash.flask, ash.kills]).toEqual([FLASK_DRINKS, 0]);
     expect(ash.wait).toBeGreaterThan(DOWN_TICKS - 10);
+  });
+});
+
+describe("the crit roll", () => {
+  /**
+   * Ash's first blade swing east with a post on each of `tiles`, in a world of
+   * `seed`: the generator just before the tick it lands, the generator after,
+   * and that tick's hits and misses.
+   */
+  function firstSwing(seed: number, tiles: readonly Point[]) {
+    const world = createWorld(MAP, seed, PROGRAMS, KINDS);
+    step(world, [spawn("Ash", "east", ASH, "blade")]);
+    for (const { x, y } of tiles) plant(world, x, y);
+    for (let t = 0; t < 20; t++) {
+      const before = { ...world.rng };
+      const events = step(world).filter(
+        (e) => (e.type === "hit" || e.type === "miss") && e.actor === 1,
+      );
+      if (events.length > 0) return { before, after: world.rng, events };
+    }
+    throw new Error(`Ash did not swing in 20 ticks on seed ${seed}`);
+  }
+
+  it("one swing on six posts makes one roll, and every post takes the same crit", () => {
+    const crits = new Set<boolean>();
+    for (let seed = 1; seed <= 200; seed++) {
+      const { before, after, events } = firstSwing(seed, square(17, 18, 12, 14));
+      const hits = events.flatMap((e) => (e.type === "hit" ? [e] : []));
+      expect(hits).toHaveLength(6);
+      const crit = rollCrit(before, []);
+      for (const e of hits) expect(e.crit, `seed ${seed}: a post took its own crit`).toBe(crit);
+      expect(after, `seed ${seed}: the swing drew other than one roll`).toEqual(before);
+      crits.add(crit);
+    }
+    // Both kinds of swing came up, so the check above saw crits and plain hits.
+    expect(crits).toEqual(new Set([true, false]));
+  });
+
+  it("a swing that finds no one still makes its roll", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const { before, after, events } = firstSwing(seed, []);
+      expect(events.map((e) => e.type)).toEqual(["miss", "miss", "miss", "miss", "miss", "miss"]);
+      rollCrit(before, []);
+      expect(after, `seed ${seed}: the empty swing did not draw its roll`).toEqual(before);
+    }
   });
 });
 
