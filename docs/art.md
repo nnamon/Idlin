@@ -11,9 +11,10 @@ character and carries the chatter's username. Most of what is on screen today
 was drawn before this page existed and does not meet it. Section 13 says what
 does and what does not.
 
-Sizes are in frame pixels at 1920 by 1080 unless they say otherwise. A stream
-shrunk to a 640-wide window shows a third of that, so "3 px" here is one
-pixel there.
+Sizes are in frame pixels at 1920 by 1080. The viewer watches the stream on a
+desktop at that size, and everything here is drawn and lettered to be seen
+there. Every check on this page is made on the 1920 frame. A smaller window
+shows the same frame scaled down, and nothing is sized for one.
 
 ## 1. The look
 
@@ -64,16 +65,16 @@ constant width is roughed in, whatever else is right about it.
 
 Four weights, and nothing in between.
 
-| Weight  | Width   | At 640  | Used for                                                             |
-| ------- | ------- | ------- | -------------------------------------------------------------------- |
-| Heavy   | 5 px    | 1.7 px  | the city's hull and legs, a boss's contour, the horde's leading edge |
-| Contour | 3 px    | 1 px    | the outer silhouette of anything that acts or stands up              |
-| Form    | 1.5 px  | 0.5 px  | structure inside a silhouette: folds, planks, joints, a face         |
-| Hair    | 0.75 px | nothing | hatching and texture; at 640 it reads only as tone                   |
+| Weight  | Width   | Used for                                                             |
+| ------- | ------- | -------------------------------------------------------------------- |
+| Heavy   | 5 px    | the city's hull and legs, a boss's contour, the horde's leading edge |
+| Contour | 3 px    | the outer silhouette of anything that acts or stands up              |
+| Form    | 1.5 px  | structure inside a silhouette: folds, planks, joints, a face         |
+| Hair    | 0.75 px | hatching and texture, which read as tone                             |
 
-- Anything a viewer must see at 640 is a contour, a heavy line or a filled
-  shape. Form and hair lines may only add to a drawing that already reads
-  without them.
+- Anything a viewer must see at a glance is a contour, a heavy line or a
+  filled shape. Form and hair lines may only add to a drawing that already
+  reads without them.
 - Line width is set in screen pixels. It does not scale with the camera. When
   the view zooms out, drawings get smaller and their lines stay the same
   weight, so detail has to be dropped (section 5), never thinned.
@@ -121,7 +122,7 @@ Three, and no others.
 - Hatching follows form on anything round: it bends with a trunk or a hull.
 - The red-brown hatch (`#9c3b22`) means "a blow lands here" and nothing else.
 - Paper grain is made of fibres and blotches at least 6 px across. No
-  per-pixel speckle: it turns to noise at 640.
+  per-pixel speckle: it reads as noise.
 - Ground marks (grass, stones, reeds) are drawn in clumps with bare paper
   between them. Nothing repeats on an even pitch.
 
@@ -139,13 +140,16 @@ citizens' own colours.
   closer hatching than a citizen. A viewer tells the sides apart by colour
   against black before reading any shape. A monster takes its black as it
   wakes: one at rest is drawn pale (section 6).
-- **The darkest tenth.** Squint at a frame in greyscale at 640. The darkest
+- **The darkest tenth.** Squint at a 1920 frame in greyscale. The darkest
   shapes should be, in order of area: the city, the horde or the monsters
   that are awake, then lettering. If a bar, a border, a river, a route line
   or a pack at rest is among them, the frame is wrong.
 - **Contrast.** A contour against the ground under it: at least 7:1. Lettering
   that carries information: at least 4.5:1, and never under 3:1 while a
-  palette is changing. A wash never brings ink on it below 7:1.
+  palette is changing. A name tag at rest is the one exception: it is set at
+  60% ink (section 11) and holds at least 3:1 on every paper, the sky's cast
+  included. That is 3.75:1 on the day paper, about 3.4:1 on the fen's and
+  4.7:1 on the night paper. A wash never brings ink on it below 7:1.
 - **One accent a phase**, used on less than 2% of the frame. A wash or halo
   of the accent counts at its strength: a 35% wash over 1,000 px² counts as
   350. The shield may take it to 5% during the siege (section 7).
@@ -221,7 +225,7 @@ their rules and times), and the plate is a different picture in each.
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Peace             | No black. The map runs to the rule and stops as an unfinished drawing does: in its last two tiles the washes end and the lines trail off into bare paper. Packs are at rest in their pockets.                                         |
 | 2. Scouts            | The same map with scouts on it, in ones to threes, coming in from the rim's gaps toward citizens.                                                                                                                                     |
-| 3. The front gathers | Black comes in at the gaps and spreads along the rim on every side. It deepens from one tile to four (two on the first size of landing) as the horde gathers, and its depth is how a viewer at 640 tells how near the march is.       |
+| 3. The front gathers | Black comes in at the gaps and spreads along the rim on every side. It deepens from one tile to four (two on the first size of landing) as the horde gathers, and its depth is how a viewer tells how near the march is.              |
 | 4. The march         | The black moves. It takes the ground with the longest walk to the ramp first, on every side at once, so the pale ground shrinks to one shape round the city. The frame closes with it (section 12).                                   |
 | 5. The siege         | The horde meets the city's shield (section 7) and throws itself on it. Citizens fight at its foot. This is the late picture: a lit oblong with the city in it, a wall of light on lamp posts round it, and bodies heaped on the wall. |
 | 6. The break         | The shield goes all at once, the heap falls inward and the black takes the ground inside. Citizens run for the ramp from every side with the horde two or three tiles behind them.                                                    |
@@ -259,10 +263,11 @@ their rules and times), and the plate is a different picture in each.
   that the black has covered still shows the top of its outline as a paper
   line at form weight, so the map can be read under the ink.
 - It is the only large black thing on a daytime plate, which is how a viewer
-  at 640 reads the time: none, a rim, a closing shape, a pile against the
-  shield. The dial in the corner (section 11) says the same in numbers.
+  reads the time at a glance: none, a rim, a closing shape, a pile against
+  the shield. The dial in the corner (section 11) says the same in numbers.
 - Lettering that lies over the black is set in paper colour with no halo. A
-  name tag there keeps its rule in the cloak colour.
+  name tag there keeps its rule in the cloak colour, and a tag at rest is
+  set in paper at 60%.
 - Citizens at the shield and running in keep their full colours. From the
   march on the city's lantern is at the accent at full strength.
 
@@ -302,10 +307,9 @@ the city at one end and the enemy at the other.
   row, and the groups never join into a line round the shield. Which side
   of the foot they stand on is the simulation's rule
   ([slice.md](slice.md), section 1).
-- **The halves test.** Shrink the frame to 640 and cut it in half through the
-  city, across and then down. Each half has citizens, monsters and something
-  to take. If one half is ours and the other is theirs, the frame is staged
-  wrong.
+- **The halves test.** Cut the frame in half through the city, across and
+  then down. Each half has citizens, monsters and something to take. If one
+  half is ours and the other is theirs, the frame is staged wrong.
 
 ### The lean
 
@@ -357,13 +361,13 @@ of value, and a thing changes plane when it wakes.
   longest stroke. Section 10 has their sizes. A fight where every mark is
   the same size is a blot.
 - **The frame has a lead.** One fight in frame carries the frame's largest
-  mark: the one number at 72 px, or a unique's pole and slip. Every other
+  mark: the one number at 48 px, or a unique's pole and slip. Every other
   fight is a size below it.
 - **Quiet ground.** At least a third of a landing's ground carries nothing
   but ground marks, in stretches four tiles wide or more. Paths run through
   them. A map where packs stand at an even spacing from edge to edge has no
   pockets and no fights that can be found.
-- **The check.** Shrink a peace-phase frame to 640 and put it in greyscale.
+- **The check.** Put a peace-phase frame in greyscale and squint at it.
   The dark knots are the city and the fights, and they can be counted. If
   the dark is spread evenly over the map, the frame is wrong.
 
@@ -397,7 +401,7 @@ shown the larger it is.
 ### Construction
 
 - Three heads tall. The head is a paper disc with a contour; it is the mark
-  that says "a person" and is never smaller than 3 px across at 640.
+  that says "a person" and is never smaller than 9 px across.
 - The body is a cloak hung from a spine. The spine is a curve from the feet
   to the neck, and the pose bends it: upright standing, tipped 10 degrees
   into a walk and 20 into a run, coiled back before a blow, thrown forward
@@ -418,11 +422,11 @@ shown the larger it is.
 
 Height is from the feet to the top of the head. The hat stands above that.
 
-| Size | Where                                                           | Height at 1920 | At 640      | What is drawn                                                                                                                           |
-| ---- | --------------------------------------------------------------- | -------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Far  | a landing of the mid city's size or larger                      | 40 to 50 px    | 13 to 17 px | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
-| Mid  | a landing of the first two sizes; the siege; the deck when full | 54 to 76 px    | 18 to 25 px | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
-| Near | the deck in transit with 40 aboard or fewer                     | 96 to 120 px   | 32 to 40 px | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
+| Size | Where                                                           | Height at 1920 | What is drawn                                                                                                                           |
+| ---- | --------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Far  | a landing of the mid city's size or larger                      | 40 to 50 px    | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
+| Mid  | a landing of the first two sizes; the siege; the deck when full | 54 to 76 px    | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
+| Near | the deck in transit with 40 aboard or fewer                     | 96 to 120 px   | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
 
 - **A citizen's height comes from the camera**, in every scene. Between two
   columns it is on the straight line between them.
@@ -441,8 +445,9 @@ Height is from the feet to the top of the head. The hat stands above that.
   fewer tiles. That puts the widest landing at about 136 tiles.
 - At far size a figure is at most six shapes. Pattern, mark and patches are
   not drawn smaller; they are left out.
-- A viewer finds their own citizen on a landing by its name tag (section 11),
-  then by cloak colour and hat colour and shape.
+- A viewer finds their own citizen on a landing by its name tag, or by
+  calling it when the crowd is too thick for every name (section 11), then
+  by cloak colour and hat colour and shape.
 - A change of size during a zoom adds or drops whole parts, each fading over
   the part of the move where the figure is between two sizes. Lines never
   thin.
@@ -587,8 +592,8 @@ A landing is full of monsters, and they are in groups.
 - **Two packs never touch.** There are two tiles or more of open ground
   between one pack at rest and the next.
 - **Every pocket has its pack** (section 8), and more packs walk the ground
-  between pockets. On a landing with everyone out, a viewer at 640 sees
-  monsters on every side of the city before seeing any single one.
+  between pockets. On a landing with everyone out, a viewer sees monsters
+  on every side of the city before seeing any single one.
 - **A monster looks like a threat.** One that is not fighting is doing
   something a viewer reads as intent: a pack asleep in a heap with one
   awake, a pack pacing its ground or gnawing at a kill, a swarm boiling
@@ -695,7 +700,7 @@ These are the steps to draw toward. #413 fixes how many sizes there are and
 their tile counts; where its table differs, the columns here follow from it
 by the rules under the table. The slice draws the mid row. The last two
 rows are limits. Nothing is built to them before a still mockup of each, at
-1920 and 640, has been looked at.
+1920, has been looked at.
 
 | Step    | Hull, tiles | Legs | Planted, tiles | Landing, tiles | Px a tile, landed | Citizen, landed | Hull, of the frame's width | City, of the map | Px a tile, transit |
 | ------- | ----------- | ---: | -------------- | -------------- | ----------------: | --------------: | -------------------------: | ---------------: | -----------------: |
@@ -879,15 +884,15 @@ first set of biomes.
   and 26 on 80 by 45. A pocket with nothing in it is a mistake unless it is
   only a way through.
 - **A pocket has edges a viewer can see.** Each is bounded on two sides or
-  more by a wood, a crag, the river or the map's edge, and at 640 a viewer
-  can point to where one pocket stops and the next starts. Packs spread
-  over open ground with no masses between them are not pockets.
+  more by a wood, a crag, the river or the map's edge, and a viewer can
+  point to where one pocket stops and the next starts. Packs spread over
+  open ground with no masses between them are not pockets.
 - **Places stand out from scenery.** What can be taken or fought is drawn
   larger and with more contour than what is only terrain. Sizes are against
   a citizen, so they hold at every size of landing: a den's mound is two to
   two and a half citizens wide and no taller than two thirds of its width,
   a chest sits on a rise with its lid showing, a scrap heap is one and a
-  half citizens wide. A viewer at 640 can count the dens.
+  half citizens wide. A viewer can count the dens at a glance.
 - **Edges are curves.** Banks, coasts, treelines and cliff lines are fitted
   through the tile data with bends no tighter than two tiles. A staircase of
   tile edges is a hard miss at sign-off.
@@ -989,7 +994,7 @@ soft-edged particle, no drop shadow.
 - **Telegraphs.** The shape of the coming blow fills with red-brown hatching
   a stroke at a time, so its fullness says how soon. One shape for one blow,
   with a curved edge where the blow has one.
-- **How much of it.** A fight is read at 640 by what is in the air round it.
+- **How much of it.** A fight is found by what is in the air round it.
   Where a citizen is fighting, a still shows at least one of: a swing's
   stroke, a shot in flight, a body thrown, a burst of drops.
 - **Sized against the figure.** Tiles get small as a landing grows
@@ -1027,8 +1032,8 @@ soft-edged particle, no drop shadow.
   own colours. No ink blot: ink is what monsters are made of.
 - **Loot.** Drawn in colour, as citizens are: magic `#3e70a2`, rare
   `#d79a1e`, unique `#d9622b`. On a landing a drop is a marker. A rare or a
-  unique stands taller than a figure, so it is found at 640. Magic is a peg
-  half a citizen
+  unique stands taller than a figure, so it is found from across the map.
+  Magic is a peg half a citizen
   tall with a ringed bundle. A rare is a pole one and a half citizens tall
   with a swallowtail in its colour. A unique is a pole two and a half
   citizens tall with a slip that carries its name, drawn over a second.
@@ -1036,21 +1041,21 @@ soft-edged particle, no drop shadow.
   near size and is not drawn at far size. A citizen carrying an unopened rare
   or unique has a pennant in that colour on its bundle.
 - **Numbers.** One number a blow: the damage it did to everything it hit,
-  added up. It is lettered in roman at full ink, at 30 px, or 36 px for a
+  added up. It is lettered in roman at full ink, at 20 px, or 24 px for a
   blow that kills something bigger than fodder, held for half a second and
-  gone in a fifth. A crit is 48 px italic in the red-brown with a stroke
-  under it. The largest blow in frame may be set at 72 px, one at a time.
-  In each fight the largest number of the last second is set at 36 px at
-  least, so every fight has one number that is read at 640 (section 11). A
-  number's paper halo is 5 px wide all round, so the halos of its digits
-  join into one paper shape that knocks out what is under it. Over the
+  gone in a fifth. A crit is 32 px italic in the red-brown with a stroke
+  under it. The largest blow in frame may be set at 48 px, one at a time.
+  In each fight the largest number of the last second is set at 24 px at
+  least, so a fight's numbers have one that leads (section 4). A
+  number has the paper halo of its size (section 11), so the halos of its
+  digits join into one paper shape that knocks out what is under it. Over the
   horde's black a number is in paper colour with no halo. A number starts
   over what was struck and rises along its blow. It never lies over a
-  citizen's head, over more than a third of a figure, over a name tag or
-  over another number, and that comes before showing it. When its spot is
-  taken it steps on along the blow by half its own height, up to three
-  citizens away, and a 30 px number with nowhere free is left out. A crit,
-  a 36 px number and the 72 px one try the other directions too and reach
+  citizen's head, over more than a third of a figure, over a name tag at
+  either ink or over another number, and that comes before showing it. When
+  its spot is taken it steps on along the blow by half its own height, up to
+  three citizens away, and a 20 px number with nowhere free is left out. A crit,
+  a 24 px number and the 48 px one try the other directions too and reach
   twice as far, and one of them is left out only when it still has no free
   spot. At most 24 are in frame; past that the smallest are left out first,
   and the count never takes a crit.
@@ -1097,19 +1102,26 @@ number, an item or a label a player already knows.
 - **The face** is IM Fell English, in roman. Italic is for a crit's number
   only. An item's name is set in its rarity's colour, darkened until it
   holds 4.5:1 against the paper.
-- **Sizes** come from one scale: 24, 30, 36, 48, 72. Nothing is set under
-  24 px.
-- **What has to be read at 640** is 30 px or more on a corner's slip, and
-  36 px or more on the map, where it has a paper halo 5 px wide that knocks
-  out what is under it. Those are 10 and 12 px at 640. Fell at 24 px is
-  8 px there, with an x-height under 4 px; it reads on a clean slip with
-  effort and does not read over a drawn map. So 24 px is kept for what a viewer at full size needs and a
-  viewer at 640 can do without: the label under the time and a landing's
-  modifiers.
+- **Sizes** come from one scale: 20, 24, 32, 48. They are set for a viewer
+  at a desktop watching the 1920 frame, and a frame's lettering is checked
+  at that size and no other. Nothing is set under 20 px, because Fell runs
+  small for its size.
+
+  | Size  | In the corners                                                                   | On the map                                                                                   |
+  | ----- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+  | 20 px | the label under the time or the shield, a landing's modifiers                    | a name tag, a blow's number                                                                  |
+  | 24 px | the log line, the counts, a landing's size and levels, the shield's rate of loss | a called tag, a den's lettering, the number of a kill above fodder, a fight's largest number |
+  | 32 px | the time on the clock, the shield's lamps                                        | a crit                                                                                       |
+  | 48 px | nothing                                                                          | the frame's largest blow, one at a time                                                      |
+
+- **The halo.** Lettering on the map has a paper halo that knocks out what
+  is under it: 3 px wide at 20 and 24 px, 4 px at 32 and 6 px at 48.
+  Lettering on a slip has none.
 - **Hierarchy.** The largest thing on the plate is the drawing. In the
   corners the largest lettering is the time on the clock, or during the
-  siege the shield's lamps. On the map only a crit and
-  the frame's largest blow are set as large or larger.
+  siege the shield's lamps. On the map only a crit is set as large, and
+  only the frame's largest blow larger. Nothing is set smaller than a name
+  tag, and a tag at rest is the quietest lettering on the plate.
 - **One rule** at contour weight runs round the picture, 20 px in from the
   frame's edge. There is no strip under it and no second sheet beside it.
 
@@ -1122,35 +1134,52 @@ plate is boxed.
 
 | Corner      | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upper left  | The clock, then the shield. In transit, a dial 60 px across and the time to the landing at 48 px, with `landing` under the number at 24 px. On a landing until the march, the time to the march by the calls made so far, with `march` under it. The dial's wedge is the time gone. From the march to the break the clock is not drawn, and the slip holds the shield in its place: a ring 60 px across of one dot for each post, in the order they stand round the foot with the far side at the top, the lit ones filled in the accent and the dark ones in ink; the lamps lit and the posts at 48 px (`9/18`); beside them at 36 px in red-brown, the part of its full strength the shield is losing a minute at its present rate, as a negative whole percent (`−12%`); and `shield` under that at 24 px. Nothing in the slip counts to lift-off before the break, because when that is depends on how long the shield holds. At the break the shield row goes and the clock comes back with the time to lift-off and `lift-off` under it, the wedge and the number in red-brown. |
-| Upper right | The landing: its size and level range at 30 px (`Medium 23–68`), then its modifiers at 24 px, one a line (`packs ×2`, `rares +40%`). In transit it shows the landing ahead.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Lower left  | The log: one line at 30 px. A username ruled under in its cloak colour, a gap, then an item name in its rarity's colour or one label (`down`). A new line replaces the last, no sooner than two seconds after it. It keeps no history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Lower right | Counts at 30 px, each an icon and a number: citizens out (a cloaked figure), citizens aboard (the hull on its legs), kills (a blot), loot banked (a sack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Upper left  | The clock, then the shield. In transit, a dial 60 px across and the time to the landing at 32 px, with `landing` under the number at 20 px. On a landing until the march, the time to the march by the calls made so far, with `march` under it. The dial's wedge is the time gone. From the march to the break the clock is not drawn, and the slip holds the shield in its place: a ring 60 px across of one dot for each post, in the order they stand round the foot with the far side at the top, the lit ones filled in the accent and the dark ones in ink; the lamps lit and the posts at 32 px (`9/18`); beside them at 24 px in red-brown, the part of its full strength the shield is losing a minute at its present rate, as a negative whole percent (`−12%`); and `shield` under that at 20 px. Nothing in the slip counts to lift-off before the break, because when that is depends on how long the shield holds. At the break the shield row goes and the clock comes back with the time to lift-off and `lift-off` under it, the wedge and the number in red-brown. |
+| Upper right | The landing: its size and level range at 24 px (`Medium 23–68`), then its modifiers at 20 px, one a line (`packs ×2`, `rares +40%`). In transit it shows the landing ahead.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Lower left  | The log: one line at 24 px. A username ruled under in its cloak colour, a gap, then an item name in its rarity's colour or one label (`down`). A new line replaces the last, no sooner than two seconds after it. It keeps no history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Lower right | Counts at 24 px, each an icon and a number: citizens out (a cloaked figure), citizens aboard (the hull on its legs), kills (a blot), loot banked (a sack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 A card a chatter asks for ([chat.md](chat.md)) is a fifth slip beside the
 log, laid out one fact a line in two columns, under the same rules.
 
 ### On the map
 
-- **Name tags.** A username in ink with a paper halo 5 px wide, ruled under
-  in its owner's cloak colour. No banner and no box. It is set at 30 px,
-  and at 36 px on a landing while 20 citizens or fewer are out.
+- **Name tags.** A username in roman at 20 px with a paper halo 3 px wide,
+  ruled under at form weight in its owner's cloak colour. No banner and no
+  box. It is 20 px at every camera and however many are out. Fell has one
+  weight, so a tag is kept light by its size, its halo and its rule, and
+  nothing is stroked round its letters to thicken them. It is never taller
+  than the figure it names: the smallest citizen is 40 px (section 5),
+  twice a tag's size.
+  - **Its ink.** With 20 citizens or fewer out, every tag is at full ink.
+    With more, a tag is at full ink only while its owner is in a fight
+    (section 4), within two tiles of a drop's marker (section 10), named in
+    the log, or called. Every other tag is at 60% ink, and so is its
+    leader. The rule keeps its cloak colour at full strength at either
+    ink, because the colour is what ties a tag to its owner. A tag comes
+    up to full ink over a fifth of a second, holds it for two seconds
+    after the reason has gone, and eases back over half a second, so a
+    tag does not flicker as a fight moves past its owner.
   - **A called tag.** When a chatter's command is accepted or they ask for
-    their citizen ([chat.md](chat.md)), its tag is set at 48 px for six
-    seconds with a ring in its cloak colour round its feet, wherever it is
-    and however many are out. At most six tags are at 48 px at once; a
-    seventh waits at its usual size. This is how a viewer at 640 finds
-    their citizen in a crowd.
-  - It sits centred over the hat, 8 px above it. When that spot is taken by
-    another tag, a head or a corner, it takes the nearest free
-    spot of a fixed set, up to 150 px away, and a hair-line joins it to its
-    owner once it is more than 14 px off.
+    their citizen ([chat.md](chat.md)), its tag is set at 24 px at full ink
+    for six seconds, with its rule at contour weight and a ring at contour
+    weight in its cloak colour round its feet, as wide as the citizen is
+    tall. That holds wherever it is and however many are out. At most six
+    tags are called at once; a seventh waits at its usual size. This is
+    how a chatter spots their own citizen in a crowd.
+  - **Where it sits.** Centred over the hat, 6 px above it. When that spot
+    is taken by another tag, a head or a corner, it goes beside its owner,
+    to the right and then the left, with its near end 6 px from the figure
+    and its baseline level with the head. When those are taken too it
+    takes the nearest free spot of a fixed set, up to 100 px away, and a
+    hair-line joins it to its owner once its near end is more than 10 px
+    from the figure.
   - It holds its spot. It moves with its owner, changes spot only when it
     must and at most once a second, and slides there at no more than 4 px a
     frame against its owner, so a move of 72 px takes 0.3 s and a longer one
     takes longer.
   - It never lies over another tag or over a citizen, its owner included.
-    A number gives way to it (section 10).
+    A number gives way to it, whatever the tag's ink (section 10).
   - With 40 citizens or fewer out, every one is named. With more, at most
     24 tags are shown at once. They go first to a citizen in the log, one
     carrying a pennant, one who is down and one fighting a brute, an elite
@@ -1162,36 +1191,13 @@ log, laid out one fact a line in two columns, under the same rules.
     rail or a gun post. The rest take turns, four at a time, changing every
     five seconds. The count in the lower right says how many are aboard.
 - **Dens** are lettered `den`, a letter and their level (`den A 28`) at
-  36 px under the mouth, with the halo. The letter is what a chatter types
+  24 px under the mouth, with the halo. The letter is what a chatter types
   to send a citizen there. A unique's marker carries its name on a slip
   (section 10).
 - **Routes and intentions** are drawn as an engraver marks a march: a
   hair-line of dashes in ink along the curved path, with only the end cross
   in the walker's colour.
 - Damage numbers are section 10's. Nothing else is lettered on the map.
-
-### What a viewer at 640 gets
-
-A stream in a 640-wide window, or on a phone held upright, shows a third of
-these sizes. This is what such a viewer has, and a frame is checked against
-it.
-
-- **Read:** the time and its dial, the shield's lamps (`15/28`) and its rate
-  of loss, the log line, the counts, the landing's size and levels, every number of 36 px or
-  more, a called tag, a den's letter and level, and each name tag while 20
-  or fewer are out.
-- **Read with effort, and not relied on:** tags at 30 px, numbers at 30 px,
-  the corners' 24 px lines.
-- **Seen and not read:** the city; the black and how far it has come; the
-  shield's wall on its far side, its posts and which stretches of it are
-  still lit; a brute or an elite standing above the horde, and an elite's
-  sail; each fight as a knot of colour and black on pale ground
-  with a stroke and one number over it; packs at rest as pale patches;
-  dens as earth mounds; chests; a rare's or a unique's pole by its colour;
-  each citizen as a spot of its own colour.
-- **So:** with more than 20 out, a viewer at 640 finds their citizen by
-  typing, which calls its tag. Nothing a viewer needs in order to play is
-  lettered at a size from the second or third line of this list alone.
 
 ## 12. The zoom between city and landing
 
@@ -1256,9 +1262,9 @@ Hard:
 2. Every new stroke comes from the pen, at one of the four weights.
 3. Fills are wash, spot black or paper. No gradient or soft edge outside
    lamplight's three steps.
-4. It reads at 640: the full frame shrunk to 640 wide still shows what the
-   change is for, and lettering that has to be read there is 10 px or more
-   on a slip and 12 px or more on the map (section 11).
+4. It reads at 1920: the full frame shows at a glance what the change is
+   for, and its lettering is at the sizes of section 11, none of it under
+   20 px.
 5. The palette rules hold: citizens own saturated colour, and the darkest
    tenth of the frame is the city, the horde or monsters that are awake,
    and lettering. Packs at rest are drawn at rest (section 6).
@@ -1269,25 +1275,30 @@ Hard:
    passes, nothing is drawn side-on as a lane, and no rank, file or front
    is in frame.
 9. Every citizen in frame can be found, in full or as an outline.
+10. The first glance at 1920 lands on the fights and the citizens, and on
+    lettering last. No lettering outweighs what it labels: a tag is never
+    taller than its figure, and labels or empty ground never take more of
+    the frame than the drawing they belong to. A frame that fails this
+    fails the look pass, whatever else holds.
 
 Soft:
 
-10. The silhouette test passes for any new body, at 12 px in solid black.
+11. The silhouette test passes for any new body, at 12 px in solid black.
     No brute or elite can be taken for a den, a crag, a heap or a standing
     stone, and no crest for a flame (section 6).
-11. A new state has a pose, and a new blow has all its beats: coil, contact,
+12. A new state has a pose, and a new blow has all its beats: coil, contact,
     hit-stop, follow-through.
-12. Variation: no stamp repeated with only its size changed, and no crowd in
+13. Variation: no stamp repeated with only its size changed, and no crowd in
     step or in a grid.
-13. Ink behaves as ink: thrown along the blow, wet then spreading then dry.
-14. Night is drawn in masses with rims toward the lantern.
-15. The frame has one lead and every fight in it has a focus (section 4),
+14. Ink behaves as ink: thrown along the blow, wet then spreading then dry.
+15. Night is drawn in masses with rims toward the lantern.
+16. The frame has one lead and every fight in it has a focus (section 4),
     and a squint finds them.
-16. The capture was looked at in day and night, at 1920 and at 640.
-17. Monsters are in packs and swarms, every pocket in frame has one, and
+17. The capture was looked at in day and night, at 1920.
+18. Monsters are in packs and swarms, every pocket in frame has one, and
     none stands idle facing nothing (section 6).
-18. A third of a landing's ground is quiet, and its pockets have edges a
-    viewer at 640 can point to (sections 4 and 8).
+19. A third of a landing's ground is quiet, and its pockets have edges a
+    viewer can point to (sections 4 and 8).
 
 ### What meets this today
 
