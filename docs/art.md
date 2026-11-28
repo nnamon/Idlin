@@ -424,8 +424,8 @@ Height is from the feet to the top of the head. The hat stands above that.
 
 | Size | Where                                                                                                  | Height at 1920 | What is drawn                                                                                                                           |
 | ---- | ------------------------------------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Far  | a landing of the mid city's size or larger                                                             | 40 to 50 px    | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
-| Mid  | a landing of the first two sizes; the siege; the deck when full; the deck in the widened transit frame | 54 to 76 px    | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
+| Far  | a landing of the mid city's size or larger; the widened transit frame with over 40 aboard              | 40 to 50 px    | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
+| Mid  | a landing of the first two sizes; the siege; the deck when full; the widened frame, 40 aboard or fewer | 54 to 80 px    | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
 | Near | the deck in ordinary transit with 40 aboard or fewer                                                   | 96 to 120 px   | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
 
 - **A citizen's height comes from the camera**, in every scene. Between two
@@ -603,6 +603,54 @@ A landing is full of monsters, and they are in groups.
   round its nest. When a citizen comes within ten tiles, heads turn to it.
   Within six the pack is stalking: low, facing it, closing. No monster
   stands idle facing nothing, and no two of a pack share a pose.
+
+### The raider rig
+
+In transit the raiders come alongside on a machine of their own, and the
+frame widens to hold it (section 12). It is the monsters' machine and is
+drawn as theirs. The brief on #445 has the drawing in full.
+
+- **It rolls.** It is a train of low wagons on solid wheels behind a
+  horned, armoured head. Nothing on it walks, and it has no mast and no
+  lamp. Filled black at 12 px tall it is a low bar on discs, with horns
+  at one end and a tower standing on it for each line. It cannot be taken
+  for the city, or for another city.
+- **It is low and narrow.** A bed is under a tile off the ground and
+  under four tiles wide, and its wheels stand close against it. So it
+  runs about two tiles outside the city's near feet, and that is what
+  lets the widened frame stay at 50 px a tile.
+- **Grey and black.** Plate and hide take iron and soot (`#5b5048`) at
+  40% or under, patched, with seams at form weight. A near side is spot
+  black for its whole depth, with a paper line along the rim. Bone, horn
+  and rope are the canvas colour (`#e7dcc0`). It has no timber, brass,
+  oxide or flame of its own. The colour on it is a captain's sail (An
+  elite's crest, above) and the crates it has taken, which keep the
+  city's timber, so a viewer sees on the rig what the city has lost.
+- **A tower for each line.** A tower stands on the far side of its
+  wagon, the side toward the city, and its head is higher than the city's
+  rail. Its face toward the city is hung with hide. Its near face is
+  open, with the ladder the boarders climb. The line leaves from its
+  head. A wagon carries one tower when there are three lines and two when
+  there are more.
+- **A line is a rope**, 9 px wide: the canvas colour between two lines
+  at contour weight, with twist marks at form weight. So it holds over
+  the hull's near side and over paper alike. Lines fan out and never
+  cross.
+- **Its crew is awake** from the sighting: full ink and their rank's
+  black. Up to about forty on its beds are drawn singly, in knots at the
+  towers' feet. A larger crew is a press, drawn as the horde's is
+  (section 3). A boarder over the hull's near side, its shadow or a
+  tower's hide has a paper line along its back.
+- **No two wagons are one drawing.** Each has its own build of bed and
+  its own wheels, and each yaws a few degrees on its coupling as it
+  rolls, so the train is never a ruled line. Its track is two bands of
+  churned ground, broken and wandering. It is never a pair of rails.
+- **The fight is aboard the city, in the round** (section 4). Boarders
+  get inboard. With 15 aboard citizens fight them in ones to threes, at
+  four places or more. With 150 they fight in groups of up to eight, at
+  twelve places or more. Nobody stands in a row along the rail. The
+  longest strokes and the largest number in the frame are at those
+  fights (section 10), so the first glance lands there.
 
 ## 7. The city
 
@@ -1230,20 +1278,28 @@ an hour.
   in four places: above the far walls, beyond the stern, beyond the prow,
   and in the hull's shadow under the keel.
 - **When something runs alongside** (a raider rig, and later another
-  city) the frame widens to hold both machines whole, with every foot of
-  each inside the rule and clear of the slips, and the ground between
-  them. What runs alongside is on the city's near side, lower on the plate,
-  so none of it is behind the hull. The frame opens downward to take it
-  in: the lantern stays within 40 px of where it was and the hull keeps to
-  the upper half of the picture. For the mid city and a raider rig that is
-  40 px a tile, where a citizen is 68 px, or 40 px with over 40 aboard
-  (section 5). The widening takes 6 to 8
-  seconds from the sighting, eased at both ends, and what is coming walks
-  into the frame as it opens. Names aboard are then shown as on a landing
-  (section 11), and anyone standing at the near rail or a gun post counts
-  as shooting from it. When the other machine has gone the frame closes on the
-  deck again in about 4 seconds. Nothing else widens the frame in
-  transit.
+  city) the frame widens to hold the fight between the two machines, and
+  no further. It holds the city on its legs, the other machine whole, and
+  the ground the lines cross between them. What runs alongside is on the
+  city's near side, lower on the plate, so none of it is behind the hull,
+  and it runs as close outside the row of the city's near feet as it can.
+  The frame opens downward to take it in: the lantern stays within 40 px
+  of where it was, the hull keeps to the upper half of the picture, and
+  the other machine stands on ground just inside the bottom rule, clear
+  of the two lower slips. Every foot of the city is inside the rule and
+  clear of the slips. For the mid city and a raider rig (section 6) that
+  is 50 px a tile, where the hull is 750 px long, two fifths of the
+  picture's width, and a citizen is 79 px, or 43 px with over 40 aboard
+  (section 5). The two machines and the lines between them fill the
+  middle of the picture from the lantern to the bottom rule, and every
+  ninth of the picture has part of one of them in it. The widening takes
+  6 to 8 seconds from the sighting, eased at both ends, and what is
+  coming enters the frame as it opens. Names aboard are then shown as
+  on a landing (section 11), and anyone in a fight aboard or at a gun
+  post counts as shooting from it, with at most 24 tags at once when
+  over 40 are aboard. When the other machine has gone the
+  frame closes on the deck again in about 4 seconds. Nothing else widens
+  the frame in transit.
 - **Landed** the city stands inside the map (section 4), with ground and
   pockets on every side, and the frame holds the whole landing. Its hull is
   a quarter to a seventh of the frame's width, by the city's size
