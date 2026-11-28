@@ -1,6 +1,6 @@
 {
   "name": "Goblin",
-  "hp": 8,
+  "hp": 14,
   "damage": 3,
   "windup": 8,
   "recovery": 10,

@@ -161,7 +161,16 @@ describe("spotlight director", () => {
 
   it("credits the target of a hit and whoever struck the last blow", () => {
     // Actor 99 is not a resident; only the other side of each event is present.
-    const hit: WorldEvent = { type: "hit", tick: 10, actor: 99, target: 3, damage: 1, hp: 4 };
+    const hit: WorldEvent = {
+      type: "hit",
+      tick: 10,
+      actor: 99,
+      target: 3,
+      damage: 1,
+      crit: false,
+      damageType: "physical",
+      hp: 4,
+    };
     const byHit = run(DWELL_TICKS + 1, (tick) => ({
       events: tick === 10 ? [hit] : [],
       present: [1, 2, 3],

@@ -1,15 +1,16 @@
 // What a fight looks like, read off the world once a tick as effects.ts reads
-// walks: the viewer is sent worlds and no events, so every blow is worked out
-// from how the actors and the marked tiles changed since the last tick. A
-// blow lands at the tick its attacker's wind-up runs out, on every enemy that
-// stood on one of its marked tiles at the end of the tick before. From that
-// come the lunge and the target's recoil, the number that floats up, the
-// scratch a blow leaves on an empty tile, the blot a dead monster leaves, and
-// the lines of news. Everything here is a function of that history and the
-// time, with no randomness and no clock of its own. Pure, so it can be tested
-// without a page.
+// walks. The viewer is sent each world with the blows of the tick that made
+// it: who struck whom, and for how much, since the sim's `hit` works that out
+// with rolls the viewer cannot make. Where each blow went is read from how the
+// actors and the marked tiles changed since the last tick: a blow lands at the
+// tick its attacker's wind-up runs out, on the marked tiles of the tick before.
+// From that come the lunge and the target's recoil, the number that floats
+// up, the scratch a blow leaves on an empty tile, the blot a dead monster
+// leaves, and the lines of news. Everything here is a function of that history
+// and the time, with no randomness and no clock of its own. Pure, so it can be
+// tested without a page.
 
-import { type Actor, ADVENTURER, DOWN_TICKS, kindOf, type Mark, type World } from "@idlin/sim";
+import { ADVENTURER, type Blow, DOWN_TICKS, kindOf, type Mark, type World } from "@idlin/sim";
 
 /** Ticks a number floats up over its target before it is gone. It fades over the last FLOAT_FADE. */
 export const FLOAT_TICKS = 20;
@@ -205,9 +206,10 @@ const isLow = (hp: number, max: number): boolean => hp > 0 && hp < max * NEAR_DE
 /**
  * The fight after a tick. As with effects.ts, an actor seen for the first
  * time starts nothing but its arrival, and nothing is read across missed
- * ticks: a change across a gap is not one that just happened.
+ * ticks: a change across a gap is not one that just happened. `struckBy` is
+ * the blows of the tick that made `world`, as the sim's `blowsOf` lists them.
  */
-export function nextFight(previous: Fight, world: World): Fight {
+export function nextFight(previous: Fight, world: World, struckBy: readonly Blow[]): Fight {
   const tick = world.tick;
   const followsOn = previous.tick === tick - 1;
   const was = followsOn ? previous.seen : new Map<number, Seen>();
@@ -237,27 +239,24 @@ export function nextFight(previous: Fight, world: World): Fight {
     ? previous.marks.filter((mark) => was.get(mark.by)?.windup === 1 && byId.has(mark.by))
     : [];
   const enemyOf = (a: string, b: string): boolean => (a === ADVENTURER) !== (b === ADVENTURER);
-  // Everyone struck, by what, from the tiles they stood on at the last tick.
-  // Each blow's damage is kept apart, so each gets its own number.
+  // Everyone struck, by what, from the tiles they stood on at the last tick,
+  // as the sim's list of the tick's blows says. Each blow's damage is kept
+  // apart, so each gets its own number.
   const struck = new Map<number, { damage: number; hits: number[]; from: Mark[] }>();
-  // What each has left as the blows land in turn: as in the sim, one already out takes no more.
-  const left = new Map<number, number>();
+  // Tiles each attacker's blows found someone on.
+  const found = new Set<string>();
+  for (const landed of followsOn ? struckBy : []) {
+    const seen = was.get(landed.target);
+    if (!seen || !was.has(landed.by)) continue;
+    const entry = struck.get(landed.target) ?? { damage: 0, hits: [], from: [] };
+    entry.damage += landed.amount;
+    entry.hits.push(landed.amount);
+    entry.from.push({ x: seen.x, y: seen.y, by: landed.by });
+    struck.set(landed.target, entry);
+    found.add(`${landed.by}:${seen.x},${seen.y}`);
+  }
   for (const blow of blows) {
-    const attacker = was.get(blow.by) as Seen;
-    let hit = false;
-    for (const [id, seen] of was) {
-      if (seen.x !== blow.x || seen.y !== blow.y || (left.get(id) ?? seen.hp) <= 0) continue;
-      if (!enemyOf(seen.kind, attacker.kind)) continue;
-      const attackerActor = byId.get(blow.by) as Actor;
-      const entry = struck.get(id) ?? { damage: 0, hits: [], from: [] };
-      const damage = kindOf(world, attackerActor).damage;
-      entry.damage += damage;
-      entry.hits.push(damage);
-      left.set(id, (left.get(id) ?? seen.hp) - damage);
-      entry.from.push(blow);
-      struck.set(id, entry);
-      hit = true;
-    }
+    const hit = found.has(`${blow.by}:${blow.x},${blow.y}`);
     const at = was.get(blow.by) as Seen;
     const dx = sign(blow.x - at.x);
     const dy = sign(blow.y - at.y);

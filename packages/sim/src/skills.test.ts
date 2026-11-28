@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { blow } from "./hit.ts";
 import { placeConstants } from "./map.ts";
 import { gainXp, levelFor, MAX_LEVEL, MAX_XP, noXp, SKILLS, XP_TABLE } from "./skills.ts";
 import { compileBots } from "./tactics.ts";
@@ -79,13 +80,24 @@ describe("experience from fighting", () => {
     step(world, [at("Ash", "fighter", 20, 11), at("Post", "stander", 21, 11, "dummy")]);
     const log = run(world, 400);
     const ash = world.actors[0];
-    const hits = log.filter((e) => e.type === "hit" && e.actor === ash?.id);
+    const hits = log.flatMap((e) => (e.type === "hit" && e.actor === ash?.id ? [e] : []));
     expect(hits.length).toBeGreaterThan(6);
-    expect(ash?.xp[melee]).toBe(hits.length * 16);
-    // Five blows make 80; the sixth makes 96, past 83, and the level comes with it.
+    expect(ash?.xp[melee]).toBe(4 * hits.reduce((sum, e) => sum + e.damage, 0));
+    // A level-1 blow is 7, 28 experience, or 14 on a crit; the blow that
+    // takes the total past 83 brings level 2, and each blow after a level
+    // is that level's: 8 at level 2.
+    const totals = hits.map((_, i) => 4 * hits.slice(0, i + 1).reduce((s, e) => s + e.damage, 0));
+    const crossing = totals.findIndex((total) => total >= 83);
     const levels = log.filter((e) => e.type === "level");
     expect(levels[0]).toMatchObject({ actor: ash?.id, skill: "melee", level: 2 });
-    expect(levels[0]?.tick).toBe(hits[5]?.tick);
+    expect(levels[0]?.tick).toBe(hits[crossing]?.tick);
+    let level = 1;
+    for (const e of log) {
+      if (e.type === "level" && e.skill === "melee") level = e.level;
+      if (e.type === "hit" && e.actor === ash?.id)
+        expect(e.damage).toBe(blow(level) * (e.crit ? 2 : 1));
+    }
+    expect(blow(2)).toBe(8);
     expect(world.actors[1]?.xp.every((n) => n === 0)).toBe(true);
     expect(ash?.xp[hitpoints]).toBe(0);
   });

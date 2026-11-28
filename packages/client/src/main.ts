@@ -1,6 +1,7 @@
 import { Chat, parseCrowd } from "@idlin/chat";
 import {
   ADVENTURER,
+  blowsOf,
   compileBots,
   createWorld,
   loadMonsters,
@@ -179,10 +180,9 @@ async function main(): Promise<void> {
 
   const draw = (fraction: number): void => drawAt(world.tick + fraction);
   const tick = (): void => {
-    step(world, chat?.take(world.tick) ?? []);
-    scene.observe(world);
+    scene.observe(world, blowsOf(step(world, chat?.take(world.tick) ?? [])));
   };
-  scene.observe(world);
+  scene.observe(world, []);
   for (let i = 0; i < skip; i++) tick();
   await document.fonts.ready;
 

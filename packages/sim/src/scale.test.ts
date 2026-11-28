@@ -37,7 +37,10 @@ describe("a tick at scale", () => {
   it("a crowd's world comes out the same every run", () => {
     const world = crowd(150, 450);
     for (let i = 0; i < 300; i++) step(world);
-    expect(hashWorld(world)).toBe("941335f9a94ad9e0");
+    // Changed by the hit (#383): blows from the Melee level, one crit roll a
+    // swing, and the goblin's and the wolf's hitpoints. With a resident's blow
+    // put back to 4, no crit roll and the old hitpoints, it is 941335f9a94ad9e0 again.
+    expect(hashWorld(world)).toBe("b41c1d03f92787ba");
   });
 
   it("times a tick at 150 residents and 450 monsters, and checks it in the long run", () => {

@@ -230,7 +230,8 @@ describe("adopting a snapshot", () => {
   });
 
   it("after a monster kind's numbers change: monsters stay where they are, cut to the new numbers", () => {
-    const monster = before.actors.find((a) => a.kind !== ADVENTURER) as Actor;
+    // One with more than the new kind's 1 hitpoint, so there is something to cut.
+    const monster = before.actors.find((a) => a.kind !== ADVENTURER && a.hp > 1) as Actor;
     const kind = MONSTERS.kinds[monster.kind] as Kinds[string];
     const weaker = { ...kind, hp: 1, windup: 1, recovery: 0, damage: kind.damage + 1 };
     const content = { ...SHIPPED, kinds: { ...MONSTERS.kinds, [monster.kind]: weaker } };

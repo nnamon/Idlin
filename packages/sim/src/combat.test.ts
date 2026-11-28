@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { atlasOf } from "./atlas.ts";
 import { NO_THREAT } from "./brain.ts";
+import { blow } from "./hit.ts";
 import { placeConstants } from "./map.ts";
+import { XP_TABLE } from "./skills.ts";
 import { compileBots } from "./tactics.ts";
 import { firstLight } from "./testing.ts";
 import {
   ADVENTURER,
   ADVENTURER_KIND,
+  blowsOf,
   checkKinds,
   createWorld,
   DOWN_TICKS,
@@ -15,10 +18,12 @@ import {
   KindError,
   type Kinds,
   MAX_ACTOR_ID,
+  readMessage,
   restore,
   SnapshotError,
   snapshot,
   step,
+  viewerMessage,
   type World,
   type WorldEvent,
 } from "./world.ts";
@@ -132,12 +137,49 @@ describe("fights", () => {
     expect(down).toMatchObject({ actor: 1, name: "Wolf", kind: "wolf", by: 2, x: 14, y: 11 });
     expect(world.actors.map((a) => a.name)).toEqual(["Ash"]);
     expect(world.marks).toEqual([]);
-    // Three blows of four take twelve hitpoints.
-    expect(log.filter((e) => e.type === "hit" && e.target === 1)).toHaveLength(3);
+    // Ash's level-1 blow is 7, or 14 on a crit, and the blows go on until the twelve hitpoints are gone.
+    const blows = log.flatMap((e) => (e.type === "hit" && e.target === 1 ? [e] : []));
+    for (const b of blows) expect(b.damage).toBe(b.crit ? 14 : 7);
+    const total = blows.reduce((sum, b) => sum + b.damage, 0);
+    expect(total).toBeGreaterThanOrEqual(12);
+    expect(total - (blows.at(-1)?.damage ?? 0)).toBeLessThan(12);
     // Ids are never reused, and the survivor goes on deciding.
     step(world, [at("Late", "stander", 14, 9)]);
     expect(named(world, "Late")?.id).toBe(3);
     expect(run(world, 50).some((e) => e.type === "decide" && e.actor === 2)).toBe(true);
+  });
+
+  it("an adventurer's blow is the base blow of its Melee level, doubled on one swing in 20", () => {
+    const kinds: Kinds = { post: { hp: 100_000, damage: 0, windup: 10, recovery: 4, reach: 1 } };
+    const world = createWorld(MAP, 3, PROGRAMS, kinds);
+    step(world, [at("Ash", "fighter", 20, 9), at("Post", "stander", 21, 9, "post")]);
+    const ash = named(world, "Ash") as World["actors"][number];
+    ash.xp[0] = XP_TABLE[10] as number;
+    let level = 10;
+    let swings = 0;
+    let crits = 0;
+    for (const e of run(world, 6_000)) {
+      if (e.type === "level" && e.actor === ash.id && e.skill === "melee") level = e.level;
+      if (e.type !== "hit") continue;
+      expect(e.actor).toBe(ash.id);
+      // 21 at level 10, 23 at 11, 26 at 12.
+      expect(e.damage).toBe(blow(level) * (e.crit ? 2 : 1));
+      expect(e.damageType).toBe("physical");
+      swings++;
+      if (e.crit) crits++;
+    }
+    expect(level).toBeGreaterThan(10);
+    // 5% of the swings, within 4 standard deviations: sqrt(n * 0.05 * 0.95).
+    expect(swings).toBeGreaterThan(300);
+    const spread = 4 * Math.sqrt(swings * 0.05 * 0.95);
+    expect(Math.abs(crits - swings * 0.05)).toBeLessThanOrEqual(spread);
+  });
+
+  it("a monster's blow is its kind's damage, and never a crit", () => {
+    const world = fight([at("Thug", "biter", 20, 9, "thug"), at("Ash", "stander", 21, 9)]);
+    const hits = run(world, 300).flatMap((e) => (e.type === "hit" ? [e] : []));
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+    for (const e of hits) expect([e.damage, e.crit]).toEqual([12, false]);
   });
 
   it("an adventurer struck down wakes at camp with full hitpoints and rests", () => {
@@ -626,6 +668,24 @@ describe("fights and determinism", () => {
     expect(hashWorld(resumed)).toBe(hashWorld(straight));
   });
 
+  it("crits come out the same after a snapshot and resume", () => {
+    const kinds: Kinds = { post: { hp: 100_000, damage: 0, windup: 10, recovery: 4, reach: 1 } };
+    const training = (): World => {
+      const world = createWorld(MAP, 9, PROGRAMS, kinds);
+      step(world, [at("Ash", "fighter", 20, 9), at("Post", "stander", 21, 9, "post")]);
+      run(world, 150);
+      return world;
+    };
+    const straight = training();
+    const resumed = restore(snapshot(training()), MAP, PROGRAMS, kinds);
+    const hitsOf = (world: World) =>
+      run(world, 2_000).flatMap((e) => (e.type === "hit" ? [[e.tick, e.damage, e.crit]] : []));
+    const hits = hitsOf(straight);
+    expect(hitsOf(resumed)).toEqual(hits);
+    expect(hits.filter(([, , crit]) => crit).length).toBeGreaterThan(0);
+    expect(hashWorld(resumed)).toBe(hashWorld(straight));
+  });
+
   it("a snapshot that could not be a real fight is refused", () => {
     const world = melee(3);
     while (world.marks.length === 0) step(world);
@@ -778,5 +838,50 @@ describe("fights and determinism", () => {
       } as Kinds),
     ).toThrow(/different monster kinds/);
     expect(restore(snapshot(world), MAP, PROGRAMS, KINDS)).toEqual(world);
+  });
+});
+
+describe("the viewer message", () => {
+  /** The wolf's first blow on Ash, and the world after the tick it landed in. */
+  const struck = () => {
+    const world = fight([at("Wolf", "biter", 14, 11, "wolf"), at("Ash", "stander", 15, 11)]);
+    let events = step(world);
+    while (!events.some((e) => e.type === "hit")) events = step(world);
+    return { world, blows: blowsOf(events) };
+  };
+
+  it("carries the tick's blows beside the snapshot, each cut to who, whom, how much, crit and type", () => {
+    const { world, blows } = struck();
+    expect(blows).toEqual([{ by: 1, target: 2, amount: 5, crit: false, type: "physical" }]);
+    const text = viewerMessage(world, blows);
+    const read = readMessage(text, MAP, PROGRAMS, KINDS);
+    expect(read.blows).toEqual(blows);
+    expect(read.world).toEqual(world);
+    // `restore` reads a viewer message as a snapshot, and a snapshot as a message with no blows.
+    expect(restore(text, MAP, PROGRAMS, KINDS)).toEqual(world);
+    expect(readMessage(snapshot(world), MAP, PROGRAMS, KINDS).blows).toEqual([]);
+  });
+
+  it("leaves out blows not as it writes them, and refuses a world as restore does", () => {
+    const { world, blows } = struck();
+    const good = blows[0];
+    const data = JSON.parse(viewerMessage(world, blows));
+    const listed = (list: unknown) =>
+      readMessage(JSON.stringify({ ...data, blows: list }), MAP, PROGRAMS, KINDS).blows;
+    expect(
+      listed([
+        good,
+        { ...good, amount: 1.5 },
+        { ...good, type: "acid" },
+        { ...good, crit: 1 },
+        { ...good, by: "1" },
+        null,
+        "hit",
+      ]),
+    ).toEqual([good]);
+    expect(listed("all of them")).toEqual([]);
+    expect(() => readMessage("{", MAP, PROGRAMS, KINDS)).toThrow(SnapshotError);
+    const damaged = { ...data, state: { ...data.state, tick: data.state.tick + 1 } };
+    expect(() => readMessage(JSON.stringify(damaged), MAP, PROGRAMS, KINDS)).toThrow(SnapshotError);
   });
 });

@@ -1,5 +1,6 @@
 import {
   type Actor,
+  type Blow,
   compileBots,
   createWorld,
   type Mark,
@@ -234,7 +235,7 @@ const wolf = (over: Partial<Actor>): Actor =>
  * The fight after a run of ticks from tick 1, with every line of news, and
  * everything that fell or went home at any tick.
  */
-function watch(ticks: readonly { actors: Actor[]; marks?: Mark[] }[]): {
+function watch(ticks: readonly { actors: Actor[]; marks?: Mark[]; blows?: Blow[] }[]): {
   fight: Fight;
   news: News[];
   fell: Fight["fallen"][number][];
@@ -244,9 +245,9 @@ function watch(ticks: readonly { actors: Actor[]; marks?: Mark[] }[]): {
   const news: News[] = [];
   const fell = new Map<number, Fight["fallen"][number]>();
   const went = new Map<number, Fight["gone"][number]>();
-  ticks.forEach(({ actors, marks = [] }, i) => {
+  ticks.forEach(({ actors, marks = [], blows = [] }, i) => {
     const world = { atlas, tick: i + 1, actors, marks, kinds: KINDS } as unknown as World;
-    fight = nextFight(fight, world);
+    fight = nextFight(fight, world, blows);
     news.push(...fight.news);
     for (const f of fight.fallen) fell.set(f.id, f);
     for (const g of fight.gone) went.set(g.id, g);
@@ -268,9 +269,13 @@ it("does not take a monster walking into the next region for killed or gone home
   // on into the pinewood, hurt.
   const marks = [{ x: 0, y: 7, by: 1 }];
   const ash = someone({ x: 1 });
+  const struck = { by: 1, target: 2, amount: 4, crit: false, type: "physical" } as const;
   const ticks = [
     { actors: [someone({ x: 1, windup: 1 }), wolf({ x: 0 })], marks },
-    ...stepWest(wolf({ x: 0, hp: 20 }), 6).map((w) => ({ actors: [ash, w] })),
+    ...stepWest(wolf({ x: 0, hp: 20 }), 6).map((w, i) => ({
+      actors: [ash, w],
+      blows: i === 0 ? [struck] : [],
+    })),
   ];
   const { fight, news, fell, went } = watch(ticks);
   // The blow is seen to land, on the camp's side of the exit.
@@ -281,7 +286,7 @@ it("does not take a monster walking into the next region for killed or gone home
   // Killed for real, it falls where it stood.
   const killed = watch([
     { actors: [someone({ x: 1, windup: 1 }), wolf({ x: 0, hp: 4 })], marks },
-    { actors: [ash] },
+    { actors: [ash], blows: [struck] },
   ]);
   expect(killed.fight.fallen.map((f) => [f.kind, f.x, f.y])).toEqual([["wolf", 0, 7]]);
   expect(killed.news.map((line) => line.text)).toEqual(["Ash killed a wolf"]);
@@ -310,7 +315,10 @@ it("does not take a resident walking into the next region for downed, and counts
   const deep = { ...(out.at(-1) as Actor), x: -10, fromX: -10 };
   const downed = watch([
     { actors: [deep, wolf({ id: 3, x: -9, windup: 1 })], marks: [{ x: -10, y: 7, by: 3 }] },
-    { actors: [someone({ x: 14, y: 9, wait: 150 }), wolf({ id: 3, x: -9, recover: 20 })] },
+    {
+      actors: [someone({ x: 14, y: 9, wait: 150 }), wolf({ id: 3, x: -9, recover: 20 })],
+      blows: [{ by: 3, target: 1, amount: 8, crit: false, type: "physical" }],
+    },
   ]);
   expect(downed.fight.downs.has(1)).toBe(true);
   expect(downed.news.map((line) => line.text)).toEqual(["Ash was downed by a wolf"]);

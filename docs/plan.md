@@ -158,8 +158,12 @@ ms, and the server stops a wake after 50 ms of work.
 
 ### 2.5 What a viewer is sent
 
-Each tick's message is the whole snapshot, about 440 bytes an actor. At 600
-actors that is 264 KB a tick, and the server drops a viewer that falls 1 MiB
-behind. The fields one frame draws come to about 170 bytes an actor, or 100
-KB a tick. The slice's fighting piece cuts the message to those fields and
-measures whether a local viewer keeps up.
+Each tick's message is the whole snapshot, about 440 bytes an actor, with the
+tick's blows beside it. A blow is cut to what a frame draws of it: who struck,
+whom, how much, whether it crit and the type that did most of it. At 600
+actors the snapshot is 264 KB a tick, and the server drops a viewer that
+falls 1 MiB behind. The fields one frame draws come to about 170 bytes an
+actor, or 100 KB a tick. The viewer restores a whole world from each message
+today, so the actors are cut to those fields when the viewer draws from them
+instead, with the deck (slice piece 2) or the fight in ink (piece 8), and
+that piece measures whether a local viewer keeps up.

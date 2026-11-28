@@ -17,11 +17,14 @@ import { runInNewContext } from "node:vm";
 import {
   type Actor,
   ADVENTURER,
+  type Blow,
+  blowsOf,
   compileBots,
   createWorld,
   GROUP_SPREAD,
   hashWorld,
   placeConstants,
+  readMessage,
   restore,
   SNAPSHOT_VERSION,
   spawnsNearCamp,
@@ -118,7 +121,14 @@ const viewer = async (port: number, origin?: string) => {
   const worlds: World[] = [];
   const waiting: { tick: number; resolve: () => void }[] = [];
   socket.on("message", (data) => {
-    const world = read(String(data));
+    // As the viewer reads it.
+    const { world } = readMessage(
+      String(data),
+      CONTENT.atlas,
+      CONTENT.programs,
+      CONTENT.kinds,
+      CONTENT.spawns,
+    );
     worlds.push(world);
     for (const wait of waiting.filter((w) => world.tick >= w.tick)) wait.resolve();
   });
@@ -404,6 +414,30 @@ describe("world server", () => {
     }
     early.close();
     late.close();
+  });
+
+  it("sends each tick's blows with its world, and none with the world sent on connect", async () => {
+    const server = await start(tempDir());
+    // Only the blows are read here: restoring thousands of worlds would take too long.
+    const socket = new WebSocket(`ws://127.0.0.1:${server.port}`);
+    const sent: unknown[] = [];
+    socket.on("message", (data) => sent.push(JSON.parse(String(data)).blows));
+    await new Promise((resolve) => socket.once("open", resolve));
+    // In batches that stay well inside what the server queues for a viewer before dropping it.
+    const ticks = 1_000;
+    for (let done = 0; done < ticks; done += 50) {
+      server.advance(50);
+      await vi.waitFor(() => expect(sent).toHaveLength(done + 51));
+    }
+    expect(sent[0]).toEqual([]);
+    // The same world stepped without a server makes the same blows on each tick.
+    const world = createWorld(CONTENT.atlas, SEED, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
+    step(world, spawnsNearCamp(world, castOf(RESIDENTS)));
+    const made: (readonly Blow[])[] = [];
+    while (world.tick < ticks + 1) made.push(blowsOf(step(world)));
+    expect(sent.slice(1)).toEqual(made);
+    expect(made.flat().length).toBeGreaterThan(0);
+    socket.close();
   });
 
   it("drops a viewer that stops reading instead of queueing for it", async () => {

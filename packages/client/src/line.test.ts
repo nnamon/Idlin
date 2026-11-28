@@ -1,5 +1,6 @@
 import {
   type Actor,
+  blowsOf,
   compileBots,
   createWorld,
   DOWN_TICKS,
@@ -526,8 +527,7 @@ describe("the line in a running world", () => {
     let lines: Lines = NO_LINES;
     const out = { rows: [] as string[][], news: [] as string[] };
     for (let t = 0; t < ticks; t++) {
-      step(world);
-      fight = nextFight(fight, world);
+      fight = nextFight(fight, world, blowsOf(step(world)));
       lines = nextLines(lines, world, fight);
       out.rows.push([...lines.shown.values()].map((s) => pageText(s.line)));
       out.news.push(...lines.news.map((n) => n.text));

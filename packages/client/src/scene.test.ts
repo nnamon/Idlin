@@ -5,6 +5,7 @@
 
 import {
   type Actor,
+  blowsOf,
   createWorld,
   levelFor,
   parseMap,
@@ -239,8 +240,8 @@ describe("the scene", () => {
     const world = newWorld();
     const watched = await newScene();
     const unwatched = await newScene();
-    watched.scene.observe(world);
-    unwatched.scene.observe(world);
+    watched.scene.observe(world, []);
+    unwatched.scene.observe(world, []);
     const shot = () => {
       const daySheet = drawn(watched.day, () => {
         watched.out.calls = [];
@@ -250,9 +251,9 @@ describe("the scene", () => {
       return { frame: [...watched.out.calls], daySheet: [...daySheet] };
     };
     for (let tick = 1; tick <= TO_MIDNIGHT; tick++) {
-      step(world);
-      watched.scene.observe(world);
-      unwatched.scene.observe(world);
+      const blows = blowsOf(step(world));
+      watched.scene.observe(world, blows);
+      unwatched.scene.observe(world, blows);
       // The first minute, when all six leave camp in a knot and names have to make room,
       // and the last one, when they are back round the fire. And the minutes
       // after 19:00, when the homebodies turn for camp and the rule in charge
@@ -368,7 +369,7 @@ describe("the scene", () => {
   it("fills a wider frame: the sheets grow and the page's rules run to the new edge", async () => {
     const { scene, out, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const reach = (calls: Call[]): number =>
       Math.max(...calls.filter((c) => c.op === "lineTo").map((c) => c.args[0] as number));
     const plain = reach(drawn(day, () => scene.draw(world, world.tick)));
@@ -424,7 +425,7 @@ describe("the scene", () => {
     // that "and N more" and the line of news, written one under the other, do not touch.
     const crowd = newWorld(12);
     const crowded = await newScene();
-    crowded.scene.observe(crowd);
+    crowded.scene.observe(crowd, []);
     crowded.scene.resize(2200, map.height * 48);
     const foot = drawn(crowded.day, () => crowded.scene.draw(crowd, crowd.tick));
     const more = foot.find((c) => c.op === "fillText" && c.args[0] === "and 6 more");
@@ -457,14 +458,14 @@ describe("the scene", () => {
     let found = 0;
     for (const crowd of [newWorld(30), newWorld(12, 1, true)]) {
       const { scene, out, day } = await newScene();
-      scene.observe(crowd);
+      scene.observe(crowd, []);
       let most = 0;
       let line = "";
       let lineSince = 0;
       const offSince = new Map<string, number>();
       for (let i = 0; i < TO_NIGHTFALL + 1200; i++) {
-        step(crowd);
-        scene.observe(crowd);
+        const blows = blowsOf(step(crowd));
+        scene.observe(crowd, blows);
         if (i % 10 !== 9) continue;
         day.calls = [];
         const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
@@ -499,10 +500,10 @@ describe("the scene", () => {
     // Six residents or fewer: every one keeps a name.
     const few = newWorld(6);
     const small = await newScene();
-    small.scene.observe(few);
+    small.scene.observe(few, []);
     for (let i = 0; i < 20; i++) {
-      step(few);
-      small.scene.observe(few);
+      const blows = blowsOf(step(few));
+      small.scene.observe(few, blows);
     }
     const names = mapNames(drawn(small.out, () => small.scene.draw(few, few.tick)));
     expect(new Set(names).size).toBe(6);
@@ -512,13 +513,13 @@ describe("the scene", () => {
     const twelve = newWorld(12);
     const { scene, out } = await newScene();
     const onMap = (): number => mapNames(drawn(out, () => scene.draw(twelve, twelve.tick))).length;
-    scene.observe(twelve);
+    scene.observe(twelve, []);
     // The first frame of a run is drawn at the tick it starts on: no fade-in, no unnamed second.
     expect(onMap()).toBe(8);
     const counts: number[] = [];
     for (let i = 0; i < 3000; i++) {
-      step(twelve);
-      scene.observe(twelve);
+      const blows = blowsOf(step(twelve));
+      scene.observe(twelve, blows);
       if (i % 10 !== 9) continue;
       const count = onMap();
       // Counted while the view is on the camp, where most of the twelve are.
@@ -538,7 +539,7 @@ describe("the scene", () => {
     const { scene, out, day } = await newScene();
     const camp = placeConstants(map).camp as { x: number; y: number };
     let effects = NO_EFFECTS;
-    scene.observe(twelve);
+    scene.observe(twelve, []);
     effects = nextEffects(effects, twelve.actors, twelve.tick, camp);
     let routesDrawn = 0;
     let glyphsDrawn = 0;
@@ -546,8 +547,8 @@ describe("the scene", () => {
     let glyphsWithout = 0;
     let fading = 0;
     for (let tick = 1; tick <= EVENING + 300; tick++) {
-      step(twelve);
-      scene.observe(twelve);
+      const blows = blowsOf(step(twelve));
+      scene.observe(twelve, blows);
       effects = nextEffects(effects, twelve.actors, twelve.tick, camp);
       if (tick % 5 !== 0 || (tick > 900 && tick <= EVENING)) continue;
       day.calls = [];
@@ -646,7 +647,7 @@ describe("the scene", () => {
     // on it must draw what a scene that only ever saw the second world draws.
     const first = newWorld();
     const rewound = await newScene();
-    rewound.scene.observe(first);
+    rewound.scene.observe(first, []);
     // On into the evening, until a glyph has just come up on someone's slip.
     const inside = rewound.scene as unknown as { effects: Effects; slips: Slips };
     const justBegun = () =>
@@ -654,8 +655,8 @@ describe("the scene", () => {
         ([id, { since }]) => since === first.tick && inside.slips.held.has(id),
       );
     while (first.tick < EVENING || !justBegun()) {
-      step(first);
-      rewound.scene.observe(first);
+      const blows = blowsOf(step(first));
+      rewound.scene.observe(first, blows);
     }
     expect(first.tick).toBeLessThan(EVENING + 600);
     // Back eight ticks, to a world with another seed that goes its own way: the
@@ -664,9 +665,9 @@ describe("the scene", () => {
     while (second.tick < first.tick - 8) step(second);
     const fresh = await newScene();
     for (let tick = 0; tick < 40; tick++) {
-      step(second);
-      rewound.scene.observe(second);
-      fresh.scene.observe(second);
+      const blows = blowsOf(step(second));
+      rewound.scene.observe(second, blows);
+      fresh.scene.observe(second, blows);
       for (const time of [second.tick, second.tick + 0.5]) {
         // The frame, and the day drawing, where routes go.
         const both = (s: typeof fresh) => {
@@ -691,7 +692,7 @@ describe("the scene", () => {
     // Twelve standing together at camp on their first tick.
     const twelve = newWorld(12);
     const atCamp = await newScene();
-    atCamp.scene.observe(twelve);
+    atCamp.scene.observe(twelve, []);
     const slips = slipsOf(drawn(atCamp.out, () => atCamp.scene.draw(twelve, twelve.tick)));
     expect(slips).toHaveLength(8);
     const avoid = (atCamp.scene as unknown as Inside).avoid;
@@ -727,7 +728,7 @@ describe("the scene", () => {
           const ticks = s === 0 && dx === -2 && dy === 1 ? 2 * MIN_HOLD : 1;
           for (let t = 0; t < ticks; t++) {
             group.tick = t;
-            scene.observe(group);
+            scene.observe(group, []);
             const drawnSlips = slipsOf(drawn(out, () => scene.draw(group, group.tick)));
             drawnSlips.forEach((slip, i) => {
               for (const other of drawnSlips.slice(i + 1)) expect(covers(slip, other)).toBe(false);
@@ -751,11 +752,11 @@ describe("the scene", () => {
     const twelve = newWorld(12);
     const { scene, out } = await newScene();
     const inside = scene as unknown as Inside;
-    scene.observe(twelve);
+    scene.observe(twelve, []);
     let checked = 0;
     for (let i = 0; i < 1200; i++) {
-      step(twelve);
-      scene.observe(twelve);
+      const blows = blowsOf(step(twelve));
+      scene.observe(twelve, blows);
       const { slips } = inside;
       for (const fraction of [0, 0.25, 0.5, 0.75, 0.99]) {
         const time = twelve.tick + fraction;
@@ -815,7 +816,7 @@ describe("the scene", () => {
       const { scene, out } = await newScene();
       for (const tick of ticks) {
         world.tick = tick;
-        scene.observe(world);
+        scene.observe(world, []);
       }
       return drawn(out, () => scene.draw(world, world.tick)).find(
         (c) => c.op === "fillText" && c.args[0] === labels[den]?.text,
@@ -837,11 +838,11 @@ describe("the scene", () => {
       );
       const sheets = canvases.filter((c) => c.width === FRAME_WIDTH && c.height === FRAME_HEIGHT);
       const [out, ...others] = sheets as [FakeCanvas, ...FakeCanvas[]];
-      scene.observe(world);
+      scene.observe(world, []);
       // Every 50 ticks (five game minutes) from 06:00 round to 06:00 the next day.
       for (let tick = 1; tick <= 24 * 600; tick++) {
-        step(world);
-        scene.observe(world);
+        const blows = blowsOf(step(world));
+        scene.observe(world, blows);
         if (tick % 50 !== 0) continue;
         for (const sheet of sheets) sheet.calls = [];
         scene.draw(world, world.tick + 0.5);
@@ -870,7 +871,7 @@ describe("the scene", () => {
     actor.moveTicksLeft = 0;
     actor.path.length = 0;
     const ink = (): unknown => {
-      scene.observe(world);
+      scene.observe(world, []);
       return drawn(out, () => scene.draw(world, world.tick)).find(
         (c) => c.op === "fillText" && c.args[0] === wood.text,
       )?.fill;
@@ -896,14 +897,14 @@ describe("the scene", () => {
       const inside = scene as unknown as Inside;
       return [[...inside.slips.held], [...inside.slips.leaving], [...inside.tagSpots]];
     };
-    once.scene.observe(world);
-    twice.scene.observe(world);
-    twice.scene.observe(world);
+    once.scene.observe(world, []);
+    twice.scene.observe(world, []);
+    twice.scene.observe(world, []);
     for (let i = 0; i < 1500; i++) {
-      step(world);
-      once.scene.observe(world);
-      twice.scene.observe(world);
-      twice.scene.observe(world);
+      const blows = blowsOf(step(world));
+      once.scene.observe(world, blows);
+      twice.scene.observe(world, blows);
+      twice.scene.observe(world, blows);
       expect(state(twice.scene)).toEqual(state(once.scene));
     }
   }, 60_000);
@@ -911,7 +912,7 @@ describe("the scene", () => {
   it("names six residents on the very first frame", async () => {
     const six = newWorld(6);
     const { scene, out } = await newScene();
-    scene.observe(six);
+    scene.observe(six, []);
     const names = drawn(out, () => scene.draw(six, six.tick)).filter(
       (c) => c.op === "fillText" && NAMES.includes(String(c.args[0])),
     );
@@ -925,7 +926,7 @@ describe("the scene", () => {
     // Melee 10 and Cooking 99; Birch is untouched, level 1 in everything.
     ash.xp = [1_154, 0, 0, 0, 13_034_431];
     const { scene, day } = await newScene();
-    scene.observe(six);
+    scene.observe(six, []);
     const texts = drawn(day, () => scene.draw(six, six.tick)).filter((c) => c.op === "fillText");
     const words = texts.map((c) => String(c.args[0]));
     expect(words.filter((w) => w === "20/20")).toHaveLength(5);
@@ -946,11 +947,11 @@ describe("the scene", () => {
     const crowd = newWorld(30);
     const { scene, out } = await newScene();
     const inside = scene as unknown as { tagSpots: Map<number, number>; slips: Slips };
-    scene.observe(crowd);
+    scene.observe(crowd, []);
     let moved = 0;
     for (let i = 0; i < 1500; i++) {
-      step(crowd);
-      scene.observe(crowd);
+      const blows = blowsOf(step(crowd));
+      scene.observe(crowd, blows);
       if (i % 10 !== 9) continue;
       const calls = drawn(out, () => scene.draw(crowd, crowd.tick));
       // Lettering is in world pixels, moved by where the window is.
@@ -988,14 +989,14 @@ describe("the scene", () => {
     const restarted = await newScene();
     // The restarted scene first followed a world far ahead of the one it now sees.
     const ahead = newWorld();
-    restarted.scene.observe(ahead);
+    restarted.scene.observe(ahead, []);
     for (let i = 0; i < 2000; i++) {
-      step(ahead);
-      restarted.scene.observe(ahead);
+      const blows = blowsOf(step(ahead));
+      restarted.scene.observe(ahead, blows);
     }
     const world = newWorld();
-    fresh.scene.observe(world);
-    restarted.scene.observe(world);
+    fresh.scene.observe(world, []);
+    restarted.scene.observe(world, []);
     // The news each shows, every 20 ticks, and every tick who has a slip and where it sits.
     const lines = { fresh: [] as unknown[], restarted: [] as unknown[] };
     const slipsOf = (scene: Scene) => {
@@ -1004,9 +1005,9 @@ describe("the scene", () => {
     };
     expect(slipsOf(restarted.scene)).toEqual(slipsOf(fresh.scene));
     for (let i = 1; i <= 600; i++) {
-      step(world);
-      fresh.scene.observe(world);
-      restarted.scene.observe(world);
+      const blows = blowsOf(step(world));
+      fresh.scene.observe(world, blows);
+      restarted.scene.observe(world, blows);
       expect(slipsOf(restarted.scene)).toEqual(slipsOf(fresh.scene));
       if (i % 20 !== 0) continue;
       lines.fresh.push(newsOf(drawn(fresh.day, () => fresh.scene.draw(world, world.tick))));
@@ -1022,7 +1023,7 @@ describe("the scene", () => {
   it("takes a line of news down after ten seconds with nothing after it, and tells of a resident instead", async () => {
     const { scene, day } = await newScene();
     const world = newWorld(12);
-    scene.observe(world);
+    scene.observe(world, []);
     const ash = world.actors.find((a) => a.name === "Ash") as World["actors"][number];
     (scene as unknown as { newsQueue: unknown[] }).newsQueue = [
       { text: "Ash killed a wolf", who: ash.id },
@@ -1035,8 +1036,8 @@ describe("the scene", () => {
     };
     const seen: string[] = [];
     for (let i = 0; i <= NEWS_STALE + 1; i++) {
-      step(world);
-      scene.observe(world);
+      const blows = blowsOf(step(world));
+      scene.observe(world, blows);
       seen.push(newsLine());
     }
     expect(seen[0]).toBe("Ash killed a wolf");
@@ -1051,7 +1052,7 @@ describe("the scene", () => {
   it("writes a notice on the page beside the map, not over it", async () => {
     const { scene, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const notice = (calls: Call[]) =>
       calls.find((c) => c.op === "fillText" && c.args[0] === "waiting for the world");
     expect(notice(drawn(day, () => scene.draw(world, world.tick)))).toBeUndefined();
@@ -1068,7 +1069,7 @@ describe("the scene", () => {
     const pinewood = placeConstants(WORLD).pinewood as { x: number; y: number };
     Object.assign(cedar, { x: pinewood.x, y: pinewood.y, fromX: pinewood.x, fromY: pinewood.y });
     Object.assign(cedar, { path: [], moveTicksLeft: 0 });
-    scene.observe(world);
+    scene.observe(world, []);
     const page = drawn(day, () => scene.draw(world, world.tick)).filter(
       (c) => c.op === "fillText" && (c.args[1] as number) > map.width * 48,
     );
@@ -1087,7 +1088,7 @@ describe("the scene", () => {
   it("shows a dash for the time, and no day, while the clock is hidden", async () => {
     const { scene, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const texts = () =>
       drawn(day, () => scene.draw(world, world.tick))
         .filter((c) => c.op === "fillText")
@@ -1103,7 +1104,7 @@ describe("the scene", () => {
   it("eases a figure into sitting and out of it: its name moves a little each tick, not 9 pixels at once", async () => {
     const { scene, out } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const last = new Map<
       number,
       {
@@ -1119,8 +1120,8 @@ describe("the scene", () => {
     let changes = 0;
     let largest = 0;
     for (let tick = 1; tick <= 2400; tick++) {
-      step(world);
-      scene.observe(world);
+      const blows = blowsOf(step(world));
+      scene.observe(world, blows);
       // Only the frame's calls are read; the other sheets' would pile up over 2,400 draws.
       for (const canvas of canvases) canvas.calls = [];
       const calls = drawn(out, () => scene.draw(world, world.tick));
@@ -1164,7 +1165,7 @@ describe("the scene", () => {
   it("with the page below the map in a wider frame, centres the map and the page under it", async () => {
     const { scene, out, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const mapWidth = map.width * 48;
     scene.resize(mapWidth + 200, 2000, true, 3);
     const sheet = drawn(day, () => scene.draw(world, world.tick));
@@ -1188,7 +1189,7 @@ describe("the scene", () => {
   it("eases the figure itself into sitting, and between ticks draws it part of the way", async () => {
     const { scene, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     // How far down a still figure is drawn, from the drop drawFigure applies after
     // moving to the figure's feet: 7 pixels times the depth, less the breath.
     const sitOf = (calls: Call[], actor: Actor, fraction: number): number | undefined => {
@@ -1204,8 +1205,8 @@ describe("the scene", () => {
     };
     let partway = 0;
     for (let tick = 1; tick <= 2400; tick++) {
-      step(world);
-      scene.observe(world);
+      const blows = blowsOf(step(world));
+      scene.observe(world, blows);
       const half = drawn(day, () => scene.draw(world, world.tick + 0.5));
       for (const actor of world.actors) {
         if (actor.moveTicksLeft !== 0) continue;
@@ -1238,15 +1239,15 @@ describe("the scene", () => {
     const sitting = (scene: Scene) => [
       ...(scene as unknown as { sitting: Map<number, readonly [number, number]> }).sitting,
     ];
-    once.scene.observe(world);
-    twice.scene.observe(world);
-    twice.scene.observe(world);
+    once.scene.observe(world, []);
+    twice.scene.observe(world, []);
+    twice.scene.observe(world, []);
     let partway = 0;
     for (let tick = 1; tick <= 2400; tick++) {
-      step(world);
-      once.scene.observe(world);
-      twice.scene.observe(world);
-      twice.scene.observe(world);
+      const blows = blowsOf(step(world));
+      once.scene.observe(world, blows);
+      twice.scene.observe(world, blows);
+      twice.scene.observe(world, blows);
       expect(sitting(twice.scene)).toEqual(sitting(once.scene));
       partway += sitting(once.scene).filter(([, [, sit]]) => sit > 0 && sit < 1).length;
     }
@@ -1256,7 +1257,7 @@ describe("the scene", () => {
   it("with the page below the map, darkens the paper either side of the map with the map", async () => {
     const { scene, out, lit } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const mapWidth = map.width * 48;
     const mapHeight = map.height * 48;
     const outerRadius = (width: number): number => {
@@ -1285,7 +1286,7 @@ describe("the scene", () => {
   it("draws smoke rising from the fire and leans the trees, both moving with time", async () => {
     const { scene, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const ground = (
       scene as unknown as {
         day: { grounds: { fires: [number, number][]; standing: { sways: boolean }[] }[] };
@@ -1343,7 +1344,7 @@ describe("the scene", () => {
   it("spreads the page below the map over the spare paper under it", async () => {
     const { scene, day } = await newScene();
     const world = newWorld();
-    scene.observe(world);
+    scene.observe(world, []);
     const mapHeight = map.height * 48;
     scene.resize(map.width * 48, 2000, true, 3);
     const calls = drawn(day, () => scene.draw(world, world.tick));

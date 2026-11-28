@@ -31,11 +31,23 @@ import {
   stepOnto,
 } from "./grid.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
+import {
+  type Attacker,
+  blow,
+  DAMAGE_TYPES,
+  type DamageType,
+  type Defender,
+  FAMILY_HIT,
+  FULL,
+  hit,
+  type Modifier,
+  rollCrit,
+} from "./hit.ts";
 import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./inputs.ts";
 import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
-import { gainXp, MAX_XP, noXp, SKILLS, type Skill, XP_PER_DAMAGE } from "./skills.ts";
+import { gainXp, levelFor, MAX_XP, noXp, SKILLS, type Skill, XP_PER_DAMAGE } from "./skills.ts";
 import {
   FAULTS,
   MEMORY_SLOTS,
@@ -69,7 +81,11 @@ export const MAX_DEATHS = 0x7fffffff;
 export interface Kind {
   /** Hitpoints at full health. */
   readonly hp: number;
-  /** Hitpoints one of its hits takes off. */
+  /**
+   * A monster's blow, from which `hit` in hit.ts works out what each of its
+   * hits takes off. An adventurer's blow comes from its Melee level instead,
+   * so ADVENTURER_KIND's is not read.
+   */
   readonly damage: number;
   /** Ticks between starting an attack and the hit landing. The marked tiles show for this long. */
   readonly windup: number;
@@ -628,7 +644,12 @@ export type WorldEvent =
       readonly tick: number;
       readonly actor: number;
       readonly target: number;
+      /** What it took off, as `hit` in hit.ts works it out. */
       readonly damage: number;
+      /** Whether the swing crit. A swing that lands on several crits on all or none. */
+      readonly crit: boolean;
+      /** The type that did most of it. */
+      readonly damageType: DamageType;
       /** The target's hitpoints afterwards; 0 or less means it is out. */
       readonly hp: number;
     }
@@ -738,6 +759,21 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
   return events;
 }
 
+/** No gear is worn yet, so no blow carries a line. */
+const NO_LINES: readonly Modifier[] = [];
+const UNARMOURED: Defender = { armour: 0 };
+
+/**
+ * What an actor swings with. An adventurer's blow is the base blow of its
+ * Melee level, which is the slice's Arms, with the bare blade every citizen
+ * holds. A monster's is its kind's damage, until monsters have ranks and levels.
+ */
+function swingerOf(actor: Actor, kind: Kind): Attacker {
+  if (actor.kind !== ADVENTURER) return { blow: kind.damage, family: FULL };
+  return { blow: blow(levelFor(actor.xp[MELEE] as number)), family: FAMILY_HIT.blade };
+}
+const MELEE = SKILLS.indexOf("melee");
+
 /** Counts every wind-up down, lands the attacks that are due, and takes out whoever has no hitpoints left. */
 function landAttacks(world: World, events: WorldEvent[]): void {
   const struck = new Map<number, number>();
@@ -759,6 +795,10 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     const kind = kindOf(world, attacker);
     attacker.recover = kind.recovery;
     landed.add(attacker.id);
+    const citizen = attacker.kind === ADVENTURER;
+    const swinger = swingerOf(attacker, kind);
+    // One roll a swing, however many it lands on; monsters do not crit.
+    const crit = citizen && rollCrit(world.rng, NO_LINES);
     for (const mark of marksBy.get(attacker.id) ?? []) {
       // Adventurers can share a tile, so a blow lands on every enemy standing
       // there. One mending at camp after a down is passed by.
@@ -774,19 +814,23 @@ function landAttacks(world: World, events: WorldEvent[]): void {
         continue;
       }
       for (const target of targets) {
+        // Nobody wears armour yet: coats come with wearing gear.
+        const { amount, type } = hit(swinger, UNARMOURED, NO_LINES, crit);
         // Experience counts the hitpoints a blow actually took, not what it would have.
-        const taken = Math.min(kind.damage, target.hp);
-        target.hp -= kind.damage;
+        const taken = Math.min(amount, target.hp);
+        target.hp -= amount;
         struck.set(target.id, attacker.id);
         events.push({
           type: "hit",
           tick: world.tick,
           actor: attacker.id,
           target: target.id,
-          damage: kind.damage,
+          damage: amount,
+          crit,
+          damageType: type,
           hp: target.hp,
         });
-        const learner = attacker.kind === ADVENTURER ? attacker : target;
+        const learner = citizen ? attacker : target;
         const skill: Skill = learner === attacker ? "melee" : "hitpoints";
         const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
         if (level > 0)
@@ -1444,8 +1488,78 @@ export class SnapshotError extends Error {
  * `adopt` can tell which programs changed; it is not part of the hash.
  */
 export function snapshot(world: World): string {
+  return JSON.stringify(savedOf(world));
+}
+
+/** A blow as a viewer is sent it: what one frame needs to draw it, and nothing else. */
+export interface Blow {
+  /** Who struck, and whom. */
+  readonly by: number;
+  readonly target: number;
+  /** The hitpoints it took off. */
+  readonly amount: number;
+  readonly crit: boolean;
+  /** The damage type that did most of it. */
+  readonly type: DamageType;
+}
+
+/** The blows among a tick's events, in the order they landed. */
+export const blowsOf = (events: readonly WorldEvent[]): Blow[] =>
+  events.flatMap((e) =>
+    e.type === "hit"
+      ? [{ by: e.actor, target: e.target, amount: e.damage, crit: e.crit, type: e.damageType }]
+      : [],
+  );
+
+/**
+ * What the world server sends a viewer after each tick: the snapshot, with the
+ * tick's blows beside it. `restore` reads it as it reads a snapshot, and
+ * `readMessage` gives the blows as well.
+ */
+export function viewerMessage(world: World, blows: readonly Blow[]): string {
+  return JSON.stringify({ ...savedOf(world), blows });
+}
+
+/** A viewer message read: the world, and the blows of the tick that made it. */
+export interface Message {
+  readonly world: World;
+  readonly blows: readonly Blow[];
+}
+
+/**
+ * Reads a viewer message as `restore` reads a snapshot, refusing the same
+ * things. Blows that are not as `viewerMessage` writes them are left out; a
+ * plain snapshot has none.
+ */
+export function readMessage(
+  text: string,
+  ground: TileMap | Atlas,
+  programs: Programs = {},
+  kinds: Kinds = {},
+  spawns: Spawns = [],
+): Message {
+  const data = parseJson(text);
+  const world = restoreSaved(savedFrom(data), ground, programs, kinds, spawns);
+  const listed = (data as Record<string, unknown>).blows;
+  const blows = Array.isArray(listed) ? listed.filter(isBlow) : [];
+  return { world, blows };
+}
+
+const isBlow = (raw: unknown): raw is Blow => {
+  if (typeof raw !== "object" || raw === null) return false;
+  const { by, target, amount, crit, type } = raw as Record<string, unknown>;
+  return (
+    isInt32(by) &&
+    isInt32(target) &&
+    isInt32(amount) &&
+    typeof crit === "boolean" &&
+    DAMAGE_TYPES.includes(type as DamageType)
+  );
+};
+
+function savedOf(world: World) {
   const { atlas, programs, kinds, spawns, ...state } = world;
-  return JSON.stringify({
+  return {
     version: SNAPSHOT_VERSION,
     map: hashAtlas(atlas),
     programs: hashPrograms(programs),
@@ -1458,7 +1572,7 @@ export function snapshot(world: World): string {
     spawns: hashSpawns(spawns),
     hash: hashWorld(world),
     state,
-  });
+  };
 }
 
 /** A snapshot's text, parsed, with its version checked and nothing else. */
@@ -1474,13 +1588,17 @@ export interface Saved {
 }
 
 /** Parses a snapshot and checks its version. Throws a SnapshotError if either fails. */
-export function parseSnapshot(text: string): Saved {
-  let data: unknown;
+export const parseSnapshot = (text: string): Saved => savedFrom(parseJson(text));
+
+function parseJson(text: string): unknown {
   try {
-    data = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
     throw new SnapshotError("snapshot is not valid JSON");
   }
+}
+
+function savedFrom(data: unknown): Saved {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     throw new SnapshotError("snapshot is not an object");
   }
@@ -1549,12 +1667,20 @@ export function migrate(version: number, state: unknown, atlas: Atlas): unknown 
  * from before version 8, nobody has died yet. In one from before version 9,
  * every node stands with its full yield and nobody has a burnt fish.
  */
-export function restore(
+export const restore = (
   text: string,
   ground: TileMap | Atlas,
   programs: Programs = {},
   kinds: Kinds = {},
   spawns: Spawns = [],
+): World => restoreSaved(parseSnapshot(text), ground, programs, kinds, spawns);
+
+function restoreSaved(
+  saved: Saved,
+  ground: TileMap | Atlas,
+  programs: Programs,
+  kinds: Kinds,
+  spawns: Spawns,
 ): World {
   const atlas = atlasOf(ground);
   const {
@@ -1565,7 +1691,7 @@ export function restore(
     spawns: spawnsHash,
     hash,
     state,
-  } = parseSnapshot(text);
+  } = saved;
   if (!sameGround(version, mapHash, atlas))
     throw new SnapshotError("snapshot was taken on a different map");
   const table = checkPrograms(programs);

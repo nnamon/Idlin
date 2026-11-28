@@ -20,6 +20,8 @@ const hit = (tick: number, actor: number, target: number): WorldEvent => ({
   actor,
   target,
   damage: 3,
+  crit: false,
+  damageType: "physical",
   hp: 1,
 });
 /** 400 ticks with nobody on the map and the given events. */

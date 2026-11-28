@@ -2,7 +2,9 @@
 
 One 13-minute cycle of the walking city, specified to build from. It is the
 spec for [#361](https://github.com/nnamon/Idlin/issues/361) and replaces the
-milestones that were in [plan.md](plan.md). None of it is built. Every rate
+milestones that were in [plan.md](plan.md). Only section 4.1's hit is built
+so far (`packages/sim/src/hit.ts`); the world runs every blow through it, with
+no gear, ranks or armour yet. Every rate
 is arithmetic from a rule on this page; section 11 names the piece that
 tests the rule.
 
@@ -597,6 +599,37 @@ has: with 70% already, another 20% makes blows 11.8% harder. A "more" is
 worth what it says. "More" and "less" come only from a unique's rule, a
 bonus line from Acid, and shock.
 
+**The rules in full**, as `hit` in `packages/sim/src/hit.ts` works them:
+
+- Each stage rounds each type down on its own: `n * pct / 10,000`, with
+  `pct` in hundredths of a percent and 100% as 10,000.
+- Where a line sits on the item, or in what order the lines are read,
+  changes nothing, except that the "more" and "less" lines are applied in
+  the order given. A "more" that names a type ("20% more fire damage")
+  touches that type only; one that names none touches every type.
+- A sum of increased under -100%, or a "less" of 100% or more, leaves
+  nothing of the types it applies to, and never a negative.
+- The crit roll is a whole number drawn below 10,000 from the world's
+  generator, and the swing crits when it is under the crit chance, 500 bare
+  plus every "+N% crit", held between 0 and 4,000. It is drawn once each time
+  a citizen's swing lands, before its targets are looked at, whether it hits
+  anyone or not; a swing that lands on several crits on all of them or none.
+- Physical loses nothing when either the hit or the armour is 0. Two lines of
+  "ignores N% resistance" add up.
+- The hit does at least 1 when its base had anything in it, whatever the
+  "less" lines and the target took off. A blow of nothing, such as a monster
+  file's `damage: 0`, does nothing.
+- No type grows past 2,147,483,647 at any stage, so a hit fits in 32 bits.
+- The blow a viewer is sent names one type: the one that did most, or of
+  types that tie, the first of physical, fire, cold and lightning.
+
+The numbers a hit starts from are [plan.md](plan.md)'s, section 2.1, rounded
+this way: a monster's hitpoints are rounded down once, after the rank
+multiplies, so a level-5 brute has 158 and not twelve fodder's 156; its blow
+is `hp(M) * (100 + M) / 100` rounded down, then the rank's share of that
+rounded down, and at least 1. Brutes and elites have armour of four times
+their level (4.3).
+
 **Example 1, at its own level.** `goofguy`, Arms 27, long blade of item
 level 31 with +10 physical, +12 fire and +14% damage, hits a level-27 pack
 monster with no armour or resistance.
@@ -769,8 +802,9 @@ of 690.
 | On screen      | one group at a time by the ramp                     | swarms cut down in ring 2, the bundle full once a landing | alone at the far edge with two groups on it, a taller hat, the unique's effect |
 
 The hat's height is the level and the weapon's silhouette is the base, so
-the three can be told apart standing still. The hour-10 column is on a cliff
-that makes a drop matter: its 75 physical is under a ring-2 fodder monster's
+the three can be told apart standing still. The hour-10 citizen's blade is a
+long blade of item level 25, the lowest that gives 10. The hour-10 column is
+on a cliff that makes a drop matter: its 75 physical is under a ring-2 fodder monster's
 80 hitpoints, and the "+14% damage" line makes it 85 and one blow. Without that line it is two blows and half the
 kills.
 

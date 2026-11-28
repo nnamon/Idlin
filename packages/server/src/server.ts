@@ -1,19 +1,22 @@
 // The world as a running process: steps it in real time, saves it on an
 // interval and on stop, and streams it to viewers over a WebSocket. Every
-// message a viewer receives is the sim's snapshot text of the world after a
-// tick: the first on connect, then one per tick. Chat reaches the world
-// through the queue in packages/chat, and each tick's inputs go in the input
-// log beside the newest snapshot before the world is stepped with them.
+// message a viewer receives is the sim's viewer message: the snapshot of the
+// world after a tick, with that tick's blows. The first comes on connect, with
+// no blows, then one per tick. Chat reaches the world through the queue in
+// packages/chat, and each tick's inputs go in the input log beside the newest
+// snapshot before the world is stepped with them.
 import { mkdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Chat, type ChatEvent, type Crowd } from "@idlin/chat";
 import {
+  type Blow,
+  blowsOf,
   createWorld,
-  snapshot,
   spawnsNearCamp,
   step,
   TICKS_PER_SECOND,
+  viewerMessage,
   type World,
 } from "@idlin/sim";
 import { WebSocket, WebSocketServer } from "ws";
@@ -124,8 +127,9 @@ export class WorldServer {
         failed = true;
         socket.terminate();
       });
-      // Viewers only listen; anything they send is ignored.
-      socket.send(snapshot(this.world));
+      // Viewers only listen; anything they send is ignored. A viewer that
+      // joins mid-tick has no tick before this one to draw blows across.
+      socket.send(viewerMessage(this.world, []));
     });
     sockets.on("error", (error) => options.log(`server socket: ${error.message}`));
   }
@@ -292,14 +296,14 @@ export class WorldServer {
   private tick(): void {
     const inputs = this.chat.take(this.world.tick);
     this.inputLog?.append(this.world.tick, inputs);
-    step(this.world, inputs);
+    const events = step(this.world, inputs);
     if (this.world.tick - this.savedTick >= this.options.snapshotTicks) this.save();
-    this.send();
+    this.send(blowsOf(events));
   }
 
-  private send(): void {
+  private send(blows: readonly Blow[]): void {
     if (this.sockets.clients.size === 0) return;
-    const text = snapshot(this.world);
+    const text = viewerMessage(this.world, blows);
     for (const socket of this.sockets.clients) {
       if (socket.readyState !== WebSocket.OPEN) continue;
       if (socket.bufferedAmount > MAX_QUEUED_BYTES) {

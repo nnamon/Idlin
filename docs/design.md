@@ -314,8 +314,9 @@ five seconds each in turn, with the same line: "Tim is walking to the river,
 bag 0/12". With every resident listed it goes round all of them. The resident
 it names has a claim to a name slip, as anyone in the news does.
 
-The fight is read off the whole world, where walking through an exit is a step
-like any other, so someone who walks off the map is not taken for killed or
+The fight is read off the whole world and the tick's blows, which the viewer
+is sent with it, since what a blow takes off depends on a crit roll the viewer
+cannot make. Walking through an exit is a step like any other, so someone who walks off the map is not taken for killed or
 downed. The regions lie side by side as one plane, so a blot left in the
 pinewood is there when the map pans to the pinewood. The page and the news
 line cover every resident, so one downed in another region is on the news,

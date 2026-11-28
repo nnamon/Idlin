@@ -1,5 +1,7 @@
 import {
   ADVENTURER,
+  type Blow,
+  blowsOf,
   compileBots,
   createWorld,
   placeConstants,
@@ -128,10 +130,11 @@ describe("the watch over the shipped world", () => {
     const world = createShipped();
     let watch = startWatch(world.atlas);
     const watches: Watch[] = [];
+    let blows: Blow[] = [];
     for (let tick = 0; tick < 24 * 600; tick++) {
-      watch = nextWatch(watch, world);
+      watch = nextWatch(watch, world, blows);
       watches.push(watch);
-      step(world);
+      blows = blowsOf(step(world));
     }
     return watches;
   }
@@ -147,9 +150,10 @@ describe("the watch over the shipped world", () => {
     let lagging = 0;
     // A drift under way, of two regions at most, then FOLLOW_TICKS of wanting.
     const settle = 2 * DRIFT_TICKS + FOLLOW_TICKS + 1;
+    let blows: Blow[] = [];
     for (let tick = 0; tick < 24 * 600; tick++) {
       const before = watch.camera.since;
-      watch = nextWatch(watch, world);
+      watch = nextWatch(watch, world, blows);
       if (watch.camera.since !== before) drifts++;
       const subject = world.actors.find((a) => a.id === watch.subject && a.kind === ADVENTURER);
       const region = subject ? regionAt(world.atlas, subject.x, subject.y) : -1;
@@ -158,7 +162,7 @@ describe("the watch over the shipped world", () => {
       // Once the same resident has been in one region for long enough to get
       // there from anywhere, the view is on that region.
       if (subject && tick - since >= settle && regionOf(watch.camera) !== region) lagging++;
-      step(world);
+      blows = blowsOf(step(world));
     }
     expect(lagging).toBe(0);
     // At least one trip out of the camp and back, so the view did follow someone.

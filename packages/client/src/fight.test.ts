@@ -1,4 +1,4 @@
-import type { Actor, Mark, World } from "@idlin/sim";
+import type { Actor, Blow, Mark, World } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
 import {
   ARRIVE_TICKS,
@@ -48,11 +48,21 @@ const actor = (over: Partial<Actor>): Actor =>
 const wolf = (over: Partial<Actor>): Actor =>
   actor({ id: 2, name: "Wolf", kind: "wolf", hp: 24, x: 4, y: 5, ...over });
 
-/** The fight after each of a run of ticks, from tick 1: the actors and marks at each. */
-function history(ticks: readonly { actors: Actor[]; marks?: Mark[] }[]): Fight {
+/** A physical blow as the sim lists it. */
+const blow = (by: number, target: number, amount: number, crit = false): Blow => ({
+  by,
+  target,
+  amount,
+  crit,
+  type: "physical",
+});
+
+/** The fight after each of a run of ticks, from tick 1: the actors and marks at each, and the blows that tick landed. */
+function history(ticks: readonly { actors: Actor[]; marks?: Mark[]; blows?: Blow[] }[]): Fight {
   let fight = NO_FIGHT;
-  ticks.forEach(({ actors, marks = [] }, i) => {
-    fight = nextFight(fight, { tick: i + 1, actors, marks, kinds: KINDS } as unknown as World);
+  ticks.forEach(({ actors, marks = [], blows = [] }, i) => {
+    const world = { tick: i + 1, actors, marks, kinds: KINDS } as unknown as World;
+    fight = nextFight(fight, world, blows);
   });
   return fight;
 }
@@ -61,7 +71,7 @@ describe("a fight read off the world", () => {
   it("floats the damage over whoever a landed blow hit, pushes it away and lunges the attacker", () => {
     const fight = history([
       { actors: [actor({}), wolf({ windup: 1 })], marks: [{ x: 5, y: 5, by: 2 }] },
-      { actors: [actor({ hp: 12 }), wolf({ recover: 20 })] },
+      { actors: [actor({ hp: 12 }), wolf({ recover: 20 })], blows: [blow(2, 1, 8)] },
     ]);
     expect(fight.floaters).toEqual([{ since: 2, x: 5, y: 5, damage: 8, order: 0 }]);
     expect(fight.recoils.get(1)).toEqual({ since: 2, dx: 1, dy: 0 });
@@ -74,6 +84,25 @@ describe("a fight read off the world", () => {
     const ring = fight.rings.get(1);
     expect(ring && ringShare(ring, 2)).toBe(1);
     expect(ring && ringShare(ring, 10)).toBeCloseTo(0.6);
+  });
+
+  it("takes each blow's number from the sim's list, crit and all, not from the kind", () => {
+    // The kind's blow is 8; this one crit for 16, and the next one did 9.
+    const fight = history([
+      { actors: [actor({}), wolf({ windup: 1 })], marks: [{ x: 5, y: 5, by: 2 }] },
+      { actors: [actor({ hp: 4 }), wolf({ recover: 20 })], blows: [blow(2, 1, 16, true)] },
+    ]);
+    expect(fight.floaters.map((f) => f.damage)).toEqual([16]);
+    expect(fight.news).toEqual([
+      { text: "Ash took a blow from a wolf, 4 hitpoints left", who: 1, close: true },
+    ]);
+    // A blow by someone not seen last tick has nowhere to be drawn from, and is left out.
+    const stray = history([
+      { actors: [actor({}), wolf({})] },
+      { actors: [actor({ hp: 11 }), wolf({})], blows: [blow(2, 1, 9), blow(7, 1, 9)] },
+    ]);
+    expect(stray.floaters.map((f) => f.damage)).toEqual([9]);
+    expect(stray.scratches).toEqual([]);
   });
 
   it("counts a hop off a marked tile as a dodge, and the blow on the empty tile leaves a scratch for a while", () => {
@@ -90,26 +119,34 @@ describe("a fight read off the world", () => {
     expect(fight.scratches).toEqual([{ since: 3, x: 5, y: 5, dx: 1, dy: 0 }]);
     let later = fight;
     for (let tick = 4; tick < 3 + SCRATCH_TICKS; tick++)
-      later = nextFight(later, {
-        tick,
+      later = nextFight(
+        later,
+        {
+          tick,
+          actors: [actor({ x: 5, y: 4 }), wolf({})],
+          marks: [],
+          kinds: KINDS,
+        } as unknown as World,
+        [],
+      );
+    expect(later.scratches).toHaveLength(1);
+    later = nextFight(
+      later,
+      {
+        tick: 3 + SCRATCH_TICKS,
         actors: [actor({ x: 5, y: 4 }), wolf({})],
         marks: [],
         kinds: KINDS,
-      } as unknown as World);
-    expect(later.scratches).toHaveLength(1);
-    later = nextFight(later, {
-      tick: 3 + SCRATCH_TICKS,
-      actors: [actor({ x: 5, y: 4 }), wolf({})],
-      marks: [],
-      kinds: KINDS,
-    } as unknown as World);
+      } as unknown as World,
+      [],
+    );
     expect(later.scratches).toEqual([]);
   });
 
   it("leaves a blot that stays about a minute where a monster was killed, and says who killed it", () => {
     const fight = history([
       { actors: [actor({ windup: 1 }), wolf({ hp: 4 })], marks: [{ x: 4, y: 5, by: 1 }] },
-      { actors: [actor({ recover: 6 })] },
+      { actors: [actor({ recover: 6 })], blows: [blow(1, 2, 7)] },
     ]);
     expect(fight.news).toEqual([{ text: "Ash killed a wolf", who: 1 }]);
     const [fallen] = fight.fallen;
@@ -133,36 +170,40 @@ describe("a fight read off the world", () => {
     // Ash's blow kills the wolf; Elm's, landing after it, finds nobody.
     const first = history([
       { actors: [actor({ windup: 1 }), wolf({ hp: 4 }), elm({ windup: 1 })], marks },
-      { actors: [actor({ recover: 6 }), elm({ recover: 6 })] },
+      { actors: [actor({ recover: 6 }), elm({ recover: 6 })], blows: [blow(1, 2, 7)] },
     ]);
     expect(first.news).toEqual([{ text: "Ash killed a wolf", who: 1 }]);
-    expect(first.floaters).toEqual([{ since: 2, x: 4, y: 5, damage: 4, order: 0 }]);
+    expect(first.floaters).toEqual([{ since: 2, x: 4, y: 5, damage: 7, order: 0 }]);
     expect(first.scratches).toMatchObject([{ x: 4, y: 5 }]);
 
     // Neither alone kills: the last blow to land, Elm's, gets the kill, and
     // each blow has its own number, apart from the other.
     const both = history([
       { actors: [actor({ windup: 1 }), wolf({ hp: 8 }), elm({ windup: 1 })], marks },
-      { actors: [actor({ recover: 6 }), elm({ recover: 6 })] },
+      {
+        actors: [actor({ recover: 6 }), elm({ recover: 6 })],
+        blows: [blow(1, 2, 7), blow(3, 2, 7)],
+      },
     ]);
     expect(both.news).toEqual([{ text: "Elm killed a wolf", who: 3 }]);
     expect(both.floaters.map((f) => [f.damage, f.order])).toEqual([
-      [4, 0],
-      [4, 1],
+      [7, 0],
+      [7, 1],
     ]);
     expect(both.scratches).toEqual([]);
   });
 
   it("stacks a number on a spot where another is still rising, and reuses the place once it is free", () => {
     // The wolf's blow lands at ticks 2 and 3 on the same spot.
-    const winding = (hp: number) => ({
+    const winding = (hp: number, blows: Blow[]) => ({
       actors: [actor({ hp }), wolf({ windup: 1 })],
       marks: [{ x: 5, y: 5, by: 2 }],
+      blows,
     });
     const fight = history([
-      winding(20),
-      winding(12),
-      { actors: [actor({ hp: 4 }), wolf({ recover: 20 })] },
+      winding(20, []),
+      winding(12, [blow(2, 1, 8)]),
+      { actors: [actor({ hp: 4 }), wolf({ recover: 20 })], blows: [blow(2, 1, 8)] },
     ]);
     expect(fight.floaters.map((f) => [f.since, f.order])).toEqual([
       [2, 0],
@@ -171,19 +212,27 @@ describe("a fight read off the world", () => {
     // Long after, a new number on that spot goes back to the first place.
     let later = fight;
     for (let tick = 4; tick < 4 + FLOAT_STACK; tick++) {
-      later = nextFight(later, {
-        tick,
-        actors: [actor({ hp: 4 }), wolf({ windup: tick === 3 + FLOAT_STACK ? 1 : 0 })],
-        marks: tick === 3 + FLOAT_STACK ? [{ x: 5, y: 5, by: 2 }] : [],
-        kinds: KINDS,
-      } as unknown as World);
+      later = nextFight(
+        later,
+        {
+          tick,
+          actors: [actor({ hp: 4 }), wolf({ windup: tick === 3 + FLOAT_STACK ? 1 : 0 })],
+          marks: tick === 3 + FLOAT_STACK ? [{ x: 5, y: 5, by: 2 }] : [],
+          kinds: KINDS,
+        } as unknown as World,
+        [],
+      );
     }
-    later = nextFight(later, {
-      tick: 4 + FLOAT_STACK,
-      actors: [actor({ hp: 16, x: 14, y: 9 }), wolf({ recover: 20 })],
-      marks: [],
-      kinds: KINDS,
-    } as unknown as World);
+    later = nextFight(
+      later,
+      {
+        tick: 4 + FLOAT_STACK,
+        actors: [actor({ hp: 16, x: 14, y: 9 }), wolf({ recover: 20 })],
+        marks: [],
+        kinds: KINDS,
+      } as unknown as World,
+      [blow(2, 1, 8)],
+    );
     expect(later.floaters.at(-1)).toMatchObject({ since: 4 + FLOAT_STACK, order: 0 });
   });
 
@@ -198,7 +247,10 @@ describe("a fight read off the world", () => {
     const downed = history([
       { actors: [actor({ hp: 6 }), wolf({ windup: 1 })], marks: [{ x: 5, y: 5, by: 2 }] },
       // Carried back to camp with its hitpoints back.
-      { actors: [actor({ x: 14, y: 9, wait: 150 }), wolf({ recover: 20 })] },
+      {
+        actors: [actor({ x: 14, y: 9, wait: 150 }), wolf({ recover: 20 })],
+        blows: [blow(2, 1, 8)],
+      },
     ]);
     expect(downed.news).toEqual([{ text: "Ash was downed by a wolf", who: 1, urgent: true }]);
     expect(downed.fallen).toMatchObject([{ x: 5, y: 5, kind: "adventurer" }]);
@@ -216,7 +268,7 @@ describe("a fight read off the world", () => {
 
     const close = history([
       { actors: [actor({ hp: 13 }), wolf({ windup: 1 })], marks: [{ x: 5, y: 5, by: 2 }] },
-      { actors: [actor({ hp: 5 }), wolf({ recover: 20 })] },
+      { actors: [actor({ hp: 5 }), wolf({ recover: 20 })], blows: [blow(2, 1, 8)] },
     ]);
     expect(close.news).toEqual([
       { text: "Ash took a blow from a wolf, 5 hitpoints left", who: 1, close: true },
@@ -233,7 +285,11 @@ describe("a fight read off the world", () => {
     let fight = NO_FIGHT;
     const strokes: number[] = [];
     ticks.forEach(({ actors, marks }, i) => {
-      fight = nextFight(fight, { tick: i + 1, actors, marks, kinds: KINDS } as unknown as World);
+      fight = nextFight(
+        fight,
+        { tick: i + 1, actors, marks, kinds: KINDS } as unknown as World,
+        [],
+      );
       strokes.push(hatchAt(fight, 2, i + 1));
     });
     for (let i = 1; i < strokes.length; i++)

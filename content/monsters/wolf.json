@@ -1,6 +1,6 @@
 {
   "name": "Wolf",
-  "hp": 24,
+  "hp": 42,
   "damage": 8,
   "windup": 8,
   "recovery": 20,

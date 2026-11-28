@@ -4,7 +4,7 @@
 // the exits, never cutting. Pure and deterministic for the same worlds, so the
 // capture tool follows the same view without a page.
 
-import { ADVENTURER, type Atlas, regionAt, type World } from "@idlin/sim";
+import { ADVENTURER, type Atlas, type Blow, regionAt, type World } from "@idlin/sim";
 import { createDirector, type Director, direct, type Notice } from "./director.ts";
 import { type Fight, NO_FIGHT, nextFight } from "./fight.ts";
 import { campRegion } from "./view.ts";
@@ -170,11 +170,12 @@ export function startWatch(atlas: Atlas): Watch {
 /**
  * The watch after `world`'s tick: the fight read off the whole world, the
  * director's pick among every resident, and the view following that resident's
- * region. Seeing the same tick again changes nothing.
+ * region. Seeing the same tick again changes nothing. `blows` are the blows
+ * of the tick that made `world`.
  */
-export function nextWatch(watch: Watch, world: World): Watch {
+export function nextWatch(watch: Watch, world: World, blows: readonly Blow[]): Watch {
   if (world.tick === watch.tick) return watch;
-  const fight = nextFight(watch.fight, world);
+  const fight = nextFight(watch.fight, world, blows);
   const residents = world.actors.filter((actor) => actor.kind === ADVENTURER);
   const subject = direct(
     watch.director,

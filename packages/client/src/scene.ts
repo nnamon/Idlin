@@ -16,6 +16,7 @@ import {
   type Actor,
   ADVENTURER,
   type Atlas,
+  type Blow,
   clock,
   kindOf,
   place,
@@ -928,9 +929,10 @@ export class Scene {
    * that what a frame shows depends on the world's history and not on which
    * frames happened to be drawn. The fight, the spotlight and where the view
    * goes are read off the whole world (see camera.ts); the rest is about what
-   * is in the window.
+   * is in the window. `blows` are the blows of the tick that made `whole`, as
+   * `step`'s events or the server's message give them.
    */
-  observe(whole: World): void {
+  observe(whole: World, blows: readonly Blow[]): void {
     // Each tick is taken note of once: seeing it again changes nothing.
     if (whole.tick === this.lastTick) return;
     // A world from earlier than the last (a server restarted from a snapshot) has
@@ -959,7 +961,7 @@ export class Scene {
       this.effects = NO_EFFECTS;
     }
     this.lastTick = whole.tick;
-    this.watch = nextWatch(this.watch, whole);
+    this.watch = nextWatch(this.watch, whole, blows);
     this.fight = this.watch.fight;
     const seen = this.seenAt(whole.tick);
     this.seen = seen;

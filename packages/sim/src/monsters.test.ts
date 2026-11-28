@@ -681,8 +681,10 @@ describe("goblins", () => {
     }
     const hit = log.find((e) => e.type === "hit" && e.target === 1);
     expect(hit).toBeDefined();
-    // One blow takes the goblin to half its hitpoints, and the next thing it does is run.
-    expect(hit?.type === "hit" && hit.hp).toBe((MONSTERS.kinds.goblin?.hp as number) / 2);
+    // One level-1 blow of 7 takes the goblin to half its 14 hitpoints, and the next thing it does is run.
+    expect(hit?.type === "hit" && !hit.crit && hit.hp).toBe(
+      (MONSTERS.kinds.goblin?.hp as number) / 2,
+    );
     const next = log.find(
       (e) => e.type === "decide" && e.actor === 1 && e.tick >= (hit?.tick ?? 0),
     );

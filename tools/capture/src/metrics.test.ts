@@ -185,7 +185,20 @@ describe("watchMetrics", () => {
     for (let tick = 0; tick < 300; tick++) {
       run.push(
         record(
-          tick === 100 ? [{ type: "hit", tick, actor: 2, target: 1, damage: 4, hp: 16 }] : [],
+          tick === 100
+            ? [
+                {
+                  type: "hit",
+                  tick,
+                  actor: 2,
+                  target: 1,
+                  damage: 4,
+                  crit: false,
+                  damageType: "physical",
+                  hp: 16,
+                },
+              ]
+            : [],
           [[1, "Ash", 4, 0]],
         ),
       );

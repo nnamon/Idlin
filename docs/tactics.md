@@ -168,7 +168,12 @@ minute.
 ## Fighting
 
 Adventurers and monsters are enemies; nobody else is. Each kind of actor has
-hitpoints and one attack. An adventurer has 20 hitpoints and hits for 4.
+hitpoints and one attack. An adventurer has 20 hitpoints, and its blow is the
+base blow of its Melee level, `6 + L + L*L/20`: 7 at level 1, 21 at level 10.
+One swing in 20 is a crit and does double. A monster's blow is its kind's
+`damage`, and monsters do not crit. What a blow takes off is worked out as
+section 4.1 of [slice.md](slice.md) says; nobody wears armour yet, so for now
+that is the blow itself.
 
 `attack(x, y)` strikes in the direction of (x, y): up, down, left or right,
 whichever is nearer to it. It does not land at once. The tiles it will hit are
@@ -240,8 +245,8 @@ blow takes off a monster is 4 Melee experience, and every hitpoint a
 monster's blow takes off an adventurer is 4 Hitpoints experience. A blow that
 finishes a monster with 2 hitpoints left counts 2, whatever it would have
 done. Woodcutting, Fishing and Cooking experience come from gathering and
-cooking, below. Besides what can be gathered and the odds of a try, levels
-change nothing yet.
+cooking, below. Besides the Melee level's blow, what can be gathered and the
+odds of a try, levels change nothing yet.
 
 Skill, good and node names are known to every program, so they can be passed
 to the sensors and actions above: `level(melee)`, `carrying(logs)`,
@@ -321,7 +326,7 @@ any other, and must not share a name with a program in `content/bots/`.
 ```json
 {
   "name": "Wolf",
-  "hp": 24,
+  "hp": 42,
   "damage": 8,
   "windup": 8,
   "recovery": 20,

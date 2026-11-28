@@ -8,6 +8,8 @@
 
 import {
   ADVENTURER,
+  type Blow,
+  blowsOf,
   compileBots,
   createWorld,
   type Monsters,
@@ -73,7 +75,7 @@ function follower(atlas: World["atlas"]) {
   const regions = atlas.regions.map((region) => region.map.name);
   let before = new Set<number>();
   return (world: World, events: readonly WorldEvent[]) => {
-    watch = nextWatch(watch, world);
+    watch = nextWatch(watch, world, blowsOf(events));
     const at = viewAt(watch.camera, atlas, world.tick);
     const window = { ...at, ...size };
     const view = windowView(world, window);
@@ -291,15 +293,16 @@ export function spotlightRun(
   subjects: (number | null)[];
   names: Map<number, string>;
 } {
-  const { world } = start(seed, castOf(residents));
+  const { world, events } = start(seed, castOf(residents));
   let watch = startWatch(world.atlas);
   const subjects: (number | null)[] = [];
   const cast = world.actors.filter((a) => a.kind === ADVENTURER);
   const names = new Map(cast.map((a) => [a.id, a.name]));
+  let blows: Blow[] = blowsOf(events);
   for (let tick = 0; tick < ticks; tick++) {
-    watch = nextWatch(watch, world);
+    watch = nextWatch(watch, world, blows);
     subjects.push(watch.subject);
-    step(world);
+    blows = blowsOf(step(world));
   }
   return { subjects, names };
 }

@@ -3,8 +3,9 @@ import {
   type Atlas,
   createWorld,
   type Kinds,
+  type Message,
   type Programs,
-  restore,
+  readMessage,
   type Spawns,
   TICKS_PER_SECOND,
   type World,
@@ -21,7 +22,7 @@ export interface LiveContent {
 
 /**
  * Live mode: draws the server's world. The server sends the whole world after
- * every tick; between two of them the picture moves on by the time since the
+ * every tick, with that tick's blows; between two of them the picture moves on by the time since the
  * last, up to just short of the next tick. A lost connection is retried every
  * two seconds, and the last world stays on screen meanwhile. Until the first
  * world arrives the map is drawn empty and the clock is hidden, since the
@@ -56,9 +57,9 @@ export function follow(
       return;
     }
     socket.onmessage = (event) => {
-      let next: World;
+      let next: Message;
       try {
-        next = restore(String(event.data), atlas, programs, kinds, spawns);
+        next = readMessage(String(event.data), atlas, programs, kinds, spawns);
       } catch (error) {
         // Most likely the server runs other content than this page was built with.
         // The server may be updated, so this keeps trying.
@@ -67,11 +68,11 @@ export function follow(
         socket.close();
         return;
       }
-      world = next;
+      world = next.world;
       document.body.dataset.live = "connected";
       scene.notice = "";
       scene.clockShown = true;
-      scene.observe(world);
+      scene.observe(world, next.blows);
       arrived = performance.now();
     };
     socket.onclose = () => {
