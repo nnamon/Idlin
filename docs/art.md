@@ -146,8 +146,9 @@ citizens' own colours.
 - **Contrast.** A contour against the ground under it: at least 7:1. Lettering
   that carries information: at least 4.5:1, and never under 3:1 while a
   palette is changing. A wash never brings ink on it below 7:1.
-- **One accent a phase**, used on less than 2% of the frame. The shield's
-  bands may take it to 3% during the siege (section 7).
+- **One accent a phase**, used on less than 2% of the frame. A wash or halo
+  of the accent counts at its strength: a 35% wash over 1,000 px² counts as
+  350. The shield may take it to 5% during the siege (section 7).
 - Water is a ground wash like any other. It is never the most saturated or
   the largest flat colour in a frame.
 
@@ -166,6 +167,12 @@ Warm wood and lamplight against a cool, pale land going by.
 | oxide strake    | `#a8644a` |
 | the land beyond | `#a9b4b0` |
 | accent: lamp    | `#f6cf6a` |
+| lamp ink        | `#aa8f4e` |
+
+A line in the lamp accent does not hold against paper. So the accent is kept
+for fills, and hatching or a ray in the lamp's colour is stroked in lamp
+ink, which is the accent mixed 38% toward ink. Lamp ink is about 2.5:1 on
+paper, so it is never a contour: an edge in the lamp's colour is drawn in ink.
 
 The land the city walks over is drawn in plan under it, in ink at 40%
 strength with the one cool wash. It has no contour weight lines and nothing
@@ -210,15 +217,15 @@ Night is drawn in masses. It is not the day drawing with its colours swapped.
 The horde is the landing's clock. A landing has seven phases (#413 sets
 their rules and times), and the plate is a different picture in each.
 
-| Phase                | What the plate shows                                                                                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Peace             | No black. The map runs to the rule and stops as an unfinished drawing does: in its last two tiles the washes end and the lines trail off into bare paper. Packs are at rest in their pockets.                                   |
-| 2. Scouts            | The same map with scouts on it, in ones to threes, coming in from the rim's gaps toward citizens.                                                                                                                               |
-| 3. The front gathers | Black comes in at the gaps and spreads along the rim on every side. It deepens from one tile to four (two on the first size of landing) as the horde gathers, and its depth is how a viewer at 640 tells how near the march is. |
-| 4. The march         | The black moves. It takes the ground with the longest walk to the ramp first, on every side at once, so the pale ground shrinks to one shape round the city. The frame closes with it (section 12).                             |
-| 5. The siege         | The horde meets the city's shield (section 7) and piles up against it. Citizens hold the shield's edge. This is the late picture: a lit oblong with the city in it, the bands of the shield, and bodies heaped against them.    |
-| 6. The break         | The last band goes, the pile falls inward and the black takes the ground inside. Citizens run for the ramp from every side with the horde two or three tiles behind them.                                                       |
-| 7. Lift-off          | The black reaches the hull. The legs lift out of it and the frame closes on the city (section 12).                                                                                                                              |
+| Phase                | What the plate shows                                                                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Peace             | No black. The map runs to the rule and stops as an unfinished drawing does: in its last two tiles the washes end and the lines trail off into bare paper. Packs are at rest in their pockets.                                         |
+| 2. Scouts            | The same map with scouts on it, in ones to threes, coming in from the rim's gaps toward citizens.                                                                                                                                     |
+| 3. The front gathers | Black comes in at the gaps and spreads along the rim on every side. It deepens from one tile to four (two on the first size of landing) as the horde gathers, and its depth is how a viewer at 640 tells how near the march is.       |
+| 4. The march         | The black moves. It takes the ground with the longest walk to the ramp first, on every side at once, so the pale ground shrinks to one shape round the city. The frame closes with it (section 12).                                   |
+| 5. The siege         | The horde meets the city's shield (section 7) and throws itself on it. Citizens fight at its foot. This is the late picture: a lit oblong with the city in it, a wall of light on lamp posts round it, and bodies heaped on the wall. |
+| 6. The break         | The last lamp goes out, the heap falls inward and the black takes the ground inside. Citizens run for the ramp from every side with the horde two or three tiles behind them.                                                         |
+| 7. Lift-off          | The black reaches the hull. The legs lift out of it and the frame closes on the city (section 12).                                                                                                                                    |
 
 - It is spot black on the ground, a tide of ink. It is never a front that
   crosses the plate from one side: it gathers, marches and piles up on every
@@ -235,13 +242,20 @@ their rules and times), and the plate is a different picture in each.
   mass with heads and backs in paper line and eyes in clusters. Beyond that
   it is black with eyes. No stretch of black more than ten tiles across has
   nothing drawn in it.
+- **Everything in it is black.** A brute or an elite of the horde carries no
+  wash paler than the bodies round it. A grey one in the black is read as a
+  boulder. Its shape is the paper line along its lantern side at contour
+  weight, its eyes and its teeth, and it stands a head or more above the
+  mass (section 6). An elite's sail is the only colour in the black.
 - Its edge is one curved line at heavy weight, crowded with heads, backs and
   reaching limbs, uneven along its length. For one to two tiles ahead of the
   edge the ground is hatched in the red-brown of a blow about to land. Ahead
   of that a bruise wash (`#5a2a3a`) lies in two flat steps, 12% then 9%, out
   to about five tiles.
 - Inside the black there are eyes and teeth in paper colour, thick near the
-  edge and in clusters, never on an even pitch. Anything over two tiles tall
+  edge and in clusters of five to twelve with black between them, never on
+  an even pitch. Backs drawn as a field of arcs at one spacing read as
+  scales. Anything over two tiles tall
   that the black has covered still shows the top of its outline as a paper
   line at form weight, so the map can be read under the ink.
 - It is the only large black thing on a daytime plate, which is how a viewer
@@ -282,10 +296,12 @@ the city at one end and the enemy at the other.
   target goes.
 - **The horde is the clock** (section 3). It closes from the rim on every
   side. It is never the enemy line.
-- **The shield is held in the round.** In the siege citizens stand at the
-  shield's edge in ones to fives, on at least three sides of the city, with
+- **The shield is held in the round.** In the siege citizens fight at the
+  shield's foot in ones to fives, on at least three sides of the city, with
   three tiles or more between one group and the next. No group stands in a
-  row, and the groups never join into a line round the shield.
+  row, and the groups never join into a line round the shield. Which side
+  of the foot they stand on is the simulation's rule
+  ([slice.md](slice.md), section 1).
 - **The halves test.** Shrink the frame to 640 and cut it in half through the
   city, across and then down. Each half has citizens, monsters and something
   to take. If one half is ours and the other is theirs, the frame is staged
@@ -361,6 +377,10 @@ of value, and a thing changes plane when it wakes.
   top as an outline at contour weight in its cloak colour, with its head in
   paper. Monsters get no outline. A pack half behind a wood is how an ambush
   reads.
+- In a press of the horde no body is drawn over a citizen's head, or over
+  more than a third of its figure. A citizen fighting at the shield has
+  half a tile of open ground on the side toward the viewer.
+- The shield's wall is sorted behind everything that stands (section 7).
 - A figure may cover up to a third of its neighbour. At 1920 no citizen's
   head or hat is covered by another citizen.
 - A thing in the air is drawn above its shadow, and the gap between the two
@@ -517,6 +537,39 @@ them apart.
   they lie round what it guards. A den has a letter and a level under its
   mouth (section 11), an earth wash and growth on top. A brute has grey
   and nothing lettered.
+- **No part of it is a slab.** Its forelimbs are longer than its hind legs
+  and it walks on its knuckles. A forelimb bends at the elbow and narrows
+  from the shoulder to the wrist by half, with the fist wider again. Its
+  underside is not a flat line: the belly is a fifth of its height off the
+  ground between the limbs, and what is behind it shows through the gap.
+- **It rears to strike.** Winding up, its hind legs stay planted, its spine
+  tips back to 50 degrees or more and both forelimbs come up over its head,
+  bent. One limb held straight up beside the body is read as a standing
+  stone.
+- **Its teeth are a row** of four to six along an open lower jaw, in paper.
+  Two tusks standing up from a flat face are read as the corners of a
+  block.
+- **It is never square.** Standing, one forelimb is off the ground or it is
+  turned in mid-stride. In the horde it is drawn in the horde's black
+  (section 3).
+
+### An elite's crest
+
+A crest drawn as a row of separate points in red-brown is read as a row of
+flames. Flames on this plate are the lamps' and the firepot's.
+
+- **It is one shape:** a sail down the spine from the skull to the hips,
+  tallest over the shoulder at a quarter of the body's height, and two and
+  a half times as long as it is tall or longer.
+- Its top edge is ragged, with three to five notches cut no deeper than a
+  third of the sail. It is raked back 25 degrees from the head. Nothing on
+  it points straight up.
+- It is a flat red-brown wash (`#9c3b22`) inside an ink contour, with four
+  to six ribs in ink at form weight running from the spine to the edge. It
+  has no highlight, and it does not flicker or change shape while the
+  elite stands.
+- A banner or a broken horn, where a kind has one in its place, is likewise
+  one shape and joined to the body's outline.
 
 ### Packs and swarms
 
@@ -580,8 +633,10 @@ slice draws. Growth, below, has the other sizes.
   hair weight. It is the
   anchor of the zoom (section 12) and the source of light at night.
 - **The rail.** It runs round the deck, with gun posts fore and aft. This is
-  where citizens fight in transit and shoot from on a landing. Posts and
-  mounted weapons are drawn large enough to read at mid size.
+  where citizens fight in transit. Gun posts and mounted weapons are drawn
+  large enough to read at mid size. The shield's posts ride in a rack along
+  the hull's near side under the rim, so a shield level the works have
+  built is seen aboard before the next landing.
 - **The ramp.** Timber, three tiles wide. It comes down through a gap in the
   rail to the ground on whichever side the landing puts it. Stowed, it is
   folded up against the rail.
@@ -598,8 +653,9 @@ slice draws. Growth, below, has the other sizes.
 - Parked, the belly is half a tile off the ground. Its shadow under the hull
   is what lifts it off the map.
 - Citizens aboard stand on the open deck at the landing's figure size, and
-  are named as section 11 has it. Those at the rail shoot outward in any
-  direction.
+  are named as section 11 has it. Whether anyone aboard may shoot on a
+  landing is [slice.md](slice.md)'s rule. Where they may, they shoot from
+  the rail outward in any direction.
 - A citizen behind the hull or a leg is drawn as an outline (section 4).
 
 ### Districts
@@ -622,6 +678,8 @@ recolour, a number or a badge.
   pennants, then carved and painted work.
 - Damage and upkeep show the same way in reverse: missing planks, patched
   plate, a leg that drags, soot.
+- A shield level adds two posts to the shield, and every third level
+  rebuilds them all in the next material (The shield, below).
 
 ### Growth
 
@@ -679,41 +737,92 @@ are in pixels and do not change. Effects are sized against a citizen
 ### The shield
 
 The city has a shield, and the horde has to break it before it can reach
-the hull. The simulation gives its shape and its strength (#413). It is
-drawn with the pen like everything else: no glow, no blur and no dome of
-light.
+the hull. The simulation gives its foot, its level and its strength
+([slice.md](slice.md), section 1). It is drawn as a dome of light standing
+on lamp posts. The posts are what the city has built, the lamps are the
+strength it has left, and the dome is what the horde throws itself on. It
+is drawn with the pen like everything else: hatching and flat wash, no
+glow and no blur.
 
-- **Its foot** is one closed curve on the ground round the city, four to
-  five tiles clear of the planted feet: about 30 tiles by 22 for the mid
-  city. On the first size of landing it is two tiles clear. It is in plan,
-  with bends no tighter than two tiles. The ramp's foot is inside it.
-- **Its bands.** The shield is drawn as bands in the lamp accent
-  (`#f6cf6a`) that follow the foot on its outer side, each at heavy weight
-  with a gap of its own width before the next. A shield has two bands
-  before any upgrade and up to five when fully built, so a better shield is
-  a thicker edge.
-- **Its strength** is how many bands there are and how whole the outermost
-  one is. Each band stands for an equal share of the strength. The
-  outermost loses length as that share goes, in gaps that open where the
-  horde is striking, and when it is all gaps it is gone and the next band
-  starts to break. No bar, and no number on the map: the number is in the
-  corner (section 11).
-- **Before the march** the bands are not drawn. From the march on they are
-  drawn at full, so a viewer sees what the horde is walking toward.
+- **Its foot** is one closed curve on the ground round the city, drawn in
+  plan through the tiles the simulation gives, with bends no tighter than
+  two tiles. The planted feet and the ramp's foot are inside it. It is a
+  heavy line in ink with a band of the lamp accent 6 px wide along its
+  inner side, so it holds against pale ground and against the black. It
+  stays closed until the break.
+- **Its posts.** Lamp posts stand on the foot at even spacing by its
+  length, with the way out from the ramp's foot passing midway between two
+  of them. A shield has ten before any upgrade and two more for each level
+  the works have built, to thirty at level 10. They are the city's work and
+  are drawn in its colours (section 3), each with a paper line down its
+  lantern side. No post is drawn in black or in ink alone, lit or dark.
+
+  | Shield level | Posts      | Built of                                 | Height, to the lamp | The lamp                  |
+  | ------------ | ---------- | ---------------------------------------- | ------------------- | ------------------------- |
+  | 0 to 2       | 10, 12, 14 | timber and rope                          | 1.25 citizens       | an open flame in a cup    |
+  | 3 to 5       | 16, 18, 20 | timber with iron bands                   | 1.5                 | a caged lamp              |
+  | 6 to 8       | 22, 24, 26 | brass fittings, a pennant under the lamp | 1.75                | a glass lantern           |
+  | 9 and 10     | 28, 30     | carved and painted                       | 2                   | a lantern with two flames |
+
+  A shaft is 8 px wide at contour weight. A lamp is a disc of the accent
+  14 px across in an ink ring. Lit, it has one flat halo of the accent at
+  30%, 40 px across, with a hard edge.
+- **Its lamps are its strength.** Each lamp stands for an equal share of
+  the shield's full strength. The lamps lit are the strength left over one
+  share, rounded up, so the last goes out only when nothing is left. They
+  go out and are not relit during a siege. The next to go is the lit one
+  nearest the place where most of the horde is striking, so dark posts come
+  in runs and a viewer sees which side is going. No bar, and no number on
+  the map: the count is in the corner (section 11).
+- **A dark post** keeps its wash and loses its flame. It leans up to 20
+  degrees toward the city and smokes: two loops at contour weight, in paper
+  colour where they lie over the black. With a quarter of the lamps or
+  fewer lit, one dark post in three is snapped at half its height.
+- **The wall.** The dome's skin hangs from the lit lamps. Between two lit
+  posts it is whole: a wash of the accent at 35%, with open hatching in
+  lamp ink that leans in toward the lantern and a top edge at contour
+  weight in ink. On the far side it stands from the foot to a quarter
+  of a post above the lamps. Toward the two ends it narrows to nothing. On
+  the near side it is a strip half a tile deep lying on the ground outside
+  the foot, so nothing of it stands between a citizen and the viewer.
+  Between a lit post and a dark one it is torn down to half its height
+  with a ragged edge. Between two dark posts only the foot is left.
+- **The crown is not drawn.** Nothing of the wall lies over the hull, the
+  deck, the mast or the ground inside the foot.
+- **The wall is a backdrop.** It is drawn after the ground and the black
+  and before everything that stands, on every side. The horde on it is
+  black on gold, and a citizen beyond the far wall keeps its full colours.
+  Nothing is seen through it.
+- **A blow on it** is a contact burst in the accent at that place, a
+  citizen's height across and thrown inward, and a crack: a jagged line in
+  ink at form weight that runs up the wall from the place. Each blow there
+  adds a third of the wall's height to it, and it stays until that stretch
+  tears. Cracks are on the standing wall only. On the near side's strip,
+  and where the wall has narrowed to nothing, a blow is the burst alone.
+- **Before the march** the posts stand unlit and are drawn at rest, as a
+  pack is (section 6): line at 45% ink and wash at half strength. The foot
+  and the wall are not drawn. When the march starts the lamps light in a
+  run round the foot both ways from the ramp's side, a tenth of a second a
+  post, the foot is inked behind the run and the wall is hatched up from it
+  over half a second. So a viewer sees the shield come up as the horde
+  starts to walk.
 - **Inside it** the ground keeps its day colours under lamplight's three
   flat steps (section 3), centred on the lantern. This is the lightest
-  large shape on the plate during the siege.
-- **A blow on it** is a contact burst in the accent, thrown inward, and a
-  gap in the outermost band at that place. A band that goes breaks into
-  drops along its whole length in the same frame and they fall inward.
-- **The pile shows its shape.** The horde heaps up against the shield
-  (section 3). On the far side and at the two ends the heap climbs to two
-  and a half tiles and leans in over the bands, which is what makes the
-  shield read as a bubble. On the near side it stays under one tile, so no
-  citizen at the near edge is covered.
-- **The break.** With the last band gone the heap falls inward as one held
-  drawing and the black follows it across the foot. Nothing of the shield
-  is drawn after that.
+  large shape on the plate during the siege. It takes no wash of the accent:
+  a lit disc in the accent takes the colour from the
+  citizens standing on it.
+- **The heap on it.** Where the horde is striking, its bodies are on the
+  wall (section 3). On the far side and at the two ends the heap climbs as
+  high as the lamps and leans in over the wall's top, which with the wall
+  is what makes the shield read as a bubble. On the near side it stays
+  under one tile, so no citizen there is covered. Ground the simulation
+  leaves between the foot and the black is drawn trodden: the ground wash
+  greyed by a third, with no ground marks.
+- **The break.** The last lamp goes out. In that frame the wall and the
+  foot break into drops along their whole length and the drops fall inward.
+  The posts go down inward in a run both ways round from that lamp, in 0.6
+  seconds. The heap falls inward as one held drawing and the black follows
+  it across the foot. Nothing of the shield is drawn after that.
 
 ### Movement
 
@@ -930,10 +1039,11 @@ hue, a rounded chip, a thumbnail pasted in a box: none of those are drawn.
 These, and nothing else:
 
 - usernames, as typed and whole, from 3 to 25 characters;
-- numbers;
+- numbers, and a count out of a total as two numbers with a stroke between
+  them (`15/28`);
 - item names, as the game generates them;
 - plain game nouns used as labels: `den` with its letter, `landing`,
-  `lift-off`, `shield`, `packs`, `rares`, `down`, a landing's size;
+  `march`, `lift-off`, `shield`, `packs`, `rares`, `down`, a landing's size;
 - icons drawn with the pen, each with a number beside it.
 
 ### What is not
@@ -967,7 +1077,8 @@ number, an item or a label a player already knows.
   viewer at 640 can do without: the label under the time and a landing's
   modifiers.
 - **Hierarchy.** The largest thing on the plate is the drawing. In the
-  corners the largest lettering is the time left. On the map only a crit and
+  corners the largest lettering is the time on the clock, or during the
+  siege the shield's lamps. On the map only a crit and
   the frame's largest blow are set as large or larger.
 - **One rule** at contour weight runs round the picture, 20 px in from the
   frame's edge. There is no strip under it and no second sheet beside it.
@@ -979,12 +1090,12 @@ paper fill with a frame at form weight and clipped corners, as small as what
 it holds. Together they cover under 6% of the frame. Nothing else on the
 plate is boxed.
 
-| Corner      | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upper left  | The clock. A dial 60 px across and the time left at 48 px, with `landing` or `lift-off` under the number at 24 px. The dial's wedge is the time gone. During the siege the corner shows the shield: the dial's rim is drawn as the shield's bands, broken as they are on the map, and the number is its strength, with `shield` under it. After the break it is the time to lift-off again, and the wedge and the number are red-brown. |
-| Upper right | The landing: its size and level range at 30 px (`Medium 23–68`), then its modifiers at 24 px, one a line (`packs ×2`, `rares +40%`). In transit it shows the landing ahead.                                                                                                                                                                                                                                                             |
-| Lower left  | The log: one line at 30 px. A username ruled under in its cloak colour, a gap, then an item name in its rarity's colour or one label (`down`). A new line replaces the last, no sooner than two seconds after it. It keeps no history.                                                                                                                                                                                                  |
-| Lower right | Counts at 30 px, each an icon and a number: citizens out (a cloaked figure), citizens aboard (the hull on its legs), kills (a blot), loot banked (a sack).                                                                                                                                                                                                                                                                              |
+| Corner      | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upper left  | The clock, then the shield. In transit, a dial 60 px across and the time to the landing at 48 px, with `landing` under the number at 24 px. On a landing until the march, the time to the march by the calls made so far, with `march` under it. The dial's wedge is the time gone. From the march to the break the clock is not drawn, and the slip holds the shield in its place: a ring 60 px across of one dot for each post, in the order they stand round the foot with the far side at the top, the lit ones filled in the accent and the dark ones in ink; the lamps lit and the posts at 48 px (`9/18`); beside them at 36 px in red-brown, the lamps the shield is losing a minute at its present rate, as a negative number to one place (`−1.5`); and `shield` under that at 24 px. Nothing in the slip counts to lift-off before the break, because when that is depends on how long the shield holds. At the break the shield row goes and the clock comes back with the time to lift-off and `lift-off` under it, the wedge and the number in red-brown. |
+| Upper right | The landing: its size and level range at 30 px (`Medium 23–68`), then its modifiers at 24 px, one a line (`packs ×2`, `rares +40%`). In transit it shows the landing ahead.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Lower left  | The log: one line at 30 px. A username ruled under in its cloak colour, a gap, then an item name in its rarity's colour or one label (`down`). A new line replaces the last, no sooner than two seconds after it. It keeps no history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Lower right | Counts at 30 px, each an icon and a number: citizens out (a cloaked figure), citizens aboard (the hull on its legs), kills (a blot), loot banked (a sack).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 A card a chatter asks for ([chat.md](chat.md)) is a fifth slip beside the
 log, laid out one fact a line in two columns, under the same rules.
@@ -1034,13 +1145,16 @@ A stream in a 640-wide window, or on a phone held upright, shows a third of
 these sizes. This is what such a viewer has, and a frame is checked against
 it.
 
-- **Read:** the time and its dial, the log line, the counts, the landing's
-  size and levels, every number of 36 px or more, a called tag, a den's
-  letter and level, and each name tag while 20 or fewer are out.
+- **Read:** the time and its dial, the shield's lamps (`15/28`) and its rate
+  of loss, the log line, the counts, the landing's size and levels, every number of 36 px or
+  more, a called tag, a den's letter and level, and each name tag while 20
+  or fewer are out.
 - **Read with effort, and not relied on:** tags at 30 px, numbers at 30 px,
   the corners' 24 px lines.
 - **Seen and not read:** the city; the black and how far it has come; the
-  shield's bands; each fight as a knot of colour and black on pale ground
+  shield's wall on its far side, its posts and which stretches of it are
+  still lit; a brute or an elite standing above the horde, and an elite's
+  sail; each fight as a knot of colour and black on pale ground
   with a stroke and one number over it; packs at rest as pale patches;
   dens as earth mounds; chests; a rare's or a unique's pole by its colour;
   each citizen as a spot of its own colour.
@@ -1080,10 +1194,10 @@ an hour.
   the ground the horde has not taken, with five tiles of the horde beyond
   it above and below, and every citizen who is still out. It closes as that
   ground shrinks, eased, at no more than half a tile a second, and it never
-  cuts. It stops when it holds the shield with those five tiles: 32 px a
-  tile for the mid city, where a citizen is 59 px. On the first size of
-  landing that is no closer than the whole landing, and the frame does not
-  move. So the siege is seen nearer than the expedition, and the horde is
+  cuts. It stops when it holds the shield's foot with those five tiles:
+  32 px a tile for a foot 22 tiles deep, where a citizen is 59 px. On the
+  first size of landing that is no closer than the whole landing, and the
+  frame does not move. So the siege is seen nearer than the expedition, and the horde is
   never more than about 70% of a frame.
 - **Leaving** runs the reveal backward and shorter, in about 4 seconds from
   wherever the frame is: the close-up closes on the city as the horde's
@@ -1127,8 +1241,9 @@ Hard:
 
 Soft:
 
-10. The silhouette test passes for any new body, at 12 px in solid black,
-    and no brute or elite can be taken for a den, a crag or a heap.
+10. The silhouette test passes for any new body, at 12 px in solid black.
+    No brute or elite can be taken for a den, a crag, a heap or a standing
+    stone, and no crest for a flame (section 6).
 11. A new state has a pose, and a new blow has all its beats: coil, contact,
     hit-stop, follow-through.
 12. Variation: no stamp repeated with only its size changed, and no crowd in
