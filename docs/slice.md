@@ -195,13 +195,13 @@ citizen.
 **Where the numbers come from.** `packages/sim/scripts/plate.ts` lays
 landings by the rules of this section and prints every number in it. It
 builds stand-ins for every size, cut the way the generator cuts its maps,
-with the yard as the bubble and open to every pocket beside it, as #415 and
-#416 will have it. The generator (`packages/sim/src/landing.ts`) has the
-slice's five landings, cut as the stand-ins are, and sets the pockets'
-levels, aims the dens and stands the first chest by the rules below; its
-yard is the bubble's footprint, square-cornered and walled until #416.
-`--generator` lays its maps by the same rules. The commands are under the
-fairness table.
+with the yard as the bubble and open to every pocket beside it. The
+generator (`packages/sim/src/landing.ts`) has the slice's five landings,
+cut as the stand-ins are, with the yard as the bubble's rounded footprint
+and open; it sets the pockets' levels, aims the dens and stands the chests,
+piles, seams, shrines and wrecks by the rules below, and lists the wall's
+stations. `--generator` lays its maps by the same rules. The commands are
+under the fairness table.
 
 **Pockets.** The generator cuts the map into districts joined by passages,
 and a walk leaves a district only through one of its passages. The city
@@ -223,10 +223,10 @@ drawn from the march. Nothing of the map or the horde enters it or strikes
 into it, and no blow or shot leaves it, the rail's and the gun posts'
 included. The yard opens onto every pocket beside it along their whole
 shared side, so the bubble has ground outside it all the way round. The
-generator's yard is the footprint, square-cornered and walled, with a few
-gates; #416 rounds it and opens it. The stand-ins, which are
-square-cornered, have 84 tiles of the bubble's edge with ground outside
-them on 80 by 45, where the generator's map has 28.
+generator keeps every tile within two steps of the yard open ground in no
+district, the **strip**, so on every seed 70 tiles of the bubble's edge
+have ground outside them on the first city's landings and 94 on the
+second's. The stand-ins, which are square-cornered, have 84 on 80 by 45.
 
 **Level and ground.** A landing has a **level**, which the navigator sets
 (section 9), and a **far level**, set in transit when the landing is chosen:
@@ -453,7 +453,8 @@ from legs-plant, and the peace is the time to get round them.
 - **Scrap piles** go to pockets with no den while those have room. Seams
   are shared out by the size of a pocket. Shrines and wrecks go to a pocket
   with no den or chest while there is one. None stands within 8 tiles of
-  the ramp (#416).
+  the ramp. The generator stands the piles before the dens, so its piles
+  do not keep to pockets without one.
 
 **What the plate shows.** As the ink reaches a pocket at legs-plant, what
 was laid in it is drawn: each pack at its post with its leader marked; each
@@ -524,16 +525,20 @@ Paid for that tier and then for the strongest, at 15 awake and at 150:
 
 | The tier between | City 2, small, 68 by 38, stand-ins | City 2, medium, 80 by 45, stand-ins | 68 by 38 on the generator's maps | 80 by 45 on the generator's maps |
 | ---------------- | ---------------------------------- | ----------------------------------- | -------------------------------- | -------------------------------- |
-| Arms 30          | 92% and 93%; 96% and 92%           | 89% and 99%; 84% and 99%            | 90% and 96%; 91% and 93%         | 96% and 100%; 90% and 100%       |
-| Arms 40          | 98% and 93%; 98% and 92%           | 97% and 99%; 96% and 99%            | 95% and 96%; 87% and 93%         | 99% and 100%; 96% and 100%       |
-| Arms 50          | 95% and 91%; 93% and 88%           | 93% and 98%; 85% and 99%            | 98% and 96%; 82% and 90%         | 100% and 100%; 89% and 100%      |
+| Arms 30          | 92% and 93%; 96% and 92%           | 89% and 99%; 84% and 99%            | 92% and 98%; 92% and 93%         | 98% and 100%; 94% and 100%       |
+| Arms 40          | 98% and 93%; 98% and 92%           | 97% and 99%; 96% and 99%            | 100% and 98%; 97% and 93%        | 100% and 100%; 99% and 100%      |
+| Arms 50          | 95% and 91%; 93% and 88%           | 93% and 98%; 85% and 99%            | 99% and 97%; 89% and 88%         | 100% and 100%; 92% and 100%      |
 
 The first pair in each cell is at 15 awake and the second at 150. Every
 tier is paid 89% or more at 15 awake on 80 by 45, and 84% or more at 150 on
 stand-ins. The generator's maps have 26 pockets on 80 by 45 and 70 posts at
-the median, and stand 593 at 15 and 595 at 150 against the room of 600. On
-its five landings every tier is paid 90% or more at 15 awake and 82% or
-more at 150; the shortest is 68 by 38's tier at Arms 50 at 150.
+the median, and stand 593 at 15 and 586 at 150 against the room of 600. On
+its five landings every tier is paid 92% or more at 15 awake and 88% or
+more at 150; the shortest is 68 by 38's strongest tier at 150 with the tier
+between at Arms 50. The first city's smallest landing stands least: 194 at
+15 and 168 at 150 of its 251 at the median, since the strip round the yard
+leaves the pockets north of it two rows deep and with no post; dens hold
+the rest.
 
 **The other landings.** Paid, for the four tiers in the first table's
 order, at 15 awake and then at 150, on stand-ins:
@@ -704,8 +709,8 @@ since then, and L the landing's level.
   **stations** are the tiles two steps' walk outside the bubble, the
   strip's outer row at the black's edge, in tile order, each more than a
   tile from every station before it: 36 or 37 on the first city's landings
-  and 45 to 47 on the second's at the median of the stand-ins, with the yard
-  open (#416). A siege swarm is the part of the heap that steps out onto a
+  and 45 to 47 on the second's at the median of the stand-ins, and 39 and
+  51 on every seed of the generator's. A siege swarm is the part of the heap that steps out onto a
   station. A station holds one swarm for each 15 citizens counted at the
   march (below), rounded up: one at 15 and ten at 150. The wall's ground
   does not grow with the roster, so the stations take more swarms each, and
@@ -2174,8 +2179,8 @@ Known to be thin:
   place of more kills, up to 5 times, and a share with nothing laid gives
   nothing. With a level a pocket and the size's dens aimed at ring 3's
   steps, section 1's runs pay every tier 89% or more at 15 awake and 84% or
-  more at 150 on stand-ins; the generator's maps pay every tier 90% or more
-  at 15 and 82% or more at 150. A citizen paid 89% from level 30 to 50
+  more at 150 on stand-ins; the generator's maps pay every tier 92% or more
+  at 15 and 88% or more at 150. A citizen paid 89% from level 30 to 50
   takes about 46 hours over a climb plan.md's table gives 41, about a level
   short at hour 100.
 - A pack takes its pocket's level, up to 5 off what its share was due. The
@@ -2242,8 +2247,6 @@ Known to be thin:
   pool itself, which only `shield` reads. Whether a viewer can tell how
   much of the shield is left from the lamps and the rate is for the art
   director and the hour's judge.
-- The bubble needs open ground outside it. The generator's yard is walled
-  until #416, with a median of 6 stations at its gates on 80 by 45 (0 to 20).
 - The front gathers over the far ground from 8:00: on 80 by 45 the black
   holds 28% of the ground when it marches, and the strongest citizen's
   posts are covered at 8:20 at the median. Its packs there must be killed

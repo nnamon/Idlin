@@ -66,8 +66,10 @@ describe("world", () => {
     // down at 1,800 and its ramp down at 2,000. Changed by the landing
     // generator's city sizes (#415), and by the deck asking it for a landing
     // cut for the first city, so the footprint is the hull's own 13 by 6 with
-    // no spare hull tiles round the deck: the ground and dens differ.
-    expect(hashWorld(run(city, 4000))).toBe("72fc6eb3fda6eb8a");
+    // no spare hull tiles round the deck: the ground and dens differ. Changed
+    // again by the open yard and what pockets hold (#416): the landing's tiles
+    // and its dens' places.
+    expect(hashWorld(run(city, 4000))).toBe("6bbfd9d62412b49f");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {

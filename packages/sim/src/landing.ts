@@ -11,74 +11,98 @@
 //
 // 0. The frame. The map is about 16:9, the shape of the stream's frame. The
 //    rim, its outer two rings of tiles, is the biome's barrier and in no block
-//    and no district. The city's ground is in the middle: the bubble's
-//    footprint of docs/slice.md, section 1, which is the ground the city's
-//    feet stand on (19 by 12 for the first city, 21 by 14 for the second) and
-//    2 or 4 tiles round it, with the hull's footprint (13 by 6 or 15 by 6) in
-//    its middle and the ramp on whichever side of the hull the seed draws.
-//    It is square-cornered and walled with gates here; #416 rounds and opens
-//    it. So the city's ground has the same size and place on every seed. Every
-//    size leaves a strip at least a block wide between that ground and the
-//    rim on all four sides, so there are pockets on every side of the city.
-//    This is a fact of the size alone, checked before the first draw, so a
-//    size without the room is refused on every seed.
+//    and no district. In the middle is the box of the bubble's footprint of
+//    docs/slice.md, section 1: the ground the city's feet stand on (19 by 12
+//    for the first city, 21 by 14 for the second) and 2 or 4 tiles round it,
+//    with the hull's footprint (13 by 6 or 15 by 6) in its middle and the
+//    ramp on whichever side of the hull the seed draws. The yard, the city's
+//    district, is that box with its corners rounded on a radius of 3 tiles (a
+//    tile is in it when its centre is), which takes one tile off each corner.
+//    The strip is every tile within two steps of the yard: open ground in no
+//    district, round the whole yard. So the city's ground has the same size
+//    and place on every seed. Every size leaves room for a block at least
+//    four tiles deep between the box and the rim on all four sides, so there
+//    are pockets on every side of the city. This is a fact of the size alone,
+//    checked before the first draw, so a size without the room is refused on
+//    every seed.
 // 1. Blocks. Jittered lines cut the ground inside the rim into blocks of four
-//    tiles or more a side, along the edges of the city's ground. The blocks
-//    under that ground are the city's district, which holds the ramp and is
-//    the graph's root. Every other block lies in one of the four strips or a
-//    corner between two, so none of the city's blocks touches the rim.
+//    tiles or more a side, along the edges of the box. The blocks under the
+//    box are the city's, which holds the ramp and is the graph's root. Every
+//    other block lies in one of the four strips of blocks or a corner between
+//    two, so none of the city's blocks touches the rim. The room a block's
+//    lanes and things are drawn in is the block less a tile on each side, and
+//    on a side it shares with the box less the strip's two tiles instead.
 // 2. Districts. The other blocks are counted outward from the city into
 //    bands. Each band gets a seed block for every few of its blocks, each
 //    seed the block farthest from the seeds before it. Then the districts
 //    take turns to add a free block beside one they have, keeping to their
 //    band where they can. A district is a connected, irregular group of
 //    blocks, and every block ends up in one. The number of districts is a
-//    fact of the size: the cuts and the bands depend on lengths only.
-// 3. Passages. Districts with blocks side by side are neighbours. A spanning
-//    tree is grown outward from the city over the neighbours (Prim's
-//    algorithm, nearer bands first, seeded weights). Where the biome has a
-//    river, one branch of the tree is its far bank. Of the neighbours left
-//    over, the ones that close the longest detours become loop passages: a
-//    set share of the districts, of which only one or two may cross the river.
+//    fact of the size: the cuts and the bands depend on lengths only. A
+//    district with a block beside the city's is a yard pocket.
+// 3. Passages. Districts with blocks side by side are neighbours, where one
+//    of those sides has room for a gate: its tiles four steps or more from
+//    the yard, its jambs and lane ends three or more, and a lane end three
+//    steps out, beside the strip, only a yard pocket's. Only a side between
+//    two blocks that both touch the box, and are four deep, has none, and
+//    both of those are yard pockets. Each yard pocket's passage to the city
+//    is on the spanning tree, and the tree is grown from the city and the
+//    yard pockets over the other neighbours (Prim's algorithm, nearer bands
+//    first, seeded weights). Where the biome has a river, one branch of the
+//    tree away from the yard pockets is its far bank. Where every pocket is
+//    a yard pocket there is no such branch and no river, since the strip
+//    joins them all: 1 of the 800 wet landings of 52 by 29 and of 56 by 31
+//    in landing.test.ts's long sweep, and none of the larger. Of the
+//    neighbours left over, the ones that close the longest detours become
+//    loop passages: a set share of the districts, of which only one or two
+//    may cross the river.
 // 4. Skeleton. Each passage gets a gate on a block side its two districts
 //    share: tiles two deep and one to three wide, with a wall tile (a jamb)
-//    at each end. Each district gets lanes, which are 4-connected lines: from
-//    its centre (the hub of its seed block) from block to block, to its side
-//    of every gate, and to each seam it holds. A lane tile has
-//    all eight tiles round it in its own district's blocks (a rim tile counts
-//    as part of the block inside it), so the lanes of two districts are never
-//    nearer than two tiles. Each side of the map gets a gap in the rim, in a
-//    block on that side drawn from the best by a score: one whose district
-//    has a gap already is worse, and so is one in a corner of the map, on two
-//    of its sides. The blocks on a
-//    side are all in the strip or the corners there, so the gap's district is
-//    never the city's. Its district lays a lane to the rim's inner face and on
-//    straight through it to the map's edge, and the rim tiles beside that
-//    lane's last two, within the block, are lane tiles too, so a gap is two
-//    deep and three wide where the block allows.
+//    at each end. A yard passage's gate is the strip's two tiles across the
+//    side, with no jambs, and its lanes end one tile inside the yard and
+//    three tiles out from it. Each district gets lanes, which are
+//    4-connected lines: from its centre (the hub of its seed block) from
+//    block to block, to its side of every gate, and to each thing it holds.
+//    A lane tile has all eight tiles round it in its own district's blocks (a
+//    rim tile counts as part of the block inside it), so the lanes of two
+//    districts are never nearer than two tiles. Each side of the map gets a
+//    gap in the rim, in a block on that side drawn from the best by a score:
+//    one whose district has a gap already is worse, and so is one in a corner
+//    of the map, on two of its sides. The blocks on a side are all in the
+//    strip of blocks or the corners there, so the gap's district is never the
+//    city's. Its district lays a lane to the rim's inner face and on straight
+//    through it to the map's edge, and the rim tiles beside that lane's last
+//    two, within the block, are lane tiles too, so a gap is two deep and
+//    three wide where the block allows.
 // 5. Ground. A tile's land is the district of the block under it, looked up
 //    a few tiles to one side by smooth noise. The shift is nothing beside a
-//    lane or a gate and grows away from them, so borders curve where there
-//    is room and stay where the gates are. Then every district is grown from
-//    its lanes, a tile at a time, each next to one it has: over its own land
-//    first, then over any land its owner could not get to. A tile with
-//    another district among the eight round it stays out for good, and so
-//    does the rim. What stays out inside the rim is the border between
-//    districts, at least one tile thick, also diagonally.
+//    lane, a gate or the yard and grows away from them, so borders curve
+//    where there is room and stay where the gates are. Then every district
+//    is grown from its lanes, a tile at a time, each next to one it has:
+//    over its own land first, then over any land its owner could not get to.
+//    A tile with another district among the eight round it stays out for
+//    good, and so does the rim and the strip. A tile beside the strip is
+//    offered only to yard pockets. What stays out inside the rim, but for
+//    the strip, is the border between districts, at least one tile thick,
+//    also diagonally.
 // 6. Barriers. Border tiles become water (the river, where the border has
 //    the far bank on one side only), rock beside a crag, dark trees beside
 //    an old wood, and the biome's own barrier elsewhere. A passage across
 //    the river is a bridge if it is on the tree and a ford if it is a loop,
 //    and nothing else crosses it. Where a passage is "open" the border
-//    between its two districts is taken out instead. The rim, but for its
-//    gaps, becomes the biome's barrier.
+//    between its two districts is taken out instead, but for any tile beside
+//    the strip. An open passage drawn between two pockets is opened only if
+//    both keep two sides bounded (below), and is a gap or a pass otherwise.
+//    The rim, but for its gaps, becomes the biome's barrier.
 // 7. Dressing. Woods and the river are thickened, and cover (groves, ponds,
 //    outcrops) is stamped inside districts. Each of these turns walkable
-//    tiles into blocked ones, and a tile is turned only if it is not on a
-//    lane and its walkable 4-neighbours stay joined to each other through
-//    the eight tiles round it. District kinds are dealt from the biome's
-//    deck, and seams are shared out by the size of a district, each on the
-//    next tile in its district's fixed order, so no two share one.
+//    tiles into blocked ones, and a tile is turned only if it is in a
+//    district, not on a lane and not in the yard, and its walkable
+//    4-neighbours stay joined to each other through the eight tiles round
+//    it. District kinds are dealt from the biome's deck. Scrap piles, then
+//    seams of ore, are shared out by the size of a district, each on the next
+//    tile in its district's fixed order with nothing within a tile of it and
+//    more than eight tiles from the ramp, and each gets a lane.
 // 8. Levels. One walk out of the yard (the city's district), over the
 //    dressed ground with the camp closed, orders the pockets: by the walk to
 //    their nearest tile, their gate, then to their centre, then the lower
@@ -87,56 +111,93 @@
 //    level up toward it, ring 2's are at it, ring 3's nearer pockets step up
 //    to the far level, 10 levels or less a step where there are pockets
 //    enough, and the rest are at the far level. The yard is a third of the
-//    level, 5 at most. A gate or an opened border has the lower level of its
-//    two districts.
-// 9. Dens and caches. Each stands on a clear tile: its eight neighbours
-//    walkable and in its own pocket, nothing standing within a tile of it,
-//    and more than eight tiles from the ramp. The size's own dens are aimed
-//    first, one at each level of ring 3's pockets from the far level down,
-//    each in the pocket with no den whose level is nearest its aim, on its
-//    clear tile nearest the yard. Own dens past those levels, and the
-//    caller's after its first, are spread: each in the district with the
-//    most passages between it and everything stood so far, more of them in
-//    the far rings. The caller's first den stands on the clear tile nearest
-//    the yard of the first pocket by the walk that has no den. A pocket
-//    holds one den at most, so dens asked for past the pockets with room are
-//    not stood. The first cache stands in a pocket at the far level (then
-//    one with no den, then nearest the yard), and the rest are spread, in
-//    pockets without a den while there are any. Then their floors are
-//    painted, paths are worn to each from the ramp, and the dens are
-//    lettered A and on by the walk from the ramp.
+//    level, 5 at most. A gate, an opened border or the strip has the lower
+//    level of the districts beside it, which for the strip is the yard's.
+// 9. Dens, caches, shrines and wrecks. Each stands on a clear tile: its
+//    eight neighbours walkable and in its own pocket, which is room for a
+//    guard, nothing standing within a tile of it, and more than eight tiles
+//    from the ramp. The size's own dens are aimed first, one at each level of
+//    ring 3's pockets from the far level down, each in the pocket with no den
+//    whose level is nearest its aim, on its clear tile nearest the yard. Own
+//    dens past those levels, and the caller's after its first, are spread:
+//    each in the district with the most passages between it and everything
+//    stood so far, more of them in the far rings. The caller's first den
+//    stands on the clear tile nearest the yard of the first pocket by the
+//    walk that has no den. A pocket holds one den at most, so dens asked for
+//    past the pockets with room are not stood. The first cache stands in a
+//    pocket at the far level (then one with no den, then nearest the yard),
+//    and the rest are spread, in pockets without a den while there are any.
+//    Shrines, each with a boon drawn from its own stream, then wrecks, are
+//    spread to pockets with no den, cache, shrine or wreck while there are
+//    any. Then the floors are painted, paths are worn to each den and cache
+//    from the ramp, and the dens are lettered A and on by the walk from the
+//    ramp. Last, the wall's stations are listed: the tiles two steps' walk
+//    outside the yard, in tile order, each more than a tile from every
+//    station before it.
 //
 // Why every walkable tile can be reached from the ramp
 //
 // - The neighbour graph is connected: the blocks tile the ground inside the
 //   rim and each is in a district, so any two districts are joined by a chain
-//   of blocks side by side. Prim's algorithm therefore spans every district.
-//   The other blocks are one piece, a ring of strips and corners round the
-//   city's, so every one of them is grown into from a seed.
+//   of blocks side by side. A side with no room for a gate lies between two
+//   yard pockets, which are joined through the city instead, so the
+//   neighbours with room are connected too. Prim's algorithm therefore spans
+//   every district. The other blocks are one piece, a ring of strips and
+//   corners round the city's, so every one of them is grown into from a
+//   seed.
 // - The skeleton is connected. All of a district's lanes run from its centre,
 //   and a gap's tiles are lane tiles. A passage joins the centres of its two
-//   districts by lane, gate, lane. The city's centre is the ramp. So a gap,
-//   its lane, and the lanes and gates of the passages on its district's
+//   districts by lane, gate, lane; a yard passage's gate and the yard tile
+//   inside it join its two lane ends. The city's centre is the ramp. So a
+//   gap, its lane, and the lanes and gates of the passages on its district's
 //   shortest way to the city's are a walk from the map's edge to the ramp,
 //   and that walk is the entry's path.
-// - After step 5 a walkable tile is in a district or in a gate. A district's
-//   tile was a lane tile or was added beside a tile already in the district,
-//   so by induction it is joined to one of the district's lanes. A gate's
-//   tiles lie between the lane ends of its two districts.
+// - After step 5 a walkable tile is in a district, in a gate or in the strip.
+//   A district's tile was a lane tile or was added beside a tile already in
+//   the district, so by induction it is joined to one of the district's
+//   lanes. The yard, the box less a tile at each corner, is all the city's
+//   from the start and walkable, so it is joined. A gate's tiles lie between
+//   the lane ends of its two districts. The strip is the ring of tiles one
+//   and two steps from the yard, each beside a yard tile or beside a strip
+//   tile that is, and nothing is ever stood or grown on it.
 // - A border tile opened in step 6 has a 4-neighbour in one of its passage's
 //   two districts. A rim tile is walkable only if it is in a gap.
 // - Step 7 never cuts the ground: if a tile's walkable 4-neighbours are
 //   joined through the eight tiles round it, a walk through the tile can go
-//   round it instead.
+//   round it instead. It never blocks the strip or the yard, which are in no
+//   district or kept.
 // - Nothing else changes what is walkable. Shore, path, den floor and deep
 //   grass repaint tiles that already were.
 // - The same holds with the camp ground taken away, for a monster, which may
-//   not stand on it. Every tile of the city's ground but its outermost is a
-//   lane tile of the city's. Less the camp, that is a ring round the
-//   footprint and the ramp, at least four tiles thick beside the hull and two
-//   in front of the ramp: it is joined, and it holds every tile beside camp
-//   ground. The city's lanes leave the ramp onto it and never cross camp
-//   again.
+//   not stand on it. Every tile of the box but its outermost is a lane tile
+//   of the city's. Less the camp, that is a ring round the footprint and the
+//   ramp, at least four tiles thick beside the hull and two in front of the
+//   ramp: it is joined, and it holds every tile beside camp ground. The
+//   yard's outermost tiles and the strip lie round it. The city's lanes
+//   leave the ramp onto it and never cross camp again.
+//
+// Why every pocket is bounded on two sides
+//
+// docs/art.md, section 8, asks that each pocket be bounded on two sides or
+// more by a wood, a crag, the river or the map's edge. A side of a pocket,
+// north, east, south or west, is its tiles whose next tile that way is not
+// the pocket's, and it is bounded when at least half of those next tiles are
+// barrier, the rim, or a gate cut through a barrier. An open border and the
+// strip are open. Once the growth has finished, which tiles are a pocket's
+// is fixed, and so are the gates, the rim and the strip. Before an open
+// passage between two pockets is opened, the tiles it would open are
+// counted against both pockets' sides, and it is opened only if each keeps
+// two bounded sides; else it is a gap or a pass. Passages are taken in
+// order and none is opened and then closed. Nothing later changes these
+// counts: the dressing blocks tiles inside a district only, and nothing
+// makes a border or a gate walkable or blocked. So no open passage takes a
+// pocket under two bounded sides. That a pocket has two before any is
+// opened is not proved here. Then the only open tiles beside a pocket are
+// the strip's, so a pocket that is not a yard pocket has four bounded sides.
+// A yard pocket meets the strip on the side facing the yard, and on a second
+// side only where it reaches round a corner of the box, where its outer
+// sides face the rim or other pockets' borders. landing.test.ts checks every
+// pocket of its sweep.
 //
 // Why the levels are the finished map's
 //
@@ -152,26 +213,29 @@
 //
 // The legs' ground reaches three tiles past each end of the hull and three or
 // four past each long side. The bubble's footprint is two or four tiles round
-// it, so the legs' ground lies inside the city's ground less its outermost
-// tiles, which are the city's lane tiles. A lane tile is in the city's
-// district from the start and is kept: the growth never gives it to another
-// district, and no barrier or obstacle takes it. Dens,
-// caches and seams stand only in other districts, and a gap only in a block
-// on the rim. So under the legs there is the city's open ground, its camp
-// and its ramp, and nothing else.
+// it, so the legs' ground lies inside the box less its outermost tiles, which
+// are the city's lane tiles. A lane tile is in the city's district from the
+// start and is kept: the growth never gives it to another district, and no
+// barrier or obstacle takes it. Dens, caches, shrines, wrecks, piles and
+// seams stand only in other districts, and a gap only in a block on the rim.
+// So under the legs there is the city's open ground, its camp and its ramp,
+// and nothing else.
 //
 // The graph is also exact. Two districts never touch (step 5). A gate's
-// 4-neighbours are its two districts' lane ends, its own tiles and its jambs.
-// An opened border tile has only its passage's two districts among the eight
-// tiles round it, and is never beside another passage's tile. A gap's tiles
-// are its own district's, and the rest of the rim is barrier. So a walk
-// leaves a district only through one of its passages, and the routes in the
-// output are the only routes there are.
+// 4-neighbours are its two districts' lane ends, its own tiles and its jambs;
+// a yard passage's gate is in the strip. An opened border tile has only its
+// passage's two districts among the eight tiles round it, is never beside
+// another passage's tile, and is never beside the strip. The strip touches
+// the yard and the yard pockets only, each of which has its passage to the
+// city across it. A gap's tiles are its own district's, and the rest of the
+// rim is barrier. So a walk leaves a district only through one of its
+// passages, a walk across the strip is one through the city's passages, and
+// the routes in the output are the only routes there are.
 //
 // Cost: every loop runs over tiles, blocks, districts or passages a fixed
-// number of times, and the growth pushes a tile at most four times. Each den
-// and cache looks over the map's tiles once. No step retries, and no loop's
-// length depends on what the seed drew.
+// number of times, and the growth pushes a tile at most four times. Each den,
+// cache, shrine and wreck looks over the map's tiles once. No step retries,
+// and no loop's length depends on what the seed drew.
 
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { NEIGHBOURS, type Point, TERRAINS, type Terrain, type TileMap } from "./map.ts";
@@ -302,7 +366,7 @@ export const RAMP_WIDTH = 3;
 /** How deep the rim of barrier round the map is, in tiles. */
 export const RIM = 2;
 
-/** No den or cache stands this many tiles from the ramp or nearer, in a straight line. */
+/** Nothing a pocket holds stands this many tiles from the ramp or nearer, in a straight line. */
 export const RAMP_CLEAR = 8;
 /** The highest level the yard may have. */
 export const YARD_LEVEL = 5;
@@ -438,8 +502,38 @@ export interface Cache extends Stand {
   readonly level: number;
 }
 
-/** A seam of salvage, worked from its tile. */
+/** A scrap pile, worked from its tile for salvage. */
+export type Pile = Stand;
+
+/** A seam of ore, worked from its tile, with an outcrop beside it. */
 export type Seam = Stand;
+
+/** What a shrine gives the citizens near it when it is touched (docs/slice.md, section 1). Append only. */
+export const BOONS = ["quick", "keen", "lucky"] as const;
+export type Boon = (typeof BOONS)[number];
+
+/** A shrine, with a guard beside it. */
+export interface Shrine extends Stand {
+  readonly boon: Boon;
+}
+
+/** A wreck, worked for ore, with a guard beside it. */
+export type Wreck = Stand;
+
+/** Scrap piles: one for each 100 tiles, rounded down. */
+export const pilesOf = (spec: SizeSpec): number => Math.floor((spec.width * spec.height) / 100);
+/** Seams of ore: one for each 150 tiles, rounded down. */
+export const seamsOf = (spec: SizeSpec): number => Math.floor((spec.width * spec.height) / 150);
+/** Shrines: one for each 1,800 tiles, to the nearest, one at least. */
+export const shrinesOf = (spec: SizeSpec): number =>
+  Math.max(1, nearest(spec.width * spec.height, 1_800));
+/** Wrecks: one for each 1,800 tiles, rounded down. */
+export const wrecksOf = (spec: SizeSpec): number => Math.floor((spec.width * spec.height) / 1_800);
+
+/** How deep the strip round the yard is, in steps: the black stops at its outer edge until the break. */
+export const STRIP = 2;
+/** The radius the yard's corners are rounded on, in tiles (docs/slice.md, section 1). */
+export const YARD_CORNER = 3;
 
 export interface Landing extends TileMap {
   readonly seed: number;
@@ -455,8 +549,8 @@ export interface Landing extends TileMap {
   readonly far: number;
   /**
    * Each tile's ground level, row by row: its district's level, the lower
-   * of its passage's two districts' for a gate or an opened border, and -1
-   * for a border or the rim.
+   * of its passage's two districts' for a gate or an opened border, the
+   * yard's for the strip, and -1 for a border or the rim.
    */
   readonly ground: readonly number[];
   /** The ground under the parked city's hull: `camp`, which monsters cannot stand on. */
@@ -474,13 +568,23 @@ export interface Landing extends TileMap {
   readonly districts: readonly District[];
   /** The layout graph's edges. */
   readonly passages: readonly Passage[];
-  /** The district each tile belongs to, row by row; -1 for a border or a gate. */
+  /** The district each tile belongs to, row by row; -1 for a border, a gate or the strip. */
   readonly districtAt: readonly number[];
   readonly entries: readonly Entry[];
   /** The size's own dens first, in the order they were stood, then the caller's. */
   readonly dens: readonly Den[];
   readonly caches: readonly Cache[];
+  readonly piles: readonly Pile[];
   readonly seams: readonly Seam[];
+  readonly shrines: readonly Shrine[];
+  readonly wrecks: readonly Wreck[];
+  /**
+   * The wall's stations: tiles two steps' walk outside the yard, in tile
+   * order, each more than a tile from every station before it. The strip
+   * round the yard, every tile within two steps of it, is open ground in no
+   * district, at the yard's level.
+   */
+  readonly stations: readonly Point[];
 }
 
 export interface LandingInput {
@@ -649,9 +753,14 @@ interface Side {
   upright: boolean;
   /** The first column (or row) of `b`. */
   at: number;
-  /** The shared stretch of the side: from `lo`, up to but not including `hi`. */
-  lo: number;
-  hi: number;
+  /**
+   * Where a gate's tiles may go along the side, both included: a tile in from
+   * each end, and clear of the strip.
+   */
+  from: number;
+  to: number;
+  /** Between the city's district and a yard pocket. */
+  yard: boolean;
   weight: number;
 }
 
@@ -816,6 +925,7 @@ export function generateLanding(input: unknown): Landing {
   const graphRng = fork();
   const contentRng = fork();
   const shapeRng = fork();
+  const boonRng = fork();
 
   const at = (x: number, y: number): number => y * W + x;
   const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
@@ -871,6 +981,34 @@ export function generateLanding(input: unknown): Landing {
     Math.min(home.x1 - city.x - hullW, home.y1 - city.y - hullH) < 5
   )
     throw new Error(`city ${citySize}'s ground is too narrow for its legs and ramp`);
+  // The yard: the box with its corners rounded, a tile in it when its centre
+  // is. In half tiles, a centre is within the radius of the nearest point of
+  // the box shrunk by the radius.
+  const r2 = 2 * YARD_CORNER;
+  const yard: boolean[] = Array.from({ length: N }, (_, i) => {
+    const [u, v] = [xOf(i) - home.x0, yOf(i) - home.y0];
+    if (u < 0 || v < 0 || u >= yardW || v >= yardH) return false;
+    const [px, py] = [2 * u + 1, 2 * v + 1];
+    const qx = Math.max(r2, Math.min(2 * yardW - r2, px));
+    const qy = Math.max(r2, Math.min(2 * yardH - r2, py));
+    return (px - qx) ** 2 + (py - qy) ** 2 <= r2 * r2;
+  });
+  /** Steps from the yard, 4-connected over every tile: the strip is the tiles one and two steps out. */
+  const fromYard: number[] = yard.map((y) => (y ? 0 : -1));
+  const rings = yard.flatMap((y, i) => (y ? [i] : []));
+  for (let head = 0; head < rings.length; head++) {
+    const i = rings[head] as number;
+    for (const [dx, dy] of NEIGHBOURS) {
+      const [x, y] = [xOf(i) + dx, yOf(i) + dy];
+      if (!inside(x, y) || fromYard[at(x, y)] !== -1) continue;
+      fromYard[at(x, y)] = (fromYard[i] as number) + 1;
+      rings.push(at(x, y));
+    }
+  }
+  /** The strip: open ground in no district, one and two steps from the yard. */
+  const strip: boolean[] = fromYard.map((s) => s >= 1 && s <= STRIP);
+  /** Tiles beside the strip, which only a yard pocket may have. */
+  const brink: boolean[] = fromYard.map((s) => s === STRIP + 1);
   const rampIndex = roll(layoutRng, 4);
   const rampSide = EDGES[rampIndex] as Edge;
   const [rx, ry] = TOWARD[rampIndex] as [number, number];
@@ -932,6 +1070,24 @@ export function generateLanding(input: unknown): Landing {
     y1: ys[Math.floor(b / gw) + 1] as number,
   });
   const boxes = Array.from({ length: B }, (_, b) => boxOf(b));
+  /**
+   * The room in a block where its lanes and things go: a tile in from each
+   * side, so that a lane's eight neighbours are in the block, and on a side
+   * it shares with the box of the city's ground the strip's two tiles
+   * instead. So the room of a block four deep beside the box is its one row
+   * beside the strip.
+   */
+  const insets: Box[] = boxes.map((box) => {
+    const alongX = box.x0 >= home.x0 && box.x1 <= home.x1;
+    const alongY = box.y0 >= home.y0 && box.y1 <= home.y1;
+    const trim = (facing: boolean): number => (facing ? STRIP : 1);
+    return {
+      x0: box.x0 + trim(alongY && box.x0 === home.x1),
+      x1: box.x1 - trim(alongY && box.x1 === home.x0),
+      y0: box.y0 + trim(alongX && box.y0 === home.y1),
+      y1: box.y1 - trim(alongX && box.y1 === home.y0),
+    };
+  });
   /** Whether a block lies along the rim on a side of the map, by its place in EDGES. */
   const onSide = (b: number, side: number): boolean => {
     const box = boxes[b] as Box;
@@ -1037,6 +1193,13 @@ export function generateLanding(input: unknown): Landing {
     }
   }
   if (districtOf.includes(-1)) throw new Error("a block of a landing was left to no district");
+  /** The yard pockets: districts with a block that shares a side with one of the city's. */
+  const yardSide: boolean[] = each.map(() => false);
+  for (let b = 0; b < B; b++) {
+    if (districtOf[b] === 0) continue;
+    if (beside(b, NEIGHBOURS).some((c) => districtOf[c] === 0))
+      yardSide[districtOf[b] as number] = true;
+  }
 
   /** The block each tile lies in; a rim tile's is the block inside it. */
   const blockUnder: number[] = [];
@@ -1060,6 +1223,8 @@ export function generateLanding(input: unknown): Landing {
         throw new Error("a lane leaves its district's blocks");
     }
     if (fixed[i]) throw new Error("a lane crosses a gate");
+    if (strip[i]) throw new Error("a lane enters the strip");
+    if (brink[i] && !yardSide[district]) throw new Error("a lane reaches the strip off the yard");
     owner[i] = district;
     kept[i] = true;
   };
@@ -1074,6 +1239,35 @@ export function generateLanding(input: unknown): Landing {
       const [da, db] = [districtOf[b] as number, districtOf[c] as number];
       if (da === db) continue;
       const box = boxes[b] as Box;
+      const at0 = upright ? box.x1 : box.y1;
+      const [lo, hi] = upright ? [box.y0, box.y1] : [box.x0, box.x1];
+      const toYard = da === 0 || db === 0;
+      // Steps from the yard of the tile `across` tiles over the side, `along` it.
+      const near = (across: number, along: number): number =>
+        fromYard[upright ? at(at0 + across, along) : at(along, at0 + across)] as number;
+      // A yard passage's gate is in the strip. Between two pockets, a gate's
+      // tiles are four steps or more from the yard and its lane ends three, so
+      // that it never opens onto the strip; its jambs are three or more too.
+      // A lane end beside the strip is a yard pocket's, as every lane tile there is.
+      const laneEnd = (d: number, steps: number): boolean =>
+        steps > (yardSide[d] ? STRIP : STRIP + 1);
+      const roomy = (v: number): boolean =>
+        near(-1, v) > STRIP + 1 &&
+        near(0, v) > STRIP + 1 &&
+        laneEnd(da, near(-2, v)) &&
+        laneEnd(db, near(1, v));
+      const jamb = (v: number): boolean => near(-1, v) > STRIP && near(0, v) > STRIP;
+      let [from, to] = [lo + 1, hi - 2];
+      if (!toYard) {
+        // Near the yard is one end of a side or neither, so what is left is a run.
+        while (from <= to && !roomy(from)) from++;
+        while (from <= to && !roomy(to)) to--;
+        if (from <= to && !jamb(from - 1)) from++;
+        if (from <= to && !jamb(to + 1)) to--;
+      }
+      // No room for a gate: only between two blocks that both touch the box,
+      // whose districts are both joined to the city's.
+      if (from > to) continue;
       const ring = Math.max(bandOf[da] as number, bandOf[db] as number);
       const side: Side = {
         a: da,
@@ -1081,9 +1275,10 @@ export function generateLanding(input: unknown): Landing {
         blockA: b,
         blockB: c,
         upright,
-        at: upright ? box.x1 : box.y1,
-        lo: upright ? box.y0 : box.x0,
-        hi: upright ? box.y1 : box.x1,
+        at: at0,
+        from,
+        to,
+        yard: toYard,
         weight: ring * 0x10_0000 + roll(graphRng, 0x10_0000),
       };
       const key = Math.min(da, db) * count + Math.max(da, db);
@@ -1092,13 +1287,22 @@ export function generateLanding(input: unknown): Landing {
     }
   }
   const sides = [...sideOf.values()];
-  // The spanning tree, grown outward from the city: always the lightest side
-  // that joins a new district, and a nearer ring is always lighter.
+  // The spanning tree. Every yard pocket opens onto the strip, so its passage
+  // to the city is on it from the start. Then it is grown outward: always the
+  // lightest side that joins a new district, and a nearer ring is always lighter.
   const joined: boolean[] = each.map((d) => d === 0);
   const parent: number[] = each.map(() => -1);
   const treeSteps: number[] = each.map(() => 0);
   const onTree = new Set<Side>();
-  for (let n = 1; n < count; n++) {
+  for (const side of sides) {
+    if (!side.yard) continue;
+    const d = side.a === 0 ? side.b : side.a;
+    joined[d] = true;
+    parent[d] = 0;
+    treeSteps[d] = 1;
+    onTree.add(side);
+  }
+  for (let n = 1 + onTree.size; n < count; n++) {
     let best: Side | undefined;
     for (const side of sides) {
       if (joined[side.a] === joined[side.b]) continue;
@@ -1122,7 +1326,10 @@ export function generateLanding(input: unknown): Landing {
     return steps;
   };
   // The river's far bank: the tree branch nearest a third of the districts that
-  // leaves a district on the map's edge on each bank. Without one, no river.
+  // leaves a district on the map's edge on each bank, and holds no yard pocket,
+  // so that no walk round the strip gets past the river. The yard pockets hang
+  // from the city, so a branch holds one only if it is rooted at one. Without
+  // one, no river.
   const below: number[][] = each.map((d) => [d]);
   for (const d of [...each].sort((p, q) => (treeSteps[q] as number) - (treeSteps[p] as number))) {
     if (d !== 0) (below[parent[d] as number] as number[]).push(...(below[d] as number[]));
@@ -1136,6 +1343,7 @@ export function generateLanding(input: unknown): Landing {
   let branch = -1;
   let branchScore = 0;
   for (let d = 1; d < count; d++) {
+    if (yardSide[d]) continue;
     const members = below[d] as number[];
     const touching = members.filter((m) => onEdge[m]).length;
     if (touching === 0 || touching === edgeCount) continue;
@@ -1172,6 +1380,13 @@ export function generateLanding(input: unknown): Landing {
   // them, all but the outermost tile, whose neighbours are not all the city's.
   for (let y = home.y0 + 1; y < home.y1 - 1; y++) {
     for (let x = home.x0 + 1; x < home.x1 - 1; x++) claim(at(x, y), 0);
+  }
+  // The yard's outermost tiles are the city's too, and kept: the strip is
+  // between them and every other district's ground.
+  for (let i = 0; i < N; i++) {
+    if (!yard[i] || owner[i] === 0) continue;
+    owner[i] = 0;
+    kept[i] = true;
   }
   for (let y = city.y; y <= cityBottom; y++) {
     for (let x = city.x; x <= cityRight; x++) tiles[at(x, y)] = CAMP;
@@ -1222,8 +1437,8 @@ export function generateLanding(input: unknown): Landing {
   // Each block of a district has a hub, a tile inside it, and a lane to the hub
   // of the block it was added from, through the side they share. So a district's
   // lanes are a tree over its blocks, and its centre is its seed block's hub.
-  const hub: number[] = boxes.map((box) =>
-    at(between(layoutRng, box.x0 + 1, box.x1 - 2), between(layoutRng, box.y0 + 1, box.y1 - 2)),
+  const hub: number[] = insets.map((room) =>
+    at(between(layoutRng, room.x0, room.x1 - 1), between(layoutRng, room.y0, room.y1 - 1)),
   );
   const tilesOf = (points: [number, number][]): number[] => points.map(([x, y]) => at(x, y));
   /** The lane from the hub of a block's parent to its own. */
@@ -1232,10 +1447,12 @@ export function generateLanding(input: unknown): Landing {
     if (p === -1) return [];
     const from = boxes[p] as Box;
     const upright = from.y0 === box.y0;
-    // Where it crosses: a tile of the shared side that is not at either end of it.
+    // Where it crosses: a tile of the shared side in the room of both blocks,
+    // which is never at either end of it or in the strip.
+    const [mine, theirs] = [insets[b] as Box, insets[p] as Box];
     const v = upright
-      ? between(layoutRng, box.y0 + 1, box.y1 - 2)
-      : between(layoutRng, box.x0 + 1, box.x1 - 2);
+      ? between(layoutRng, Math.max(mine.y0, theirs.y0), Math.min(mine.y1, theirs.y1) - 1)
+      : between(layoutRng, Math.max(mine.x0, theirs.x0), Math.min(mine.x1, theirs.x1) - 1);
     const lower = upright ? from.x0 < box.x0 : from.y0 < box.y0;
     const edge = upright ? (lower ? box.x0 : from.x0) : lower ? box.y0 : from.y0;
     const [near, farther] = lower ? [edge - 1, edge] : [edge, edge - 1];
@@ -1271,36 +1488,47 @@ export function generateLanding(input: unknown): Landing {
     return lane;
   };
 
-  // The gates: two tiles deep across the shared side, a jamb at each end.
+  // The gates: two tiles deep across the shared side, a jamb at each end. A
+  // yard passage's gate is the strip's two tiles across the side, with no
+  // jambs: its lanes end on the yard's second tile in and three tiles out.
   const links: Link[] = chosen.map((side, id) => {
-    const width = Math.min(spec.gate, side.hi - side.lo - 2);
-    const start = between(graphRng, side.lo + 1, side.hi - 1 - width);
+    const width = Math.min(spec.gate, side.to - side.from + 1);
+    const start = between(graphRng, side.from, side.to + 1 - width);
     /** A tile by its place across the side and along it. */
     const tile = (across: number, along: number): number =>
       side.upright ? at(across, along) : at(along, across);
+    // Across the side: the last tile of `a`'s lane, the gate's two, and the
+    // first of `b`'s, with the yard's outermost tile on its side for a yard passage.
+    const [endA, gateU, endB] = !side.yard
+      ? [side.at - 2, [side.at - 1, side.at], side.at + 1]
+      : side.a === 0
+        ? [side.at - 2, [side.at, side.at + 1], side.at + 2]
+        : [side.at - 3, [side.at - 2, side.at - 1], side.at + 1];
     const gate: number[] = [];
     for (let v = start; v < start + width; v++) {
-      for (const u of [side.at - 1, side.at]) {
+      for (const u of gateU) {
         gate.push(tile(u, v));
         fixed[tile(u, v)] = true;
         label[tile(u, v)] = id;
       }
-      claim(tile(side.at - 2, v), side.a);
-      claim(tile(side.at + 1, v), side.b);
+      claim(tile(endA, v), side.a);
+      claim(tile(endB, v), side.b);
       // The approach to the gate is kept as wide as the gate.
-      for (let u = side.at - 4; u <= side.at + 3; u++) {
+      for (let u = endA - 2; u <= endB + 2; u++) {
         const [x, y] = side.upright ? [u, v] : [v, u];
         if (inside(x, y)) kept[at(x, y)] = true;
       }
     }
-    for (const v of [start - 1, start + width]) {
-      for (const u of [side.at - 1, side.at]) fixed[tile(u, v)] = true;
+    if (!side.yard) {
+      for (const v of [start - 1, start + width]) {
+        for (const u of gateU) fixed[tile(u, v)] = true;
+      }
     }
     const mid = start + (width >> 1);
     const crossing = far[side.a] !== far[side.b];
     const tree = onTree.has(side);
     const ring = Math.max(bandOf[side.a] as number, bandOf[side.b] as number);
-    const open = roll(graphRng, 100) < (OPEN_SHARE[ring] as number);
+    const open = side.yard || roll(graphRng, 100) < (OPEN_SHARE[ring] as number);
     const kind: PassageKind = crossing
       ? tree
         ? "bridge"
@@ -1310,14 +1538,16 @@ export function generateLanding(input: unknown): Landing {
         : kinds[side.a] === "crag" || kinds[side.b] === "crag"
           ? "pass"
           : "gap";
+    const row: number[] = [];
+    for (let u = endA + 1; u < endB; u++) row.push(tile(u, mid));
     return {
       side,
       tree,
       kind,
       gate,
-      laneA: lay(side.a, side.blockA, tile(side.at - 2, mid)),
-      row: [tile(side.at - 1, mid), tile(side.at, mid)],
-      laneB: lay(side.b, side.blockB, tile(side.at + 1, mid)),
+      laneA: lay(side.a, side.blockA, tile(endA, mid)),
+      row,
+      laneB: lay(side.b, side.blockB, tile(endB, mid)),
     };
   });
   const linksOf: number[][] = each.map(() => []);
@@ -1354,7 +1584,8 @@ export function generateLanding(input: unknown): Landing {
     for (const id of linksOf[d] as number[]) {
       const link = links[id] as Link;
       const next = link.side.a === d ? link.side.b : link.side.a;
-      const through = (distance[d] as number) + link.laneA.length + link.laneB.length + 2;
+      const through =
+        (distance[d] as number) + link.laneA.length + link.row.length + link.laneB.length;
       if (distance[next] !== -1 && (distance[next] as number) <= through) continue;
       distance[next] = through;
       homeward[next] = id;
@@ -1379,13 +1610,12 @@ export function generateLanding(input: unknown): Landing {
     return hops;
   });
 
-  // Where things stand in a district: its tiles inside its blocks, in one fixed
-  // order (the blocks shuffled, a tile of each in turn from a drawn start).
-  // Each thing takes the first tile in that order that it may have, so no two
-  // stand on one tile.
+  // Where things stand in a district: the tiles in the room of its blocks, in
+  // one fixed order (the blocks shuffled, a tile of each in turn from a drawn
+  // start). Each thing takes the first tile in that order that it may have.
   const inner = (b: number): number => {
-    const box = boxes[b] as Box;
-    return (box.x1 - box.x0 - 2) * (box.y1 - box.y0 - 2);
+    const room = insets[b] as Box;
+    return (room.x1 - room.x0) * (room.y1 - room.y0);
   };
   const outer = each.filter((d) => d !== 0);
   const order: number[][] = each.map((d) => {
@@ -1395,35 +1625,55 @@ export function generateLanding(input: unknown): Landing {
     for (let turn = 0; turn < Math.max(0, ...blocks.map(inner)); turn++) {
       blocks.forEach((b, n) => {
         if (turn >= inner(b)) return;
-        const box = boxes[b] as Box;
-        const width = box.x1 - box.x0 - 2;
+        const room = insets[b] as Box;
+        const width = room.x1 - room.x0;
         const k = ((first[n] as number) + turn) % inner(b);
-        list.push(at(box.x0 + 1 + (k % width), box.y0 + 1 + Math.floor(k / width)));
+        list.push(at(room.x0 + (k % width), room.y0 + Math.floor(k / width)));
       });
     }
     return list;
   });
   const taken: boolean[] = new Array(N).fill(false);
-  type Spot = { d: number; block: number; i: number };
-  const firstFree = (d: number): number => (order[d] as number[]).find((i) => !taken[i]) ?? -1;
-  // Seams: one for each 100 tiles, shared out by the number of blocks a district
-  // has. Each goes to the district with the most blocks for each seam it holds.
-  const held: number[] = each.map(() => 0);
-  const seamAt: Spot[] = [];
-  for (let n = 0; n < Math.floor(N / 100); n++) {
-    let best = -1;
-    for (const d of outer) {
-      if (firstFree(d) === -1) continue;
-      const share = (d2: number): number =>
-        Math.floor(((blocksOf[d2] as number[]).length * 1000) / ((held[d2] as number) + 1));
-      if (best === -1 || share(d) > share(best)) best = d;
-    }
-    if (best === -1) throw new LandingError(`a ${size} landing has no room for its seams`);
-    held[best] = (held[best] as number) + 1;
-    const i = firstFree(best);
+  /** Tiles within a tile of something that stands. */
+  const crowded: boolean[] = new Array(N).fill(false);
+  const crowd = (i: number): void => {
     taken[i] = true;
-    seamAt.push({ d: best, block: blockUnder[i] as number, i });
-  }
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (inside(xOf(i) + dx, yOf(i) + dy)) crowded[at(xOf(i) + dx, yOf(i) + dy)] = true;
+      }
+    }
+  };
+  /** More than RAMP_CLEAR tiles from the ramp, in a straight line. */
+  const pastRamp = (i: number): boolean =>
+    Math.abs(xOf(i) - ramp.x) + Math.abs(yOf(i) - ramp.y) > RAMP_CLEAR;
+  type Spot = { d: number; block: number; i: number };
+  const firstFree = (d: number): number =>
+    (order[d] as number[]).find((i) => !crowded[i] && pastRamp(i)) ?? -1;
+  // Scrap piles, one for each 100 tiles, then seams of ore, one for each 150,
+  // each shared out by the number of blocks a district has: each goes to the
+  // district with the most blocks for each of its kind it holds.
+  const shareOut = (n: number, what: string): Spot[] => {
+    const held: number[] = each.map(() => 0);
+    const found: Spot[] = [];
+    for (let k = 0; k < n; k++) {
+      let best = -1;
+      for (const d of outer) {
+        if (firstFree(d) === -1) continue;
+        const share = (d2: number): number =>
+          Math.floor(((blocksOf[d2] as number[]).length * 1000) / ((held[d2] as number) + 1));
+        if (best === -1 || share(d) > share(best)) best = d;
+      }
+      if (best === -1) throw new LandingError(`a ${size} landing has no room for its ${what}`);
+      held[best] = (held[best] as number) + 1;
+      const i = firstFree(best);
+      crowd(i);
+      found.push({ d: best, block: blockUnder[i] as number, i });
+    }
+    return found;
+  };
+  const pileAt = shareOut(pilesOf(spec), "piles");
+  const oreAt = shareOut(seamsOf(spec), "seams");
   // What each district grows, by its kind: obstacles of one terrain, and deep
   // grass. A patch needs no tile of its own; it is centred on one of the district's.
   const GROWS: Readonly<Record<DistrictKind, readonly number[]>> = {
@@ -1442,7 +1692,7 @@ export function generateLanding(input: unknown): Landing {
       r: between(contentRng, spec.blob[0], spec.blob[1]),
     })),
   );
-  for (const { d, block, i } of seamAt) lay(d, block, i);
+  for (const { d, block, i } of [...pileAt, ...oreAt]) lay(d, block, i);
 
   // The horde's gaps, one on each side, in EDGES order. Each is in a block on
   // that side, scored: one whose district has a gap already is worse, and so is
@@ -1517,7 +1767,7 @@ export function generateLanding(input: unknown): Landing {
   }
   let land: number[] = owner.map((d, i) => {
     if (d !== -1) return d;
-    if (fixed[i] || rim[i]) return -1;
+    if (fixed[i] || rim[i] || strip[i]) return -1;
     const most = Math.min(spec.warp, (clear[i] as number) - 1);
     const sway = (field: readonly number[]): number =>
       Math.max(-most, Math.min(most, Math.floor((((field[i] as number) - 128) * most) / 40)));
@@ -1527,7 +1777,7 @@ export function generateLanding(input: unknown): Landing {
   });
   for (let pass = 0; pass < 2; pass++) {
     land = land.map((d, i) => {
-      if (owner[i] !== -1 || fixed[i] || rim[i]) return d;
+      if (owner[i] !== -1 || fixed[i] || rim[i] || strip[i]) return d;
       // The district most of the nine tiles here belong to, if five or more do.
       const votes: number[] = [];
       for (const [dx, dy] of AROUND) {
@@ -1542,9 +1792,12 @@ export function generateLanding(input: unknown): Landing {
   // to one it already has. Its own land comes first, nearest the lanes first;
   // land that its district could not reach that way goes after, to whichever
   // district gets to it. A tile with another district among the eight round it
-  // stays out, and is not offered again. The rim is never offered.
+  // stays out, and is not offered again. The rim and the strip are never
+  // offered, and a tile beside the strip is offered only to a yard pocket.
   const heap = new Heap();
-  const done: boolean[] = owner.map((d, i) => d !== -1 || (fixed[i] as boolean) || rim[i] === true);
+  const done: boolean[] = owner.map(
+    (d, i) => d !== -1 || (fixed[i] as boolean) || rim[i] === true || strip[i] === true,
+  );
   const LATER = 0x1_0000;
   const offer = (i: number): void => {
     const district = owner[i] as number;
@@ -1552,7 +1805,7 @@ export function generateLanding(input: unknown): Landing {
       const [x, y] = [xOf(i) + dx, yOf(i) + dy];
       if (!inside(x, y)) continue;
       const j = at(x, y);
-      if (done[j]) continue;
+      if (done[j] || (brink[j] && !yardSide[district])) continue;
       const order =
         (land[j] === district ? 0 : LATER) + (clear[j] as number) * 256 + (rough[j] as number);
       heap.push((order * 4096 + j) * 64 + district);
@@ -1577,14 +1830,11 @@ export function generateLanding(input: unknown): Landing {
     offer(i);
   }
 
-  // 5. Barriers. Where a passage is open, the border between its two districts goes:
-  // each border tile that touches one of the two and has no third district, no other
-  // passage's tile, and no border tile with a third district beside it.
-  const openBetween = new Map<number, number>();
-  links.forEach((link, id) => {
-    const { a, b } = link.side;
-    if (link.kind === "open") openBetween.set(Math.min(a, b) * count + Math.max(a, b), id);
-  });
+  // 5. Barriers. A yard passage's ground is the strip. Where a passage between
+  // two pockets is open, the border between its two districts goes: each border
+  // tile that touches one of the two and has no third district, no other
+  // passage's tile, no border tile with a third district beside it, and is not
+  // beside the strip.
   /** The districts among the eight tiles round a tile, lowest first. */
   const around = (i: number): number[] => {
     const found: number[] = [];
@@ -1596,25 +1846,84 @@ export function generateLanding(input: unknown): Landing {
     }
     return found.sort((p, q) => p - q);
   };
+  // The sides of each pocket (docs/art.md, section 8): for each of north, east,
+  // south and west, how many of its tiles have a next tile that way that is not
+  // the pocket's, and how many of those are barrier, rim or a gate. Only the
+  // strip is open so far. The tiles are the finished map's from here.
+  const sideAll: number[] = new Array(4 * count).fill(0);
+  const sideShut: number[] = new Array(4 * count).fill(0);
+  for (let j = 0; j < N; j++) {
+    const d = owner[j] as number;
+    if (d < 1) continue;
+    TOWARD.forEach(([dx, dy], k) => {
+      const [x, y] = [xOf(j) + dx, yOf(j) + dy];
+      if (inside(x, y) && owner[at(x, y)] === d) return;
+      sideAll[4 * d + k] = (sideAll[4 * d + k] as number) + 1;
+      if (!inside(x, y) || !strip[at(x, y)])
+        sideShut[4 * d + k] = (sideShut[4 * d + k] as number) + 1;
+    });
+  }
+  /** Sides of a pocket at least half shut, after `lost` of each side's shut tiles open. */
+  const bounded = (d: number, lost: readonly number[]): number =>
+    TOWARD.filter(
+      (_, k) =>
+        2 * ((sideShut[4 * d + k] as number) - (lost[k] as number)) >=
+        (sideAll[4 * d + k] as number),
+    ).length;
+  /** Border tiles with exactly two districts among the eight round them, by the pair. */
+  const between2 = new Map<number, number[]>();
   for (let i = 0; i < N; i++) {
-    if (owner[i] !== -1 || label[i] !== -1 || rim[i]) continue;
+    if (owner[i] !== -1 || label[i] !== -1 || rim[i] || strip[i] || brink[i]) continue;
     const near = around(i);
     if (near.length !== 2) continue;
-    const [a, b] = near as [number, number];
-    const id = openBetween.get(a * count + b);
-    if (id === undefined) continue;
-    let touches = false;
-    let clear = true;
-    for (const [dx, dy] of NEIGHBOURS) {
-      const [x, y] = [xOf(i) + dx, yOf(i) + dy];
-      if (!inside(x, y)) continue;
-      const j = at(x, y);
-      if (owner[j] !== -1) touches = true;
-      else if (label[j] !== -1) clear &&= label[j] === id;
-      else clear &&= around(j).every((d) => d === a || d === b);
-    }
-    if (touches && clear) label[i] = id;
+    const key = (near[0] as number) * count + (near[1] as number);
+    const list = between2.get(key);
+    if (list === undefined) between2.set(key, [i]);
+    else list.push(i);
   }
+  // The open passages in order. Each is opened only if both its pockets keep
+  // two sides bounded with its border gone; otherwise it is a gap or a pass.
+  links.forEach((link, id) => {
+    if (link.kind !== "open" || link.side.yard) return;
+    const { a, b } = link.side;
+    const opening: number[] = [];
+    for (const i of between2.get(Math.min(a, b) * count + Math.max(a, b)) ?? []) {
+      let touches = false;
+      let clear = true;
+      for (const [dx, dy] of NEIGHBOURS) {
+        const [x, y] = [xOf(i) + dx, yOf(i) + dy];
+        if (!inside(x, y)) continue;
+        const j = at(x, y);
+        if (owner[j] !== -1) touches = true;
+        else if (label[j] !== -1) clear &&= label[j] === id;
+        else clear &&= around(j).every((d) => d === a || d === b);
+      }
+      if (touches && clear) opening.push(i);
+    }
+    // What each of the two would lose, side by side: the tiles whose next tile
+    // that way is one this opens, or the passage's own gate, which is open
+    // ground once the border round it goes.
+    const lostA = [0, 0, 0, 0];
+    const lostB = [0, 0, 0, 0];
+    for (const i of [...opening, ...link.gate]) {
+      TOWARD.forEach(([dx, dy], k) => {
+        const [x, y] = [xOf(i) - dx, yOf(i) - dy];
+        if (!inside(x, y)) return;
+        const d = owner[at(x, y)];
+        if (d === a) lostA[k] = (lostA[k] as number) + 1;
+        else if (d === b) lostB[k] = (lostB[k] as number) + 1;
+      });
+    }
+    if (bounded(a, lostA) < 2 || bounded(b, lostB) < 2) {
+      link.kind = kinds[a] === "crag" || kinds[b] === "crag" ? "pass" : "gap";
+      return;
+    }
+    for (const i of opening) label[i] = id;
+    for (let k = 0; k < 4; k++) {
+      sideShut[4 * a + k] = (sideShut[4 * a + k] as number) - (lostA[k] as number);
+      sideShut[4 * b + k] = (sideShut[4 * b + k] as number) - (lostB[k] as number);
+    }
+  });
   links.forEach((link, id) => {
     const terrain = link.kind === "bridge" ? BRIDGE : link.kind === "ford" ? SHORE : GRASS;
     for (const i of link.gate) tiles[i] = terrain;
@@ -1629,7 +1938,7 @@ export function generateLanding(input: unknown): Landing {
   /** The river's banks among a border tile's districts: 1 the far one, 2 the near one, 3 both. */
   const banks: number[] = new Array(N).fill(0);
   for (let i = 0; i < N; i++) {
-    if (owner[i] !== -1 || label[i] !== -1 || rim[i]) continue;
+    if (owner[i] !== -1 || label[i] !== -1 || rim[i] || strip[i]) continue;
     border.push(i);
     for (const d of around(i)) banks[i] = (banks[i] as number) | (far[d] ? 1 : 2);
   }
@@ -1663,11 +1972,12 @@ export function generateLanding(input: unknown): Landing {
     tiles[i] = TREE;
     for (const [dx, dy] of AROUND) {
       const [x, y] = [xOf(i) + dx, yOf(i) + dy];
-      if (!inside(x, y) || owner[at(x, y)] !== -1 || label[at(x, y)] !== -1) continue;
-      const beside = tiles[at(x, y)] as number;
+      const j = at(x, y);
+      if (!inside(x, y) || owner[j] !== -1 || label[j] !== -1 || strip[j]) continue;
+      const beside = tiles[j] as number;
       if (beside === -1) continue;
       tiles[i] = beside;
-      grows[i] = grows[at(x, y)] as number;
+      grows[i] = grows[j] as number;
       break;
     }
   }
@@ -1723,8 +2033,8 @@ export function generateLanding(input: unknown): Landing {
     return Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
   };
 
-  // Seams: the tile one is worked from, with an outcrop of rock beside it.
-  for (const { d, i } of seamAt) {
+  // Piles and seams: the tile one is worked from, with an outcrop of rock beside it.
+  for (const { d, i } of [...pileAt, ...oreAt]) {
     const [ox, oy] = outward(i, d);
     if (inside(xOf(i) + ox, yOf(i) + oy)) block(at(xOf(i) + ox, yOf(i) + oy), ROCK, d);
   }
@@ -1839,29 +2149,21 @@ export function generateLanding(input: unknown): Landing {
   });
   const ground: number[] = owner.map((d, i) => {
     if (d !== -1) return levelOf[d] as number;
+    // The strip lies between the yard and its pockets, which are all over it.
+    if (strip[i]) return levelOf[0] as number;
     const id = label[i] as number;
     if (id === -1) return -1;
     const { a, b } = (links[id] as Link).side;
     return Math.min(levelOf[a] as number, levelOf[b] as number);
   });
 
-  // 9. Dens and caches, each on a clear tile: its eight neighbours walkable
-  // ground of its own pocket, nothing standing within a tile of it, and more
-  // than RAMP_CLEAR tiles from the ramp in a straight line.
-  /** Tiles within a tile of something that stands. */
-  const crowded: boolean[] = new Array(N).fill(false);
-  const crowd = (i: number): void => {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (inside(xOf(i) + dx, yOf(i) + dy)) crowded[at(xOf(i) + dx, yOf(i) + dy)] = true;
-      }
-    }
-  };
-  for (const { i } of seamAt) crowd(i);
+  // 9. Dens, caches, shrines and wrecks, each on a clear tile: its eight
+  // neighbours walkable ground of its own pocket, where its guard stands,
+  // nothing standing within a tile of it, and more than RAMP_CLEAR tiles from
+  // the ramp in a straight line.
   const fits = (i: number): boolean => {
     const d = owner[i] as number;
-    if (d < 1 || crowded[i] || !WALK.has(tiles[i] as number)) return false;
-    if (Math.abs(xOf(i) - ramp.x) + Math.abs(yOf(i) - ramp.y) <= RAMP_CLEAR) return false;
+    if (d < 1 || crowded[i] || !WALK.has(tiles[i] as number) || !pastRamp(i)) return false;
     return AROUND.every(([dx, dy]) => {
       const [x, y] = [xOf(i) + dx, yOf(i) + dy];
       return inside(x, y) && owner[at(x, y)] === d && WALK.has(tiles[at(x, y)] as number);
@@ -1870,7 +2172,6 @@ export function generateLanding(input: unknown): Landing {
   const picked = [0];
   const put = (i: number): Spot => {
     const d = owner[i] as number;
-    taken[i] = true;
     crowd(i);
     picked.push(d);
     return { d, block: blockUnder[i] as number, i };
@@ -1995,6 +2296,11 @@ export function generateLanding(input: unknown): Landing {
       null,
     ),
   );
+  // Shrines, then wrecks, spread like the rest, each in a pocket with no den,
+  // cache, shrine or wreck while there is one with a clear tile.
+  const sited = (k: number, d: number): number => turn(k, d) + (picked.includes(d) ? 4 : 0);
+  const shrineAt = spread(0, shrinesOf(spec), sited, null);
+  const wreckAt = spread(shrineAt.length, wrecksOf(spec), sited, null);
 
   // Their floors: a cache on a square of path, a den on a round floor of den
   // ground. Neither blocks a tile, so nothing turns walkable ground into
@@ -2081,11 +2387,29 @@ export function generateLanding(input: unknown): Landing {
     ring: ring[d] as number,
     level: levelOf[d] as number,
   }));
-  const seams: Seam[] = seamAt.map(({ d, i }) => ({
+  const standing = ({ d, i }: Spot): Stand => ({
     ...point(i),
     district: d,
     ring: ring[d] as number,
+  });
+  const piles: Pile[] = pileAt.map(standing);
+  const seams: Seam[] = oreAt.map(standing);
+  const shrines: Shrine[] = shrineAt.map((spot) => ({
+    ...standing(spot),
+    boon: BOONS[roll(boonRng, BOONS.length)] as Boon,
   }));
+  const wrecks: Wreck[] = wreckAt.map(standing);
+  // The wall's stations: two steps' walk outside the yard, in tile order, each
+  // more than a tile from every station before it. The strip is open ground,
+  // so these are its outer tiles.
+  const fromYardWalk = walkFrom(owner.flatMap((d, i) => (d === 0 ? [i] : [])));
+  const stations: number[] = [];
+  for (let i = 0; i < N; i++) {
+    if (fromYardWalk[i] !== STRIP) continue;
+    const far1 = (s: number): boolean =>
+      Math.max(Math.abs(xOf(s) - xOf(i)), Math.abs(yOf(s) - yOf(i))) > 1;
+    if (stations.every(far1)) stations.push(i);
+  }
 
   const entries: Entry[] = entryLanes.map(({ side, d, lane, gap }) => {
     const way = wayHome(d);
@@ -2129,7 +2453,8 @@ export function generateLanding(input: unknown): Landing {
   }));
   const passages: Passage[] = links.map((link, id) => ({
     id,
-    ...point(link.row[0] as number),
+    // The middle row's first gate tile: a yard passage's row starts in the yard.
+    ...point(link.row.find((i) => link.gate.includes(i)) as number),
     a: link.side.a,
     b: link.side.b,
     kind: link.kind,
@@ -2167,11 +2492,15 @@ export function generateLanding(input: unknown): Landing {
     entries,
     dens,
     caches,
+    piles,
     seams,
+    shrines,
+    wrecks,
+    stations: stations.map(point),
   };
 }
 
-/** A fingerprint of a landing: every tile, place, den, cache, seam and the whole graph. */
+/** A fingerprint of a landing: every tile, place, thing that stands, station and the whole graph. */
 export function hashLanding(landing: Landing): string {
   return hashInts([
     ...stringInts(landing.name),
@@ -2254,8 +2583,14 @@ export function hashLanding(landing: Landing): string {
     ]),
     landing.caches.length,
     ...landing.caches.flatMap((c) => [c.x, c.y, c.district, c.ring, c.level]),
-    landing.seams.length,
-    ...landing.seams.flatMap((s) => [s.x, s.y, s.district, s.ring]),
+    ...[landing.piles, landing.seams, landing.wrecks].flatMap((list) => [
+      list.length,
+      ...list.flatMap((s) => [s.x, s.y, s.district, s.ring]),
+    ]),
+    landing.shrines.length,
+    ...landing.shrines.flatMap((s) => [s.x, s.y, s.district, s.ring, BOONS.indexOf(s.boon)]),
+    landing.stations.length,
+    ...landing.stations.flatMap((s) => [s.x, s.y]),
   ]);
 }
 
@@ -2285,9 +2620,10 @@ const LETTERS = "0abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 /**
  * A landing as text, one character a tile. Terrain as in content/maps. On top
  * of it: `+` a gate tile (`=` on a bridge, `%` on a ford), `'` a border taken
- * out for an open passage, R the ramp, H the middle of each gap in the rim
- * where the horde comes in, D a den, C a cache and o a seam. Closed borders
- * are the rock, trees and water between districts.
+ * out for an open passage or the strip round the yard, `*` a station of the
+ * wall, R the ramp, H the middle of each gap in the rim where the horde comes
+ * in, D a den, C a cache, S a shrine, W a wreck, o a scrap pile and e a seam
+ * of ore. Closed borders are the rock, trees and water between districts.
  *
  * The `districts` view shows the graph instead: each tile as its district's
  * letter (0 for the city's), `#` for a border, `+` for a gate and `'` for an
@@ -2319,7 +2655,11 @@ export function landingText(
   });
   if (view === "districts") for (const d of landing.districts) put(d, "@");
   if (view !== "districts") {
-    for (const s of landing.seams) put(s, "o");
+    for (const s of landing.stations) put(s, "*");
+    for (const s of landing.piles) put(s, "o");
+    for (const s of landing.seams) put(s, "e");
+    for (const s of landing.shrines) put(s, "S");
+    for (const s of landing.wrecks) put(s, "W");
     for (const c of landing.caches) put(c, "C");
     for (const d of landing.dens) put(d, "D");
   }
@@ -2341,7 +2681,7 @@ export function landingText(
     .map((d) => `${LETTERS[d.id % LETTERS.length]} ${d.level}`);
   return [
     `city ${landing.citySize} ${landing.size} ${landing.width}x${landing.height}, ${landing.biome} (element: ${landing.element}), seed ${landing.seed}, level ${landing.level}, far ${landing.far}`,
-    `ramp on the ${landing.rampSide}; horde gaps at ${landing.entries.map((e) => `${e.edge} (${e.x}, ${e.y})`).join(", ")}; ${landing.dens.length} dens, ${landing.caches.length} caches, ${landing.seams.length} seams`,
+    `ramp on the ${landing.rampSide}; horde gaps at ${landing.entries.map((e) => `${e.edge} (${e.x}, ${e.y})`).join(", ")}; ${landing.dens.length} dens, ${landing.caches.length} caches, ${landing.shrines.length} shrines, ${landing.wrecks.length} wrecks, ${landing.piles.length} piles, ${landing.seams.length} seams, ${landing.stations.length} stations`,
     `districts: the city and ${rings.join(", ")}; passages: ${landing.passages.length - loops} on the tree and ${loops} loops, ${crossings} over the river`,
     `levels: yard ${landing.districts[0]?.level}; pockets by the walk out of the yard: ${byGate.join(", ")}`,
     `dens: ${landing.dens.map((d) => `den ${d.letter} ${d.level} (elite ${d.elite})`).join("; ")}`,

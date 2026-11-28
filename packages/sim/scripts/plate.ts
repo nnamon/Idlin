@@ -25,10 +25,10 @@
 // caches spread by passages), with straight borders and no river, and the
 // city's ground open to every pocket beside it. --generator runs the same
 // laying on generateLanding's maps, which have the slice's five landings with
-// the bubble's footprint as a walled yard (#416 opens it); there the pockets'
-// levels, the dens and the first chest are the generator's, and the script
-// stands only what the generator does not have yet. Maps over 80 by 45 wait
-// for #418.
+// the bubble's footprint as the yard, open to every pocket beside it; there
+// the pockets' levels, the dens, the chests, the piles, the seams, the
+// shrines and the wrecks are the generator's. Maps over 80 by 45 wait for
+// #418.
 //
 // The first city is laid at level 8 for a young crowd and the others at level
 // 23 for the slice's worked crowd (CROWDS below). --middle moves the crowd's
@@ -195,6 +195,17 @@ interface Ground {
   readonly piles: number[];
   /** On generateLanding's maps, each district's ring and level as the generator set them. */
   readonly levels?: { readonly ring: number[]; readonly level: number[] };
+  /** On generateLanding's maps, the shrines, wrecks and seams of ore the generator stood. */
+  readonly holds?: {
+    readonly shrines: number[];
+    readonly wrecks: number[];
+    readonly seams: number[];
+  };
+  /**
+   * On generateLanding's maps, the strip round the yard: open ground in no
+   * district, which counts as ground like a pocket's.
+   */
+  readonly strip?: boolean[];
 }
 
 const AROUND: readonly (readonly [number, number])[] = [
@@ -809,7 +820,16 @@ function generatorGround(spec: LandingSpec, seed: number, extra: number, far: nu
   const { city } = landing;
   for (let y = city.y; y < city.y + city.height; y++)
     for (let x = city.x; x < city.x + city.width; x++) open[y * W + x] = false;
+  const fromYard = walkFrom(
+    W,
+    landing.height,
+    open,
+    landing.districtAt.flatMap((d, i) => (d === 0 && open[i] ? [i] : [])),
+  ).dist;
   return {
+    strip: landing.districtAt.map(
+      (d, i) => d === -1 && num(fromYard, i) >= 1 && num(fromYard, i) <= STRIP,
+    ),
     width: W,
     height: landing.height,
     open,
@@ -826,10 +846,15 @@ function generatorGround(spec: LandingSpec, seed: number, extra: number, far: nu
       return near === undefined ? -1 : near.y * W + near.x;
     })(),
     chests: landing.caches.map((c) => c.y * W + c.x),
-    piles: landing.seams.map((s) => s.y * W + s.x),
+    piles: landing.piles.map((s) => s.y * W + s.x),
     levels: {
       ring: landing.districts.map((d) => d.ring),
       level: landing.districts.map((d) => d.level),
+    },
+    holds: {
+      shrines: landing.shrines.map((s) => s.y * W + s.x),
+      wrecks: landing.wrecks.map((s) => s.y * W + s.x),
+      seams: landing.seams.map((s) => s.y * W + s.x),
     },
   };
 }
@@ -1007,7 +1032,7 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
   const rng = createRng((seed * 31 + 17) | 0);
   const walk = walkFrom(W, H, open, [ground.ramp]).dist;
   const onGround = (i: number): boolean =>
-    num(district, i) >= 0 && open[i] === true && num(walk, i) >= 0;
+    (num(district, i) >= 0 || ground.strip?.[i] === true) && open[i] === true && num(walk, i) >= 0;
   let longest = 1;
   for (let i = 0; i < N; i++) if (onGround(i)) longest = Math.max(longest, num(walk, i));
   const cheb = (a: number, b: number): number =>
@@ -1247,9 +1272,12 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
     }
     return found;
   };
-  const shrines = stand(shrinesOf(spec), true);
-  const wrecks = stand(wrecksOf(spec), true);
-  const seams = stand(seamsOf(spec), false);
+  // The generator stands them itself (landing.ts, step 9).
+  const { holds } = ground;
+  if (holds) stood.push(...holds.shrines, ...holds.wrecks, ...holds.seams);
+  const shrines = holds ? holds.shrines : stand(shrinesOf(spec), true);
+  const wrecks = holds ? holds.wrecks : stand(wrecksOf(spec), true);
+  const seams = holds ? holds.seams : stand(seamsOf(spec), false);
 
   // Posts: inner tiles of a pocket beyond the yard, not beside anything that
   // stands, taken in tile order, each more than 3 tiles (a diagonal counting
