@@ -26,6 +26,10 @@ export const PLANS: Readonly<Record<string, Plan>> = {
   deck: { stills: [2.2, 5.0], burst: 3, clip: [0, 5.6, 10] },
   deck150: { stills: [2.2], burst: 3, clip: [0, 2, 10] },
   deckside: { stills: [2.2], burst: 3, clip: [0, 2, 10] },
+  // Mockups for #445, one still each.
+  "raid-a": { stills: [3], burst: 3, clip: [0, 1, 4] },
+  "raid-b": { stills: [3], burst: 3, clip: [0, 1, 4] },
+  "raid-c": { stills: [3], burst: 3, clip: [0, 1, 4] },
   reveal: { stills: [2, 6, 8, 11, 16, 28], burst: 6, clip: [0, 30, 6] },
   // The burst is round the elite's blow at 14 s.
   // The second burst is the mow at the nest, as the firepot lands at 5 s.

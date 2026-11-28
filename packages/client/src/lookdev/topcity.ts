@@ -354,6 +354,13 @@ export interface TopCity {
   crew: readonly Crew[];
   /** 0 the lantern plain, 1 at full accent. */
   lantern: number;
+  /** The guns' bearing in radians, fore then aft, in place of their idle turning (raid mockups). */
+  gunAim?: readonly [number, number];
+  /** More things aboard, sorted with the crew by hull y (raid mockups). */
+  more?: (
+    P: (x: number, y: number, z: number) => [number, number],
+    H: number,
+  ) => { y: number; draw: () => void }[];
 }
 
 export interface CityDrawn {
@@ -1355,7 +1362,9 @@ export function drawTopCity(d: Draw, c: TopCity): CityDrawn {
           weight: CONTOUR,
           seed: key,
         });
-        const aim = dir * (0.25 * Math.sin(t * 0.3 + key)) + (dir < 0 ? Math.PI : 0);
+        const aim = c.gunAim
+          ? (c.gunAim[dir > 0 ? 0 : 1] as number)
+          : dir * (0.25 * Math.sin(t * 0.3 + key)) + (dir < 0 ? Math.PI : 0);
         const ax = Math.cos(aim);
         const ay = Math.sin(aim) * BACK;
         const len = 1.15 * T;
@@ -1811,6 +1820,7 @@ export function drawTopCity(d: Draw, c: TopCity): CityDrawn {
     },
   });
   items.push({ y: 3.2, draw: () => railHalf(1) });
+  if (c.more) items.push(...c.more(P, H));
   items.sort((a, b) => a.y - b.y);
   for (const item of items) item.draw();
 
@@ -1880,7 +1890,7 @@ function drawRamp(
 }
 
 /** The ring of strokes and puff of dust where a foot has come down, flattened to lie on the ground. */
-function drawFootfallTop(d: Draw, age: number, key: number): void {
+export function drawFootfallTop(d: Draw, age: number, key: number): void {
   if (age > 1.6) return;
   const k = age / 1.6;
   const strength = d.strength;

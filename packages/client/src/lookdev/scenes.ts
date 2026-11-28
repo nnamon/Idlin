@@ -8,6 +8,7 @@ import {
   expeditionScene,
   revealScene,
 } from "./expeditions.ts";
+import { raidAScene, raidBScene, raidCScene } from "./raid.ts";
 import { beastsSheet, figuresSheet, scaleSheet } from "./sheets.ts";
 import { shieldLevelsSheet, siege150Scene, siegeScene } from "./siege.ts";
 import type { PlacedTag } from "./stage.ts";
@@ -38,6 +39,9 @@ const MAKERS: Readonly<Record<string, () => Scene>> = {
   deck: () => deckScene(15),
   deck150: () => deckScene(150),
   deckside: () => decksideScene(15),
+  "raid-a": raidAScene,
+  "raid-b": raidBScene,
+  "raid-c": raidCScene,
   reveal: revealScene,
   expedition: expeditionScene,
   "expedition-b": expeditionBScene,

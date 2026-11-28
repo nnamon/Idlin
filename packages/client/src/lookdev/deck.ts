@@ -66,6 +66,7 @@ export function drawTransitPlan(
   T: number,
   travel: number,
   strength: number,
+  bend: { slope: number; at: number } = { slope: 0, at: 0 },
 ): void {
   if (strength <= 0.01) return;
   const base = d.strength;
@@ -76,7 +77,8 @@ export function drawTransitPlan(
   const sx = (wx: number): number => ox + (wx - travel) * T;
   const sy = (wy: number): number => oy + wy * T;
   // A stream and a track across the land.
-  const streamY = (wx: number): number => 3.2 + 2.2 * noise1(wx / 11, 405);
+  const streamY = (wx: number): number =>
+    3.2 + 2.2 * noise1(wx / 11, 405) + bend.slope * (wx - travel - bend.at);
   const trackY = (wx: number): number => -5.2 + 1.6 * noise1(wx / 9, 406);
   const clear = (wx: number, wy: number, r: number): boolean =>
     Math.abs(wy - streamY(wx)) > r + 0.8 && Math.abs(wy - trackY(wx)) > r + 0.6;
