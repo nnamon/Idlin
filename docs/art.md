@@ -29,9 +29,14 @@ ink (section 11).
 
 A landing is a hand-drawn adventure map seen from a little above. The ground
 is in plan. The city stands in the middle of it on splayed legs with its deck
-open to the viewer. Citizens are out in every direction, there is a pack
-round every place worth walking to, and black closes in from the rim
-(section 4).
+open to the viewer. Citizens are out in every direction and there is a pack
+round every place worth walking to. Late in the landing the horde's black
+comes in from the rim and piles up against the city's shield (sections 3, 4
+and 7).
+
+The city and its landings grow over the game, and the figure is the measure
+of both. As they grow, the same frame holds more tiles and a citizen is
+drawn smaller in it (section 7).
 
 Where it comes from, in spirit. None of these is to be copied.
 
@@ -132,15 +137,17 @@ citizens' own colours.
   Terrain washes stay under 35%, monster washes under 20%.
 - **Monsters own black.** Rank for rank a monster carries more spot black and
   closer hatching than a citizen. A viewer tells the sides apart by colour
-  against black before reading any shape.
+  against black before reading any shape. A monster takes its black as it
+  wakes: one at rest is drawn pale (section 6).
 - **The darkest tenth.** Squint at a frame in greyscale at 640. The darkest
-  shapes should be, in order of area: the city, monsters or the horde, then
-  lettering. If a bar, a border, a river or a route line is among them, the
-  frame is wrong.
+  shapes should be, in order of area: the city, the horde or the monsters
+  that are awake, then lettering. If a bar, a border, a river, a route line
+  or a pack at rest is among them, the frame is wrong.
 - **Contrast.** A contour against the ground under it: at least 7:1. Lettering
   that carries information: at least 4.5:1, and never under 3:1 while a
   palette is changing. A wash never brings ink on it below 7:1.
-- **One accent a phase**, used on less than 2% of the frame.
+- **One accent a phase**, used on less than 2% of the frame. The shield's
+  bands may take it to 3% during the siege (section 7).
 - Water is a ground wash like any other. It is never the most saturated or
   the largest flat colour in a frame.
 
@@ -200,18 +207,34 @@ Night is drawn in masses. It is not the day drawing with its colours swapped.
 
 ### The horde
 
-The horde is the landing's clock. Nobody fights it. It is what everyone gets
-home ahead of.
+The horde is the landing's clock. A landing has seven phases (#413 sets
+their rules and times), and the plate is a different picture in each.
 
-- It is spot black on the ground, a tide of ink. It is never a row of
-  monsters to fight and never a front that crosses the plate from one side.
-- From the landing on, black stands along the whole rim of the map, about two
-  tiles deep, with eyes in it. Until the horde moves, no side shows more than
-  half again as much black as another.
-- When it moves it takes the ground with the longest walk to the ramp first,
-  on every side at once, so the pale ground shrinks to one shape round the
-  city. Late in a landing the black is a closed ring and the picture is the
-  run for the ramp.
+| Phase                | What the plate shows                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Peace             | No black. The map runs to the rule and stops as an unfinished drawing does: in its last two tiles the washes end and the lines trail off into bare paper. Packs are at rest in their pockets.                                   |
+| 2. Scouts            | The same map with scouts on it, in ones to threes, coming in from the rim's gaps toward citizens.                                                                                                                               |
+| 3. The front gathers | Black comes in at the gaps and spreads along the rim on every side. It deepens from one tile to four (two on the first size of landing) as the horde gathers, and its depth is how a viewer at 640 tells how near the march is. |
+| 4. The march         | The black moves. It takes the ground with the longest walk to the ramp first, on every side at once, so the pale ground shrinks to one shape round the city. The frame closes with it (section 12).                             |
+| 5. The siege         | The horde meets the city's shield (section 7) and piles up against it. Citizens hold the shield's edge. This is the late picture: a lit oblong with the city in it, the bands of the shield, and bodies heaped against them.    |
+| 6. The break         | The last band goes, the pile falls inward and the black takes the ground inside. Citizens run for the ramp from every side with the horde two or three tiles behind them.                                                       |
+| 7. Lift-off          | The black reaches the hull. The legs lift out of it and the frame closes on the city (section 12).                                                                                                                              |
+
+- It is spot black on the ground, a tide of ink. It is never a front that
+  crosses the plate from one side: it gathers, marches and piles up on every
+  side at once, and until it marches no side shows more than half again as
+  much black as another.
+- **Scouts** are the horde's, and are drawn in its ink: a lean, long-legged
+  body in spot black with paper eyes, running low. A scout is black from the
+  moment it appears, which is how it is told from a pack at rest
+  (section 6). It leaves a dashed track in ink behind it for two tiles.
+- **It is bodies wherever it is near anything.** Within three tiles of its
+  edge, and wherever it stands against the shield, the horde is drawn as
+  whole bodies in spot black, overlapping, each with a paper line along the
+  side that faces the city's lantern. From three to eight tiles back it is a
+  mass with heads and backs in paper line and eyes in clusters. Beyond that
+  it is black with eyes. No stretch of black more than ten tiles across has
+  nothing drawn in it.
 - Its edge is one curved line at heavy weight, crowded with heads, backs and
   reaching limbs, uneven along its length. For one to two tiles ahead of the
   edge the ground is hatched in the red-brown of a blow about to land. Ahead
@@ -222,10 +245,12 @@ home ahead of.
   that the black has covered still shows the top of its outline as a paper
   line at form weight, so the map can be read under the ink.
 - It is the only large black thing on a daytime plate, which is how a viewer
-  at 640 reads the time. The dial in the corner (section 11) counts the same
-  time in numbers.
-- Citizens running in keep their full colours. From the horn the city's
-  lantern goes to the accent at full strength.
+  at 640 reads the time: none, a rim, a closing shape, a pile against the
+  shield. The dial in the corner (section 11) says the same in numbers.
+- Lettering that lies over the black is set in paper colour with no halo. A
+  name tag there keeps its rule in the cloak colour.
+- Citizens at the shield and running in keep their full colours. From the
+  march on the city's lantern is at the accent at full strength.
 
 ## 4. Staging and the lean
 
@@ -236,8 +261,9 @@ it is staged as two sides facing each other across a line, and no frame has
 the city at one end and the enemy at the other.
 
 - **The city stands inside the map.** Its hull is in the middle third of the
-  frame both ways, with at least eight tiles of walkable ground on every side
-  of it on a medium or large landing, and five on a small one.
+  frame both ways, with at least six tiles of walkable ground beyond its
+  planted feet on every side on the first size of landing, and ten on every
+  other (section 7 has the sizes).
 - **The ramp comes down on any side.** The generator picks the side. No
   drawing assumes one.
 - **Pockets lie on every side** (section 8), each with something to take and
@@ -256,6 +282,10 @@ the city at one end and the enemy at the other.
   target goes.
 - **The horde is the clock** (section 3). It closes from the rim on every
   side. It is never the enemy line.
+- **The shield is held in the round.** In the siege citizens stand at the
+  shield's edge in ones to fives, on at least three sides of the city, with
+  three tiles or more between one group and the next. No group stands in a
+  row, and the groups never join into a line round the shield.
 - **The halves test.** Shrink the frame to 640 and cut it in half through the
   city, across and then down. Each half has citizens, monsters and something
   to take. If one half is ours and the other is theirs, the frame is staged
@@ -289,6 +319,37 @@ is up.
 
 The lean is the same for every thing on the plate and does not change with
 the camera.
+
+### What comes forward
+
+A landing holds hundreds of monsters, and a viewer has to find the few
+places where something is happening. So a landing is drawn in three planes
+of value, and a thing changes plane when it wakes.
+
+- **The map sits back.** Ground, terrain, paths, places nobody is at, and
+  every monster at rest (section 6). Nothing here is spot black but a den's
+  mouth, and a monster's line here is at 45% ink.
+- **The city stands.** It is at full strength in every phase.
+- **A fight comes forward.** Citizens in their colours, the monsters they
+  have woken in full ink with their black, strokes, shots, thrown bodies,
+  spilt ink and numbers. On a daytime plate before the horde moves, these
+  and the city are the only dark things.
+- **Every fight has a focus.** A fight is a citizen or a group and what it
+  is fighting, within four tiles. At any moment one mark in it is the
+  largest, and the eye lands there first. In order: a rare's or a unique's
+  pole going up, an elite's telegraph, the fight's largest number, the
+  longest stroke. Section 10 has their sizes. A fight where every mark is
+  the same size is a blot.
+- **The frame has a lead.** One fight in frame carries the frame's largest
+  mark: the one number at 72 px, or a unique's pole and slip. Every other
+  fight is a size below it.
+- **Quiet ground.** At least a third of a landing's ground carries nothing
+  but ground marks, in stretches four tiles wide or more. Paths run through
+  them. A map where packs stand at an even spacing from edge to edge has no
+  pockets and no fights that can be found.
+- **The check.** Shrink a peace-phase frame to 640 and put it in greyscale.
+  The dark knots are the city and the fights, and they can be counted. If
+  the dark is spread evenly over the map, the frame is wrong.
 
 ### Depth and cover
 
@@ -334,16 +395,27 @@ shown the larger it is.
 
 Height is from the feet to the top of the head. The hat stands above that.
 
-| Size | Where                                                   | Height at 1920 | At 640      | What is drawn                                                                                                                           |
-| ---- | ------------------------------------------------------- | -------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Far  | a large landing                                         | 44 to 50 px    | 15 to 17 px | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
-| Mid  | a small or medium landing; the deck with over 40 aboard | 56 to 76 px    | 19 to 25 px | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
-| Near | the deck in transit with 40 aboard or fewer             | 96 to 120 px   | 32 to 40 px | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
+| Size | Where                                                           | Height at 1920 | At 640      | What is drawn                                                                                                                           |
+| ---- | --------------------------------------------------------------- | -------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Far  | a landing of the mid city's size or larger                      | 40 to 50 px    | 13 to 17 px | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
+| Mid  | a landing of the first two sizes; the siege; the deck when full | 54 to 76 px    | 18 to 25 px | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
+| Near | the deck in transit with 40 aboard or fewer                     | 96 to 120 px   | 32 to 40 px | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
 
-- A citizen on a landing is never under 44 px at 1920. A landing too large to
-  hold that is not drawn smaller; the generator makes it of fewer tiles.
-- A citizen is drawn larger than its tile: about 1.9 tiles tall on a medium
-  or large landing, and no more than 76 px on a small one. It is a figure standing on a map, as the lean has it (section 4).
+- **A citizen's height comes from the camera**, in every scene. Between two
+  columns it is on the straight line between them.
+
+  | Px a tile       | 14  | 17  | 23  | 31  | 47  | 66  | 100 |
+  | --------------- | --- | --- | --- | --- | --- | --- | --- |
+  | Citizen, px     | 40  | 42  | 46  | 58  | 76  | 96  | 120 |
+  | The same, tiles | 2.9 | 2.5 | 2.0 | 1.9 | 1.6 | 1.5 | 1.2 |
+
+  So a citizen is drawn larger than its tile, and more so the more tiles
+  the frame holds. It is a figure standing on a map, as the lean has it
+  (section 4). The one exception is a full deck in transit: with over 40
+  aboard a citizen is 0.85 of a tile tall, and 40 px at least.
+- A citizen is never under 40 px at 1920, and never over three tiles tall. A
+  landing too wide for both is not drawn smaller; the generator makes it of
+  fewer tiles. That puts the widest landing at about 136 tiles.
 - At far size a figure is at most six shapes. Pattern, mark and patches are
   not drawn smaller; they are left out.
 - A viewer finds their own citizen on a landing by its name tag (section 11),
@@ -380,12 +452,14 @@ simulation's: fodder, pack, brute, elite, boss.
 | ------ | ------------------------ | ---------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
 | Fodder | a half or less           | contour only     | one grey wash                           | drawn as a swarm: overlapping bodies share one outline, with many heads and legs |
 | Pack   | about the same           | contour and form | wash and open hatching                  | each drawn singly, in three or more variants of pose and build                   |
-| Brute  | one and a half           | contour and form | close hatching, one area of spot black  | wide: at least twice a citizen's width                                           |
+| Brute  | one and a half           | contour and form | close hatching, one area of spot black  | at least twice a citizen's width at the shoulder, standing on legs (see below)   |
 | Elite  | one and a half to two    | contour and form | crossed hatching, spot black, an accent | one feature no lesser monster of its kind has: a crest, a banner, a broken horn  |
 | Boss   | three or more            | heavy contour    | crossed hatching and large spot black   | its level lettered beside it; a solid ground shadow; stands on 2 tiles or more   |
 
 - Each kind passes the silhouette test: filled solid black at 12 px tall, it
-  can be told from every other kind and from a citizen.
+  can be told from every other kind and from a citizen. A brute and an
+  elite can also be told from a den, a crag, a scrap heap and a standing
+  stone.
 - Monsters are drawn in the same manner as each other and as the citizens:
   side or three-quarter view, facing what they are after. No kind is drawn
   front-on like a mascot.
@@ -397,16 +471,65 @@ simulation's: fodder, pack, brute, elite, boss.
   go, so a nearly dead one is visibly lighter. No ring or bar is needed for
   that.
 
+### At rest, alert and awake
+
+A monster's ink says how awake it is. This is what lets a map of 600
+monsters show where the fights are (section 4).
+
+| State   | When                                                             | Line                                              | Fill                         | Black                 |
+| ------- | ---------------------------------------------------------------- | ------------------------------------------------- | ---------------------------- | --------------------- |
+| At rest | no citizen within ten tiles                                      | 45% ink; form weight for fodder and pack monsters | its wash at half strength    | none, and no hatching |
+| Alert   | a citizen within ten tiles; heads have turned                    | 70% ink at its rank's weight                      | its wash, with open hatching | the eyes only         |
+| Awake   | stalking, fighting, or struck in the last two seconds; the horde | full ink at its rank's weight                     | its rank's wash and hatching | its rank's spot black |
+
+- A swarm at rest is one pale shape: one shared outline, one wash, heads as
+  dots. It keeps to its post, three tiles across, with its bodies
+  overlapped by a third to a half.
+- One of every pack at rest is its sentinel, drawn alert, so each pack
+  shows one darker head.
+- A monster wakes in 0.3 s, darkest parts first: the black, then the
+  hatching, then the line. Going back to rest takes two seconds.
+- A leader is a head taller than its pack and has a notched ridge down its
+  back in ink. It carries no colour. The accent is an elite's alone.
+- The horde's monsters, scouts included, are awake from the moment they
+  appear.
+
+### Brutes and places
+
+A brute and a den are both grey shapes a few tiles wide, and a brute drawn
+as a slab with a dark cap is read as a den or a standing stone. These keep
+them apart.
+
+- **A brute stands on legs.** Ground and its own shadow show under its
+  belly, between forelimbs that reach the ground. A den, a crag and a heap
+  sit on the ground with nothing under them.
+- **It is widest at the shoulder** and narrower at the feet. A mound is
+  widest at its foot.
+- **It is taller than it is wide**, or as tall. A den is no taller than
+  two thirds of its width.
+- **Its head is carried forward of its body**, low, with a jaw and two eyes
+  that show against the ground. It is never drawn square-on, and its spine
+  leans 15 degrees or more.
+- **Its black is on top**: the mane and the forearms. It has no round or
+  arched black shape inside its outline. An arch of black with eyes in it
+  is a den's mouth and nothing else.
+- **It has company.** A brute leads a pack or has fodder at its feet, and
+  they lie round what it guards. A den has a letter and a level under its
+  mouth (section 11), an earth wash and growth on top. A brute has grey
+  and nothing lettered.
+
 ### Packs and swarms
 
 A landing is full of monsters, and they are in groups.
 
-- **Fodder is a swarm** of 12 to 50, drawn as one crawling shape wider than
+- **Fodder is a swarm** of 10 to 50, drawn as one crawling shape wider than
   the citizen it is after. It flows round what is in its way and closes as
   one mass.
 - **Pack monsters come in packs** of three to six with a leader a head
   taller than the rest. A brute has fodder round its feet. A den's elite has
   its pack at the mouth.
+- **Two packs never touch.** There are two tiles or more of open ground
+  between one pack at rest and the next.
 - **Every pocket has its pack** (section 8), and more packs walk the ground
   between pockets. On a landing with everyone out, a viewer at 640 sees
   monsters on every side of the city before seeing any single one.
@@ -429,6 +552,9 @@ above, by the lean of section 4, with its deck open to the viewer. It is not
 drawn side-on in any frame. The close-up in transit and the city on a landing
 are the same drawing at two sizes.
 
+The numbers in this list are the mid-sized city's, which is the one the
+slice draws. Growth, below, has the other sizes.
+
 - **Hull.** Long and plated, pointed at the prow and blunt at the stern, 15
   tiles by 6. Its near side shows below the deck's rim: riveted plate in
   heavy contour with close hatching, a strake of oxide red (`#a8644a`) under
@@ -444,7 +570,10 @@ are the same drawing at two sizes.
   along from its middle. Near-side legs are in heavy contour and
   cross in front of the deck's edge. Far-side legs are in contour weight
   with a 55% wash and are drawn before the hull, so the pairs separate. A
-  foot plate lies on the ground at 0.8 with its own shadow.
+  foot plate lies on the ground at 0.8 with its own shadow. A leg is the
+  largest part of the close-up after the hull and is drawn as machinery:
+  plate seams, rivets, a piston at the knee, and hatching down its shade
+  side.
 - **The lantern mast.** It stands three and a half tiles high from the middle
   of the deck and its head is the highest thing on the plate, with the
   lantern there, a crow's nest below it and stays to the deck's corners in
@@ -464,12 +593,13 @@ are the same drawing at two sizes.
 - The city stands inside the map (section 4) with its legs planted wide.
   With them it covers about 20 tiles by 14. The ground under the hull and
   between the feet is still map: citizens walk out between the legs.
-- Its hull is a third of the frame's width on a small landing, a quarter on
-  a medium one and a sixth on a large one.
+- Its hull is between a quarter and a seventh of the frame's width, by the
+  city's size (Growth, below).
 - Parked, the belly is half a tile off the ground. Its shadow under the hull
   is what lifts it off the map.
-- Citizens aboard stand on the open deck at the landing's figure size and are
-  named like anyone else. Those at the rail shoot outward in any direction.
+- Citizens aboard stand on the open deck at the landing's figure size, and
+  are named as section 11 has it. Those at the rail shoot outward in any
+  direction.
 - A citizen behind the hull or a leg is drawn as an outline (section 4).
 
 ### Districts
@@ -492,6 +622,98 @@ recolour, a number or a badge.
   pennants, then carved and painted work.
 - Damage and upkeep show the same way in reverse: missing planks, patched
   plate, a leg that drags, soot.
+
+### Growth
+
+The city grows over many hours of play and its landings grow with it. The
+frame does not grow, so growth is read from the figure: a bigger city is
+drawn at about the same width on a landing, is built of more parts, and has
+smaller citizens on it and more ground round it.
+
+These are the steps to draw toward. #413 fixes how many sizes there are and
+their tile counts; where its table differs, the columns here follow from it
+by the rules under the table. The slice draws the mid row. The last two
+rows are limits. Nothing is built to them before a still mockup of each, at
+1920 and 640, has been looked at.
+
+| Step    | Hull, tiles | Legs | Planted, tiles | Landing, tiles | Px a tile, landed | Citizen, landed | Hull, of the frame's width | City, of the map | Px a tile, transit |
+| ------- | ----------- | ---: | -------------- | -------------- | ----------------: | --------------: | -------------------------: | ---------------: | -----------------: |
+| First   | 10 by 4     |    6 | 14 by 9        | 40 by 22       |                47 |           76 px |                        25% |              14% |                100 |
+| Second  | 12 by 5     |    6 | 16 by 12       | 60 by 33       |                31 |           58 px |                        20% |              10% |                 88 |
+| Mid     | 15 by 6     |    8 | 20 by 14       | 80 by 45       |                23 |           46 px |                        18% |               8% |                 66 |
+| Late    | 18 by 7     |   10 | 25 by 16       | 108 by 60      |                17 |           42 px |                        16% |               6% |                 56 |
+| Largest | 21 by 8     |   12 | 29 by 19       | 136 by 76      |                14 |           40 px |                        15% |               5% |                 48 |
+
+- **The whole landing is in frame** from the reveal until the march
+  (section 12), so the landed camera is 1880 px over the landing's width, or
+  1040 over its height if that is less.
+- **In transit** the planted span is about 1,400 px wide whatever the city's
+  size. A citizen's height comes from the camera at both ends (section 5).
+- **The city's share of the map falls** as both grow, from about a seventh
+  to about a twentieth, and its hull from a quarter of the frame's width to
+  a seventh. It does not fall further: under a seventh the deck's rooms
+  cannot be told apart on a landing.
+- **A deck holds two citizens a tile** at most: 80, 120, 180, 252 and 336
+  on the five hulls. A roster larger than that needs the next hull.
+- **Each step is a different drawing**, and between steps upgrades add its
+  parts one at a time, so the city is never redrawn whole between two
+  landings.
+
+| Step    | Mast, tiles            | What the drawing has                                                                                              |
+| ------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| First   | 2.5                    | Timber and rope. Engine, open deck with the bench, galley, wheel. One gun post at the prow.                       |
+| Second  | 3                      | Iron banding. Adds the forge and the bunks, and a gun post aft.                                                   |
+| Mid     | 3.5                    | Brass fittings. Engine room, forge, bunks, open deck, galley, chart room, wheelhouse, two gun posts, crow's nest. |
+| Late    | 4.5, and a lesser mast | A deck raised one step (0.8 of a tile) at the stern, a second stack, gun posts along both sides.                  |
+| Largest | 5.5, and two lesser    | Raised decks fore and aft, carved and painted work, pennants on the stays.                                        |
+
+A raised deck has no roof and is set back from the rail, so the deck below
+shows on its near side. A citizen behind its step is drawn as an outline
+(section 4).
+
+Places and monsters keep their size against a citizen at every step, so
+they are given in citizens (sections 6 and 8). Lettering and line weights
+are in pixels and do not change. Effects are sized against a citizen
+(section 10).
+
+### The shield
+
+The city has a shield, and the horde has to break it before it can reach
+the hull. The simulation gives its shape and its strength (#413). It is
+drawn with the pen like everything else: no glow, no blur and no dome of
+light.
+
+- **Its foot** is one closed curve on the ground round the city, four to
+  five tiles clear of the planted feet: about 30 tiles by 22 for the mid
+  city. On the first size of landing it is two tiles clear. It is in plan,
+  with bends no tighter than two tiles. The ramp's foot is inside it.
+- **Its bands.** The shield is drawn as bands in the lamp accent
+  (`#f6cf6a`) that follow the foot on its outer side, each at heavy weight
+  with a gap of its own width before the next. A shield has two bands
+  before any upgrade and up to five when fully built, so a better shield is
+  a thicker edge.
+- **Its strength** is how many bands there are and how whole the outermost
+  one is. Each band stands for an equal share of the strength. The
+  outermost loses length as that share goes, in gaps that open where the
+  horde is striking, and when it is all gaps it is gone and the next band
+  starts to break. No bar, and no number on the map: the number is in the
+  corner (section 11).
+- **Before the march** the bands are not drawn. From the march on they are
+  drawn at full, so a viewer sees what the horde is walking toward.
+- **Inside it** the ground keeps its day colours under lamplight's three
+  flat steps (section 3), centred on the lantern. This is the lightest
+  large shape on the plate during the siege.
+- **A blow on it** is a contact burst in the accent, thrown inward, and a
+  gap in the outermost band at that place. A band that goes breaks into
+  drops along its whole length in the same frame and they fall inward.
+- **The pile shows its shape.** The horde heaps up against the shield
+  (section 3). On the far side and at the two ends the heap climbs to two
+  and a half tiles and leans in over the bands, which is what makes the
+  shield read as a bubble. On the near side it stays under one tile, so no
+  citizen at the near edge is covered.
+- **The break.** With the last band gone the heap falls inward as one held
+  drawing and the black follows it across the foot. Nothing of the shield
+  is drawn after that.
 
 ### Movement
 
@@ -519,13 +741,20 @@ first set of biomes.
   into pockets, with gaps, fords and worn paths between them. Each pocket
   has one thing to take that can be seen from the city (a den, a chest, a
   heap of scrap, a seam, a wreck) and a pack that holds it (section 6). A
-  medium landing has twelve pockets or more besides the city's own ground,
-  on every side of it. A pocket with nothing in it is a mistake unless it is
+  landing has about one pocket for every 140 tiles besides the city's own
+  ground, on every side of it: 6 on a landing of 40 by 22, 14 on 60 by 33
+  and 26 on 80 by 45. A pocket with nothing in it is a mistake unless it is
   only a way through.
+- **A pocket has edges a viewer can see.** Each is bounded on two sides or
+  more by a wood, a crag, the river or the map's edge, and at 640 a viewer
+  can point to where one pocket stops and the next starts. Packs spread
+  over open ground with no masses between them are not pockets.
 - **Places stand out from scenery.** What can be taken or fought is drawn
-  larger and with more contour than what is only terrain: a den's mound is
-  four to five tiles wide, a chest sits on a rise with its lid showing, a
-  scrap heap is three tiles wide. A viewer at 640 can count the dens.
+  larger and with more contour than what is only terrain. Sizes are against
+  a citizen, so they hold at every size of landing: a den's mound is two to
+  two and a half citizens wide and no taller than two thirds of its width,
+  a chest sits on a rise with its lid showing, a scrap heap is one and a
+  half citizens wide. A viewer at 640 can count the dens.
 - **Edges are curves.** Banks, coasts, treelines and cliff lines are fitted
   through the tile data with bends no tighter than two tiles. A staircase of
   tile edges is a hard miss at sign-off.
@@ -548,8 +777,8 @@ first set of biomes.
 - **Paths are worn ground**: a pale band with broken hair-line edges and a
   few stones. Not rows of circles.
 - **The land is not named.** No river, wood or hill carries lettering. A den
-  is lettered `den` and its level, and nothing else on the ground has a
-  label (section 11).
+  is lettered `den`, its letter and its level (`den A 28`), and nothing
+  else on the ground has a label (section 11).
 
 ### First biomes
 
@@ -629,10 +858,16 @@ soft-edged particle, no drop shadow.
   with a curved edge where the blow has one.
 - **How much of it.** A fight is read at 640 by what is in the air round it.
   Where a citizen is fighting, a still shows at least one of: a swing's
-  stroke, a shot in flight, a body thrown, a burst of drops. A swing's stroke
-  is as long as its weapon reaches, two tiles at least, and 12 px wide at its
-  wet end.
-- **Arrows and spears.** A shaft at contour weight most of a tile long, with
+  stroke, a shot in flight, a body thrown, a burst of drops.
+- **Sized against the figure.** Tiles get small as a landing grows
+  (section 7), so on a landing an effect's size comes from the citizen's
+  height. A swing's stroke is two and a half citizens long at least and
+  14 px wide at its wet end: 115 px long at the mid city's size. A contact
+  burst is a citizen's height across. An elite's telegraph is two and a
+  half citizens wide. What a blow covers in the simulation is still shown
+  true: a stroke may be longer than its reach, and the bodies it throws are
+  the ones it hit.
+- **Arrows and spears.** A shaft at contour weight half a citizen long, with
   a streak behind it three times its length and 6 px wide, in the shooter's
   cloak colour. On a hit it stays in the target for a moment.
 - **Sling stones.** An 8 px dot on a visible arc with its shadow running
@@ -668,13 +903,18 @@ soft-edged particle, no drop shadow.
   near size and is not drawn at far size. A citizen carrying an unopened rare
   or unique has a pennant in that colour on its bundle.
 - **Numbers.** One number a blow: the damage it did to everything it hit,
-  added up. It is lettered in roman at full ink with a paper halo, at 30 px,
-  or 36 px for a blow that kills something bigger than fodder, held for
-  half a second and gone in a fifth. A crit is 48 px italic in the red-brown
-  with a stroke under it. The largest blow in frame may be set at 72 px,
-  one at a time. A number rises along its blow and never covers a citizen's
-  head or a name tag. At most 24 are in frame; past that the smallest are
-  left out first, and a crit never is.
+  added up. It is lettered in roman at full ink, at 30 px, or 36 px for a
+  blow that kills something bigger than fodder, held for half a second and
+  gone in a fifth. A crit is 48 px italic in the red-brown with a stroke
+  under it. The largest blow in frame may be set at 72 px, one at a time.
+  In each fight the largest number of the last second is set at 36 px at
+  least, so every fight has one number that is read at 640 (section 11). A
+  number's paper halo is 5 px wide all round, so the halos of its digits
+  join into one paper shape that knocks out what is under it. Over the
+  horde's black a number is in paper colour with no halo. A number rises
+  along its blow and never covers a citizen's head or a name tag. At most
+  24 are in frame; past that the smallest are left out first, and a crit
+  never is.
 - **Hitpoints.** On a body they are shown by the drawing where possible (a
   stoop, a torn hem, thinned hatching). Where a measure is needed it is an
   arc of ink strokes at the feet, never a filled bar.
@@ -692,8 +932,8 @@ These, and nothing else:
 - usernames, as typed and whole, from 3 to 25 characters;
 - numbers;
 - item names, as the game generates them;
-- plain game nouns used as labels: `den`, `landing`, `lift-off`, `packs`,
-  `rares`, `down`, a landing's size;
+- plain game nouns used as labels: `den` with its letter, `landing`,
+  `lift-off`, `shield`, `packs`, `rares`, `down`, a landing's size;
 - icons drawn with the pen, each with a number beside it.
 
 ### What is not
@@ -717,8 +957,15 @@ number, an item or a label a player already knows.
 - **The face** is IM Fell English, in roman. Italic is for a crit's number
   only. An item's name is set in its rarity's colour, darkened until it
   holds 4.5:1 against the paper.
-- **Sizes** come from one scale: 24, 30, 36, 48, 72. Nothing that carries
-  information is set under 24 px, which is 8 px at 640.
+- **Sizes** come from one scale: 24, 30, 36, 48, 72. Nothing is set under
+  24 px.
+- **What has to be read at 640** is 30 px or more on a corner's slip, and
+  36 px or more on the map, where it has a paper halo 5 px wide that knocks
+  out what is under it. Those are 10 and 12 px at 640. Fell at 24 px is
+  8 px there, with an x-height under 4 px; it reads on a clean slip with
+  effort and does not read over a drawn map. So 24 px is kept for what a viewer at full size needs and a
+  viewer at 640 can do without: the label under the time and a landing's
+  modifiers.
 - **Hierarchy.** The largest thing on the plate is the drawing. In the
   corners the largest lettering is the time left. On the map only a crit and
   the frame's largest blow are set as large or larger.
@@ -732,20 +979,27 @@ paper fill with a frame at form weight and clipped corners, as small as what
 it holds. Together they cover under 6% of the frame. Nothing else on the
 plate is boxed.
 
-| Corner      | Holds                                                                                                                                                                                                                                                                                    |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Upper left  | The clock. A dial 60 px across and the time left at 48 px, with `landing` or `lift-off` under the number at 24 px. The dial's wedge is the time gone, and the stretch from the horn to the lift is hatched. In the last two minutes of a landing the wedge and the number are red-brown. |
-| Upper right | The landing: its size and level range at 30 px (`Medium 23–68`), then its modifiers at 24 px, one a line (`packs ×2`, `rares +40%`). In transit it shows the landing ahead.                                                                                                              |
-| Lower left  | The log: one line at 30 px. A username ruled under in its cloak colour, a gap, then an item name in its rarity's colour or one label (`down`). A new line replaces the last, no sooner than two seconds after it. It keeps no history.                                                   |
-| Lower right | Counts at 30 px, each an icon and a number: citizens out (a cloaked figure), citizens aboard (the hull on its legs), kills (a blot), loot banked (a sack).                                                                                                                               |
+| Corner      | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upper left  | The clock. A dial 60 px across and the time left at 48 px, with `landing` or `lift-off` under the number at 24 px. The dial's wedge is the time gone. During the siege the corner shows the shield: the dial's rim is drawn as the shield's bands, broken as they are on the map, and the number is its strength, with `shield` under it. After the break it is the time to lift-off again, and the wedge and the number are red-brown. |
+| Upper right | The landing: its size and level range at 30 px (`Medium 23–68`), then its modifiers at 24 px, one a line (`packs ×2`, `rares +40%`). In transit it shows the landing ahead.                                                                                                                                                                                                                                                             |
+| Lower left  | The log: one line at 30 px. A username ruled under in its cloak colour, a gap, then an item name in its rarity's colour or one label (`down`). A new line replaces the last, no sooner than two seconds after it. It keeps no history.                                                                                                                                                                                                  |
+| Lower right | Counts at 30 px, each an icon and a number: citizens out (a cloaked figure), citizens aboard (the hull on its legs), kills (a blot), loot banked (a sack).                                                                                                                                                                                                                                                                              |
 
 A card a chatter asks for ([chat.md](chat.md)) is a fifth slip beside the
 log, laid out one fact a line in two columns, under the same rules.
 
 ### On the map
 
-- **Name tags.** A username at 24 px in ink with a paper halo, ruled under
-  in its owner's cloak colour. No banner and no box.
+- **Name tags.** A username in ink with a paper halo 5 px wide, ruled under
+  in its owner's cloak colour. No banner and no box. It is set at 30 px,
+  and at 36 px on a landing while 20 citizens or fewer are out.
+  - **A called tag.** When a chatter's command is accepted or they ask for
+    their citizen ([chat.md](chat.md)), its tag is set at 48 px for six
+    seconds with a ring in its cloak colour round its feet, wherever it is
+    and however many are out. At most six tags are at 48 px at once; a
+    seventh waits at its usual size. This is how a viewer at 640 finds
+    their citizen in a crowd.
   - It sits centred over the hat, 8 px above it. When that spot is taken by
     another tag, a head, a number or a corner, it takes the nearest free
     spot of a fixed set, up to 150 px away, and a hair-line joins it to its
@@ -755,18 +1009,44 @@ log, laid out one fact a line in two columns, under the same rules.
     frame against its owner, so a move of 72 px takes 0.3 s and a longer one
     takes longer.
   - It never lies over another tag, a citizen's head or a damage number.
-  - With 40 citizens or fewer out, every one is named. With more, tags go
-    first to a citizen in the log, one carrying a pennant, one who is down
-    and one fighting a brute, an elite or a boss, then to whoever has gone
-    longest without one. A tag is shown only where it has room, the set
-    changes no faster than every five seconds, and every citizen is named
-    for five seconds in each minute.
-- **Dens** are lettered `den` and their level at 24 px under the mouth. A
-  unique's marker carries its name on a slip (section 10).
+  - With 40 citizens or fewer out, every one is named. With more, at most
+    24 tags are shown at once. They go first to a citizen in the log, one
+    carrying a pennant, one who is down and one fighting a brute, an elite
+    or a boss, then to whoever has gone longest without one. A tag is shown
+    only where it has room, the set changes no faster than every five
+    seconds, and every citizen is named for five seconds in each minute.
+  - Aboard on a landing, the deck is too small for every name. A citizen
+    there is named while it is called, in the log or shooting from the
+    rail or a gun post. The rest take turns, four at a time, changing every
+    five seconds. The count in the lower right says how many are aboard.
+- **Dens** are lettered `den`, a letter and their level (`den A 28`) at
+  36 px under the mouth, with the halo. The letter is what a chatter types
+  to send a citizen there. A unique's marker carries its name on a slip
+  (section 10).
 - **Routes and intentions** are drawn as an engraver marks a march: a
   hair-line of dashes in ink along the curved path, with only the end cross
   in the walker's colour.
 - Damage numbers are section 10's. Nothing else is lettered on the map.
+
+### What a viewer at 640 gets
+
+A stream in a 640-wide window, or on a phone held upright, shows a third of
+these sizes. This is what such a viewer has, and a frame is checked against
+it.
+
+- **Read:** the time and its dial, the log line, the counts, the landing's
+  size and levels, every number of 36 px or more, a called tag, a den's
+  letter and level, and each name tag while 20 or fewer are out.
+- **Read with effort, and not relied on:** tags at 30 px, numbers at 30 px,
+  the corners' 24 px lines.
+- **Seen and not read:** the city; the black and how far it has come; the
+  shield's bands; each fight as a knot of colour and black on pale ground
+  with a stroke and one number over it; packs at rest as pale patches;
+  dens as earth mounds; chests; a rare's or a unique's pole by its colour;
+  each citizen as a spot of its own colour.
+- **So:** with more than 20 out, a viewer at 640 finds their citizen by
+  typing, which calls its tag. Nothing a viewer needs in order to play is
+  lettered at a size from the second or third line of this list alone.
 
 ## 12. The zoom between city and landing
 
@@ -775,13 +1055,15 @@ ends. It is the shot that sells the game, and it happens two or three times
 an hour.
 
 - **In transit** the city with its legs fills about three quarters of the
-  frame's width, at about 66 px a tile. The middle of its deck sits a little
-  above the frame's middle, so the lantern and all eight feet are inside the
-  rule. The land slides under it in plan, the opposite way to its walk.
+  frame's width: 66 px a tile for the mid city (section 7 has the others).
+  The middle of its deck sits a little above the frame's middle, so the
+  lantern and every foot are inside the rule and clear of the corners'
+  slips. The land slides under it in plan, the opposite way to its walk.
   Every citizen aboard is at near or mid size.
 - **Landed** the city stands inside the map (section 4), with ground and
-  pockets on every side. Its hull is a third of the frame's width on a small
-  landing, a quarter on a medium one and a sixth on a large one.
+  pockets on every side, and the frame holds the whole landing. Its hull is
+  a quarter to a seventh of the frame's width, by the city's size
+  (section 7).
 - **The move** takes 6 to 8 seconds, eased at both ends, with no cut and no
   cross-fade of the whole frame. The lantern mast is the anchor: it travels
   on one smooth curve from where it is in the close-up to where it is on the
@@ -790,11 +1072,22 @@ an hour.
 - **The land is drawn as it is revealed.** Pulling back, the ground's
   contours are inked outward from the city in every direction, just inside
   the edge of the frame as it widens. Washes flood in half a second behind
-  the line. Standing things and packs rise in order of distance, and the
-  black at the rim comes last. A viewer watches the map being drawn.
-- **Leaving** runs it backward and shorter, in about 4 seconds: washes drain
-  toward the city, lines hold a moment and lift, and the close-up closes on
-  the city as the horde's black reaches the ground it stood on.
+  the line. Standing things rise in order of distance, and packs with them,
+  drawn at rest (section 6). No black comes with it: a landing begins in
+  peace, and its edge is where the drawing stops (section 3). A viewer
+  watches the map being drawn.
+- **The frame closes with the horde.** From the march on, the frame holds
+  the ground the horde has not taken, with five tiles of the horde beyond
+  it above and below, and every citizen who is still out. It closes as that
+  ground shrinks, eased, at no more than half a tile a second, and it never
+  cuts. It stops when it holds the shield with those five tiles: 32 px a
+  tile for the mid city, where a citizen is 59 px. On the first size of
+  landing that is no closer than the whole landing, and the frame does not
+  move. So the siege is seen nearer than the expedition, and the horde is
+  never more than about 70% of a frame.
+- **Leaving** runs the reveal backward and shorter, in about 4 seconds from
+  wherever the frame is: the close-up closes on the city as the horde's
+  black reaches the ground it stood on.
 - **During the move** line weights hold, figures change size by adding or
   dropping parts (section 5), lettering fades out at the start and in at the
   end at its proper size and is never scaled, and no more than 5% of the
@@ -819,10 +1112,11 @@ Hard:
 3. Fills are wash, spot black or paper. No gradient or soft edge outside
    lamplight's three steps.
 4. It reads at 640: the full frame shrunk to 640 wide still shows what the
-   change is for, and lettering that carries information is 8 px or more
-   there.
+   change is for, and lettering that has to be read there is 10 px or more
+   on a slip and 12 px or more on the map (section 11).
 5. The palette rules hold: citizens own saturated colour, and the darkest
-   tenth of the frame is the city, monsters and lettering.
+   tenth of the frame is the city, the horde or monsters that are awake,
+   and lettering. Packs at rest are drawn at rest (section 6).
 6. Lettering keeps to section 11: only what may be lettered, in the four
    corners and on the map as that section has it.
 7. No edge follows the tile grid in steps.
@@ -833,17 +1127,21 @@ Hard:
 
 Soft:
 
-10. The silhouette test passes for any new body, at 12 px in solid black.
+10. The silhouette test passes for any new body, at 12 px in solid black,
+    and no brute or elite can be taken for a den, a crag or a heap.
 11. A new state has a pose, and a new blow has all its beats: coil, contact,
     hit-stop, follow-through.
 12. Variation: no stamp repeated with only its size changed, and no crowd in
     step or in a grid.
 13. Ink behaves as ink: thrown along the blow, wet then spreading then dry.
 14. Night is drawn in masses with rims toward the lantern.
-15. The frame has one focus, and a squint finds it.
+15. The frame has one lead and every fight in it has a focus (section 4),
+    and a squint finds them.
 16. The capture was looked at in day and night, at 1920 and at 640.
 17. Monsters are in packs and swarms, every pocket in frame has one, and
     none stands idle facing nothing (section 6).
+18. A third of a landing's ground is quiet, and its pockets have edges a
+    viewer at 640 can point to (sections 4 and 8).
 
 ### What meets this today
 
