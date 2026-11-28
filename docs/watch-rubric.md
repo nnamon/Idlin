@@ -2,7 +2,10 @@
 
 Tests can't tell you whether a stream is worth watching. So it is judged from
 captures of the running game, by a judge who didn't build the change, using
-the rubric below.
+the rubric below. On a `look` pull request the judge is the art director, in
+its one look pass (step 7 of [process/cycle.md](../process/cycle.md)). The
+daily playtest and a milestone's closing review are judged by a watch judge
+that knows nothing of the changes.
 
 Every duration on this page is stream time: seconds and minutes as a viewer
 experiences them, not game-clock time.
@@ -155,11 +158,14 @@ that seat would notice and complain about, in or out of the change's scope.
 ## The playtest
 
 The daily digest's watch review is a playtest of `main`: the same seat, at 15
-residents, with no baseline and no scores to fill in. The judge goes through
-the whole capture and writes down what a player who owns one of the 15 would
-complain about, one line each with the frame it shows in, worst first.
-Nothing is too small or out of scope for it. [process/daily.md](../process/daily.md)
-says where the list goes.
+residents, with no scores to fill in. Its baseline is the last playtest's
+capture, usually the previous day's, and the judge says whether today's is
+better, the same or worse, with the reason and the frames. It is told nothing
+about what merged in between, so it is the one blind check of whether the
+game got worse. It then goes through the whole capture and writes down what a
+player who owns one of the 15 would complain about, one line each with the
+frame it shows in, worst first. Nothing is too small or out of scope for it.
+[process/daily.md](../process/daily.md) says where the list goes.
 
 ## What applies when
 
@@ -176,19 +182,22 @@ A check applies once the thing it measures exists.
 ## The judge
 
 - A fresh Mythos 5.2 agent (if Mythos cannot be reached, Codex `gpt-6.2-sol`
-  or a fresh Opus 5.5 at effort `high`) with no knowledge of the change, which
-  did not build it. It gets the captures, the metrics, this page and the
-  number of the pull request to post its verdict on, nothing else; it does not
-  read that pull request or its issue.
+  or a fresh Opus 5.5 at effort `high`) that did not build what it judges.
+  The watch judge gets the captures, the metrics and this page, and nothing
+  about the changes. The art director, judging a pull request, also has the
+  issue and its own brief.
 - Every claim must point at a frame ("storyboard frame 7: three characters
   overlap the lantern and none can be read") or at a metric.
-- It returns the scores, any hard fail, the absolute verdict (three yes or no
-  answers), and the fix-now findings: every "no" and anything else a player
-  would notice, ranked by how much they hurt the watching experience.
-- For a pull request it gets the baseline capture too, and must say whether the
-  change is better, the same or worse, and where, beside the absolute verdict.
-  It posts both on the pull request itself, signed `[watch judge] <model>`,
-  without reading the pull request or its issue.
+- It returns any hard fail, the absolute verdict (three yes or no answers),
+  and the fix-now findings: every "no" and anything else a player would
+  notice, ranked by how much they hurt the watching experience. A milestone's
+  closing review also gives the scores.
+- For a pull request the art director gets the baseline capture too, and must
+  say whether the change is better, the same or worse, and where, beside the
+  absolute verdict. It also says how close the change comes to the look
+  target on [#362](https://github.com/nnamon/Idlin/issues/362) for what the
+  target shows. All of it goes in its look pass on the pull request, signed
+  `[art director] <model>`.
 - A milestone's closing review adds a second judge from another model family
   (Codex `gpt-6.2-sol`). For each dimension the lower of the two scores
   stands, and a hard fail from either stands. If Codex already judged because
@@ -199,8 +208,8 @@ A check applies once the thing it measures exists.
 
 - A pull request that changes what is on screen merges only with no hard fail,
   no "worse" verdict, and, unless it closes one of them, no open fix-now issue
-  that judges have raised twice or more, on any pull request or playtest. The conductor checks the last of
-  these, since the judge does not read the tracker.
+  that has been raised twice or more, on any pull request or playtest. The
+  conductor checks the last of these against the tracker.
 - Fix-now findings become issues labelled `watch`, unless an open one already
   covers them, and go ahead of polish and new features. A finding raised
   again is a comment on its issue, so the count is kept there. Other findings

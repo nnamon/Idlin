@@ -3,9 +3,11 @@
 One cycle takes one issue as far as it can, ideally to merged. A builder child
 does the work in its own worktree: building and opening the pull request
 (steps 4 and 5), fixing review findings and conflicts, taking the captures for
-a watch judgement (step 7), and squashing its branch before the merge (the
-first block of step 8). The conductor does everything else and does not
-build. The conductor keeps up to three cycles going at once, one per
+the look pass (step 7), and squashing its branch before the merge (the
+first block of step 8). The conductor does everything else. Its only edits
+to a branch are applying a reviewer's `suggestion` blocks (step 6) and
+re-squashing or rebasing a branch for merge (step 8); it builds nothing
+else. The conductor keeps up to three cycles going at once, one per
 builder, and starts a new one as soon as a builder finishes. The "Idlin work
 cycle" schedule does the conductor's job too, if nobody else holds the lock.
 All state is in the repo and the tracker, so a cycle can start knowing nothing
@@ -112,11 +114,23 @@ with its Area.
 
 ## 3. Brief
 
+Before anything else, read the issue against the operator's picture in
+section 1 of `AGENTS.md`. If it drifts from the picture, rewrite the issue
+first and say why in a comment.
+
 A `look` issue needs the art director's brief before a builder is started on
-it. If the issue has no comment signed `[art director]`, start the art
-director first: a Mythos 5.2 child (`delegate_task`, role `design`, effort
+it. If the issue sets a new look direction, or one that `docs/art.md` and the
+look target on #362 leave open, it needs mockups before the brief. A builder
+at effort `medium` makes three or four stills by hacking the look target's
+lookdev scenes in its own worktree, with no tests and no pull request, and
+reports the image files. The art director picks one in a comment on the
+issue, and its brief follows from that pick. The operator is not asked to
+choose.
+
+If the issue has no comment signed `[art director]`, start the art
+director: a Mythos 5.2 child (`delegate_task`, role `design`, effort
 `medium`, no worktree: it only reads) with the issue number, `docs/art.md`,
-and the newest capture folders. It posts the brief on the issue
+the look target on #362, and the newest capture folders. It posts the brief on the issue
 (`gh issue comment <N> -R nnamon/Idlin --body-file -`), signed
 `[art director] <model>`, and reports the comment's URL. A brief says:
 
@@ -135,17 +149,20 @@ or judges. If Mythos cannot be reached, Codex `gpt-6.2-sol` or a fresh Opus
 5.5 child at effort `high` writes the brief from `docs/art.md`; if none can
 be reached, the issue waits and the slot takes other work.
 
-Start the builder: one `delegate_task` child on Opus 5.5 (effort `medium`)
-with `isolation: "worktree"`. Its brief gives the issue number, the docs to
+Start the builder: one `delegate_task` child on Opus 5.5 with
+`isolation: "worktree"`, at effort `high` for hard simulation or renderer
+work and `medium` for everything else, as the table in section 2 of
+`AGENTS.md` says. The builder's brief gives the issue number, the docs to
 read (`docs/art.md` and the art brief for a `look` issue), the files the
-change is likely to touch, what the other running builders are working on (so
-it stays out of
-their files), and steps 4 and 5 of this procedure, plus step 7 for a `look`
-issue. It reports the pull request URL and head
-commit. The builder does not push to `main`.
+change is likely to touch, what the other running builders are working on
+(so it stays out of their files), and steps 4 and 5 of this procedure, plus
+step 7 for a `look` issue. A brief for hard work also names the engineering
+approach. Every brief asks for the design note of step 4 before any code.
+The builder reports the pull request URL and head commit. It does not push
+to `main`.
 
 A builder's task ends when it reports, so a pull request waiting for review,
-a judgement or the merge holds no builder slot. Later work on it (review
+a look pass or the merge holds no builder slot. Later work on it (review
 fixes, conflicts, captures, the squash) goes to a new builder started on the
 branch, which takes a slot while it works and ends when it reports.
 
@@ -159,10 +176,9 @@ git worktree list                     # every line whose branch is [<branch>], [
 git worktree remove --force <path>    # each such line's path; only a builder's worktree, never the shared checkout
 ```
 
-A builder's worktree that holds capture folders for a watch judgement (step
-7) is kept until both the judge's verdict and the art director's sign-off are
-posted, and the removal above skips it until then. The judge and the art
-director read the folders from there.
+A builder's worktree that holds capture folders for a look pass (step 7) is
+kept until the art director has posted it, and the removal above skips it
+until then. The art director reads the folders from there.
 
 The new builder still never checks out `<branch>` itself, in case a worktree
 holding it was missed. It works on a local branch of another name made from
@@ -190,6 +206,12 @@ builder: on the existing branch if it has commits, or from a clean
 - Read the issue and all its comments (`gh issue view <N> --comments`), since
   scope often changes there. Comment `[builder] starting: ` and the plan in
   two lines, and set the board Status to In progress.
+- Before writing code, post a design note on the issue, starting
+  `[builder] design note:`. It says how the change will be built (the
+  approach, and the choice made where the brief left one open), the files
+  and data it touches, and what it leaves out. For a small change the
+  starting comment's two lines can be the note. For hard work it follows the
+  approach the brief named, and says so where it has to depart from it.
 - While building, comment on the issue when you make a decision the next
   person would want to know: a choice between two designs, something left
   out, a surprise in the code.
@@ -239,11 +261,11 @@ left alone; if `main` moves under it, step 8 says what happens.
 
 Start the reviewer (`delegate_task`, role `review`, `isolation: "worktree"`
 so that it never switches the shared checkout) with this brief, filled in. The
-reviewer is a fresh Opus 5.5 child (effort `medium` or higher) that did not
-build the change by default, or Codex `gpt-6.2-sol` (reasoning effort `high`)
-while its usage limits allow. For a change that is hard to get right
-(concurrency, data safety, the simulation's determinism, a large change) the
-conductor picks Mythos 5.2 and says so in the brief.
+reviewer is a fresh child that did not build the change: Opus 5.5 at effort
+`medium` for docs and ordinary code, or Codex `gpt-6.2-sol` (reasoning
+effort `high`) while its usage limits allow. For a change to determinism or
+saving, or a large simulation change, the conductor picks Mythos 5.2 and
+says so in the brief. This review is the pull request's one code gate.
 
 > You are reviewing pull request #P in this repository. Your job is to refute
 > the claim that the change is correct, complete and well made. Read
@@ -311,7 +333,31 @@ gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thre
   thread { isResolved } } }'
 ```
 
-The comment id is the `databaseId` of the thread's first comment. After the fix the pull request goes on to merge without
+The comment id is the `databaseId` of the thread's first comment.
+
+When every blocking finding comes with a `suggestion` block that fixes it,
+the conductor may apply the blocks itself instead of starting a builder. It
+applies them exactly as written, in a worktree of its own, never the shared
+checkout, and changes nothing else. If a suggestion does not apply cleanly,
+or the fix needs more than the blocks, it goes to a builder as above.
+
+```sh
+git fetch origin
+git worktree add "$TMP/fix" origin/<branch> --detach   # TMP: a fresh temporary directory
+cd "$TMP/fix"
+# apply each suggestion block to its file and lines
+docker compose run --rm dev pnpm install --frozen-lockfile   # a fresh worktree has no node_modules
+docker compose run --rm dev pnpm gate               # must pass before anything is pushed
+TZ=UTC git commit -am "Apply review suggestions"
+git push origin HEAD:<branch>                       # an ordinary push, never --force
+```
+
+It then replies to and resolves each thread as a builder would, signed
+`[conductor]`, and runs the first block of step 8 in the same worktree with
+that commit as the reviewed head, so the squash needs no builder either. It
+removes the worktree once the squashed commit is pushed.
+
+After the fix the pull request goes on to merge without
 another full review, unless the fix itself was large or risky; then start a
 new review of the fix. If the same kind of finding keeps returning, have the
 cause fixed in one place.
@@ -326,7 +372,7 @@ happening in its thread: no message, no command run) is stopped with
 `task_cancel`, and the review goes to another of the three with the same
 brief. When all three have stalled or are out, no reviewer is reachable.
 
-## 7. Watch judge (visible changes)
+## 7. Look pass (visible changes)
 
 The builder takes both captures with the same seed, one at a time and each
 after the check in section 1 of `AGENTS.md`. The branch capture comes from its
@@ -349,30 +395,47 @@ docker compose run --rm capture captures/branch --review --baseline captures/bas
 
 The builder reports the two capture folders, `captures/base` and
 `captures/branch` in its worktree, to the conductor. That worktree stays until
-the judge's verdict is posted (step 3).
+the look pass is posted (step 3).
 
-The conductor starts the judge (`delegate_task`, role `review`, Mythos 5.2 at
-effort `medium`; if Mythos cannot be reached, Codex `gpt-6.2-sol` or a fresh
-Opus 5.5 child at effort `high`; no worktree, since it reads the capture
-folders, which are not committed) with the two capture folders and
-`docs/watch-rubric.md`, the number of the pull request to post on, and nothing about
-what the change was meant to do. The judge does not open that pull request, its
-diff or its issue; it only posts its verdict there. A
-judge with no activity for 60 minutes is stopped with `task_cancel` and the
-judgement goes to the next of those with the same folders; when all three
-have stalled or are out, no judge is reachable.
-The judge posts its verdict on the pull request itself, as a comment signed
-`[watch judge] <model>` (`gh pr comment <P> -R nnamon/Idlin --body-file -`), and reports the
-comment's URL. The judge looks
-once per pull request. Its verdict has two parts: the comparison with `main`
-(better, the same or worse) and the absolute verdict from the seat of a
-viewer who owns one resident among 15 (find, follow, stay: yes or no each),
-as `docs/watch-rubric.md` describes. A hard fail or a "worse" verdict sends
-the change back to a builder (step 4), and the judge looks again only at the
-fixed capture.
+The conductor starts the art director (`delegate_task`, role `design`,
+Mythos 5.2 at effort `medium`; if Mythos cannot be reached, Codex
+`gpt-6.2-sol` or a fresh Opus 5.5 child at effort `high`; no worktree, since
+it reads the capture folders, which are not committed) with the two capture
+folders, `docs/watch-rubric.md`, `docs/art.md`, the issue number and the pull
+request number. It reads the issue and its own brief there. It need not read
+the diff. An art director with no activity for 60 minutes is stopped with
+`task_cancel` and the pass goes to the next of those with the same folders;
+when all three have stalled or are out, no art director is reachable.
+
+It looks once per pull request and posts one comment on it
+(`gh pr comment <P> -R nnamon/Idlin --body-file -`), signed
+`[art director] <model>`, and reports the comment's URL. It opens the
+branch's frames at full size and at 640 wide, by day and at night, and the
+comment gives, in this order:
+
+- any hard fail from `docs/watch-rubric.md`;
+- the comparison with `main`: better, the same or worse, and where;
+- the comparison with the look target on #362: for what the change draws
+  that the target shows, how close it comes, and where it falls short;
+- the absolute verdict from the seat of a viewer who owns one resident among
+  15 (find, follow, stay: yes or no each, with the frames), and the fix-now
+  findings, as `docs/watch-rubric.md` describes;
+- each hard item of the checklist in section 13 of `docs/art.md` as met or
+  missed, a miss with the frame and the place in it;
+- the soft items it found missed, at most five, ranked by how much each hurts
+  the picture;
+- a last line of `ART-OK` or `ART-REDO`.
+
+`ART-REDO` is only for a hard item missed in what the issue set out to draw.
+Something rough that the change did not touch is not a reason; the art
+director files it as its own `look` issue. A hard fail, a "worse" verdict or
+an `ART-REDO` sends the change back to a builder (step 4) once, and the art
+director looks again only at the fixed capture. Soft misses and anything else
+it noticed become `look` issues, filed by the art director with the frame
+they were seen in and added to the board by the conductor.
 
 The conductor files each fix-now finding (every "no", and anything else the
-judge lists as fix-now, in the change's scope or not) as a `watch` issue
+look pass lists as fix-now, in the change's scope or not) as a `watch` issue
 whose body links the verdict. When an open issue already covers a finding,
 it comments on that issue instead, starting `[conductor] raised again:` and
 linking the verdict. These issues go ahead of polish and new features in the
@@ -387,40 +450,12 @@ gh issue list --label watch --state open --limit 1000 --json number,title,commen
         | "\(.number) \(.title)"'
 ```
 
-Anything else the judge finds becomes a follow-up issue and does not hold
-the merge. The conductor takes no captures for a judgement; it only runs the
-daily one in `process/daily.md`.
+Anything else the look pass finds becomes a follow-up issue and does not
+hold the merge. The conductor takes no captures for a look pass; it only
+runs the daily one in `process/daily.md`.
 
 Which checks apply depends on what exists so far; see "What applies when" in
 `docs/watch-rubric.md`.
-
-### Art sign-off
-
-Alongside the judge, the conductor starts the art director (`delegate_task`,
-role `design`, Mythos 5.2 at effort `medium`, with the same fallbacks and the
-same 60-minute limit as the judge; no worktree) with the two capture folders,
-the issue number and the pull request number. Unlike the judge, it reads the
-issue and its own brief there. It need not read the diff. It must be a
-different child from the one judging this pull request.
-
-It opens the branch's frames at full size and at 640 wide, by day and at
-night, goes down the checklist in section 13 of `docs/art.md`, and posts on
-the pull request (`gh pr comment <P> -R nnamon/Idlin --body-file -`), signed
-`[art director] <model>`:
-
-- each hard item of the checklist as met or missed, a miss with the frame and
-  the place in it;
-- the soft items it found missed, at most five, ranked by how much each hurts
-  the picture;
-- a last line of `ART-OK` or `ART-REDO`.
-
-`ART-REDO` is only for a hard item missed in what the issue set out to draw.
-Something rough that the change did not touch is not a reason; the art
-director files it as its own `look` issue. After an `ART-REDO` the change
-goes back to a builder (step 4) once, and the art director looks again at
-the fixed capture only. Soft misses and anything else it noticed become
-`look` issues, filed by the art director with the frame they were seen in
-and added to the board by the conductor.
 
 When the art backlog is thin, or after a milestone closes, the conductor may
 start the art director on the daily capture alone to audit the screen and
@@ -551,10 +586,23 @@ anything else in the queue.
 
 ## 10. Report
 
-When a cycle ends, report in at most ten lines: the issue, the pull request
-link, merged or not and why, what the reviewer and judge said in one line
-each, and what each builder slot is working on now. If there is a new
-capture, embed the storyboard.
+The work-cycle thread gets one short line per merge: the issue, the pull
+request link and what merged. A pull request that is stuck gets one line
+saying why, when it gets stuck. Nothing else is reported per cycle.
+
+When a milestone closes, the conductor posts a fuller report, in at most
+twenty lines: what the milestone shipped, its exit check and the closing
+review's verdict, what the reviews and look passes kept finding, any
+`process` issue waiting on the operator (section 10 of `AGENTS.md`), and the
+plan for the next milestone. Embed the closing review's storyboard.
+
+## Chores
+
+The conductor's own small chores (board moves, labels, triage and close-out
+comments, follow-up issues, branch and worktree clean-up) are done in
+batches: after starting or checking on children, the conductor clears every
+chore that has built up, rather than stopping for each one as it comes up. A
+chore that blocks a builder or a merge is done at once.
 
 ## Limits
 
@@ -564,9 +612,11 @@ capture, embed the storyboard.
   on something it cannot get this run.
 - At most three builders at a time, and at most three reviewers or judges at
   a time, as section 1 of `AGENTS.md` says; the art director is one of those
-  three whenever it runs. The conductor builds nothing itself.
+  three whenever it runs. The conductor may apply a reviewer's `suggestion`
+  blocks (step 6) and may re-squash or rebase a branch for merge (step 8).
+  It builds nothing else.
 - A builder with no activity for 60 minutes is replaced, as in step 3. A
-  reviewer with none for 90 minutes, or a judge with none for 60, is stopped
+  reviewer with none for 90 minutes, or an art director with none for 60, is stopped
   and its work goes to the fallback model, as in steps 6 and 7.
 - Captures run one at a time across the team, by the rule in section 1 of
   `AGENTS.md`. Up to six `pnpm gate` runs may overlap.

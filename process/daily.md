@@ -42,18 +42,37 @@ Then:
 git checkout main && git pull --ff-only origin main
 git rev-parse HEAD            # must equal origin/main; this is the commit judged
 docker compose run --rm dev pnpm --filter @idlin/client build
-docker compose run --rm capture captures/daily --review
+rm -rf captures/daily-prev
+if [ -d captures/daily ]; then  # the last playtest's capture; captures/ is ignored by git
+  mv captures/daily captures/daily-prev
+  docker compose run --rm capture captures/daily --review --baseline captures/daily-prev
+else
+  docker compose run --rm capture captures/daily --review
+fi
 ```
+
+The baseline is the last playtest's capture, usually the previous day's. Its
+commit is the one in the top entry of `playtest.md` on `media`. On the first
+run, or if the folder has been lost, there is no baseline and the playtest
+says so.
 
 Release the lock as soon as the capture has finished; nothing after this
 touches the shared checkout. Start the watch judge as described in
-[docs/watch-rubric.md](../docs/watch-rubric.md), without a baseline, for a
-playtest ("The playtest" there): it sits in the seat of a viewer who owns one
-resident among the capture's 15 and returns an open-ended list of what that
-player would complain about, one line each with the frame it shows in, worst
-first. It gives no scores and no comparison. It also answers the absolute
-verdict's three questions (find, follow, stay), so the playtests can be
-compared from day to day.
+[docs/watch-rubric.md](../docs/watch-rubric.md) for a playtest ("The
+playtest" there), with both folders. It is told nothing about what merged
+between the two commits. It sits in the seat of a viewer who owns one
+resident among the capture's 15 and returns:
+
+- whether today's capture is better, the same or worse than the last one,
+  with the reason and the frames it rests on (read from `compare.png` and
+  the two folders);
+- the absolute verdict's three answers (find, follow, stay);
+- an open-ended list of what that player would complain about, one line
+  each with the frame it shows in, worst first.
+
+It gives no scores. This is the one blind check of whether the game got
+worse: the look pass on a pull request is the art director's, which knows
+what the change was for.
 
 Then publish to the `media` branch (it holds no code and is not protected)
 from a separate worktree, so the shared checkout stays as it is:
@@ -63,17 +82,21 @@ git fetch origin media
 git worktree add "$TMP/media" origin/media --detach   # TMP: a fresh temporary directory
 # copy the showcase set into showcase/ under its stable file names;
 # add the playtest to the top of playtest.md, newest first: date, commit
-# judged, the three answers, then the list as the judge wrote it
+# judged, commit compared with, better/same/worse and why, the three
+# answers, then the list as the judge wrote it
 git -C "$TMP/media" add -A && git -C "$TMP/media" commit -m "Showcase and playtest for <sha>"
 git -C "$TMP/media" push origin HEAD:media
 git -C "$TMP/media" rev-parse HEAD                    # the media commit to link
 git worktree remove "$TMP/media"
 ```
 
-Every line of the playtest is a fix-now finding. File each as an issue
-labelled `watch` and `ready`, unless an open issue already covers it; then
-comment on that issue instead, as step 7 of [cycle.md](cycle.md) describes
-(`[conductor] raised again:` and a link to the playtest).
+Every line of the playtest is a fix-now finding, and so is a "worse". File
+each as an issue labelled `watch` and `ready`, unless an open issue already
+covers it; then comment on that issue instead, as step 7 of
+[cycle.md](cycle.md) describes (`[conductor] raised again:` and a link to the
+playtest). The issue for a "worse" lists the pull requests merged between the
+two commits (`git log --oneline <compared> <judged>`), so the builder can
+find which one did it.
 
 ## 3. Health
 
@@ -102,8 +125,9 @@ facts allow:
 
 1. **Merged.** Pull requests merged since the last digest, one line each.
 2. **Now.** The issue each builder is on, and the next two in the queue.
-3. **Playtest.** The storyboard, embedded, the three answers, and the
-   playtest's first five lines.
+3. **Playtest.** The storyboard, embedded, better, the same or worse than
+   the last one and why, the three answers, and the playtest's first five
+   lines.
 4. **Decisions you can veto**: anything added to `docs/decisions/` since the
    last digest, one line each with the alternative.
 5. **Stuck or odd**: only if there is something.

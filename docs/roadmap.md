@@ -35,7 +35,7 @@ game. Nothing else is built until it is done.
    and [#365](https://github.com/nnamon/Idlin/issues/365) the spec.
 2. The twenty-nine build pieces in [slice.md](slice.md), section 11, in that
    order, each filed as one issue when the one it depends on is in review.
-3. A playtester watches the running slice every few hours, and what it files
+3. The watch judge playtests the running slice once a day, and what it files
    goes ahead of the next piece.
 
 The slice is finished when all of these hold:
