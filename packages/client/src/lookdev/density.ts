@@ -6,7 +6,7 @@
 //   dense  a 60 by 33 map in which every pocket holds something, about 340 monsters;
 //   big    an 80 by 45 map at the same density per tile, about 600.
 
-import { beastPose, drawBrute, drawHound, drawSwarm, type Mite } from "./beasts.ts";
+import { beastPose, drawBrute, drawHound, drawSwarm, type Mite, TONE } from "./beasts.ts";
 import { BRASS, CANVAS, IRON, LAMP, TIMBER } from "./city.ts";
 import { BLOW, CONTOUR, type Draw, FORM, HAIR, HEAVY, INK, PAPER, shade } from "./draw.ts";
 import {
@@ -123,8 +123,19 @@ let CITY = { x: 30, y: 17.5 };
 /** The city's size against take C's hull of 15 tiles. */
 let CS = 1;
 
-const px = (x: number): number => OX + x * T;
-const py = (y: number): number => OY + y * T;
+type AboardKind = "hammer" | "gun" | "shoot" | "draw" | "stand" | "walk";
+/** Who is on deck: index, deck position in hull tiles, facing, and what they do. */
+let ABOARD: [number, number, number, number, AboardKind][] = [
+  [5, -0.2, 1.4, 1, "hammer"],
+  [10, 6.3, -0.9, 1, "gun"],
+];
+
+/** The tile at the frame's top left corner, for a camera closed in on part of the map. */
+let VX = 0;
+let VY = 0;
+
+const px = (x: number): number => OX + (x - VX) * T;
+const py = (y: number): number => OY + (y - VY) * T;
 
 const crowd: Look[] = Array.from({ length: 15 }, (_, i) => lookOf(i + 1));
 
@@ -1130,13 +1141,13 @@ function build(cfg: Config): World {
 
 function groundSpace(d: Draw): void {
   d.push();
-  d.move(OX, OY);
+  d.move(OX - VX * T, OY - VY * T);
   d.scale(T);
 }
 
 function standSpace(d: Draw): void {
   d.push();
-  d.move(OX, OY);
+  d.move(OX - VX * T, OY - VY * T);
   d.scale(T, T * ST);
 }
 
@@ -1635,15 +1646,19 @@ function drawCityTop(d: Draw, t: number, tags: Tag[], heads: number[]): void {
   }
 
   // The two aboard: one at the bench, one at the fore gun.
-  const aboard: [number, number, number, number][] = [
-    [5, -0.2, 1.4, 1],
-    [10, 6.3, -0.9, 1],
-  ];
-  for (const [i, x, y, face] of aboard) {
+  for (const [i, x, y, face, kind] of ABOARD) {
     const look = crowd[i] as Look;
     const [fxp, fyp] = P(x, y, H);
-    const p = i === 5 ? swinging(0.14, face) : shooting(1, face, true);
-    if (i === 5) p.tool = "hammer";
+    const p =
+      kind === "hammer"
+        ? swinging(0.14, face)
+        : kind === "walk"
+          ? walking(2.3 + i, 1, face)
+          : kind === "stand"
+            ? pose({ face, arm: 0.9, arm2: 0.7, tool: "none" })
+            : shooting(1, face, kind !== "draw");
+    if (kind === "hammer") p.tool = "hammer";
+    if (kind === "shoot" || kind === "draw") p.tool = "bow";
     d.push();
     d.move(fxp, fyp);
     d.scale(T, T * ST);
@@ -1993,7 +2008,14 @@ function slip(d: Draw, x: number, y: number, w: number, h: number, seed: number)
   );
 }
 
-function drawCorners(d: Draw): number[] {
+interface CornerOpts {
+  time?: string;
+  elapsed?: number;
+  counts?: string[];
+  log?: [who: number, what: string, rarity: number];
+}
+
+function drawCorners(d: Draw, o: CornerOpts = {}): number[] {
   const taken: number[] = [];
   // The clock: time left before lift-off, the dial filling toward it.
   {
@@ -2005,7 +2027,7 @@ function drawCorners(d: Draw): number[] {
     const cx = x + 50;
     const cy = y + h / 2;
     const r = 32;
-    const elapsed = 270 / 780;
+    const elapsed = o.elapsed ?? 270 / 780;
     const wedge = [cx, cy];
     for (let i = 0; i <= 40; i++) {
       const a = -Math.PI / 2 + (i / 40) * elapsed * Math.PI * 2;
@@ -2033,7 +2055,7 @@ function drawCorners(d: Draw): number[] {
     const ha = -Math.PI / 2 + elapsed * Math.PI * 2;
     d.line(cx, cy, cx + Math.cos(ha) * (r - 4), cy + Math.sin(ha) * (r - 4), CONTOUR, 33);
     d.dot(cx, cy, 3);
-    d.text("8:30", x + 98, y + 56, { size: 48 });
+    d.text(o.time ?? "8:30", x + 98, y + 56, { size: 48 });
     d.text("lift-off", x + 100, y + 86, { size: 24 });
     taken.push(x, y, x + w, y + h);
   }
@@ -2053,8 +2075,8 @@ function drawCorners(d: Draw): number[] {
   }
   // The log: who found what, the item in its rarity's colour.
   {
-    const who = "lil_gremlin";
-    const what = "Nine Lives";
+    const [whoIndex, what, rarity] = o.log ?? [14, "Nine Lives", 3];
+    const who = (crowd[whoIndex] as Look).name;
     const ww = measure("roman", 30, who);
     const w = ww + 36 + measure("roman", 30, what) + 44;
     const h = 58;
@@ -2062,13 +2084,16 @@ function drawCorners(d: Draw): number[] {
     const y = FRAME.y1 - 18 - h;
     slip(d, x, y, w, h, 61);
     d.text(who, x + 22, y + 39, { size: 30 });
-    d.fill(d.box(x + 22, y + 44, x + 22 + ww, y + 46.5), (crowd[14] as Look).cloak);
-    d.text(what, x + 22 + ww + 36, y + 39, { size: 30, rgb: mix(RARITY[3], INK, 0.2) });
+    d.fill(d.box(x + 22, y + 44, x + 22 + ww, y + 46.5), (crowd[whoIndex] as Look).cloak);
+    d.text(what, x + 22 + ww + 36, y + 39, {
+      size: 30,
+      rgb: mix(RARITY[rarity] as number, INK, 0.2),
+    });
     taken.push(x, y, x + w, y + h);
   }
   // Counts: an icon and a number each.
   {
-    const counts = ["13", "2", "214", "31"];
+    const counts = o.counts ?? ["13", "2", "214", "31"];
     const h = 58;
     const cell = (s: string): number => 40 + measure("roman", 30, s) + 22;
     const w = counts.reduce((sum, s) => sum + cell(s), 0) + 16;
@@ -2224,127 +2249,7 @@ export function densityScene(name: string): Scene {
       const numberBoxes: number[] = [];
 
       // ---- Ground.
-      groundSpace(d);
-      for (const p of L.patches) {
-        const pts: number[] = [];
-        for (let i = 0; i < 16; i++) {
-          const a = (i / 16) * Math.PI * 2;
-          const reach =
-            p.r *
-            (0.72 + 0.34 * noise1(i * 0.7 + p.seed, p.seed) + 0.14 * noise1(i * 2.3, p.seed + 1));
-          pts.push(p.x + Math.cos(a) * reach * 1.45, p.y + Math.sin(a) * reach * 0.8);
-        }
-        d.wash(pts, p.rgb, p.alpha, true);
-      }
-      const n = L.river.length / 2;
-      for (let i = 0; i + 4 < n; i += 4) {
-        const quad: number[] = [];
-        for (let j = i; j <= i + 4; j++)
-          quad.push(L.left[j * 2] as number, L.left[j * 2 + 1] as number);
-        for (let j = i + 4; j >= i; j--)
-          quad.push(L.right[j * 2] as number, L.right[j * 2 + 1] as number);
-        d.fill(quad, d.ground, 1);
-        d.fill(quad, WATER, 0.7);
-        const deep: number[] = [];
-        for (let j = i; j <= i + 4; j++)
-          deep.push(
-            lerp(L.left[j * 2] as number, L.right[j * 2] as number, 0.3),
-            lerp(L.left[j * 2 + 1] as number, L.right[j * 2 + 1] as number, 0.3),
-          );
-        for (let j = i + 4; j >= i; j--)
-          deep.push(
-            lerp(L.left[j * 2] as number, L.right[j * 2] as number, 0.9),
-            lerp(L.left[j * 2 + 1] as number, L.right[j * 2 + 1] as number, 0.9),
-          );
-        d.fill(deep, 0x6f97a3, 0.45);
-      }
-      for (let i = 0; i + 1 < n; i += 9) {
-        const to = Math.min(n - 1, i + 10);
-        d.curve(L.left.slice(i * 2, to * 2 + 2), CONTOUR, 100 + i);
-        d.curve(L.right.slice(i * 2, to * 2 + 2), FORM, 200 + i);
-      }
-      for (let i = 2; i < n - 2; i += 2) {
-        const x = L.river[i * 2] as number;
-        const y = L.river[i * 2 + 1] as number;
-        const tx = (L.river[i * 2 + 2] as number) - x;
-        const ty = (L.river[i * 2 + 3] as number) - y;
-        const side = (hash(i, 93) - 0.5) * 0.8;
-        d.strength = 0.7;
-        d.line(
-          x - ty * side - tx * 0.5,
-          y + tx * side - ty * 0.5,
-          x - ty * side + tx * 0.6,
-          y + tx * side + ty * 0.6,
-          HAIR,
-          i + 300,
-        );
-        d.strength = 1;
-      }
-      for (const [fx, fy] of L.fords)
-        for (let j = 0; j < 4; j++)
-          d.body(
-            d.round(fx - 0.75 + j * 0.5, fy + (j % 2) * 0.12, 0.22, 0.15 * GY * 1.1, 7, j + 5),
-            { wash: STONE, washAlpha: 0.9, weight: FORM, seed: j + 400 },
-          );
-      for (const path of L.paths) {
-        const pn = path.length / 2;
-        for (let i = 0; i + 3 < pn; i += 3) {
-          const bandPts: number[] = [];
-          for (let j = i; j <= i + 3; j++)
-            bandPts.push(path[j * 2] as number, (path[j * 2 + 1] as number) - 0.32);
-          for (let j = i + 3; j >= i; j--)
-            bandPts.push(path[j * 2] as number, (path[j * 2 + 1] as number) + 0.32);
-          d.fill(bandPts, d.ground, 0.62);
-        }
-        d.strength = 0.75;
-        for (let i = 0; i + 2 < pn; i += 3) {
-          const x = path[i * 2] as number;
-          const y = path[i * 2 + 1] as number;
-          const x1 = path[i * 2 + 4] as number;
-          const y1 = path[i * 2 + 5] as number;
-          if (hash(i, 96) < 0.75)
-            d.line(x, y - 0.34, lerp(x, x1, 0.7), lerp(y, y1, 0.7) - 0.34, HAIR, i + 500);
-          if (hash(i, 97) < 0.75)
-            d.line(lerp(x, x1, 0.2), lerp(y, y1, 0.2) + 0.34, x1, y1 + 0.34, HAIR, i + 600);
-          if (hash(i, 98) < 0.25) d.dot(x + 0.2, y + (hash(i, 99) - 0.5) * 0.4, 1.6);
-        }
-        d.strength = 1;
-      }
-      for (const c of L.clumps) {
-        if (c.kind === 0) {
-          for (let b = 0; b < 3; b++) {
-            const lean = (b - 1) * 0.09 + (hash(c.seed, b) - 0.5) * 0.06;
-            d.line(
-              c.x + b * 0.07,
-              c.y,
-              c.x + b * 0.07 + lean,
-              c.y - (0.2 + hash(c.seed, b + 4) * 0.14) * ST,
-              FORM,
-              c.seed + b,
-            );
-          }
-        } else if (c.kind === 1) {
-          d.dot(c.x, c.y - 0.08, 2.1, FLOWER);
-          d.dot(c.x + 0.22, c.y + 0.05, 1.7, FLOWER);
-        } else {
-          d.curve(
-            [
-              c.x - 0.14,
-              c.y,
-              c.x - 0.08,
-              c.y - 0.12 * ST,
-              c.x + 0.1,
-              c.y - 0.13 * ST,
-              c.x + 0.16,
-              c.y,
-            ],
-            FORM,
-            c.seed,
-          );
-        }
-      }
-      drawSpills(d, L.spills, L.spills.length);
-      d.pop();
+      drawGround(d, L);
 
       // ---- Shadows, and what lies on the ground.
       groundSpace(d);
@@ -2633,4 +2538,1166 @@ function scaleMass(m: Mass): Mass {
   const scaled: Mass = { ...m, base: m.base.map((v, i) => (i % 2 ? v / ST : v)) };
   MASS_CACHE.set(m, scaled);
   return scaled;
+}
+
+function drawGround(d: Draw, L: World): void {
+      groundSpace(d);
+      for (const p of L.patches) {
+        const pts: number[] = [];
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2;
+          const reach =
+            p.r *
+            (0.72 + 0.34 * noise1(i * 0.7 + p.seed, p.seed) + 0.14 * noise1(i * 2.3, p.seed + 1));
+          pts.push(p.x + Math.cos(a) * reach * 1.45, p.y + Math.sin(a) * reach * 0.8);
+        }
+        d.wash(pts, p.rgb, p.alpha, true);
+      }
+      const n = L.river.length / 2;
+      for (let i = 0; i + 4 < n; i += 4) {
+        const quad: number[] = [];
+        for (let j = i; j <= i + 4; j++)
+          quad.push(L.left[j * 2] as number, L.left[j * 2 + 1] as number);
+        for (let j = i + 4; j >= i; j--)
+          quad.push(L.right[j * 2] as number, L.right[j * 2 + 1] as number);
+        d.fill(quad, d.ground, 1);
+        d.fill(quad, WATER, 0.7);
+        const deep: number[] = [];
+        for (let j = i; j <= i + 4; j++)
+          deep.push(
+            lerp(L.left[j * 2] as number, L.right[j * 2] as number, 0.3),
+            lerp(L.left[j * 2 + 1] as number, L.right[j * 2 + 1] as number, 0.3),
+          );
+        for (let j = i + 4; j >= i; j--)
+          deep.push(
+            lerp(L.left[j * 2] as number, L.right[j * 2] as number, 0.9),
+            lerp(L.left[j * 2 + 1] as number, L.right[j * 2 + 1] as number, 0.9),
+          );
+        d.fill(deep, 0x6f97a3, 0.45);
+      }
+      for (let i = 0; i + 1 < n; i += 9) {
+        const to = Math.min(n - 1, i + 10);
+        d.curve(L.left.slice(i * 2, to * 2 + 2), CONTOUR, 100 + i);
+        d.curve(L.right.slice(i * 2, to * 2 + 2), FORM, 200 + i);
+      }
+      for (let i = 2; i < n - 2; i += 2) {
+        const x = L.river[i * 2] as number;
+        const y = L.river[i * 2 + 1] as number;
+        const tx = (L.river[i * 2 + 2] as number) - x;
+        const ty = (L.river[i * 2 + 3] as number) - y;
+        const side = (hash(i, 93) - 0.5) * 0.8;
+        d.strength = 0.7;
+        d.line(
+          x - ty * side - tx * 0.5,
+          y + tx * side - ty * 0.5,
+          x - ty * side + tx * 0.6,
+          y + tx * side + ty * 0.6,
+          HAIR,
+          i + 300,
+        );
+        d.strength = 1;
+      }
+      for (const [fx, fy] of L.fords)
+        for (let j = 0; j < 4; j++)
+          d.body(
+            d.round(fx - 0.75 + j * 0.5, fy + (j % 2) * 0.12, 0.22, 0.15 * GY * 1.1, 7, j + 5),
+            { wash: STONE, washAlpha: 0.9, weight: FORM, seed: j + 400 },
+          );
+      for (const path of L.paths) {
+        const pn = path.length / 2;
+        for (let i = 0; i + 3 < pn; i += 3) {
+          const bandPts: number[] = [];
+          for (let j = i; j <= i + 3; j++)
+            bandPts.push(path[j * 2] as number, (path[j * 2 + 1] as number) - 0.32);
+          for (let j = i + 3; j >= i; j--)
+            bandPts.push(path[j * 2] as number, (path[j * 2 + 1] as number) + 0.32);
+          d.fill(bandPts, d.ground, 0.62);
+        }
+        d.strength = 0.75;
+        for (let i = 0; i + 2 < pn; i += 3) {
+          const x = path[i * 2] as number;
+          const y = path[i * 2 + 1] as number;
+          const x1 = path[i * 2 + 4] as number;
+          const y1 = path[i * 2 + 5] as number;
+          if (hash(i, 96) < 0.75)
+            d.line(x, y - 0.34, lerp(x, x1, 0.7), lerp(y, y1, 0.7) - 0.34, HAIR, i + 500);
+          if (hash(i, 97) < 0.75)
+            d.line(lerp(x, x1, 0.2), lerp(y, y1, 0.2) + 0.34, x1, y1 + 0.34, HAIR, i + 600);
+          if (hash(i, 98) < 0.25) d.dot(x + 0.2, y + (hash(i, 99) - 0.5) * 0.4, 1.6);
+        }
+        d.strength = 1;
+      }
+      for (const c of L.clumps) {
+        if (c.kind === 0) {
+          for (let b = 0; b < 3; b++) {
+            const lean = (b - 1) * 0.09 + (hash(c.seed, b) - 0.5) * 0.06;
+            d.line(
+              c.x + b * 0.07,
+              c.y,
+              c.x + b * 0.07 + lean,
+              c.y - (0.2 + hash(c.seed, b + 4) * 0.14) * ST,
+              FORM,
+              c.seed + b,
+            );
+          }
+        } else if (c.kind === 1) {
+          d.dot(c.x, c.y - 0.08, 2.1, FLOWER);
+          d.dot(c.x + 0.22, c.y + 0.05, 1.7, FLOWER);
+        } else {
+          d.curve(
+            [
+              c.x - 0.14,
+              c.y,
+              c.x - 0.08,
+              c.y - 0.12 * ST,
+              c.x + 0.1,
+              c.y - 0.13 * ST,
+              c.x + 0.16,
+              c.y,
+            ],
+            FORM,
+            c.seed,
+          );
+        }
+      }
+      drawSpills(d, L.spills, L.spills.length);
+      d.pop();
+}
+
+// ---------------------------------------------------------------- the shield siege (#413)
+//
+// Three mockups of one moment of phase 5, for the art director to pick the
+// shield's look from. The horde is piled against the shield round the city at
+// about half strength; six citizens hold its edge and nine are aboard. The
+// camera is closed in to 32 px a tile on the 80 by 45 landing. Everything in
+// the siege is placed by hand on the bigger map's ground.
+//   dome  a hatched dome in the lantern's colour; hits crack it, strength is how much outline holds
+//   ring  a lit disc on the ground; hits flare, and the disc shrinks as strength falls
+//   wall  lamp posts with light strung between; hits knock posts dark
+
+type Take = "dome" | "ring" | "wall";
+
+interface SBody {
+  kind: "mite" | "hound" | "brute" | "elite";
+  x: number;
+  y: number;
+  face: number;
+  act: MAct;
+  /** Lifted off the ground, in stand tiles: climbing the heap, or thrown. */
+  air: number;
+  build: number;
+  /** Part of the horde's black, or drawn in its usual hide. */
+  dark: boolean;
+}
+
+const LAMP_INK = mix(LAMP, INK, 0.38);
+const HORDE_HIDE = 0x3e3530;
+const HORDE_DARK = 0x332b26;
+
+/** Where the horde is breaking the shield: the angle round the city, and half the arc. */
+const HITS_SPREAD = [
+  { a: -1.98, w: 0.24 },
+  { a: -0.78, w: 0.2 },
+  { a: 0.04, w: 0.32 },
+  { a: 2.97, w: 0.3 },
+  { a: 2.25, w: 0.2 },
+  { a: 0.95, w: 0.16 },
+];
+// The wall loses posts in runs, so what still burns is strung in long stretches.
+const HITS_WALL = [
+  { a: -1.98, w: 0.34 },
+  { a: 0.04, w: 0.44 },
+  { a: 2.97, w: 0.4 },
+  { a: 1.0, w: 0.2 },
+];
+let HITS = HITS_SPREAD;
+/** The share of the dome's outline that still holds. */
+const DOME_HOLDS = 1 - HITS_SPREAD.reduce((s, h) => s + h.w * 2, 0) / (Math.PI * 2);
+const angDist = (a: number, b: number): number => {
+  const d = Math.abs(a - b) % (Math.PI * 2);
+  return d > Math.PI ? Math.PI * 2 - d : d;
+};
+const hitAt = (a: number, pad = 0): { a: number; w: number } | undefined =>
+  HITS.find((h) => angDist(a, h.a) < h.w + pad);
+
+export function siegeScene(take: Take): Scene {
+  const cfg = CONFIGS.big as Config;
+  T = cfg.T;
+  S = cfg.S;
+  MAP_W = cfg.W;
+  MAP_H = cfg.H;
+  CS = 1;
+  CITY = { x: cfg.W / 2, y: cfg.H / 2 + 0.8 };
+  VX = 0;
+  VY = 0;
+  const L = build(cfg);
+
+  // Closed in on the shield: 32 px a tile, the shield with five tiles over and under it.
+  T = 32;
+  S = 59 / (T * ST);
+  const C = { x: CITY.x + 0.3, y: CITY.y + 0.4 };
+  const FULL = { rx: 15, ry: 11 };
+  const R = take === "ring" ? { rx: 12.7, ry: 9.3 } : FULL;
+  HITS = take === "wall" ? HITS_WALL : HITS_SPREAD;
+  VX = C.x - (FRAME.x1 - FRAME.x0) / T / 2;
+  VY = C.y - (FRAME.y1 - FRAME.y0) / T / 2;
+
+  ABOARD = [
+    [5, -0.2, 1.4, 1, "hammer"],
+    [9, -2.2, -1.1, -1, "hammer"],
+    [10, 6.3, -0.9, 1, "gun"],
+    [11, -6.3, 0.9, -1, "gun"],
+    [12, -1.4, -2.45, -1, "shoot"],
+    [13, 5.3, 2.0, 1, "shoot"],
+    [6, -4.9, 2.4, -1, "draw"],
+    [7, 4.9, 0.5, 1, "stand"],
+    [14, 2.9, -1.5, 1, "walk"],
+  ];
+
+  const E = (a: number, dd: number, r = R): [number, number] => [
+    C.x + Math.cos(a) * (r.rx + dd),
+    C.y + Math.sin(a) * (r.ry + dd),
+  ];
+  const depthOf = (x: number, y: number): number => {
+    const nx = (x - C.x) / R.rx;
+    const ny = (y - C.y) / R.ry;
+    const r = Math.hypot(nx, ny) || 1e-6;
+    const a = Math.atan2(ny, nx);
+    return (r - 1) * Math.hypot(R.rx * Math.cos(a), R.ry * Math.sin(a));
+  };
+  const onScreen = (x: number, y: number, m = 2): boolean =>
+    x > VX - m && x < VX + (FRAME.x1 - FRAME.x0) / T + m && y > VY - m && y < VY + 32.5 + m + 3;
+
+  // ---- The horde.
+  const rand = rng(4131);
+  const bodies: SBody[] = [];
+  const heapOf = (a: number): number =>
+    2.5 * Math.max(Math.max(0, -Math.sin(a)) ** 1.6, Math.abs(Math.cos(a)) ** 5);
+  const near = (a: number): boolean => Math.sin(a) > 0.42;
+  const add = (b: SBody): void => {
+    if (onScreen(b.x, b.y)) bodies.push(b);
+  };
+  const faceOf = (x: number): number => (x < C.x ? 1 : -1);
+  // Whole bodies to three tiles out, pressed on the shield in four loose rows.
+  for (let row = 0; row < 4; row++) {
+    let a = -Math.PI + rand() * 0.3;
+    while (a < Math.PI) {
+      const dd0 = 0.28 + row * 0.7 + (rand() - 0.5) * 0.35;
+      const hit = hitAt(a);
+      const r = rand();
+      let kind: SBody["kind"] = "mite";
+      if (near(a)) kind = r < 0.27 ? "hound" : "mite";
+      else if (row > 1 && r < 0.06) kind = "brute";
+      else if (r < 0.42) kind = "hound";
+      const dd = (row === 0 && hit ? 0.12 + rand() * 0.15 : dd0) + (take === "wall" ? 0.4 : 0);
+      const [x, y] = E(a, dd);
+      const heap = heapOf(a);
+      const air =
+        row === 0 ? (heap > 1 ? rand() * 0.4 : 0) : heap * (0.15 + rand() * 0.55) * (1 - row * 0.2);
+      const act: MAct =
+        row === 0
+          ? hit
+            ? rand() < 0.25
+              ? "flash"
+              : "lunge"
+            : rand() < 0.5
+              ? "lunge"
+              : "coil"
+          : rand() < 0.35
+            ? "run"
+            : rand() < 0.6
+              ? "coil"
+              : "stalk";
+      add({
+        kind,
+        x,
+        y,
+        face: faceOf(x),
+        act: kind === "brute" && act === "lunge" ? "coil" : act,
+        air: kind === "brute" ? 0 : air,
+        build: Math.floor(rand() * 3),
+        dark: true,
+      });
+      const step = kind === "mite" ? 0.95 : kind === "hound" ? 1.7 : 2.6;
+      const radius = Math.hypot((R.rx + dd) * Math.sin(a), (R.ry + dd) * Math.cos(a));
+      a += (step + rand() * 0.35) / radius;
+    }
+  }
+  // The heap climbs on the far side and at the ends, and leans in over the shield.
+  for (let k = 0; k < 420; k++) {
+    const a = -Math.PI + rand() * Math.PI * 2;
+    const heap = heapOf(a);
+    if (heap < 0.9 || rand() > heap / 2.5) continue;
+    const dd = -0.45 + rand() * 1.8;
+    const [x, y] = E(a, dd);
+    add({
+      kind: rand() < 0.7 ? "mite" : "hound",
+      x,
+      y,
+      face: faceOf(x),
+      act: rand() < 0.5 ? "lunge" : "coil",
+      air: heap * (0.5 + rand() * 0.6) * (dd < 0.4 ? 1.05 : 0.75),
+      build: Math.floor(rand() * 3),
+      dark: true,
+    });
+  }
+  // Brutes, and two elites, standing up out of the mass.
+  let elites = 0;
+  let brutes = 0;
+  for (let k = 0; k < 60 && brutes < 6; k++) {
+    const a = -Math.PI + rand() * Math.PI * 2;
+    if (near(a)) continue;
+    const dd = 3.6 + rand() * 3.0;
+    const [x, y] = E(a, dd);
+    if (bodies.some((b) => b.kind !== "mite" && b.kind !== "hound" && Math.hypot(b.x - x, b.y - y) < 4.5))
+      continue;
+    const elite = elites < 2 && rand() < 0.5 && Math.sin(a) < -0.6;
+    if (elite) elites++;
+    else brutes++;
+    add({
+      kind: elite ? "elite" : "brute",
+      x,
+      y,
+      face: faceOf(x),
+      act: rand() < 0.5 ? "pace" : "coil",
+      air: 0,
+      build: 0,
+      dark: true,
+    });
+  }
+
+  // ---- The six at the edge, the fights round them, and the shots from the rail.
+  const out: Cit[] = [];
+  const at = (a: number, dd: number): [number, number] => E(a, dd);
+  const cit = (i: number, a: number, dd: number, act: Act, face: number): Cit => {
+    const [x, y] = at(a, dd);
+    const c: Cit = { i, x, y, act, face };
+    out.push(c);
+    return c;
+  };
+  const eastBlade = cit(0, -0.14, -1.25, "hit", 1);
+  const maul = cit(8, 0.27, -1.35, "slam", 1);
+  const spear = cit(1, -1.7, -1.3, "thrust", -1);
+  const bow = cit(2, 2.02, -1.25, "shoot", -1);
+  const pot = cit(3, 2.42, -1.15, "pot", -1);
+  const westBlade = cit(4, 3.1, -1.2, "swing", -1);
+
+  // Clear the bodies off where a citizen's blow has just landed, and set the ones it hit.
+  const struck = (x: number, y: number, r: number, act: MAct): void => {
+    for (const b of bodies) if (Math.hypot(b.x - x, b.y - y) < r && b.air === 0) b.act = act;
+  };
+  // The maul throws bodies back into the heap as a fan.
+  for (let k = 0; k < 7; k++) {
+    const a = 0.12 + k * 0.055;
+    const [x, y] = E(a, 1.0 + (k % 3) * 0.8);
+    bodies.push({
+      kind: k === 3 ? "hound" : "mite",
+      x,
+      y,
+      face: k % 2 ? 1 : -1,
+      act: k % 3 === 1 ? "flash" : "hurt",
+      air: 0.9 + (k % 3) * 0.55 + hash(k, 5) * 0.3,
+      build: 1,
+      dark: false,
+    });
+  }
+  const [mx0, my0] = E(0.27, 0.15);
+  struck(mx0, my0, 1.2, "hurt");
+  const [ebx, eby] = E(-0.14, 0.3);
+  struck(ebx, eby, 1.1, "flash");
+  const [wbx, wby] = E(3.1, 0.3);
+  struck(wbx, wby, 1.2, "flash");
+  // The spear's elite, dying in the press on the far side, and the rare that drops from it.
+  const [elx, ely] = E(-1.98, 0.9);
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i] as SBody;
+    if (Math.hypot(b.x - elx, b.y - ely) < 1.6) bodies.splice(i, 1);
+  }
+  bodies.push({ kind: "elite", x: elx, y: ely, face: 1, act: "hurt", air: 0, build: 0, dark: false });
+  const [dropX, dropY] = E(-1.72, 2.3);
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i] as SBody;
+    if (Math.hypot(b.x - dropX, b.y - dropY) < 1.1) bodies.splice(i, 1);
+  }
+  const [burnX, burnY] = E(2.5, 1.7);
+
+  const swings: ((d: Draw) => void)[] = [];
+  const swingOf = (c: Cit, angle: number, sweep: number, radius: number, age = 0.03): void => {
+    const look = crowd[c.i] as Look;
+    swings.push((d) =>
+      drawSwing(d, c.x, c.y / ST - 0.55, radius, angle, sweep, age, look.cloak, c.i * 17),
+    );
+  };
+  swingOf(eastBlade, 0.05, 2.3, 2.6);
+  swingOf(maul, 0.15, 2.0, 2.9, 0.06);
+  swingOf(westBlade, Math.PI - 0.05, 2.3, 2.6);
+
+  const nums: Num[] = [];
+  const num = (x: number, y: number, value: number, size: number, crit = false): void => {
+    nums.push({ x, y, value, size, crit });
+  };
+  num(elx - 3.9, ely - 1.0, 2140, 72, true);
+  num(maul.x + 3.6, maul.y - 0.8, 318, 36);
+  num(eastBlade.x + 3.4, eastBlade.y - 0.6, 186, 30);
+  num(westBlade.x - 3.0, westBlade.y - 2.6, 207, 36);
+  num(bow.x - 2.2, bow.y + 2.9, 94, 36);
+  num(burnX + 0.4, burnY - 2.6, 41, 30);
+  const BOLTS = [
+    [1, -0.32, 1],
+    [-1, Math.PI + 0.3, 2],
+  ] as const;
+  for (const [side, a] of BOLTS) {
+    const [tx0, ty0] = E(a, 4.2);
+    num(tx0 + side * 1.4, ty0 - 1.9, 260, 36);
+  }
+
+  // ---- The shield's posts, for the wall.
+  const POSTS = 28;
+  const posts = Array.from({ length: POSTS }, (_, k) => {
+    const a = -Math.PI / 2 + (k / POSTS) * Math.PI * 2;
+    const [x, y] = E(a, 0);
+    const lit = !hitAt(a, 0.04);
+    return { a, x, y, lit, lean: lit ? 0 : (hash(k, 3) - 0.5) * 0.9, snapped: !lit && hash(k, 4) < 0.4 };
+  });
+  const litPosts = posts.filter((p) => p.lit).length;
+
+  (globalThis as unknown as { siegeCount?: Record<string, unknown> }).siegeCount = {
+    take,
+    bodies: bodies.length,
+    out: out.length,
+    aboard: ABOARD.length,
+    litPosts,
+  };
+
+  return {
+    duration: 1,
+    draw(d: Draw, t: number): void {
+      const tags: Tag[] = [];
+      const heads: number[] = [];
+
+      drawGround(d, L);
+
+      // ---- Lamplight in three flat steps inside the shield.
+      groundSpace(d);
+      for (const [k, alpha] of [
+        [1, 0.07],
+        [0.74, 0.06],
+        [0.48, 0.06],
+      ] as const) {
+        const pts: number[] = [];
+        for (let i = 0; i < 48; i++) {
+          const a = (i / 48) * Math.PI * 2;
+          pts.push(C.x + Math.cos(a) * R.rx * k, C.y + Math.sin(a) * R.ry * k);
+        }
+        d.fill(pts, LAMP, alpha);
+      }
+      if (take === "ring") {
+        const disc: number[] = [];
+        const edge: number[] = [];
+        for (let i = 0; i < 72; i++) {
+          const a = (i / 72) * Math.PI * 2;
+          disc.push(...E(a, 0));
+        }
+        d.wash(disc, LAMP, 0.26, true);
+        for (let i = 0; i <= 72; i++) {
+          const a = (i / 72) * Math.PI * 2;
+          const [ox, oy] = E(a, 0);
+          const [ix, iy] = E(a, -0.55);
+          edge.push(ox, oy, ix, iy);
+        }
+        // The lit band at the rim.
+        const rim: number[] = [];
+        for (let i = 0; i <= 72; i++) rim.push(edge[i * 4] as number, edge[i * 4 + 1] as number);
+        for (let i = 72; i >= 0; i--) rim.push(edge[i * 4 + 2] as number, edge[i * 4 + 3] as number);
+        d.fill(rim, LAMP, 0.42);
+      }
+      d.pop();
+
+      // ---- The black: everything the horde has taken, from just behind its front to the rule.
+      {
+        const rib: number[] = [];
+        const n = 220;
+        for (let i = 0; i <= n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const dd = 1.35 + 0.45 * noise1(a * 3.1, 5) + 0.25 * noise1(a * 11, 6);
+          const [ix, iy] = E(a, dd);
+          const [ox, oy] = E(a, 60);
+          rib.push(px(ix), py(iy), px(ox), py(oy));
+        }
+        d.surface.strip(rib, n + 1, INK, 1);
+        // Trodden ground between the shield and the black.
+        const tread: number[] = [];
+        for (let i = 0; i <= n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const [ix, iy] = E(a, 0.15);
+          const [ox, oy] = E(a, 1.6);
+          tread.push(px(ix), py(iy), px(ox), py(oy));
+        }
+        d.surface.strip(tread, n + 1, 0x5a4a40, 0.35);
+      }
+
+      // ---- The drowned map: what the black has taken, in paper line.
+      d.ink = PAPER;
+      groundSpace(d);
+      d.strength = 0.32;
+      const nRiver = L.river.length / 2;
+      for (let i = 0; i + 1 < nRiver; i += 3) {
+        const x = L.left[i * 2] as number;
+        const y = L.left[i * 2 + 1] as number;
+        if (depthOf(x, y) < 2.4 || !onScreen(x, y)) continue;
+        const to = Math.min(nRiver - 1, i + 3);
+        d.curve(L.left.slice(i * 2, to * 2 + 2), FORM, 100 + i);
+        d.curve(L.right.slice(i * 2, to * 2 + 2), FORM, 200 + i);
+      }
+      for (const path of L.paths) {
+        const pn = path.length / 2;
+        for (let i = 0; i + 2 < pn; i += 2) {
+          const x = path[i * 2] as number;
+          const y = path[i * 2 + 1] as number;
+          if (depthOf(x, y) < 2.4 || !onScreen(x, y)) continue;
+          if (i % 4 === 0)
+            d.line(x, y, path[i * 2 + 2] as number, path[i * 2 + 3] as number, HAIR, 700 + i);
+        }
+      }
+      for (const m of L.masses) {
+        const b = m.base;
+        const x = b[0] as number;
+        const y = b[1] as number;
+        if (depthOf(x, y) < 2.6 || !onScreen(x, y, 6)) continue;
+        d.curve(b, FORM, 800, true);
+      }
+      for (const th of L.things) {
+        if (depthOf(th.x, th.y) < 2.6 || !onScreen(th.x, th.y)) continue;
+        d.curve(d.round(th.x, th.y - th.size * 0.9, th.size * 0.4, th.size * 0.45, 8, 3).slice(), HAIR, 810, true);
+        d.line(th.x, th.y, th.x, th.y - th.size * 0.5, HAIR, 811);
+      }
+      for (const f of L.features) {
+        if (depthOf(f.x, f.y) < 2.6 || !onScreen(f.x, f.y, 3)) continue;
+        if (f.kind === "den") {
+          d.curve(d.round(f.x, f.y - 0.5, 2.1, 1.0, 10, 5).slice(), FORM, 820, true);
+          d.curve([f.x - 0.7, f.y, f.x - 0.5, f.y - 0.8, f.x + 0.5, f.y - 0.8, f.x + 0.7, f.y], FORM, 821);
+        } else d.curve(d.round(f.x, f.y - 0.3, 0.9, 0.5, 8, 6).slice(), HAIR, 822, true);
+      }
+      d.strength = 1;
+      d.pop();
+
+      // ---- The mass from three to eight tiles: heads and backs in paper line, eyes in clusters.
+      standSpace(d);
+      {
+        const mr = rng(77);
+        for (let k = 0; k < 2600; k++) {
+          const a = mr() * Math.PI * 2;
+          const dd = 2.4 + mr() ** 0.8 * 12;
+          const [x, y] = E(a, dd);
+          if (!onScreen(x, y, 1)) continue;
+          const yy = y / ST;
+          const deep = Math.min(1, (dd - 2.4) / 6);
+          if (dd < 8.5 || mr() < 0.25) {
+            const f = x < C.x ? 1 : -1;
+            const s = 0.75 + mr() * 0.6;
+            d.ink = PAPER;
+            d.strength = 0.75 - deep * 0.45;
+            d.curve(
+              [x - 0.5 * s * f, yy + 0.05, x - 0.2 * s * f, yy - 0.3 * s, x + 0.25 * s * f, yy - 0.28 * s, x + 0.5 * s * f, yy - 0.05],
+              dd < 5 ? FORM : HAIR,
+              k,
+            );
+            d.strength = 1;
+            d.ink = INK;
+          }
+          if (mr() < (dd < 8.5 ? 0.5 : 0.35)) {
+            const f = x < C.x ? 1 : -1;
+            const ea = 0.9 - deep * 0.4;
+            d.dot(x + 0.42 * f, yy - 0.12, 1.7, PAPER, ea);
+            d.dot(x + 0.56 * f, yy - 0.1, 1.5, PAPER, ea);
+            if (mr() < 0.3) d.dot(x + 0.3 * f, yy - 0.18, 1.3, PAPER, ea * 0.8);
+          }
+        }
+      }
+      d.pop();
+
+      // ---- The dome's outline and its cracks, behind what stands.
+      const domeH = 6;
+      const Ry = Math.hypot(R.ry, domeH * ST);
+      const dome = (a: number, inset: number): [number, number] => [
+        C.x + Math.cos(a) * (R.rx - inset),
+        C.y + Math.sin(a) * ((Math.sin(a) < 0 ? Ry : R.ry) - inset),
+      ];
+      // The band's inner edge: the foot itself on the far side, where the dome is seen edge-on
+      // and the band is its whole far wall; a narrow band elsewhere.
+      const domeIn = (a: number): [number, number] => [
+        C.x + Math.cos(a) * (R.rx - 0.75),
+        C.y + Math.sin(a) * (Math.sin(a) < 0 ? R.ry - 0.25 - 0.5 * (1 + Math.sin(a)) : R.ry - 0.75),
+      ];
+      const drawDome = (): void => {
+        groundSpace(d);
+        d.ink = LAMP_INK;
+        const n = 160;
+        for (let i = 0; i < n; i++) {
+          const a0 = -Math.PI + (i / n) * Math.PI * 2;
+          const a1 = a0 + (Math.PI * 2) / n;
+          const am = (a0 + a1) / 2;
+          if (hitAt(am)) continue;
+          const [o0x, o0y] = dome(a0, 0);
+          const [o1x, o1y] = dome(a1, 0);
+          const [i1x, i1y] = domeIn(a1);
+          const [i0x, i0y] = domeIn(a0);
+          const band = [o0x, o0y, o1x, o1y, i1x, i1y, i0x, i0y];
+          const far = Math.sin(am) < -0.3;
+          d.fill(band, LAMP, far ? 0.38 : 0.6);
+          d.hatch(band, far ? 1 : 2, LAMP_INK, 0.9, false, FORM);
+        }
+        // The outline, in runs between the breaks.
+        let run: number[] = [];
+        let inner: number[] = [];
+        const flush = (seed: number): void => {
+          if (run.length >= 4) {
+            d.ink = LAMP;
+            d.curve(run, 9, seed + 2);
+            d.ink = LAMP_INK;
+            d.curve(run, CONTOUR, seed);
+            d.curve(inner, FORM, seed + 1);
+          }
+          run = [];
+          inner = [];
+        };
+        for (let i = 0; i <= n; i++) {
+          const a = -Math.PI + (i / n) * Math.PI * 2;
+          if (hitAt(a)) {
+            flush(1300 + i);
+            continue;
+          }
+          run.push(...dome(a, 0));
+          inner.push(...domeIn(a));
+        }
+        flush(1500);
+        // Cracks: from each break, jagged lines running up the dome toward the lantern.
+        for (const [hi, h] of HITS.entries()) {
+          const crr = rng(900 + hi);
+          for (let c = 0; c < 5; c++) {
+            // Each crack starts at a broken end of the outline or inside the break.
+            const a = h.a + (c < 2 ? (c === 0 ? -h.w : h.w) : (crr() - 0.5) * h.w * 1.4);
+            let [x, y] = dome(a, 0.3);
+            const pts = [x, y];
+            const forks: number[][] = [];
+            const tx = C.x + 0.2;
+            const ty = C.y - domeH * ST * 0.9;
+            const len = 2.2 + crr() * 2.8;
+            for (let s = 0; s < 5; s++) {
+              const dx = tx - x;
+              const dy = ty - y;
+              const dl = Math.hypot(dx, dy) || 1;
+              const stepL = len / 5;
+              x += (dx / dl) * stepL + (crr() - 0.5) * 0.9;
+              y += (dy / dl) * stepL + (crr() - 0.5) * 0.9;
+              pts.push(x, y);
+              if (crr() < 0.4) forks.push([x, y, x + (crr() - 0.5) * 1.8, y + (crr() - 0.5) * 1.8]);
+            }
+            d.ink = LAMP;
+            d.path(pts, 6, 1850 + hi * 10 + c);
+            d.ink = LAMP_INK;
+            d.path(pts, c < 2 ? CONTOUR : FORM, 1800 + hi * 10 + c);
+            for (const [k, f] of forks.entries())
+              d.line(f[0] as number, f[1] as number, f[2] as number, f[3] as number, FORM, 1700 + c * 7 + k);
+          }
+        }
+        d.ink = INK;
+        d.pop();
+      };
+
+      // ---- Everything that stands, sorted by its feet.
+      const items: Item[] = [];
+      items.push({ y: CITY.y, draw: () => drawCityTop(d, t, tags, heads) });
+      for (const th of L.things) {
+        if (depthOf(th.x, th.y) > -0.5 || !onScreen(th.x, th.y)) continue;
+        items.push({
+          y: th.y,
+          draw: () => {
+            standSpace(d);
+            d.move(th.x, th.y / ST);
+            drawThingAt(d, th.kind, th.size, Math.round(th.x * 31 + th.y * 7));
+            d.pop();
+          },
+        });
+      }
+      for (const c of out) {
+        const look = crowd[c.i] as Look;
+        items.push({
+          y: c.y,
+          draw: () => {
+            groundSpace(d);
+            castShadowAt(d, c.x, c.y);
+            d.pop();
+            standSpace(d);
+            drawCitizen(d, look, citizenPose(c), c.x, c.y / ST, S, detailFor(S * T));
+            d.pop();
+          },
+        });
+      }
+      const late: Item[] = [];
+      for (const [idx, b] of bodies.entries()) {
+        const a = Math.atan2((b.y - C.y) / R.ry, (b.x - C.x) / R.rx);
+        const climber = b.air > 0.9 && (Math.sin(a) < -0.2 || Math.abs(Math.cos(a)) > 0.8);
+        (take === "dome" && climber ? late : items).push({
+          y: b.y + b.air * 0.6,
+          draw: () => drawSBody(d, b, idx, t, C.x),
+        });
+      }
+      if (take === "wall") {
+        const HP = 2.3;
+        const top = (p: (typeof posts)[number]): [number, number] => [
+          p.x + Math.sin(p.lean) * HP * (p.snapped ? 0.45 : 1),
+          p.y / ST - Math.cos(p.lean) * HP * (p.snapped ? 0.45 : 1),
+        ];
+        posts.forEach((p, k) => {
+          const q = posts[(k + 1) % POSTS] as (typeof posts)[number];
+          const list = Math.sin(p.a) < 0.3 && Math.sin(q.a) < 0.3 ? late : items;
+          if (p.lit && q.lit)
+            list.push({
+              y: (p.y + q.y) / 2,
+              draw: () => {
+                standSpace(d);
+                const [ax, ay] = top(p);
+                const [bx, by] = top(q);
+                const sheet = [p.x, p.y / ST, q.x, q.y / ST, bx, by + 0.12, ax, ay + 0.12];
+                d.fill(sheet, LAMP, 0.42);
+                d.ink = LAMP_INK;
+                for (const u of [0.33, 0.66])
+                  d.line(
+                    lerp(p.x, ax, u),
+                    lerp(p.y / ST, ay, u),
+                    lerp(q.x, bx, u),
+                    lerp(q.y / ST, by, u),
+                    HAIR,
+                    2000 + k,
+                    0.7,
+                  );
+                d.ink = LAMP;
+                d.line(ax, ay + 0.08, bx, by + 0.08, 8, 2150 + k);
+                d.ink = LAMP_INK;
+                d.line(ax, ay + 0.08, bx, by + 0.08, FORM, 2100 + k);
+                d.line(p.x, p.y / ST, q.x, q.y / ST, FORM, 2120 + k);
+                d.ink = INK;
+                d.pop();
+              },
+            });
+          list.push({
+            y: p.y + 0.01,
+            draw: () => {
+              standSpace(d);
+              const [tx, ty] = top(p);
+              d.hatch(d.round(p.x, p.y / ST + 0.03, 0.35, 0.1, 7), 2, INK, 0.6);
+              d.body([p.x - 0.11, p.y / ST, tx - 0.08, ty, tx + 0.08, ty, p.x + 0.11, p.y / ST], {
+                smooth: false,
+                wash: IRON,
+                washAlpha: 0.95,
+                weight: CONTOUR,
+                seed: 2200 + k,
+              });
+              d.body(d.box(p.x - 0.2, p.y / ST - 0.12, p.x + 0.2, p.y / ST + 0.02), {
+                smooth: false,
+                wash: IRON,
+                washAlpha: 0.95,
+                weight: FORM,
+                seed: 2250 + k,
+              });
+              if (p.snapped) {
+                // The rest of it, knocked down beside its stump.
+                const s = Math.sign(p.lean) || 1;
+                d.body(
+                  [tx, ty + 0.14, tx + s * 1.2, ty + 0.7, tx + s * 1.26, ty + 0.56, tx + 0.06, ty],
+                  { smooth: false, wash: IRON, washAlpha: 0.95, weight: FORM, seed: 2300 + k },
+                );
+                d.body(d.round(tx + s * 1.32, ty + 0.66, 0.2, 0.15, 8), {
+                  spot: true,
+                  weight: FORM,
+                  seed: 2350 + k,
+                });
+              } else if (p.lit) {
+                d.dot(tx, ty, 20, LAMP, 0.4);
+                d.body(d.round(tx, ty, 0.27, 0.22, 9), {
+                  wash: LAMP,
+                  washAlpha: 1,
+                  weight: CONTOUR,
+                  seed: 2400 + k,
+                });
+                d.dot(tx, ty, 3.5, PAPER);
+              } else {
+                d.body(d.round(tx, ty, 0.25, 0.2, 9), { spot: true, weight: CONTOUR, seed: 2500 + k });
+              }
+              d.pop();
+            },
+          });
+        });
+      }
+      items.sort((a, b) => a.y - b.y);
+      for (const item of items) item.draw();
+      if (take === "dome") drawDome();
+      late.sort((a, b) => a.y - b.y);
+      for (const item of late) item.draw();
+
+      // ---- The firepot's burn on the heap.
+      groundSpace(d);
+      d.wash(d.round(burnX, burnY - 0.5, 1.7, 1.0, 12, 31), 0xe79a3c, 0.5, true);
+      d.wash(d.round(burnX + 0.2, burnY - 0.7, 0.9, 0.55, 10, 32), 0xf2c25a, 0.55, true);
+      d.pop();
+      standSpace(d);
+      d.ink = BLOW;
+      for (let k = 0; k < 5; k++) {
+        const fx = burnX - 1.0 + k * 0.5 + (hash(k, 40) - 0.5) * 0.2;
+        const fy = (burnY - 0.3 - (k % 2) * 0.4) / ST;
+        const hgt = 0.45 + hash(k, 41) * 0.45;
+        const lick = [fx - 0.13, fy, fx - 0.1, fy - hgt * 0.5, fx + 0.06, fy - hgt, fx + 0.04, fy - hgt * 0.45, fx + 0.14, fy];
+        d.fill(lick, 0xf0a640, 0.9, true);
+        d.curve(lick, FORM, 3000 + k, true);
+      }
+      d.ink = INK;
+      d.pop();
+
+      // ---- Strokes over the press.
+      standSpace(d);
+      for (const s of swings) s(d);
+      // The spear's thrust: one long stroke through the shield into the elite.
+      {
+        const look = crowd[spear.i] as Look;
+        const sx = spear.x - 1.3;
+        const sy = spear.y / ST - 0.8;
+        const ex = elx + 0.9;
+        const ey = ely / ST - 1.2;
+        const dx = ex - sx;
+        const dy = ey - sy;
+        const l = Math.hypot(dx, dy);
+        const nx = -dy / l;
+        const ny = dx / l;
+        d.body([sx, sy, ex + nx * 0.22, ey + ny * 0.22, ex + dx * 0.08 / l, ey + dy * 0.08 / l, ex - nx * 0.22, ey - ny * 0.22], {
+          smooth: false,
+          wash: look.cloak,
+          washAlpha: 1,
+          weight: FORM,
+          seed: 3100,
+        });
+      }
+      d.pop();
+      groundSpace(d);
+      drawImpactRaw(d, elx + 0.5, ely - 1.6, 1.5, 3);
+      drawImpactRaw(d, ebx + 0.6, eby - 0.9, 1.0, 4);
+      drawImpactRaw(d, wbx - 0.6, wby - 0.9, 1.0, 5);
+      d.pop();
+      standSpace(d);
+      // The pot in the air, the bow's arrows, the rail's arrows.
+      drawPot(d, pot.x - 1.5, (pot.y - 0.4) / ST, -0.9, -0.35, 1.9, 0, 7);
+      drawArrow(d, bow.x - 2.3, bow.y / ST - 0.2, -0.95, 0.3, 1.1, 8);
+      drawArrow(d, bow.x - 3.8, bow.y / ST + 0.25, -0.95, 0.3, 0.9, 9);
+      const rail = (ax: number, ay: number, a: number, dd: number, h: number, seed: number): void => {
+        const [tx, ty] = E(a, dd);
+        const fx = lerp(CITY.x + ax, tx, 0.62);
+        const fy = lerp(CITY.y + ay * GY, ty, 0.62);
+        const dx = tx - (CITY.x + ax);
+        const dy = ty - (CITY.y + ay * GY);
+        const l = Math.hypot(dx, dy);
+        const ux = dx / l;
+        const uy = dy / l;
+        // Its shadow on the ground, then the arrow high over it with its streak behind.
+        d.line(fx - ux * 0.4, fy / ST + 0.05, fx + ux * 0.4, fy / ST + 0.05 + uy * 0.3, HAIR, seed, 0.5);
+        const hy = fy / ST - h;
+        const tail = [fx - ux * 3.0, hy - (uy * 3.0) / ST];
+        d.fill(
+          [tail[0] as number, tail[1] as number, fx - ux * 0.5 - uy * 0.09, hy - (uy * 0.5) / ST + ux * 0.09, fx - ux * 0.5 + uy * 0.09, hy - (uy * 0.5) / ST - ux * 0.09],
+          INK,
+          0.35,
+        );
+        d.line(fx - ux * 0.5, hy - (uy * 0.5) / ST, fx + ux * 0.5, hy + (uy * 0.5) / ST, CONTOUR, seed + 1);
+        d.fill(
+          [fx + ux * 0.75, hy + (uy * 0.75) / ST, fx + ux * 0.4 - uy * 0.14, hy + (uy * 0.4) / ST + ux * 0.14, fx + ux * 0.4 + uy * 0.14, hy + (uy * 0.4) / ST - ux * 0.14],
+          INK,
+        );
+      };
+      rail(-1.4, -2.45, -2.25, 3.5, 2.4, 10);
+      rail(-1.4, -2.45, -2.1, 4.5, 2.0, 11);
+      rail(5.3, 2.0, 0.75, 3.0, 2.2, 12);
+      rail(-4.9, 2.4, 2.65, 3.6, 2.1, 13);
+      // The rare, two tiles out in the heap.
+      drawDrop(d, dropX, dropY / ST, dropX, dropY / ST, 2, 2, 1, 63, 0.5);
+      d.pop();
+      // The gun posts' bolts, over the shield into the press.
+      for (const [side, a, seed] of BOLTS) {
+        const mx = px(CITY.x + side * 8.0);
+        const my = py(CITY.y) - 1.9 * T * ST;
+        const [tx0, ty0] = E(a, 4.2);
+        const tx = px(tx0);
+        const ty = py(ty0) - 0.9 * T * ST;
+        const u = 0.7;
+        const bx = lerp(mx, tx, u);
+        const by = lerp(my, ty, u) - Math.sin(u * Math.PI) * 30;
+        const ux = (tx - mx) / Math.hypot(tx - mx, ty - my);
+        const uy = (ty - my) / Math.hypot(tx - mx, ty - my);
+        // The streak behind it: a tapered wedge of paper, then the shaft in brass, inked.
+        const sx0 = bx - ux * 160;
+        const sy0 = by - uy * 160;
+        d.fill([sx0, sy0, bx - ux * 40 - uy * 6, by - uy * 40 + ux * 6, bx - ux * 40 + uy * 6, by - uy * 40 - ux * 6], PAPER, 0.85);
+        d.line(sx0, sy0, bx - ux * 40, by - uy * 40, HAIR, 3210 + seed, 0.8);
+        d.line(bx - ux * 44, by - uy * 44, bx, by, 9, 3220 + seed);
+        d.ink = BRASS;
+        d.line(bx - ux * 42, by - uy * 42, bx - ux * 2, by - uy * 2, 4.5, 3230 + seed);
+        d.ink = INK;
+        const head = [bx + ux * 14, by + uy * 14, bx - uy * 7, by + ux * 7, bx + uy * 7, by - ux * 7];
+        d.fill(head, PAPER, 1);
+        d.path(head, FORM, 3240 + seed, true);
+        groundSpace(d);
+        drawImpactRaw(d, tx0, ty0 - 0.9, 1.1, 6 + seed);
+        d.pop();
+      }
+
+      // ---- Where the horde strikes the shield.
+      if (take === "dome") {
+        groundSpace(d);
+        d.ink = LAMP_INK;
+        for (const [hi, h] of HITS.entries()) {
+          const sr = rng(600 + hi);
+          // What is left of the outline across the break: loose pieces, knocked out of line.
+          for (let s = 0; s < 7; s++) {
+            const a0 = h.a - h.w + (s / 7) * h.w * 2 + sr() * 0.03;
+            const a1 = a0 + h.w * 0.12;
+            const off = (sr() - 0.5) * 0.6;
+            const [x0, y0] = dome(a0, off);
+            const [x1, y1] = dome(a1, off + (sr() - 0.5) * 0.4);
+            if (sr() < 0.75) d.line(x0, y0, x1, y1, CONTOUR, 3300 + hi * 10 + s);
+          }
+          // Shards, thrown off.
+          for (let s = 0; s < 3; s++) {
+            const [x, y] = dome(h.a + (sr() - 0.5) * h.w * 1.4, -0.4 - sr() * 1.0);
+            const r = 0.3 + sr() * 0.2;
+            const ang = sr() * Math.PI;
+            const ux = Math.cos(ang) * r;
+            const uy = Math.sin(ang) * r;
+            const sliver = [x - ux, y - uy, x - uy * 0.25, y + ux * 0.25, x + ux, y + uy];
+            d.fill(sliver, LAMP, 0.95);
+            d.path(sliver, HAIR, 3400 + s, true);
+          }
+        }
+        d.ink = INK;
+        d.pop();
+      } else if (take === "ring") {
+        groundSpace(d);
+        // Where the shield stood at full strength: a dotted line over the press.
+        for (let i = 0; i < 150; i++) {
+          const a = (i / 150) * Math.PI * 2;
+          const [x, y] = E(a, 0, FULL);
+          if (!onScreen(x, y, 0)) continue;
+          d.dot(x, y, 2.4, LAMP, 0.85);
+        }
+        // The rim, bright, then flares where blows land on it.
+        d.ink = LAMP_INK;
+        const rimPts: number[] = [];
+        for (let i = 0; i < 90; i++) rimPts.push(...E((i / 90) * Math.PI * 2, 0));
+        d.curve(rimPts, HEAVY, 3500, true);
+        d.ink = PAPER;
+        const innerPts: number[] = [];
+        for (let i = 0; i < 90; i++) innerPts.push(...E((i / 90) * Math.PI * 2, -0.22));
+        d.curve(innerPts, FORM, 3501, true, 0.9);
+        d.pop();
+        standSpace(d);
+        for (const [hi, h] of HITS.entries()) {
+          const fr = rng(700 + hi);
+          for (const da of [-0.45, 0, 0.5]) {
+            const a = h.a + da * h.w;
+            const [x, y] = E(a, 0);
+            const yy = y / ST - 0.55;
+            const big = da === 0 ? 1.5 : 0.9;
+            d.dot(x, yy, 18 * big, LAMP, 0.45);
+            for (let r = 0; r < 11; r++) {
+              const ra = (r / 11) * Math.PI * 2 + fr();
+              const l0 = 0.25 * big;
+              const l1 = (0.7 + fr() * 0.7) * big;
+              d.ink = LAMP_INK;
+              d.line(x + Math.cos(ra) * l0, yy + Math.sin(ra) * l0 * 0.8, x + Math.cos(ra) * l1, yy + Math.sin(ra) * l1 * 0.8, CONTOUR, 3600 + hi * 30 + r);
+            }
+            d.ink = INK;
+            d.body(d.round(x, yy, 0.3 * big, 0.24 * big, 9, 3700 + hi), { wash: LAMP, washAlpha: 1, weight: FORM, seed: 3700 + hi });
+            d.dot(x, yy, 3.5 * big, PAPER);
+          }
+        }
+        d.pop();
+      } else {
+        // Sparks off the posts the horde is knocking down, and off the light where it is hit.
+        standSpace(d);
+        posts.forEach((p, k) => {
+          if (p.lit) return;
+          const sr = rng(800 + k);
+          d.ink = LAMP_INK;
+          for (let s = 0; s < 7; s++) {
+            const ra = sr() * Math.PI * 2;
+            const r0 = 0.3;
+            const r1 = 0.6 + sr() * 0.6;
+            const yy = p.y / ST - 1.1;
+            d.line(p.x + Math.cos(ra) * r0, yy + Math.sin(ra) * r0, p.x + Math.cos(ra) * r1, yy + Math.sin(ra) * r1, FORM, 3800 + k * 10 + s);
+          }
+          d.ink = INK;
+        });
+        d.pop();
+      }
+
+      for (const nm of nums) drawNum(d, nm);
+
+      // ---- Names: the six out, four of the nine aboard.
+      const boxes: number[] = [];
+      const label = (name: string, rgb: number, ax: number, ay: number, dx: number, dy: number, size: number, seed: number): void => {
+        const cx = ax + dx;
+        const base = ay + dy;
+        const w = measure("roman", size, name);
+        if (Math.hypot(dx, dy) > 34) d.line(cx, base + 6, ax, ay + 2, HAIR, seed);
+        d.fill(d.box(cx - w / 2 - 1, base + 3, cx + w / 2 + 1, base + 8), d.ground);
+        d.fill(d.box(cx - w / 2, base + 4, cx + w / 2, base + 7), rgb);
+        d.text(name, cx, base, { size, align: 0.5, halo: 1.4 });
+        boxes.push(cx - w / 2, base - size * 0.8, cx + w / 2, base + 8);
+      };
+      const ringed = take === "ring";
+      const OUT_TAG: Record<number, [number, number]> = {
+        0: ringed ? [0, -46] : [-100, 100],
+        8: [-60, 118],
+        1: ringed ? [160, 14] : [10, 96],
+        2: [120, 40],
+        3: [100, -24],
+        4: [90, 30],
+      };
+      for (const c of out) {
+        const look = crowd[c.i] as Look;
+        const [dx, dy] = OUT_TAG[c.i] ?? [0, -10];
+        label(look.name, look.cloak, px(c.x), py(c.y) - S * T * ST * HAT_TOP * 0.82, dx, dy, 36, c.i + 40);
+      }
+      const ABOARD_TAG: Record<string, [number, number]> = {
+        dr_spoon: [0, -18],
+        sleepyotter: [0, -18],
+        NotABot_: [-150, 8],
+        kraken_main: [0, -18],
+      };
+      for (const tg of tags) {
+        const o = ABOARD_TAG[tg.name];
+        if (o) label(tg.name, tg.rgb, tg.x, tg.y, o[0], o[1], 30, 60);
+      }
+
+      drawCorners(d, {
+        time: "3:40",
+        elapsed: 0.72,
+        counts: ["6", "9", "1388", "31"],
+        log: [10, "Gravel Oath", 2],
+      });
+      drawShieldSlip(d, take, litPosts, POSTS);
+      drawFrameRule(d);
+    },
+  };
+}
+
+function castShadowAt(d: Draw, x: number, y: number): void {
+  castShadow(d, x, y, S, 0.5);
+}
+
+/** A contact burst at a ground point, `size` tiles across, already in ground space. */
+function drawImpactRaw(d: Draw, x: number, y: number, size: number, seed: number): void {
+  drawImpact(d, x, y, 0.04, size, seed);
+}
+
+function drawSBody(d: Draw, b: SBody, idx: number, t: number, cx: number): void {
+  const hide = TONE.hide;
+  const dark = TONE.dark;
+  if (b.dark) {
+    TONE.hide = HORDE_HIDE;
+    TONE.dark = HORDE_DARK;
+  }
+  if (b.kind === "mite") {
+    standSpace(d);
+    drawSwarm(
+      d,
+      [
+        {
+          x: b.x,
+          y: b.y / ST - b.air,
+          face: b.face,
+          phase: t * 3 + idx * 0.37,
+          stretch: b.air > 0 ? 1.12 : 1 + (idx % 3) * 0.05,
+          flash: b.act === "flash",
+          seed: idx,
+        },
+      ],
+      1,
+      0.97,
+    );
+    d.pop();
+  } else {
+    drawMon(d, { kind: b.kind, x: b.x, y: b.y - b.air * ST, face: b.face, act: b.act, build: b.build, air: 0 }, idx, t);
+  }
+  TONE.hide = hide;
+  TONE.dark = dark;
+  if (!b.dark || b.act === "flash") return;
+  // The side toward the lantern catches its light: a paper line along the back.
+  const sz = b.kind === "mite" ? 0.62 : b.kind === "hound" ? 0.85 : b.kind === "brute" ? 1.75 : 2.2;
+  const hw = b.kind === "mite" ? 0.42 : b.kind === "hound" ? 0.75 : 1.0;
+  const s = b.x < cx ? 1 : -1;
+  const top = b.y / ST - b.air - sz;
+  standSpace(d);
+  d.ink = PAPER;
+  d.curve([b.x - s * hw * 0.1, top + 0.04, b.x + s * hw * 0.45, top - 0.02, b.x + s * hw * 0.9, top + 0.22 * hw], FORM, idx + 5000, false, 0.8);
+  d.ink = INK;
+  d.pop();
+}
+
+function drawShieldSlip(d: Draw, take: Take, lit: number, posts: number): void {
+  const x = FRAME.x0 + 18;
+  const y = FRAME.y0 + 18 + 104 + 12;
+  const w = 224;
+  const h = 96;
+  slip(d, x, y, w, h, 35);
+  const cx = x + 50;
+  const cy = y + h / 2;
+  const r = 30;
+  const strength = take === "wall" ? lit / posts : take === "dome" ? DOME_HOLDS : 0.52;
+  if (take === "dome") {
+    // The dome in small: its outline holding over the share that still stands.
+    const base = cy + 14;
+    d.line(cx - r - 4, base, cx + r + 4, base, FORM, 36);
+    const n = 24;
+    d.ink = LAMP_INK;
+    for (let i = 0; i < n; i++) {
+      const a0 = Math.PI + (i / n) * Math.PI;
+      const a1 = a0 + Math.PI / n;
+      const holds = i / n < strength;
+      const p0 = [cx + Math.cos(a0) * r, base + Math.sin(a0) * r * 1.05];
+      const p1 = [cx + Math.cos(a1) * r, base + Math.sin(a1) * r * 1.05];
+      if (holds) {
+        const q0 = [cx + Math.cos(a0) * (r - 7), base + Math.sin(a0) * (r - 7)];
+        const q1 = [cx + Math.cos(a1) * (r - 7), base + Math.sin(a1) * (r - 7)];
+        const band = [p0[0], p0[1], p1[0], p1[1], q1[0], q1[1], q0[0], q0[1]] as number[];
+        d.fill(band, LAMP, 0.5);
+        d.hatch(band, 2, LAMP_INK, 0.9, false, FORM);
+        d.line(p0[0] as number, p0[1] as number, p1[0] as number, p1[1] as number, CONTOUR, 37 + i);
+      } else if (i % 2 === 0) {
+        d.line(p0[0] as number, (p0[1] as number) - 2, p1[0] as number, (p1[1] as number) + 2, FORM, 37 + i);
+      }
+    }
+    d.ink = INK;
+  } else if (take === "ring") {
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      d.dot(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 1.8, LAMP_INK);
+    }
+    const k = 0.35 + 0.65 * strength;
+    d.fill(d.round(cx, cy, r * k, r * k, 24).slice(), LAMP, 0.6);
+    d.ink = LAMP_INK;
+    d.curve(d.round(cx, cy, r * k, r * k, 24).slice(), CONTOUR, 38, true);
+    d.ink = INK;
+  } else {
+    for (let i = 0; i < posts; i++) {
+      const a = -Math.PI / 2 + (i / posts) * Math.PI * 2;
+      const on = i < lit;
+      const px0 = cx + Math.cos(a) * r;
+      const py0 = cy + Math.sin(a) * r;
+      if (on) {
+        d.dot(px0, py0, 3.6, LAMP_INK);
+        d.dot(px0, py0, 2.4, LAMP);
+      } else d.dot(px0, py0, 2.2, INK);
+    }
+  }
+  const value = take === "wall" ? `${lit}/${posts}` : `${Math.round(strength * 100)}%`;
+  d.text(value, x + 98, y + 54, { size: take === "wall" ? 40 : 48 });
+  d.text("shield", x + 100, y + 82, { size: 24 });
 }

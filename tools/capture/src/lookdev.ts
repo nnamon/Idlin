@@ -33,6 +33,9 @@ export const PLANS: Readonly<Record<string, Plan>> = {
   denser: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   bigger: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   smallcity: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  "siege-dome": { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  "siege-ring": { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  "siege-wall": { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   figures: { stills: [1], burst: 1, clip: [0, 1, 10] },
   scale: { stills: [1], burst: 1, clip: [0, 1, 10] },
 };

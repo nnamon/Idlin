@@ -7,8 +7,8 @@
 import { BLOW, CONTOUR, type Draw, FORM, INK, PAPER } from "./draw.ts";
 import { hash, lerp, noise1 } from "./geom.ts";
 
-const HIDE = 0x9a948a;
-const HIDE_DARK = 0x77716a;
+/** The hide washes, which a mockup may darken for the horde. */
+export const TONE = { hide: 0x9a948a, dark: 0x77716a };
 const BRUISE = 0x5a2a3a;
 
 export interface Mite {
@@ -81,7 +81,7 @@ export function drawSwarm(d: Draw, mites: readonly Mite[], count: number, size: 
     d.scale(size * m.face * m.stretch, size / m.stretch);
     d.fill(BODY, PAPER, 1, true);
     if (!m.flash) {
-      d.fill(BODY, HIDE, 0.9, true);
+      d.fill(BODY, TONE.hide, 0.9, true);
       d.fill(SHELL, INK, 1, true);
     }
     d.dot(0.36, -0.42, Math.max(1.3, px * 0.075), PAPER);
@@ -220,7 +220,7 @@ export function drawHound(
     X(-1.0),
     top + 0.3,
   ];
-  d.body(body, { wash: p.flash ? PAPER : HIDE, washAlpha: 0.9, seed: seed + 20 });
+  d.body(body, { wash: p.flash ? PAPER : TONE.hide, washAlpha: 0.9, seed: seed + 20 });
   if (!p.flash) {
     // A ragged mane of spot black down the back. As it loses ink the black breaks into hatching.
     const mane = [
@@ -309,7 +309,7 @@ export function drawBrute(
   // The far arm and leg.
   d.strength = strength * 0.75;
   d.body([-0.5 - step * 0.1, 0, -0.62, -0.4, -0.3, -0.42, -0.24 - step * 0.1, 0], {
-    wash: HIDE_DARK,
+    wash: TONE.dark,
     washAlpha: 0.9,
     seed: seed + 1,
   });
@@ -343,7 +343,7 @@ export function drawBrute(
     -0.3,
     -0.02,
   ];
-  d.body(body, { wash: p.flash ? PAPER : HIDE, washAlpha: 0.92, weight: CONTOUR, seed: seed + 2 });
+  d.body(body, { wash: p.flash ? PAPER : TONE.hide, washAlpha: 0.92, weight: CONTOUR, seed: seed + 2 });
   if (!p.flash) {
     const back = [
       -0.8,
@@ -400,7 +400,7 @@ export function drawBrute(
       armX - 0.16,
       armY - 0.14,
     ],
-    { wash: p.flash ? PAPER : HIDE_DARK, washAlpha: 0.95, weight: CONTOUR, seed: seed + 3 },
+    { wash: p.flash ? PAPER : TONE.dark, washAlpha: 0.95, weight: CONTOUR, seed: seed + 3 },
   );
   if (!p.flash)
     d.hatch(
