@@ -53,6 +53,16 @@ import {
 import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./inputs.ts";
 import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
+import {
+  applyOrder,
+  citizenOf,
+  flagsHold,
+  freshOrders,
+  type Orders,
+  ordersInts,
+  readOrders,
+  withOrders,
+} from "./orders.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
 import {
   gainXp,
@@ -482,7 +492,8 @@ export interface Mark {
   readonly by: number;
 }
 
-export interface Actor {
+/** Everything about one actor. Its `Orders` are what chat changes (see orders.ts). */
+export interface Actor extends Orders {
   readonly id: number;
   readonly name: string;
   /** The tile the actor occupies. While it walks, this is already the tile it is stepping onto. */
@@ -1534,6 +1545,22 @@ function nearestUntaken(
   return null;
 }
 
+/** The inputs that come from a chatter's own messages, besides `join`. */
+const HEARD_FROM = new Set<string>([
+  "heard",
+  "go",
+  "free",
+  "param",
+  "run",
+  "me",
+  "stash",
+  "wear",
+  "lock",
+  "scrap",
+  "bench",
+  "say",
+] satisfies ChatInput["type"][]);
+
 function applyInput(world: World, input: Input): void {
   // An input that cannot be honoured is dropped; it never throws and never half-applies.
   // Inputs come from outside the simulation, so nothing about their shape is assumed.
@@ -1542,11 +1569,11 @@ function applyInput(world: World, input: Input): void {
   let fields: Record<string, unknown>;
   try {
     // Read every field once, before anything changes, so a property that throws changes nothing.
-    const { type, name, x, y, program, kind, weapon, account, role } = raw as Record<
+    const { type, name, x, y, program, kind, weapon, account, role, words, value } = raw as Record<
       string,
       unknown
     >;
-    fields = { type, name, x, y, program, kind, weapon, account, role };
+    fields = { type, name, x, y, program, kind, weapon, account, role, words, value };
   } catch {
     return;
   }
@@ -1555,7 +1582,12 @@ function applyInput(world: World, input: Input): void {
     join(world, fields.account, name, fields.role);
     return;
   }
-  // The other chat inputs have no effect yet (see inputs.ts).
+  // Every other input from a chat account says its chatter was heard; `go`,
+  // `free` and `param` act on its citizen, and the rest have no effect yet (see inputs.ts).
+  if (typeof type === "string" && HEARD_FROM.has(type)) {
+    applyOrder(world, fields);
+    return;
+  }
   if (type !== "spawn") return;
   if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return;
   if (!isInt32(fields.x) || !isInt32(fields.y)) return;
@@ -1588,15 +1620,21 @@ function applyInput(world: World, input: Input): void {
 
 /**
  * A chatter's first message makes their citizen: an adventurer named by their
- * username, on NEWCOMER_PROGRAM, on the free tile nearest the camp. A name
- * already in the world, in any capitals, is taken to be that chatter's
- * citizen, so a second join changes nothing. The account is checked and not
- * yet kept; the hatch, the name rule and colours from the account are C3's.
+ * username and kept under their account, on NEWCOMER_PROGRAM, on the free
+ * tile nearest the camp. An account that has a citizen already is only
+ * heard. A name another citizen has, in any capitals, is refused, so `!go`
+ * never finds two. The hatch, the name rule and colours from the account
+ * are C3's.
  */
 function join(world: World, account: unknown, name: unknown, role: unknown): void {
   if (typeof account !== "string" || !ACCOUNT.test(account)) return;
   if (typeof name !== "string" || !USERNAME.test(name)) return;
   if (!ROLES.some((each) => each === role)) return;
+  const own = citizenOf(world, account);
+  if (own) {
+    own.heard = world.tick;
+    return;
+  }
   if (!Object.hasOwn(world.programs, NEWCOMER_PROGRAM)) return;
   if (world.nextActorId >= MAX_ACTOR_ID) return;
   const lower = name.toLowerCase();
@@ -1604,7 +1642,7 @@ function join(world: World, account: unknown, name: unknown, role: unknown): voi
     return;
   const at = freeTileNear(world, place(world.atlas, "camp"));
   if (!at) return;
-  addActor(world, name, at.x, at.y, NEWCOMER_PROGRAM, ADVENTURER, "");
+  addActor(world, name, at.x, at.y, NEWCOMER_PROGRAM, ADVENTURER, "", "blade", account);
 }
 
 /**
@@ -1776,9 +1814,11 @@ function addActor(
   kind: string,
   shift: Shift,
   weapon: Family = "blade",
+  account = "",
 ): void {
   const adventurer = kind === ADVENTURER;
   world.actors.push({
+    ...freshOrders(world.programs[program] as Program, account, world.tick),
     id: world.nextActorId++,
     name,
     x,
@@ -1924,6 +1964,12 @@ export function clock(world: World): Clock {
   };
 }
 
+/**
+ * A program as its fingerprint takes it. One with params follows its labels
+ * with -1 and the params; one without hashes as programs did before they had
+ * params, so snapshots saved then still match. A label's length comes first
+ * and is never -1, so the two forms never read the same.
+ */
 const programInts = (name: string, program: Program): number[] => [
   ...stringInts(name),
   program.version,
@@ -1931,9 +1977,23 @@ const programInts = (name: string, program: Program): number[] => [
   ...program.code,
   program.rules.length,
   ...program.rules.flatMap(stringInts),
+  ...(program.params.length === 0
+    ? []
+    : [
+        -1,
+        program.params.length,
+        ...program.params.flatMap((p) => [
+          ...stringInts(p.name),
+          p.value,
+          p.min,
+          p.max,
+          p.values.length,
+          ...p.values.flatMap(stringInts),
+        ]),
+      ]),
 ];
 
-/** A fingerprint of the program table: names in order, with each program's code and rule labels. */
+/** A fingerprint of the program table: names in order, with each program's code, rule labels and params. */
 export function hashPrograms(programs: Programs): string {
   return hashInts(
     Object.keys(programs)
@@ -1995,8 +2055,9 @@ const halves = (n: number): number[] => [
  * had no spawn table, no `nextSpawn`, and no `shift` or `stalled` on actors,
  * versions 4 and 5 had no experience, bag or bank, versions before 8 no
  * death count, versions before 9 no nodes, versions before 10 no weapons,
- * aims, knockback, flasks or arrows, and versions before 11 no statuses, so
- * those are left out. Banks before version 9 held the first V8_GOODS goods only.
+ * aims, knockback, flasks or arrows, versions before 11 no statuses, and
+ * versions before 12 no accounts, params, tokens or flags, so those are left
+ * out. Banks before version 9 held the first V8_GOODS goods only.
  */
 function hashWorldAs(world: World, version: number): string {
   const { atlas } = world;
@@ -2069,6 +2130,7 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
         ? []
         : [FAMILIES.indexOf(a.weapon as Family), a.aim, a.knockX, a.knockY, a.flask, a.kills]),
       ...(before11 ? [] : STATUS_FIELDS.map((field) => a.status[field])),
+      ...(version < 12 ? [] : ordersInts(a)),
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
@@ -2117,7 +2179,7 @@ export function hashSpawns(spawns: Spawns): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 11;
+export const SNAPSHOT_VERSION = 12;
 /** How many goods there were up to version 8: `logs`, `raw_fish` and `cooked_fish`. */
 const V8_GOODS = 3;
 
@@ -2342,7 +2404,12 @@ export function sameGround(version: number, mapHash: unknown, atlas: Atlas): boo
  * rules do not allow (see refuseOldMonsters); anything else is left for
  * readState to judge.
  */
-export function migrate(version: number, state: unknown, atlas: Atlas): unknown {
+export function migrate(
+  version: number,
+  state: unknown,
+  atlas: Atlas,
+  programs: Programs,
+): unknown {
   const old = version < 7;
   if (old) refuseOldMonsters(state);
   const v5 = version === 4 ? fromVersion4(state) : state;
@@ -2351,7 +2418,20 @@ export function migrate(version: number, state: unknown, atlas: Atlas): unknown 
   const v8 = version < 8 ? fromVersion7(v7) : v7;
   const v9 = version < 9 ? fromVersion8(v8, atlas) : v8;
   const v10 = version < 10 ? fromVersion9(v9) : v9;
-  return version < 11 ? fromVersion10(v10) : v10;
+  const v11 = version < 11 ? fromVersion10(v10) : v10;
+  return version < 12 ? fromVersion11(v11, programs) : v11;
+}
+
+/**
+ * A version 11 world's state with what version 12 added (see `withOrders`):
+ * every actor has its program's defaults for its params, a full set of
+ * tokens, no flag and no account, and was last heard at the snapshot's tick.
+ */
+function fromVersion11(state: unknown, programs: Programs): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors, tick } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return state;
+  return { ...state, actors: actors.map((actor: unknown) => withOrders(actor, programs, tick)) };
 }
 
 /** A version 10 world's state with what version 11 added: nobody has a status. */
@@ -2458,7 +2538,8 @@ function callOffOldBlows(state: unknown): unknown {
  * every node stands with its full yield and nobody has a burnt fish. In one
  * from before version 10, every adventurer holds a blade and a full flask,
  * and its wind-up, if it was in one, is called off. In one from before
- * version 11, nobody has a status.
+ * version 11, nobody has a status. In one from before version 12, nobody
+ * belongs to a chat account, has a flag or has set a param.
  */
 export const restore = (
   text: string,
@@ -2500,7 +2581,7 @@ function restoreSaved(
   if (version !== 4 && spawnsHash !== hashSpawns(spawnTable)) {
     throw new SnapshotError("snapshot was taken with different spawns");
   }
-  const migrated = migrate(version, state, atlas);
+  const migrated = migrate(version, state, atlas, table);
   if (version === SNAPSHOT_VERSION) {
     const world = readState(migrated, atlas, table, kindTable, spawnTable);
     if (!world || hashWorldAs(world, version) !== hash)
@@ -2839,7 +2920,16 @@ export function readState(
       return null;
     }
     if (!isInt32(fault) || fault < 0 || fault >= FAULTS.length) return null;
+    const orders = readOrders(
+      item as Record<string, unknown>,
+      adventurer,
+      programs[program] as Program,
+      atlas,
+      tick,
+    );
+    if (!orders) return null;
     world.actors.push({
+      ...orders,
       id,
       name,
       x,
@@ -2905,6 +2995,10 @@ export function readState(
     if (actor.windup === 0) continue;
     if (!same(marksOf.get(actor.id) ?? [], blowTiles(world, actor, actor.aim))) return null;
   }
+  if (!flagsHold(world.actors)) return null;
+  // `join` gives an account one citizen, and an order goes to the first it finds.
+  const owned = world.actors.filter((a) => a.account !== "").map((a) => a.account);
+  if (new Set(owned).size !== owned.length) return null;
   const arrows = readArrows(rawArrows, world);
   if (!arrows) return null;
   world.arrows = arrows;

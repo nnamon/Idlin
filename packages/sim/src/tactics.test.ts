@@ -696,6 +696,100 @@ describe("hostile source", () => {
   });
 });
 
+describe("params", () => {
+  const SOURCE = [
+    'bot "Steady"',
+    "param margin = 120 from 0 to 240",
+    "param stance = gather of gather, fight, careful",
+    "param tries = 3",
+    "param lean = -2 from -5 to 5",
+    'when stance == fight as "fight" -> wait(margin + lean)',
+    "when stance == careful -> wait(tries)",
+    "otherwise -> idle",
+  ].join("\n");
+
+  it("declares params with ranges and named values, and reads the actor's values at run time", () => {
+    const program = compiled(SOURCE);
+    expect(program.params).toEqual([
+      { name: "margin", value: 120, min: 0, max: 240, values: [] },
+      { name: "stance", value: 0, min: 0, max: 2, values: ["gather", "fight", "careful"] },
+      { name: "tries", value: 3, min: 0, max: 2147483647, values: [] },
+      { name: "lean", value: -2, min: -5, max: 5, values: [] },
+    ]);
+    const memory = new Array<number>(MEMORY_SLOTS).fill(0);
+    const run = (values: number[]) => runDecision(program, memory, () => 0, values);
+    // The defaults, with no values given: gather, so it idles.
+    expect(run([]).action?.id).toBe(id("idle"));
+    expect(run([150, 1, 3, 4]).action).toEqual({ id: id("wait"), args: [154] });
+    expect(run([150, 2, 9, 4]).action).toEqual({ id: id("wait"), args: [9] });
+    // A change of value needs no compile: the same program, another number.
+    expect(run([0, 1, 3, -5]).action).toEqual({ id: id("wait"), args: [-5] });
+  });
+
+  it("refuses a ninth param, a default out of its range, and names already taken", () => {
+    const nine = Array.from({ length: 9 }, (_, i) => `param p${i} = ${i}`).join("\n");
+    expect(errorsOf(`${nine}\notherwise -> idle`)).toEqual([
+      "9:1 a program can declare at most 8 params",
+    ]);
+    const refused = (lines: string): string[] => errorsOf(`${lines}\notherwise -> idle`);
+    expect(refused("param margin = 300 from 0 to 240")).toEqual([
+      "1:16 the default 300 is outside 0 to 240",
+    ]);
+    expect(refused("param margin = 120 from 240 to 0")).toEqual([
+      '1:20 "from 240 to 0" is empty: the first must not be larger',
+    ]);
+    expect(refused("param stance = run of gather, fight")).toEqual([
+      '1:16 "run" is not one of the values listed after "of"',
+    ]);
+    expect(refused("param stance = fight of fight, fight")).toEqual([
+      '1:32 "fight" is named twice',
+    ]);
+    expect(refused("param hp = 3")).toEqual([
+      '1:1 the param "hp" cannot be used: it is already a sensor or an action',
+    ]);
+    expect(refused("param camp = 3")).toEqual([
+      '1:1 the param "camp" cannot be used: it is already a place, a skill, a good or a kind of node',
+    ]);
+    expect(refused("param a = x of x, y\nparam b = y of y, z")).toEqual([
+      '2:16 the value "y" cannot be used: it is already a value of "a"',
+    ]);
+    expect(refused("param a = 1\nparam a = 2")).toEqual([
+      '2:1 the param "a" cannot be used: it is already a param',
+    ]);
+    expect(refused("param flag = 1")).toEqual([
+      '1:1 the param "flag" cannot be used: it is already the flag\'s place',
+    ]);
+    expect(refused("param Margin = 1")[0]).toMatch(/its name in lower case/);
+    expect(refused("param margin = 99999999999")[0]).toMatch(/too large/);
+    expect(refused("param margin 120")[0]).toMatch(/expected "="/);
+    expect(refused("param margin = 1 from 0 240")[0]).toMatch(/expected "to"/);
+  });
+
+  it("keeps params above the rules and out of the program's own memory", () => {
+    expect(errorsOf("when hp > 0 -> idle\nparam margin = 1\notherwise -> idle")).toEqual([
+      "2:1 params are declared above the rules, after the bot line",
+    ]);
+    expect(errorsOf("param margin = 1\notherwise -> set margin = 2; idle")).toEqual([
+      '2:14 "margin" is a param: its chatter sets it, so the program can read it but not set it',
+    ]);
+    // A value's name is a constant like a place's number.
+    expect(
+      errorsOf("param stance = gather of gather, fight\notherwise -> set fight = 2; idle"),
+    ).toEqual(['2:14 "fight" already means something, so it cannot be used as a memory slot']);
+  });
+
+  it("reads the flag as a place wherever a place goes, and refuses it as a number", () => {
+    const program = compiled("when distance(flag) > 6 -> walk_to(flag)\notherwise -> idle");
+    expect(decide(program, { distance: 7, flag_x: 3, flag_y: 4 }).action).toEqual({
+      id: id("walk_to"),
+      args: [3, 4],
+    });
+    expect(errorsOf("when flag > 0 -> idle")[0]).toMatch(/"flag" is a place/);
+    expect(errorsOf("otherwise -> set flag = 1; idle")[0]).toMatch(/already means something/);
+    expect(compileTactics("otherwise -> idle", { flag: 3 })).toMatchObject({ ok: false });
+  });
+});
+
 describe("the language reference", () => {
   it("lists exactly the system calls the machine has", () => {
     const doc = readFileSync(new URL("../../../docs/tactics.md", import.meta.url), "utf8");
@@ -740,7 +834,12 @@ describe("the language reference", () => {
 describe("shipped programs", () => {
   it("every program in content/bots compiles", () => {
     const sources = botSources();
-    expect(Object.keys(sources).sort()).toEqual(["homebody", "riverwalker", "wanderer"]);
+    expect(Object.keys(sources).sort()).toEqual([
+      "deckhand",
+      "homebody",
+      "riverwalker",
+      "wanderer",
+    ]);
     const programs = compileBots(sources, placeConstants(shippedWorld()));
     expect(Object.keys(programs).sort()).toEqual(Object.keys(sources).sort());
   });

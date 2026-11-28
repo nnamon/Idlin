@@ -49,8 +49,10 @@ describe("world", () => {
     // blade a 6 + 6 line of one tile with no knockback, the wolf's 42
     // hitpoints and the version 9 hash, it is c8b882d51c753024 again. Changed
     // by the statuses (#402) only through the fields snapshot version 11
-    // hashes: hashed as version 10 it is e38225492ab9de5c again.
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("861d9d19d967717c");
+    // hashes: hashed as version 10 it is e38225492ab9de5c again. Changed by
+    // the orders version 12 hashes and Deckhand joining the program table
+    // (#405): hashed as version 11 without Deckhand it is 861d9d19d967717c.
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("ba0787361ed8a39b");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {

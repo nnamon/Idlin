@@ -94,6 +94,14 @@ describe("the system call table", () => {
       "48 weapon_reach sensor 0",
       "49 flask sensor 0",
       "50 drink action 0",
+      "51 flagged sensor 0",
+      "52 flag_x sensor 0",
+      "53 flag_y sensor 0",
+      "54 flag_age sensor 0",
+      "55 flag_down sensor 0",
+      "56 heard sensor 0",
+      "57 lift_eta sensor 0",
+      "58 way_home sensor 0",
     ]);
   });
 
@@ -130,7 +138,48 @@ describe("the system call table", () => {
       "28 SENSE",
       "29 ACT",
       "30 RULE",
+      "31 PARAM",
     ]);
+  });
+});
+
+describe("params", () => {
+  const margin = { name: "margin", value: 120, min: 0, max: 240, values: [] };
+  const stance = {
+    name: "stance",
+    value: 0,
+    min: 0,
+    max: 2,
+    values: ["gather", "fight", "careful"],
+  };
+  const withParams = (params: unknown, code = [OP.PARAM, 0, OP.ACT, WAIT]) =>
+    validateProgram({ version: BYTECODE_VERSION, code, rules: [], params });
+
+  it("PARAM pushes the value the actor has, or the default if it has none", () => {
+    const checked = withParams([margin, stance], [OP.PARAM, 1, OP.PARAM, 0, OP.ADD, OP.ACT, WAIT]);
+    const memory = new Array<number>(MEMORY_SLOTS).fill(0);
+    expect(runDecision(checked, memory, () => 0, [150, 2]).action?.args).toEqual([152]);
+    expect(runDecision(checked, memory, () => 0).action?.args).toEqual([120]);
+    expect(checked.params).toEqual([margin, stance]);
+    expect(Object.isFrozen(checked.params[1]?.values)).toBe(true);
+  });
+
+  it("refuses params that are not what a program can declare", () => {
+    const bad = (params: unknown, pattern: RegExp) =>
+      expect(() => withParams(params), JSON.stringify(params)).toThrow(pattern);
+    bad("margin", /at most 8/);
+    bad(new Array(9).fill(margin), /at most 8/);
+    bad([margin, margin], /declared twice/);
+    bad([{ ...margin, name: "Margin" }], /no usable name/);
+    bad([{ ...margin, value: 241 }], /min <= value <= max/);
+    bad([{ ...margin, min: 10, max: 5, value: 7 }], /min <= value <= max/);
+    bad([{ ...margin, value: 1.5 }], /min <= value <= max/);
+    bad([{ ...stance, values: ["gather", "gather", "x"] }], /not usable/);
+    bad([{ ...stance, max: 3 }], /one less than its value names/);
+    bad([{ ...margin, values: "abc" }], /no list of values/);
+    // A PARAM past the program's params is refused before it can run.
+    expect(() => withParams([], [OP.PARAM, 0, OP.ACT, WAIT])).toThrow(/no param 0/);
+    expect(() => withParams([margin], [OP.PARAM, -1, OP.ACT, WAIT])).toThrow(/no param -1/);
   });
 });
 
@@ -475,13 +524,22 @@ describe("validateProgram", () => {
 
   it("accepts a well-formed program and returns it", () => {
     const ok = validateProgram(withCode([OP.RULE, 0, OP.ACT, IDLE], ["rest"]));
-    expect(ok).toEqual({ version: 1, code: [OP.RULE, 0, OP.ACT, IDLE], rules: ["rest"] });
+    expect(ok).toEqual({
+      version: 1,
+      code: [OP.RULE, 0, OP.ACT, IDLE],
+      rules: ["rest"],
+      params: [],
+    });
   });
 });
 
 describe("hostile programs", () => {
   const OPERAND_COUNT = (op: number): number =>
-    [1, 23, 24, 25, 26, 27, 28, 29, 30].includes(op) ? 1 : 0;
+    [1, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(op) ? 1 : 0;
+  const TWO_PARAMS = [
+    { name: "a", value: 1, min: -5, max: 5, values: [] },
+    { name: "b", value: 0, min: 0, max: 1, values: ["x", "y"] },
+  ];
 
   it("random words: every one is refused or runs to a clean end", () => {
     const rng = createRng(1234);
@@ -490,7 +548,12 @@ describe("hostile programs", () => {
       const code = Array.from({ length: 1 + nextInt(rng, 24) }, () => nextInt(rng, 40) - 4);
       let checked: Program;
       try {
-        checked = validateProgram({ version: BYTECODE_VERSION, code, rules: ["a", "b"] });
+        checked = validateProgram({
+          version: BYTECODE_VERSION,
+          code,
+          rules: ["a", "b"],
+          params: TWO_PARAMS,
+        });
       } catch (error) {
         expect(error).toBeInstanceOf(ProgramError);
         continue;
@@ -516,7 +579,7 @@ describe("hostile programs", () => {
       const length = 2 + nextInt(rng, 30);
       for (let k = 0; k < length; k++) {
         starts.push(ops.length);
-        const op = nextInt(rng, 31);
+        const op = nextInt(rng, 32);
         ops.push(op);
         if (OPERAND_COUNT(op)) ops.push(0);
       }
@@ -532,9 +595,14 @@ describe("hostile programs", () => {
         else if (op === OP.ACT) ops[at + 1] = 6 + nextInt(rng, 4);
         else ops[at + 1] = nextInt(rng, 2);
       }
-      const checked = validateProgram({ version: BYTECODE_VERSION, code: ops, rules: ["a", "b"] });
+      const checked = validateProgram({
+        version: BYTECODE_VERSION,
+        code: ops,
+        rules: ["a", "b"],
+        params: TWO_PARAMS,
+      });
       const memory = new Array<number>(MEMORY_SLOTS).fill(0);
-      const decision = runDecision(checked, memory, () => nextInt(rng, 2 ** 32) | 0);
+      const decision = runDecision(checked, memory, () => nextInt(rng, 2 ** 32) | 0, [-5]);
       faults.add(decision.fault);
       expect(decision.gasUsed).toBeLessThanOrEqual(GAS_PER_DECISION);
       expect(memory.every((value) => (value | 0) === value)).toBe(true);

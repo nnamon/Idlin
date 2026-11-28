@@ -162,6 +162,7 @@ export {
   GAS_PER_DECISION,
   MEMORY_SLOTS,
   OP,
+  type Param,
   PROGRAM_NAME,
   type Program,
   ProgramError,

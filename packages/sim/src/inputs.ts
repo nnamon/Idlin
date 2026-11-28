@@ -1,8 +1,9 @@
 // The inputs chat and the streamer's site send the world (docs/chat.md,
 // section 10). The gate in packages/chat makes them; the world server logs
-// them a tick at a time and `step` applies them. Of these only `join` has an
-// effect so far: the rest are dropped by `step` until the pieces that give
-// them one are built.
+// them a tick at a time and `step` applies them. `join`, `heard`, `go`,
+// `free` and `param` have their effects (orders.ts), and every input from a
+// chatter's own messages marks them heard. The rest are dropped by `step`
+// until the pieces that give them one are built.
 
 /** A chat username as the platform gives it: 3 to 25 letters, digits and underscores. */
 export const USERNAME = /^[A-Za-z0-9_]{3,25}$/;
@@ -14,11 +15,10 @@ export type Role = "viewer" | "mod" | "streamer";
 export const ROLES: readonly Role[] = ["viewer", "mod", "streamer"];
 
 /**
- * The program a citizen made by `join` runs. It stands in for the shipped
- * program (docs/chat.md, section 9) until that is written; a world without it
- * takes no joins.
+ * The program a citizen made by `join` runs: the shipped program, Deckhand
+ * (docs/chat.md, section 9). A world without it takes no joins.
  */
-export const NEWCOMER_PROGRAM = "wanderer";
+export const NEWCOMER_PROGRAM = "deckhand";
 
 /** The tools a bench order spends (docs/slice.md, section 3). */
 export type Tool = "reroll" | "add" | "acid";

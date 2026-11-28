@@ -21,16 +21,20 @@ export const MAX_MUTE_MINUTES = 7 * 24 * 60;
 /**
  * The params chat can set, by name, each with the names of its values (none
  * for a number). A program's params are its commands, so this is built from
- * the presets the city offers; until presets declare params it is
+ * the presets the city offers; until the city offers more than one it is
  * DEFAULT_VOCABULARY.
  */
 export type Vocabulary = Readonly<Record<string, readonly string[]>>;
 
-/** The params every preset declares in docs/slice.md, section 5. */
+/**
+ * The params every preset declares in docs/slice.md, section 5, as Deckhand
+ * (content/bots/deckhand.tac) declares them. The simulation checks a value
+ * against the citizen's own program when it applies it.
+ */
 export const DEFAULT_VOCABULARY: Vocabulary = Object.freeze({
   stance: ["gather", "fight", "careful"],
   margin: [],
-  keep: [],
+  keep: ["any", "magic", "rare"],
   over: [],
   aid: [],
   ramp: ["board", "guard"],

@@ -76,8 +76,9 @@ describe("ways where there is only one", () => {
     // has no monsters, so nobody swings; the weapons (#393) changed the hash
     // only through the weapon and flask that snapshot version 10 hashes, and
     // the statuses (#402) only through the ones version 11 hashes: hashed as
-    // version 10 it is 54e7508897f9c1e1 again.
-    expect(hashWorld(world)).toBe("5a619cf86617e425");
+    // version 10 it is 54e7508897f9c1e1 again. The orders (#405) changed it
+    // only through what version 12 hashes: as version 11 it is 5a619cf86617e425.
+    expect(hashWorld(world)).toBe("4e61e01a3af69aaf");
   });
 });
 

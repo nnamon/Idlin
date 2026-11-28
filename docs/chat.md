@@ -5,19 +5,26 @@ design for [#337](https://github.com/nnamon/Idlin/issues/337). Every time and
 count here is a target or arithmetic from the rules below, and section 12 says
 what the first slice measures.
 
-**What is built** is C1 and C2 of section 12. The input kinds are types in
-`packages/sim/src/inputs.ts`, and of them only `join` has an effect: a citizen
-named by the username, on the `wanderer` program until the shipped program
-exists, on the free tile nearest the camp. It does not keep the account yet,
-so a second `join` for a name already in the world changes nothing. The gate,
+**What is built** is C1, C2, C5 and C6 of section 12. The input kinds are
+types in `packages/sim/src/inputs.ts`. `join` makes a citizen named by the
+username and kept under the account, on the shipped program
+(`content/bots/deckhand.tac`), on the free tile nearest the camp; a name
+another citizen has is refused. `go`, `free` and `param` act on the citizen
+of their account (`packages/sim/src/orders.ts`), with tokens, the lookup of
+section 3.2 and the interrupt, and every input from a chatter's messages
+marks them heard. Deckhand declares section 9's params and slice.md's four
+more, and reads `stance`, `margin` and the flag; in the camp, nightfall
+stands in for the horde ([decisions/0033](decisions/0033-params-and-the-flag-in-the-camp-world.md)).
+Flags do not come down at a lift yet, since nothing lifts. The gate,
 the queue with its bounds and the scripted crowd are `packages/chat`, and the
 crowd format is described at the top of `packages/chat/src/crowd.ts`. The
 crowd files are `content/chat/crowd-15.txt` and `crowd-150.txt`. Flood control
 counts in world ticks: an account's sixth message within ten ticks is dropped.
 The server keeps the input log beside each
 snapshot and replays it on start ([stack.md](stack.md)). Not built yet: `wake`,
-the speech filter, the name filter, a chatter whose name fails it, and every
-effect but `join`.
+the speech filter, the name filter, a chatter whose name fails it, orders
+drawn on screen, and the effects of every input but `join`, `heard`, `go`,
+`free` and `param`.
 
 It rests on rules the operator set on
 [#331](https://github.com/nnamon/Idlin/issues/331): one streamer is one

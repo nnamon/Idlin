@@ -363,6 +363,66 @@ export const SYSCALLS: readonly Syscall[] = [
     about:
       "Drink from the flask for 40% of the most hitpoints this actor can have. At full hitpoints, or with the flask empty, nothing happens.",
   },
+  {
+    id: 51,
+    name: "flagged",
+    kind: "sensor",
+    args: 0,
+    about:
+      "What this citizen's flag is on, as its chatter planted it with `!go`: 0 with no flag, 1 for a tile, 2 for a citizen, 3 for home.",
+  },
+  {
+    id: 52,
+    name: "flag_x",
+    kind: "sensor",
+    args: 0,
+    about:
+      "The column of the flag, or this actor's own with no flag. `flag` stands for the flag's place: `walk_to(flag)`.",
+  },
+  {
+    id: 53,
+    name: "flag_y",
+    kind: "sensor",
+    args: 0,
+    about: "The row of the flag, or this actor's own with no flag.",
+  },
+  {
+    id: 54,
+    name: "flag_age",
+    kind: "sensor",
+    args: 0,
+    about: "Ticks since the flag was planted, or 0 with no flag.",
+  },
+  {
+    id: 55,
+    name: "flag_down",
+    kind: "sensor",
+    args: 0,
+    about: "1 if the flag is on a citizen who is down, else 0.",
+  },
+  {
+    id: 56,
+    name: "heard",
+    kind: "sensor",
+    args: 0,
+    about: "Ticks since this citizen's chatter last typed anything, up to 864000.",
+  },
+  {
+    id: 57,
+    name: "lift_eta",
+    kind: "sensor",
+    args: 0,
+    about:
+      "Ticks until the horde reaches the hull, or 9999 before it is sighted. In the camp, which has no cycle yet, nightfall stands in for the horde: it is sighted 3000 ticks before 19:00 and this reads 0 through the night.",
+  },
+  {
+    id: 58,
+    name: "way_home",
+    kind: "sensor",
+    args: 0,
+    about:
+      "Ticks the walk home takes from here: to the ramp, and in the camp, which stands in for the deck, to `camp`. 9999 if there is no way.",
+  },
 ];
 
 export const syscall = (id: number): Syscall | undefined => SYSCALLS[id];

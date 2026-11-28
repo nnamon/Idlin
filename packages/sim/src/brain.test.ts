@@ -244,14 +244,19 @@ describe("actors run programs", () => {
 
   it("checks the program table when a world is made, and keeps its own frozen copy", () => {
     const map = firstLight();
-    const unchecked = { version: BYTECODE_VERSION, code: [OP.SENSE, 77, OP.ACT, IDLE], rules: [] };
+    const unchecked = {
+      version: BYTECODE_VERSION,
+      code: [OP.SENSE, 77, OP.ACT, IDLE],
+      rules: [],
+      params: [],
+    };
     expect(() => createWorld(map, 1, { bad: unchecked })).toThrow(ProgramError);
     for (const name of ["", "Rover", "9lives", "__proto__", "a b", "x".repeat(33)]) {
       const table = Object.fromEntries([[name, PROGRAMS.rover]]) as Programs;
       expect(() => createWorld(map, 1, table), name).toThrow(/not a valid program name/);
     }
     const code = [OP.ACT, IDLE];
-    const mine = { walker: { version: BYTECODE_VERSION, code, rules: [] } };
+    const mine = { walker: { version: BYTECODE_VERSION, code, rules: [], params: [] } };
     const w = createWorld(map, 1, mine);
     code[1] = 999;
     mine.walker.code = [OP.JMP, 0];
@@ -312,12 +317,22 @@ describe("actors run programs", () => {
     const map = firstLight();
     const saved = snapshot(run(world([["Ash", "rover", 14, 9]]), 20));
     // An invalid program in the table is refused before any state is read.
-    const unchecked = { version: BYTECODE_VERSION, code: [OP.SENSE, 77, OP.ACT, IDLE], rules: [] };
+    const unchecked = {
+      version: BYTECODE_VERSION,
+      code: [OP.SENSE, 77, OP.ACT, IDLE],
+      rules: [],
+      params: [],
+    };
     expect(() => restore(saved, map, { ...PROGRAMS, rover: unchecked })).toThrow(ProgramError);
     // A table changed after the restore does not change the restored world.
     const table: Record<string, Program> = { ...PROGRAMS };
     const resumed = restore(saved, map, table);
-    table.rover = { version: BYTECODE_VERSION, code: [OP.SENSE, 77, OP.ACT, IDLE], rules: [] };
+    table.rover = {
+      version: BYTECODE_VERSION,
+      code: [OP.SENSE, 77, OP.ACT, IDLE],
+      rules: [],
+      params: [],
+    };
     expect(resumed.programs).not.toBe(table);
     expect(Object.isFrozen(resumed.programs)).toBe(true);
     expect(() => run(resumed, 200)).not.toThrow();

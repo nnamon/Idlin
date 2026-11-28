@@ -71,6 +71,13 @@ describe("a world with chat", () => {
     const { world, log, saved } = live(3, ticks, 1500);
     expect(world.actors.filter((actor) => actor.kind === ADVENTURER)).toHaveLength(50);
     expect(log.filter((line) => line.includes('"go"')).length).toBeGreaterThan(50);
+    // The orders took: flags stand, programs followed them, params were set.
+    const citizens = world.actors.filter((actor) => actor.kind === ADVENTURER);
+    expect(citizens.filter((a) => a.flag !== 0).length).toBeGreaterThan(10);
+    expect(citizens.filter((a) => a.heed === 1).length).toBeGreaterThan(5);
+    expect(citizens.filter((a) => a.params[0] !== 0 || a.params[1] !== 120).length).toBeGreaterThan(
+      5,
+    );
     expect(hashWorld(live(3, ticks, 1500).world)).toBe(hashWorld(world));
     expect(hashWorld(replay(newWorld(3), log))).toBe(hashWorld(world));
     const resumed = restore(saved, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);

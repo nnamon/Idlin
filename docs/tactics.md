@@ -68,6 +68,55 @@ After `->` comes an action, or several separated by `;`.
 kept between decisions and starts at 0. A program can remember up to 15
 things. A decision that is stopped by a mistake changes nothing in memory.
 
+## Params
+
+A program declares the numbers its chatter sets from chat, above its rules
+and after the bot line:
+
+```
+param margin = 120 from 0 to 240
+param stance = gather of gather, fight, careful
+param tries = 3
+```
+
+- `from … to …` gives the range; a value typed outside it is refused. A param
+  with no range takes any whole number from 0.
+- `of a, b, c` names the values, which are 0, 1, 2 and on. The default is one
+  of them. The names are constants in the program, so `stance == fight` reads,
+  and no two params may share one.
+- A program may declare 8 params. A param is read like a sensor (`margin * 10`)
+  and cannot be set by the program.
+
+Every param is a chat command for the citizens that run the program:
+`!margin 150` and `!set margin 150` set a number, `!stance fight` and `!fight`
+a named value (docs/chat.md, section 3.3). The values are kept on the citizen
+and read at each decision, so a change needs no compile. Each accepted change
+costs one of the citizen's two tokens, which come back one every 200 ticks,
+and ends what the citizen is doing at the next tile or the end of its blow, so
+its program decides again. Setting the value it already has costs nothing.
+
+## The flag
+
+`!go <where>` plants a citizen's flag, `!home` plants it at home and `!free`
+takes it down, at the same cost as a param. A program reads it with
+`flagged`, `flag_age`, `flag_down`, and `flag`, which stands for the flag's
+place as `camp` stands for the camp's: `walk_to(flag)`, `distance(flag)`. A
+flag on a citizen is where that citizen is.
+
+`<where>` is looked up in this order, and the first step that matches wins:
+`home`; a compass point (`north` or `n` to `northwest` or `nw`, a tile 12
+tiles from `camp` that way); a place, typed with spaces for underscores
+(`!go lower river`); a citizen by username, or `@name` for a citizen only. A
+name matches whole, or by a prefix of three letters or more that only one name
+in that step has. A word that matches nothing, or a prefix two names in the
+step share, is refused.
+
+After each decision the citizen keeps whether its program took the flag: it
+followed it if the rule that won reads the flag or comes after one that does,
+and it held it if the rule that won is above every rule that reads it. So a
+program that keeps its flag rules together, under the rules allowed to
+outrank an order, shows who was ordered and which rule said no.
+
 ## Places
 
 Each map names its places. A place stands for its position, and can be given
@@ -163,6 +212,14 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `weapon_reach`      | sensor | 0     | How many steps out this actor's blow reaches, counting a diagonal step as one: 2 with a blade, 3 with a maul, 4 with a spear, 9 with a bow, and a monster's reach.                                                                                        |
 | `flask`             | sensor | 0     | Drinks left in this actor's flask, 0 to 3; always 0 for a monster.                                                                                                                                                                                        |
 | `drink`             | action | 0     | Drink from the flask for 40% of the most hitpoints this actor can have. At full hitpoints, or with the flask empty, nothing happens.                                                                                                                      |
+| `flagged`           | sensor | 0     | What this citizen's flag is on, as its chatter planted it with `!go`: 0 with no flag, 1 for a tile, 2 for a citizen, 3 for home.                                                                                                                          |
+| `flag_x`            | sensor | 0     | The column of the flag, or this actor's own with no flag. `flag` stands for the flag's place: `walk_to(flag)`.                                                                                                                                            |
+| `flag_y`            | sensor | 0     | The row of the flag, or this actor's own with no flag.                                                                                                                                                                                                    |
+| `flag_age`          | sensor | 0     | Ticks since the flag was planted, or 0 with no flag.                                                                                                                                                                                                      |
+| `flag_down`         | sensor | 0     | 1 if the flag is on a citizen who is down, else 0.                                                                                                                                                                                                        |
+| `heard`             | sensor | 0     | Ticks since this citizen's chatter last typed anything, up to 864000.                                                                                                                                                                                     |
+| `lift_eta`          | sensor | 0     | Ticks until the horde reaches the hull, or 9999 before it is sighted. In the camp, which has no cycle yet, nightfall stands in for the horde: it is sighted 3000 ticks before 19:00 and this reads 0 through the night.                                   |
+| `way_home`          | sensor | 0     | Ticks the walk home takes from here: to the ramp, and in the camp, which stands in for the deck, to `camp`. 9999 if there is no way.                                                                                                                      |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
@@ -292,6 +349,13 @@ way round, however long. People who stand still hold an actor up for one
 pause. On such a long way round, `step_to` takes the steps up to the first
 tile from which the rest is no more than 8 steps longer than the way
 through, so that the next `step_to` goes on round instead of back.
+
+`deckhand` is the shipped program, which every chatter's citizen runs. Its
+`stance` picks how it fights (`gather` strikes what comes within reach,
+`fight` goes at any monster within 8 tiles, `careful` keeps 3 tiles clear),
+it turns back when `lift_eta < margin * 10 + way_home`, it chops the camp's
+trees and banks when its bag is full, and its flag rules sit together under
+the ones that may hold an order.
 
 The three resident programs fight in different ways. `wanderer` walks up to an
 enemy and trades blows. `riverwalker` steps out of every blow it sees coming and

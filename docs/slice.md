@@ -6,7 +6,9 @@ milestones that were in [plan.md](plan.md). Built so far: section 4.1's hit
 (`packages/sim/src/hit.ts`), through which the world runs every blow, and
 section 3.1's four weapon families and the flask
 (`packages/sim/src/weapons.ts`), in the camp world, with no gear, ranks or
-armour yet. Every rate
+armour yet; and section 5's params and the flag, with a first Deckhand that
+reads `stance`, `margin` and the flag (`packages/sim/src/orders.ts`,
+`content/bots/deckhand.tac`). Every rate
 is arithmetic from a rule on this page; section 11 names the piece that
 tests the rule.
 

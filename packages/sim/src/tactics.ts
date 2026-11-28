@@ -14,15 +14,21 @@ import {
   countInstructions,
   GAS_PER_DECISION,
   MAX_CODE_LENGTH,
+  MAX_PARAM_VALUES,
+  MAX_PARAMS,
   MAX_RULE_LABEL_LENGTH,
   MAX_RULES,
   MEMORY_SLOTS,
   OP,
+  PARAM_NAME,
+  type Param,
   PROGRAM_NAME,
   type Program,
   STACK_SIZE,
   validateProgram,
 } from "./vm.ts";
+
+const sensorId = (name: string): number => (SYSCALLS.find((c) => c.name === name) as Syscall).id;
 
 export interface TacticsError {
   readonly line: number;
@@ -52,7 +58,20 @@ const MAX_NAMED_SLOTS = MEMORY_SLOTS - 1;
 const MAX_ERRORS = 10;
 const MAX_BOT_NAME_LENGTH = 32;
 
-const KEYWORDS = new Set(["bot", "when", "otherwise", "as", "set", "and", "or", "not", "mod"]);
+const KEYWORDS = new Set([
+  "bot",
+  "param",
+  "when",
+  "otherwise",
+  "as",
+  "set",
+  "and",
+  "or",
+  "not",
+  "mod",
+]);
+/** The name that stands for the flag's place, as `camp` stands for the camp's. */
+const FLAG = "flag";
 const SYMBOLS = [
   "->",
   "<=",
@@ -167,7 +186,7 @@ function tokenize(text: string, errors: TacticsError[]): Token[] {
       // A line that starts a new rule always ends the one before it, whatever
       // that one was in the middle of: an unclosed bracket or a dangling
       // operator must not swallow the rest of the program.
-      const startsRule = /^ *(when|otherwise|bot)\b/.test(source.slice(i + 1, i + 40));
+      const startsRule = /^ *(when|otherwise|bot|param)\b/.test(source.slice(i + 1, i + 40));
       if (startsRule) depth = 0;
       const last = tokens[tokens.length - 1];
       const wraps =
@@ -266,6 +285,14 @@ interface Rule {
   readonly at: Token;
 }
 
+/** A `param` line as written, before its names are checked against everything else. */
+interface ParamLine {
+  readonly param: Param;
+  readonly at: Token;
+  /** Where each of its value names was written. */
+  readonly valuesAt: readonly Token[];
+}
+
 const BINARY_OPS: Readonly<Record<string, number>> = {
   "+": OP.ADD,
   "-": OP.SUB,
@@ -328,6 +355,9 @@ class Parser {
     while (this.peek().kind !== "newline" && this.peek().kind !== "end") this.at++;
     if (this.peek().kind === "newline") this.at++;
   }
+  atParam(): boolean {
+    return this.is("param");
+  }
   skipBlankLines(): void {
     while (this.peek().kind === "newline") this.at++;
   }
@@ -376,6 +406,100 @@ class Parser {
     this.next();
     this.endOfLine("the bot line");
     return text;
+  }
+
+  /**
+   * `param margin = 120 from 0 to 240`, `param stance = gather of gather,
+   * fight, careful`, or `param tries = 3`, which takes any whole number from 0.
+   */
+  param(): ParamLine {
+    const at = this.next();
+    const name = this.peek();
+    if (name.kind !== "name" || !PARAM_NAME.test(name.text)) {
+      throw new Problem(
+        name,
+        'after "param" comes its name in lower case, like: param margin = 120 from 0 to 240',
+      );
+    }
+    this.next();
+    this.expect("=", `after "param ${name.text}"`);
+    const first = this.peek();
+    if (first.kind === "name") {
+      this.next();
+      const of = this.peek();
+      if (of.kind !== "name" || of.text !== "of") {
+        throw new Problem(
+          of,
+          `a param with named values lists them after "of", like: param ${name.text} = ${first.text} of ${first.text}, other`,
+        );
+      }
+      this.next();
+      const valuesAt: Token[] = [];
+      do {
+        const value = this.peek();
+        if (value.kind !== "name" || !PARAM_NAME.test(value.text))
+          throw new Problem(value, "a param's values are names in lower case, split by commas");
+        if (valuesAt.some((seen) => seen.text === value.text))
+          throw new Problem(value, `"${value.text}" is named twice`);
+        if (valuesAt.length >= MAX_PARAM_VALUES)
+          throw new Problem(value, `a param can name at most ${MAX_PARAM_VALUES} values`);
+        valuesAt.push(this.next());
+      } while (this.take(","));
+      this.endOfLine("the param line");
+      const values = valuesAt.map((token) => token.text);
+      const index = values.indexOf(first.text);
+      if (index < 0) {
+        throw new Problem(
+          first,
+          `"${first.text}" is not one of the values listed after "of"`,
+          true,
+        );
+      }
+      const param = { name: name.text, value: index, min: 0, max: values.length - 1, values };
+      return { param, at, valuesAt };
+    }
+    const value = this.whole("its default");
+    let min = 0;
+    let max = 0x7fffffff;
+    const from = this.peek();
+    if (from.kind === "name" && from.text === "from") {
+      this.next();
+      min = this.whole('"from"');
+      const to = this.peek();
+      if (to.kind !== "name" || to.text !== "to")
+        throw new Problem(to, `I expected "to" after "from ${min}", but found ${describe(to)}`);
+      this.next();
+      max = this.whole('"to"');
+    }
+    this.endOfLine("the param line");
+    if (min > max)
+      throw new Problem(
+        from,
+        `"from ${min} to ${max}" is empty: the first must not be larger`,
+        true,
+      );
+    if (value < min || value > max)
+      throw new Problem(first, `the default ${value} is outside ${min} to ${max}`, true);
+    return { param: { name: name.text, value, min, max, values: [] }, at, valuesAt: [] };
+  }
+
+  /** A whole number, with a minus sign if it has one. */
+  private whole(after: string): number {
+    const minus = this.take("-");
+    const token = this.peek();
+    if (token.kind !== "number")
+      throw new Problem(
+        token,
+        `I expected a whole number after ${after}, but found ${describe(token)}`,
+      );
+    this.next();
+    const value = Number(token.text) * (minus ? -1 : 1);
+    if (!isInt32(value))
+      throw new Problem(
+        token,
+        `${shown(token.text, 24)} is too large; numbers go up to 2147483647`,
+      );
+    return value | 0;
   }
 
   rule(): Rule {
@@ -591,10 +715,18 @@ class Generator {
   private deepest = 0;
   private readonly slots = new Map<string, number>();
   private readonly constants: Constants;
+  /** Each param's index, by name. */
+  private readonly params: ReadonlyMap<string, number>;
 
   /** Problems with slot names are added to `errors`; generation can still go on to find more. */
-  constructor(constants: Constants, rules: readonly Rule[], errors: TacticsError[]) {
+  constructor(
+    constants: Constants,
+    params: readonly Param[],
+    rules: readonly Rule[],
+    errors: TacticsError[],
+  ) {
     this.constants = constants;
+    this.params = new Map(params.map((param, index) => [param.name, index]));
     // Every slot a rule sets exists from the start (holding 0), so a rule may read a slot that a later rule sets.
     for (const rule of rules) {
       for (const step of rule.steps) {
@@ -626,7 +758,17 @@ class Generator {
   private slotFor(name: string, at: Token): number {
     const existing = this.slots.get(name);
     if (existing !== undefined) return existing;
-    if (SYSCALLS.some((c) => c.name === name) || this.constant(name) !== undefined) {
+    if (this.params.has(name)) {
+      throw new Problem(
+        at,
+        `"${name}" is a param: its chatter sets it, so the program can read it but not set it`,
+      );
+    }
+    if (
+      SYSCALLS.some((c) => c.name === name) ||
+      this.constant(name) !== undefined ||
+      name === FLAG
+    ) {
       throw new Problem(
         at,
         `"${name}" already means something, so it cannot be used as a memory slot`,
@@ -644,8 +786,15 @@ class Generator {
     let count = 0;
     let places = 0;
     for (const arg of args) {
-      const place = arg.type === "name" && arg.args === null ? this.constant(arg.name) : undefined;
-      if (typeof place === "object") {
+      const bare = arg.type === "name" && arg.args === null;
+      const place = bare ? this.constant(arg.name) : undefined;
+      if (bare && arg.name === FLAG) {
+        // Wherever the flag stands at the moment of the decision.
+        this.emit([OP.SENSE, sensorId("flag_x")], 0, 1);
+        this.emit([OP.SENSE, sensorId("flag_y")], 0, 1);
+        count += 2;
+        places++;
+      } else if (typeof place === "object") {
         this.emit([OP.PUSH, place.x | 0], 0, 1);
         this.emit([OP.PUSH, place.y | 0], 0, 1);
         count += 2;
@@ -722,8 +871,10 @@ class Generator {
       const constant = this.constant(expr.name);
       const slot = this.slots.get(expr.name);
       const call = SYSCALLS.find((c) => c.name === expr.name);
-      if (typeof constant === "number") this.emit([OP.PUSH, constant | 0], 0, 1);
-      else if (constant !== undefined) {
+      const param = this.params.get(expr.name);
+      if (param !== undefined) this.emit([OP.PARAM, param], 0, 1);
+      else if (typeof constant === "number") this.emit([OP.PUSH, constant | 0], 0, 1);
+      else if (constant !== undefined || expr.name === FLAG) {
         const how = `it can only be given to a sensor or an action, like distance(${expr.name})`;
         throw new Problem(expr.at, `"${expr.name}" is a place, so ${how}`);
       } else if (slot !== undefined) this.emit([OP.LOAD, slot], 0, 1);
@@ -810,6 +961,51 @@ const BUILT_IN: Constants = Object.freeze(
   ]),
 );
 
+/**
+ * The params of the lines that declared them, up to MAX_PARAMS. A name a
+ * param or one of its values would take from something else, or that two of
+ * them would share, is added to `errors`: each value name is a constant in
+ * the program, so `stance == fight` reads, and `!fight` has one meaning.
+ */
+function checkParams(
+  lines: readonly ParamLine[],
+  named: Constants,
+  errors: TacticsError[],
+): Param[] {
+  const params: Param[] = [];
+  const taken = new Map<string, string>();
+  const claim = (name: string, at: Token, what: string): boolean => {
+    let other = taken.get(name);
+    if (other === undefined && SYSCALLS.some((c) => c.name === name))
+      other = "a sensor or an action";
+    if (other === undefined && Object.hasOwn(named, name))
+      other = "a place, a skill, a good or a kind of node";
+    if (other === undefined && name === FLAG) other = "the flag's place";
+    if (other !== undefined) {
+      errors.push(
+        new Problem(at, `${what} "${name}" cannot be used: it is already ${other}`).error,
+      );
+      return false;
+    }
+    return true;
+  };
+  for (const line of lines) {
+    if (params.length >= MAX_PARAMS) {
+      errors.push(new Problem(line.at, `a program can declare at most ${MAX_PARAMS} params`).error);
+      break;
+    }
+    const { param } = line;
+    let usable = claim(param.name, line.at, "the param");
+    taken.set(param.name, "a param");
+    line.valuesAt.forEach((at) => {
+      usable = claim(at.text, at, "the value") && usable;
+      taken.set(at.text, `a value of "${param.name}"`);
+    });
+    if (usable) params.push(param);
+  }
+  return params;
+}
+
 /** Says what is wrong with the constants a caller passed, or returns null if they are usable. */
 function constantsProblem(constants: Constants): string | null {
   for (const name of Object.keys(constants)) {
@@ -820,6 +1016,7 @@ function constantsProblem(constants: Constants): string | null {
     if (SYSCALLS.some((c) => c.name === name)) {
       return `"${name}" is already a sensor or an action, so nothing else can have that name`;
     }
+    if (name === FLAG) return `"${FLAG}" is the flag's place, so nothing else can have that name`;
     if (Object.hasOwn(BUILT_IN, name)) {
       return `"${name}" is already a skill, a good or a kind of node, so nothing else can have that name`;
     }
@@ -865,6 +1062,7 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     const tokens = tokenize(source, errors);
     const parser = new Parser(tokens);
     const rules: Rule[] = [];
+    const paramLines: ParamLine[] = [];
     let name = "Unnamed";
     let sawOtherwise: Token | null = null;
 
@@ -892,6 +1090,14 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
       parser.skipBlankLines()
     ) {
       attempt(() => {
+        if (parser.atParam()) {
+          const first = parser.peek();
+          if (rules.length > 0) {
+            throw new Problem(first, "params are declared above the rules, after the bot line");
+          }
+          paramLines.push(parser.param());
+          return;
+        }
         const rule = parser.rule();
         if (sawOtherwise) {
           const where = `(line ${sawOtherwise.line})`;
@@ -919,7 +1125,12 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
     const sequences = rules.some(
       (rule) => rule.steps.filter((step) => step.type === "act").length > 1,
     );
-    const generator = new Generator({ ...BUILT_IN, ...constants }, rules, errors);
+    const named = { ...BUILT_IN, ...constants };
+    const params = checkParams(paramLines, named, errors);
+    const valueNames = Object.fromEntries(
+      params.flatMap((param) => param.values.map((value, index) => [value, index] as const)),
+    );
+    const generator = new Generator({ ...named, ...valueNames }, params, rules, errors);
     const labels: string[] = [];
     // The first rule at which each limit is passed, so the error can point at it.
     let tooLong: Rule | null = null;
@@ -974,6 +1185,7 @@ export function compileTactics(source: unknown, constants: Constants = {}): Comp
       version: BYTECODE_VERSION,
       code: generator.code,
       rules: labels,
+      params,
     });
     return { ok: true, name, program };
   } catch {

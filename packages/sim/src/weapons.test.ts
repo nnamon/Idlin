@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import { emptyBag, emptyBank } from "./bag.ts";
 import { blow, rollCrit } from "./hit.ts";
 import { isWalkable, type Point, placeConstants } from "./map.ts";
+import { freshOrders } from "./orders.ts";
 import { MAX_LEVEL, noXp, XP_TABLE } from "./skills.ts";
 import { noStatus } from "./status.ts";
 import { compileBots } from "./tactics.ts";
 import { firstLight } from "./testing.ts";
-import { MEMORY_SLOTS } from "./vm.ts";
+import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import {
   ARROW_RANGE,
   blowShape,
@@ -93,6 +94,7 @@ function armed(weapon: Family, program: string, at: Point = ASH): World {
  */
 function plant(world: World, x: number, y: number, kind = "post", program = "stander"): Actor {
   const post: Actor = {
+    ...freshOrders(world.programs[program] as Program, "", world.tick),
     id: world.nextActorId++,
     name: "Post",
     x,

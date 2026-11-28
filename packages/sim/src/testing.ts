@@ -15,11 +15,12 @@ import {
 } from "./map.ts";
 import { loadMonsters, type Monsters } from "./monsters.ts";
 import { NODE_KINDS } from "./nodes.ts";
+import { freshOrders } from "./orders.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
 import { noXp } from "./skills.ts";
 import { noStatus } from "./status.ts";
 import { compileBots } from "./tactics.ts";
-import { MEMORY_SLOTS } from "./vm.ts";
+import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import { createWorld, type Input, type Programs, step, type World } from "./world.ts";
 
 const content = (path: string): URL => new URL(`../../../content/${path}`, import.meta.url);
@@ -285,6 +286,7 @@ function freeTile(world: World, rng: Rng, taken: Set<number>): Point {
  */
 export function putMonster(world: World, kind: string, { x, y }: Point, program = kind): void {
   world.actors.push({
+    ...freshOrders(world.programs[program] as Program, "", world.tick),
     id: world.nextActorId++,
     name: kind === "wolf" ? "Wolf" : "Goblin",
     x,

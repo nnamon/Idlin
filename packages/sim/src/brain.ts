@@ -27,6 +27,7 @@ import {
   tileOf,
 } from "./grid.ts";
 import { NEIGHBOURS, type Point, place } from "./map.ts";
+import { FLAG_NONE, flagDown, flagPlace, HEARD_MOST, heedOf, liftEta, wayHome } from "./orders.ts";
 import { findPath, scratchFor } from "./path.ts";
 import { nextInt } from "./rng.ts";
 import { levelFor, SKILLS } from "./skills.ts";
@@ -88,10 +89,14 @@ export function think(world: World, actor: Actor, events: WorldEvent[]): void {
     }
     return side;
   };
-  const decision = runDecision(program, actor.memory, (id, args) =>
-    sense(world, actor, foe, node, id, args),
+  const decision = runDecision(
+    program,
+    actor.memory,
+    (id, args) => sense(world, actor, foe, node, id, args),
+    actor.params,
   );
   actor.rule = decision.rule;
+  actor.heed = heedOf(program, actor, decision.rule);
   actor.fault = FAULTS.indexOf(decision.fault);
   if (!decision.action) {
     actor.wait = CONFUSED_TICKS;
@@ -623,6 +628,22 @@ function sense(
       return reachOf(world, actor);
     case "flask":
       return actor.flask;
+    case "flagged":
+      return flagPlace(world, actor) ? actor.flag : FLAG_NONE;
+    case "flag_x":
+      return (flagPlace(world, actor) ?? actor).x;
+    case "flag_y":
+      return (flagPlace(world, actor) ?? actor).y;
+    case "flag_age":
+      return actor.flag === FLAG_NONE ? 0 : Math.min(0x7fffffff, world.tick - actor.flagAt);
+    case "flag_down":
+      return flagDown(world, actor) ? 1 : 0;
+    case "heard":
+      return Math.min(HEARD_MOST, world.tick - actor.heard);
+    case "lift_eta":
+      return liftEta(world);
+    case "way_home":
+      return wayHome(world, actor);
     default:
       return 0;
   }

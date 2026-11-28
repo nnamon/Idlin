@@ -51,15 +51,42 @@ export const OP = {
   SENSE: 28,
   ACT: 29,
   RULE: 30,
+  /** Pushes the value of the program's param with the operand's index, as its chatter set it. */
+  PARAM: 31,
 } as const;
 
 /** How many operand words follow each opcode, indexed by opcode. */
 const OPERANDS: readonly number[] = [
-  0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+  0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
 /** Program names: a lower-case letter, then letters, digits or underscores. */
 export const PROGRAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+
+/** The most params a program may declare (docs/chat.md, section 3.3). */
+export const MAX_PARAMS = 8;
+/** The most names one param's values may have. */
+export const MAX_PARAM_VALUES = 16;
+/** Param names and the names of their values: what a chatter types, so plain lower-case words. */
+export const PARAM_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * A number a program declares for its chatter to set. A param with named
+ * values (`of gather, fight, careful`) runs from 0 to one less than their
+ * count, and `value` is one of them.
+ */
+export interface Param {
+  readonly name: string;
+  /** The default, which every citizen starts with. */
+  readonly value: number;
+  readonly min: number;
+  readonly max: number;
+  /** The names of the values 0, 1, 2 and on, or none for a plain number. */
+  readonly values: readonly string[];
+}
+
+/** How many operand words follow opcode `op`; 0 for one that is not an opcode. */
+export const operandsOf = (op: number): number => OPERANDS[op] ?? 0;
 
 /** How many instructions a word list holds, given that it is well formed. */
 export function countInstructions(code: readonly number[]): number {
@@ -74,6 +101,8 @@ export interface Program {
   readonly code: readonly number[];
   /** A short label per rule, for showing which rule chose the action. */
   readonly rules: readonly string[];
+  /** The params it declares, in the order PARAM numbers them. */
+  readonly params: readonly Param[];
 }
 
 export const FAULTS = [
@@ -115,10 +144,11 @@ export function validateProgram(raw: unknown): Program {
   let version: unknown;
   let ints: number[];
   let rules: string[];
+  let params: Param[];
   try {
     // Each value is read exactly once, so an object that answers differently
     // on a second read cannot show the checks one thing and the machine another.
-    [version, ints, rules] = readProgram(raw);
+    [version, ints, rules, params] = readProgram(raw);
   } catch (error) {
     if (error instanceof ProgramError) throw error;
     throw new ProgramError("a program could not be read");
@@ -155,16 +185,24 @@ export function validateProgram(raw: unknown): Program {
     } else if (op === OP.RULE) {
       if (operand < 0 || operand >= rules.length)
         throw new ProgramError(`word ${at}: no rule ${operand}`);
+    } else if (op === OP.PARAM) {
+      if (operand < 0 || operand >= params.length)
+        throw new ProgramError(`word ${at}: no param ${operand}`);
     }
   }
-  return Object.freeze({ version, code: Object.freeze(ints), rules: Object.freeze(rules) });
+  return Object.freeze({
+    version,
+    code: Object.freeze(ints),
+    rules: Object.freeze(rules),
+    params: Object.freeze(params),
+  });
 }
 
 /** Copies a would-be program out of whatever was passed in, checking types and sizes on the way. */
-function readProgram(raw: unknown): [unknown, number[], string[]] {
+function readProgram(raw: unknown): [unknown, number[], string[], Param[]] {
   if (typeof raw !== "object" || raw === null)
     throw new ProgramError("a program must be an object");
-  const { version, code, rules } = raw as Record<string, unknown>;
+  const { version, code, rules, params } = raw as Record<string, unknown>;
   if (!Array.isArray(code)) throw new ProgramError(`code must hold 1 to ${MAX_CODE_LENGTH} words`);
   const codeLength: unknown = code.length;
   if (!isInt32(codeLength) || codeLength < 1 || codeLength > MAX_CODE_LENGTH) {
@@ -191,16 +229,67 @@ function readProgram(raw: unknown): [unknown, number[], string[]] {
     }
     labels.push(label);
   }
-  return [version, ints, labels];
+  return [version, ints, labels, readParams(params)];
+}
+
+/** A program's params, checked and copied. A program from before params has none. */
+function readParams(raw: unknown): Param[] {
+  if (raw === undefined) return [];
+  const most = `params must be a list of at most ${MAX_PARAMS}`;
+  if (!Array.isArray(raw)) throw new ProgramError(most);
+  const count: unknown = raw.length;
+  if (!isInt32(count) || count < 0 || count > MAX_PARAMS) throw new ProgramError(most);
+  const params: Param[] = [];
+  for (let i = 0; i < count; i++) {
+    const item: unknown = raw[i];
+    if (typeof item !== "object" || item === null) throw new ProgramError(`param ${i} is not one`);
+    const { name, value, min, max, values } = item as Record<string, unknown>;
+    if (typeof name !== "string" || !PARAM_NAME.test(name))
+      throw new ProgramError(`param ${i} has no usable name`);
+    if (params.some((p) => p.name === name))
+      throw new ProgramError(`param "${name}" is declared twice`);
+    if (!isInt32(value) || !isInt32(min) || !isInt32(max) || min > value || value > max)
+      throw new ProgramError(`param "${name}" must have whole numbers min <= value <= max`);
+    if (!Array.isArray(values)) throw new ProgramError(`param "${name}" has no list of values`);
+    const length: unknown = values.length;
+    if (!isInt32(length) || length < 0 || length > MAX_PARAM_VALUES)
+      throw new ProgramError(`param "${name}" can name at most ${MAX_PARAM_VALUES} values`);
+    const names: string[] = [];
+    for (let k = 0; k < length; k++) {
+      const each: unknown = values[k];
+      if (typeof each !== "string" || !PARAM_NAME.test(each) || names.includes(each))
+        throw new ProgramError(`param "${name}" has a value name that is not usable`);
+      names.push(each);
+    }
+    if (names.length > 0 && (min !== 0 || max !== names.length - 1))
+      throw new ProgramError(`param "${name}" must run from 0 to one less than its value names`);
+    params.push(
+      Object.freeze({
+        name,
+        value: value | 0,
+        min: min | 0,
+        max: max | 0,
+        values: Object.freeze(names),
+      }),
+    );
+  }
+  return params;
 }
 
 /**
  * Runs one decision. `program` must have passed validateProgram. `memory` is
  * the actor's persistent slots: it is changed only when the decision commits
  * an action. A decision that faults leaves memory exactly as it was, so a
- * fault has no effect beyond costing the actor its turn. Never throws.
+ * fault has no effect beyond costing the actor its turn. `params` holds the
+ * values of the program's params as the actor has them; a param it has no
+ * value for reads as its default. Never throws.
  */
-export function runDecision(program: Program, memory: number[], sense: Sense): Decision {
+export function runDecision(
+  program: Program,
+  memory: number[],
+  sense: Sense,
+  params: readonly number[] = [],
+): Decision {
   const { code } = program;
   const slots = memory.slice(0, MEMORY_SLOTS);
   const stack: number[] = [];
@@ -225,7 +314,7 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
     // How many values the instruction takes from the stack and how many it leaves.
     let takes = 0;
     let gives = 0;
-    if (op === OP.PUSH || op === OP.LOAD) gives = 1;
+    if (op === OP.PUSH || op === OP.LOAD || op === OP.PARAM) gives = 1;
     else if (op === OP.POP || op === OP.JZ || op === OP.JNZ || op === OP.STORE) takes = 1;
     else if (op === OP.DUP) [takes, gives] = [1, 2];
     else if (op === OP.SWAP) [takes, gives] = [2, 2];
@@ -283,6 +372,9 @@ export function runDecision(program: Program, memory: number[], sense: Sense): D
         break;
       case OP.RULE:
         rule = operand;
+        break;
+      case OP.PARAM:
+        stack.push((params[operand] ?? (program.params[operand] as Param).value) | 0);
         break;
       case OP.SENSE: {
         const args = stack.splice(stack.length - takes, takes);

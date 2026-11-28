@@ -49,8 +49,10 @@ describe("a tick at scale", () => {
     // Changed by the statuses (#402): a hit of a tenth of a monster's life
     // staggers it, and version 11 hashes every actor's statuses. With no
     // stagger and the version 10 hash it is 845d29c3f38cdb9e again, with the
-    // same work counts.
-    expect(hashWorld(world)).toBe("c9c56e2a16e6f737");
+    // same work counts. #405 changed only what is hashed: the orders of
+    // snapshot version 12 and Deckhand in the program table. As version 11
+    // without Deckhand it is c9c56e2a16e6f737 still.
+    expect(hashWorld(world)).toBe("1195d9ec95d3c73d");
     // Over the 300 ticks: some 3,150 field tiles and 2,600 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
     // 83,000 tiles a tick off their queues at this load. A blow now moves every

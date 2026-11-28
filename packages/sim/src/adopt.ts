@@ -10,6 +10,7 @@ import { type Atlas, atlasOf, pointOf, regionAt, walkable } from "./atlas.ts";
 import { fullNodes } from "./gather.ts";
 import { isInt32 } from "./hash.ts";
 import type { Point, TileMap } from "./map.ts";
+import { fitOrders } from "./orders.ts";
 import { cutStatus, type Status, slowed, statusTicksFor } from "./status.ts";
 import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import { DIRECTIONS, FAMILIES, type Family, WEAPONS } from "./weapons.ts";
@@ -86,6 +87,8 @@ interface Fitting {
   readonly aim: number;
   /** Read for a chill, which makes steps and blows longer, and cut to a rank that now lasts less. */
   status: Status;
+  /** Whether its program changed, so its params go back to the defaults. */
+  programChanged: boolean;
 }
 
 function readActor(item: unknown): Fitting {
@@ -128,6 +131,7 @@ function readActor(item: unknown): Fitting {
     weapon,
     aim,
     status: status as unknown as Status,
+    programChanged: false,
   };
 }
 
@@ -198,8 +202,11 @@ const sameTiles = (a: readonly Point[], b: readonly Point[]): boolean =>
  * to date first, as `restore` does. Then:
  *
  * - An actor whose program or monster kind is gone is removed.
- * - An actor whose program changed has its memory cleared and its rule reset,
- *   and decides again at once unless it is mending after a down.
+ * - An actor whose program changed has its memory cleared, its rule reset and
+ *   its params set to the new program's defaults, and decides again at once
+ *   unless it is mending after a down.
+ * - A flag comes down if the ground it stood on is gone or the citizen it
+ *   followed was removed.
  *   A snapshot without `byProgram`, from before it was stored, cannot say which
  *   changed, so every program counts as changed.
  * - Hitpoints, wind-up, recovery, the ticks left in a step and the time left
@@ -245,7 +252,7 @@ export function adopt(
     typeof spawnsPrint !== "string"
   )
     damaged();
-  const state = migrate(version, saved.state, atlas);
+  const state = migrate(version, saved.state, atlas, table);
   let hash: string;
   try {
     const prints = { map, programs: programsPrint, kinds: kindsPrint, spawns: spawnsPrint };
@@ -293,7 +300,8 @@ export function adopt(
     const program = table[a.program] as Program;
     const changed =
       !samePrograms && (byProgram?.[a.program] ?? "") !== hashProgram(a.program, program);
-    if (changed || a.rule >= program.rules.length) {
+    a.programChanged = changed || a.rule >= program.rules.length;
+    if (a.programChanged) {
       // A wait from the old program ends, so that a reset rule reads as mending
       // only for one who was mending already.
       if (!mending(a as unknown as Actor)) a.wait = 0;
@@ -415,10 +423,21 @@ export function adopt(
   if (!sameMap && atlas.nodes.length > 0)
     changes.push(`all ${atlas.nodes.length} nodes stand full again`);
 
+  const citizens = new Set(kept.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
+  let flagsDown = 0;
+  const orders = kept.map((a) => {
+    const fit = fitOrders(a.item, table[a.program] as Program, a.programChanged, atlas, citizens);
+    if (fit.flagDown) flagsDown++;
+    return fit.fields;
+  });
+  if (flagsDown > 0)
+    changes.push(`${flagsDown} flag(s) came down: the ground or the citizen they were on is gone`);
+
   const fitted = {
     ...state,
-    actors: kept.map((a) => ({
+    actors: kept.map((a, i) => ({
       ...a.item,
+      ...orders[i],
       x: a.x,
       y: a.y,
       fromX: a.fromX,

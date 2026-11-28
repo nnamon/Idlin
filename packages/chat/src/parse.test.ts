@@ -1,6 +1,7 @@
-import type { ChatInput } from "@idlin/sim";
+import type { ChatInput, Program } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { clean, MAX_LINE, MAX_WORDS, parseLine } from "./parse.ts";
+import { shippedPrograms } from "../../sim/src/testing.ts";
+import { clean, DEFAULT_VOCABULARY, MAX_LINE, MAX_WORDS, parseLine } from "./parse.ts";
 
 const viewer = (text: string): ChatInput | null =>
   parseLine({ account: "101", role: "viewer", id: "m1", text });
@@ -67,6 +68,14 @@ describe("the parser", () => {
       name: "a",
       value: "x",
     });
+    expect(viewer("!rare")).toEqual({ type: "param", account, name: "keep", value: "rare" });
+  });
+
+  it("knows the params the shipped program declares, with the same value names", () => {
+    const deckhand = shippedPrograms().deckhand as Program;
+    expect(
+      Object.fromEntries(deckhand.params.map((param) => [param.name, [...param.values]])),
+    ).toEqual(DEFAULT_VOCABULARY);
   });
 
   it("reads moderator commands from a moderator or the streamer and from nobody else", () => {

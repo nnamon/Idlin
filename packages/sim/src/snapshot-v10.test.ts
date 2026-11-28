@@ -71,7 +71,7 @@ describe("a version 10 snapshot", () => {
     for (let t = 0; t < 2000; t++) step(world);
     const again = snapshot(world);
     expect(JSON.parse(again).version).toBe(SNAPSHOT_VERSION);
-    expect(SNAPSHOT_VERSION).toBe(11);
+    expect(SNAPSHOT_VERSION).toBe(12);
     const resumed = reload(again);
     expect(resumed).toEqual(world);
     for (let t = 0; t < 500; t++) {
