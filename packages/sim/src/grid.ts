@@ -141,6 +141,14 @@ export function addMark(world: World, mark: Mark): void {
   if (grid?.marks) listMark(grid, mark);
 }
 
+/** Takes away the marks of actor `by`'s attack. */
+export function dropMarks(world: World, by: number): void {
+  world.marks = world.marks.filter((mark) => mark.by !== by);
+  const grid = held.get(world);
+  // Listed again from the world's marks the next time they are asked for.
+  if (grid) grid.marks = null;
+}
+
 function count(grid: Grid, tally: Tally, actor: Actor, x: number, y: number, by: number): void {
   const tile = tileOf(grid, x, y);
   tally.standing[tile] = (tally.standing[tile] as number) + by;

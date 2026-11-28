@@ -6,6 +6,7 @@ import {
   addMark,
   allAt,
   countWithin,
+  dropMarks,
   firstAt,
   gridOf,
   holdGrid,
@@ -116,6 +117,10 @@ describe("the grid of who stands where", () => {
           stepOff(world, actor);
         } else if (roll === 4) {
           addMark(world, { ...box(), by: actor.id });
+        } else {
+          dropMarks(world, actor.id);
+          // Listed again here, so the marks added after are kept in step too.
+          marksOn(gridOf(world), 0);
         }
       }
       const held = gridOf(world);
@@ -415,12 +420,13 @@ describe("walk_to's way", () => {
     expect(count("false near")).toBeGreaterThan(10);
     expect(count("false none")).toBeGreaterThan(10);
     // Allowed the long way round, some went more than DETOUR_STEPS out of their way
-    // (13 of the 400 since the weapons changed who fights where), and some were
-    // held up where people shut the goal off.
-    expect(count("true long")).toBeGreaterThan(10);
+    // (9 of the 400 since a blow pushes bodies in a row from the far end, which
+    // changes where the crowd stands), and some were held up where people shut
+    // the goal off.
+    expect(count("true long")).toBeGreaterThan(5);
     expect(count("true near")).toBeGreaterThan(10);
-    // On some of those long ways, step_to takes more than one step.
-    expect(longer).toBeGreaterThan(10);
+    // On some of those long ways (8), step_to takes more than one step.
+    expect(longer).toBeGreaterThan(5);
   });
 
   it("is the same when the tile asked for, or the one asking, is walled in by monsters", () => {

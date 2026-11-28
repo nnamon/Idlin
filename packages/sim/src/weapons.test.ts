@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { emptyBag, emptyBank } from "./bag.ts";
 import { blow } from "./hit.ts";
 import { isWalkable, type Point, placeConstants } from "./map.ts";
-import { noXp, XP_TABLE } from "./skills.ts";
+import { MAX_LEVEL, noXp, XP_TABLE } from "./skills.ts";
 import { compileBots } from "./tactics.ts";
 import { firstLight } from "./testing.ts";
 import { MEMORY_SLOTS } from "./vm.ts";
@@ -24,12 +25,14 @@ import {
   ADVENTURER_KIND,
   createWorld,
   DOWN_TICKS,
+  hashStateAs,
   hashWorld,
   type Input,
   type Kinds,
   knocksOf,
   readMessage,
   restore,
+  SNAPSHOT_VERSION,
   SnapshotError,
   snapshot,
   step,
@@ -227,6 +230,39 @@ describe("the blow shapes", () => {
     // Two arrows are loosed in that time, and both stop in the nearer post.
     expect(new Set(hits.map((e) => e.type === "hit" && e.target))).toEqual(new Set([near.id]));
     expect(far.hp).toBe(1_000);
+  });
+
+  it("tactics.md's example strikes only at a target its weapon reaches", () => {
+    const doc = readFileSync(new URL("../../../docs/tactics.md", import.meta.url), "utf8");
+    const from = doc.indexOf("```\n", doc.indexOf("close in with a maul")) + 4;
+    const programs = {
+      ...PROGRAMS,
+      ...compileBots({ example: doc.slice(from, doc.indexOf("```", from)) }, placeConstants(MAP)),
+    };
+    // Off Ash's eight lines, on a row and on diagonals, all on open ground.
+    const offsets = [
+      [3, 1],
+      [2, 2],
+      [-4, 0],
+      [4, -2],
+      [-2, 3],
+      [-3, -3],
+    ] as const;
+    for (const weapon of FAMILIES)
+      for (const [dx, dy] of offsets) {
+        const world = createWorld(MAP, 1, programs, KINDS);
+        step(world, [spawn("Ash", "example", ASH, weapon)]);
+        const post = plant(world, ASH.x + dx, ASH.y + dy);
+        let hits = 0;
+        for (let t = 0; t < 60; t++) {
+          const events = step(world);
+          hits += events.filter((e) => e.type === "hit" && e.target === post.id).length;
+          if (!events.some((e) => e.type === "attack" && e.actor === 1)) continue;
+          const marked = world.marks.some((m) => m.by === 1 && m.x === post.x && m.y === post.y);
+          expect(marked, `${weapon} at (${dx}, ${dy}), tick ${world.tick}`).toBe(true);
+        }
+        expect(hits, `${weapon} at (${dx}, ${dy})`).toBeGreaterThan(0);
+      }
   });
 
   it("weapon_reach says how far each reaches, and a monster's is its kind's", () => {
@@ -449,7 +485,35 @@ describe("knockback", () => {
     expect(knock).toMatchObject({ fromX: 17, x: 17, stopped: true });
   });
 
-  it("a body knocked back in its wind-up takes its blow with it, and the world still saves", () => {
+  it("bodies in a row are pushed from the far end, so each that has room moves", () => {
+    // From (9, 11) a maul swung east crushes (10..12, 10..12), and a spear runs (10..13, 11).
+    for (const [weapon, to] of [
+      ["maul", [12, 13, 14]],
+      ["spear", [11, 12, 13]],
+    ] as const) {
+      const world = armed(weapon, "east", { x: 9, y: 11 });
+      const posts = [10, 11, 12].map((x) => plant(world, x, 11));
+      let knocks = knocksOf(step(world));
+      while (knocks.length === 0) knocks = knocksOf(step(world));
+      expect(
+        posts.map((post) => knocks.find((k) => k.target === post.id)),
+        weapon,
+      ).toEqual(
+        posts.map((post, i) => ({
+          by: 1,
+          target: post.id,
+          fromX: 10 + i,
+          fromY: 11,
+          x: to[i],
+          y: 11,
+          stopped: false,
+        })),
+      );
+      expect(posts.map((post) => post.x)).toEqual(to);
+    }
+  });
+
+  it("a body knocked back in its wind-up takes its blow with it", () => {
     const world = armed("spear", "east");
     const brute = plant(world, 17, 13, "brute", "biter");
     brute.hp = 500;
@@ -604,18 +668,47 @@ describe("weapons in the world's state", () => {
       ["an arrow with nowhere left to fly", (s) => Object.assign(arrowOf(s), { left: 0 })],
       ["an arrow over the river", (s) => Object.assign(arrowOf(s), { x: 24 })],
       ["an arrow that crits maybe", (s) => Object.assign(arrowOf(s), { crit: 1 })],
+      ["an arrow from a blade", (s) => Object.assign(arrowOf(s), { by: actorOf(s, 1).id })],
+      [
+        "an arrow harder than Arms 99 shoots",
+        (s) => Object.assign(arrowOf(s), { blow: blow(MAX_LEVEL) + 1 }),
+      ],
       ["arrows that are not a list", (s) => Object.assign(s, { arrows: { 0: arrowOf(s) } })],
       [
         "a blade's wind-up longer than a blade's",
         (s) => Object.assign(actorOf(s, 1), { windup: 3 }),
       ],
     ];
-    for (const [what, change] of forged) {
+    // Each forged state gets the hash it would need, so it is readState that
+    // refuses it and not the hash check.
+    const forge = (change: (state: Record<string, unknown>) => void): string => {
       const data = JSON.parse(text);
       change(data.state);
-      expect(() => restore(JSON.stringify(data), MAP, PROGRAMS, KINDS), what).toThrow(
-        SnapshotError,
-      );
+      try {
+        data.hash = hashStateAs(data.state as World, SNAPSHOT_VERSION, {
+          map: data.map,
+          programs: data.programs,
+          kinds: data.kinds,
+          spawns: data.spawns,
+        });
+      } catch {
+        // Arrows that are not a list cannot be hashed, so the old hash stays.
+      }
+      return JSON.stringify(data);
+    };
+    // The hash made to fit is the one restore wants: an unchanged state passes with it.
+    expect(
+      hashWorld(
+        restore(
+          forge(() => {}),
+          MAP,
+          PROGRAMS,
+          KINDS,
+        ),
+      ),
+    ).toBe(hashWorld(busy()));
+    for (const [what, change] of forged) {
+      expect(() => restore(forge(change), MAP, PROGRAMS, KINDS), what).toThrow(SnapshotError);
     }
   });
 
@@ -627,6 +720,21 @@ describe("weapons in the world's state", () => {
       spawn("Bryn", "stander", { x: 18, y: 11 }),
     ]);
     expect(world.actors.map((a) => [a.name, a.weapon])).toEqual([["Bryn", "blade"]]);
+  });
+
+  it("a monster spawn dropped for its weapon holds back none of its region's spawns", () => {
+    const quiet = createWorld(MAP, 1, PROGRAMS, KINDS);
+    const tried = createWorld(MAP, 1, PROGRAMS, KINDS);
+    step(quiet);
+    step(tried, [spawn("Post", "stander", { x: 20, y: 13 }, "bow", "post")]);
+    expect(tried.actors).toEqual([]);
+    expect(tried.nextSpawn).toEqual(quiet.nextSpawn);
+    expect(hashWorld(tried)).toBe(hashWorld(quiet));
+    // Without the weapon the same spawn is honoured and holds them.
+    step(tried, [spawn("Post", "stander", { x: 20, y: 13 }, undefined, "post")]);
+    step(quiet);
+    expect(tried.actors.map((a) => a.kind)).toEqual(["post"]);
+    expect(tried.nextSpawn).not.toEqual(quiet.nextSpawn);
   });
 });
 

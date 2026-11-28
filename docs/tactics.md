@@ -206,10 +206,19 @@ its line, so it reaches a monster six tiles off six ticks later. It hits the
 first enemy it comes to and stops in it; a monster that has stepped off the
 line by then is missed. `weapon_reach` gives the farthest tile a blow
 reaches, counting a diagonal step as one, so a program can keep its
-distance with a bow and close in with a maul:
+distance with a bow and close in with a maul.
+
+A blade or a maul hits a target up to `weapon_reach` steps off, as
+`threat_distance` counts them, whichever way it lies. A spear or a bow hits
+only along its line, so the target has to be on the same row, the same column
+or a diagonal. `threat_distance` counts a diagonal step as two, so on a
+diagonal the target is in reach at up to twice `weapon_reach`. This program
+strikes only at a target on one of those lines and steps towards any other,
+which works for every weapon:
 
 ```
-when threat_distance <= weapon_reach as "shoot" -> attack(threat_x, threat_y)
+when (threat_x == self_x or threat_y == self_y) and threat_distance <= weapon_reach as "strike" -> attack(threat_x, threat_y)
+when (threat_x - self_x == threat_y - self_y or threat_x - self_x == self_y - threat_y) and threat_distance <= 2 * weapon_reach as "strike" -> attack(threat_x, threat_y)
 otherwise -> step_to(threat_x, threat_y)
 ```
 

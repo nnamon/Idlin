@@ -45,16 +45,18 @@ describe("a tick at scale", () => {
     // an actor that got nowhere going round the people in its way however far
     // (see wayTo in brain.ts); and by the weapons (#393): a blade's arc, times
     // and knockback, the wolf's hitpoints, and the fields snapshot version 10
-    // hashes.
-    expect(hashWorld(world)).toBe("32f44c272a180d72");
-    // Over the 300 ticks: some 3,400 field tiles and 2,800 search tiles a
+    // hashes; and by bodies in a row being pushed from the far end (#398).
+    expect(hashWorld(world)).toBe("845d29c3f38cdb9e");
+    // Over the 300 ticks: some 3,800 field tiles and 3,100 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
-    // 83,000 tiles a tick off their queues at this load.
+    // 83,000 tiles a tick off their queues at this load. A blow now moves every
+    // body in a row it hits that has room, and a body that is moved loses its
+    // walk and finds a new one, which took the counts up from 3,400 and 2,800.
     expect(workOf(world)).toEqual({
-      fieldTiles: 1_034_583,
-      fields: 2_679,
-      searchTiles: 831_145,
-      actors: 2_359_094,
+      fieldTiles: 1_129_842,
+      fields: 2_753,
+      searchTiles: 934_354,
+      actors: 2_382_719,
     });
   });
 

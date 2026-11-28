@@ -20,6 +20,7 @@ import {
   addMark,
   allAt,
   countWithin,
+  dropMarks,
   firstAt,
   type Grid,
   gridOf,
@@ -47,7 +48,16 @@ import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./in
 import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
-import { gainXp, levelFor, MAX_XP, noXp, SKILLS, type Skill, XP_PER_DAMAGE } from "./skills.ts";
+import {
+  gainXp,
+  levelFor,
+  MAX_LEVEL,
+  MAX_XP,
+  noXp,
+  SKILLS,
+  type Skill,
+  XP_PER_DAMAGE,
+} from "./skills.ts";
 import {
   FAULTS,
   MEMORY_SLOTS,
@@ -1016,7 +1026,7 @@ function knock(
  * with it; aimed at a wall, the blow lands on nothing.
  */
 function reaim(world: World, body: Actor): Mark[] {
-  world.marks = world.marks.filter((mark) => mark.by !== body.id);
+  dropMarks(world, body.id);
   const marks = blowTiles(world, body, body.aim).map((tile) => ({ ...tile, by: body.id }));
   for (const mark of marks) addMark(world, mark);
   return marks;
@@ -1133,8 +1143,15 @@ function landAttacks(world: World, events: WorldEvent[]): void {
         strike(world, attacker, target, swinger, crit, events);
         struck.set(target.id, attacker.id);
       }
+      // The farthest along the blow is pushed first, so one in front is not
+      // stopped by the one behind it a moment before that one moves. Bodies
+      // as far along keep the order they were hit in.
       const quarters = attacker.weapon === "" ? 0 : WEAPONS[attacker.weapon].knockback;
-      for (const target of targets) push(target, attacker.aim, quarters, attacker.id);
+      const [ax, ay] = DIRECTIONS[attacker.aim] as readonly [number, number];
+      const along = (t: Actor): number => (t.x - attacker.x) * ax + (t.y - attacker.y) * ay;
+      const order = targets.map((target, i) => ({ target, i, far: along(target) }));
+      order.sort((p, q) => q.far - p.far || p.i - q.i);
+      for (const { target } of order) push(target, attacker.aim, quarters, attacker.id);
     }
   } finally {
     releaseGrid(world);
@@ -1285,6 +1302,10 @@ function applyInput(world: World, input: Input): void {
   if (world.nextActorId >= MAX_ACTOR_ID) return;
   const kind = fields.kind ?? ADVENTURER;
   if (typeof kind !== "string") return;
+  // Checked before a monster holds its region's spawns, so a spawn dropped for its weapon holds none.
+  const weapon = fields.weapon ?? "blade";
+  if (!FAMILIES.includes(weapon as Family) || (kind !== ADVENTURER && fields.weapon !== undefined))
+    return;
   if (kind !== ADVENTURER) {
     // A monster put in by hand counts against its region's cap and wait like any other.
     if (!Object.hasOwn(world.kinds, kind)) return;
@@ -1295,9 +1316,6 @@ function applyInput(world: World, input: Input): void {
     // the world on that next tick, so the hour is counted from there.
     holdSpawns(world, region, world.tick + 1);
   }
-  const weapon = fields.weapon ?? "blade";
-  if (!FAMILIES.includes(weapon as Family) || (kind !== ADVENTURER && fields.weapon !== undefined))
-    return;
   addActor(world, name, x, y, program, kind, "", weapon as Family);
 }
 
@@ -2584,14 +2602,21 @@ export function readState(
   return world;
 }
 
+/** The base blow at the highest Arms, which no arrow is loosed harder than. */
+const HARDEST_BLOW = blow(MAX_LEVEL);
+
 /**
  * The arrows in flight if `value` lists them as a world could hold them, each
- * loosed by an adventurer in it over ground, else null. A shooter looses one
- * at most every SHORTEST_BLOW ticks and it flies ARROW_RANGE, so no more than
- * that many are in flight for each adventurer.
+ * loosed by an adventurer in it who holds a bow, over ground, no harder than
+ * the blow of the highest Arms. A shooter looses one at most every
+ * SHORTEST_BLOW ticks and it flies ARROW_RANGE, so no more than that many are
+ * in flight for each. A weapon is never changed, so whoever loosed an arrow
+ * still holds the bow.
  */
 function readArrows(value: unknown, world: World): Arrow[] | null {
-  const shooters = new Set(world.actors.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
+  const shooters = new Set(
+    world.actors.filter((a) => a.kind === ADVENTURER && a.weapon === "bow").map((a) => a.id),
+  );
   const list = plainList(value, shooters.size * ARROW_RANGE);
   if (!list) return null;
   const arrows: Arrow[] = [];
@@ -2608,7 +2633,7 @@ function readArrows(value: unknown, world: World): Arrow[] | null {
     if (!isInt32(x) || !isInt32(y) || !walkable(world.atlas, x, y)) return null;
     if (!isInt32(aim) || aim < 0 || aim >= DIRECTIONS.length) return null;
     if (!isInt32(left) || left < 1 || left > ARROW_RANGE) return null;
-    if (!isInt32(blow) || blow < 0 || typeof crit !== "boolean") return null;
+    if (!isInt32(blow) || blow < 0 || blow > HARDEST_BLOW || typeof crit !== "boolean") return null;
     arrows.push({ by, x, y, aim, left, blow, crit });
   }
   return arrows;
