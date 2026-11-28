@@ -12,6 +12,8 @@ import {
   hashLanding,
   type Landing,
   LandingError,
+  LEGS_HEIGHT,
+  LEGS_WIDTH,
   landingGraphText,
   landingText,
   MAX_EXTRA,
@@ -53,17 +55,8 @@ const landings: Record<SizeClass, Landing[]> = {
   large: sweep("large"),
 };
 
-/**
- * Districts besides the city's, which the blocks and SIZES' `cell` fix for
- * each size: with the ramp to the north or south, and to the east or west.
- */
-const POCKETS: Record<SizeClass, readonly [number, number]> = {
-  small: [8, 8],
-  medium: [12, 15],
-  large: [17, 18],
-};
-const across = (landing: Landing): 0 | 1 =>
-  landing.rampSide === "north" || landing.rampSide === "south" ? 0 : 1;
+/** Districts besides the city's, which the blocks and SIZES' `cell` fix for each size. */
+const POCKETS: Record<SizeClass, number> = { small: 7, medium: 12, large: 19 };
 
 const index = (landing: Landing, p: Point): number => p.y * landing.width + p.x;
 const pointAt = (landing: Landing, i: number): Point => ({
@@ -157,7 +150,7 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
       for (const landing of landings[size]) {
         const { districts } = landing;
         // The pockets besides the city's district, near the counts the spec for packs (#396) works from.
-        expect(districts.length - 1).toBe(POCKETS[size][across(landing)]);
+        expect(districts.length - 1).toBe(POCKETS[size]);
         expect(districts[0]).toMatchObject({
           ...landing.ramp,
           id: 0,
@@ -379,13 +372,14 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
 
 describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT }, () => {
   it("has the sizes and counts of the slice's spec, the small one made room in", () => {
-    // docs/slice.md has small at 40 by 22; 46 by 26 fits a row of blocks north
-    // and south of the city's ground (SIZES says how).
-    expect([SIZES.small.width, SIZES.small.height]).toEqual([46, 26]);
+    // docs/slice.md has small at 40 by 22; 50 by 28 fits a row of blocks north
+    // and south of the city's ground with the legs on it (SIZES says how).
+    expect([SIZES.small.width, SIZES.small.height]).toEqual([50, 28]);
     expect([SIZES.medium.width, SIZES.medium.height]).toEqual([60, 33]);
     expect([SIZES.large.width, SIZES.large.height]).toEqual([80, 45]);
-    expect([CITY_WIDTH, CITY_HEIGHT, RIM]).toEqual([10, 6, 2]);
-    expect(SIZE_CLASSES.map((s) => SIZES[s].apron)).toEqual([3, 4, 4]);
+    // The hull and its legs as docs/art.md, section 7, draws them.
+    expect([CITY_WIDTH, CITY_HEIGHT, LEGS_WIDTH, LEGS_HEIGHT, RIM]).toEqual([15, 6, 21, 14, 2]);
+    expect(SIZE_CLASSES.map((s) => SIZES[s].apron)).toEqual([5, 6, 6]);
     expect(SIZE_CLASSES.map((s) => [SIZES[s].dens, SIZES[s].caches, SIZES[s].far])).toEqual([
       [1, 1, 0],
       [3, 2, 5],
@@ -463,29 +457,23 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
           [0, 1],
           [-1, 0],
         ][side] as [number, number];
-        // The city's district is the apron round the footprint, two deeper on the ramp's side.
-        const pad = EDGES.map((_, s) => spec.apron + (s === side ? 2 : 0));
-        const [padN, padE, padS, padW] = pad as [number, number, number, number];
+        // The city's district is the apron round the footprint, the same on
+        // every side whichever side the ramp is on.
         const home = (landing.districts[0] as Landing["districts"][0]).bounds;
         expect(home).toEqual({
-          x: city.x - padW,
-          y: city.y - padN,
-          width: padW + CITY_WIDTH + padE,
-          height: padN + CITY_HEIGHT + padS,
+          x: city.x - spec.apron,
+          y: city.y - spec.apron,
+          width: CITY_WIDTH + 2 * spec.apron,
+          height: CITY_HEIGHT + 2 * spec.apron,
         });
-        // It is centred on the map, and so are the footprint and the ramp
-        // together; to half a tile where the map's length is odd.
+        // It is centred on the map, and so is the hull; to half a tile where
+        // one of the two lengths is odd and the other even.
         const centred = (x: number, y: number, w: number, h: number): void => {
-          expect(Math.abs(2 * x + w - width), landing.name).toBeLessThanOrEqual(width % 2);
-          expect(Math.abs(2 * y + h - height), landing.name).toBeLessThanOrEqual(height % 2);
+          expect(Math.abs(2 * x + w - width), landing.name).toBeLessThanOrEqual((width + w) % 2);
+          expect(Math.abs(2 * y + h - height), landing.name).toBeLessThanOrEqual((height + h) % 2);
         };
         centred(home.x, home.y, home.width, home.height);
-        centred(
-          city.x - (toX < 0 ? 2 : 0),
-          city.y - (toY < 0 ? 2 : 0),
-          city.width + 2 * Math.abs(toX),
-          city.height + 2 * Math.abs(toY),
-        );
+        centred(city.x, city.y, city.width, city.height);
         // All of it but its outermost tiles is the city's own and open.
         for (let y = home.y + 1; y < home.y + home.height - 1; y++) {
           for (let x = home.x + 1; x < home.x + home.width - 1; x++) {
@@ -509,14 +497,45 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
             expect(terrainAt(landing, x, y)).toBe("camp");
           }
         }
-        // Open ground of the city's in front of the ramp: two tiles on a small
-        // landing, three on the others.
-        for (let k = 1; k < spec.apron; k++) {
+        // Open ground of the city's in front of the ramp, short of the city's
+        // outermost tile: two tiles on a small landing, three on the others.
+        expect(spec.apron - 3).toBe(size === "small" ? 2 : 3);
+        for (let k = 1; k <= spec.apron - 3; k++) {
           const [x, y] = [ramp.x + k * toX, ramp.y + k * toY];
           expect(terrainAt(landing, x, y)).not.toBe("camp");
           expect(isWalkable(landing, x, y)).toBe(true);
           expect(landing.districtAt[index(landing, { x, y })]).toBe(0);
         }
+      }
+    });
+
+    it(`${size}: nothing but the city's open ground, camp and ramp lies under the drawn legs`, () => {
+      for (const landing of landings[size]) {
+        const { city, legs } = landing;
+        // 21 by 14, centred on the hull: three tiles past each end, four past each long side.
+        expect(legs).toEqual({
+          x: city.x - 3,
+          y: city.y - 4,
+          width: LEGS_WIDTH,
+          height: LEGS_HEIGHT,
+        });
+        const under = (p: Point): boolean =>
+          p.x >= legs.x && p.y >= legs.y && p.x < legs.x + legs.width && p.y < legs.y + legs.height;
+        for (let y = legs.y; y < legs.y + legs.height; y++) {
+          for (let x = legs.x; x < legs.x + legs.width; x++) {
+            const where = `${landing.name} (${x}, ${y})`;
+            expect(landing.districtAt[index(landing, { x, y })], where).toBe(0);
+            expect(isWalkable(landing, x, y), where).toBe(true);
+          }
+        }
+        const things = [
+          ...landing.dens,
+          ...landing.caches,
+          ...landing.seams,
+          ...landing.entries.flatMap((e) => e.gap),
+          ...landing.passages.flatMap((p) => p.tiles),
+        ];
+        expect(things.filter(under), landing.name).toEqual([]);
       }
     });
 
@@ -745,15 +764,15 @@ describe("generateLanding: determinism", () => {
     // a change to the generator that is meant to move them updates them.
     expect(
       hashLanding(generateLanding({ seed: 1, size: "small", biome: "meadow", level: 5 })),
-    ).toBe("ad2347d6ea09af7f");
+    ).toBe("228760a8147193f9");
     expect(hashLanding(generateLanding({ seed: 2, size: "medium", biome: "fen", level: 12 }))).toBe(
-      "35f8a33629e084b3",
+      "7b9f120d35276e10",
     );
     expect(
       hashLanding(
         generateLanding({ seed: 3, size: "large", biome: "ash_waste", level: 30, extraDens: 2 }),
       ),
-    ).toBe("838d9d20dbc9ef1d");
+    ).toBe("709f1dc58c02c164");
   });
 
   it("gives different landings for different seeds", () => {
@@ -780,9 +799,10 @@ describe("generateLanding: determinism", () => {
 
 describe("generateLanding: cost", () => {
   it("takes a bounded time whatever the seed", () => {
-    // Over 2,000 seeds in the dev container the mean is 2.5, 3.0 and 6.9 ms and
-    // the median 2.4, 2.9 and 6.7 ms; the slowest, at 8 to 49 ms, were pauses
-    // with other work running beside them. CI runs the gate about three times slower.
+    // Over the 200 seeds of the long run in the dev container the mean is 3.2,
+    // 3.3 and 8.1 ms and the median 2.8, 3.1 and 7.1 ms; the slowest, at 5 to
+    // 56 ms, were pauses with other work running beside them. CI runs the gate
+    // about three times slower.
     const budget: Record<SizeClass, number> = { small: 25, medium: 40, large: 75 };
     const count = LONG ? 200 : 40;
     for (const size of SIZE_CLASSES) {
@@ -827,18 +847,37 @@ describe("generateLanding: cost", () => {
     }
   });
 
-  it("refuses a size with no room for a strip of blocks on every side of the city", () => {
-    // 40 by 22 leaves the strips north and south of the city's ground two or
-    // three tiles deep, whichever side the ramp is on.
+  it("refuses a size with no room for a strip of blocks on every side of the city, on every seed or none", () => {
+    // The least room each way: rim, block, apron, footprint, apron, block, rim.
+    // For the small apron of 5 that is 37 by 28. One tile less either way
+    // leaves a strip three deep on that axis, whichever side the ramp is on.
     const spec = SIZES.small as { width: number; height: number };
     const [width, height] = [spec.width, spec.height];
+    const least = (length: number): number => 2 * RIM + 2 * 4 + length + 2 * SIZES.small.apron;
+    const [w, h] = [least(CITY_WIDTH), least(CITY_HEIGHT)];
+    expect([w, h]).toEqual([37, 28]);
+    /** The ramp sides of 40 seeds on a map this size, or the refusals. */
+    const sides = (x: number, y: number): string[] => {
+      [spec.width, spec.height] = [x, y];
+      return Array.from({ length: 40 }, (_, seed) => {
+        try {
+          const landing = generateLanding({ seed, size: "small", biome: "meadow", level: 5 });
+          expect(walks(landing).size).toBe(walkableCount(landing));
+          return landing.rampSide;
+        } catch (error) {
+          expect(String(error)).toContain("no room for blocks on every side of the city");
+          return "refused";
+        }
+      });
+    };
     try {
-      [spec.width, spec.height] = [40, 22];
-      for (let seed = 0; seed < 8; seed++) {
-        expect(() => generateLanding({ seed, size: "small", biome: "meadow", level: 5 })).toThrow(
-          "no room for blocks on every side of the city",
-        );
-      }
+      // At the least, every seed fits, with the ramp on each of the four sides.
+      expect(new Set(sides(w, h))).toEqual(new Set(EDGES));
+      // A column short, or a row short, every seed is refused.
+      expect(new Set(sides(w - 1, h))).toEqual(new Set(["refused"]));
+      expect(new Set(sides(w, h - 1))).toEqual(new Set(["refused"]));
+      // 40 by 22, the slice's small size, is refused on every seed.
+      expect(new Set(sides(40, 22))).toEqual(new Set(["refused"]));
     } finally {
       [spec.width, spec.height] = [width, height];
     }

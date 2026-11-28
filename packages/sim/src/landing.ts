@@ -10,13 +10,15 @@
 //
 // 0. The frame. The map is about 16:9, the shape of the stream's frame. The
 //    rim, its outer two rings of tiles, is the biome's barrier and in no block
-//    and no district. The city's ground is in the middle: its 10 by 6
-//    footprint and the size's apron round it, two tiles deeper on the side
-//    the seed draws for the ramp, so that the footprint and its ramp
-//    together are centred too. Every size leaves a strip at least a block
-//    wide between that ground and the rim on all four sides, so there are
-//    pockets on every side of the city. This is a fact of the sizes, not of
-//    the seed, and a size without the room is refused outright.
+//    and no district. The city's ground is in the middle: the hull's 15 by 6
+//    footprint and the size's apron round it on every side. The apron holds
+//    the ground the legs stand on, 21 by 14 round the hull as docs/art.md,
+//    section 7, draws them, and the ramp on whichever side of the footprint
+//    the seed draws for it, so the city's ground has the same size and place
+//    on every seed. Every size leaves a strip at least a block wide between
+//    that ground and the rim on all four sides, so there are pockets on every
+//    side of the city. This is a fact of the size alone, checked before the
+//    first draw, so a size without the room is refused on every seed.
 // 1. Blocks. Jittered lines cut the ground inside the rim into blocks of four
 //    tiles or more a side, along the edges of the city's ground. The blocks
 //    under that ground are the city's district, which holds the ramp and is
@@ -28,8 +30,7 @@
 //    take turns to add a free block beside one they have, keeping to their
 //    band where they can. A district is a connected, irregular group of
 //    blocks, and every block ends up in one. The number of districts is a
-//    fact of the size and of which axis the ramp is on: the cuts and the
-//    bands depend on lengths only.
+//    fact of the size: the cuts and the bands depend on lengths only.
 // 3. Passages. Districts with blocks side by side are neighbours. A spanning
 //    tree is grown outward from the city over the neighbours (Prim's
 //    algorithm, nearer bands first, seeded weights). Where the biome has a
@@ -45,7 +46,8 @@
 //    as part of the block inside it), so the lanes of two districts are never
 //    nearer than two tiles. Each side of the map gets a gap in the rim, in a
 //    block on that side drawn from the best by a score: one whose district
-//    has a gap already is worse, and so is one in a corner. The blocks on a
+//    has a gap already is worse, and so is one in a corner of the map, on two
+//    of its sides. The blocks on a
 //    side are all in the strip or the corners there, so the gap's district is
 //    never the city's. Its district lays a lane to the rim's inner face and on
 //    straight through it to the map's edge, and the rim tiles beside that
@@ -106,10 +108,22 @@
 //   grass repaint tiles that already were.
 // - The same holds with the camp ground taken away, for a monster, which may
 //   not stand on it. Every tile of the city's ground but its outermost is a
-//   lane tile of the city's. Less the camp, that is a ring at least two tiles
-//   thick round the footprint and the ramp, so it is joined, and it holds
-//   every tile beside camp ground. The city's lanes leave the ramp onto it
-//   and never cross camp again.
+//   lane tile of the city's. Less the camp, that is a ring round the
+//   footprint and the ramp, `apron - 1` tiles thick and two fewer in front of
+//   the ramp, so at least two: it is joined, and it holds every tile beside
+//   camp ground. The city's lanes leave the ramp onto it and never cross camp
+//   again.
+//
+// Why nothing stands under the legs
+//
+// The legs' ground reaches three tiles past each end of the hull and four
+// past each long side. The apron is at least five, so the legs' ground lies
+// inside the city's ground less its outermost tiles, which are the city's lane
+// tiles. A lane tile is in the city's district from the start and is kept:
+// the growth never gives it to another district, and no barrier, obstacle,
+// cache wall or den wall takes it. Dens, caches and seams stand only in other
+// districts, and a gap only in a block on the rim. So under the legs there is
+// the city's open ground, its camp and its ramp, and nothing else.
 //
 // The graph is also exact. Two districts never touch (step 5). A gate's
 // 4-neighbours are its two districts' lane ends, its own tiles and its jambs.
@@ -140,9 +154,12 @@ export interface SizeSpec {
   readonly width: number;
   readonly height: number;
   /**
-   * Tiles of ground round the city's footprint that are the city's district,
-   * and two more on the ramp's side. The ramp takes two of those, the road
-   * round it the third, and the rest is open ground in front of it.
+   * Tiles of ground beyond the hull's footprint, on every side, that are the
+   * city's district. The legs stand on the first three past each end and the
+   * first four past each long side. On the ramp's side the ramp takes two, the
+   * road round it the third, and the rest but the outermost is open ground in
+   * front of it. Five at least, so that the legs' ground is clear of the
+   * outermost tile, which may be a border.
    */
   readonly apron: number;
   /** How many bands of blocks, counted out from the city, each get their own seed blocks. */
@@ -150,11 +167,9 @@ export interface SizeSpec {
   /** The side a block aims for, in tiles. Districts are made of blocks. */
   readonly block: number;
   /**
-   * How many blocks a district aims for. With the ramp to the east or west
-   * these give 8, 15 and 18 districts besides the city's, and with it to the
-   * north or south 8, 12 and 17, where the city's ground is a row of blocks
-   * taller and a column narrower. The slice's spec for packs (#396) works
-   * from 7 to 9, 12 to 15 and 18 or 19.
+   * How many blocks a district aims for. These give 7, 12 and 19 districts
+   * besides the city's on every seed. The slice's spec for packs (#396)
+   * works from 7 to 9, 12 to 15 and 18 or 19.
    */
   readonly cell: number;
   /** The widest a gate is cut, in tiles. */
@@ -181,18 +196,19 @@ export interface SizeSpec {
 /**
  * The three size classes, with the tile counts, dens, caches and level steps
  * of docs/slice.md, section 1, but for the small one's tiles. A small landing
- * is 46 by 26, not 40 by 22, so that it has a strip of blocks north and south
- * of the city as well as east and west. With the ramp to the north, from top
- * to bottom: the rim (2), a block (4), the apron and the ramp's two more (5),
- * the footprint (6), the apron (3), a block (4) and the rim (2) make 26 rows,
- * and 46 keeps it near 16:9. It has about as much ground inside its rim as 40
- * by 22 had in all.
+ * is 50 by 28, not 40 by 22, so that it has a strip of blocks north and south
+ * of the city as well as east and west, with the legs on the city's ground.
+ * From top to bottom: the rim (2), a block (4), the apron (5), the footprint
+ * (6), the apron (5), a block (4) and the rim (2) make 28 rows, the least that
+ * fit, and 50 keeps it at 16:9. Across, the same make 37 columns, so the
+ * width has room to spare. Medium and large have rows to spare at 60 by 33
+ * and 80 by 45 (30 needed) and keep their sizes.
  */
 export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
   small: {
-    width: 46,
-    height: 26,
-    apron: 3,
+    width: 50,
+    height: 28,
+    apron: 5,
     bands: 2,
     block: 4,
     cell: 5,
@@ -210,7 +226,7 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
   medium: {
     width: 60,
     height: 33,
-    apron: 4,
+    apron: 6,
     bands: 2,
     block: 5,
     cell: 4,
@@ -228,10 +244,10 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
   large: {
     width: 80,
     height: 45,
-    apron: 4,
+    apron: 6,
     bands: 3,
     block: 5,
-    cell: 7,
+    cell: 5,
     gate: 3,
     loops: 30,
     wood: 2,
@@ -245,9 +261,15 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
   },
 });
 
-/** The ground the parked city stands on, in tiles, and the width of its ramp. */
-export const CITY_WIDTH = 10;
+/**
+ * The hull's footprint, which the parked city stands over (docs/art.md,
+ * section 7), the ground its eight feet stand on, centred on the footprint,
+ * and the width of its ramp, in tiles.
+ */
+export const CITY_WIDTH = 15;
 export const CITY_HEIGHT = 6;
+export const LEGS_WIDTH = 21;
+export const LEGS_HEIGHT = 14;
 export const RAMP_WIDTH = 3;
 /** How deep the rim of barrier round the map is, in tiles. */
 export const RIM = 2;
@@ -335,7 +357,7 @@ export interface Passage extends Point {
 /**
  * A gap in the rim where the horde comes in, and the way it knows to the hull.
  * There is one on each side of the map. `x`, `y` is its middle tile on the
- * map's edge.
+ * map's edge, or on a gap two wide the edge tile its lane runs through.
  */
 export interface Entry extends Point {
   /** The side of the map it is on. */
@@ -386,8 +408,13 @@ export interface Landing extends TileMap {
   readonly level: number;
   /** Monster level by ring: the most on the apron, then rings 1, 2 and 3. */
   readonly levels: readonly number[];
-  /** The ground under the parked city: `camp`, which monsters cannot stand on. */
+  /** The ground under the parked city's hull: `camp`, which monsters cannot stand on. */
   readonly city: Rect;
+  /**
+   * The ground the parked city's feet stand on, LEGS_WIDTH by LEGS_HEIGHT and
+   * centred on `city`. All of it is the city's district and walkable.
+   */
+  readonly legs: Rect;
   /** The foot of the ramp in its middle, also the place `ramp`. */
   readonly ramp: Point;
   /** The side of the footprint the ramp comes out of. */
@@ -714,32 +741,40 @@ export function generateLanding(input: unknown): Landing {
   const depthOf = (x: number, y: number): number => Math.min(x, y, W - 1 - x, H - 1 - y);
   const rim: boolean[] = Array.from({ length: N }, (_, i) => depthOf(xOf(i), yOf(i)) < RIM);
 
-  // 0. The city's ground in the middle: the footprint, the apron round it, two
-  // tiles deeper on the side the seed draws for the ramp, and so the footprint a
-  // tile back from the middle, away from the ramp. Each strip between that ground
-  // and the rim is a block wide or more, which the sizes are chosen for.
-  const rampIndex = roll(layoutRng, 4);
-  const rampSide = EDGES[rampIndex] as Edge;
-  const [rx, ry] = TOWARD[rampIndex] as [number, number];
-  /** The apron on each side, in EDGES order. */
-  const pad = EDGES.map((_, side) => spec.apron + (side === rampIndex ? 2 : 0));
-  const [padN, padE, padS, padW] = pad as [number, number, number, number];
-  const homeX = (W - (padW + CITY_WIDTH + padE)) >> 1;
-  const homeY = (H - (padN + CITY_HEIGHT + padS)) >> 1;
+  // 0. The city's ground in the middle: the footprint and the apron round it on
+  // every side, which holds the legs' ground and the ramp on any side. None of
+  // it depends on the seed, so neither does the check that each strip between
+  // that ground and the rim is a block wide or more, which the sizes are chosen
+  // for: a size passes it on every seed or on none.
+  const homeX = (W - (CITY_WIDTH + 2 * spec.apron)) >> 1;
+  const homeY = (H - (CITY_HEIGHT + 2 * spec.apron)) >> 1;
   const home: Box = {
     x0: homeX,
     y0: homeY,
-    x1: homeX + padW + CITY_WIDTH + padE,
-    y1: homeY + padN + CITY_HEIGHT + padS,
+    x1: homeX + CITY_WIDTH + 2 * spec.apron,
+    y1: homeY + CITY_HEIGHT + 2 * spec.apron,
   };
-  if (Math.min(home.x0 - RIM, home.y0 - RIM, W - RIM - home.x1, H - RIM - home.y1) < MIN_BLOCK)
+  // The strips on the far sides are as deep as these or a tile deeper.
+  if (Math.min(home.x0, home.y0) - RIM < MIN_BLOCK)
     throw new Error(`a ${size} landing has no room for blocks on every side of the city`);
+  // The legs' ground inside the city's but for its outermost tiles.
+  if (2 * (spec.apron - 1) < Math.max(LEGS_WIDTH - CITY_WIDTH, LEGS_HEIGHT - CITY_HEIGHT))
+    throw new Error(`a ${size} landing's city ground is too narrow for its legs`);
   const city: Rect = {
-    x: home.x0 + padW,
-    y: home.y0 + padN,
+    x: home.x0 + spec.apron,
+    y: home.y0 + spec.apron,
     width: CITY_WIDTH,
     height: CITY_HEIGHT,
   };
+  const legs: Rect = {
+    x: city.x - ((LEGS_WIDTH - CITY_WIDTH) >> 1),
+    y: city.y - ((LEGS_HEIGHT - CITY_HEIGHT) >> 1),
+    width: LEGS_WIDTH,
+    height: LEGS_HEIGHT,
+  };
+  const rampIndex = roll(layoutRng, 4);
+  const rampSide = EDGES[rampIndex] as Edge;
+  const [rx, ry] = TOWARD[rampIndex] as [number, number];
   const cx = city.x + (CITY_WIDTH >> 1);
   const cy = city.y + (CITY_HEIGHT >> 1);
   const cityRight = city.x + city.width - 1;
@@ -1856,6 +1891,7 @@ export function generateLanding(input: unknown): Landing {
     level,
     levels,
     city,
+    legs,
     ramp,
     rampSide,
     districts,
@@ -1884,6 +1920,8 @@ export function hashLanding(landing: Landing): string {
     ...landing.places.flatMap((p) => [...stringInts(p.name), p.x, p.y]),
     landing.city.x,
     landing.city.y,
+    landing.legs.x,
+    landing.legs.y,
     landing.ramp.x,
     landing.ramp.y,
     EDGES.indexOf(landing.rampSide),
