@@ -52,10 +52,22 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   deleted is logged and left.
   Beside each snapshot is its input log, `world-<tick>.log`, one line for each
   tick stepped since with the inputs applied at it, written ten ticks at a
-  time. A new world is saved at once so that every tick is in a log. On start
-  the server replays the resumed snapshot's log up to its last whole line, so
-  a kill loses at most ten ticks; a torn or out-of-order line ends the replay
-  there, with a line in the log. A log is deleted once its snapshot is.
+  time; a write that fails or writes only part is retried with the next, so
+  the file has no gaps. A new world is saved at once so that every tick is in
+  a log, and any log already in `data/` is set aside as `.bad`, since it
+  belongs to another world. On start the server replays the resumed
+  snapshot's log up to its last whole line, so a kill of the process loses at
+  most ten ticks (nothing is fsynced, so a machine going down can lose more).
+  A torn last line ends the replay there. A log that cannot be read, or has
+  a bad line before its end, is copied aside as `.bad` with a line in the log,
+  and stays under its name until the new log with the lines used replaces it.
+  A log used to its end reaches the tick of the next snapshot, and when that
+  snapshot was refused the replay goes on into its log. Logs later than the
+  one the replay ends in are set aside, since the world goes on past their
+  ticks with other inputs. A world that replayed
+  anything is saved at once. A save sets aside a log with lines that is
+  already under its tick's name, and fails if it cannot. A log is deleted
+  once its snapshot is.
   `IDLIN_CHAT=crowd:crowd-150` reads that crowd file from `content/chat/` as
   the server's chat, from the tick it starts at, and a new world then starts
   with no residents.

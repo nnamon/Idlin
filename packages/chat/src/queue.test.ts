@@ -141,10 +141,11 @@ describe("the input queue", () => {
     let applied: number | null = null;
     const sentAt = 300;
     for (let tick = 0; tick < 600; tick++) {
-      // Five a second each: one message every two ticks.
-      if (tick % 2 === 0)
+      // Five a second each, all in the second's first tick, so they wait together.
+      if (tick % 10 === 0)
         for (const account of flooders)
-          chat.hear(event(account, `${account}-${tick}`, `!go river${tick}`), tick);
+          for (let n = 0; n < 5; n++)
+            chat.hear(event(account, `${account}-${tick}-${n}`, `!go river${tick}${n}`), tick);
       if (tick === sentAt) chat.hear(event("9999", "order", "!go hills"), tick);
       for (const account of flooders)
         most = Math.max(

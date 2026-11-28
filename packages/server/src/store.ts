@@ -50,7 +50,8 @@ export function listSnapshots(dir: string): string[] {
  * before its tick. Names in `keep` (refused snapshots that could not be set
  * aside) are neither written over nor deleted.
  * Returns the file name. Throws if the new snapshot was not written, including
- * when its name is in `keep`; an old one that cannot be deleted is logged and
+ * when its name is in `keep` or a log with lines under its tick's name could
+ * not be set aside; an old one that cannot be deleted is logged and
  * left, and the save still counts.
  */
 export function saveSnapshot(
@@ -73,6 +74,26 @@ export function saveSnapshot(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   writeFileSync(temp, snapshot(world), { flag: "wx" });
+  // A log with lines under this tick's name was written beside another
+  // snapshot, from a world set aside before, and must not be found beside
+  // this one. The server's own log of this tick has no lines yet, since any
+  // line means the world has moved past it.
+  const logFile = name.replace(/\.json$/, ".log");
+  let size = 0;
+  try {
+    const stat = lstatSync(join(dir, logFile));
+    if (stat.isFile()) size = stat.size;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (size > 0 && !setAside(dir, logFile, log)) {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Left for the next save at this tick to remove.
+    }
+    throw new Error(`${logFile} holds a log that could not be set aside`);
+  }
   renameSync(temp, join(dir, name));
   let older: string[] = [];
   try {
@@ -172,15 +193,22 @@ export function loadNewest(
 const code = (error: unknown): string | undefined => (error as NodeJS.ErrnoException).code;
 
 /**
- * Moves a refused snapshot to the first free name of `<file>.bad`, `<file>.1.bad`,
+ * Moves a refused snapshot, or an input log not to be used, to the first free name of `<file>.bad`, `<file>.1.bad`,
  * `<file>.2.bad` and so on, and says whether it did. A new world starts again at
  * tick 1, so its snapshots can take the names of a world set aside before. The
  * new name is made with a hard link, or where links are refused with a copy
  * made with COPYFILE_EXCL; both fail rather than replace whatever is there. Only
  * after one of them succeeds is the old name removed, so no file is ever
- * replaced or lost.
+ * replaced or lost; if it cannot be removed, that is logged and the result is
+ * false, since the file is still at its name. With `remove` false the old name
+ * is left, for a caller that is about to replace it anyway.
  */
-function setAside(dir: string, file: string, log: (line: string) => void): boolean {
+export function setAside(
+  dir: string,
+  file: string,
+  log: (line: string) => void,
+  remove = true,
+): boolean {
   for (let n = 0; ; n++) {
     const bad = n === 0 ? `${file}.bad` : `${file}.${n}.bad`;
     try {
@@ -195,10 +223,13 @@ function setAside(dir: string, file: string, log: (line: string) => void): boole
         return false;
       }
     }
+    if (!remove) return true;
     try {
       unlinkSync(join(dir, file));
     } catch (error) {
+      if (code(error) === "ENOENT") return true;
       log(`set ${file} aside as ${bad} but could not remove ${file}: ${String(error)}`);
+      return false;
     }
     return true;
   }

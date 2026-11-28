@@ -194,14 +194,16 @@ describe("world server", () => {
 
     const lines: string[] = [];
     const second = await start(dir, lines);
-    expect(lines.slice(0, 4)).toEqual([
+    expect(lines).toEqual([
       "skipping snapshot world-0000000000000301.json: snapshot is not valid JSON",
       `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4 to ${SNAPSHOT_VERSION}`,
       "resumed world-0000000000000101.json at tick 101",
       "replayed 100 ticks of its input log, to tick 201",
+      `went on into the input log ${logName(201)}: 100 more ticks, to tick 301`,
+      `went on into the input log ${logName(301)}: 50 more ticks, to tick 351`,
     ]);
-    // The older snapshot's log runs up to the snapshot after it.
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(201)));
+    // Each log runs up to the snapshot after it, so the refused ones' logs carry the world on.
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(351)));
     // Refused files are kept aside and not tried again.
     expect(readdirSync(dir).filter((f) => f.endsWith(".bad"))).toHaveLength(2);
   });
@@ -224,7 +226,7 @@ describe("world server", () => {
       "skipping snapshot world-0000000000000201.json: snapshot contents are damaged",
     );
     expect(lines[1]).toBe("resumed world-0000000000000101.json at tick 101");
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(201)));
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(251)));
   });
 
   it("goes on to an older snapshot when a bad one cannot be set aside, and does not save over it", async () => {
@@ -244,10 +246,14 @@ describe("world server", () => {
     expect(lines[0]).toBe(`skipping snapshot ${newest}: snapshot is not valid JSON`);
     expect(lines[1]).toMatch(new RegExp(`^could not set ${newest} aside as ${newest}\\.bad: `));
     expect(lines[2]).toBe("resumed world-0000000000000101.json at tick 101");
+    // Its log is past where this start goes on from, so it is set aside too, and that fails as well.
+    expect(lines[3]).toMatch(
+      new RegExp(`^could not set ${logName(201)} aside as ${logName(201)}\\.bad: `),
+    );
     expect(hashWorld(second.world)).toBe(hashWorld(reference(101)));
     // The save that lands on its name is refused and logged; the world runs on.
     second.advance(100);
-    expect(lines[3]).toBe(
+    expect(lines[4]).toBe(
       `snapshot at tick 201 failed: Error: ${newest} holds a refused snapshot that could not be set aside`,
     );
     expect(readFileSync(join(dir, newest), "utf8")).toBe("{ not a snapshot");

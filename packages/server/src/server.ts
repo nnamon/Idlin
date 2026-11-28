@@ -5,9 +5,10 @@
 // no blows, then one per tick. Chat reaches the world through the queue in
 // packages/chat, and each tick's inputs go in the input log beside the newest
 // snapshot before the world is stepped with them.
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { Chat, type ChatEvent, type Crowd } from "@idlin/chat";
 import {
   type Blow,
@@ -22,9 +23,9 @@ import {
 import { WebSocket, WebSocketServer } from "ws";
 import { castOf } from "../../client/src/cast.ts";
 import { type Content, loadContent } from "./content.ts";
-import { InputLog, replayLog } from "./inputlog.ts";
+import { InputLog, logName, replayLog } from "./inputlog.ts";
 import { Pacer } from "./pacer.ts";
-import { loadNewest, saveSnapshot } from "./store.ts";
+import { loadNewest, saveSnapshot, setAside } from "./store.ts";
 
 export const TICK_MS = 1000 / TICKS_PER_SECOND;
 
@@ -81,6 +82,13 @@ export interface ServerOptions {
   readonly ignore?: readonly string[];
 }
 
+/** A resume's replay: the tick of the log replayed last, the lines of it that were used (see `replayLog`), and the ticks replayed. */
+interface Replayed {
+  readonly tick: number;
+  readonly text: string | null;
+  readonly ticks: number;
+}
+
 export class WorldServer {
   readonly world: World;
   private readonly options: ServerOptions;
@@ -101,7 +109,7 @@ export class WorldServer {
     http: Server,
     sockets: WebSocketServer,
     stuck: ReadonlySet<string>,
-    resumed: { tick: number; text: string } | null,
+    resumed: Replayed | null,
   ) {
     this.world = world;
     this.options = options;
@@ -115,9 +123,18 @@ export class WorldServer {
       ...(options.ignore ? { ignore: options.ignore } : {}),
       start: world.tick,
     });
-    // A new world is saved at once, so that every tick it steps is in a log beside a snapshot.
-    if (resumed) this.inputLog = this.openLog(resumed.tick, resumed.text);
-    else this.save();
+    if (resumed) {
+      // The log replayed last goes on, with the lines that were used, until the next save.
+      if (resumed.text !== null) this.inputLog = this.openLog(resumed.tick, resumed.text);
+      else options.log("running without an input log until the next snapshot");
+      // A world that replayed anything is saved at once, so that a server
+      // killed more often than the snapshot interval does not replay a longer
+      // log at every start.
+      if (resumed.ticks > 0) this.save();
+    } else {
+      // A new world is saved at once, so that every tick it steps is in a log beside a snapshot.
+      this.save();
+    }
     sockets.on("connection", (socket) => {
       // A bad frame or a message over maxPayload is reported here; without a
       // listener it would take the whole process down.
@@ -145,15 +162,42 @@ export class WorldServer {
     const stuck = new Set<string>();
     const resumed = loadNewest(options.dataDir, content, options.log, stuck);
     let world: World;
-    let replayed: { tick: number; text: string } | null = null;
+    let replayed: Replayed | null = null;
     if (resumed) {
       world = resumed.world;
       options.log(`resumed ${resumed.file} at tick ${world.tick}`);
-      const tick = world.tick;
-      const { ticks, text } = replayLog(options.dataDir, world, options.log);
+      let tick = world.tick;
+      let replay = replayLog(options.dataDir, world, options.log);
+      let ticks = replay.ticks;
       if (ticks > 0) options.log(`replayed ${ticks} ticks of its input log, to tick ${world.tick}`);
-      replayed = { tick, text };
+      // A log used to its end brings the world to the tick of the next
+      // snapshot, which was refused if it was not resumed. Its log was written
+      // against that same world, so the replay goes on into it.
+      while (
+        replay.whole &&
+        replay.ticks > 0 &&
+        existsSync(join(options.dataDir, logName(world.tick)))
+      ) {
+        tick = world.tick;
+        replay = replayLog(options.dataDir, world, options.log);
+        ticks += replay.ticks;
+        options.log(
+          `went on into the input log ${logName(tick)}: ${replay.ticks} more ticks, to tick ${world.tick}`,
+        );
+      }
+      // A log at a later tick is a refused snapshot's that this replay did not
+      // reach. The world goes on from here with other inputs, so it is set aside
+      // and a later start cannot go on into it.
+      for (const file of readdirSync(options.dataDir)) {
+        const at = /^world-(\d{16})\.log$/.exec(file);
+        if (at && Number(at[1]) > tick) setAside(options.dataDir, file, options.log);
+      }
+      replayed = { tick, text: replay.text, ticks };
     } else {
+      // No snapshot here restores, so a log here was written beside one of another
+      // world. It is set aside, so that it cannot be taken for this world's.
+      for (const file of readdirSync(options.dataDir))
+        if (/^world-\d{16}\.log$/.test(file)) setAside(options.dataDir, file, options.log);
       world = createWorld(
         content.atlas,
         options.seed,
