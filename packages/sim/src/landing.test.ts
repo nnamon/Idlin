@@ -1,77 +1,118 @@
 import { describe, expect, it } from "vitest";
 import {
-  APRON,
-  APRON_LEVEL,
   BIOMES,
   type Biome,
-  CITY_HEIGHT,
-  CITY_WIDTH,
+  CITIES,
+  type CitySize,
+  cachesOf,
   DISTRICT_KINDS,
+  densOf,
   EDGES,
+  FAR_STEP,
   generateLanding,
   hashLanding,
   type Landing,
   LandingError,
-  LEGS_HEIGHT,
-  LEGS_WIDTH,
   landingGraphText,
   landingText,
   MAX_EXTRA,
   MAX_LEVEL,
   PASSAGE_KINDS,
+  RAMP_CLEAR,
   RAMP_WIDTH,
   RIM,
-  SIZE_CLASSES,
   SIZES,
   type SizeClass,
+  type SizeSpec,
+  YARD_LEVEL,
+  yardOf,
 } from "./landing.ts";
 import { isWalkable, NEIGHBOURS, type Point, TERRAINS, terrainAt } from "./map.ts";
 
-// The gate checks a sample of seeds per size class; the capture workflow
-// checks many more (IDLIN_LONG=1).
+// The gate checks a sample of seeds per landing; the capture workflow checks
+// many more (IDLIN_LONG=1).
 const LONG = process.env.IDLIN_LONG === "1";
 const SEEDS = LONG ? 1000 : 100;
-// The tests over every landing of a size take about 10 s each for the large
-// size under IDLIN_LONG=1 on CI.
-const SWEEP_TIMEOUT = LONG ? 120_000 : 30_000;
+// The tests over every landing of a size take about 10 s each for 80 by 45
+// under IDLIN_LONG=1 on CI.
+const SWEEP_TIMEOUT = LONG ? 180_000 : 30_000;
+
+/** The slice's five landings, by city size and class (docs/slice.md, section 1). */
+const KEYS = ["1s", "1m", "1l", "2s", "2m"] as const;
+type Key = (typeof KEYS)[number];
+const OF: Record<Key, { city: CitySize; size: SizeClass }> = {
+  "1s": { city: 1, size: "small" },
+  "1m": { city: 1, size: "medium" },
+  "1l": { city: 1, size: "large" },
+  "2s": { city: 2, size: "small" },
+  "2m": { city: 2, size: "medium" },
+};
+const specOf = (key: Key): SizeSpec => SIZES[OF[key].city][OF[key].size] as SizeSpec;
+/** Pockets besides the city's district, a fact of each size (docs/slice.md, section 1). */
+const POCKETS: Record<Key, number> = { "1s": 9, "1m": 9, "1l": 13, "2s": 18, "2m": 26 };
+/** Section 1's worked crowds: the landing's level, and the far level its strongest citizen sets. */
+const WORKED: Record<Key, { level: number; far: number }> = {
+  "1s": { level: 8, far: 22 },
+  "1m": { level: 8, far: 25 },
+  "1l": { level: 8, far: 30 },
+  "2s": { level: 23, far: 65 },
+  "2m": { level: 23, far: 68 },
+};
 
 /**
  * The n-th input of a sweep: seeds spread over the 32-bit range, every biome,
- * levels across the range, and now and then more dens and caches.
+ * levels and far levels across their ranges, and now and then more dens and
+ * caches.
  */
-const input = (size: SizeClass, n: number) => ({
-  seed: Math.imul(n + 1, 0x9e3779b1) | 0,
-  size,
-  biome: BIOMES[n % BIOMES.length] as Biome,
-  level: 1 + ((n * 7) % MAX_LEVEL),
-  ...(n % 4 === 3 ? { extraDens: n % 7, extraCaches: n % 6 } : {}),
-});
-
-const sweep = (size: SizeClass): Landing[] =>
-  Array.from({ length: SEEDS }, (_, n) => generateLanding(input(size, n)));
-const landings: Record<SizeClass, Landing[]> = {
-  small: sweep("small"),
-  medium: sweep("medium"),
-  large: sweep("large"),
+const input = (key: Key, n: number) => {
+  const level = 1 + ((n * 7) % MAX_LEVEL);
+  return {
+    seed: Math.imul(n + 1, 0x9e3779b1) | 0,
+    ...OF[key],
+    biome: BIOMES[n % BIOMES.length] as Biome,
+    level,
+    far: level + ((n * 13) % (MAX_LEVEL - level + 1)),
+    ...(n % 4 === 3 ? { extraDens: n % 7, extraCaches: n % 6 } : {}),
+  };
+};
+const extraOf = (key: Key, n: number): { dens: number; caches: number } => {
+  const given: { extraDens?: number; extraCaches?: number } = input(key, n);
+  return { dens: given.extraDens ?? 0, caches: given.extraCaches ?? 0 };
 };
 
-/** Districts besides the city's, which the blocks and SIZES' `cell` fix for each size. */
-const POCKETS: Record<SizeClass, number> = { small: 7, medium: 12, large: 19 };
+const sweep = (key: Key): Landing[] =>
+  Array.from({ length: SEEDS }, (_, n) => generateLanding(input(key, n)));
+const landings = Object.fromEntries(KEYS.map((key) => [key, sweep(key)])) as Record<Key, Landing[]>;
+/** Twenty landings of each size at section 1's worked level and far level. */
+const worked = Object.fromEntries(
+  KEYS.map((key) => [
+    key,
+    Array.from({ length: 20 }, (_, n) =>
+      generateLanding({
+        seed: n + 1,
+        ...OF[key],
+        biome: BIOMES[n % BIOMES.length] as Biome,
+        ...WORKED[key],
+      }),
+    ),
+  ]),
+) as Record<Key, Landing[]>;
 
 const index = (landing: Landing, p: Point): number => p.y * landing.width + p.x;
 const pointAt = (landing: Landing, i: number): Point => ({
   x: i % landing.width,
   y: Math.floor(i / landing.width),
 });
+const cheb = (a: Point, b: Point): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
 /**
- * Steps of the shortest walk from the ramp to each tile it can reach, by the
- * map's own rules. Without camp ground, the walk steps off the ramp and never
- * onto camp again, as a monster's must.
+ * Steps of the shortest walk from some tiles to each tile it can reach, by the
+ * map's own rules. Without camp ground, the walk steps off camp and never onto
+ * it again, as a monster's must.
  */
-function walks(landing: Landing, camp = true): Map<number, number> {
-  const steps = new Map([[index(landing, landing.ramp), 0]]);
-  const queue = [landing.ramp];
+function walksFrom(landing: Landing, starts: readonly Point[], camp: boolean): Map<number, number> {
+  const steps = new Map(starts.map((p) => [index(landing, p), 0]));
+  const queue = [...starts];
   for (let head = 0; head < queue.length; head++) {
     const here = queue[head] as Point;
     for (const [dx, dy] of NEIGHBOURS) {
@@ -84,6 +125,22 @@ function walks(landing: Landing, camp = true): Map<number, number> {
   }
   return steps;
 }
+const walks = (landing: Landing, camp = true): Map<number, number> =>
+  walksFrom(landing, [landing.ramp], camp);
+/** The walk out of the yard, the city's district, over the ground off the camp. */
+const walkOut = (landing: Landing): Map<number, number> =>
+  walksFrom(
+    landing,
+    landing.tiles.flatMap((_, i) => {
+      const p = pointAt(landing, i);
+      return landing.districtAt[i] === 0 &&
+        isWalkable(landing, p.x, p.y) &&
+        terrainAt(landing, p.x, p.y) !== "camp"
+        ? [p]
+        : [];
+    }),
+    false,
+  );
 
 /** How many of a landing's tiles can be walked on. */
 const walkableCount = (landing: Landing): number =>
@@ -142,20 +199,85 @@ function crossings(landing: Landing): { tiles: number[]; touches: number[] }[] {
   return groups;
 }
 
-describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => {
-  for (const size of SIZE_CLASSES) {
-    const spec = SIZES[size];
+/** A tile whose eight neighbours are walkable tiles of its own pocket. */
+const inner = (landing: Landing, p: Point): boolean => {
+  const d = landing.districtAt[index(landing, p)] as number;
+  if (d < 1 || !isWalkable(landing, p.x, p.y)) return false;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      if (q.x < 0 || q.y < 0 || q.x >= landing.width || q.y >= landing.height) return false;
+      if (landing.districtAt[index(landing, q)] !== d || !isWalkable(landing, q.x, q.y))
+        return false;
+    }
+  }
+  return true;
+};
 
-    it(`${size}: the ramp's district is the root, and each other one has a ring by its walk from the ramp`, () => {
-      for (const landing of landings[size]) {
+/**
+ * The pockets with room for a den or a cache beside what already stands: a
+ * tile whose eight neighbours are its pocket's ground, more than RAMP_CLEAR
+ * tiles from the ramp, with nothing of `stood` within a tile.
+ */
+function roomIn(landing: Landing, stood: readonly Point[]): Set<number> {
+  const found = new Set<number>();
+  for (let i = 0; i < landing.tiles.length; i++) {
+    const p = pointAt(landing, i);
+    if (!inner(landing, p) || stood.some((s) => cheb(s, p) <= 1)) continue;
+    if (Math.abs(p.x - landing.ramp.x) + Math.abs(p.y - landing.ramp.y) <= RAMP_CLEAR) continue;
+    found.add(landing.districtAt[i] as number);
+  }
+  return found;
+}
+
+/**
+ * Section 1's posts on the generator's map alone: inner tiles with nothing
+ * that stands on them or beside them, taken row by row, each more than 3
+ * tiles from every post of its pocket before it.
+ */
+function posts(landing: Landing): Point[] {
+  const stands = [...landing.dens, ...landing.caches, ...landing.seams];
+  const found: Point[] = [];
+  for (let i = 0; i < landing.tiles.length; i++) {
+    const p = pointAt(landing, i);
+    if (!inner(landing, p) || stands.some((s) => cheb(s, p) <= 1)) continue;
+    const d = landing.districtAt[i];
+    if (found.some((q) => landing.districtAt[index(landing, q)] === d && cheb(q, p) <= 3)) continue;
+    found.push(p);
+  }
+  return found;
+}
+
+/** The pockets in the order of the walk out of the yard: to their gate, then their centre, then number. */
+function walkOrder(landing: Landing, out: Map<number, number>): number[] {
+  return landing.districts
+    .slice(1)
+    .sort(
+      (p, q) =>
+        p.gate - q.gate ||
+        (out.get(index(landing, p)) as number) - (out.get(index(landing, q)) as number) ||
+        p.id - q.id,
+    )
+    .map((d) => d.id);
+}
+
+const median = (list: readonly number[]): number =>
+  [...list].sort((a, b) => a - b)[Math.floor((list.length - 1) / 2)] as number;
+
+describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => {
+  for (const key of KEYS) {
+    const spec = specOf(key);
+
+    it(`${key}: the ramp's district is the root, and the pockets are ${POCKETS[key]}`, () => {
+      for (const landing of landings[key]) {
         const { districts } = landing;
-        // The pockets besides the city's district, near the counts the spec for packs (#396) works from.
-        expect(districts.length - 1).toBe(POCKETS[size]);
+        expect(districts.length - 1).toBe(POCKETS[key]);
         expect(districts[0]).toMatchObject({
           ...landing.ramp,
           id: 0,
           ring: 0,
           kind: "city",
+          gate: 0,
           steps: 0,
           distance: 0,
           depth: 0,
@@ -175,22 +297,37 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
           expect(landing.districtAt[index(landing, d)]).toBe(id);
           if (id === 0) return;
           expect(d.kind).not.toBe("city");
-          // Rings are thirds of the longest walk.
-          expect(d.ring).toBe(Math.min(3, 1 + Math.floor((3 * d.depth) / 1000)));
-          // Every district has a way to the city, and a longer walk than the city has.
           expect(d.steps).toBeGreaterThan(0);
           expect(d.distance).toBeGreaterThan(0);
           expect(d.bounds.width).toBeGreaterThanOrEqual(4);
           expect(d.bounds.height).toBeGreaterThanOrEqual(4);
         });
-        // The district with the longest walk is in ring 3.
-        expect(Math.max(...districts.map((d) => d.ring))).toBe(3);
       }
     });
 
-    it(`${size}: passages are a spanning tree and loops, with gates of walkable tiles`, () => {
+    it(`${key}: rings are thirds of the pockets in the order of the walk out of the yard, recomputed from the map`, () => {
+      for (const landing of landings[key]) {
+        const out = walkOut(landing);
+        // Each pocket's gate is the walk to its nearest tile on the finished map.
+        for (const d of landing.districts.slice(1)) {
+          let gate = -1;
+          landing.districtAt.forEach((owner, i) => {
+            const steps = out.get(i);
+            if (owner === d.id && steps !== undefined && (gate === -1 || steps < gate))
+              gate = steps;
+          });
+          expect(d.gate, `${landing.name} district ${d.id}`).toBe(gate);
+        }
+        const order = walkOrder(landing, out);
+        order.forEach((d, k) => {
+          expect(landing.districts[d]?.ring).toBe(1 + Math.floor((3 * k) / order.length));
+        });
+      }
+    });
+
+    it(`${key}: passages are a spanning tree and loops, with gates of walkable tiles`, () => {
       let loops = 0;
-      for (const landing of landings[size]) {
+      for (const landing of landings[key]) {
         const { districts, passages } = landing;
         const tree = passages.filter((p) => p.tree);
         expect(tree).toHaveLength(districts.length - 1);
@@ -218,12 +355,12 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
           }
         });
       }
-      // More than one way home, in most landings of any class.
+      // More than one way home, in most landings of any size.
       expect(loops).toBeGreaterThan(SEEDS);
     });
 
-    it(`${size}: the passages are the only ways between districts`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: the passages are the only ways between districts`, () => {
+      for (const landing of landings[key]) {
         // No two districts' tiles are side by side, or corner to corner.
         for (let i = 0; i < landing.tiles.length; i++) {
           const here = landing.districtAt[i] as number;
@@ -270,10 +407,10 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
       }
     });
 
-    it(`${size}: a river is crossed only by its bridge and its fords, and an ash waste has none`, () => {
+    it(`${key}: a river is crossed only by its bridge and its fords, and an ash waste has none`, () => {
       let rivers = 0;
       let wet = 0;
-      for (const landing of landings[size]) {
+      for (const landing of landings[key]) {
         const over = landing.passages.filter((p) => p.kind === "bridge" || p.kind === "ford");
         if (landing.biome === "ash_waste") {
           expect(over).toHaveLength(0);
@@ -296,8 +433,8 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
       expect(rivers).toBe(wet);
     });
 
-    it(`${size}: the rim is two tiles of barrier, broken by one gap on each side`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: the rim is two tiles of barrier, broken by one gap on each side`, () => {
+      for (const landing of landings[key]) {
         const { width, height } = landing;
         const depth = (x: number, y: number): number =>
           Math.min(x, y, width - 1 - x, height - 1 - y);
@@ -340,8 +477,8 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
       }
     });
 
-    it(`${size}: the horde's front comes in at each gap and has a known way to the hull`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: the horde's front comes in at each gap and has a known way to the hull`, () => {
+      for (const landing of landings[key]) {
         expect(landing.entries).toHaveLength(4);
         expect(new Set(landing.entries.map((e) => index(landing, e))).size).toBe(4);
         for (const entry of landing.entries) {
@@ -371,36 +508,53 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
 });
 
 describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT }, () => {
-  it("has the sizes and counts of the slice's spec, the small one made room in", () => {
-    // docs/slice.md has small at 40 by 22; 50 by 28 fits a row of blocks north
-    // and south of the city's ground with the legs on it (SIZES says how).
-    expect([SIZES.small.width, SIZES.small.height]).toEqual([50, 28]);
-    expect([SIZES.medium.width, SIZES.medium.height]).toEqual([60, 33]);
-    expect([SIZES.large.width, SIZES.large.height]).toEqual([80, 45]);
-    // The hull and its legs as docs/art.md, section 7, draws them.
-    expect([CITY_WIDTH, CITY_HEIGHT, LEGS_WIDTH, LEGS_HEIGHT, RIM]).toEqual([15, 6, 21, 14, 2]);
-    expect(SIZE_CLASSES.map((s) => SIZES[s].apron)).toEqual([5, 6, 6]);
-    expect(SIZE_CLASSES.map((s) => [SIZES[s].dens, SIZES[s].caches, SIZES[s].far])).toEqual([
-      [1, 1, 0],
-      [3, 2, 5],
-      [5, 3, 10],
+  it("has the sizes, cities and counts of the slice's spec", () => {
+    expect(KEYS.map((key) => [specOf(key).width, specOf(key).height])).toEqual([
+      [52, 29],
+      [56, 31],
+      [60, 33],
+      [68, 38],
+      [80, 45],
     ]);
+    // The second city's large waits for #418.
+    expect(SIZES[2].large).toBeUndefined();
+    expect(CITIES[1]).toEqual({ hull: [13, 6], feet: [19, 12], clear: 2 });
+    expect(CITIES[2]).toEqual({ hull: [15, 6], feet: [21, 14], clear: 4 });
+    expect([yardOf(CITIES[1]), yardOf(CITIES[2])]).toEqual([
+      [23, 16],
+      [29, 22],
+    ]);
+    // Dens by 700 tiles to the nearest; caches by 1,100, one at least.
+    expect(KEYS.map((key) => [densOf(specOf(key)), cachesOf(specOf(key))])).toEqual([
+      [2, 1],
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [5, 3],
+    ]);
+    expect([RAMP_WIDTH, RIM, RAMP_CLEAR, YARD_LEVEL]).toEqual([3, 2, 8, 5]);
+    expect(FAR_STEP).toEqual({ small: 7, medium: 10, large: 15 });
   });
 
-  for (const size of SIZE_CLASSES) {
-    const spec = SIZES[size];
+  for (const key of KEYS) {
+    const spec = specOf(key);
+    const shape = CITIES[OF[key].city];
+    const [yardW, yardH] = yardOf(shape);
 
-    it(`${size}: is ${spec.width} by ${spec.height} with known terrain only`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: is ${spec.width} by ${spec.height} with known terrain only`, () => {
+      for (const landing of landings[key]) {
         expect([landing.width, landing.height]).toEqual([spec.width, spec.height]);
+        expect(landing.citySize).toBe(OF[key].city);
+        expect(landing.size).toBe(OF[key].size);
         expect(landing.tiles).toHaveLength(spec.width * spec.height);
         expect(landing.districtAt).toHaveLength(spec.width * spec.height);
+        expect(landing.ground).toHaveLength(spec.width * spec.height);
         expect(landing.tiles.findIndex((t) => TERRAINS[t] === undefined)).toBe(-1);
       }
     });
 
-    it(`${size}: every walkable tile can be reached from the ramp`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: every walkable tile can be reached from the ramp`, () => {
+      for (const landing of landings[key]) {
         const seen = walks(landing);
         let walkable = 0;
         for (let i = 0; i < landing.tiles.length; i++) {
@@ -415,8 +569,8 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       }
     });
 
-    it(`${size}: a monster, which may not stand on camp ground, can reach every other walkable tile from the ramp`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: a monster, which may not stand on camp ground, can reach every other walkable tile from the ramp`, () => {
+      for (const landing of landings[key]) {
         const seen = walks(landing, false);
         let open = 0;
         for (let i = 0; i < landing.tiles.length; i++) {
@@ -440,10 +594,10 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       }
     });
 
-    it(`${size}: the city's ground is in the middle, the city on camp ground in it, its ramp three wide`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: the city's ground is the bubble's footprint in the middle, the hull on camp in its middle, its ramp three wide`, () => {
+      for (const landing of landings[key]) {
         const { city, ramp, width, height } = landing;
-        expect([city.width, city.height]).toEqual([CITY_WIDTH, CITY_HEIGHT]);
+        expect([city.width, city.height]).toEqual(shape.hull);
         for (let y = city.y; y < city.y + city.height; y++) {
           for (let x = city.x; x < city.x + city.width; x++) {
             expect(terrainAt(landing, x, y)).toBe("camp");
@@ -457,23 +611,18 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
           [0, 1],
           [-1, 0],
         ][side] as [number, number];
-        // The city's district is the apron round the footprint, the same on
-        // every side whichever side the ramp is on.
+        // The city's district is the feet and 2 or 4 tiles round them, 23 by 16 or 29 by 22.
         const home = (landing.districts[0] as Landing["districts"][0]).bounds;
-        expect(home).toEqual({
-          x: city.x - spec.apron,
-          y: city.y - spec.apron,
-          width: CITY_WIDTH + 2 * spec.apron,
-          height: CITY_HEIGHT + 2 * spec.apron,
-        });
-        // It is centred on the map, and so is the hull; to half a tile where
-        // one of the two lengths is odd and the other even.
+        expect([home.width, home.height]).toEqual([yardW, yardH]);
+        // It is centred on the map, and the hull is centred in it; to half a
+        // tile where one of the two lengths is odd and the other even.
         const centred = (x: number, y: number, w: number, h: number): void => {
           expect(Math.abs(2 * x + w - width), landing.name).toBeLessThanOrEqual((width + w) % 2);
           expect(Math.abs(2 * y + h - height), landing.name).toBeLessThanOrEqual((height + h) % 2);
         };
         centred(home.x, home.y, home.width, home.height);
-        centred(city.x, city.y, city.width, city.height);
+        expect(2 * (city.x - home.x) + city.width).toBe(home.width);
+        expect(2 * (city.y - home.y) + city.height).toBe(home.height);
         // All of it but its outermost tiles is the city's own and open.
         for (let y = home.y + 1; y < home.y + home.height - 1; y++) {
           for (let x = home.x + 1; x < home.x + home.width - 1; x++) {
@@ -481,15 +630,14 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
             expect(isWalkable(landing, x, y)).toBe(true);
           }
         }
-        // Two tiles out from the middle of its side of the footprint.
-        if (toX !== 0) expect(ramp.y).toBe(city.y + (CITY_HEIGHT >> 1));
-        if (toY !== 0) expect(ramp.x).toBe(city.x + (CITY_WIDTH >> 1));
+        // Two tiles out from the middle of its side of the hull.
+        if (toX !== 0) expect(ramp.y).toBe(city.y + (city.height >> 1));
+        if (toY !== 0) expect(ramp.x).toBe(city.x + (city.width >> 1));
         if (toX > 0) expect(ramp.x).toBe(city.x + city.width + 1);
         if (toX < 0) expect(ramp.x).toBe(city.x - 2);
         if (toY > 0) expect(ramp.y).toBe(city.y + city.height + 1);
         if (toY < 0) expect(ramp.y).toBe(city.y - 2);
         // The ramp: its foot and the tile behind it, and the same on either side.
-        expect(RAMP_WIDTH).toBe(3);
         for (const along of [-1, 0, 1]) {
           for (const back of [0, 1]) {
             const x = ramp.x - back * toX + along * Math.abs(toY);
@@ -498,9 +646,10 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
           }
         }
         // Open ground of the city's in front of the ramp, short of the city's
-        // outermost tile: two tiles on a small landing, three on the others.
-        expect(spec.apron - 3).toBe(size === "small" ? 2 : 3);
-        for (let k = 1; k <= spec.apron - 3; k++) {
+        // outermost tile: two tiles at the least.
+        const apron = toX !== 0 ? (yardW - city.width) >> 1 : (yardH - city.height) >> 1;
+        expect(apron - 3).toBeGreaterThanOrEqual(2);
+        for (let k = 1; k <= apron - 3; k++) {
           const [x, y] = [ramp.x + k * toX, ramp.y + k * toY];
           expect(terrainAt(landing, x, y)).not.toBe("camp");
           expect(isWalkable(landing, x, y)).toBe(true);
@@ -509,15 +658,15 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       }
     });
 
-    it(`${size}: nothing but the city's open ground, camp and ramp lies under the drawn legs`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: nothing but the city's open ground, camp and ramp lies under the drawn legs`, () => {
+      for (const landing of landings[key]) {
         const { city, legs } = landing;
-        // 21 by 14, centred on the hull: three tiles past each end, four past each long side.
+        // Centred on the hull: 19 by 12 or 21 by 14.
         expect(legs).toEqual({
-          x: city.x - 3,
-          y: city.y - 4,
-          width: LEGS_WIDTH,
-          height: LEGS_HEIGHT,
+          x: city.x - ((shape.feet[0] - shape.hull[0]) >> 1),
+          y: city.y - ((shape.feet[1] - shape.hull[1]) >> 1),
+          width: shape.feet[0],
+          height: shape.feet[1],
         });
         const under = (p: Point): boolean =>
           p.x >= legs.x && p.y >= legs.y && p.x < legs.x + legs.width && p.y < legs.y + legs.height;
@@ -539,8 +688,8 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       }
     });
 
-    it(`${size}: has pockets on every side of the city's ground`, () => {
-      for (const landing of landings[size]) {
+    it(`${key}: has pockets on every side of the city's ground`, () => {
+      for (const landing of landings[key]) {
         const { width, height } = landing;
         const home = (landing.districts[0] as Landing["districts"][0]).bounds;
         // The strip straight across each side, from the city's ground to the rim, in EDGES order.
@@ -567,30 +716,152 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       }
     });
 
-    it(`${size}: dens, caches and seams stand in district slots, by ring, off the apron`, () => {
-      const densIn = [0, 0, 0, 0];
-      for (const [n, landing] of landings[size].entries()) {
-        const given: { level: number; extraDens?: number; extraCaches?: number } = input(size, n);
-        const names = landing.places.map((p) => p.name);
-        expect(names).toEqual([...names].sort());
-        expect(new Set(names).size).toBe(names.length);
-        for (const p of landing.places) {
-          expect(p.name).toMatch(/^[a-z][a-z0-9_]{0,31}$/);
-          expect(isWalkable(landing, p.x, p.y)).toBe(true);
+    it(`${key}: each pocket has one level, which never falls along the walk out of the yard`, () => {
+      for (const [n, landing] of landings[key].entries()) {
+        const given = input(key, n);
+        const { level, far } = given;
+        expect([landing.level, landing.far]).toEqual([level, far]);
+        const third = Math.max(1, Math.floor(level / 3));
+        const levelOf = landing.districts.map((d) => d.level);
+        // The yard is a third of the level, and 5 at most.
+        expect(levelOf[0]).toBe(Math.min(YARD_LEVEL, third));
+        // Every tile of a district has its level; a barrier has none.
+        landing.ground.forEach((g, i) => {
+          const d = landing.districtAt[i] as number;
+          const { x, y } = pointAt(landing, i);
+          if (d !== -1) expect(g).toBe(levelOf[d]);
+          else if (!isWalkable(landing, x, y)) expect(g).toBe(-1);
+        });
+        // A gate or an opened border has the lower level of the districts beside it.
+        for (const p of landing.passages) {
+          for (const t of p.tiles)
+            expect(landing.ground[index(landing, t)]).toBe(
+              Math.min(levelOf[p.a] as number, levelOf[p.b] as number),
+            );
         }
-        expect(names).toContain("ramp");
-        // Levels by ring, as the spec has them.
-        expect(landing.level).toBe(given.level);
-        expect(landing.levels).toEqual([
-          APRON_LEVEL,
-          Math.max(1, Math.floor(given.level / 3)),
-          given.level,
-          Math.min(99, given.level + spec.far),
-        ]);
-        expect(landing.dens).toHaveLength(spec.dens + (given.extraDens ?? 0));
-        expect(landing.caches).toHaveLength(spec.caches + (given.extraCaches ?? 0));
+        for (const { tiles, touches } of crossings(landing)) {
+          if (touches.length !== 2) continue;
+          const low = Math.min(...touches.map((d) => levelOf[d] as number));
+          for (const t of tiles) expect(landing.ground[t]).toBe(low);
+        }
+        // By the order of the walk: ring 1 steps up from a third of the level,
+        // ring 2 is at it, ring 3 steps up to the far level and the rest are at it.
+        const order = walkOrder(landing, walkOut(landing));
+        const ring = (r: number): number[] => order.filter((d) => landing.districts[d]?.ring === r);
+        ring(1).forEach((d, k, list) => {
+          expect(levelOf[d]).toBe(third + Math.floor(((level - third) * k) / list.length));
+        });
+        for (const d of ring(2)) expect(levelOf[d]).toBe(level);
+        const outmost = ring(3);
+        const climb = Math.min(
+          outmost.length,
+          Math.max(Math.ceil(outmost.length / 2), Math.ceil((far - level) / 10)),
+        );
+        outmost.forEach((d, k) => {
+          expect(levelOf[d]).toBe(
+            k < climb ? level + Math.floor(((far - level) * (k + 1)) / climb) : far,
+          );
+        });
+        expect(levelOf[order.at(-1) as number]).toBe(far);
+        order.forEach((d, k) => {
+          if (k > 0)
+            expect(levelOf[d]).toBeGreaterThanOrEqual(levelOf[order[k - 1] as number] as number);
+        });
+      }
+    });
+
+    it(`${key}: at section 1's worked levels, the yard is 5 or less and ring 3 steps 10 levels or less`, () => {
+      const { level, far } = WORKED[key];
+      for (const landing of worked[key]) {
+        expect(landing.districts[0]?.level).toBeLessThanOrEqual(5);
+        const order = walkOrder(landing, walkOut(landing));
+        const levels = order.map((d) => landing.districts[d]?.level as number);
+        const third = levels.filter((_, k) => landing.districts[order[k] as number]?.ring === 3);
+        [level, ...third].forEach((v, k, list) => {
+          if (k > 0) expect(v - (list[k - 1] as number)).toBeLessThanOrEqual(10);
+        });
+        expect(third.at(-1)).toBe(far);
+        // The first den is at the far level, and no pocket holds two.
+        expect(landing.dens[0]?.level).toBe(far);
+        expect(new Set(landing.dens.map((d) => d.district)).size).toBe(landing.dens.length);
+      }
+    });
+
+    it(`${key}: dens are aimed at ring 3's levels from the far level down, one a pocket, lettered by the walk from the ramp`, () => {
+      const own = densOf(spec);
+      let aimed = 0;
+      let aimedExactly = 0;
+      for (const [n, landing] of landings[key].entries()) {
+        const extra = extraOf(key, n).dens;
+        // The pockets a den could stand in: those with a clear tile once the
+        // seams stood. Another pocket's den is never within a tile of one.
+        const room = roomIn(landing, landing.seams);
+        // The size's own and the caller's, one a pocket at most.
+        expect(landing.dens).toHaveLength(Math.min(own + extra, room.size));
+        expect(new Set(landing.dens.map((d) => d.district)).size).toBe(landing.dens.length);
+        // The own dens aimed at ring 3's levels, from the far level down, one a
+        // level: each at the level nearest its aim of a pocket with room and no den.
+        const aims = [
+          ...new Set(landing.districts.filter((d) => d.ring === 3).map((d) => d.level)),
+        ].sort((p, q) => q - p);
+        aims.slice(0, own).forEach((aim, k) => {
+          const before = new Set(landing.dens.slice(0, k).map((d) => d.district));
+          const nearest = Math.min(
+            ...[...room]
+              .filter((d) => !before.has(d))
+              .map((d) => Math.abs((landing.districts[d]?.level as number) - aim)),
+          );
+          expect(Math.abs((landing.dens[k]?.level as number) - aim), landing.name).toBe(nearest);
+          if (nearest === 0) aimedExactly++;
+          aimed++;
+        });
+        // The caller's first den: in the first pocket by the walk with room and no own den.
+        if (extra > 0 && landing.dens.length > own) {
+          const order = walkOrder(landing, walkOut(landing));
+          const owned = new Set(landing.dens.slice(0, own).map((d) => d.district));
+          expect(landing.dens[own]?.district).toBe(order.find((d) => !owned.has(d) && room.has(d)));
+        }
+        for (const d of landing.dens) {
+          expect(d.level).toBe(landing.districts[d.district]?.level);
+          expect(d.elite).toBe(Math.min(landing.far, d.level + 5));
+          expect(terrainAt(landing, d.x, d.y)).toBe("den");
+        }
+        // A to the count, by the walk from the ramp, then the lower tile.
+        const walk = walks(landing, false);
+        const byWalk = [...landing.dens].sort(
+          (p, q) =>
+            (walk.get(index(landing, p)) as number) - (walk.get(index(landing, q)) as number) ||
+            index(landing, p) - index(landing, q),
+        );
+        expect(byWalk.map((d) => d.letter)).toEqual(
+          byWalk.map((_, k) => String.fromCharCode(65 + k)),
+        );
+        for (const d of landing.dens) expect(d.name).toBe(`den_${d.letter.toLowerCase()}`);
+        // The places a program can name: the ramp, the city and the dens.
+        expect(landing.places.map((p) => p.name)).toEqual(
+          ["city", "ramp", ...landing.dens.map((d) => d.name)].sort(),
+        );
+        for (const p of landing.places) expect(p.name).toMatch(/^[a-z][a-z0-9_]{0,31}$/);
+      }
+      // Nearly always a pocket at the aim itself has room.
+      console.log(`aimed dens ${key}: ${aimedExactly} of ${aimed} at their aim`);
+      expect(aimedExactly * 100).toBeGreaterThanOrEqual(aimed * 90);
+    });
+
+    it(`${key}: dens, caches and seams stand on their own tiles in pockets, the first cache at the far level`, () => {
+      const densIn = [0, 0, 0, 0];
+      let farCaches = 0;
+      for (const [n, landing] of landings[key].entries()) {
+        const extra = extraOf(key, n);
+        expect(landing.caches).toHaveLength(cachesOf(spec) + extra.caches);
         expect(landing.seams).toHaveLength(Math.floor((spec.width * spec.height) / 100));
-        const walk = walks(landing);
+        // The first cache: at the level nearest the far level of a pocket with room.
+        const room = roomIn(landing, [...landing.seams, ...landing.dens]);
+        const nearest = Math.min(
+          ...[...room].map((d) => landing.far - (landing.districts[d]?.level as number)),
+        );
+        expect(landing.far - (landing.caches[0]?.level as number), landing.name).toBe(nearest);
+        if (nearest === 0) farCaches++;
         for (const s of [...landing.dens, ...landing.caches, ...landing.seams]) {
           expect(isWalkable(landing, s.x, s.y)).toBe(true);
           expect(s.district).not.toBe(0);
@@ -598,36 +869,34 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
           expect(s.ring).toBe(landing.districts[s.district]?.ring);
           expect([1, 2, 3]).toContain(s.ring);
         }
-        for (const s of [...landing.dens, ...landing.caches]) {
-          expect(names).toContain(s.name);
-          expect(s.level).toBe(landing.levels[s.ring]);
-          // The apron stays gentle: nothing dangerous within its walk of the ramp.
-          expect(walk.get(index(landing, s))).toBeGreaterThan(APRON);
+        // A den or a cache: on a tile whose eight neighbours are its pocket's
+        // ground, more than 8 tiles from the ramp, nothing else within a tile.
+        const worth = [...landing.dens, ...landing.caches];
+        const all = [...worth, ...landing.seams];
+        for (const s of worth) {
+          expect(inner(landing, s), `${landing.name} (${s.x}, ${s.y})`).toBe(true);
+          expect(Math.abs(s.x - landing.ramp.x) + Math.abs(s.y - landing.ramp.y)).toBeGreaterThan(
+            RAMP_CLEAR,
+          );
+          for (const t of all) if (t !== s) expect(cheb(s, t)).toBeGreaterThan(1);
         }
-        for (const d of landing.dens) {
-          expect(terrainAt(landing, d.x, d.y)).toBe("den");
-          densIn[d.ring] = (densIn[d.ring] as number) + 1;
-        }
-        // A landing's first den and first cache are in the farthest ring.
-        expect(landing.dens[0]?.ring).toBe(3);
-        expect(landing.caches[0]?.ring).toBe(3);
+        for (const c of landing.caches) expect(c.level).toBe(landing.districts[c.district]?.level);
+        for (const d of landing.dens) densIn[d.ring] = (densIn[d.ring] as number) + 1;
         // No two things stand on one tile.
-        const stands = [...landing.dens, ...landing.caches, ...landing.seams].map((s) =>
-          index(landing, s),
-        );
+        const stands = all.map((s) => index(landing, s));
         expect(new Set(stands).size).toBe(stands.length);
-        // No seams in the city's own district.
-        expect(landing.seams.some((s) => s.district === 0)).toBe(false);
       }
       // More dens the farther out.
       expect(densIn[3]).toBeGreaterThan(densIn[2] as number);
-      expect(densIn[2]).toBeGreaterThan(densIn[1] as number);
+      // Nearly always a pocket at the far level has room for the first cache.
+      console.log(`first caches ${key}: ${farCaches} of ${landings[key].length} at the far level`);
+      expect(farCaches * 100).toBeGreaterThanOrEqual(landings[key].length * 90);
     });
 
-    it(`${size}: has masses, not scattered single tiles, and worn paths`, () => {
+    it(`${key}: has masses, not scattered single tiles, and worn paths`, () => {
       let blocked = 0;
       let alone = 0;
-      for (const landing of landings[size]) {
+      for (const landing of landings[key]) {
         for (let y = 0; y < landing.height; y++) {
           for (let x = 0; x < landing.width; x++) {
             if (isWalkable(landing, x, y)) continue;
@@ -651,6 +920,21 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       expect(alone * 100).toBeLessThan(blocked * 8);
     });
   }
+
+  // Section 1's posts on the generator's map, at the worked levels with no
+  // extra dens or caches: medians of 29, 36, 40, 47 and 82 over the 20
+  // landings. packages/sim/scripts/plate.ts stands shrines, wrecks and seams
+  // of ore besides (#416), and counts fewer: 24, 33, 36, 41 and 70 on 100.
+  const POSTS: Record<Key, number> = { "1s": 26, "1m": 33, "1l": 36, "2s": 42, "2m": 74 };
+  for (const key of KEYS) {
+    it(`${key}: has room for ${POSTS[key]} posts or more at the median`, () => {
+      const counts = worked[key].map((l) => posts(l).length);
+      console.log(
+        `posts ${key}: median ${median(counts)}, ${Math.min(...counts)} to ${Math.max(...counts)}`,
+      );
+      expect(median(counts)).toBeGreaterThanOrEqual(POSTS[key]);
+    });
+  }
 });
 
 describe("generateLanding: biomes", () => {
@@ -671,11 +955,11 @@ describe("generateLanding: biomes", () => {
   });
 
   it("the biome picks the barriers and the cover", () => {
-    /** Tiles of each terrain over the vales of one biome, out of 1000. */
+    /** Tiles of each terrain over the landings of one biome, out of 1000. */
     const share = (biome: Biome): Record<string, number> => {
       const counts: Record<string, number> = {};
       let total = 0;
-      for (const landing of landings.medium.filter((l) => l.biome === biome)) {
+      for (const landing of landings["2m"].filter((l) => l.biome === biome)) {
         for (const t of landing.tiles) {
           counts[TERRAINS[t] as string] = (counts[TERRAINS[t] as string] ?? 0) + 1;
           total++;
@@ -698,8 +982,8 @@ describe("generateLanding: biomes", () => {
   });
 
   it("a biome changes the dressing and not where the districts and gates are", () => {
-    const meadow = generateLanding({ seed: 11, size: "medium", biome: "meadow", level: 9 });
-    const crags = generateLanding({ seed: 11, size: "medium", biome: "crags", level: 9 });
+    const meadow = generateLanding({ seed: 11, size: "large", biome: "meadow", level: 9 });
+    const crags = generateLanding({ seed: 11, size: "large", biome: "crags", level: 9 });
     expect(crags.districts.map((d) => [d.x, d.y, d.bounds])).toEqual(
       meadow.districts.map((d) => [d.x, d.y, d.bounds]),
     );
@@ -710,20 +994,24 @@ describe("generateLanding: biomes", () => {
   });
 });
 
-describe("generateLanding: counts the caller raises", () => {
-  it("adds a den and a cache for each one asked for, and moves nothing in the graph", () => {
-    const plain = { seed: 99, size: "medium", biome: "pinewood", level: 20 } as const;
+describe("generateLanding: what the caller sets", () => {
+  it("adds a den and a cache for each one asked for, and moves nothing in the graph or the levels", () => {
+    const plain = { seed: 99, city: 2, size: "medium", biome: "pinewood", level: 20 } as const;
     const base = generateLanding(plain);
     const more = generateLanding({ ...plain, extraDens: 4, extraCaches: 3 });
     expect(more.dens).toHaveLength(base.dens.length + 4);
     expect(more.caches).toHaveLength(base.caches.length + 3);
-    expect(more.dens.slice(0, base.dens.length)).toEqual(base.dens);
+    // The size's own dens stand where they did; their letters may move.
+    expect(more.dens.slice(0, base.dens.length).map((d) => [d.x, d.y, d.level])).toEqual(
+      base.dens.map((d) => [d.x, d.y, d.level]),
+    );
     expect(more.districts).toEqual(base.districts);
     expect(more.passages).toEqual(base.passages);
-    expect(more.seams).toHaveLength(base.seams.length);
+    expect(more.ground).toEqual(base.ground);
+    expect(more.seams).toEqual(base.seams);
   });
 
-  it("has room for the most that may be asked, on the smallest landing", () => {
+  it("stands one den a pocket and every cache asked for, at the most that may be asked, on the smallest landing", () => {
     for (let seed = 0; seed < 20; seed++) {
       const landing = generateLanding({
         seed,
@@ -733,27 +1021,67 @@ describe("generateLanding: counts the caller raises", () => {
         extraDens: MAX_EXTRA,
         extraCaches: MAX_EXTRA,
       });
-      expect(landing.dens).toHaveLength(1 + MAX_EXTRA);
+      // One in every pocket with room for one: all but the smallest of the nine.
+      const room = roomIn(landing, landing.seams).size;
+      expect(room).toBeGreaterThanOrEqual(landing.districts.length - 2);
+      expect(landing.dens).toHaveLength(room);
       expect(landing.caches).toHaveLength(1 + MAX_EXTRA);
-      const walk = walks(landing);
-      for (const s of [...landing.dens, ...landing.caches]) {
-        expect(walk.get(index(landing, s))).toBeGreaterThan(APRON);
-      }
       const stands = [...landing.dens, ...landing.caches, ...landing.seams].map((s) =>
         index(landing, s),
       );
       expect(new Set(stands).size).toBe(stands.length);
-      expect(walk.size).toBe(walkableCount(landing));
+      expect(walks(landing).size).toBe(walkableCount(landing));
     }
+  });
+
+  it("takes the far level, and without one sets it by the class over the level", () => {
+    const at = (far?: number) =>
+      generateLanding({
+        seed: 4,
+        city: 2,
+        size: "small",
+        biome: "fen",
+        level: 23,
+        ...(far === undefined ? {} : { far }),
+      });
+    expect(at().far).toBe(23 + FAR_STEP.small);
+    expect(at(65).far).toBe(65);
+    // At the far level of the level itself, every pocket past ring 1 is at it.
+    const flat = at(23);
+    for (const d of flat.districts.filter((e) => e.ring >= 2)) expect(d.level).toBe(23);
+    expect(generateLanding({ seed: 1, size: "large", biome: "meadow", level: 95 }).far).toBe(99);
+    // The far level moves the levels and the dens, and not the graph.
+    expect(at(65).districts.map((d) => [d.x, d.y, d.bounds])).toEqual(
+      at(40).districts.map((d) => [d.x, d.y, d.bounds]),
+    );
+    expect(at(65).districts.map((d) => d.level)).not.toEqual(at(40).districts.map((d) => d.level));
+  });
+
+  it("matches section 1's worked levels on a level-23 medium landing of the second city", () => {
+    // Ring 1's nine pockets at 7 to 21, ring 2's nine at 23, ring 3's eight at
+    // 32, 41, 50, 59 and 68, and 68 for the last three.
+    let exact = 0;
+    for (const landing of worked["2m"]) {
+      const order = walkOrder(landing, walkOut(landing));
+      expect(order.map((d) => landing.districts[d]?.level)).toEqual([
+        7, 8, 10, 12, 14, 15, 17, 19, 21, 23, 23, 23, 23, 23, 23, 23, 23, 23, 32, 41, 50, 59, 68,
+        68, 68, 68,
+      ]);
+      expect(landing.dens[0]?.level).toBe(68);
+      exact += Number(landing.dens.map((d) => d.level).join() === "68,59,50,41,32");
+    }
+    // The five dens at 68, 59, 50, 41 and 32 unless a pocket at one of them has
+    // no room (the sweep checks the nearest is taken then).
+    expect(exact).toBeGreaterThanOrEqual(18);
   });
 });
 
 describe("generateLanding: determinism", () => {
   it("gives the same landing for the same input, whatever was generated in between", () => {
-    for (const size of SIZE_CLASSES) {
-      const first = generateLanding(input(size, 7));
-      generateLanding(input(size, 8));
-      const again = generateLanding(input(size, 7));
+    for (const key of KEYS) {
+      const first = generateLanding(input(key, 7));
+      generateLanding(input(key, 8));
+      const again = generateLanding(input(key, 7));
       expect(again).toEqual(first);
       expect(hashLanding(again)).toBe(hashLanding(first));
     }
@@ -764,31 +1092,39 @@ describe("generateLanding: determinism", () => {
     // a change to the generator that is meant to move them updates them.
     expect(
       hashLanding(generateLanding({ seed: 1, size: "small", biome: "meadow", level: 5 })),
-    ).toBe("228760a8147193f9");
-    expect(hashLanding(generateLanding({ seed: 2, size: "medium", biome: "fen", level: 12 }))).toBe(
-      "7b9f120d35276e10",
-    );
+    ).toBe("5afd67b142147a78");
+    expect(
+      hashLanding(generateLanding({ seed: 2, size: "large", biome: "fen", level: 12, far: 30 })),
+    ).toBe("4f081b3953b84b34");
     expect(
       hashLanding(
-        generateLanding({ seed: 3, size: "large", biome: "ash_waste", level: 30, extraDens: 2 }),
+        generateLanding({
+          seed: 3,
+          city: 2,
+          size: "medium",
+          biome: "ash_waste",
+          level: 30,
+          far: 68,
+          extraDens: 2,
+        }),
       ),
-    ).toBe("709f1dc58c02c164");
+    ).toBe("a06bc07f5b8257a6");
   });
 
   it("gives different landings for different seeds", () => {
-    for (const size of SIZE_CLASSES) {
-      expect(new Set(landings[size].map(hashLanding)).size).toBe(SEEDS);
+    for (const key of KEYS) {
+      expect(new Set(landings[key].map(hashLanding)).size).toBe(SEEDS);
       // The graph differs too, not only the dressing.
-      const graphs = landings[size].map((l) =>
+      const graphs = landings[key].map((l) =>
         l.passages.map((p) => `${p.a}-${p.b}-${p.x}-${p.y}`).join(" "),
       );
       expect(new Set(graphs).size).toBeGreaterThan((SEEDS * 9) / 10);
     }
   });
 
-  it("puts the ramp on every side of the footprint across seeds", () => {
-    for (const size of SIZE_CLASSES) {
-      const sides = landings[size].map((l) => l.rampSide);
+  it("puts the ramp on every side of the hull across seeds", () => {
+    for (const key of KEYS) {
+      const sides = landings[key].map((l) => l.rampSide);
       // Each side about a quarter of the time: 100 seeds give 15 or more of each.
       for (const side of EDGES) {
         expect(sides.filter((s) => s === side).length).toBeGreaterThan(SEEDS * 0.15);
@@ -799,63 +1135,74 @@ describe("generateLanding: determinism", () => {
 
 describe("generateLanding: cost", () => {
   it("takes a bounded time whatever the seed", () => {
-    // Over the 200 seeds of the long run in the dev container the mean is 3.2,
-    // 3.3 and 8.1 ms and the median 2.8, 3.1 and 7.1 ms; the slowest, at 5 to
-    // 56 ms, were pauses with other work running beside them. CI runs the gate
-    // about three times slower.
-    const budget: Record<SizeClass, number> = { small: 25, medium: 40, large: 75 };
+    const budget: Record<Key, number> = { "1s": 25, "1m": 25, "1l": 30, "2s": 40, "2m": 75 };
     const count = LONG ? 200 : 40;
-    for (const size of SIZE_CLASSES) {
-      for (let n = 0; n < 5; n++) generateLanding(input(size, n));
+    for (const key of KEYS) {
+      for (let n = 0; n < 5; n++) generateLanding(input(key, n));
       const times: number[] = [];
       for (let n = 0; n < count; n++) {
         const before = performance.now();
-        generateLanding(input(size, 1000 + n));
+        generateLanding(input(key, 1000 + n));
         times.push(performance.now() - before);
       }
       const mean = times.reduce((a, b) => a + b) / count;
-      const median = [...times].sort((a, b) => a - b)[count >> 1] as number;
+      const middle = median(times);
       const worst = Math.max(...times);
       console.log(
-        `landing ${size}: mean ${mean.toFixed(1)} ms, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms`,
+        `landing ${key}: mean ${mean.toFixed(1)} ms, median ${middle.toFixed(1)} ms, worst ${worst.toFixed(1)} ms`,
       );
       // Wall time depends on what else the machine is doing (the gate runs the
       // other test files beside this one), so the gate only prints it and the
       // long run checks it, as scale.test.ts does.
       if (!LONG) continue;
-      expect(mean, `${size} mean ms`).toBeLessThan(budget[size]);
-      // No seed is far slower than the rest. The bound follows the runner's own
-      // speed; the 30 ms covers a pause for garbage collection.
-      expect(worst, `${size} worst ms, median ${median.toFixed(1)}`).toBeLessThan(median * 5 + 30);
+      expect(mean, `${key} mean ms`).toBeLessThan(budget[key]);
+      // No seed is far slower than the rest. A pause for garbage collection or
+      // for another process falls on one run of a seed and not the next, so the
+      // five slowest are timed again, and each is judged by its fastest of three.
+      const slowest = times
+        .map((t, n) => [t, n] as const)
+        .sort((p, q) => q[0] - p[0])
+        .slice(0, 5);
+      for (const [, n] of slowest) {
+        let fastest = Number.POSITIVE_INFINITY;
+        for (let k = 0; k < 3; k++) {
+          const before = performance.now();
+          generateLanding(input(key, 1000 + n));
+          fastest = Math.min(fastest, performance.now() - before);
+        }
+        expect(fastest, `${key} seed ${1000 + n}, median ${middle.toFixed(1)}`).toBeLessThan(
+          middle * 5 + 30,
+        );
+      }
     }
   });
 
   it("refuses a map of more tiles than the growth's heap keys can hold", () => {
     // The growth packs a tile index into 12 bits, so 4,096 tiles at most. The
-    // sizes are fixed, so the test widens the large one for a moment.
-    const spec = SIZES.large as { width: number };
+    // sizes are fixed, so the test widens the largest one for a moment.
+    const spec = SIZES[2].medium as { width: number };
     const width = spec.width;
+    const make = () =>
+      generateLanding({ seed: 1, city: 2, size: "medium", biome: "meadow", level: 5 });
     try {
       spec.width = 91; // 4,095 tiles
-      expect(generateLanding({ seed: 1, size: "large", biome: "meadow", level: 5 }).width).toBe(91);
+      expect(make().width).toBe(91);
       spec.width = 92; // 4,140 tiles
-      expect(() => generateLanding({ seed: 1, size: "large", biome: "meadow", level: 5 })).toThrow(
-        "more tiles than its growth can order",
-      );
+      expect(make).toThrow("more tiles than its growth can order");
     } finally {
       spec.width = width;
     }
   });
 
   it("refuses a size with no room for a strip of blocks on every side of the city, on every seed or none", () => {
-    // The least room each way: rim, block, apron, footprint, apron, block, rim.
-    // For the small apron of 5 that is 37 by 28. One tile less either way
-    // leaves a strip three deep on that axis, whichever side the ramp is on.
-    const spec = SIZES.small as { width: number; height: number };
+    // The least room each way: rim, block, the bubble's footprint, block, rim.
+    // For the first city's 23 by 16 that is 35 by 28. One tile less either way
+    // leaves a strip three deep on that axis.
+    const spec = SIZES[1].small as { width: number; height: number };
     const [width, height] = [spec.width, spec.height];
-    const least = (length: number): number => 2 * RIM + 2 * 4 + length + 2 * SIZES.small.apron;
-    const [w, h] = [least(CITY_WIDTH), least(CITY_HEIGHT)];
-    expect([w, h]).toEqual([37, 28]);
+    const [yardW, yardH] = yardOf(CITIES[1]);
+    const [w, h] = [2 * RIM + 2 * 4 + yardW, 2 * RIM + 2 * 4 + yardH];
+    expect([w, h]).toEqual([35, 28]);
     /** The ramp sides of 40 seeds on a map this size, or the refusals. */
     const sides = (x: number, y: number): string[] => {
       [spec.width, spec.height] = [x, y];
@@ -876,8 +1223,6 @@ describe("generateLanding: cost", () => {
       // A column short, or a row short, every seed is refused.
       expect(new Set(sides(w - 1, h))).toEqual(new Set(["refused"]));
       expect(new Set(sides(w, h - 1))).toEqual(new Set(["refused"]));
-      // 40 by 22, the slice's small size, is refused on every seed.
-      expect(new Set(sides(40, 22))).toEqual(new Set(["refused"]));
     } finally {
       [spec.width, spec.height] = [width, height];
     }
@@ -918,6 +1263,11 @@ describe("generateLanding: refuses what is not an input", () => {
       "a seed only on the prototype",
       Object.assign(Object.create({ seed: 1 }), { size: "medium", biome: "fen", level: 5 }),
     ],
+    ["a city of 0", { ...ok, city: 0 }],
+    ["a city the slice does not build", { ...ok, city: 3 }],
+    ["a city as text", { ...ok, city: "1" }],
+    ["half a city", { ...ok, city: 1.5 }],
+    ["the second city's large landing, which waits for #418", { ...ok, city: 2, size: "large" }],
     ["an unknown size", { ...ok, size: "mountain" }],
     ["a size in capitals", { ...ok, size: "MEDIUM" }],
     ["a size named after the prototype", { ...ok, size: "__proto__" }],
@@ -932,6 +1282,10 @@ describe("generateLanding: refuses what is not an input", () => {
     ["a level with a fraction", { ...ok, level: 0.5 }],
     ["a level as text", { ...ok, level: "5" }],
     ["a missing level", { seed: 1, size: "small", biome: "meadow" }],
+    ["a far level under the level", { ...ok, far: 4 }],
+    ["a far level past the highest", { ...ok, far: MAX_LEVEL + 1 }],
+    ["a far level with a fraction", { ...ok, far: 20.5 }],
+    ["a far level as text", { ...ok, far: "20" }],
     ["fewer dens than none", { ...ok, extraDens: -1 }],
     ["more dens than may be asked", { ...ok, extraDens: MAX_EXTRA + 1 }],
     ["half a den", { ...ok, extraDens: 0.5 }],
@@ -950,11 +1304,15 @@ describe("generateLanding: refuses what is not an input", () => {
   }
 
   it("takes the seeds and the levels at the ends of their ranges", () => {
-    for (const size of SIZE_CLASSES) {
+    for (const key of KEYS) {
       for (const seed of [0, -1, 2 ** 31 - 1, -(2 ** 31)]) {
-        for (const level of [1, MAX_LEVEL]) {
-          const landing = generateLanding({ seed, size, biome: "crags", level });
-          expect(landing.levels[3]).toBeLessThanOrEqual(99);
+        for (const [level, far] of [
+          [1, 1],
+          [1, MAX_LEVEL],
+          [MAX_LEVEL, MAX_LEVEL],
+        ] as const) {
+          const landing = generateLanding({ seed, ...OF[key], biome: "crags", level, far });
+          expect(Math.max(...landing.districts.map((d) => d.level))).toBe(far);
           expect(walks(landing).size).toBe(walkableCount(landing));
         }
       }
@@ -964,14 +1322,16 @@ describe("generateLanding: refuses what is not an input", () => {
 
 describe("landingText", () => {
   it("prints the header and one line a row, with the gates and the gaps marked", () => {
-    for (const size of SIZE_CLASSES) {
-      const landing = landings[size][0] as Landing;
+    for (const key of KEYS) {
+      const landing = landings[key][0] as Landing;
       for (const view of ["terrain", "districts", "rings"] as const) {
         const lines = landingText(landing, view).split("\n");
         const grid = lines.slice(5);
         expect(grid).toHaveLength(landing.height);
         for (const row of grid) expect(row).toHaveLength(landing.width);
-        expect(lines[0]).toContain(`${size} ${landing.width}x${landing.height}, ${landing.biome}`);
+        expect(lines[0]).toContain(
+          `city ${landing.citySize} ${landing.size} ${landing.width}x${landing.height}, ${landing.biome}`,
+        );
         expect(lines[1]).toContain(`ramp on the ${landing.rampSide}`);
         const drawn = grid.join("");
         expect(drawn).toContain("R");
@@ -987,11 +1347,11 @@ describe("landingText", () => {
   });
 
   it("prints the graph, a line a district, passage and entry", () => {
-    const landing = landings.medium[0] as Landing;
+    const landing = landings["2m"][0] as Landing;
     const lines = landingGraphText(landing).split("\n");
     expect(lines).toHaveLength(
       landing.districts.length + landing.passages.length + landing.entries.length,
     );
-    expect(lines[0]).toMatch(/^district 0: ring 0 city at/);
+    expect(lines[0]).toMatch(/^district 0: ring 0 level \d+ city at/);
   });
 });

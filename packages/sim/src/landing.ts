@@ -1,7 +1,8 @@
 // Landings: the ground the walking city parks on (#361, #364), generated from a
-// seed, a size, a biome and a level, to docs/slice.md, section 1. Integer maths
-// and the seeded generator only, so the same input gives the same landing
-// anywhere. It is not part of a world yet: nothing here is read by world.ts.
+// seed, a city size, a size class, a biome, a level and a far level, to
+// docs/slice.md, section 1. Integer maths and the seeded generator only, so the
+// same input gives the same landing anywhere. It is not part of a world yet:
+// nothing here is read by world.ts.
 //
 // How a landing is made
 //
@@ -10,15 +11,17 @@
 //
 // 0. The frame. The map is about 16:9, the shape of the stream's frame. The
 //    rim, its outer two rings of tiles, is the biome's barrier and in no block
-//    and no district. The city's ground is in the middle: the hull's 15 by 6
-//    footprint and the size's apron round it on every side. The apron holds
-//    the ground the legs stand on, 21 by 14 round the hull as docs/art.md,
-//    section 7, draws them, and the ramp on whichever side of the footprint
-//    the seed draws for it, so the city's ground has the same size and place
-//    on every seed. Every size leaves a strip at least a block wide between
-//    that ground and the rim on all four sides, so there are pockets on every
-//    side of the city. This is a fact of the size alone, checked before the
-//    first draw, so a size without the room is refused on every seed.
+//    and no district. The city's ground is in the middle: the bubble's
+//    footprint of docs/slice.md, section 1, which is the ground the city's
+//    feet stand on (19 by 12 for the first city, 21 by 14 for the second) and
+//    2 or 4 tiles round it, with the hull's footprint (13 by 6 or 15 by 6) in
+//    its middle and the ramp on whichever side of the hull the seed draws.
+//    It is square-cornered and walled with gates here; #416 rounds and opens
+//    it. So the city's ground has the same size and place on every seed. Every
+//    size leaves a strip at least a block wide between that ground and the
+//    rim on all four sides, so there are pockets on every side of the city.
+//    This is a fact of the size alone, checked before the first draw, so a
+//    size without the room is refused on every seed.
 // 1. Blocks. Jittered lines cut the ground inside the rim into blocks of four
 //    tiles or more a side, along the edges of the city's ground. The blocks
 //    under that ground are the city's district, which holds the ramp and is
@@ -41,7 +44,7 @@
 //    share: tiles two deep and one to three wide, with a wall tile (a jamb)
 //    at each end. Each district gets lanes, which are 4-connected lines: from
 //    its centre (the hub of its seed block) from block to block, to its side
-//    of every gate, and to each den, cache and seam it holds. A lane tile has
+//    of every gate, and to each seam it holds. A lane tile has
 //    all eight tiles round it in its own district's blocks (a rim tile counts
 //    as part of the block inside it), so the lanes of two districts are never
 //    nearer than two tiles. Each side of the map gets a gap in the rim, in a
@@ -70,17 +73,38 @@
 //    between its two districts is taken out instead. The rim, but for its
 //    gaps, becomes the biome's barrier.
 // 7. Dressing. Woods and the river are thickened, and cover (groves, ponds,
-//    outcrops), cache walls and den walls are stamped inside districts. Each
-//    of these turns walkable tiles into blocked ones, and a tile is turned
-//    only if it is not on a lane and its walkable 4-neighbours stay joined
-//    to each other through the eight tiles round it.
-// 8. Rings and contents. A district's ring is the third of the longest walk
-//    from the ramp, along the lanes, that its centre lies in. District kinds
-//    are dealt from the biome's deck. Dens and caches take tiles in the
-//    districts with the most passages between them and the ramp and each
-//    other, more of them in the far rings, and never within eight tiles of
-//    the ramp. Seams are shared out by the size of a district. Each takes
-//    the next tile in its district's fixed order, so no two share one.
+//    outcrops) is stamped inside districts. Each of these turns walkable
+//    tiles into blocked ones, and a tile is turned only if it is not on a
+//    lane and its walkable 4-neighbours stay joined to each other through
+//    the eight tiles round it. District kinds are dealt from the biome's
+//    deck, and seams are shared out by the size of a district, each on the
+//    next tile in its district's fixed order, so no two share one.
+// 8. Levels. One walk out of the yard (the city's district), over the
+//    dressed ground with the camp closed, orders the pockets: by the walk to
+//    their nearest tile, their gate, then to their centre, then the lower
+//    number. Of P pockets the kth from 0 is in ring 1 + floor(3k / P), and
+//    its level is section 1's: ring 1's step from a third of the landing's
+//    level up toward it, ring 2's are at it, ring 3's nearer pockets step up
+//    to the far level, 10 levels or less a step where there are pockets
+//    enough, and the rest are at the far level. The yard is a third of the
+//    level, 5 at most. A gate or an opened border has the lower level of its
+//    two districts.
+// 9. Dens and caches. Each stands on a clear tile: its eight neighbours
+//    walkable and in its own pocket, nothing standing within a tile of it,
+//    and more than eight tiles from the ramp. The size's own dens are aimed
+//    first, one at each level of ring 3's pockets from the far level down,
+//    each in the pocket with no den whose level is nearest its aim, on its
+//    clear tile nearest the yard. Own dens past those levels, and the
+//    caller's after its first, are spread: each in the district with the
+//    most passages between it and everything stood so far, more of them in
+//    the far rings. The caller's first den stands on the clear tile nearest
+//    the yard of the first pocket by the walk that has no den. A pocket
+//    holds one den at most, so dens asked for past the pockets with room are
+//    not stood. The first cache stands in a pocket at the far level (then
+//    one with no den, then nearest the yard), and the rest are spread, in
+//    pockets without a den while there are any. Then their floors are
+//    painted, paths are worn to each from the ramp, and the dens are
+//    lettered A and on by the walk from the ramp.
 //
 // Why every walkable tile can be reached from the ramp
 //
@@ -109,21 +133,32 @@
 // - The same holds with the camp ground taken away, for a monster, which may
 //   not stand on it. Every tile of the city's ground but its outermost is a
 //   lane tile of the city's. Less the camp, that is a ring round the
-//   footprint and the ramp, `apron - 1` tiles thick and two fewer in front of
-//   the ramp, so at least two: it is joined, and it holds every tile beside
-//   camp ground. The city's lanes leave the ramp onto it and never cross camp
+//   footprint and the ramp, at least four tiles thick beside the hull and two
+//   in front of the ramp: it is joined, and it holds every tile beside camp
+//   ground. The city's lanes leave the ramp onto it and never cross camp
 //   again.
+//
+// Why the levels are the finished map's
+//
+// The pockets are ordered in step 8 by walks over the ground as it stands
+// then. Step 9 only stands things on walkable tiles and repaints walkable
+// tiles as floors and paths, so after step 8 no tile changes between
+// walkable and blocked. The walks, the order, the rings and the levels are
+// therefore those of the finished map, and a walk over the output gives
+// them again. The dens and caches are stood after the levels for the same
+// reason the levels come first: a den is aimed at a level.
 //
 // Why nothing stands under the legs
 //
-// The legs' ground reaches three tiles past each end of the hull and four
-// past each long side. The apron is at least five, so the legs' ground lies
-// inside the city's ground less its outermost tiles, which are the city's lane
-// tiles. A lane tile is in the city's district from the start and is kept:
-// the growth never gives it to another district, and no barrier, obstacle,
-// cache wall or den wall takes it. Dens, caches and seams stand only in other
-// districts, and a gap only in a block on the rim. So under the legs there is
-// the city's open ground, its camp and its ramp, and nothing else.
+// The legs' ground reaches three tiles past each end of the hull and three or
+// four past each long side. The bubble's footprint is two or four tiles round
+// it, so the legs' ground lies inside the city's ground less its outermost
+// tiles, which are the city's lane tiles. A lane tile is in the city's
+// district from the start and is kept: the growth never gives it to another
+// district, and no barrier or obstacle takes it. Dens,
+// caches and seams stand only in other districts, and a gap only in a block
+// on the rim. So under the legs there is the city's open ground, its camp
+// and its ramp, and nothing else.
 //
 // The graph is also exact. Two districts never touch (step 5). A gate's
 // 4-neighbours are its two districts' lane ends, its own tiles and its jambs.
@@ -134,8 +169,9 @@
 // output are the only routes there are.
 //
 // Cost: every loop runs over tiles, blocks, districts or passages a fixed
-// number of times, and the growth pushes a tile at most four times. No step
-// retries, and no loop's length depends on what the seed drew.
+// number of times, and the growth pushes a tile at most four times. Each den
+// and cache looks over the map's tiles once. No step retries, and no loop's
+// length depends on what the seed drew.
 
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
 import { NEIGHBOURS, type Point, TERRAINS, type Terrain, type TileMap } from "./map.ts";
@@ -148,28 +184,42 @@ export class LandingError extends Error {
 export const SIZE_CLASSES = ["small", "medium", "large"] as const;
 export type SizeClass = (typeof SIZE_CLASSES)[number];
 
-/** What a size class holds. Size is difficulty (docs/slice.md, section 1). */
+/** The city sizes the generator has. The slice builds the first two (docs/slice.md, section 1). */
+export const CITY_SIZES = [1, 2] as const;
+export type CitySize = (typeof CITY_SIZES)[number];
+
+/** A city's ground on a landing, in tiles (docs/slice.md, section 1, "Growth"). */
+export interface CitySpec {
+  /** The hull's footprint, which the parked city stands over: camp ground. */
+  readonly hull: readonly [number, number];
+  /** The ground its feet stand on, centred on the hull. */
+  readonly feet: readonly [number, number];
+  /** How far the bubble's footprint stands clear of the feet, on every side. */
+  readonly clear: number;
+}
+export const CITIES: Readonly<Record<CitySize, CitySpec>> = Object.freeze({
+  1: { hull: [13, 6], feet: [19, 12], clear: 2 },
+  2: { hull: [15, 6], feet: [21, 14], clear: 4 },
+});
+/** The bubble's footprint, which is the city's district here: the feet and the clearance round them. */
+export const yardOf = (city: CitySpec): readonly [number, number] => [
+  city.feet[0] + 2 * city.clear,
+  city.feet[1] + 2 * city.clear,
+];
+
+/** How a landing of one city size and class is cut. Size is difficulty (docs/slice.md, section 1). */
 export interface SizeSpec {
   /** About 16:9, the shape of the stream's frame. */
   readonly width: number;
   readonly height: number;
-  /**
-   * Tiles of ground beyond the hull's footprint, on every side, that are the
-   * city's district. The legs stand on the first three past each end and the
-   * first four past each long side. On the ramp's side the ramp takes two, the
-   * road round it the third, and the rest but the outermost is open ground in
-   * front of it. Five at least, so that the legs' ground is clear of the
-   * outermost tile, which may be a border.
-   */
-  readonly apron: number;
   /** How many bands of blocks, counted out from the city, each get their own seed blocks. */
   readonly bands: number;
   /** The side a block aims for, in tiles. Districts are made of blocks. */
   readonly block: number;
   /**
-   * How many blocks a district aims for. These give 7, 12 and 19 districts
-   * besides the city's on every seed. The slice's spec for packs (#396)
-   * works from 7 to 9, 12 to 15 and 18 or 19.
+   * How many blocks a district aims for. With the blocks these give 9, 9 and
+   * 13 pockets on the first city's landings and 18 and 26 on the second's,
+   * on every seed: about one for each 140 tiles.
    */
   readonly cell: number;
   /** The widest a gate is cut, in tiles. */
@@ -186,100 +236,79 @@ export interface SizeSpec {
   readonly fords: number;
   /** Radius range of a grove, meadow or pond. */
   readonly blob: readonly [number, number];
-  /** Dens and caches, before what the caller adds. */
-  readonly dens: number;
-  readonly caches: number;
-  /** Levels ring 3 is above the landing's level. */
-  readonly far: number;
 }
 
 /**
- * The three size classes, with the tile counts, dens, caches and level steps
- * of docs/slice.md, section 1, but for the small one's tiles. A small landing
- * is 50 by 28, not 40 by 22, so that it has a strip of blocks north and south
- * of the city as well as east and west, with the legs on the city's ground.
- * From top to bottom: the rim (2), a block (4), the apron (5), the footprint
- * (6), the apron (5), a block (4) and the rim (2) make 28 rows, the least that
- * fit, and 50 keeps it at 16:9. Across, the same make 37 columns, so the
- * width has room to spare. Medium and large have rows to spare at 60 by 33
- * and 80 by 45 (30 needed) and keep their sizes.
+ * The landings of docs/slice.md, section 1, by city size and class: the first
+ * city's three and the second city's small and medium. The second city's
+ * large, 96 by 54, waits for #418, since the growth orders 4,096 tiles at
+ * most. The blocks, cells, bands, gates and loops are the cuts of the
+ * stand-ins in packages/sim/scripts/plate.ts, which give 9, 9, 13, 18 and 26
+ * pockets. The dressing is light, so that the pockets keep room for section
+ * 1's posts: woods between districts are not thickened (`wood` 0), and cover
+ * is patches of radius 1. On 20 landings of 80 by 45, thickened woods and
+ * cover of radius 1 to 3 each took 10 to 13 posts at the median.
  */
-export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
-  small: {
-    width: 50,
-    height: 28,
-    apron: 5,
-    bands: 2,
-    block: 4,
-    cell: 5,
-    gate: 2,
-    loops: 34,
-    wood: 1,
-    river: 0,
-    warp: 2,
-    fords: 1,
-    blob: [1, 2],
-    dens: 1,
-    caches: 1,
-    far: 0,
-  },
-  medium: {
-    width: 60,
-    height: 33,
-    apron: 6,
-    bands: 2,
-    block: 5,
-    cell: 4,
-    gate: 2,
-    loops: 30,
-    wood: 1,
-    river: 1,
-    warp: 3,
-    fords: 1,
-    blob: [2, 3],
-    dens: 3,
-    caches: 2,
-    far: 5,
-  },
-  large: {
-    width: 80,
-    height: 45,
-    apron: 6,
-    bands: 3,
-    block: 5,
-    cell: 5,
-    gate: 3,
-    loops: 30,
-    wood: 2,
-    river: 1,
-    warp: 4,
-    fords: 2,
-    blob: [2, 4],
-    dens: 5,
-    caches: 3,
-    far: 10,
-  },
-});
+const sized = (
+  width: number,
+  height: number,
+  cuts: Pick<SizeSpec, "bands" | "block" | "cell" | "gate" | "loops">,
+  ground: Pick<SizeSpec, "river" | "warp" | "fords">,
+): SizeSpec => ({ width, height, ...cuts, ...ground, wood: 0, blob: [1, 1] });
+const cut52 = { bands: 2, block: 4, cell: 5, gate: 2, loops: 34 } as const;
+export const SIZES: Readonly<Record<CitySize, Readonly<Partial<Record<SizeClass, SizeSpec>>>>> =
+  Object.freeze({
+    1: {
+      small: sized(52, 29, cut52, { river: 0, warp: 2, fords: 1 }),
+      medium: sized(56, 31, cut52, { river: 0, warp: 2, fords: 1 }),
+      large: sized(
+        60,
+        33,
+        { bands: 2, block: 5, cell: 3, gate: 2, loops: 30 },
+        { river: 1, warp: 3, fords: 1 },
+      ),
+    },
+    2: {
+      small: sized(
+        68,
+        38,
+        { bands: 3, block: 5, cell: 3, gate: 2, loops: 30 },
+        { river: 1, warp: 3, fords: 1 },
+      ),
+      medium: sized(
+        80,
+        45,
+        { bands: 3, block: 5, cell: 4, gate: 3, loops: 30 },
+        { river: 1, warp: 3, fords: 2 },
+      ),
+    },
+  });
 
-/**
- * The hull's footprint, which the parked city stands over (docs/art.md,
- * section 7), the ground its eight feet stand on, centred on the footprint,
- * and the width of its ramp, in tiles.
- */
-export const CITY_WIDTH = 15;
-export const CITY_HEIGHT = 6;
-export const LEGS_WIDTH = 21;
-export const LEGS_HEIGHT = 14;
+/** The levels the far level stands over the strongest citizen's Arms, by class (docs/slice.md, section 1). */
+export const FAR_STEP: Readonly<Record<SizeClass, number>> = Object.freeze({
+  small: 7,
+  medium: 10,
+  large: 15,
+});
+const nearest = (n: number, d: number): number => Math.floor((2 * n + d) / (2 * d));
+/** A size's own dens: one for each 700 tiles, to the nearest. */
+export const densOf = (spec: SizeSpec): number => nearest(spec.width * spec.height, 700);
+/** A size's own caches (the spec's chests): one for each 1,100 tiles, to the nearest, one at least. */
+export const cachesOf = (spec: SizeSpec): number =>
+  Math.max(1, nearest(spec.width * spec.height, 1_100));
+
+/** The width of the ramp, in tiles. */
 export const RAMP_WIDTH = 3;
 /** How deep the rim of barrier round the map is, in tiles. */
 export const RIM = 2;
 
-/** The apron: ground within this many tiles' walk of the ramp, which stays gentle. */
-export const APRON = 8;
-/** The highest level a monster may have on the apron. */
-export const APRON_LEVEL = 5;
+/** No den or cache stands this many tiles from the ramp or nearer, in a straight line. */
+export const RAMP_CLEAR = 8;
+/** The highest level the yard may have. */
+export const YARD_LEVEL = 5;
+/** The radius of a den's floor of den ground. */
+const DEN_FLOOR = 2;
 export const MAX_LEVEL = 99;
-export const MAX_MONSTER_LEVEL = 99;
 /** The most dens, and the most caches, a caller may add to a size's own. */
 export const MAX_EXTRA = 20;
 
@@ -308,7 +337,7 @@ export interface Rect {
   readonly height: number;
 }
 
-/** The rings, by a district's `ring`: 0 is the city's own, then thirds of the longest walk. */
+/** The rings, by a district's `ring`: 0 is the city's own, then thirds of the pockets by the walk out of the yard. */
 export const RINGS = ["city", "ring 1", "ring 2", "ring 3"] as const;
 
 /** What a district is mostly made of. Append only. */
@@ -327,8 +356,15 @@ export type PassageKind = (typeof PASSAGE_KINDS)[number];
 export interface District extends Point {
   /** Its position in `districts`. The city's, which holds the ramp, is 0 and the root. */
   readonly id: number;
-  /** 0 for the city's; else 1 to 3, the third of the longest walk its centre lies in. */
+  /**
+   * 0 for the city's; else 1 to 3: the kth of P pockets in the order of the
+   * walk out of the yard, from 0, is in ring 1 + floor(3k / P).
+   */
   readonly ring: number;
+  /** Its level, which every tile of it has (docs/slice.md, section 1). */
+  readonly level: number;
+  /** Tiles from the yard to its nearest tile, its gate, by the walk over the finished ground. */
+  readonly gate: number;
   readonly kind: DistrictKind;
   /** The box round the blocks its lanes were laid in. Its ground may spill past it. */
   readonly bounds: Rect;
@@ -381,17 +417,24 @@ export interface Stand extends Point {
   readonly ring: number;
 }
 
-/** A den's mouth. Its name is a place, lettered on the map. */
+/**
+ * A den's mouth. It is lettered on the map as `den`, its letter and its level
+ * (`den B 28`), and the letter is its name for `!go`.
+ */
 export interface Den extends Stand {
+  /** Its place: `den_a`, `den_b` and so on. */
   readonly name: string;
-  /** Its ring's level: the level of its elite and of what comes out of it. */
+  /** A for the den with the shortest walk from the ramp, then B and on. */
+  readonly letter: string;
+  /** Its pocket's level. */
   readonly level: number;
+  /** Its elite's level: 5 over the den, and never over the far level. */
+  readonly elite: number;
 }
 
-/** A cache, opened by standing work. Its name is a place. */
+/** A cache, the spec's chest, opened by standing work. */
 export interface Cache extends Stand {
-  readonly name: string;
-  /** Its ring's level: the item level of what it gives. */
+  /** Its pocket's level: the item level of what it gives. */
   readonly level: number;
 }
 
@@ -400,19 +443,27 @@ export type Seam = Stand;
 
 export interface Landing extends TileMap {
   readonly seed: number;
+  /** The city size whose hull and feet the city's ground is cut for. */
+  readonly citySize: CitySize;
   readonly size: SizeClass;
   readonly biome: Biome;
   /** The biome's element. */
   readonly element: Element;
   /** The landing's level, which the navigator set. */
   readonly level: number;
-  /** Monster level by ring: the most on the apron, then rings 1, 2 and 3. */
-  readonly levels: readonly number[];
+  /** The far level: the level of ring 3's farthest pockets. */
+  readonly far: number;
+  /**
+   * Each tile's ground level, row by row: its district's level, the lower
+   * of its passage's two districts' for a gate or an opened border, and -1
+   * for a border or the rim.
+   */
+  readonly ground: readonly number[];
   /** The ground under the parked city's hull: `camp`, which monsters cannot stand on. */
   readonly city: Rect;
   /**
-   * The ground the parked city's feet stand on, LEGS_WIDTH by LEGS_HEIGHT and
-   * centred on `city`. All of it is the city's district and walkable.
+   * The ground the parked city's feet stand on, CITIES' `feet` and centred on
+   * `city`. All of it is the city's district and walkable.
    */
   readonly legs: Rect;
   /** The foot of the ramp in its middle, also the place `ramp`. */
@@ -426,6 +477,7 @@ export interface Landing extends TileMap {
   /** The district each tile belongs to, row by row; -1 for a border or a gate. */
   readonly districtAt: readonly number[];
   readonly entries: readonly Entry[];
+  /** The size's own dens first, in the order they were stood, then the caller's. */
   readonly dens: readonly Den[];
   readonly caches: readonly Cache[];
   readonly seams: readonly Seam[];
@@ -433,10 +485,18 @@ export interface Landing extends TileMap {
 
 export interface LandingInput {
   readonly seed: number;
+  /** The city size, 1 or 2; 1 if left out. */
+  readonly city?: CitySize;
   readonly size: SizeClass;
   readonly biome: Biome;
   /** 1 to MAX_LEVEL. */
   readonly level: number;
+  /**
+   * The far level, from `level` to MAX_LEVEL: the highest Arms awake, or the
+   * level if that is higher, plus the class's FAR_STEP. Left out, the level
+   * plus FAR_STEP, held at MAX_LEVEL.
+   */
+  readonly far?: number;
   /** Dens and caches beyond the size's own, as for a larger crew; 0 to MAX_EXTRA each. */
   readonly extraDens?: number;
   readonly extraCaches?: number;
@@ -607,14 +667,26 @@ interface Link {
   laneB: number[];
 }
 
-const FIELDS = new Set(["seed", "size", "biome", "level", "extraDens", "extraCaches"]);
+const FIELDS = new Set([
+  "seed",
+  "city",
+  "size",
+  "biome",
+  "level",
+  "far",
+  "extraDens",
+  "extraCaches",
+]);
 
 /** Reads and checks an input, whatever it is; throws a LandingError for anything wrong. */
 function readInput(raw: unknown): {
   seed: number;
+  city: CitySize;
   size: SizeClass;
+  spec: SizeSpec;
   biome: Biome;
   level: number;
+  far: number;
   extraDens: number;
   extraCaches: number;
 } {
@@ -628,11 +700,16 @@ function readInput(raw: unknown): {
       Object.hasOwn(raw, field) ? (raw as Record<string, unknown>)[field] : undefined;
     const seed = own("seed");
     if (!isInt32(seed)) throw new LandingError("seed must be a 32-bit whole number");
+    const cityValue = own("city") ?? 1;
+    const city = CITY_SIZES.find((c) => c === cityValue);
+    if (city === undefined) throw new LandingError(`city must be one of ${CITY_SIZES.join(", ")}`);
     const size = SIZE_CLASSES.find((s) => s === own("size"));
     if (size === undefined)
       throw new LandingError(
         `size must be one of ${SIZE_CLASSES.join(", ")}, not ${show(own("size")).slice(0, 40)}`,
       );
+    const spec = SIZES[city][size];
+    if (spec === undefined) throw new LandingError(`city ${city} has no ${size} landing yet`);
     const biome = BIOMES.find((b) => b === own("biome"));
     if (biome === undefined)
       throw new LandingError(
@@ -641,6 +718,9 @@ function readInput(raw: unknown): {
     const level = own("level");
     if (!isInt32(level) || level < 1 || level > MAX_LEVEL)
       throw new LandingError(`level must be a whole number from 1 to ${MAX_LEVEL}`);
+    const far = own("far") ?? Math.min(MAX_LEVEL, level + FAR_STEP[size]);
+    if (!isInt32(far) || far < level || far > MAX_LEVEL)
+      throw new LandingError(`far must be a whole number from the level to ${MAX_LEVEL}`);
     const extra = (field: string): number => {
       const value = own(field) ?? 0;
       if (!isInt32(value) || value < 0 || value > MAX_EXTRA)
@@ -649,9 +729,12 @@ function readInput(raw: unknown): {
     };
     return {
       seed,
+      city,
       size,
+      spec,
       biome,
       level,
+      far,
       extraDens: extra("extraDens"),
       extraCaches: extra("extraCaches"),
     };
@@ -707,9 +790,22 @@ class Heap {
  * seed that is not a 32-bit whole number.
  */
 export function generateLanding(input: unknown): Landing {
-  const { seed, size, biome: biomeName, level, extraDens, extraCaches } = readInput(input);
+  const {
+    seed,
+    city: citySize,
+    size,
+    spec,
+    biome: biomeName,
+    level,
+    far: farLevel,
+    extraDens,
+    extraCaches,
+  } = readInput(input);
   const biome = BIOME_SPECS[biomeName];
-  const spec = SIZES[size];
+  const shape = CITIES[citySize];
+  const [hullW, hullH] = shape.hull;
+  const [feetW, feetH] = shape.feet;
+  const [yardW, yardH] = yardOf(shape);
   const W = spec.width;
   const H = spec.height;
   const N = W * H;
@@ -720,7 +816,6 @@ export function generateLanding(input: unknown): Landing {
   const graphRng = fork();
   const contentRng = fork();
   const shapeRng = fork();
-  const denRng = fork();
 
   const at = (x: number, y: number): number => y * W + x;
   const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
@@ -741,42 +836,46 @@ export function generateLanding(input: unknown): Landing {
   const depthOf = (x: number, y: number): number => Math.min(x, y, W - 1 - x, H - 1 - y);
   const rim: boolean[] = Array.from({ length: N }, (_, i) => depthOf(xOf(i), yOf(i)) < RIM);
 
-  // 0. The city's ground in the middle: the footprint and the apron round it on
-  // every side, which holds the legs' ground and the ramp on any side. None of
-  // it depends on the seed, so neither does the check that each strip between
+  // 0. The city's ground in the middle: the bubble's footprint, which holds the
+  // legs' ground, the hull in its middle and the ramp on any side. None of it
+  // depends on the seed, so neither does the check that each strip between
   // that ground and the rim is a block wide or more, which the sizes are chosen
   // for: a size passes it on every seed or on none.
-  const homeX = (W - (CITY_WIDTH + 2 * spec.apron)) >> 1;
-  const homeY = (H - (CITY_HEIGHT + 2 * spec.apron)) >> 1;
-  const home: Box = {
-    x0: homeX,
-    y0: homeY,
-    x1: homeX + CITY_WIDTH + 2 * spec.apron,
-    y1: homeY + CITY_HEIGHT + 2 * spec.apron,
-  };
+  const homeX = (W - yardW) >> 1;
+  const homeY = (H - yardH) >> 1;
+  const home: Box = { x0: homeX, y0: homeY, x1: homeX + yardW, y1: homeY + yardH };
   // The strips on the far sides are as deep as these or a tile deeper.
   if (Math.min(home.x0, home.y0) - RIM < MIN_BLOCK)
     throw new Error(`a ${size} landing has no room for blocks on every side of the city`);
-  // The legs' ground inside the city's but for its outermost tiles.
-  if (2 * (spec.apron - 1) < Math.max(LEGS_WIDTH - CITY_WIDTH, LEGS_HEIGHT - CITY_HEIGHT))
-    throw new Error(`a ${size} landing's city ground is too narrow for its legs`);
   const city: Rect = {
-    x: home.x0 + spec.apron,
-    y: home.y0 + spec.apron,
-    width: CITY_WIDTH,
-    height: CITY_HEIGHT,
+    x: home.x0 + ((yardW - hullW) >> 1),
+    y: home.y0 + ((yardH - hullH) >> 1),
+    width: hullW,
+    height: hullH,
   };
   const legs: Rect = {
-    x: city.x - ((LEGS_WIDTH - CITY_WIDTH) >> 1),
-    y: city.y - ((LEGS_HEIGHT - CITY_HEIGHT) >> 1),
-    width: LEGS_WIDTH,
-    height: LEGS_HEIGHT,
+    x: city.x - ((feetW - hullW) >> 1),
+    y: city.y - ((feetH - hullH) >> 1),
+    width: feetW,
+    height: feetH,
   };
+  // The legs' ground inside the city's but for its outermost tiles, and room
+  // round the hull for the ramp (two tiles), the road round it and a tile
+  // more before that outermost one.
+  if (
+    legs.x <= home.x0 ||
+    legs.y <= home.y0 ||
+    legs.x + feetW >= home.x1 ||
+    legs.y + feetH >= home.y1 ||
+    Math.min(city.x - home.x0, city.y - home.y0) < 5 ||
+    Math.min(home.x1 - city.x - hullW, home.y1 - city.y - hullH) < 5
+  )
+    throw new Error(`city ${citySize}'s ground is too narrow for its legs and ramp`);
   const rampIndex = roll(layoutRng, 4);
   const rampSide = EDGES[rampIndex] as Edge;
   const [rx, ry] = TOWARD[rampIndex] as [number, number];
-  const cx = city.x + (CITY_WIDTH >> 1);
-  const cy = city.y + (CITY_HEIGHT >> 1);
+  const cx = city.x + (hullW >> 1);
+  const cy = city.y + (hullH >> 1);
   const cityRight = city.x + city.width - 1;
   const cityBottom = city.y + city.height - 1;
   // The ramp: RAMP_WIDTH tiles wide and two long, out from the middle of that side.
@@ -854,19 +953,19 @@ export function generateLanding(input: unknown): Landing {
   const free = districtOf.flatMap((d, b) => (d === -1 ? [b] : []));
   if (free.length === 0) throw new Error(`a ${size} landing has no room for a district`);
   // How far out a block is: blocks from the city, counting diagonals as one.
-  const out: number[] = districtOf.map((d) => (d === 0 ? 0 : -1));
+  const blocksOut: number[] = districtOf.map((d) => (d === 0 ? 0 : -1));
   const ordered = districtOf.flatMap((d, b) => (d === 0 ? [b] : []));
   for (let head = 0; head < ordered.length; head++) {
     const b = ordered[head] as number;
     for (const c of beside(b, AROUND)) {
-      if (out[c] !== -1) continue;
-      out[c] = (out[b] as number) + 1;
+      if (blocksOut[c] !== -1) continue;
+      blocksOut[c] = (blocksOut[b] as number) + 1;
       ordered.push(c);
     }
   }
-  const farthest = Math.max(...out);
-  /** The ring a block lies in, 1 to the class's count. */
-  const band = out.map((steps) =>
+  const farthest = Math.max(...blocksOut);
+  /** The band a block lies in, 1 to the size's count. */
+  const band = blocksOut.map((steps) =>
     steps === 0 ? 0 : 1 + Math.floor(((steps - 1) * spec.bands) / farthest),
   );
 
@@ -1280,15 +1379,10 @@ export function generateLanding(input: unknown): Landing {
     return hops;
   });
 
-  // Rings (docs/slice.md, section 1): thirds of the longest walk from the ramp.
-  const ring: number[] = depth.map((deep, d) =>
-    d === 0 ? 0 : Math.min(3, 1 + Math.floor((deep * 3) / 1000)),
-  );
-
   // Where things stand in a district: its tiles inside its blocks, in one fixed
   // order (the blocks shuffled, a tile of each in turn from a drawn start).
-  // Each thing takes the first tile in that order that nothing has, so no two
-  // stand on one tile. A den or a cache takes one beyond the apron only.
+  // Each thing takes the first tile in that order that it may have, so no two
+  // stand on one tile.
   const inner = (b: number): number => {
     const box = boxes[b] as Box;
     return (box.x1 - box.x0 - 2) * (box.y1 - box.y0 - 2);
@@ -1310,56 +1404,8 @@ export function generateLanding(input: unknown): Landing {
     return list;
   });
   const taken: boolean[] = new Array(N).fill(false);
-  /** True for a tile no walk of APRON tiles or fewer from the ramp can reach. */
-  const beyond = (i: number): boolean =>
-    Math.abs(xOf(i) - ramp.x) + Math.abs(yOf(i) - ramp.y) > APRON;
   type Spot = { d: number; block: number; i: number };
-  const next = (d: number, far: boolean): number =>
-    (order[d] as number[]).find((i) => !taken[i] && (!far || beyond(i))) ?? -1;
-  const stand = (d: number, far: boolean): Spot => {
-    const i = next(d, far);
-    taken[i] = true;
-    return { d, block: blockUnder[i] as number, i };
-  };
-
-  /**
-   * Stands things that should be far from the ramp and from each other: each
-   * in the district with the most passages between it and everything stood so
-   * far, then the deepest. Never in the city's, on the apron, or in a
-   * district with no tile left.
-   */
-  const picked = [0];
-  const spread = (n: number, unfit: (k: number, d: number) => number): Spot[] => {
-    const found: Spot[] = [];
-    for (let k = 0; k < n; k++) {
-      const open = outer.filter((d) => next(d, true) !== -1);
-      if (open.length === 0) throw new LandingError(`a ${size} landing has no room for so many`);
-      const least = Math.min(...open.map((d) => unfit(k, d)));
-      const pool = open.filter((d) => unfit(k, d) === least);
-      const fresh = pool.filter((d) => !picked.includes(d));
-      let best = -1;
-      let bestGap = -1;
-      for (const d of fresh.length > 0 ? fresh : pool) {
-        const gap = Math.min(...picked.map((p) => (apart[p] as number[])[d] as number));
-        const better =
-          gap > bestGap || (gap === bestGap && (depth[d] as number) > (depth[best] as number));
-        if (best === -1 || better) [best, bestGap] = [d, gap];
-      }
-      found.push(stand(best, true));
-      picked.push(best);
-    }
-    return found;
-  };
-  // Dens first: the first in ring 3, the next in ring 2, and so on round the
-  // order below, so the far ground has most and the near ground one in five.
-  // Then caches the same way, in districts without a den while there are any.
-  const RING_TURN = [3, 2, 3, 2, 1];
-  /** 0 for a district in the ring whose turn it is, 2 for any other. */
-  const turn = (k: number, d: number): number =>
-    ring[d] === RING_TURN[k % RING_TURN.length] ? 0 : 2;
-  const denAt = spread(spec.dens + extraDens, turn);
-  const denned = new Set(denAt.map((s) => s.d));
-  const cacheAt = spread(spec.caches + extraCaches, (k, d) => turn(k, d) + (denned.has(d) ? 1 : 0));
+  const firstFree = (d: number): number => (order[d] as number[]).find((i) => !taken[i]) ?? -1;
   // Seams: one for each 100 tiles, shared out by the number of blocks a district
   // has. Each goes to the district with the most blocks for each seam it holds.
   const held: number[] = each.map(() => 0);
@@ -1367,14 +1413,16 @@ export function generateLanding(input: unknown): Landing {
   for (let n = 0; n < Math.floor(N / 100); n++) {
     let best = -1;
     for (const d of outer) {
-      if (next(d, false) === -1) continue;
+      if (firstFree(d) === -1) continue;
       const share = (d2: number): number =>
         Math.floor(((blocksOf[d2] as number[]).length * 1000) / ((held[d2] as number) + 1));
       if (best === -1 || share(d) > share(best)) best = d;
     }
     if (best === -1) throw new LandingError(`a ${size} landing has no room for its seams`);
     held[best] = (held[best] as number) + 1;
-    seamAt.push(stand(best, false));
+    const i = firstFree(best);
+    taken[i] = true;
+    seamAt.push({ d: best, block: blockUnder[i] as number, i });
   }
   // What each district grows, by its kind: obstacles of one terrain, and deep
   // grass. A patch needs no tile of its own; it is centred on one of the district's.
@@ -1394,12 +1442,7 @@ export function generateLanding(input: unknown): Landing {
       r: between(contentRng, spec.blob[0], spec.blob[1]),
     })),
   );
-  const spurs = [...denAt, ...cacheAt, ...seamAt].map(({ d, block, i }) => lay(d, block, i));
-  for (const { i } of [...denAt, ...cacheAt]) {
-    for (const [dx, dy] of NEIGHBOURS) {
-      if (inside(xOf(i) + dx, yOf(i) + dy)) kept[at(xOf(i) + dx, yOf(i) + dy)] = true;
-    }
-  }
+  for (const { d, block, i } of seamAt) lay(d, block, i);
 
   // The horde's gaps, one on each side, in EDGES order. Each is in a block on
   // that side, scored: one whose district has a gap already is worse, and so is
@@ -1680,36 +1723,6 @@ export function generateLanding(input: unknown): Landing {
     return Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
   };
 
-  // Caches: a broken wall round a path floor. The lanes through it are its doors.
-  for (const { d, i } of cacheAt) {
-    const [x, y] = [xOf(i), yOf(i)];
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        if (!inside(x + dx, y + dy)) continue;
-        const j = at(x + dx, y + dy);
-        const wall = Math.abs(dx) === 2 || Math.abs(dy) === 2;
-        const standing = roll(contentRng, 5) > 0;
-        if (wall && standing && block(j, ROCK, d)) continue;
-        if (owner[j] === d && tiles[j] === GRASS) tiles[j] = PATH;
-      }
-    }
-  }
-
-  // Dens: a floor of den ground with a rock wall at its back, away from the centre.
-  const denRadius = size === "large" ? 3 : 2;
-  for (const { d, i } of denAt) {
-    const [ox, oy] = outward(i, d);
-    for (const j of patch(i, denRadius)) {
-      if (owner[j] === d && (tiles[j] === GRASS || tiles[j] === PATH)) tiles[j] = DEN;
-    }
-    tiles[i] = DEN;
-    for (const j of patch(i, denRadius + 1)) {
-      const [dx, dy] = [xOf(j) - xOf(i), yOf(j) - yOf(i)];
-      if (dx * ox + dy * oy <= 0 || tiles[j] === DEN) continue;
-      if (roll(denRng, 4) > 0) block(j, ROCK, d);
-    }
-  }
-
   // Seams: the tile one is worked from, with an outcrop of rock beside it.
   for (const { d, i } of seamAt) {
     const [ox, oy] = outward(i, d);
@@ -1752,7 +1765,7 @@ export function generateLanding(input: unknown): Landing {
     for (const [i, terrain, left] of taking) if (block(i, terrain)) grows[i] = left - 1;
   }
 
-  // Shores round open water, and worn paths from the ramp to each den and cache.
+  // Shores round open water.
   for (let i = 0; i < N; i++) {
     if (tiles[i] !== GRASS && tiles[i] !== DEEP_GRASS) continue;
     if (
@@ -1763,11 +1776,261 @@ export function generateLanding(input: unknown): Landing {
     )
       tiles[i] = SHORE;
   }
-  const wear = (lane: readonly number[]): void => {
-    for (const i of lane) {
-      if (tiles[i] === GRASS || tiles[i] === DEEP_GRASS || tiles[i] === SHORE) tiles[i] = PATH;
+
+  // 8. Levels (docs/slice.md, section 1, "Level and ground"). The walk out of
+  // the yard, over the dressed ground with the camp closed, as a monster walks.
+  /** Steps from the nearest of some tiles, 4-connected over walkable ground off the camp; -1 off it. */
+  const walkFrom = (starts: readonly number[]): number[] => {
+    const steps: number[] = new Array(N).fill(-1);
+    for (const s of starts) steps[s] = 0;
+    const queue = [...starts];
+    for (let head = 0; head < queue.length; head++) {
+      const i = queue[head] as number;
+      for (const [dx, dy] of NEIGHBOURS) {
+        const [x, y] = [xOf(i) + dx, yOf(i) + dy];
+        if (!inside(x, y)) continue;
+        const j = at(x, y);
+        if (steps[j] !== -1 || tiles[j] === CAMP || !WALK.has(tiles[j] as number)) continue;
+        steps[j] = (steps[i] as number) + 1;
+        queue.push(j);
+      }
+    }
+    return steps;
+  };
+  const out = walkFrom(
+    owner.flatMap((d, i) =>
+      d === 0 && tiles[i] !== CAMP && WALK.has(tiles[i] as number) ? [i] : [],
+    ),
+  );
+  /** Steps out of the yard to each district's nearest tile, its gate. */
+  const gateWalk: number[] = each.map((d) => (d === 0 ? 0 : -1));
+  for (let i = 0; i < N; i++) {
+    const d = owner[i] as number;
+    const steps = out[i] as number;
+    if (d < 1 || steps === -1) continue;
+    if (gateWalk[d] === -1 || steps < (gateWalk[d] as number)) gateWalk[d] = steps;
+  }
+  // The pockets by the walk to their gate, then to their centre, then number.
+  const byWalk = [...outer].sort(
+    (p, q) =>
+      (gateWalk[p] as number) - (gateWalk[q] as number) ||
+      (out[centre[p] as number] as number) - (out[centre[q] as number] as number) ||
+      p - q,
+  );
+  const ring: number[] = each.map(() => 0);
+  byWalk.forEach((d, k) => {
+    ring[d] = 1 + Math.floor((3 * k) / byWalk.length);
+  });
+  const inRing = (r: number): number[] => byWalk.filter((d) => ring[d] === r);
+  const third = Math.max(1, Math.floor(level / 3));
+  const levelOf: number[] = each.map((d) => (d === 0 ? Math.min(YARD_LEVEL, third) : level));
+  inRing(1).forEach((d, k, list) => {
+    levelOf[d] = third + Math.floor(((level - third) * k) / list.length);
+  });
+  // Ring 3's nearer pockets step up to the far level: half of them, rounded
+  // up, or enough that no step is over 10 levels, as far as it has pockets.
+  const farthest3 = inRing(3);
+  const climb = Math.min(
+    farthest3.length,
+    Math.max((farthest3.length + 1) >> 1, Math.floor((farLevel - level + 9) / 10)),
+  );
+  farthest3.forEach((d, k) => {
+    levelOf[d] = k < climb ? level + Math.floor(((farLevel - level) * (k + 1)) / climb) : farLevel;
+  });
+  const ground: number[] = owner.map((d, i) => {
+    if (d !== -1) return levelOf[d] as number;
+    const id = label[i] as number;
+    if (id === -1) return -1;
+    const { a, b } = (links[id] as Link).side;
+    return Math.min(levelOf[a] as number, levelOf[b] as number);
+  });
+
+  // 9. Dens and caches, each on a clear tile: its eight neighbours walkable
+  // ground of its own pocket, nothing standing within a tile of it, and more
+  // than RAMP_CLEAR tiles from the ramp in a straight line.
+  /** Tiles within a tile of something that stands. */
+  const crowded: boolean[] = new Array(N).fill(false);
+  const crowd = (i: number): void => {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (inside(xOf(i) + dx, yOf(i) + dy)) crowded[at(xOf(i) + dx, yOf(i) + dy)] = true;
+      }
     }
   };
+  for (const { i } of seamAt) crowd(i);
+  const fits = (i: number): boolean => {
+    const d = owner[i] as number;
+    if (d < 1 || crowded[i] || !WALK.has(tiles[i] as number)) return false;
+    if (Math.abs(xOf(i) - ramp.x) + Math.abs(yOf(i) - ramp.y) <= RAMP_CLEAR) return false;
+    return AROUND.every(([dx, dy]) => {
+      const [x, y] = [xOf(i) + dx, yOf(i) + dy];
+      return inside(x, y) && owner[at(x, y)] === d && WALK.has(tiles[at(x, y)] as number);
+    });
+  };
+  const picked = [0];
+  const put = (i: number): Spot => {
+    const d = owner[i] as number;
+    taken[i] = true;
+    crowd(i);
+    picked.push(d);
+    return { d, block: blockUnder[i] as number, i };
+  };
+  /** The clear tile with the least key among those `allowed`, or -1. Keys are unique. */
+  const least = (allowed: (i: number) => boolean, key: (i: number) => number): number => {
+    let best = -1;
+    let bestKey = 0;
+    for (let i = 0; i < N; i++) {
+      if (!fits(i) || !allowed(i)) continue;
+      const k = key(i);
+      if (best === -1 || k < bestKey) [best, bestKey] = [i, k];
+    }
+    return best;
+  };
+  const pocketOf = (i: number): number => owner[i] as number;
+  const walkOut = (i: number): number => out[i] as number;
+  // A district's slots, then the rest of its ground in tile order, since its
+  // ground spills past the blocks its slots are in. A slot can also be another
+  // district's ground now, where a border bent across its block, so a slot
+  // counts only while it is the district's own.
+  const slots: number[][] = order.map((list) => [...list]);
+  const slotted = new Set(order.flat());
+  owner.forEach((d, i) => {
+    if (d > 0 && !slotted.has(i)) (slots[d] as number[]).push(i);
+  });
+  const nextFit = (d: number): number =>
+    (slots[d] as number[]).find((i) => owner[i] === d && fits(i)) ?? -1;
+  /**
+   * Stands things that should be far from the ramp and from each other: the
+   * kth in the district with the most passages between it and everything
+   * stood so far, then the deepest, among those `unfit` likes best. Never in
+   * the city's, in a district of `avoid`, which gains each district used, or
+   * in a district with no clear tile left; it stops when there is none.
+   */
+  const spread = (
+    from: number,
+    n: number,
+    unfit: (k: number, d: number) => number,
+    avoid: Set<number> | null,
+  ): Spot[] => {
+    const found: Spot[] = [];
+    for (let k = from; k < from + n; k++) {
+      const open = outer.filter((d) => !avoid?.has(d) && nextFit(d) !== -1);
+      if (open.length === 0) break;
+      const fewest = Math.min(...open.map((d) => unfit(k, d)));
+      const pool = open.filter((d) => unfit(k, d) === fewest);
+      const fresh = pool.filter((d) => !picked.includes(d));
+      let best = -1;
+      let bestGap = -1;
+      for (const d of fresh.length > 0 ? fresh : pool) {
+        const gap = Math.min(...picked.map((p) => (apart[p] as number[])[d] as number));
+        const better =
+          gap > bestGap || (gap === bestGap && (depth[d] as number) > (depth[best] as number));
+        if (best === -1 || better) [best, bestGap] = [d, gap];
+      }
+      found.push(put(nextFit(best)));
+      avoid?.add(best);
+    }
+    return found;
+  };
+  // Spread dens go first to ring 3, then ring 2, and so on round this order,
+  // so the far ground has most and the near ground one in five. Spread caches
+  // go the same way, in districts without a den while there are any.
+  const RING_TURN = [3, 2, 3, 2, 1];
+  /** 0 for a district in the ring whose turn it is, 2 for any other. */
+  const turn = (k: number, d: number): number =>
+    ring[d] === RING_TURN[k % RING_TURN.length] ? 0 : 2;
+
+  // The size's own dens, aimed at ring 3's levels from the far level down, one
+  // a level: each in the pocket with no den whose level is nearest its aim, on
+  // its clear tile nearest the yard (then the lower tile number).
+  const ownDens = densOf(spec);
+  const denned = new Set<number>();
+  const denAt: Spot[] = [];
+  const aims = [...new Set(farthest3.map((d) => levelOf[d] as number))].sort((p, q) => q - p);
+  for (const aim of aims.slice(0, ownDens)) {
+    const i = least(
+      (j) => !denned.has(pocketOf(j)),
+      (j) => (Math.abs((levelOf[pocketOf(j)] as number) - aim) * N + walkOut(j)) * N + j,
+    );
+    if (i === -1) break;
+    denned.add(pocketOf(i));
+    denAt.push(put(i));
+  }
+  denAt.push(...spread(denAt.length, ownDens - denAt.length, turn, denned));
+  // The first den the caller adds: in the first pocket by the walk that has no
+  // den and a clear tile, on its clear tile nearest the yard.
+  const nearPocket =
+    extraDens > 0 ? byWalk.find((d) => !denned.has(d) && nextFit(d) !== -1) : undefined;
+  if (nearPocket !== undefined) {
+    denned.add(nearPocket);
+    denAt.push(
+      put(
+        least(
+          (j) => pocketOf(j) === nearPocket,
+          (j) => walkOut(j) * N + j,
+        ),
+      ),
+    );
+  }
+  denAt.push(...spread(denAt.length, ownDens + extraDens - denAt.length, turn, denned));
+  // The first cache: in a pocket at the far level, or the nearest to it, then
+  // one with no den, then on the tile nearest the yard.
+  const cacheAt: Spot[] = [];
+  const farCache = least(
+    () => true,
+    (j) =>
+      ((Math.abs((levelOf[pocketOf(j)] as number) - farLevel) * 2 +
+        (denned.has(pocketOf(j)) ? 1 : 0)) *
+        N +
+        walkOut(j)) *
+        N +
+      j,
+  );
+  if (farCache !== -1) cacheAt.push(put(farCache));
+  cacheAt.push(
+    ...spread(
+      cacheAt.length,
+      cachesOf(spec) + extraCaches - cacheAt.length,
+      (k, d) => turn(k, d) + (denned.has(d) ? 1 : 0),
+      null,
+    ),
+  );
+
+  // Their floors: a cache on a square of path, a den on a round floor of den
+  // ground. Neither blocks a tile, so nothing turns walkable ground into
+  // blocked after the walk out of the yard (see "Why the levels are the
+  // finished map's" at the top).
+  for (const { d, i } of cacheAt) {
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (!inside(xOf(i) + dx, yOf(i) + dy)) continue;
+        const j = at(xOf(i) + dx, yOf(i) + dy);
+        if (owner[j] === d && tiles[j] === GRASS) tiles[j] = PATH;
+      }
+    }
+  }
+  for (const { d, i } of denAt) {
+    for (const j of patch(i, DEN_FLOOR)) {
+      if (owner[j] === d && (tiles[j] === GRASS || tiles[j] === PATH)) tiles[j] = DEN;
+    }
+    tiles[i] = DEN;
+  }
+
+  // Worn paths from the ramp to each den and cache, along the walk from the
+  // ramp: from each, the lowest-numbered tile a step nearer, to the ramp.
+  const fromRamp = walkFrom([at(ramp.x, ramp.y)]);
+  for (const { i } of [...denAt, ...cacheAt]) {
+    for (let j = i, n = 0; j !== -1 && (fromRamp[j] as number) > 0 && n < N; n++) {
+      if (tiles[j] === GRASS || tiles[j] === DEEP_GRASS || tiles[j] === SHORE) tiles[j] = PATH;
+      let back = -1;
+      for (const [dx, dy] of NEIGHBOURS) {
+        const [x, y] = [xOf(j) + dx, yOf(j) + dy];
+        if (!inside(x, y) || fromRamp[at(x, y)] !== (fromRamp[j] as number) - 1) continue;
+        if (back === -1 || at(x, y) < back) back = at(x, y);
+      }
+      j = back;
+    }
+  }
   /** The tiles from a district's centre to the ramp, and the districts and passages on the way. */
   const wayHome = (from: number): { path: number[]; route: number[]; through: number[] } => {
     const path: number[] = [];
@@ -1789,33 +2052,34 @@ export function generateLanding(input: unknown): Landing {
     // Where two lanes meet at a centre the tile is listed once.
     return { path: path.filter((i, n) => n === 0 || i !== path[n - 1]), route, through };
   };
-  [...denAt, ...cacheAt].forEach(({ d }, n) => {
-    wear(spurs[n] as number[]);
-    wear(wayHome(d).path);
-  });
 
-  // Levels by ring (docs/slice.md, section 1): a third of the landing's level,
-  // the level, and the level plus what the size adds. The first is the most a
-  // monster may be on the apron, the ground within APRON tiles of the ramp.
-  const levels = [
-    APRON_LEVEL,
-    Math.max(1, Math.floor(level / 3)),
-    level,
-    Math.min(MAX_MONSTER_LEVEL, level + spec.far),
-  ];
+  // Letters: A for the den with the shortest walk from the ramp, then B and
+  // on (then the lower tile number).
+  const letters: string[] = denAt.map(() => "");
+  denAt
+    .map((_, n) => n)
+    .sort(
+      (p, q) =>
+        (fromRamp[(denAt[p] as Spot).i] as number) - (fromRamp[(denAt[q] as Spot).i] as number) ||
+        (denAt[p] as Spot).i - (denAt[q] as Spot).i,
+    )
+    .forEach((n, k) => {
+      letters[n] = String.fromCharCode(65 + k);
+    });
   const dens: Den[] = denAt.map(({ d, i }, n) => ({
-    name: n === 0 ? "den" : `den_${n + 1}`,
+    name: `den_${(letters[n] as string).toLowerCase()}`,
+    letter: letters[n] as string,
     ...point(i),
     district: d,
     ring: ring[d] as number,
-    level: levels[ring[d] as number] as number,
+    level: levelOf[d] as number,
+    elite: Math.min(farLevel, (levelOf[d] as number) + 5),
   }));
-  const caches: Cache[] = cacheAt.map(({ d, i }, n) => ({
-    name: n === 0 ? "cache" : `cache_${n + 1}`,
+  const caches: Cache[] = cacheAt.map(({ d, i }) => ({
     ...point(i),
     district: d,
     ring: ring[d] as number,
-    level: levels[ring[d] as number] as number,
+    level: levelOf[d] as number,
   }));
   const seams: Seam[] = seamAt.map(({ d, i }) => ({
     ...point(i),
@@ -1843,6 +2107,8 @@ export function generateLanding(input: unknown): Landing {
     id: d,
     ...point(centre[d] as number),
     ring: ring[d] as number,
+    level: levelOf[d] as number,
+    gate: gateWalk[d] as number,
     kind: kinds[d] as DistrictKind,
     bounds: toRect(
       d === 0
@@ -1875,21 +2141,22 @@ export function generateLanding(input: unknown): Landing {
     { name: "ramp", x: ramp.x, y: ramp.y },
     { name: "city", x: cx, y: cy },
     ...dens.map((d) => ({ name: d.name, x: d.x, y: d.y })),
-    ...caches.map((c) => ({ name: c.name, x: c.x, y: c.y })),
   ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   return {
-    name: `${size}_${biomeName}_${seed >>> 0}`,
+    name: `city${citySize}_${size}_${biomeName}_${seed >>> 0}`,
     width: W,
     height: H,
     tiles,
     places,
     seed,
+    citySize,
     size,
     biome: biomeName,
     element: biome.element,
     level,
-    levels,
+    far: farLevel,
+    ground,
     city,
     legs,
     ramp,
@@ -1909,19 +2176,25 @@ export function hashLanding(landing: Landing): string {
   return hashInts([
     ...stringInts(landing.name),
     landing.seed,
+    landing.citySize,
     SIZE_CLASSES.indexOf(landing.size),
     BIOMES.indexOf(landing.biome),
     ELEMENTS.indexOf(landing.element),
     landing.level,
-    ...landing.levels,
+    landing.far,
     landing.width,
     landing.height,
     ...landing.tiles,
+    ...landing.ground,
     ...landing.places.flatMap((p) => [...stringInts(p.name), p.x, p.y]),
     landing.city.x,
     landing.city.y,
+    landing.city.width,
+    landing.city.height,
     landing.legs.x,
     landing.legs.y,
+    landing.legs.width,
+    landing.legs.height,
     landing.ramp.x,
     landing.ramp.y,
     EDGES.indexOf(landing.rampSide),
@@ -1930,6 +2203,8 @@ export function hashLanding(landing: Landing): string {
       d.x,
       d.y,
       d.ring,
+      d.level,
+      d.gate,
       DISTRICT_KINDS.indexOf(d.kind),
       d.bounds.x,
       d.bounds.y,
@@ -1968,7 +2243,15 @@ export function hashLanding(landing: Landing): string {
       ...e.path.flatMap((t) => [t.x, t.y]),
     ]),
     landing.dens.length,
-    ...landing.dens.flatMap((d) => [d.x, d.y, d.district, d.ring, d.level]),
+    ...landing.dens.flatMap((d) => [
+      ...stringInts(d.letter),
+      d.x,
+      d.y,
+      d.district,
+      d.ring,
+      d.level,
+      d.elite,
+    ]),
     landing.caches.length,
     ...landing.caches.flatMap((c) => [c.x, c.y, c.district, c.ring, c.level]),
     landing.seams.length,
@@ -2047,12 +2330,17 @@ export function landingText(
   );
   const loops = landing.passages.filter((p) => !p.tree).length;
   const crossings = landing.passages.filter((p) => p.kind === "bridge" || p.kind === "ford").length;
+  // Levels never fall along the walk out of the yard, so by level is in its order.
+  const byGate = landing.districts
+    .slice(1)
+    .sort((p, q) => p.level - q.level || p.gate - q.gate || p.id - q.id)
+    .map((d) => `${LETTERS[d.id % LETTERS.length]} ${d.level}`);
   return [
-    `${landing.size} ${landing.width}x${landing.height}, ${landing.biome} (element: ${landing.element}), seed ${landing.seed}, level ${landing.level}`,
+    `city ${landing.citySize} ${landing.size} ${landing.width}x${landing.height}, ${landing.biome} (element: ${landing.element}), seed ${landing.seed}, level ${landing.level}, far ${landing.far}`,
     `ramp on the ${landing.rampSide}; horde gaps at ${landing.entries.map((e) => `${e.edge} (${e.x}, ${e.y})`).join(", ")}; ${landing.dens.length} dens, ${landing.caches.length} caches, ${landing.seams.length} seams`,
     `districts: the city and ${rings.join(", ")}; passages: ${landing.passages.length - loops} on the tree and ${loops} loops, ${crossings} over the river`,
-    `levels: apron ${landing.levels[0]} at most, ring 1 ${landing.levels[1]}, ring 2 ${landing.levels[2]}, ring 3 ${landing.levels[3]}`,
-    `dens: ${landing.dens.map((d) => `${d.name} ring ${d.ring} level ${d.level}`).join("; ")}`,
+    `levels: yard ${landing.districts[0]?.level}; pockets by the walk out of the yard: ${byGate.join(", ")}`,
+    `dens: ${landing.dens.map((d) => `den ${d.letter} ${d.level} (elite ${d.elite})`).join("; ")}`,
     ...rows,
   ].join("\n");
 }
@@ -2063,7 +2351,7 @@ export function landingGraphText(landing: Landing): string {
   return [
     ...landing.districts.map(
       (d) =>
-        `district ${letter(d.id)}: ring ${d.ring} ${d.kind} at (${d.x}, ${d.y}), ${d.steps} passages and ${d.distance} tiles from the ramp`,
+        `district ${letter(d.id)}: ring ${d.ring} level ${d.level} ${d.kind} at (${d.x}, ${d.y}), ${d.gate} tiles out of the yard to its gate, ${d.steps} passages and ${d.distance} tiles from the ramp`,
     ),
     ...landing.passages.map(
       (p) =>

@@ -23,11 +23,12 @@
 // (blocks, seeds by band, growth, a spanning tree of passages and loops,
 // borders a tile thick, cover stamped without cutting the ground, dens and
 // caches spread by passages), with straight borders and no river, and the
-// city's ground open to every pocket beside it. The generator has the second
-// city's medium landing (its own large), with its walled yard, so --generator
-// runs that one on generateLanding's maps and nothing else. The other sizes
-// wait for the generator to take a city size (#415, and #418 for maps over 80
-// by 45).
+// city's ground open to every pocket beside it. --generator runs the same
+// laying on generateLanding's maps, which have the slice's five landings with
+// the bubble's footprint as a walled yard (#416 opens it); there the pockets'
+// levels, the dens and the first chest are the generator's, and the script
+// stands only what the generator does not have yet. Maps over 80 by 45 wait
+// for #418.
 //
 // The first city is laid at level 8 for a young crowd and the others at level
 // 23 for the slice's worked crowd (CROWDS below). --middle moves the crowd's
@@ -35,7 +36,7 @@
 // citizens at Arms 23 instead. --map prints one landing with 15 awake. All of
 // this is an estimate for the spec; the build pieces measure the real thing.
 
-import { generateLanding, type SizeClass } from "../src/landing.ts";
+import { type CitySize, generateLanding, SIZES } from "../src/landing.ts";
 import { TERRAINS } from "../src/map.ts";
 import { createRng, nextInt, type Rng } from "../src/rng.ts";
 import { XP_TABLE } from "../src/skills.ts";
@@ -83,8 +84,6 @@ interface LandingSpec {
   readonly gate: number;
   readonly loops: number;
   readonly blob: readonly [number, number];
-  /** The generator's size with these tiles and this hull, if it has one. */
-  readonly generator?: SizeClass;
 }
 interface CitySpec {
   readonly hull: readonly [number, number];
@@ -122,7 +121,7 @@ const LANDINGS: readonly LandingSpec[] = [
   { key: "1m", city: 1, cls: "medium", width: 56, height: 31, ...cut52 },
   { key: "1l", city: 1, cls: "large", width: 60, height: 33, ...cut60 },
   { key: "2s", city: 2, cls: "small", width: 68, height: 38, ...cut68 },
-  { key: "2m", city: 2, cls: "medium", width: 80, height: 45, ...cut80, generator: "large" },
+  { key: "2m", city: 2, cls: "medium", width: 80, height: 45, ...cut80 },
   { key: "2l", city: 2, cls: "large", width: 96, height: 54, ...cut96 },
   { key: "3s", city: 3, cls: "small", width: 80, height: 45, ...cut80 },
   { key: "3m", city: 3, cls: "medium", width: 96, height: 54, ...cut96 },
@@ -194,6 +193,8 @@ interface Ground {
   readonly nearDen: number;
   readonly chests: number[];
   readonly piles: number[];
+  /** On generateLanding's maps, each district's ring and level as the generator set them. */
+  readonly levels?: { readonly ring: number[]; readonly level: number[] };
 }
 
 const AROUND: readonly (readonly [number, number])[] = [
@@ -787,13 +788,18 @@ function standIn(spec: LandingSpec, seed: number, extra: number): Ground {
   };
 }
 
+/** Whether generateLanding has a map of this city size and class. */
+const hasGenerator = (l: LandingSpec): boolean => SIZES[l.city as CitySize]?.[l.cls] !== undefined;
+
 /** generateLanding's map, with the city's footprint closed, for --generator. */
-function generatorGround(spec: LandingSpec, seed: number, extra: number): Ground {
+function generatorGround(spec: LandingSpec, seed: number, extra: number, far: number): Ground {
   const landing = generateLanding({
     seed,
-    size: spec.generator,
+    city: spec.city,
+    size: spec.cls,
     biome: BIOMES[seed % BIOMES.length],
     level: levelOfLanding(spec),
+    far,
     extraDens: extra,
     extraCaches: extra,
   });
@@ -814,9 +820,17 @@ function generatorGround(spec: LandingSpec, seed: number, extra: number): Ground
     gaps: landing.entries.map((e) => e.y * W + e.x),
     dens: landing.dens.map((d) => d.y * W + d.x),
     ownDens: densOf(spec),
-    nearDen: -1,
+    // The size's own dens come first, then the caller's, the first of them the near den.
+    nearDen: (() => {
+      const near = extra > 0 ? landing.dens[densOf(spec)] : undefined;
+      return near === undefined ? -1 : near.y * W + near.x;
+    })(),
     chests: landing.caches.map((c) => c.y * W + c.x),
     piles: landing.seams.map((s) => s.y * W + s.x),
+    levels: {
+      ring: landing.districts.map((d) => d.ring),
+      level: landing.districts.map((d) => d.level),
+    },
   };
 }
 
@@ -1000,9 +1014,8 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
     Math.max(Math.abs((a % W) - (b % W)), Math.abs(Math.floor(a / W) - Math.floor(b / W)));
 
   const citizens: number[] = crowd.tiers.flatMap(([arms, n]) => new Array<number>(n).fill(arms));
-  const top = Math.max(...citizens);
   const nearLevel = Math.max(1, Math.floor(LEVEL / 3));
-  const far = Math.min(99, Math.max(top, LEVEL) + FAR[spec.cls]);
+  const far = farOf(spec, crowd);
   // The yard is the city's own district. Each pocket has one level. The
   // pockets are taken in order of the walk out of the yard to their nearest
   // tile (their gate), then to their centre, then the lower number, and the
@@ -1065,6 +1078,14 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
             : far;
     });
   }
+  // On generateLanding's maps the generator has set them by the same rules,
+  // with its own district centres for the tie-break.
+  if (ground.levels) {
+    for (let d = 1; d <= P; d++) {
+      ringOf[d] = num(ground.levels.ring, d);
+      pocketLevel[d] = num(ground.levels.level, d);
+    }
+  }
   const levelAt = (i: number): number => {
     if (yard(i)) return Math.min(YARD_LEVEL, nearLevel);
     const d = num(district, i);
@@ -1108,24 +1129,13 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
     });
   });
 
-  // On generateLanding's maps, which do not stand the near den yet, the first
-  // den the roster adds is moved to ring 1's near end as standIn stands it.
+  // The stand-ins stand the near den already; so does the generator, which
+  // also aims its dens and stands its first chest, so on its maps neither is
+  // done again here.
   const dens = [...ground.dens];
-  let nearAt = ground.nearDen;
+  const nearAt = ground.nearDen;
   const size0 = ground.ownDens;
-  if (useGenerator && dens.length > size0) {
-    const denned = new Set(dens.filter((_, n) => n !== size0).map((t) => num(district, t)));
-    let best = -1;
-    for (let i = 0; i < N; i++) {
-      if (!inner(i) || denned.has(num(district, i))) continue;
-      if ([...ground.chests, ...ground.piles].some((t) => cheb(t, i) <= 1)) continue;
-      if (best === -1 || num(out, i) < num(out, best)) best = i;
-    }
-    if (best !== -1) {
-      dens[size0] = best;
-      nearAt = best;
-    }
-  }
+  const aimHere = ground.levels === undefined;
   // The size's own dens are aimed once the far level is known, at the levels
   // of ring 3's pockets from the far level down, one a level: the first in a
   // pocket at the far level, so it holds the strongest citizen's packs 5 and
@@ -1158,7 +1168,7 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
   const aims = [
     ...new Set(byWalk.filter((d) => ringOf[d] === 3).map((d) => num(pocketLevel, d))),
   ].sort((a, b) => b - a);
-  for (let k = 0; k < Math.min(size0, aims.length); k++) aimDen(k, num(aims, k));
+  if (aimHere) for (let k = 0; k < Math.min(size0, aims.length); k++) aimDen(k, num(aims, k));
   const denLevel = dens.map((t) => levelAt(t));
   const denPocket = dens.map((t) => num(district, t));
   const denPockets = new Set(denPocket);
@@ -1167,7 +1177,7 @@ function lay(ground: Ground, spec: LandingSpec, crowd: Crowd, seed: number): Lan
   // piles and the other chests and more than 8 tiles from the ramp (then
   // nearer the yard, then the lower tile number).
   const chests = [...ground.chests];
-  if (chests.length > 0) {
+  if (aimHere && chests.length > 0) {
     const clear = [...dens, ...ground.piles, ...chests.slice(1)];
     let best = -1;
     let bestKey = 0;
@@ -1668,8 +1678,15 @@ const clock = (tick: number): string => {
 };
 const f = (v: number, digits = 1): string => (Number.isNaN(v) ? "-" : v.toFixed(digits));
 const row = (cells: readonly (string | number)[]): string => `| ${cells.join(" | ")} |`;
-const groundOf = (spec: LandingSpec, seed: number, extra: number): Ground =>
-  useGenerator ? generatorGround(spec, seed, extra) : standIn(spec, seed, extra);
+/** The far level: the strongest citizen's Arms, or the landing's level if higher, plus the class's step. */
+function farOf(spec: LandingSpec, crowd: Crowd): number {
+  const top = Math.max(...crowd.tiers.map(([arms]) => arms));
+  return Math.min(99, Math.max(top, levelOfLanding(spec)) + FAR[spec.cls]);
+}
+const groundOf = (spec: LandingSpec, seed: number, crowd: Crowd): Ground =>
+  useGenerator
+    ? generatorGround(spec, seed, extraOf(crowd), farOf(spec, crowd))
+    : standIn(spec, seed, extraOf(crowd));
 const landingOf = (key: string | undefined): LandingSpec => {
   const spec = LANDINGS.find((l) => l.key === key);
   if (!spec) throw new Error(`no landing ${key}; one of ${LANDINGS.map((l) => l.key).join(", ")}`);
@@ -2813,7 +2830,7 @@ if (mapArg !== -1) {
   const spec = landingOf(args[mapArg + 1]);
   const seed = Number(args[mapArg + 2] ?? 1);
   const crowd = crowdsOf(spec)[0] as Crowd;
-  const ground = groundOf(spec, seed, extraOf(crowd));
+  const ground = groundOf(spec, seed, crowd);
   const laid = lay(ground, spec, crowd, seed + 15_000);
   const marks = new Map<number, string>();
   for (const t of laid.postTiles) marks.set(t, "o");
@@ -2848,26 +2865,21 @@ if (mapArg !== -1) {
 }
 
 const chosen = LANDINGS.filter((l) =>
-  onlyLanding
-    ? l.key === onlyLanding
-    : useGenerator
-      ? l.generator !== undefined
-      : l.city <= 2 && tilesOf(l) <= SLICE_TILES,
+  onlyLanding ? l.key === onlyLanding : l.city <= 2 && tilesOf(l) <= SLICE_TILES,
 );
 if (chosen.length === 0) landingOf(onlyLanding);
 console.log(
   `${useGenerator ? "generateLanding's maps" : "stand-in maps"}, ${seedCount} landings a size`,
 );
 for (const spec of chosen) {
-  if (useGenerator && spec.generator === undefined) {
+  if (useGenerator && !hasGenerator(spec)) {
     console.log(`\n## ${spec.key}: the generator has no map of this size and hull`);
     continue;
   }
   for (const crowd of crowdsOf(spec)) {
-    const extra = extraOf(crowd);
     const results: LandingResult[] = [];
     for (let seed = 1; seed <= seedCount; seed++) {
-      results.push(lay(groundOf(spec, seed, extra), spec, crowd, seed + 1_000 * awakeOf(crowd)));
+      results.push(lay(groundOf(spec, seed, crowd), spec, crowd, seed + 1_000 * awakeOf(crowd)));
     }
     const all = (pick: (r: LandingResult) => number): number[] => results.map(pick);
     const flat = (pick: (r: LandingResult) => number[]): number[] => results.flatMap(pick);
