@@ -28,6 +28,9 @@ import { isWalkable, NEIGHBOURS, type Point, TERRAINS, terrainAt } from "./map.t
 // checks many more (IDLIN_LONG=1).
 const LONG = process.env.IDLIN_LONG === "1";
 const SEEDS = LONG ? 1000 : 100;
+// The tests over every landing of a size take about 10 s each for the large
+// size under IDLIN_LONG=1 on CI.
+const SWEEP_TIMEOUT = LONG ? 120_000 : 30_000;
 
 /**
  * The n-th input of a sweep: seeds spread over the 32-bit range, every biome,
@@ -44,9 +47,9 @@ const input = (size: SizeClass, n: number) => ({
 const sweep = (size: SizeClass): Landing[] =>
   Array.from({ length: SEEDS }, (_, n) => generateLanding(input(size, n)));
 const landings: Record<SizeClass, Landing[]> = {
-  clearing: sweep("clearing"),
-  vale: sweep("vale"),
-  valley: sweep("valley"),
+  small: sweep("small"),
+  medium: sweep("medium"),
+  large: sweep("large"),
 };
 
 const index = (landing: Landing, p: Point): number => p.y * landing.width + p.x;
@@ -128,7 +131,7 @@ function crossings(landing: Landing): { tiles: number[]; touches: number[] }[] {
   return groups;
 }
 
-describe("generateLanding: the layout graph", () => {
+describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => {
   for (const size of SIZE_CLASSES) {
     const spec = SIZES[size];
 
@@ -320,11 +323,11 @@ describe("generateLanding: the layout graph", () => {
   }
 });
 
-describe("generateLanding: every landing in the sweep", () => {
+describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT }, () => {
   it("has the sizes of the slice's spec", () => {
-    expect([SIZES.clearing.width, SIZES.clearing.height]).toEqual([40, 22]);
-    expect([SIZES.vale.width, SIZES.vale.height]).toEqual([60, 33]);
-    expect([SIZES.valley.width, SIZES.valley.height]).toEqual([80, 45]);
+    expect([SIZES.small.width, SIZES.small.height]).toEqual([40, 22]);
+    expect([SIZES.medium.width, SIZES.medium.height]).toEqual([60, 33]);
+    expect([SIZES.large.width, SIZES.large.height]).toEqual([80, 45]);
     expect(SIZE_CLASSES.map((s) => [SIZES[s].dens, SIZES[s].caches, SIZES[s].far])).toEqual([
       [1, 1, 0],
       [3, 2, 5],
@@ -340,7 +343,7 @@ describe("generateLanding: every landing in the sweep", () => {
         expect([landing.width, landing.height]).toEqual([spec.width, spec.height]);
         expect(landing.tiles).toHaveLength(spec.width * spec.height);
         expect(landing.districtAt).toHaveLength(spec.width * spec.height);
-        for (const t of landing.tiles) expect(TERRAINS[t]).toBeDefined();
+        expect(landing.tiles.findIndex((t) => TERRAINS[t] === undefined)).toBe(-1);
       }
     });
 
@@ -494,7 +497,7 @@ describe("generateLanding: biomes", () => {
     const elements = Object.fromEntries(
       BIOMES.map((biome) => [
         biome,
-        generateLanding({ seed: 5, size: "clearing", biome, level: 5 }).element,
+        generateLanding({ seed: 5, size: "small", biome, level: 5 }).element,
       ]),
     );
     expect(elements).toEqual({
@@ -511,7 +514,7 @@ describe("generateLanding: biomes", () => {
     const share = (biome: Biome): Record<string, number> => {
       const counts: Record<string, number> = {};
       let total = 0;
-      for (const landing of landings.vale.filter((l) => l.biome === biome)) {
+      for (const landing of landings.medium.filter((l) => l.biome === biome)) {
         for (const t of landing.tiles) {
           counts[TERRAINS[t] as string] = (counts[TERRAINS[t] as string] ?? 0) + 1;
           total++;
@@ -534,8 +537,8 @@ describe("generateLanding: biomes", () => {
   });
 
   it("a biome changes the dressing and not where the districts and gates are", () => {
-    const meadow = generateLanding({ seed: 11, size: "vale", biome: "meadow", level: 9 });
-    const crags = generateLanding({ seed: 11, size: "vale", biome: "crags", level: 9 });
+    const meadow = generateLanding({ seed: 11, size: "medium", biome: "meadow", level: 9 });
+    const crags = generateLanding({ seed: 11, size: "medium", biome: "crags", level: 9 });
     expect(crags.districts.map((d) => [d.x, d.y, d.bounds])).toEqual(
       meadow.districts.map((d) => [d.x, d.y, d.bounds]),
     );
@@ -548,7 +551,7 @@ describe("generateLanding: biomes", () => {
 
 describe("generateLanding: counts the caller raises", () => {
   it("adds a den and a cache for each one asked for, and moves nothing in the graph", () => {
-    const plain = { seed: 99, size: "vale", biome: "pinewood", level: 20 } as const;
+    const plain = { seed: 99, size: "medium", biome: "pinewood", level: 20 } as const;
     const base = generateLanding(plain);
     const more = generateLanding({ ...plain, extraDens: 4, extraCaches: 3 });
     expect(more.dens).toHaveLength(base.dens.length + 4);
@@ -563,7 +566,7 @@ describe("generateLanding: counts the caller raises", () => {
     for (let seed = 0; seed < 20; seed++) {
       const landing = generateLanding({
         seed,
-        size: "clearing",
+        size: "small",
         biome: BIOMES[seed % BIOMES.length] as Biome,
         level: 40,
         extraDens: MAX_EXTRA,
@@ -599,16 +602,16 @@ describe("generateLanding: determinism", () => {
     // Pinned. A change here without an intended reason is a determinism bug;
     // a change to the generator that is meant to move them updates them.
     expect(
-      hashLanding(generateLanding({ seed: 1, size: "clearing", biome: "meadow", level: 5 })),
-    ).toBe("49e06d687e9567a5");
-    expect(hashLanding(generateLanding({ seed: 2, size: "vale", biome: "fen", level: 12 }))).toBe(
-      "126a20ae28e5ba67",
+      hashLanding(generateLanding({ seed: 1, size: "small", biome: "meadow", level: 5 })),
+    ).toBe("659cc6758091af34");
+    expect(hashLanding(generateLanding({ seed: 2, size: "medium", biome: "fen", level: 12 }))).toBe(
+      "f0aa9d0b18c3ea52",
     );
     expect(
       hashLanding(
-        generateLanding({ seed: 3, size: "valley", biome: "ash_waste", level: 30, extraDens: 2 }),
+        generateLanding({ seed: 3, size: "large", biome: "ash_waste", level: 30, extraDens: 2 }),
       ),
-    ).toBe("3d7c44789feea7c1");
+    ).toBe("71b7e4f97fccb23c");
   });
 
   it("gives different landings for different seeds", () => {
@@ -631,27 +634,55 @@ describe("generateLanding: determinism", () => {
 
 describe("generateLanding: cost", () => {
   it("takes a bounded time whatever the seed", () => {
-    // A landing takes a few milliseconds; the bounds leave room for a slow runner.
-    const budget: Record<SizeClass, number> = { clearing: 40, vale: 80, valley: 160 };
+    // Over 2,000 seeds in the dev container the mean is 2.7, 4.1 and 7.5 ms and
+    // the slowest 17, 21 and 23 ms; CI runs the gate about three times slower.
+    const budget: Record<SizeClass, number> = { small: 25, medium: 40, large: 75 };
+    const count = LONG ? 200 : 40;
     for (const size of SIZE_CLASSES) {
       for (let n = 0; n < 5; n++) generateLanding(input(size, n));
-      let worst = 0;
-      const start = performance.now();
-      for (let n = 0; n < 40; n++) {
+      const times: number[] = [];
+      for (let n = 0; n < count; n++) {
         const before = performance.now();
         generateLanding(input(size, 1000 + n));
-        worst = Math.max(worst, performance.now() - before);
+        times.push(performance.now() - before);
       }
-      const mean = (performance.now() - start) / 40;
+      const mean = times.reduce((a, b) => a + b) / count;
+      const median = [...times].sort((a, b) => a - b)[count >> 1] as number;
+      const worst = Math.max(...times);
+      console.log(
+        `landing ${size}: mean ${mean.toFixed(1)} ms, median ${median.toFixed(1)} ms, worst ${worst.toFixed(1)} ms`,
+      );
+      // Wall time depends on what else the machine is doing (the gate runs the
+      // other test files beside this one), so the gate only prints it and the
+      // long run checks it, as scale.test.ts does.
+      if (!LONG) continue;
       expect(mean, `${size} mean ms`).toBeLessThan(budget[size]);
-      // No seed is an outlier: generation has no loop that a seed can lengthen.
-      expect(worst, `${size} worst ms`).toBeLessThan(budget[size] * 5);
+      // No seed is far slower than the rest. The bound follows the runner's own
+      // speed; the 30 ms covers a pause for garbage collection.
+      expect(worst, `${size} worst ms, median ${median.toFixed(1)}`).toBeLessThan(median * 5 + 30);
+    }
+  });
+
+  it("refuses a map of more tiles than the growth's heap keys can hold", () => {
+    // The growth packs a tile index into 12 bits, so 4,096 tiles at most. The
+    // sizes are fixed, so the test widens the large one for a moment.
+    const spec = SIZES.large as { width: number };
+    const width = spec.width;
+    try {
+      spec.width = 91; // 4,095 tiles
+      expect(generateLanding({ seed: 1, size: "large", biome: "meadow", level: 5 }).width).toBe(91);
+      spec.width = 92; // 4,140 tiles
+      expect(() => generateLanding({ seed: 1, size: "large", biome: "meadow", level: 5 })).toThrow(
+        "more tiles than its growth can order",
+      );
+    } finally {
+      spec.width = width;
     }
   });
 });
 
 describe("generateLanding: refuses what is not an input", () => {
-  const ok = { seed: 1, size: "clearing", biome: "meadow", level: 5 };
+  const ok = { seed: 1, size: "small", biome: "meadow", level: 5 };
   const trap = new Proxy(
     {},
     {
@@ -673,23 +704,23 @@ describe("generateLanding: refuses what is not an input", () => {
     ["nothing", undefined],
     ["null", null],
     ["a number", 7],
-    ["a list", [1, "clearing", "meadow", 5]],
+    ["a list", [1, "small", "meadow", 5]],
     ["a seed with a fraction", { ...ok, seed: 1.5 }],
     ["a seed that is not a number", { ...ok, seed: "1" }],
     ["a seed past 32 bits", { ...ok, seed: 2 ** 31 }],
     ["a seed that is NaN", { ...ok, seed: Number.NaN }],
     ["a seed that is infinite", { ...ok, seed: Number.POSITIVE_INFINITY }],
-    ["a missing seed", { size: "clearing", biome: "meadow", level: 5 }],
+    ["a missing seed", { size: "small", biome: "meadow", level: 5 }],
     [
       "a seed only on the prototype",
-      Object.assign(Object.create({ seed: 1 }), { size: "vale", biome: "fen", level: 5 }),
+      Object.assign(Object.create({ seed: 1 }), { size: "medium", biome: "fen", level: 5 }),
     ],
     ["an unknown size", { ...ok, size: "mountain" }],
-    ["a size in capitals", { ...ok, size: "VALE" }],
+    ["a size in capitals", { ...ok, size: "MEDIUM" }],
     ["a size named after the prototype", { ...ok, size: "__proto__" }],
     ["a size named after a method", { ...ok, size: "toString" }],
-    ["a size that is not text", { ...ok, size: { toString: () => "vale" } }],
-    ["a missing biome", { seed: 1, size: "clearing", level: 5 }],
+    ["a size that is not text", { ...ok, size: { toString: () => "medium" } }],
+    ["a missing biome", { seed: 1, size: "small", level: 5 }],
     ["an unknown biome", { ...ok, biome: "tundra" }],
     ["a biome named after the prototype", { ...ok, biome: "constructor" }],
     ["a biome that is not text", { ...ok, biome: 2 }],
@@ -697,7 +728,7 @@ describe("generateLanding: refuses what is not an input", () => {
     ["a level past the highest", { ...ok, level: MAX_LEVEL + 1 }],
     ["a level with a fraction", { ...ok, level: 0.5 }],
     ["a level as text", { ...ok, level: "5" }],
-    ["a missing level", { seed: 1, size: "clearing", biome: "meadow" }],
+    ["a missing level", { seed: 1, size: "small", biome: "meadow" }],
     ["fewer dens than none", { ...ok, extraDens: -1 }],
     ["more dens than may be asked", { ...ok, extraDens: MAX_EXTRA + 1 }],
     ["half a den", { ...ok, extraDens: 0.5 }],
@@ -752,7 +783,7 @@ describe("landingText", () => {
   });
 
   it("prints the graph, a line a district, passage and entry", () => {
-    const landing = landings.vale[0] as Landing;
+    const landing = landings.medium[0] as Landing;
     const lines = landingGraphText(landing).split("\n");
     expect(lines).toHaveLength(
       landing.districts.length + landing.passages.length + landing.entries.length,

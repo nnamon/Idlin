@@ -100,7 +100,7 @@ export class LandingError extends Error {
   override name = "LandingError";
 }
 
-export const SIZE_CLASSES = ["clearing", "vale", "valley"] as const;
+export const SIZE_CLASSES = ["small", "medium", "large"] as const;
 export type SizeClass = (typeof SIZE_CLASSES)[number];
 
 /** What a size class holds. Size is difficulty (docs/slice.md, section 1). */
@@ -145,7 +145,7 @@ export interface SizeSpec {
  * may still change the tile counts; these are the numbers to change when it does.
  */
 export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
-  clearing: {
+  small: {
     width: 40,
     height: 22,
     apron: 3,
@@ -165,7 +165,7 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
     caches: 1,
     far: 0,
   },
-  vale: {
+  medium: {
     width: 60,
     height: 33,
     apron: 4,
@@ -185,7 +185,7 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
     caches: 2,
     far: 5,
   },
-  valley: {
+  large: {
     width: 80,
     height: 45,
     apron: 4,
@@ -626,9 +626,9 @@ class Heap {
 }
 
 /**
+ * Generates a landing from its input, or throws a LandingError if the input
  * is not one: an unknown size or biome, a level or a count out of range, or a
  * seed that is not a 32-bit whole number.
- * 32-bit whole number, an unknown or repeated modifier, or more than two.
  */
 export function generateLanding(input: unknown): Landing {
   const { seed, size, biome: biomeName, level, extraDens, extraCaches } = readInput(input);
@@ -760,7 +760,7 @@ export function generateLanding(input: unknown): Landing {
     box.x0 >= home.x0 && box.x1 <= home.x1 && box.y0 >= home.y0 && box.y1 <= home.y1 ? 0 : -1,
   );
   const free = districtOf.flatMap((d, b) => (d === -1 ? [b] : []));
-  if (free.length === 0) throw new Error(`a ${size} has no room for a district`);
+  if (free.length === 0) throw new Error(`a ${size} landing has no room for a district`);
   // How far out a block is: blocks from the city, counting diagonals as one.
   const out: number[] = districtOf.map((d) => (d === 0 ? 0 : -1));
   const ordered = districtOf.flatMap((d, b) => (d === 0 ? [b] : []));
@@ -828,8 +828,9 @@ export function generateLanding(input: unknown): Landing {
     if (!members.some((b) => seeds.includes(b))) seed1(members, band[start] as number);
   }
   const count = seeds.length + 1;
-  // The growth packs a district into six bits of a heap key.
+  // The growth packs a district into six bits of a heap key, and a tile into twelve.
   if (count > 64) throw new Error("a landing has more districts than its growth can order");
+  if (N > 4096) throw new Error("a landing has more tiles than its growth can order");
   const each = Array.from({ length: count }, (_, d) => d);
   /** The block a block was added from; -1 for a seed and for the city's. */
   const parentBlock: number[] = new Array(B).fill(-1);
@@ -1254,7 +1255,7 @@ export function generateLanding(input: unknown): Landing {
     const found: Spot[] = [];
     for (let k = 0; k < n; k++) {
       const open = outer.filter((d) => next(d, true) !== -1);
-      if (open.length === 0) throw new LandingError(`a ${size} has no room for so many`);
+      if (open.length === 0) throw new LandingError(`a ${size} landing has no room for so many`);
       const least = Math.min(...open.map((d) => unfit(k, d)));
       const pool = open.filter((d) => unfit(k, d) === least);
       const fresh = pool.filter((d) => !picked.includes(d));
@@ -1293,7 +1294,7 @@ export function generateLanding(input: unknown): Landing {
         Math.floor(((blocksOf[d2] as number[]).length * 1000) / ((held[d2] as number) + 1));
       if (best === -1 || share(d) > share(best)) best = d;
     }
-    if (best === -1) throw new LandingError(`a ${size} has no room for its seams`);
+    if (best === -1) throw new LandingError(`a ${size} landing has no room for its seams`);
     held[best] = (held[best] as number) + 1;
     seamAt.push(stand(best, false));
   }
@@ -1600,7 +1601,7 @@ export function generateLanding(input: unknown): Landing {
   }
 
   // Dens: a floor of den ground with a rock wall at its back, away from the centre.
-  const denRadius = size === "valley" ? 3 : 2;
+  const denRadius = size === "large" ? 3 : 2;
   for (const { d, i } of denAt) {
     const [ox, oy] = outward(i, d);
     for (const j of patch(i, denRadius)) {
