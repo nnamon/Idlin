@@ -92,7 +92,36 @@ export function saveSnapshot(
       log(`saved ${name} but could not delete ${old}: ${String(error)}`);
     }
   }
+  pruneLogs(dir, name, log);
   return name;
+}
+
+const LOG = /^world-(\d{16})\.log$/;
+
+/**
+ * Deletes the input logs, at or before the snapshot `name`, whose snapshot is
+ * no longer there: deleted with the old ones, or set aside as refused.
+ */
+function pruneLogs(dir: string, name: string, log: (line: string) => void): void {
+  let files: string[];
+  try {
+    files = readdirSync(dir);
+  } catch (error) {
+    log(`saved ${name} but could not list old input logs to delete: ${String(error)}`);
+    return;
+  }
+  const present = new Set(files);
+  for (const file of files) {
+    const match = LOG.exec(file);
+    if (!match) continue;
+    const json = `world-${match[1]}.json`;
+    if (json > name || (present.has(json) && isPlainFile(join(dir, json)))) continue;
+    try {
+      unlinkSync(join(dir, file));
+    } catch (error) {
+      log(`saved ${name} but could not delete ${file}: ${String(error)}`);
+    }
+  }
 }
 
 /**

@@ -8,6 +8,7 @@ describe("the capture command's arguments", () => {
       shots: ["dawn:6", "noon:12"],
       review: false,
       baseline: null,
+      chat: null,
     });
     expect(parseArgs(["captures/now", "dawn:6"])).toMatchObject({ shots: ["dawn:6"] });
   });
@@ -29,13 +30,30 @@ describe("the capture command's arguments", () => {
       shots: [],
       review: true,
       baseline: null,
+      chat: null,
     });
     expect(parseArgs(["--baseline", "before", "out", "--review", "extra:9"])).toEqual({
       outDir: "out",
       shots: ["extra:9"],
       review: true,
       baseline: "before",
+      chat: null,
     });
+  });
+
+  it("takes --chat with a crowd file's name for shots, and refuses it with --review", () => {
+    expect(parseArgs(["out", "--chat", "crowd-15", "noon:12"])).toEqual({
+      outDir: "out",
+      shots: ["noon:12"],
+      review: false,
+      baseline: null,
+      chat: "crowd-15",
+    });
+    expect(parseArgs(["out", "--chat"])).toBe("--chat needs a crowd file's name");
+    expect(parseArgs(["out", "--chat", "../secrets"])).toBe("--chat needs a crowd file's name");
+    expect(parseArgs(["out", "--review", "--chat", "crowd-15"])).toBe(
+      "--chat works with shots, not with --review",
+    );
   });
 
   it("says what is wrong instead of guessing", () => {

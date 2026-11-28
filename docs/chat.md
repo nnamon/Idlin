@@ -1,9 +1,23 @@
 # Chat
 
 How a stream's chat joins the city and commands its citizens. This is the
-design for [#337](https://github.com/nnamon/Idlin/issues/337). None of it is
-built. Every time and count here is a target or arithmetic from the rules
-below, and section 12 says what the first slice measures.
+design for [#337](https://github.com/nnamon/Idlin/issues/337). Every time and
+count here is a target or arithmetic from the rules below, and section 12 says
+what the first slice measures.
+
+**What is built** is C1 and C2 of section 12. The input kinds are types in
+`packages/sim/src/inputs.ts`, and of them only `join` has an effect: a citizen
+named by the username, on the `wanderer` program until the shipped program
+exists, on the free tile nearest the camp. It does not keep the account yet,
+so a second `join` for a name already in the world changes nothing. The gate,
+the queue with its bounds and the scripted crowd are `packages/chat`, and the
+crowd format is described at the top of `packages/chat/src/crowd.ts`. The
+crowd files are `content/chat/crowd-15.txt` and `crowd-150.txt`. Flood control
+counts in world ticks: an account's sixth message within ten ticks is dropped.
+The server keeps the input log beside each
+snapshot and replays it on start ([stack.md](stack.md)). Not built yet: `wake`,
+the speech filter, the name filter, a chatter whose name fails it, and every
+effect but `join`.
 
 It rests on rules the operator set on
 [#331](https://github.com/nnamon/Idlin/issues/331): one streamer is one

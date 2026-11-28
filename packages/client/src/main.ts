@@ -1,3 +1,4 @@
+import { Chat, parseCrowd } from "@idlin/chat";
 import {
   ADVENTURER,
   compileBots,
@@ -52,6 +53,16 @@ const monsterFiles = (): { stats: Record<string, unknown>; sources: Record<strin
   ),
 });
 
+/** The shipped crowd files' text, by file name without the extension. */
+const crowdFiles = (): Record<string, string> =>
+  byName(
+    import.meta.glob("../../../content/chat/*.txt", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  );
+
 /** The shipped map files, parsed, by file name without the extension. */
 const mapFiles = (): Record<string, unknown> =>
   byName(import.meta.glob("../../../content/maps/*.json", { import: "default", eager: true }));
@@ -105,9 +116,20 @@ async function main(): Promise<void> {
   const world = params.has("monsters")
     ? createWorld(atlas, seed, shipped.programs, shipped.kinds, shipped.spawns)
     : createWorld(atlas, seed, programs);
-  // `?crowd=50` fills the camp with that many residents, to see how a crowd reads.
+  // `?chat=crowd-15` reads that crowd file from content/chat/ as the world's
+  // chat, and its chatters are the citizens. Otherwise `?crowd=50` fills the
+  // camp with that many residents, to see how a crowd reads.
+  const chatName = params.get("chat");
+  const crowdText = chatName === null ? undefined : crowdFiles()[chatName];
+  if (chatName !== null && crowdText === undefined)
+    throw new Error(`no crowd file content/chat/${chatName}.txt`);
   const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
-  step(world, spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)));
+  step(
+    world,
+    crowdText === undefined ? spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)) : [],
+  );
+  const chat =
+    crowdText === undefined ? null : new Chat({ crowd: parseCrowd(crowdText), start: world.tick });
   // `?levels` gives the residents a spread of levels, so a capture can show every kit tier.
   if (params.has("levels"))
     spreadLevels(
@@ -145,8 +167,8 @@ async function main(): Promise<void> {
   // address). It runs a world of its own for captures, or when the URL asks for one with
   // `?local` or any of the settings only a world of its own can take.
   if (
-    !["capture", "local", "seed", "hour", "crowd", "monsters", "levels", "deaths"].some((name) =>
-      params.has(name),
+    !["capture", "local", "seed", "hour", "crowd", "chat", "monsters", "levels", "deaths"].some(
+      (name) => params.has(name),
     )
   ) {
     await document.fonts.ready;
@@ -157,7 +179,7 @@ async function main(): Promise<void> {
 
   const draw = (fraction: number): void => drawAt(world.tick + fraction);
   const tick = (): void => {
-    step(world);
+    step(world, chat?.take(world.tick) ?? []);
     scene.observe(world);
   };
   scene.observe(world);

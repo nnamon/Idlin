@@ -299,7 +299,7 @@ describe("world", () => {
       { type: "spawn", name: "InLantern", x: 15, y: 8, program: "wanderer" },
       { type: "spawn", name: "Outside", x: -3, y: 400, program: "wanderer" },
       { type: "spawn", name: "", x: 13, y: 9, program: "wanderer" },
-      { type: "spawn", name: "x".repeat(17), x: 13, y: 9, program: "wanderer" },
+      { type: "spawn", name: "x".repeat(26), x: 13, y: 9, program: "wanderer" },
       { type: "spawn", name: "Half", x: 13.5, y: 9, program: "wanderer" },
       null as never,
       "spawn" as never,

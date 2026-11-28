@@ -198,8 +198,17 @@ importers:
         specifier: 5.1.1
         version: 5.1.1(@types/node@24.19.3)(vite@8.3.8(@types/node@24.19.3))
 
+  packages/chat:
+    dependencies:
+      '@idlin/sim':
+        specifier: workspace:*
+        version: link:../sim
+
   packages/client:
     dependencies:
+      '@idlin/chat':
+        specifier: workspace:*
+        version: link:../chat
       '@idlin/sim':
         specifier: workspace:*
         version: link:../sim
@@ -210,6 +219,9 @@ importers:
 
   packages/server:
     dependencies:
+      '@idlin/chat':
+        specifier: workspace:*
+        version: link:../chat
       '@idlin/sim':
         specifier: workspace:*
         version: link:../sim

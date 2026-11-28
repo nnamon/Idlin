@@ -1,0 +1,32 @@
+# 150 chatters, a full city: the crowd the slice is sized for.
+# The format is described at the top of packages/chat/src/crowd.ts.
+seed 150
+names joshyboy88 xXxKittyKatxXx goofguy pixel_pete moss_and_mud Ravenclaw_Rae dunkmaster3000 tinytoaster
+names quietkoala LuckyLuka_ brb_snacks SirNapsAlot frogsong_ zzz_jen OatmilkOtis captain_crumb
+names hollowhank minty_mae greeb0 Kestrel_Kev Lowkey_Lumi spoonfedsam turbo_tess NovaNiko
+names bigsoup42 owlbert_ ferris_wheel22 Mistr_Moth jellybean_jo chunkyMonk3y salty_sailor_ WillowWisp_
+names tacoTuesday9 cr1spy_bacon Grumpy_Gus nightowl_nia BarnabyBean vexx_ hazelnutHal p0tatoqueen
+names dizzyduck sundae_sam Arlo_Arcade velvetvole bloopbloop tofu_tim the_real_rook MarbleMika
+names crankyKai_ lilsprout_ ZephyrZoe bonkbonk94 inkwell_ivy pebblepaws dracarys_dan mellowmarv
+names gingersnapG yeetus_maximus Quinn_Quill fuzzy_fennel rustbucket7 ploppy_ cobaltcass waffleWendell
+names sleepy_sloth_ BirdbrainBo kiwi_kat Mopsy_Moe hexen_hugo lavender_lu snorlaxing tumbleweedTy
+names echo_eel_ Pancake_Pip slimjimmy_ ottoman_otto r4diant_ray Juniper_June mudpie_mo crowbarCal
+names glitchgoblin teacup_tom noodle_nell Brisket_Ben fernfox_ sparkplug_sy wobbly_walt cheddar_chaz
+names Minnow_Max dustyDex wildberry_wren saucyspud tangerine_tam BoltBea hushpuppy_ gravygrady
+names Pippin_P fishsticks_fin oakleaf_ola krakenkid99 buttonBex sockpuppet_sid MapleMoe static_stu
+names lemondrop_lia Gizmo_Gwen roosterRuss bumbleBree yarnball_yuki cobblestone_c dewdrop_di Jasper_J4
+names sprocket_sal mothmama hammock_hal ticktock_tia BeetleBen_ plumjam_pat icicle_iggy Rambling_Rex
+names scoot_scoot ladle_lou thimble_thea crumpet_cora PogoPaul toffee_tobi wanderwen Huckleberry_H
+names mossy_mitch Banjo_Bo saffron_sue jetsam_jay Biscuit_Bram pinecone_pia lurk_larry gadget_gil
+names Clover_Cleo wombat_will drizzle_dot Fable_Finn mango_mike spindle_sky honk_honk_ tadpole_ted
+names OrbitOli quokka_quin ember_elle nimbus_ned Rufus_Rides kettlecorn_k
+streamer joshyboy88
+mods goofguy Ravenclaw_Rae
+00:00 +40 regulars over 30s
+00:00 +20 talkers over 30s
+00:00 +20 commanders over 30s
+01:00 +30 lurkers over 5m
+03:00 +38 raid over 10s
+05:00 +2 spammers
+00:05 goofguy: hello all
+12:05 * 60% !home

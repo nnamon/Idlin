@@ -258,7 +258,7 @@ describe("wolves walk faster and come in packs by night", () => {
     // Each walks six tiles east along its own open row, again and again.
     const world = createWorld(ATLAS, 1, PROGRAMS, MONSTERS.kinds);
     step(world, [
-      { ...wolf(12, 4), program: "east" },
+      wolf(12, 4, "east"),
       person("Ash", "east", 13, 5),
       { type: "spawn", name: "Goblin", program: "east", kind: "goblin", x: 8, y: 11 },
     ]);

@@ -42,6 +42,18 @@ export {
 } from "./gather.ts";
 export { hashInts } from "./hash.ts";
 export {
+  ACCOUNT,
+  type ChatInput,
+  type ChatInputType,
+  type ModAction,
+  NEWCOMER_PROGRAM,
+  ROLES,
+  type Role,
+  TOOLS,
+  type Tool,
+  USERNAME,
+} from "./inputs.ts";
+export {
   type Affix,
   type Base,
   type Item,

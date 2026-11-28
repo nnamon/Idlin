@@ -1,10 +1,13 @@
 // The world as a running process: steps it in real time, saves it on an
 // interval and on stop, and streams it to viewers over a WebSocket. Every
 // message a viewer receives is the sim's snapshot text of the world after a
-// tick: the first on connect, then one per tick.
+// tick: the first on connect, then one per tick. Chat reaches the world
+// through the queue in packages/chat, and each tick's inputs go in the input
+// log beside the newest snapshot before the world is stepped with them.
 import { mkdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Chat, type ChatEvent, type Crowd } from "@idlin/chat";
 import {
   createWorld,
   snapshot,
@@ -16,6 +19,7 @@ import {
 import { WebSocket, WebSocketServer } from "ws";
 import { castOf } from "../../client/src/cast.ts";
 import { type Content, loadContent } from "./content.ts";
+import { InputLog, replayLog } from "./inputlog.ts";
 import { Pacer } from "./pacer.ts";
 import { loadNewest, saveSnapshot } from "./store.ts";
 
@@ -68,6 +72,10 @@ export interface ServerOptions {
   readonly origins?: readonly string[];
   /** Milliseconds, for pacing (default `performance.now`). */
   readonly now?: () => number;
+  /** A scripted crowd to read as chat; its 00:00 is the tick the server starts at. */
+  readonly crowd?: Crowd;
+  /** Accounts and logins whose chat is ignored (default the gate's list of chat bots). */
+  readonly ignore?: readonly string[];
 }
 
 export class WorldServer {
@@ -80,6 +88,9 @@ export class WorldServer {
   private savedTick: number;
   /** Refused snapshots that could not be set aside; saves neither replace nor delete them. */
   private readonly stuck: ReadonlySet<string>;
+  private readonly chat: Chat;
+  /** The log of the newest snapshot saved or resumed; null if it could not be opened. */
+  private inputLog: InputLog | null = null;
 
   private constructor(
     world: World,
@@ -87,6 +98,7 @@ export class WorldServer {
     http: Server,
     sockets: WebSocketServer,
     stuck: ReadonlySet<string>,
+    resumed: { tick: number; text: string } | null,
   ) {
     this.world = world;
     this.options = options;
@@ -95,6 +107,14 @@ export class WorldServer {
     this.stuck = stuck;
     this.now = options.now ?? (() => performance.now());
     this.savedTick = world.tick;
+    this.chat = new Chat({
+      ...(options.crowd ? { crowd: options.crowd } : {}),
+      ...(options.ignore ? { ignore: options.ignore } : {}),
+      start: world.tick,
+    });
+    // A new world is saved at once, so that every tick it steps is in a log beside a snapshot.
+    if (resumed) this.inputLog = this.openLog(resumed.tick, resumed.text);
+    else this.save();
     sockets.on("connection", (socket) => {
       // A bad frame or a message over maxPayload is reported here; without a
       // listener it would take the whole process down.
@@ -121,9 +141,14 @@ export class WorldServer {
     const stuck = new Set<string>();
     const resumed = loadNewest(options.dataDir, content, options.log, stuck);
     let world: World;
+    let replayed: { tick: number; text: string } | null = null;
     if (resumed) {
       world = resumed.world;
       options.log(`resumed ${resumed.file} at tick ${world.tick}`);
+      const tick = world.tick;
+      const { ticks, text } = replayLog(options.dataDir, world, options.log);
+      if (ticks > 0) options.log(`replayed ${ticks} ticks of its input log, to tick ${world.tick}`);
+      replayed = { tick, text };
     } else {
       world = createWorld(
         content.atlas,
@@ -132,7 +157,8 @@ export class WorldServer {
         content.kinds,
         content.spawns,
       );
-      step(world, spawnsNearCamp(world, castOf(options.residents)));
+      const cast = options.residents > 0 ? castOf(options.residents) : [];
+      step(world, spawnsNearCamp(world, cast));
       options.log(`no snapshot to resume; new world from seed ${options.seed}`);
     }
     const origins = options.origins ?? VIEWER_ORIGINS;
@@ -158,7 +184,17 @@ export class WorldServer {
         resolve();
       });
     });
-    return new WorldServer(world, options, http, sockets, stuck);
+    return new WorldServer(world, options, http, sockets, stuck, replayed);
+  }
+
+  /** Hands a chat event to the gate; what it makes is applied at a coming tick. */
+  hear(event: ChatEvent): void {
+    this.chat.hear(event, this.world.tick);
+  }
+
+  /** What the chat queue holds now. */
+  get waiting(): number {
+    return this.chat.queue.size;
   }
 
   get port(): number {
@@ -202,12 +238,25 @@ export class WorldServer {
    */
   save(): boolean {
     this.savedTick = this.world.tick;
+    // The old log is complete up to now either way: if this save fails, it goes on.
+    this.inputLog?.flush();
     try {
       saveSnapshot(this.options.dataDir, this.world, this.options.log, this.stuck);
-      return true;
     } catch (error) {
       this.options.log(`snapshot at tick ${this.world.tick} failed: ${String(error)}`);
       return false;
+    }
+    this.inputLog?.close();
+    this.inputLog = this.openLog(this.world.tick);
+    return true;
+  }
+
+  private openLog(tick: number, text = ""): InputLog | null {
+    try {
+      return new InputLog(this.options.dataDir, tick, this.options.log, text);
+    } catch (error) {
+      this.options.log(`could not start the input log for tick ${tick}: ${String(error)}`);
+      return null;
     }
   }
 
@@ -220,6 +269,8 @@ export class WorldServer {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     const saved = save ? this.save() : true;
+    this.inputLog?.close();
+    this.inputLog = null;
     for (const socket of this.sockets.clients) socket.terminate();
     this.sockets.close();
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -239,7 +290,9 @@ export class WorldServer {
   }
 
   private tick(): void {
-    step(this.world);
+    const inputs = this.chat.take(this.world.tick);
+    this.inputLog?.append(this.world.tick, inputs);
+    step(this.world, inputs);
     if (this.world.tick - this.savedTick >= this.options.snapshotTicks) this.save();
     this.send();
   }

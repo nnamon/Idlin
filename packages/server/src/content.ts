@@ -1,6 +1,7 @@
 // The shipped content the server runs: the world (its regions and exits), the
 // programs, and the monsters with their spawns, read from content/.
 import { readdirSync, readFileSync } from "node:fs";
+import { type Crowd, CrowdError, parseCrowd } from "@idlin/chat";
 import {
   type Atlas,
   compileBots,
@@ -34,6 +35,21 @@ function read(dir: URL, folder: string, extension: string): Record<string, strin
 
 const parsed = (files: Record<string, string>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(files).map(([name, text]) => [name, JSON.parse(text)]));
+
+/**
+ * A crowd file from content/chat/ by its name without `.txt`, such as
+ * `crowd-150`. Throws a CrowdError if it cannot be read as one.
+ */
+export function loadCrowd(name: string, dir: URL = CONTENT): Crowd {
+  if (!/^[a-z0-9_-]{1,64}$/.test(name)) throw new CrowdError(`"${name}" is not a crowd file name`);
+  let text: string;
+  try {
+    text = readFileSync(new URL(`chat/${name}.txt`, dir), "utf8");
+  } catch (error) {
+    throw new CrowdError(`cannot read the crowd file ${name}: ${String(error)}`);
+  }
+  return parseCrowd(text);
+}
 
 /** Throws a MapError, BotError, KindError or ProgramError if the content is bad. */
 export function loadContent(dir: URL = CONTENT): Content {

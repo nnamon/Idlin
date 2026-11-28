@@ -34,6 +34,7 @@ import { WebSocket } from "ws";
 import { castOf } from "../../client/src/cast.ts";
 import { shippedPrograms as botPrograms, botSources } from "../../sim/src/testing.ts";
 import { loadContent } from "./content.ts";
+import { logName } from "./inputlog.ts";
 import {
   CLOSE_DEADLINE_MS,
   MAX_VIEWERS,
@@ -148,7 +149,7 @@ describe("world server", () => {
     expect(listSnapshots(dir).map(tickOf)).toEqual([551, 501, 401]);
   });
 
-  it("after a kill, resumes from the last snapshot and runs on as if never stopped", async () => {
+  it("after a kill, resumes from the last snapshot and its log and runs on as if never stopped", async () => {
     const dir = tempDir();
     const first = await start(dir);
     first.advance(350);
@@ -158,10 +159,13 @@ describe("world server", () => {
 
     const lines: string[] = [];
     const second = await start(dir, lines);
-    expect(lines[0]).toBe("resumed world-0000000000000301.json at tick 301");
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(301)));
+    expect(lines).toEqual([
+      "resumed world-0000000000000301.json at tick 301",
+      "replayed 50 ticks of its input log, to tick 351",
+    ]);
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(351)));
     second.advance(700);
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(1001)));
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(1051)));
   });
 
   it("skips a damaged snapshot, or one of another version, for the one before, saying why", async () => {
@@ -180,12 +184,14 @@ describe("world server", () => {
 
     const lines: string[] = [];
     const second = await start(dir, lines);
-    expect(lines.slice(0, 3)).toEqual([
+    expect(lines.slice(0, 4)).toEqual([
       "skipping snapshot world-0000000000000301.json: snapshot is not valid JSON",
       `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4 to ${SNAPSHOT_VERSION}`,
       "resumed world-0000000000000101.json at tick 101",
+      "replayed 100 ticks of its input log, to tick 201",
     ]);
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(101)));
+    // The older snapshot's log runs up to the snapshot after it.
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(201)));
     // Refused files are kept aside and not tried again.
     expect(readdirSync(dir).filter((f) => f.endsWith(".bad"))).toHaveLength(2);
   });
@@ -207,7 +213,8 @@ describe("world server", () => {
     expect(lines[0]).toBe(
       "skipping snapshot world-0000000000000201.json: snapshot contents are damaged",
     );
-    expect(second.world.tick).toBe(101);
+    expect(lines[1]).toBe("resumed world-0000000000000101.json at tick 101");
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(201)));
   });
 
   it("goes on to an older snapshot when a bad one cannot be set aside, and does not save over it", async () => {
@@ -218,6 +225,8 @@ describe("world server", () => {
     servers.length = 0;
     const [newest] = listSnapshots(dir) as [string];
     writeFileSync(join(dir, newest), "{ not a snapshot");
+    // Without its log the older snapshot resumes at its own tick, so the next save lands on the bad one's name.
+    rmSync(join(dir, logName(101)));
     refuse.setAside = true;
 
     const lines: string[] = [];
@@ -324,7 +333,10 @@ describe("world server", () => {
       "  the spawns have changed",
       "resumed world-0000000000000500.json at tick 500",
     ]);
-    expect(readdirSync(dir)).toEqual(["world-0000000000000500.json"]);
+    expect(readdirSync(dir).sort()).toEqual([
+      "world-0000000000000500.json",
+      "world-0000000000000500.log",
+    ]);
     expect(server.world.actors).toEqual(without.actors);
     expect(server.world.spawns).toEqual(CONTENT.spawns);
     while (server.world.tick <= TICKS_PER_DAY && server.world.actors.length === RESIDENTS)

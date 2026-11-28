@@ -1,0 +1,13 @@
+# Fifteen chatters, the crowd a viewer's one citizen is among in captures.
+# The format is described at the top of packages/chat/src/crowd.ts.
+seed 15
+names joshyboy88 xXxKittyKatxXx goofguy pixel_pete moss_and_mud Ravenclaw_Rae dunkmaster3000 tinytoaster
+names quietkoala LuckyLuka_ brb_snacks SirNapsAlot frogsong_ zzz_jen OatmilkOtis
+streamer joshyboy88
+mods goofguy
+00:00 +6 regulars over 20s
+00:00 +3 talkers over 20s
+00:00 +3 commanders over 30s
+00:30 +2 lurkers over 1m
+01:00 +1 spammers
+00:05 goofguy: hello all

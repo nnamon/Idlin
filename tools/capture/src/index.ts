@@ -2,11 +2,13 @@
 // headless Chromium in capture mode (the page draws only when told to), steps
 // the world to each requested moment and saves a frame.
 //
-//   node tools/capture/src/index.ts <out-dir> [name:hour[:ticks[:width[:height]]]]...
+//   node tools/capture/src/index.ts <out-dir> [--chat <crowd>] [name:hour[:ticks[:width[:height]]]]...
 //   node tools/capture/src/index.ts <out-dir> --review [--baseline <dir>]
 //
 // The first form saves the named frames: `hour` is the game hour the world is
-// run forward to before the page draws, `ticks` are stepped after that.
+// run forward to before the page draws, `ticks` are stepped after that. With
+// `--chat crowd-15` the page reads content/chat/crowd-15.txt as its chat
+// (`?chat=crowd-15`), and the crowd's chatters are the citizens.
 //
 // `--review` writes what docs/watch-rubric.md asks for: storyboard.png,
 // residents-6.png, figures.png and its crops, burst.png, drift.png, fight.png,
@@ -69,7 +71,7 @@ if (typeof args === "string") {
   console.error(args);
   process.exit(2);
 }
-const { outDir, review, baseline, shots: wanted } = args;
+const { outDir, review, baseline, shots: wanted, chat } = args;
 // Read the baseline before anything else, so a wrong folder fails at once and not after the run.
 const before = baseline ? decodePng(await readFile(join(baseline, "storyboard.png"))) : null;
 
@@ -124,7 +126,8 @@ async function open(
   levels = false,
 ): Promise<void> {
   const fight = `${monsters ? "&monsters" : ""}${levels ? "&levels&deaths" : ""}`;
-  await page.goto(`${origin}/?capture&seed=1&hour=${hour}&crowd=${residents}${fight}`);
+  const people = chat === null ? `crowd=${residents}` : `chat=${chat}`;
+  await page.goto(`${origin}/?capture&seed=1&hour=${hour}&${people}${fight}`);
   await page.waitForSelector("body[data-ready], body[data-error]", { timeout: 30_000 });
   const failure = await page.evaluate(() => document.body.dataset.error ?? null);
   if (failure !== null) throw new Error(`the viewer failed to start: ${failure}`);

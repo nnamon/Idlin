@@ -7,6 +7,7 @@
     "start": "node src/main.ts"
   },
   "dependencies": {
+    "@idlin/chat": "workspace:*",
     "@idlin/sim": "workspace:*",
     "ws": "8.23.0"
   },

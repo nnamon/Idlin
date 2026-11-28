@@ -1,5 +1,6 @@
 // The world server: steps the simulation in real time, snapshots it, streams state.
-export { type Content, loadContent } from "./content.ts";
+export { type Content, loadContent, loadCrowd } from "./content.ts";
+export { FLUSH_TICKS, InputLog, logName, replayLog } from "./inputlog.ts";
 export { MAX_OWED_TICKS, Pacer } from "./pacer.ts";
 export {
   BUDGET_MS,

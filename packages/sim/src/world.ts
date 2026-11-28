@@ -31,6 +31,7 @@ import {
   stepOnto,
 } from "./grid.ts";
 import { hashInts, isInt32, show, stringInts } from "./hash.ts";
+import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./inputs.ts";
 import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
@@ -55,7 +56,8 @@ export const START_HOUR = 6;
 export const STEP_TICKS = 6;
 /** Ticks an actor waits for a blocked tile to clear before giving up its path. */
 export const BLOCKED_PATIENCE_TICKS = 10;
-export const MAX_NAME_LENGTH = 16;
+/** A chat username can be 25 characters, and a citizen is named by it. */
+export const MAX_NAME_LENGTH = 25;
 /** No actor's id reaches this; a world stops taking spawns first. */
 export const MAX_ACTOR_ID = 0x7fffffff;
 /** Ticks an adventurer rests at camp after being struck down, before its program runs again. */
@@ -479,14 +481,16 @@ export interface World {
   nodes: NodeState[];
 }
 
-export type Input = {
-  readonly type: "spawn";
-  readonly name: string;
-  /** The program to run; must be one of the world's. */
-  readonly program: string;
-  /** A monster kind from the world's table. Left out, the actor is an adventurer. */
-  readonly kind?: string;
-} & Point;
+export type Input =
+  | ({
+      readonly type: "spawn";
+      readonly name: string;
+      /** The program to run; must be one of the world's. */
+      readonly program: string;
+      /** A monster kind from the world's table. Left out, the actor is an adventurer. */
+      readonly kind?: string;
+    } & Point)
+  | ChatInput;
 
 /**
  * Validates a program table and returns a frozen copy with no prototype, so a
@@ -892,12 +896,17 @@ function applyInput(world: World, input: Input): void {
   let fields: Record<string, unknown>;
   try {
     // Read every field once, before anything changes, so a property that throws changes nothing.
-    const { type, name, x, y, program, kind } = raw as Record<string, unknown>;
-    fields = { type, name, x, y, program, kind };
+    const { type, name, x, y, program, kind, account, role } = raw as Record<string, unknown>;
+    fields = { type, name, x, y, program, kind, account, role };
   } catch {
     return;
   }
   const { type, name } = fields;
+  if (type === "join") {
+    join(world, fields.account, name, fields.role);
+    return;
+  }
+  // The other chat inputs have no effect yet (see inputs.ts).
   if (type !== "spawn") return;
   if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return;
   if (!isInt32(fields.x) || !isInt32(fields.y)) return;
@@ -922,6 +931,27 @@ function applyInput(world: World, input: Input): void {
     holdSpawns(world, region, world.tick + 1);
   }
   addActor(world, name, x, y, program, kind, "");
+}
+
+/**
+ * A chatter's first message makes their citizen: an adventurer named by their
+ * username, on NEWCOMER_PROGRAM, on the free tile nearest the camp. A name
+ * already in the world, in any capitals, is taken to be that chatter's
+ * citizen, so a second join changes nothing. The account is checked and not
+ * yet kept; the hatch, the name rule and colours from the account are C3's.
+ */
+function join(world: World, account: unknown, name: unknown, role: unknown): void {
+  if (typeof account !== "string" || !ACCOUNT.test(account)) return;
+  if (typeof name !== "string" || !USERNAME.test(name)) return;
+  if (!ROLES.some((each) => each === role)) return;
+  if (!Object.hasOwn(world.programs, NEWCOMER_PROGRAM)) return;
+  if (world.nextActorId >= MAX_ACTOR_ID) return;
+  const lower = name.toLowerCase();
+  if (world.actors.some((actor) => actor.kind === ADVENTURER && actor.name.toLowerCase() === lower))
+    return;
+  const at = freeTileNear(world, place(world.atlas, "camp"));
+  if (!at) return;
+  addActor(world, name, at.x, at.y, NEWCOMER_PROGRAM, ADVENTURER, "");
 }
 
 /**

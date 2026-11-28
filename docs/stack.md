@@ -5,9 +5,10 @@ TypeScript throughout, in a pnpm workspace. Everything runs in containers.
 | Part            | Choice                                  | Why                                                                                                                                                                           |
 | --------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Language        | TypeScript (strict) on Node 24          | The simulation runs unchanged in the server, the browser (replays and captures) and tests. One toolchain is less to maintain.                                                 |
-| Workspace       | pnpm workspace                          | `packages/sim`, `packages/server`, `packages/client`, `tools/capture`.                                                                                                        |
+| Workspace       | pnpm workspace                          | `packages/sim`, `packages/chat`, `packages/server`, `packages/client`, `tools/capture`.                                                                                       |
 | Simulation      | `packages/sim`, no runtime dependencies | Pure and deterministic: integers, a seeded generator, no clock. Holds the world, the bot VM, the Tactics compiler and item rolls (docs/items.md).                             |
-| Server          | `packages/server`, Node + `ws`          | Runs the world in real time, saves snapshots to `data/` and streams the world over a WebSocket on port 4311.                                                                  |
+| Chat            | `packages/chat`, depends on the sim     | Pure. The gate from a chat's messages to the world's inputs: the parser, flood control, the ignore list, the input queue, and the scripted crowd (docs/chat.md).              |
+| Server          | `packages/server`, Node + `ws`          | Runs the world in real time, saves snapshots and their input logs to `data/` and streams the world over a WebSocket on port 4311.                                             |
 | Viewer          | `packages/client`, Vite, Canvas 2D      | Draws the whole frame on one canvas with the browser's own drawing calls; no rendering library. It can also drive the sim itself from a seed, which is how captures are made. |
 | Captures        | `tools/capture`, Playwright (Chromium)  | Loads the viewer in capture mode, steps the clock, saves frames, and with `--review` the watch-review set and its metrics.                                                    |
 | Tests           | Vitest                                  | Unit tests beside the code; determinism and snapshot tests in `packages/sim`.                                                                                                 |
@@ -48,6 +49,15 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   the current tick and deletes the rest; snapshots at a later tick, which it
   could not resume from, are never deleted. An old snapshot that cannot be
   deleted is logged and left.
+  Beside each snapshot is its input log, `world-<tick>.log`, one line for each
+  tick stepped since with the inputs applied at it, written ten ticks at a
+  time. A new world is saved at once so that every tick is in a log. On start
+  the server replays the resumed snapshot's log up to its last whole line, so
+  a kill loses at most ten ticks; a torn or out-of-order line ends the replay
+  there, with a line in the log. A log is deleted once its snapshot is.
+  `IDLIN_CHAT=crowd:crowd-150` reads that crowd file from `content/chat/` as
+  the server's chat, from the tick it starts at, and a new world then starts
+  with no residents.
   Settings are environment variables, listed at the top of `main.ts`. Memory is capped at 256 MB. It takes up to 16
   viewers, only from the viewer's own page (`http://localhost:4310` or
   `http://127.0.0.1:4310`, plus any listed in `IDLIN_ORIGINS`, a
@@ -59,14 +69,19 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   be written makes it exit with status 1.
 - `client` runs the viewer with hot reload. By default it follows the server
   (`?server=ws://host:port` for another address). With `?local`, or with
-  `?seed=3`, `?hour=19` or `?crowd=50`, it drives the simulation itself instead.
+  `?seed=3`, `?hour=19`, `?crowd=50` or `?chat=crowd-15`, it drives the
+  simulation itself instead. `?chat=` reads a crowd file from `content/chat/`
+  as the world's chat, and its chatters are the citizens in place of the
+  residents.
   Until the server sends a world, and while it cannot be reached, the page says
   "waiting for the world". Until the first world arrives the clock shows a dash.
   Ports bind to 127.0.0.1 only.
 - `capture` is the Playwright image. It serves the built viewer, opens it in
   capture mode (`?capture`: the page draws only when told to, so a frame is a
   pure function of seed and tick) and saves frames. Arguments after the output
-  folder are `name:hour[:ticks[:width[:height]]]`. It also prints a flicker index.
+  folder are `name:hour[:ticks[:width[:height]]]`, and `--chat crowd-15` opens
+  the page with `?chat=crowd-15` for them; the `--review` set does not take a
+  crowd yet. It also prints a flicker index.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.
 
