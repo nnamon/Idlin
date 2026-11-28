@@ -38,10 +38,16 @@ import {
   DAMAGE_TYPES,
   type DamageType,
   type Defender,
+  type Element,
   FAMILY_HIT,
   FULL,
+  type Hit,
   hit,
+  MOST_DAMAGE,
   type Modifier,
+  monsterArmour,
+  RANKS,
+  type Rank,
   rollCrit,
 } from "./hit.ts";
 import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./inputs.ts";
@@ -58,6 +64,25 @@ import {
   type Skill,
   XP_PER_DAMAGE,
 } from "./skills.ts";
+import {
+  ARC_REACH,
+  ARC_SHARE,
+  BURN_JUMP_REACH,
+  CITIZEN_STATUS_TICKS,
+  LANDING_RESIST,
+  LOCKOUT_TICKS,
+  noStatus,
+  passTick,
+  SHATTER_REACH,
+  SHOCK_MORE,
+  STATUS_FIELDS,
+  STATUS_TICKS,
+  type Status,
+  setBurn,
+  slowed,
+  type Taker,
+  takeHit,
+} from "./status.ts";
 import {
   FAULTS,
   MEMORY_SLOTS,
@@ -120,8 +145,18 @@ export interface Kind {
   readonly reach: number;
   /** Ticks it takes to walk from one tile to the next, 2 to 30. STEP_TICKS when left out. */
   readonly step?: number;
+  /**
+   * A monster's rank and level, which set its armour, how long a status lasts
+   * on it and what part of a hit sets one (slice.md, section 4). Fodder of
+   * level 1 when left out. They are the kind's until monsters take their level
+   * from the ground they stand on.
+   */
+  readonly rank?: Rank;
+  readonly level?: number;
 }
 export type Kinds = Readonly<Record<string, Kind>>;
+/** The highest level a monster kind can be. */
+export const MOST_KIND_LEVEL = 99;
 
 /** The kind every adventurer is. Any other kind is a monster, and the two are enemies. */
 export const ADVENTURER = "adventurer";
@@ -133,14 +168,16 @@ export const ADVENTURER_KIND: Kind = Object.freeze({
   reach: 1,
   step: STEP_TICKS,
 });
-const KIND_LIMITS: Readonly<Record<keyof Kind, readonly [number, number]>> = {
+const KIND_LIMITS: Readonly<Record<Exclude<keyof Kind, "rank">, readonly [number, number]>> = {
   hp: [1, 100_000],
   damage: [0, 100_000],
   windup: [1, 100],
   recovery: [0, 100],
   reach: [1, 3],
   step: [2, 30],
+  level: [1, MOST_KIND_LEVEL],
 };
+const RANK_NAMES = Object.keys(RANKS) as Rank[];
 
 export class KindError extends Error {
   override name = "KindError";
@@ -159,11 +196,22 @@ export function checkKinds(kinds: Kinds): Kinds {
       const raw: unknown = kinds[name];
       if (typeof raw !== "object" || raw === null)
         throw new KindError(`kind "${name}" is not an object`);
-      const kind: Record<string, number> = {};
-      for (const field of Object.keys(KIND_LIMITS) as (keyof Kind)[]) {
+      const kind: Record<string, number | string> = {};
+      const givenRank: unknown = (raw as Record<string, unknown>).rank;
+      const rank = givenRank === undefined ? "fodder" : givenRank;
+      if (!RANK_NAMES.includes(rank as Rank))
+        throw new KindError(`kind "${name}": rank must be one of ${RANK_NAMES.join(", ")}`);
+      kind.rank = rank as Rank;
+      for (const field of Object.keys(KIND_LIMITS) as (keyof typeof KIND_LIMITS)[]) {
         const given: unknown = (raw as Record<string, unknown>)[field];
-        // A kind that does not say how fast it walks walks as adventurers do.
-        const value = field === "step" && given === undefined ? STEP_TICKS : given;
+        // A kind that does not say how fast it walks walks as adventurers do,
+        // and one that gives no level is level 1.
+        const value =
+          given === undefined && field === "step"
+            ? STEP_TICKS
+            : given === undefined && field === "level"
+              ? 1
+              : given;
         const [low, high] = KIND_LIMITS[field];
         if (!isInt32(value) || value < low || value > high)
           throw new KindError(
@@ -512,6 +560,8 @@ export interface Actor {
    * while a drink is missing, so 0 with a full flask, and always 0 for a monster.
    */
   kills: number;
+  /** The statuses hits have left on it, and their lockouts (status.ts). */
+  status: Status;
 }
 
 /**
@@ -672,11 +722,27 @@ const MELEE = SKILLS.indexOf("melee");
 /** An adventurer's Arms, which its Melee level stands in for until the deck's citizens have Arms. */
 export const armsOf = (actor: Actor): number => levelFor(actor.xp[MELEE] as number);
 
-/** An actor's wind-up and recovery: its weapon's at its Arms for an adventurer, its kind's for a monster. */
-export const blowTimesOf = (world: World, actor: Actor): BlowTimes =>
-  actor.weapon === ""
-    ? { ...kindOf(world, actor), carry: 0 }
-    : blowTimes(actor.weapon, armsOf(actor));
+/**
+ * An actor's wind-up and recovery: its weapon's at its Arms for an
+ * adventurer, its kind's for a monster, and half as long again while it is chilled.
+ */
+export function blowTimesOf(world: World, actor: Actor): BlowTimes {
+  const { windup, recovery } =
+    actor.weapon === "" ? kindOf(world, actor) : blowTimes(actor.weapon, armsOf(actor));
+  if (actor.status.chill === 0) return { windup, recovery, carry: 0 };
+  return { windup: slowed(windup), recovery: slowed(recovery), carry: 0 };
+}
+
+/** A monster's rank and level; an adventurer has neither, and reads as level-1 fodder. */
+export const rankOf = (world: World, actor: Actor): Rank => kindOf(world, actor).rank ?? "fodder";
+export const levelOf = (world: World, actor: Actor): number => kindOf(world, actor).level ?? 1;
+
+/** The element of the landing that (x, y) is on, if it has one. */
+export function elementAt(world: World, x: number, y: number): Element | undefined {
+  const { atlas } = world;
+  const element = (atlas.regions[regionAt(atlas, x, y)] as Region).map.element;
+  return element === "none" ? undefined : element;
+}
 
 /** How far an actor's blow reaches, as `weapon_reach` reads it. */
 export const reachOf = (world: World, actor: Actor): number =>
@@ -876,6 +942,34 @@ export type WorldEvent =
       readonly x: number;
       readonly y: number;
       readonly stopped: boolean;
+    }
+  | {
+      /** A hit, a burn's jump or a shatter set a status on an actor (status.ts). */
+      readonly type: "status";
+      readonly tick: number;
+      readonly actor: number;
+      /** Who set it: the one who struck, the burn's setter, or the monster that shattered. */
+      readonly by: number;
+      readonly status: StatusName;
+    }
+  | {
+      /** A second of a burn did its damage. */
+      readonly type: "burn";
+      readonly tick: number;
+      readonly actor: number;
+      /** Who set the burn, whose kill it is. */
+      readonly by: number;
+      readonly damage: number;
+      /** Its hitpoints afterwards. */
+      readonly hp: number;
+    }
+  | {
+      /** A frozen monster went down and shattered at (x, y). */
+      readonly type: "shatter";
+      readonly tick: number;
+      readonly actor: number;
+      readonly x: number;
+      readonly y: number;
     };
 
 /**
@@ -904,31 +998,107 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
 /** No gear is worn yet, so no blow carries a line. */
 const NO_LINES: readonly Modifier[] = [];
 const UNARMOURED: Defender = { armour: 0 };
+/** What a shocked target takes from every hit. */
+const SHOCKED: Modifier = { kind: "more", pct: SHOCK_MORE };
 
 /**
  * What an actor swings with. An adventurer's blow is the base blow of its
  * Arms, with its weapon family's share of the hit. A monster's is its kind's
- * damage, until monsters have ranks and levels.
+ * damage, half of it as the element of the landing it stands on.
  */
-function swingerOf(actor: Actor, kind: Kind): Attacker {
-  if (actor.weapon === "") return { blow: kind.damage, family: FULL };
+export function swingerOf(world: World, actor: Actor, kind: Kind): Attacker {
+  if (actor.weapon === "") {
+    const element = elementAt(world, actor.x, actor.y);
+    return element === undefined
+      ? { blow: kind.damage, family: FULL }
+      : { blow: kind.damage, family: FULL, element };
+  }
   return { blow: blow(armsOf(actor)), family: FAMILY_HIT[actor.weapon] };
 }
 
-/** One hit by `attacker` on `target`, worked out by `hit`, and the experience it gives. */
-function strike(
+/**
+ * What a hit meets on `target`. Nobody wears armour yet: coats come with
+ * wearing gear. A brute or an elite has armour of four times its level, and a
+ * monster resists the element of the landing it stands on by 40%.
+ */
+export function defenderOf(world: World, target: Actor): Defender {
+  if (target.kind === ADVENTURER) return UNARMOURED;
+  const armour = monsterArmour(rankOf(world, target), levelOf(world, target));
+  const element = elementAt(world, target.x, target.y);
+  return element === undefined ? { armour } : { armour, resist: { [element]: LANDING_RESIST } };
+}
+
+/** How long a status lasts on `actor`. */
+const statusTicks = (world: World, actor: Actor): number =>
+  actor.kind === ADVENTURER ? CITIZEN_STATUS_TICKS : STATUS_TICKS[rankOf(world, actor)];
+
+/** Who `takeHit` is told it sets statuses on. */
+function takerOf(world: World, actor: Actor): Taker {
+  const citizen = actor.kind === ADVENTURER;
+  return {
+    citizen,
+    life: kindOf(world, actor).hp,
+    level: citizen ? 1 : levelOf(world, actor),
+    ticks: statusTicks(world, actor),
+  };
+}
+
+/**
+ * The living monster other than `from` that `fits`, nearest it within `reach`
+ * steps (as a king moves) in its region; of those as near, the first in
+ * update order.
+ */
+function nearestOther(
+  world: World,
+  from: Actor,
+  reach: number,
+  fits: (other: Actor) => boolean,
+): Actor | undefined {
+  let best: Actor | undefined;
+  let bestSteps = reach + 1;
+  for (const other of world.actors) {
+    if (other === from || other.hp <= 0 || other.kind === ADVENTURER || !fits(other)) continue;
+    const steps = Math.max(Math.abs(other.x - from.x), Math.abs(other.y - from.y));
+    if (steps < bestSteps && sameRegion(world, other, from)) {
+      best = other;
+      bestSteps = steps;
+    }
+  }
+  return best;
+}
+
+/**
+ * One hit by `attacker` on `target`, worked out by `hit`, and the experience
+ * it gives; `struck` records who struck the target last. A target still
+ * standing takes the hit's statuses: a stagger starts its wind-up again. A hit
+ * on a shocked target takes 20% more, and on a shocked monster arcs to the
+ * nearest other monster within 3 tiles for 30% of its lightning part. An arc
+ * is a hit that leaves no status and does not arc again. Returns the hit.
+ * `lines` are the attacker's; nobody wears gear yet, so only tests pass any.
+ */
+export function strike(
   world: World,
   attacker: Actor,
   target: Actor,
   swinger: Attacker,
   crit: boolean,
   events: WorldEvent[],
-): void {
-  // Nobody wears armour yet: coats come with wearing gear.
-  const { amount, type } = hit(swinger, UNARMOURED, NO_LINES, crit);
+  struck: Map<number, number>,
+  lines: readonly Modifier[] = NO_LINES,
+  arc = false,
+): Hit {
+  const shocked = target.status.shock > 0;
+  const result = hit(
+    swinger,
+    defenderOf(world, target),
+    shocked ? [...lines, SHOCKED] : lines,
+    crit,
+  );
+  const { amount, type } = result;
   // Experience counts the hitpoints a blow actually took, not what it would have.
   const taken = Math.min(amount, target.hp);
   target.hp -= amount;
+  struck.set(target.id, attacker.id);
   events.push({
     type: "hit",
     tick: world.tick,
@@ -943,6 +1113,64 @@ function strike(
   const skill: Skill = learner === attacker ? "melee" : "hitpoints";
   const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
   if (level > 0) events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
+  if (arc || target.hp <= 0) return result;
+  const took = takeHit(target.status, result.parts, takerOf(world, target), attacker.id);
+  // Broken off, the wind-up starts again from the beginning.
+  if (took.stagger && target.windup > 0) target.windup = blowTimesOf(world, target).windup;
+  for (const status of STATUS_NAMES)
+    if (took[status])
+      events.push({ type: "status", tick: world.tick, actor: target.id, by: attacker.id, status });
+  const lightning = result.parts[3];
+  if (!shocked || target.kind === ADVENTURER || lightning === 0) return result;
+  const share = (lightning * ARC_SHARE - ((lightning * ARC_SHARE) % FULL)) / FULL;
+  const next = share > 0 && nearestOther(world, target, ARC_REACH, (o) => enemies(o, attacker));
+  if (next) {
+    const added: Modifier = { kind: "added", type: "lightning", amount: share };
+    strike(world, attacker, next, { blow: 0, family: FULL }, false, events, struck, [added], true);
+  }
+  return result;
+}
+
+/** The statuses a hit can leave, as its events name them. */
+const STATUS_NAMES = ["stagger", "burn", "chill", "freeze", "shock"] as const;
+export type StatusName = (typeof STATUS_NAMES)[number];
+
+/**
+ * Counts every actor's statuses down a tick. A burn that has burnt a whole
+ * second does its damage, which can down a body, and is its setter's blow; at
+ * its first second a burn set by a hit jumps, at half strength, to the
+ * nearest monster within a tile that is not burning, and that burn does not
+ * jump. The jumps are set once every count is down, so a burn is never
+ * counted on the tick it is set.
+ */
+function passStatuses(world: World, events: WorldEvent[], struck: Map<number, number>): void {
+  const jumps: { from: Actor; strength: number; by: number }[] = [];
+  for (const actor of world.actors) {
+    if (actor.hp <= 0) continue;
+    const { burnBy: by, burnDamage } = actor.status;
+    const { burnt, jump } = passTick(actor.status);
+    if (burnt > 0) {
+      actor.hp -= burnt;
+      struck.set(actor.id, by);
+      events.push({
+        type: "burn",
+        tick: world.tick,
+        actor: actor.id,
+        by,
+        damage: burnt,
+        hp: actor.hp,
+      });
+    }
+    const strength = (burnDamage - (burnDamage % 2)) / 2;
+    if (jump && strength > 0 && actor.kind !== ADVENTURER)
+      jumps.push({ from: actor, strength, by });
+  }
+  for (const { from, strength, by } of jumps) {
+    const next = nearestOther(world, from, BURN_JUMP_REACH, (o) => o.status.burn === 0);
+    if (!next) continue;
+    setBurn(next.status, strength, by, 0, statusTicks(world, next));
+    events.push({ type: "status", tick: world.tick, actor: next.id, by, status: "burn" });
+  }
 }
 
 /**
@@ -1066,9 +1294,9 @@ function flyArrows(
     const target = met ?? firstAt(grid, x, y, inWay);
     if (target) {
       const swinger = { blow: arrow.blow, family: FAMILY_HIT.bow };
-      strike(world, shooter, target, swinger, arrow.crit, events);
-      struck.set(target.id, shooter.id);
-      push(target, arrow.aim, WEAPONS.bow.knockback, shooter.id);
+      const { parts } = strike(world, shooter, target, swinger, arrow.crit, events, struck);
+      // Knockback is physical: a hit with no physical part pushes nobody.
+      if (parts[0] > 0) push(target, arrow.aim, WEAPONS.bow.knockback, shooter.id);
       continue;
     }
     if (arrow.left <= 1) {
@@ -1081,8 +1309,10 @@ function flyArrows(
 }
 
 /**
- * Flies the arrows, counts every wind-up down, lands the blows that are due,
- * and takes out whoever has no hitpoints left.
+ * Counts the statuses down and burns, flies the arrows, counts every wind-up
+ * down but a frozen one, lands the blows that are due, and takes out whoever
+ * has no hitpoints left. A frozen monster that goes down shatters and chills
+ * every monster within 2 tiles.
  */
 function landAttacks(world: World, events: WorldEvent[]): void {
   // Who struck each target last, which is who downs it.
@@ -1102,10 +1332,11 @@ function landAttacks(world: World, events: WorldEvent[]): void {
   // Bodies are knocked back while blows land, so the grid is kept in step with them.
   holdGrid(world);
   try {
+    passStatuses(world, events, struck);
     flyArrows(world, events, struck, push);
     const grid = gridOf(world);
     for (const attacker of world.actors) {
-      if (attacker.windup === 0) continue;
+      if (attacker.windup === 0 || attacker.status.freeze > 0) continue;
       attacker.windup--;
       // Someone struck down earlier this tick does not get its own blow in.
       if (attacker.windup > 0 || attacker.hp <= 0) continue;
@@ -1113,7 +1344,7 @@ function landAttacks(world: World, events: WorldEvent[]): void {
       attacker.recover = blowTimesOf(world, attacker).recovery;
       landed.add(attacker.id);
       const citizen = attacker.kind === ADVENTURER;
-      const swinger = swingerOf(attacker, kind);
+      const swinger = swingerOf(world, attacker, kind);
       // One roll a swing, however many it lands on; monsters do not crit.
       const crit = citizen && rollCrit(world.rng, NO_LINES);
       if (attacker.weapon === "bow") {
@@ -1139,17 +1370,20 @@ function landAttacks(world: World, events: WorldEvent[]): void {
           events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
         targets.push(...here);
       }
-      for (const target of targets) {
-        strike(world, attacker, target, swinger, crit, events);
-        struck.set(target.id, attacker.id);
-      }
+      // Knockback is physical: one hit with no physical part is not pushed.
+      // One an arc from this blow has downed already is passed by.
+      const pushed = targets.filter(
+        (target) =>
+          target.hp > 0 &&
+          strike(world, attacker, target, swinger, crit, events, struck).parts[0] > 0,
+      );
       // The farthest along the blow is pushed first, so one in front is not
       // stopped by the one behind it a moment before that one moves. Bodies
       // as far along keep the order they were hit in.
       const quarters = attacker.weapon === "" ? 0 : WEAPONS[attacker.weapon].knockback;
       const [ax, ay] = DIRECTIONS[attacker.aim] as readonly [number, number];
       const along = (t: Actor): number => (t.x - attacker.x) * ax + (t.y - attacker.y) * ay;
-      const order = targets.map((target, i) => ({ target, i, far: along(target) }));
+      const order = pushed.map((target, i) => ({ target, i, far: along(target) }));
       order.sort((p, q) => q.far - p.far || p.i - q.i);
       for (const { target } of order) push(target, attacker.aim, quarters, attacker.id);
     }
@@ -1174,6 +1408,23 @@ function landAttacks(world: World, events: WorldEvent[]): void {
   const gone = new Set(out.map((actor) => actor.id));
   world.marks = world.marks.filter((mark) => !gone.has(mark.by));
   world.actors = world.actors.filter((actor) => actor.hp > 0 || actor.kind === ADVENTURER);
+  for (const actor of out) {
+    if (actor.kind === ADVENTURER || actor.status.freeze === 0) continue;
+    events.push({ type: "shatter", tick: world.tick, actor: actor.id, x: actor.x, y: actor.y });
+    for (const other of world.actors) {
+      const steps = Math.max(Math.abs(other.x - actor.x), Math.abs(other.y - actor.y));
+      if (other.kind === ADVENTURER || other.hp <= 0 || steps > SHATTER_REACH) continue;
+      if (!sameRegion(world, other, actor)) continue;
+      other.status.chill = statusTicks(world, other);
+      events.push({
+        type: "status",
+        tick: world.tick,
+        actor: other.id,
+        by: actor.id,
+        status: "chill",
+      });
+    }
+  }
   // One that dies is replaced a wait later at the earliest, in the region it was in.
   for (const actor of out)
     if (actor.kind !== ADVENTURER) holdSpawns(world, regionAt(world.atlas, actor.x, actor.y));
@@ -1208,6 +1459,7 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     // Camp stands in for the deck, where a flask fills again, until the deck is built.
     actor.flask = FLASK_DRINKS;
     actor.kills = 0;
+    actor.status = noStatus();
   }
 }
 
@@ -1542,10 +1794,13 @@ function addActor(
     knockY: 0,
     flask: adventurer ? FLASK_DRINKS : 0,
     kills: 0,
+    status: noStatus(),
   });
 }
 
 function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
+  // Frozen stock still: nothing it was doing goes on.
+  if (actor.status.freeze > 0) return;
   // Committed to an attack, or getting its balance back after one.
   if (actor.windup > 0) return;
   if (actor.recover > 0) {
@@ -1603,9 +1858,11 @@ function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
   actor.moveTicksLeft = stepTicks(world, actor);
 }
 
-/** Ticks `actor` takes to walk from one tile to the next. */
-export const stepTicks = (world: World, actor: Actor): number =>
-  kindOf(world, actor).step ?? STEP_TICKS;
+/** Ticks `actor` takes to walk from one tile to the next, half as long again while it is chilled. */
+export function stepTicks(world: World, actor: Actor): number {
+  const ticks = kindOf(world, actor).step ?? STEP_TICKS;
+  return actor.status.chill > 0 ? slowed(ticks) : ticks;
+}
 
 /** Spawn inputs that put the given actors on the free walkable tiles nearest the camp, in order. */
 export function spawnsNearCamp(
@@ -1679,7 +1936,9 @@ export const hashProgram = (name: string, program: Program): string =>
  * A kind that walks at STEP_TICKS hashes as kinds did before they had a
  * `step`, so snapshots saved then still match; any other step follows its
  * numbers as -1 and the step. Nothing else can stand there (the next kind's
- * name starts with its length), so the two forms never read the same.
+ * name starts with its length), so the two forms never read the same. In the
+ * same way, a kind that is not level-1 fodder adds -3, its rank's place in
+ * RANKS and its level.
  */
 export function hashKinds(kinds: Kinds): string {
   return hashInts(
@@ -1688,6 +1947,8 @@ export function hashKinds(kinds: Kinds): string {
       .flatMap((name) => {
         const kind = kinds[name] as Kind;
         const step = kind.step ?? STEP_TICKS;
+        const rank = kind.rank ?? "fodder";
+        const level = kind.level ?? 1;
         return [
           ...stringInts(name),
           kind.hp,
@@ -1696,6 +1957,7 @@ export function hashKinds(kinds: Kinds): string {
           kind.recovery,
           kind.reach,
           ...(step === STEP_TICKS ? [] : [-1, step]),
+          ...(rank === "fodder" && level === 1 ? [] : [-3, RANK_NAMES.indexOf(rank), level]),
         ];
       }),
   );
@@ -1717,9 +1979,9 @@ const halves = (n: number): number[] => [
  * they hashed that map and, in versions 5 and 6, one `nextSpawn`. Version 4
  * had no spawn table, no `nextSpawn`, and no `shift` or `stalled` on actors,
  * versions 4 and 5 had no experience, bag or bank, versions before 8 no
- * death count, versions before 9 no nodes, and versions before 10 no
- * weapons, aims, knockback, flasks or arrows, so those are left out. Banks
- * before version 9 held the first V8_GOODS goods only.
+ * death count, versions before 9 no nodes, versions before 10 no weapons,
+ * aims, knockback, flasks or arrows, and versions before 11 no statuses, so
+ * those are left out. Banks before version 9 held the first V8_GOODS goods only.
  */
 function hashWorldAs(world: World, version: number): string {
   const { atlas } = world;
@@ -1752,6 +2014,7 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
   const before8 = version < 8;
   const before9 = version < 9;
   const before10 = version < 10;
+  const before11 = version < 11;
   return hashInts([
     ...stringInts(prints.map),
     ...stringInts(prints.programs),
@@ -1790,6 +2053,7 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
       ...(before10
         ? []
         : [FAMILIES.indexOf(a.weapon as Family), a.aim, a.knockX, a.knockY, a.flask, a.kills]),
+      ...(before11 ? [] : STATUS_FIELDS.map((field) => a.status[field])),
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
@@ -1838,7 +2102,7 @@ export function hashSpawns(spawns: Spawns): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 10;
+export const SNAPSHOT_VERSION = 11;
 /** How many goods there were up to version 8: `logs`, `raw_fish` and `cooked_fish`. */
 const V8_GOODS = 3;
 
@@ -2059,7 +2323,21 @@ export function migrate(version: number, state: unknown, atlas: Atlas): unknown 
   const v7 = old ? fromVersion6(v6) : v6;
   const v8 = version < 8 ? fromVersion7(v7) : v7;
   const v9 = version < 9 ? fromVersion8(v8, atlas) : v8;
-  return version < 10 ? fromVersion9(v9) : v9;
+  const v10 = version < 10 ? fromVersion9(v9) : v9;
+  return version < 11 ? fromVersion10(v10) : v10;
+}
+
+/** A version 10 world's state with what version 11 added: nobody has a status. */
+function fromVersion10(state: unknown): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return state;
+  return {
+    ...state,
+    actors: actors.map((actor: unknown) =>
+      typeof actor === "object" && actor !== null ? { ...actor, status: noStatus() } : actor,
+    ),
+  };
 }
 
 /**
@@ -2152,7 +2430,8 @@ function callOffOldBlows(state: unknown): unknown {
  * from before version 8, nobody has died yet. In one from before version 9,
  * every node stands with its full yield and nobody has a burnt fish. In one
  * from before version 10, every adventurer holds a blade and a full flask,
- * and its wind-up, if it was in one, is called off.
+ * and its wind-up, if it was in one, is called off. In one from before
+ * version 11, nobody has a status.
  */
 export const restore = (
   text: string,
@@ -2201,8 +2480,8 @@ function restoreSaved(
       throw new SnapshotError("snapshot contents are damaged");
     return world;
   }
-  // An older world is checked against its hash as it was saved, before its
-  // adventurers' blows are fitted to version 10's weapons.
+  // An older world is checked against its hash as it was saved, before the
+  // blows of adventurers from before version 10 are fitted to its weapons.
   let hashed: string;
   try {
     const content = { atlas, programs: table, kinds: kindTable, spawns: spawnTable };
@@ -2210,10 +2489,8 @@ function restoreSaved(
   } catch {
     throw new SnapshotError("snapshot contents are damaged");
   }
-  const world =
-    hashed === hash
-      ? readState(callOffOldBlows(migrated), atlas, table, kindTable, spawnTable)
-      : null;
+  const fitted = version < 10 ? callOffOldBlows(migrated) : migrated;
+  const world = hashed === hash ? readState(fitted, atlas, table, kindTable, spawnTable) : null;
   if (!world) throw new SnapshotError("snapshot contents are damaged");
   return world;
 }
@@ -2456,7 +2733,10 @@ export function readState(
       knockY,
       flask,
       kills,
+      status: rawStatus,
     } = item as Record<string, unknown>;
+    const status = readStatus(rawStatus, nextActorId);
+    if (!status) return null;
     // An adventurer holds a weapon of one of the families, and a monster none.
     if (kind === ADVENTURER ? !FAMILIES.includes(weapon as Family) : weapon !== "") return null;
     // A monster strikes along the four axes only.
@@ -2488,11 +2768,11 @@ export function readState(
     const stepped = (p: Point, q: Point): boolean =>
       stepsFor(atlas, adventurer, p.x, p.y, q.x, q.y);
     const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
-    // A blow takes longest at Arms 1.
+    // A blow takes longest at Arms 1, and half as long again begun chilled.
     const longest = kind === ADVENTURER ? WEAPONS[weapon as Family] : numbers;
     if (!isInt32(hp) || hp < 1 || hp > numbers.hp) return null;
-    if (!isInt32(windup) || windup < 0 || windup > longest.windup) return null;
-    if (!isInt32(recover) || recover < 0 || recover > longest.recovery) return null;
+    if (!isInt32(windup) || windup < 0 || windup > slowed(longest.windup)) return null;
+    if (!isInt32(recover) || recover < 0 || recover > slowed(longest.recovery)) return null;
     if (windup > 0 && recover > 0) return null;
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
     if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
@@ -2500,7 +2780,7 @@ export function readState(
     const region = regionAt(atlas, x, y);
     if (!adventurer) monsters.set(region, (monsters.get(region) ?? 0) + 1);
     if ((monsters.get(region) ?? 0) > MONSTER_CEILING) return null;
-    const stepLength = numbers.step ?? STEP_TICKS;
+    const stepLength = slowed(numbers.step ?? STEP_TICKS);
     if (!isInt32(moveTicksLeft) || moveTicksLeft < 0 || moveTicksLeft > stepLength) return null;
     const here = { x, y };
     const from = { x: fromX, y: fromY };
@@ -2562,6 +2842,7 @@ export function readState(
       knockY: knockY as number,
       flask,
       kills,
+      status,
     });
   }
   // Only adventurers share a tile.
@@ -2600,6 +2881,44 @@ export function readState(
   if (!arrows) return null;
   world.arrows = arrows;
   return world;
+}
+
+/** The longest any status lasts, on fodder, pack monsters and citizens. */
+const LONGEST_STATUS = Math.max(CITIZEN_STATUS_TICKS, ...Object.values(STATUS_TICKS));
+
+/**
+ * A copy of an actor's status if `value` is one a world could hold, else
+ * null: every count within the longest its status lasts, a burn's numbers 0
+ * while it does not burn, its setter an id handed out already, and nobody
+ * frozen while its lockout from the last freeze runs.
+ */
+function readStatus(value: unknown, nextActorId: number): Status | null {
+  if (!isPlainObject(value)) return null;
+  const status = noStatus();
+  const most: Record<keyof Status, number> = {
+    burn: LONGEST_STATUS,
+    burnDamage: MOST_DAMAGE,
+    burnBy: nextActorId - 1,
+    burnJumps: 1,
+    chill: LONGEST_STATUS,
+    freeze: LONGEST_STATUS / 2,
+    shock: LONGEST_STATUS,
+    staggerLock: LOCKOUT_TICKS,
+    freezeLock: LOCKOUT_TICKS,
+  };
+  for (const field of STATUS_FIELDS) {
+    const n = own(value, field);
+    if (!isInt32(n) || n < 0 || n > most[field]) return null;
+    status[field] = n;
+  }
+  if (
+    status.burn === 0 &&
+    (status.burnDamage !== 0 || status.burnBy !== 0 || status.burnJumps !== 0)
+  )
+    return null;
+  if (status.burn > 0 && status.burnBy < 1) return null;
+  if (status.freeze > 0 && status.freezeLock > 0) return null;
+  return status;
 }
 
 /** The base blow at the highest Arms, which no arrow is loosed harder than. */

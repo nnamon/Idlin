@@ -89,6 +89,8 @@ describe("monsters from content", () => {
         recovery: stats.recovery,
         reach: stats.reach,
         step: stats.step ?? STEP_TICKS,
+        rank: stats.rank ?? "fodder",
+        level: stats.level ?? 1,
       });
       const spawn = MONSTERS.spawns.find((s) => s.kind === kind);
       const range = (value: unknown) => (Array.isArray(value) ? value : [value, value]);

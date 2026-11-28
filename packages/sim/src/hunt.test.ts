@@ -355,7 +355,7 @@ describe("wolves walk faster and come in packs by night", () => {
     expect(hashSpawns([{ ...bare, most: 3 }])).not.toBe(hashSpawns([bare]));
   });
 
-  it("a snapshot holds a wolf partway through a step, and refuses one further into a step than a wolf's", () => {
+  it("a snapshot holds a wolf partway through a step, and refuses one further into a step than a chilled wolf's", () => {
     const world = night(WOLF_SPAWNS, [person("Ash", "runner", 29, 3)]);
     let moving: Actor | undefined;
     for (let t = 0; t < 200 && !moving; t++) {
@@ -367,17 +367,25 @@ describe("wolves walk faster and come in packs by night", () => {
     expect(restore(saved, ATLAS, PROGRAMS, MONSTERS.kinds, WOLF_SPAWNS)).toEqual(world);
     const data = JSON.parse(saved);
     const index = world.actors.indexOf(moving as Actor);
-    data.state.actors[index].moveTicksLeft = 5;
-    data.hash = hashWorld({
-      ...data.state,
-      atlas: world.atlas,
-      programs: world.programs,
-      kinds: world.kinds,
-      spawns: world.spawns,
-    });
-    expect(() =>
-      restore(JSON.stringify(data), ATLAS, PROGRAMS, MONSTERS.kinds, WOLF_SPAWNS),
-    ).toThrow(/damaged/);
+    // A step begun chilled takes half as long again, 6 ticks for a wolf, and
+    // may still be under way after the chill is gone; 7 is more than any takes.
+    const rehash = (moveTicksLeft: number): string => {
+      data.state.actors[index].moveTicksLeft = moveTicksLeft;
+      data.hash = hashWorld({
+        ...data.state,
+        atlas: world.atlas,
+        programs: world.programs,
+        kinds: world.kinds,
+        spawns: world.spawns,
+      });
+      return JSON.stringify(data);
+    };
+    expect(
+      restore(rehash(6), ATLAS, PROGRAMS, MONSTERS.kinds, WOLF_SPAWNS).actors[index],
+    ).toMatchObject({ moveTicksLeft: 6 });
+    expect(() => restore(rehash(7), ATLAS, PROGRAMS, MONSTERS.kinds, WOLF_SPAWNS)).toThrow(
+      /damaged/,
+    );
   });
 });
 

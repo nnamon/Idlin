@@ -46,17 +46,23 @@ describe("a tick at scale", () => {
     // (see wayTo in brain.ts); and by the weapons (#393): a blade's arc, times
     // and knockback, the wolf's hitpoints, and the fields snapshot version 10
     // hashes; and by bodies in a row being pushed from the far end (#398).
-    expect(hashWorld(world)).toBe("845d29c3f38cdb9e");
-    // Over the 300 ticks: some 3,800 field tiles and 3,100 search tiles a
+    // Changed by the statuses (#402): a hit of a tenth of a monster's life
+    // staggers it, and version 11 hashes every actor's statuses. With no
+    // stagger and the version 10 hash it is 845d29c3f38cdb9e again, with the
+    // same work counts.
+    expect(hashWorld(world)).toBe("c9c56e2a16e6f737");
+    // Over the 300 ticks: some 3,150 field tiles and 2,600 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
     // 83,000 tiles a tick off their queues at this load. A blow now moves every
     // body in a row it hits that has room, and a body that is moved loses its
     // walk and finds a new one, which took the counts up from 3,400 and 2,800.
+    // A staggered monster stands through its wind-up again instead of
+    // walking, which brought them down from 3,800 and 3,100.
     expect(workOf(world)).toEqual({
-      fieldTiles: 1_129_842,
-      fields: 2_753,
-      searchTiles: 934_354,
-      actors: 2_382_719,
+      fieldTiles: 945_674,
+      fields: 2_754,
+      searchTiles: 780_738,
+      actors: 2_318_352,
     });
   });
 

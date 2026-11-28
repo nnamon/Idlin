@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atlasOf } from "./atlas.ts";
+import { atlasOf, hashMap } from "./atlas.ts";
 import { isWalkable, MapError, parseMap, place, terrainAt } from "./map.ts";
 import { firstLight, rawFirstLight } from "./testing.ts";
 
@@ -96,5 +96,17 @@ describe("parseMap", () => {
     const raw = rawFirstLight();
     (raw.rows as string[])[8] = "t,,,,,,....:cccLccc:::::~~::::";
     expect(() => atlasOf(parseMap(raw))).toThrow(/cannot be reached from camp/);
+  });
+});
+
+describe("hashMap", () => {
+  it("tells maps apart by their element, and hashes a map with none as before", () => {
+    const map = firstLight();
+    const base = hashMap(map);
+    expect(hashMap({ ...map, element: "none" })).toBe(base);
+    const fire = hashMap({ ...map, element: "fire" });
+    const cold = hashMap({ ...map, element: "cold" });
+    const lightning = hashMap({ ...map, element: "lightning" });
+    expect(new Set([base, fire, cold, lightning]).size).toBe(4);
   });
 });

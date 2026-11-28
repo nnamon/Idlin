@@ -10,6 +10,7 @@ import { type Atlas, atlasOf, pointOf, regionAt, walkable } from "./atlas.ts";
 import { fullNodes } from "./gather.ts";
 import { isInt32 } from "./hash.ts";
 import type { Point, TileMap } from "./map.ts";
+import { type Status, slowed } from "./status.ts";
 import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import { DIRECTIONS, FAMILIES, type Family, WEAPONS } from "./weapons.ts";
 import {
@@ -83,6 +84,8 @@ interface Fitting {
   recover: number;
   readonly weapon: string;
   readonly aim: number;
+  /** Passed on as it is, and read for a chill, which makes steps and blows longer. */
+  readonly status: Status;
 }
 
 function readActor(item: unknown): Fitting {
@@ -96,6 +99,9 @@ function readActor(item: unknown): Fitting {
   if (!ints.every(isInt32)) damaged();
   const steps = plainList(path, MOST);
   if (!steps) damaged();
+  // readState judges the rest of a status; a chill is read here and must be a count.
+  const { status } = item;
+  if (!isRecord(status) || !isInt32(status.chill)) damaged();
   return {
     item,
     id: id as number,
@@ -121,6 +127,7 @@ function readActor(item: unknown): Fitting {
     recover: recover as number,
     weapon,
     aim,
+    status: status as unknown as Status,
   };
 }
 
@@ -302,8 +309,10 @@ export function adopt(
     }
     // An adventurer's blow takes longest at Arms 1; readState refuses a weapon that is none of the families.
     const longest = FAMILIES.includes(a.weapon as Family) ? WEAPONS[a.weapon as Family] : numbers;
-    a.windup = Math.min(a.windup, longest.windup);
-    a.recover = Math.min(a.recover, longest.recovery);
+    // A chilled one's blow takes half as long again.
+    const chilled = (n: number): number => (a.status.chill > 0 ? slowed(n) : n);
+    a.windup = Math.min(a.windup, chilled(longest.windup));
+    a.recover = Math.min(a.recover, chilled(longest.recovery));
     // A kind that walks faster now would have this actor further into its step than one takes.
     a.moveTicksLeft = Math.min(a.moveTicksLeft, stepTicks(rules, a as unknown as Actor));
 

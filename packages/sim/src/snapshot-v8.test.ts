@@ -73,7 +73,7 @@ describe("a version 8 snapshot", () => {
     for (let t = 0; t < 2000; t++) step(world);
     const again = snapshot(world);
     expect(JSON.parse(again).version).toBe(SNAPSHOT_VERSION);
-    expect(SNAPSHOT_VERSION).toBe(10);
+    expect(SNAPSHOT_VERSION).toBe(11);
     const resumed = reload(again);
     expect(resumed).toEqual(world);
     for (let t = 0; t < 500; t++) {
@@ -133,9 +133,9 @@ describe("a version 8 snapshot", () => {
     expect(() =>
       reload(
         edited((d) => {
-          d.version = 11;
+          d.version = 12;
         }),
       ),
-    ).toThrow(/not 4 to 10/);
+    ).toThrow(/not 4 to 11/);
   });
 });

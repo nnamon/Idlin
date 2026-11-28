@@ -17,6 +17,7 @@ import { loadMonsters, type Monsters } from "./monsters.ts";
 import { NODE_KINDS } from "./nodes.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
 import { noXp } from "./skills.ts";
+import { noStatus } from "./status.ts";
 import { compileBots } from "./tactics.ts";
 import { MEMORY_SLOTS } from "./vm.ts";
 import { createWorld, type Input, type Programs, step, type World } from "./world.ts";
@@ -314,5 +315,6 @@ export function putMonster(world: World, kind: string, { x, y }: Point, program 
     knockY: 0,
     flask: 0,
     kills: 0,
+    status: noStatus(),
   });
 }

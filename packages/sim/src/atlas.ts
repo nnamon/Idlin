@@ -323,5 +323,10 @@ export function hashMap(map: TileMap): string {
     ...map.tiles,
     ...map.places.flatMap((p) => [...stringInts(p.name), p.x, p.y]),
     ...(nodes.length === 0 ? [] : [nodes.length, ...nodes.flatMap((n) => [n.kind, n.x, n.y])]),
+    // A map with no element hashes as maps did before they had one. A count of
+    // nodes is never below 1, so -1 cannot be read as one.
+    ...(map.element === undefined || map.element === "none"
+      ? []
+      : [-1, ["fire", "cold", "lightning"].indexOf(map.element)]),
   ]);
 }

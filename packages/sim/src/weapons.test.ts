@@ -4,6 +4,7 @@ import { emptyBag, emptyBank } from "./bag.ts";
 import { blow, rollCrit } from "./hit.ts";
 import { isWalkable, type Point, placeConstants } from "./map.ts";
 import { MAX_LEVEL, noXp, XP_TABLE } from "./skills.ts";
+import { noStatus } from "./status.ts";
 import { compileBots } from "./tactics.ts";
 import { firstLight } from "./testing.ts";
 import { MEMORY_SLOTS } from "./vm.ts";
@@ -122,6 +123,7 @@ function plant(world: World, x: number, y: number, kind = "post", program = "sta
     knockY: 0,
     flask: 0,
     kills: 0,
+    status: noStatus(),
   };
   world.actors.push(post);
   return post;

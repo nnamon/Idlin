@@ -136,6 +136,14 @@ export {
   XP_PER_DAMAGE,
   XP_TABLE,
 } from "./skills.ts";
+export {
+  CITIZEN_STATUS_TICKS,
+  LOCKOUT_TICKS,
+  noStatus,
+  STATUS_FIELDS,
+  STATUS_TICKS,
+  type Status,
+} from "./status.ts";
 export { SYSCALLS, type Syscall, syscall } from "./syscalls.ts";
 export {
   BotError,
@@ -204,6 +212,7 @@ export {
   createWorld,
   DAY_HOUR,
   DOWN_TICKS,
+  elementAt,
   enemies,
   freeTileNear,
   GROUP_SPREAD,
@@ -248,6 +257,7 @@ export {
   type Spawns,
   START_HOUR,
   STEP_TICKS,
+  type StatusName,
   sameRegion,
   snapshot,
   spawnsNearCamp,

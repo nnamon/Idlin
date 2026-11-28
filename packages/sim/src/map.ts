@@ -1,6 +1,7 @@
 // The tile map: loaded from content, validated once, then read-only.
 
 import { show } from "./hash.ts";
+import type { Element } from "./hit.ts";
 import { NODE_KINDS } from "./nodes.ts";
 
 /** Every terrain a map may use. The order is part of the world hash; append only. */
@@ -49,6 +50,11 @@ export interface TileMap {
   readonly places: readonly (Point & { readonly name: string })[];
   /** Resource nodes, in the file's order, each a kind's id (see NODE_KINDS) on its tile. None if left out. */
   readonly nodes?: readonly MapNode[];
+  /**
+   * The element its monsters deal in and resist, which a landing has from its
+   * biome (landing.ts). A map read from a content file has none.
+   */
+  readonly element?: "none" | Element;
 }
 
 /** A tree or fishing spot of a map: the id of its kind in NODE_KINDS, and its tile. */

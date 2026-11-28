@@ -74,8 +74,10 @@ describe("ways where there is only one", () => {
     expect(been.has("26,1") && been.has("2,19") && been.has("14,1")).toBe(true);
     // Taken on main before the ways were shared, as ad90ea6b0d31a58e. The comb
     // has no monsters, so nobody swings; the weapons (#393) changed the hash
-    // only through the weapon and flask that snapshot version 10 hashes.
-    expect(hashWorld(world)).toBe("54e7508897f9c1e1");
+    // only through the weapon and flask that snapshot version 10 hashes, and
+    // the statuses (#402) only through the ones version 11 hashes: hashed as
+    // version 10 it is 54e7508897f9c1e1 again.
+    expect(hashWorld(world)).toBe("5a619cf86617e425");
   });
 });
 

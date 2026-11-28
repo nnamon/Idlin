@@ -176,8 +176,9 @@ base blow of its Melee level, `6 + L + L*L/20`: 7 at level 1, 21 at level 10,
 times its weapon's share of the hit. One swing in 20 is a crit and does
 double. A monster's blow is its kind's `damage`, and monsters do not crit.
 What a blow takes off is worked out as section 4.1 of [slice.md](slice.md)
-says; nobody wears armour yet, so for now that is the blow and the weapon's
-share.
+says. Residents wear no armour yet, so for now a blow on one is the monster's
+`damage`, and a resident's blow is its weapon's share of the blow, less the
+armour of a monster of rank `brute` or `elite`.
 
 `attack(x, y)` strikes in the direction of (x, y). It does not land at once.
 The tiles it will hit are marked for the length of the wind-up, then the blow
@@ -229,6 +230,16 @@ and what is left of the push is lost. A monster that is moved stops walking,
 and one winding up a blow takes it with it: the blow lands from where it now
 stands, facing the same way. What is left under a tile is put back to 0 when
 it next takes a step.
+
+A hit can leave a status, as section 4.2 of [slice.md](slice.md) sets out.
+For now the one a program will meet is the stagger: a hit whose physical
+part is at least a tenth of a monster's most hitpoints starts its wind-up
+again from the beginning, and it cannot be staggered again for 2 seconds. A
+maul's 15 at Melee 1 staggers a monster of 159 hitpoints or fewer; residents
+are never staggered. On a landing with an element, a monster deals half its
+blow in that element and resists it by 40%, and its hits can burn, chill or
+shock a resident. Burns, chills, freezes and shocks from a resident's own
+blows come with gear that adds an element.
 
 `flask` is how many drinks are left in the flask, 3 when full. `drink` gives
 back 40% of the most hitpoints, 8 of an adventurer's 20, and at full
@@ -409,6 +420,10 @@ any other, and must not share a name with a program in `content/bots/`.
   `recovery` (0 to 100 ticks) and `reach` (1 to 3 tiles): its numbers in a fight.
 - `step`: ticks it takes to walk one tile, 2 to 30. Left out, it is 6, which is
   how fast residents walk.
+- `rank` (`fodder`, `pack`, `brute` or `elite`) and `level` (1 to 99): they
+  set its armour (four times its level for a brute or an elite), how long a
+  status lasts on it, and what part of a hit sets one
+  ([slice.md](slice.md), section 4.2). Left out, it is level-1 fodder.
 - `group`: how many arrive together by day, 1 to 3, or the fewest and the
   most as a list of two, `[2, 3]`, and then the number is drawn when they come
   out. `night_group`: how many arrive together by night, 1 to 6, or a list of

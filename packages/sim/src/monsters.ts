@@ -27,8 +27,11 @@ export interface Monsters {
   readonly spawns: Spawns;
 }
 
-/** A kind's numbers. `step` may be left out, and then the kind walks as adventurers do. */
-const NUMBERS = ["hp", "damage", "windup", "recovery", "reach", "step"] as const;
+/**
+ * A kind's numbers, and its rank. `step` may be left out, and then the kind
+ * walks as adventurers do; `rank` and `level`, and then it is level-1 fodder.
+ */
+const NUMBERS = ["hp", "damage", "windup", "recovery", "reach", "step", "rank", "level"] as const;
 const FIELDS = new Set<string>([
   ...NUMBERS,
   "name",
