@@ -30,6 +30,9 @@ export const PLANS: Readonly<Record<string, Plan>> = {
   mockB: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   mockC: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   mockD: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  denser: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  bigger: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  smallcity: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   figures: { stills: [1], burst: 1, clip: [0, 1, 10] },
   scale: { stills: [1], burst: 1, clip: [0, 1, 10] },
 };

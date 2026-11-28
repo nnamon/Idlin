@@ -1,6 +1,7 @@
 // The scenes the look-development page can show, by name.
 
 import type { Draw } from "./draw.ts";
+import { densityScene } from "./density.ts";
 import { fightScene } from "./fight.ts";
 import { mockupScene } from "./mockup.ts";
 import { figuresSheet, scaleSheet } from "./sheets.ts";
@@ -29,6 +30,10 @@ const MAKERS: Readonly<Record<string, () => Scene>> = {
   mockB: () => mockupScene("B"),
   mockC: () => mockupScene("C"),
   mockD: () => mockupScene("D"),
+  // One 8:30 moment on two map sizes (#362).
+  denser: () => densityScene("dense"),
+  bigger: () => densityScene("big"),
+  smallcity: () => densityScene("small"),
   figures: figuresSheet,
   scale: scaleSheet,
 };
