@@ -22,8 +22,9 @@ open issues.
 ## 2. The numbers that still hold
 
 All integer arithmetic, rounded down. `L` is a citizen's level in the skill
-concerned, `M` a monster's level. A monster's level is that of the ground it came out
-on ([slice.md](slice.md), section 1).
+concerned, `M` a monster's level. A pack's level is that of the ground at
+its post, and a pack in a den keeps its own, within 5 of the den's
+([slice.md](slice.md), section 1).
 
 ### 2.1 Citizens and monsters
 
@@ -67,7 +68,7 @@ monster 4,000,000 hitpoints, and everything stays inside 32 bits.
 
 - Ten ticks a second.
 - A step takes 4 ticks, a diagonal step 6. Citizens never step faster than 4
-  without an item that says so. Runners, stalkers and wolves step in 3, so
+  without an item that says so. Scouts, stalkers and wolves step in 3, so
   a lone walker is caught.
 - A blade's blow is 2 ticks of wind-up and 3 of recovery, 2 + 2 from Arms 30
   and 1 + 2 from 60. The other weapon families have their own times
@@ -85,38 +86,79 @@ quarter, rounded down. Hitpoints gets the same experience again, so the two
 levels keep step. The experience table (level 99 at 13,034,431) is
 unchanged.
 
-The pace follows from what a citizen is sent ([slice.md](slice.md), section
-1). Standing on ground of level `g`, it is sent `g / 5,000` of a group each
-tick, with `g` counted as 20 at least, and 20 groups hold 77 fodder, 18 pack
-and 3 brutes. A citizen is out for 6:40 of each 13:00, and the table counts
-3,600 ticks of that on ground of its own level, with everything it is sent
-killed. So a landing gives a level-23 citizen 16.6 groups and 168
-experience, and a level-58 one 41.8 groups and 766. There are 60/13
-landings an hour, and the hours are hours of stream.
+The pace follows from a citizen's share ([slice.md](slice.md), section 1).
+When the legs plant, each citizen awake has one pack laid for each 3 levels
+of its Arms, counted as 20 at least, in an order of 10 packs that holds 60
+fodder, 15 pack monsters and 6 brutes: four swarms (10 fodder and a pack
+monster leading), two packs (3 pack monsters and a brute leading) and the
+brute pack (3 brutes) at the share's level, and a swarm 5 over, a pack 5
+over and a swarm 10 over. The table counts a citizen's tier killing its
+whole share each landing. Where the plate could not lay all of a share, each
+monster of it that was laid pays for the rest, up to 5 times, so the
+expected experience is the same when a fifth of the share or more was laid.
+At level 23 the ten packs of the order give 235: 14 for each
+swarm at 23 (10 fodder at 1 and a leader at 4) and 15 at 28 and 33, 30 for
+each pack at 23 (3 at 4 and a leader at 18) and 35 at 28, and 54 for the
+brute pack. A level-23 citizen's share is 7.67 packs, so a landing gives it
+180 experience; a level-58 one's 19.33 packs give 775. There are 60/13
+landings an hour and the hours are hours of stream. "Reached after" adds up
+the landings that each level before it takes at that level's rate.
 
-| Level | Reached after | A landing sends | A landing gives |
-| ----: | ------------- | --------------: | --------------: |
-|     6 | 55 minutes    |     14.4 groups |             122 |
-|    10 | 2 hours       |            14.4 |             127 |
-|    20 | 7 hours       |            14.4 |             146 |
-|    23 | 10 hours      |            16.6 |             168 |
-|    30 | 17 hours      |            21.6 |             248 |
-|    40 | 35 hours      |            28.8 |             481 |
-|    50 | 2.5 days      |            36.0 |             617 |
-|    58 | 4.1 days      |            41.8 |             766 |
-|    60 | 4.7 days      |            43.2 |             799 |
-|    70 | 9.4 days      |            50.4 |           1,000 |
-|    80 | 20 days       |            57.6 |           1,443 |
-|    90 | 39 days       |            64.8 |           1,652 |
-|    99 | 78 days       |            71.3 |           1,903 |
+| Level | Reached after, from shares | A landing's share | A landing gives | The siege adds | Reached after, with the siege |
+| ----: | -------------------------- | ----------------: | --------------: | -------------: | ----------------------------- |
+|     6 | 55 minutes                 |        6.67 packs |             124 |              8 | 52 minutes                    |
+|    10 | 2.0 hours                  |              6.67 |             134 |              8 | 1.9 hours                     |
+|    20 | 7.0 hours                  |              6.67 |             153 |             10 | 6.6 hours                     |
+|    23 | 9.4 hours                  |              7.67 |             180 |             13 | 8.9 hours                     |
+|    30 | 17 hours                   |             10.00 |             273 |             25 | 15 hours                      |
+|    40 | 32 hours                   |             13.33 |             473 |             53 | 29 hours                      |
+|    50 | 2.4 days                   |             16.67 |             630 |             57 | 2.2 days                      |
+|    58 | 4.0 days                   |             19.33 |             775 |             88 | 3.6 days                      |
+|    60 | 4.5 days                   |             20.00 |             814 |             79 | 4.1 days                      |
+|    70 | 9.1 days                   |             23.33 |           1,050 |             84 | 8.3 days                      |
+|    80 | 19 days                    |             26.67 |           1,419 |            147 | 17 days                       |
+|    90 | 39 days                    |             30.00 |           1,665 |            148 | 35 days                       |
+|    99 | 77 days                    |             33.00 |           1,901 |            155 | 71 days                       |
 
-Den elites, boarders, the standing monsters and ground above its own level
-are not counted and come on top. The table is for a citizen whose ground is
-in rings 1 and 2. The horde takes the far ground first, so the strongest
-citizens of a roster get about 2,600 ticks on theirs and fall behind the
-table by up to a quarter. The slice's citizens at hour 1, 10 and 100
-are read off this table: levels 6, 23 and 58. The share of its sent monsters
-a citizen kills goes in `metrics.json`, and the pace is tuned from there.
+`docker compose run --rm dev node packages/sim/scripts/plate.ts --pace`
+prints the table. At hours 1, 10 and 100 a citizen is level 6, 23 and 58
+from its shares, and those are the slice's three worked citizens. With the
+siege it is 6, 24 and 60.
+
+**The siege's column.** From the tick the front is at the city's shield, the
+siege sends swarms at the landing's level, a share's weight at that level
+for each citizen awake every eight minutes at first and faster as the siege
+goes on, with the swarms growing bigger and higher, to level 99 at most,
+until the shield breaks ([slice.md](slice.md), section 1). On level-90 and
+level-99 landings the swarms reach 99 early in the siege and grow no
+higher, so citizens there kill more of them. The column counts a citizen on untouched
+settings in a roster of 15 at its level on a landing at its level, which
+fights at the wall and goes aboard by `lift_eta`, by `plate.ts --siege`'s
+estimate of the fight, at the
+shield level the works' default order has built by then: level 1 at hour
+1, 3 at hour 10 and 8 at hour 100. The siege pays a citizen up to its
+share's weight a landing and no more. A
+swarm gives less experience for its weight than the order of ten does (14
+for a weight of 13 at level 23, where the order gives 235 for 177), because
+the order's brutes are worth more. A citizen that goes aboard at the march
+gets none of it and levels by the first column.
+
+The table takes each pack at the citizen's level plus its 5 or 10, and a
+newcomer's share is in fact held at the level of ring 1's first pocket (7
+on a level-23 landing), so the first hour goes a little faster than it
+says. A pack stands at its pocket's level, up to 5 off what its share was
+due, which the table does not count either. Den elites, guards, boarders,
+scouts and the map's own packs are not counted and come on top. The packs
+laid on the far ground are the first the horde takes, half of them by 8:40
+as the front gathers along the rim, so a citizen whose share lies there
+falls behind the table by what it leaves. The table counts whole shares.
+Section 1 of slice.md pays every tier of its crowd 89% or more at 15 on the
+second city's medium landing, with the tier between the median and the
+strongest at Arms 30, 40 or 50; a citizen paid 89% from level 30 to 50 is
+about a level short at hour 100. The part of each share that was laid, its pay, the
+part of what was laid that each tier of the scripted crowd killed, and the
+siege swarms sent and killed for each tier go in `metrics.json`, and the
+pace is tuned from there.
 
 ### 2.4 What a tick costs
 
@@ -136,6 +178,12 @@ untimed (`IDLIN_LONG=1`), the range over two runs:
 The bar is a mean tick of 2 ms or less at 150 residents and 450 monsters, in
 the dev container; anyone who changes the simulation's cost checks it there
 with `IDLIN_LONG=1`, which times 3,000 ticks and also 150 and 300 actors.
+The slice's medium landing holds up to 700 monsters (slice.md, section 1),
+so the same crowd was timed with 700 too: `timeCrowd(150, 700, 100, 1500)`
+in the dev container, twice, gave a mean of 2.73 and 2.77 ms and a worst
+tick of 9.8 and 13.7 ms, where 450 gave 1.45 and 1.55 ms and 5.0 and 7.2 ms
+in the same runs. Every monster in that crowd is hunting, and on a landing
+most stand at their posts, so 700 is inside the roadmap's 4 ms and 25 ms.
 Neither the gate nor the long run checks the time, because a tick's time
 depends on the machine and on what else it is doing; both print it. What the
 gate checks is the work: over the first 300 ticks of a fresh crowd of 600, the
@@ -177,8 +225,10 @@ freed, so memory stays at the most fields alive at once, at 8 bytes a tile.
 That is bounded by the distinct targets read in 10 ticks: at 600 actors on
 `bigMap`, about 300 fields, or 23 MB, reached in the first 300 ticks and no
 higher over 3,000. The landing's district graph is not used for routes:
-the largest landing is 80 by 45 tiles, under half of `bigMap`, so one field
-covers it. A tick has 100 ms, and the server stops a wake after 50 ms of
+the slice's largest landing is 80 by 45 tiles, under half of `bigMap`, so
+one field covers it. The largest landing planned for after the slice, 128
+by 72, is about `bigMap`'s size; how many monsters it stands waits for a
+tick timed there (#418). A tick has 100 ms, and the server stops a wake after 50 ms of
 work.
 
 ### 2.5 What a viewer is sent

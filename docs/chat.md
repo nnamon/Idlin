@@ -15,7 +15,10 @@ section 3.2 and the interrupt, and every input from a chatter's messages
 marks them heard. Deckhand declares section 9's params and slice.md's four
 more, and reads `stance`, `margin` and the flag; in the camp, nightfall
 stands in for the horde ([decisions/0033](decisions/0033-params-and-the-flag-in-the-camp-world.md)).
-Flags do not come down at a lift yet, since nothing lifts. The gate,
+Flags do not come down at a lift yet, since nothing lifts. The built
+Deckhand's margin is 120 and its `ramp` is board or guard, as they were
+before the siege was specified; slice pieces 14 and 31 move its defaults to
+section 9's. The gate,
 the queue with its bounds and the scripted crowd are `packages/chat`, and the
 crowd format is described at the top of `packages/chat/src/crowd.ts`. The
 crowd files are `content/chat/crowd-15.txt` and `crowd-150.txt`. Flood control
@@ -35,7 +38,8 @@ page uses three phase names and leaves their lengths to the plan:
 
 - **transit**: the city is walking and everyone is on the deck;
 - **landing**: the city is set down and citizens go out and come back;
-- **recall**: the horde is in sight and the city is about to leave.
+- **recall**: from the sighting of the horde's front to lift-off, which
+  takes in the march, the siege of the city's shield and the break.
 
 A chatter is a person typing in the stream's chat. A citizen is their figure
 in the world. "Present" means the chatter has typed in the last 20 minutes.
@@ -93,7 +97,7 @@ citizen, and the message is the citizen's first line.
 | 0.1 s at most             | The message is in the input log for the next tick.                                                                                                 |
 | the next tick             | The citizen exists: named from the username, colours and parts from the account's id, the shipped program, a first blade. It stands under a hatch. |
 | 0.4 s                     | The hatch has opened (3 ticks).                                                                                                                    |
-| 1.2 s                     | The citizen has climbed out (8 ticks) and its name slip is lettered. The page's order strip (section 4) reads "tim came aboard".                   |
+| 1.2 s                     | The citizen has climbed out (8 ticks) and its name slip is lettered. The page's order strip (section 4) shows `tim` and the hatch icon.            |
 | 1.2 s to 4 s              | Its first message is shown as a speech bubble, ahead of every other bubble waiting.                                                                |
 
 The chat platform's own delay comes before this and the stream's delay after
@@ -110,7 +114,7 @@ next is its program's choice:
 - **In transit** it takes the station shortest of hands, and a post if the
   city is attacked. Its first landing is at most one transit away.
 - **On a landing** it walks down the ramp if its margin allows a sortie in
-  the time left. The shipped program starts at a margin of 120 seconds and
+  the time left. The shipped program starts at a margin of 30 seconds and
   works close to the city unless told otherwise, so a newcomer is cutting through
   the weakest monsters inside its first minute.
 - **In recall** the same margin rule keeps it aboard. It watches the others
@@ -142,7 +146,7 @@ finds it. The account's id is the key, so a chatter who renames keeps their
 citizen.
 
 **More than 150.** The city has 150 berths. A citizen that cannot come up
-waits under the hatch, and the page shows "at the hatch: 12". Section 5 says
+waits under the hatch, and the page shows the hatch icon and `12`. Section 5 says
 who gives up a berth. If 150 chatters are all present, a newcomer waits; that
 is outside what the plan sizes for.
 
@@ -170,13 +174,13 @@ chat. Everything else is speech (section 6).
 
 Five steer the citizen and its program:
 
-| Command         | Transit                                                                                                                                    | Landing                                                                       | Recall                                                    | Maps to                   |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------- |
-| `!go <where>`   | a station or post lettered on the deck: `!go guns`                                                                                         | a place, a sector, a compass point or a citizen: `!go brackwater`, `!go ana`  | the same; whether it is followed is up to the margin rule | a goal: the flag          |
-| `!home`         | nothing to do; the citizen is aboard                                                                                                       | the flag goes to the ramp, and the citizen stays aboard while it stands there | the same                                                  | a goal: the flag, at home |
-| `!free`         | takes the flag down                                                                                                                        | takes the flag down                                                           | takes the flag down                                       | clears the goal           |
-| `!run <preset>` | swaps to that preset at once                                                                                                               | swaps it when the citizen is next on deck                                     | swaps it when the citizen is next on deck                 | the program               |
-| `!me`           | rings the citizen and letters its name for 6 s, and shows its card: its level, preset, params and gear ([slice.md](slice.md), section 3.7) | the same                                                                      | the same                                                  | nothing in the world      |
+| Command         | Transit                                                                                                                                    | Landing                                                                        | Recall                                                    | Maps to                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ | --------------------------------------------------------- | ------------------------- |
+| `!go <where>`   | a station or post lettered on the deck: `!go guns`                                                                                         | a place, a kind of thing, a compass point or a citizen: `!go den b`, `!go ana` | the same; whether it is followed is up to the margin rule | a goal: the flag          |
+| `!home`         | nothing to do; the citizen is aboard                                                                                                       | the flag goes to the ramp, and the citizen stays aboard while it stands there  | the same                                                  | a goal: the flag, at home |
+| `!free`         | takes the flag down                                                                                                                        | takes the flag down                                                            | takes the flag down                                       | clears the goal           |
+| `!run <preset>` | swaps to that preset at once                                                                                                               | swaps it when the citizen is next on deck                                      | swaps it when the citizen is next on deck                 | the program               |
+| `!me`           | rings the citizen and letters its name for 6 s, and shows its card: its level, preset, params and gear ([slice.md](slice.md), section 3.7) | the same                                                                       | the same                                                  | nothing in the world      |
 
 Eight more are for a citizen's gear, which belongs to the citizen and not to
 its program, so no preset can drop them. [slice.md](slice.md), sections 3.6
@@ -210,17 +214,21 @@ the tick the order is applied:
    sector in that direction from the city.
 3. A sector by name: its heart, which is where its name is lettered. The
    slice's landings have no sectors, so this step finds nothing there.
-4. A named place on the site (in the slice a den, a chest, or a unique lying
-   on the ground), or in transit a station or post on the deck. A name may
-   be several words: `!go waist hatch`.
-5. A citizen by username, or `@name` to skip the steps above.
+4. A named place on the site (in the slice a den by its letter, as
+   `den b`, or a unique lying on the ground), or in transit a station or
+   post on the deck. A name may be several words: `!go waist hatch`.
+5. A kind of thing on the site: in the slice `chest`, `shrine`, `wreck`,
+   `seam` or `pile`. The flag goes on the nearest one this citizen can
+   still use, by the walk from where it stands.
+6. A citizen by username, or `@name` to skip the steps above.
 
 Names match on any prefix of three letters or more that only one name at
 that step has. The first step with a match wins, and within a step an exact
-name beats a prefix. So `!go bra` reaches Brackwater even with a chatter
-called brax aboard, since places are looked up before citizens, and
-`!go @bra` reaches brax. The map's lettering is the vocabulary: a chatter
-reads a name off the stream and types it. A word that matches nothing, or a
+name beats a prefix. So `!go che` reaches the nearest chest even with a
+chatter called chester aboard, since things are looked up before citizens,
+and `!go @che` reaches chester. A den's name is two words, so `!go den b`
+is typed whole. The map's lettering is the vocabulary: a chatter reads a
+name off the stream and types it. No place has an invented name. A word that matches nothing, or a
 prefix that two names at the same step share, is refused (section 4).
 
 A flag on a citizen follows that citizen. Since the streamer is a chatter
@@ -280,8 +288,8 @@ param stance = gather of gather, fight, careful
 ```
 
 - `from … to …` gives a range. A value outside it is refused. `margin` is in
-  seconds: how long before the horde reaches the hull the citizen wants to
-  be aboard.
+  seconds: how long before the horde's front reaches the city's shield the
+  citizen wants to be inside it.
 - `of a, b, c` names the values. They compile to 0, 1, 2, and the names are
   constants in the program, so `stance == fight` works.
 
@@ -305,16 +313,19 @@ program's defaults.
 
 With the shipped program (section 9) a new citizen understands:
 
-| Command              | What it changes                                                                                                           | Phase where it shows            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `!gather`            | `stance`: works nodes, strikes only what comes next to it                                                                 | landing                         |
-| `!fight`             | `stance`: goes at any monster within 8 tiles                                                                              | landing, and attacks in transit |
-| `!careful`           | `stance`: keeps 3 tiles clear of monsters and works where it is quiet                                                     | landing                         |
-| `!margin 0` to `240` | the seconds it wants to be aboard before the horde reaches the hull; under 90 is out past the horn, and the strip says so | every recall                    |
-| `!go …`, `!home`     | where its sorties go; which station or post it takes                                                                      | every phase                     |
+| Command              | What it changes                                                                  | Phase where it shows            |
+| -------------------- | -------------------------------------------------------------------------------- | ------------------------------- |
+| `!gather`            | `stance`: works nodes, strikes only what comes next to it                        | landing                         |
+| `!fight`             | `stance`: goes at any monster within 8 tiles                                     | landing, and attacks in transit |
+| `!careful`           | `stance`: keeps 3 tiles clear of monsters and works where it is quiet            | landing                         |
+| `!margin 0` to `240` | the seconds it wants to be inside the shield before the horde's front reaches it | every recall                    |
+| `!go …`, `!home`     | where its sorties go; which station or post it takes                             | every phase                     |
 
 The slice's Deckhand declares four more params, each a command the same way:
-`keep`, `over`, `aid` and `ramp` ([slice.md](slice.md), section 5).
+`keep`, `over`, `aid` and `ramp` ([slice.md](slice.md), section 5). `ramp`
+is what the citizen does at the siege: `!board`, `!hold`, which is the
+default and fights at the shield until 20 seconds before it breaks, or
+`!guard`, which stays out past the break, and the strip says so.
 
 The issue's starting list also had `!help ana`, `!crew guns` and
 `!craft spear`. `!help ana` is `!go ana`: the shipped program walks to a
@@ -334,40 +345,46 @@ it and a replay repeats it.
 
 **An accepted order**, from the tick it is applied:
 
-| When            | On the map                                                                                                                                                                     | On the page                                                                |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| the same tick   | The citizen's name slip is lettered, even where slips are hidden for the crowd, with a glyph on its tab: a flag, a house for `!home`, a dial for a param.                      | A row on the order strip: `tim · to Brackwater`.                           |
-| within 0.3 s    | A flag in the citizen's hood and cloak colours is drawn at the target, a stroke a tick. For a flag on a citizen, a thin line joins the two.                                    |                                                                            |
-| within 0.6 s    | The citizen has stopped what it was doing and decided again. If it follows the flag, the dashed route line the viewer already draws for a walk runs from its feet to the flag. | The row gains what the program did: `tim · to Brackwater · "to the flag"`. |
-| for 6 s         | The slip and the glyph stay up.                                                                                                                                                | The row stays for at least 3 s.                                            |
-| while it stands | The flag stays on the map: solid while the citizen follows it or has reached it, an outline while a rule above every flag rule holds it.                                       |                                                                            |
+| When            | On the map                                                                                                                                                                     | On the page                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| the same tick   | The citizen's name slip is lettered, even where slips are hidden for the crowd, with a glyph on its tab: a flag, a house for `!home`, a dial for a param.                      | A row on the order strip, in columns: `tim`, the flag icon, `den B`.          |
+| within 0.3 s    | A flag in the citizen's hood and cloak colours is drawn at the target, a stroke a tick. For a flag on a citizen, a thin line joins the two.                                    |                                                                               |
+| within 0.6 s    | The citizen has stopped what it was doing and decided again. If it follows the flag, the dashed route line the viewer already draws for a walk runs from its feet to the flag. | The row gains a fourth column, the label of the rule that won: `to the flag`. |
+| for 6 s         | The slip and the glyph stay up.                                                                                                                                                | The row stays for at least 3 s.                                               |
+| while it stands | The flag stays on the map: solid while the citizen follows it or has reached it, an outline while a rule above every flag rule holds it.                                       |                                                                               |
 
 So a chatter who looks from the chat box to the stream finds their name
 lettered, a flag in their colours and a line between the two. In the wide
 view of a landing, where a citizen is a pennant 12 pixels tall, the slip and
 a ring mark the pennant and the flag is drawn at the same size at any zoom.
 
+**The strip's rows** are set in columns with a gap between them, one fact a
+column, as art.md, section 11, has it: the username, an icon for the kind of
+order, what was ordered, and the label of the rule that won. Nothing is
+chained with dots or dashes and no row is a sentence.
+
 **A program that does not take the order.** The flag is drawn as an outline
 and the strip says why, in the program's own words:
 
-- `ana · to the Far Barrow · held by "turn back"`: the rule that won sits
-  above every rule that reads the flag, and its label is quoted.
-- `joss · to Brackwater · no rule reads the flag`: the program never reads
-  it.
+- `ana`, the flag icon in outline, `den F`, `turn back`: the rule that won
+  sits above every rule that reads the flag, and the row shows its label
+  beside the outlined flag.
+- `joss`, the flag icon struck through, `den B`: the program never reads
+  the flag, and the fourth column is empty.
 
 A citizen that has walked to its flag and is working beside it is not one of
 these. Its flag rule was read and had nothing left to ask, so the flag stays
-solid and the row reads `tim · to Brackwater · "chop"`. On a landing most
-standing flags are ones their citizens have reached, and an outline among
-them means a program said no.
+solid and the row reads `tim`, the flag icon, `den B`, `a pack here`. On a
+landing most standing flags are ones their citizens have reached, and an
+outline among them means a program said no.
 
 This is the display that makes the program the subject. A viewer who sees
-ten flags go up for the Far Barrow in recall, seven of them outlines, has
-been shown what a margin is.
+ten flags go up for den F in recall, seven of them outlines, has been shown
+what a margin is.
 
-**A param change** letters the slip with the dial glyph and puts
-`tim · margin 150` on the strip. It has nothing to show on the map until the
-program acts on it.
+**A param change** letters the slip with the dial glyph and puts a row on
+the strip: `tim`, the dial icon, `margin 60`. It has nothing to show on the
+map until the program acts on it.
 
 **A refusal.** A word that matches nothing, a value out of range or a command
 with no token left (section 8) letters the citizen's slip for 6 seconds with
@@ -376,8 +393,8 @@ on the strip. A refused command costs nothing.
 
 **The order strip** is five rows at the foot of the page, newest at the top.
 Each row stays at least 3 seconds, so it carries 100 rows a minute. When more
-arrive, rows with the same target merge: `8 to Brackwater: tim, ana, joss and
-5 more`. A merged row is also the quickest reading of where chat is sending
+arrive, rows with the same target merge into one: `8`, the flag icon,
+`den B`. A merged row is also the quickest reading of where chat is sending
 the city.
 
 **Standing flags** are drawn at every zoom. At the start of a landing the
@@ -397,12 +414,12 @@ the last message.
 | over 24 hours          | **Below.** The next time it is on deck it goes down the hatch. It is off the screen and out of the simulation. Its record is kept: levels, what it wears, stash, kits, uniques, program, params.                                                                                                               |
 
 Nothing is lost by going below. A citizen below gains nothing and risks
-nothing. The deck plan letters the count beside the hatch ("412 below"),
-which is the size of the stream's community over time.
+nothing. The deck plan letters the count beside the hatch, as `below` and
+`412`, which is the size of the stream's community over time.
 
 **Return.** Any message from a chatter whose citizen is below brings it up
 through the hatch as on the first day, in 1.2 seconds, with its record. The
-strip reads `tim is back after 3 days`. Records are kept for a year without a
+strip shows `tim`, the hatch icon and `3 days`. Records are kept for a year without a
 message and then deleted.
 
 **Why 24 hours.** The game is an idle game: a chatter who types before bed
@@ -505,7 +522,7 @@ nothing waits on a person:
 | Decision   | The default                                                                                                                                                           |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Landing    | The navigator picks the next landing from the difficulty tuning: harder and richer sites as the city grows, a gentler stop after a bad landing.                       |
-| Upgrades   | The next bay is built in the order the plan sets.                                                                                                                     |
+| The works  | The ore citizens bring home builds the next thing in the order [slice.md](slice.md), section 9, sets: shield levels and city sizes in turn.                           |
 | Tuning     | The difficulty tuning the game ships.                                                                                                                                 |
 | Moderation | The channel's own moderation, the speech and name filters and the ignore list (sections 6 and 8). The channel's moderators can use `!idlin` on the streamer's behalf. |
 
@@ -611,18 +628,18 @@ streamer shuts the doors.
 **The shipped program** is what every new citizen runs. It has to be safe for
 someone who types one line and leaves, it has to follow orders visibly, and
 it should be beatable by anyone who reads it. A sketch, using the
-walking-city draft's turn-back sensors, `lift_eta` and `way_home`:
+slice's turn-back sensors, `front_eta` and `way_home`:
 
 ```
 bot "Deckhand"
 
-param margin = 120 from 0 to 240
+param margin = 30 from 0 to 240
 param stance = gather of gather, fight, careful
 
 section landing
 when danger_here > 0 as "step out" -> step_clear
 when hp * 3 < max_hp and carrying(cooked_fish) > 0 as "eat" -> eat
-when lift_eta < margin * 10 + way_home as "turn back" -> go_home
+when front_eta < margin * 10 + way_home as "turn back" -> go_home
 when stance == careful and threat_distance <= 3 as "keep clear" ->
   flee(threat_x, threat_y)
 when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)
@@ -644,20 +661,24 @@ is one, and otherwise to whichever is shortest of hands.
 
 The sketch shows the order of the rules and how they sit round the flag. Its
 gathering and eating rules are written for the camp the code still runs; the
-slice's Deckhand works scrap piles, drinks from a flask, picks up drops and
-declares `keep`, `over`, `aid` and `ramp` as well
-([slice.md](slice.md), section 5).
+slice's Deckhand fights the packs of a pocket and then works what it holds,
+drinks from a flask, picks up drops, fights at the shield, and declares
+`keep`, `over`, `aid` and `ramp` as well, with `stance` at `fight` by
+default ([slice.md](slice.md), section 5).
 
-**The sensor and the margin.** `lift_eta` is the ticks until the horde
-reaches the hull, and belongs to the cycle, which [slice.md](slice.md) owns.
-Before the horde is sighted it reads 9999, so "turn back" cannot win then.
-`way_home` is the ticks the walk to the ramp takes as the citizen is loaded.
-`margin` is in seconds, 0 to 240, and the citizen turns back when the time
-left is less than the margin plus the walk. The default is 120, which has a
-citizen aboard half a minute before the horn. An earlier draft of this page
-had the margin as a percentage of the walk home, 100 to 400. Every walk on a
-one-screen landing is under 45 seconds, so a ratio of it separated nobody,
-and seconds are what a chatter can reason about.
+**The sensors and the margin.** `front_eta` is the ticks until the horde's
+front reaches the city's shield, and `lift_eta` the soonest lift-off could
+come if nothing were killed from then on ([slice.md](slice.md), section 5).
+Both belong to the cycle, which [slice.md](slice.md) owns,
+and both read 9999 before the front is sighted, so "turn back" cannot win
+then. `way_home` is the ticks the walk to the shield takes as the citizen is
+loaded. `margin` is in seconds, 0 to 240, and the citizen turns back when
+`front_eta` is less than the margin plus the walk. The default is 30, which
+has a citizen inside the shield half a minute before the horde is at it.
+What it does there is its `ramp` setting. An earlier draft of this page had
+the margin as a percentage of the walk home, 100 to 400. Every walk on the
+slice's landings is under 50 seconds, so a ratio of it separated nobody, and
+seconds are what a chatter can reason about.
 
 The five rules that read the flag sit together under "step out", "eat",
 "turn back", the three fighting rules and "bag full". So on this program an
@@ -683,7 +704,8 @@ submit programs.
 city offers, when it is next on deck, once in 10 minutes. The offered names,
 each with its line and its params as chat commands, are lettered on the page
 beside the world map after each lift. The
-reckoning letters how many citizens run each: "Longhaul 31, Deckhand 96".
+reckoning letters how many citizens run each, a line each: `Longhaul 31`,
+`Deckhand 96`.
 `!me` names the preset a citizen is on.
 
 **The site** is the streamer's, and it is the only page besides the stream.
@@ -702,7 +724,7 @@ streamer never opens it:
 | Raiders     | stand or run                                                                                                        |
 | Repairs     | the order broken parts are mended in, or the salvage held back                                                      |
 | Loot filter | what loot the stream draws and names                                                                                |
-| Upgrades    | which bay is built next; not in the slice, which has no bays                                                        |
+| The works   | what the works build next: the next shield level or the next city size ([slice.md](slice.md), section 9)            |
 | Tuning      | the difficulty tuning the navigator works from; not in the slice, which ships one                                   |
 
 Everything the site changes in the world goes in as a `mod` input, through
@@ -772,7 +794,7 @@ Three adapters share the gate and everything after it:
   seed 7
   00:00 +12 regulars
   00:05 ana: hello
-  00:40 ana: !go brackwater
+  00:40 ana: !go den b
   01:00 +3 talkers every 20s
   06:10 +40 raid
   12:05 * 60% !home
@@ -923,8 +945,9 @@ raid the defending city's strip names the citizens who held the hold.
   the rival's deck instead. A captive would be drawn on the other stream and
   missing from its own, and the rule that every citizen is always on its own
   city's screen decides against that. So the shipped program's "turn back"
-  rule runs here too: in a clash `lift_eta` counts to the break and
-  `way_home` is the walk back across the planks, with the same `margin`. The
+  rule runs here too: in a clash `front_eta` counts to the moment the cities
+  part and `way_home` is the walk back across the planks, with the same
+  `margin`. The
   number a chatter tuned on landings is the one that gets them off the
   rival's deck.
 - **Flags** are drawn on both streams. A rival's flag on one's own hold is
@@ -962,7 +985,7 @@ can wait until there is a stream to read.
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | -------- |
 | **C1 Inputs and the log**              | The input kinds as types, the queue and its bound for each account, 32 a tick, the log file beside each snapshot, replay on start, pruning.                                                                                                                              | A test that a snapshot plus its log gives the live hash after a crowd of 50 has joined and ordered for 12,000 ticks; a test that a torn last log line is ignored. Hostile inputs (wrong shapes, 10,000 in a tick) change nothing and never throw. A flood test: 30 accounts sending `!go` at 5 a second for a minute never have more than one `go` each waiting, and another account's order sent during it is applied within 2 ticks. | Every input's effect except `join`.           |          |
 | **C2 The gate and the scripted crowd** | A package with the `ChatEvent` type, the parser, flood control, the ignore list, and the crowd file format as a pure function of file and tick. The capture tool and the viewer's own simulation take `?chat=<file>`.                                                    | Parser tests on garbage, 500-character lines and every command; the same crowd file gives the same inputs twice.                                                                                                                                                                                                                                                                                                                       | The speech filter; a live adapter.            |          |
-| **C3 Joining**                         | `join` makes a citizen from an account: name rule, colours from the id, the shipped program, a queue under the hatch at one per 5 ticks per hatch. The entrance drawn, the slip lettered, "came aboard" merged on the news line. `look`.                                 | A test that 40 joins in a tick are all on deck 110 ticks later in arrival order; a capture of one arrival and of a raid of 40.                                                                                                                                                                                                                                                                                                         | Berths and going below.                       | C1, C2   |
+| **C3 Joining**                         | `join` makes a citizen from an account: name rule, colours from the id, the shipped program, a queue under the hatch at one per 5 ticks per hatch. The entrance drawn, the slip lettered, the arrival's row on the strip, merged when many come at once. `look`.         | A test that 40 joins in a tick are all on deck 110 ticks later in arrival order; a capture of one arrival and of a raid of 40.                                                                                                                                                                                                                                                                                                         | Berths and going below.                       | C1, C2   |
 | **C4 Speech**                          | `say` and `unsay` outside the hash, the filter, bubbles with six slots, priority and the 15-second rule, speech ticks, the emote hop. `look`.                                                                                                                            | A test that the hash is the same with and without speech; filter tests; a capture burst at 2 messages a second with the flicker index under its limit.                                                                                                                                                                                                                                                                                 | The blocked-word list beyond a short default. | C3       |
 | **C5 Params**                          | `param` with `from … to …` and `of …` in Tactics, values on the actor and read at run time, the `param` input, tokens. `stance` and `margin` in the shipped program.                                                                                                     | Compiler tests, including a ninth param and a value out of range; a seeded test that `stance` at `fight` and at `careful` differ in kills and in downs over a landing's length.                                                                                                                                                                                                                                                        | `!run`.                                       | C1       |
 | **C6 The flag**                        | The `go` and `free` inputs, name lookup in the simulation, `flagged`, `flag`, `flag_age`, `flag_down`, `heard`, the followed bit, an order interrupting the current action. The flag rules in the shipped program.                                                       | A test that an order is decided on within 6 ticks; a test that the same `!go` on two programs gives different hauls; a test that a flag under a winning "turn back" is reported as held; a test that a citizen chopping within 6 tiles of its flag is reported as following; a test that a prefix shared by two places is refused and an exact name is not.                                                                            | Flags on a rival's deck.                      | C5       |
@@ -988,6 +1011,9 @@ is a fail.
 
 ## 13. Where this is weak
 
+- **Rows without words.** The strip's rows are a name, an icon and a label
+  in columns. Whether a chatter reads an outlined flag and `turn back` as
+  "my program said no" has not been tried, and piece C7's judge is asked.
 - **Stream delay.** The simulation answers in under a second and the chatter
   sees it several seconds later. Marks on the map that last 6 seconds are
   the answer, and it has not been tried. A row on the order strip lasts 3.

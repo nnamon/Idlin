@@ -7,8 +7,8 @@ spec for the first thing to be built, one full cycle of the city.
 Idlin is a machine city that walks the world on legs, shown on a livestream.
 The stream's chat lives on it: everyone who types has a citizen with their
 name. Every thirteen minutes the city sets down somewhere new, the citizens
-go out to fight and bring back what they find, and a horde arrives to drive
-them off again. Nobody steers a citizen by hand. Each one runs a short
+go out to fight and bring back what they find, and a horde arrives, lays
+siege to the city's shield and drives them off again. Nobody steers a citizen by hand. Each one runs a short
 program, and its chatter sets that program's numbers from chat.
 
 ## Where this comes from
@@ -47,21 +47,56 @@ have weight and the slog you go through is rewarding is key."
 
 One streamer is one city. Every citizen of it is on screen all the time, and
 the camera never cuts from one place to another. What changes is the zoom.
-In transit the frame is close on the city, cut away so that every deck and
-everyone on it shows. When the legs plant, the frame pulls back in one move
-and the land is drawn outward from the hull. A small landing keeps the city
-large and is easy. A large one makes the city small and is hard, so a viewer
-can read the difficulty from the frame.
+In transit the frame is close on the city, drawn from above with its deck
+open so that everyone aboard shows. When the legs plant, the frame pulls
+back in one move and the land is drawn outward from the hull. The frame
+holds the whole landing until the horde marches, and then closes in with it,
+keeping every citizen still out in frame. A small landing keeps the city
+large and is easy. A large one makes the city small and is hard, so a viewer can read
+the difficulty from the frame.
+
+### The city grows
+
+A new city is a small hull on six legs, and its landings are small maps with
+two to three hundred monsters standing on them. Citizens dig ore on a landing and
+carry it home, and it pays for a stronger shield and a bigger city. The
+landings grow faster than the city, so the city takes less of the frame as
+both get bigger, and the same frame holds more ground, more pockets and more
+monsters. There are four city sizes. The second, the hull the look target
+draws, comes after about seven hours of stream, and the fourth after about
+two hundred, on maps of up to 128 by 72 tiles. The second city's medium
+landing, 80 by 45, has 600 monsters standing on it. Citizens are never
+drawn under 40 pixels at 1920. [slice.md](slice.md), section 1, has the
+table. The slice builds the first two sizes, and the two after them are not
+measured yet.
 
 ### The cycle
 
-Transit, then a landing, then the horde. In transit the city is cramped and
-busy: citizens look over what they own, work the bench, mend what is broken,
-and now and then fight off something that comes alongside. On a landing they
-pour down the ramp into packs and swarms. The horde comes in from one edge
-of the map and crosses it, and when it reaches the hull the ramp goes up.
-Whoever is still outside is hauled aboard without what they carried or wore.
-There is no countdown on screen. The horde is the clock.
+Transit, then a landing. In transit the city is cramped and busy: citizens
+look over what they own, work the bench, mend what is broken, and now and
+then fight off something that comes alongside. A landing has seven phases:
+
+1. **Peace.** Citizens pour down the ramp and out to the pockets on every
+   side of the city, where packs, dens, chests, shrines, wrecks, seams of ore
+   and scrap are laid. The horde is not on the map yet.
+2. **Scouts.** The horde's scouts come in at gaps on the four sides of the
+   map and look for citizens. A scout pack that finds one calls, and each
+   call that is not stopped brings the horde sooner.
+3. **The front** comes in at the gaps and gathers along the edge of the map
+   on every side, deeper as the march nears.
+4. **The march.** When it is dense enough it closes on the city from every
+   side, taking the far ground first.
+5. **The siege.** It meets the shield, a bubble over the city's ground, and
+   slams it. Citizens can go out and fight at the bubble to make it last,
+   and that fight pays.
+6. **The break.** The shield goes and everyone has thirty seconds to board.
+7. **Lift-off.** The ramp goes up. Whoever is still outside is hauled aboard
+   without what they carried or wore.
+
+The horde is time pressure and then a siege. It is never a line of monsters
+to fight across. The corner shows the time to the march, which moves when
+a call lands, then the shield's lamps through the siege, then the time to
+lift-off.
 
 ### Loot is the reason to go out
 
@@ -69,8 +104,9 @@ Items are a base, an item level, a rarity and affixes rolled in tiers, as in
 Path of Exile. What this game adds is that a drop is not safe until it has
 been carried up the ramp. The stream sees it fall and sees who has it on
 their back. The best of it is far from the ramp, on ground as strong as the
-city's strongest citizen, and late, near the horde, when the walk home is at
-its worst. Uniques bend a rule of the game, so wearing one changes what its
+city's strongest citizen, which the march takes first, and at the siege,
+where every drop is richer and the shield may go while a citizen is still
+out. Uniques bend a rule of the game, so wearing one changes what its
 citizen should be doing. There is no gold: the things that reroll and
 improve gear are themselves drops, spent at a bench aboard.
 [slice.md](slice.md), section 3, has the rates and the rules.
@@ -93,8 +129,8 @@ fight, and both show on the figure.
 ### The streamer
 
 The city's decisions (where to land, how much risk to take on, whether to
-stand or run when raiders come) are the streamer's alone, made on a page
-only they can open. Each has a default, so a city nobody is tending keeps
+stand or run when raiders come, whether the works build the shield or the
+hull next) are the streamer's alone, made on a page only they can open. Each has a default, so a city nobody is tending keeps
 walking. Chat does not vote on anything.
 
 ### Other cities
@@ -126,12 +162,12 @@ actions in it don't exist yet:
 ```
 bot "Deckhand"
 
-param margin = 120 from 0 to 240
+param margin = 30 from 0 to 240
 param over = 10 from 0 to 30
 
 when danger_here > 0                       as "step out"  -> step_clear
 when hp * 3 < max_hp and flask > 0         as "drink"     -> drink
-when lift_eta < margin * 10 + way_home     as "turn back" -> go_home
+when front_eta < margin * 10 + way_home    as "turn back" -> go_home
 when ground_level > arms + over            as "too deep"  -> go_home
 when drop_distance <= 10                   as "my drop"   -> pick_up
 when threat_distance <= weapon_reach       as "strike"    -> attack(threat_x, threat_y)
@@ -141,8 +177,8 @@ otherwise                                  as "look about" -> wander
 A rule list was chosen because it can be read at a glance on a stream, the
 rule in charge can be shown, and it's easy to start with. A `param` is a
 number its chatter can set from chat: `margin` is how many seconds before
-the horde reaches the hull it wants to be aboard, and `over` is how many
-levels above its own it will fight.
+the horde's front reaches the shield it wants to be inside it, and `over`
+is how many levels above its own it will fight.
 
 The language compiles to bytecode for a stack machine with these limits:
 
