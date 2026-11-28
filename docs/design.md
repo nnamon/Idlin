@@ -1,12 +1,15 @@
 # Idlin: design
 
-This is what the game is meant to be. Most of it isn't built yet;
-[roadmap.md](roadmap.md) says what exists and what comes next.
+This is what the game is meant to be. Almost none of it is built:
+[roadmap.md](roadmap.md) says what exists, and [slice.md](slice.md) is the
+spec for the first thing to be built, one full cycle of the city.
 
-Idlin is a small camp around a lantern, next to a wood that gets dangerous at
-night. A handful of adventurers live there. Nobody controls them directly: each
-one runs a short program. The game runs unattended on a stream. People watch,
-and anyone who wants to can write the program for one of the adventurers.
+Idlin is a machine city that walks the world on legs, shown on a livestream.
+The stream's chat lives on it: everyone who types has a citizen with their
+name. Every thirteen minutes the city sets down somewhere new, the citizens
+go out to fight and bring back what they find, and a horde arrives to drive
+them off again. Nobody steers a citizen by hand. Each one runs a short
+program, and its chatter sets that program's numbers from chat.
 
 ## Where this comes from
 
@@ -20,93 +23,96 @@ The operator's brief had four points:
    items (loot that rolls affixes).
 4. Fun to watch on a second screen, and fun for one watcher to optimise.
 
-The previous attempt was dropped because watching it was, in the operator's
-words, "mindless whacking". Characters stood at a resource and swung until a
-number went up. Nothing on screen was a decision, so there was nothing to
-follow, and better art would not have helped. Most of the choices below are
-there to make what a character does look like a choice that has a result.
+The first attempt was dropped because watching it was, in the operator's
+words, "mindless whacking". The second, a camp beside a wood with regions
+round it, is what the code is today. The operator's judgement of where it was
+heading: no satisfying loop, and no answer to how a large number of players
+share a finite screen while the world feels vast. Their answer is the one
+this page is written round
+([#331](https://github.com/nnamon/Idlin/issues/331)):
 
-## Design choices
+> instead of doing a typical open world wander around shit, why not have the
+> world move around them? Since you wanted cycles, the game could be depicted
+> all on one screen at different zoom levels for different phases of a
+> massive machine city which crawls on spider like legs traversing the world.
 
-### Show what a character is doing and why
+And on what the loop has to deliver
+([#361](https://github.com/nnamon/Idlin/issues/361)): "Itemisation and loot
+are very important! Getting rare drops and feeling like the actions you do
+have weight and the slog you go through is rewarding is key."
 
-Someone glancing at the stream for a few seconds should be able to tell what a
-character is doing, and roughly why.
+## The game
 
-- A character's program is a short list of rules. The rule currently in charge
-  is shown on the page beside the map, under the character's name. This part is built.
-  So are its hitpoints, at the end of the name's line, and a line under the rule
-  with its level in each skill, each behind a small mark (sword, heart, hatchet,
-  fish, pot).
-- Monster attacks will be telegraphed: the monster winds up, and the tiles it
-  is about to hit are marked for a moment. Whether the adventurer steps out of
-  the way depends on its program, so a fight is a series of small decisions
-  that visibly work or don't.
-- A program that hits an error doesn't break anything. The character stands
-  there confused for a few seconds and tries again, and the stream shows that
-  too.
+### One city, one screen
 
-### Play happens in trips
+One streamer is one city. Every citizen of it is on screen all the time, and
+the camera never cuts from one place to another. What changes is the zoom.
+In transit the frame is close on the city, cut away so that every deck and
+everyone on it shows. When the legs plant, the frame pulls back in one move
+and the land is drawn outward from the hull. A small landing keeps the city
+large and is easy. A large one makes the city small and is hard, so a viewer
+can read the difficulty from the frame.
 
-Characters shouldn't stand at one tree all day. The intended loop is: leave
-camp with food, work or fight further out, come under pressure (the bag fills,
-the food runs low, it gets dark), walk home, bank and cook and re-equip, go
-out again.
+### The cycle
 
-Each trip ends in something worth a line on the stream: what was brought home,
-a level gained, a close call, a death. Dying drops whatever hasn't been banked
-at the spot where the character fell. It stays there for a while and the
-character can go back for it. A character that doesn't get back in time
-loses it.
+Transit, then a landing, then the horde. In transit the city is cramped and
+busy: citizens look over what they own, work the bench, mend what is broken,
+and now and then fight off something that comes alongside. On a landing they
+pour down the ramp into packs and swarms. The horde comes in from one edge
+of the map and crosses it, and when it reaches the hull the ramp goes up.
+Whoever is still outside is hauled aboard without what they carried or wore.
+There is no countdown on screen. The horde is the clock.
 
-### Day and night
+### Loot is the reason to go out
 
-A game day takes 24 real minutes, so a game hour is one minute and the on-screen
-clock is easy to follow. By day the near wood is fairly safe. At dusk the
-lantern is lit. At night stronger monsters come out of the deep wood, with
-better loot.
+Items are a base, an item level, a rarity and affixes rolled in tiers, as in
+Path of Exile. What this game adds is that a drop is not safe until it has
+been carried up the ramp. The stream sees it fall and sees who has it on
+their back. The best of it is far from the ramp, on ground as strong as the
+city's strongest citizen, and late, near the horde, when the walk home is at
+its worst. Uniques bend a rule of the game, so wearing one changes what its
+citizen should be doing. There is no gold: the things that reroll and
+improve gear are themselves drops, spent at a bench aboard.
+[slice.md](slice.md), section 3, has the rates and the rules.
 
-The point is the decision at dusk: every program has to choose between going
-home and risking what it carries. Regular viewers also learn when the
-dangerous part of the day comes.
+### A chatter and their citizen
 
-### One fixed frame
+Talking in chat is joining. A citizen runs one of a few programs the game
+ships, and a chat command changes something that program reads: where its
+flag is, how late it turns for home, what it bothers to pick up, what it
+wears. The program still makes every decision, so two chatters who type the
+same thing get different results, and that difference is the reason to care
+about the numbers. A citizen keeps working while its chatter is away, plays
+safe when nobody has typed for a while, and is put away after a day of
+silence with everything it has. [chat.md](chat.md) is the design.
 
-The world is a few regions, each of which fits in one frame, and the camera
-doesn't cut between characters: the stream shows one region at a time (see
-"One player on a busy stream" below). The spotlight is on one character at a
-time, changing slowly and preferring whoever something is happening to, and
-the map shows the region that character is in. When that character has been
-in another region for two seconds, as when the spotlight goes to someone
-elsewhere or its subject walks through an exit, the map pans there over
-eight seconds, region by region along the exits, easing in and out. A small map at the head of the page shows every
-region, a frame round the part on screen that moves with the pan, a dot in
-each resident's cloak colour and a cross for each group of monsters. A panel
-beside the map will show the spotlit character up close.
+Citizens level as in RuneScape: each skill has its own level from 1 to 99
+and goes up only by doing that thing. Levels and gear together decide a
+fight, and both show on the figure.
 
-Feedback is small and local: a hop, a lunge, a number that floats up and
-fades. No full-screen flashes and nothing that changes brightness quickly over
-a large area. The frame has to stay readable when the stream is shrunk to a
-640-pixel-wide window on a second monitor.
+### The streamer
 
-### Skills and loot
+The city's decisions (where to land, how much risk to take on, whether to
+stand or run when raiders come) are the streamer's alone, made on a page
+only they can open. Each has a default, so a city nobody is tending keeps
+walking. Chat does not vote on anything.
 
-Skills work as in RuneScape: each has its own level from 1 to 99 on an
-exponential curve and only goes up by doing that thing. Levels unlock better
-resources and gear. Gathering feeds processing, and processing feeds combat:
-fish and logs become cooked food, and food is what lets a character stay out
-and fight.
+### Other cities
 
-Items work as in Path of Exile: a base type, an item level, a rarity (normal,
-magic, rare, unique) and affixes rolled from tiered pools. Good drops should be
-rare enough to be worth announcing. Deciding what to pick up, wear and keep is
-up to the character's program, so judging items is part of writing a good one.
+Another streamer's city is the multiplayer this is built toward: a race for
+a landing, a fight across gangways, gear lost to one horde turning up in
+front of another city. None of it is designed yet. The single city is built
+so that a second can meet it: one world server for each city, a deterministic
+simulation that two servers can step together, and decks that are already a
+battlefield.
 
 ### Everything runs a program
 
-Adventurers and monsters run on the same virtual machine with the same
-interface. What differs is the body: which actions it has and what its numbers
-are. Monster programs live in `content/monsters/` next to their stats.
+Citizens and monsters run on the same virtual machine with the same
+interface. What differs is the body: which actions it has and what its
+numbers are. Monster programs live in `content/monsters/` next to their
+stats. For now only the programs the game ships are run; chatters writing
+their own waits until the site has a login.
 
 ## Programs
 
@@ -118,19 +124,25 @@ This is the kind of program the design is aiming at. Most of the sensors and
 actions in it don't exist yet:
 
 ```
-bot "Lumberjack"
+bot "Deckhand"
 
-when hp < 40% and has(food)         -> eat
-when danger_at(me)                  -> step_clear
-when hp < 25%                       -> flee_to(camp)
-when bag_full or dusk               -> go(camp); bank_all
-when sees(tree)                     -> chop(nearest(tree))
-otherwise                           -> wander(near_wood)
+param margin = 120 from 0 to 240
+param over = 10 from 0 to 30
+
+when danger_here > 0                       as "step out"  -> step_clear
+when hp * 3 < max_hp and flask > 0         as "drink"     -> drink
+when lift_eta < margin * 10 + way_home     as "turn back" -> go_home
+when ground_level > arms + over            as "too deep"  -> go_home
+when drop_distance <= 10                   as "my drop"   -> pick_up
+when threat_distance <= weapon_reach       as "strike"    -> attack(threat_x, threat_y)
+otherwise                                  as "look about" -> wander
 ```
 
 A rule list was chosen because it can be read at a glance on a stream, the
-rule in charge can be shown, and it's easy to start with. You improve a bot by
-reordering rules, changing thresholds and adding cases.
+rule in charge can be shown, and it's easy to start with. A `param` is a
+number its chatter can set from chat: `margin` is how many seconds before
+the horde reaches the hull it wants to be aboard, and `over` is how many
+levels above its own it will fight.
 
 The language compiles to bytecode for a stack machine with these limits:
 
@@ -162,8 +174,12 @@ every tick, so actions take time and the picture stays calm.
 
 ## Look
 
-This section describes what is drawn today. [art.md](art.md) is the standard
-new drawing is held to, and says which of this meets it.
+This section describes what is drawn today, which is the camp the code still
+runs: a fixed map with a fire, a lantern, four regions, and a day and night.
+The city, the landings and the zoom are not drawn yet. [art.md](art.md) is
+the standard new drawing is held to, and says which of this meets it; the
+look target ([#362](https://github.com/nnamon/Idlin/issues/362)) is the
+first drawing of the city.
 
 The stream is drawn as a map, in the style of the maps printed in old books.
 The ground is cream paper, the land is drawn in sepia ink with thin watercolour
@@ -358,64 +374,7 @@ page below the map, the paper either side of the map is part of the map for
 this: it darkens with the map. The map's double rule sits on the
 map's own edge in every layout. The typeface is IM Fell English.
 
-## One player on a busy stream
-
-Everyone watches the same stream, and nobody can point it. There may be many
-more characters than the six in the first milestone. The game has to stay
-worth watching for someone who owns just one of them. The plan
-([plan.md](plan.md), section 4.5, has the numbers):
-
-1. **Finding your character.** Each player's character has a hood and cloak pair of
-   its own. Typing `!me` in chat will highlight it for a few seconds.
-2. **Getting noticed.** The map will be drawn smaller, so that the frame
-   holds about a region and a half each way. The frame will rest for 80
-   seconds at a time where the characters shown least are, and the spotlight
-   will change among the characters in it. A player who is
-   watching has their character in the map frame for at least 240 seconds of
-   every hour, with no gap over 20 minutes, however many others are watching.
-   Notable events can take the view, for at most a fifth of the hour. The
-   news line says who did what. How long each character was in the frame and
-   in the spotlight is measured, so a crowd can't quietly squeeze someone
-   out.
-3. **Comparing.** The spotlight shows a character's rules firing. Leaderboards
-   rank single trips in many categories (best haul today, longest night
-   survived, fastest to a level), so someone new with a clever program can top
-   one on their first day while long-time players keep their levels.
-4. **A page of your own.** Each character gets a companion web page: its
-   stats, what happened since you last looked, and its program to edit. The
-   page also draws the character live, with the ground a few tiles round it.
-   That is the one picture a player has besides the stream. It follows their
-   own character and can't be moved off it, and it is how they see what a
-   change to the program did without waiting for the stream to come round.
-5. **Regions.** A frame only holds as many characters as can be read: about
-   12 to 15, or 20 if they spread out, by the crowd captures. So the world is
-   several regions, each a map of one frame, joined by exits. A region opens
-   only when the world needs it, because the characters have outgrown the
-   ones there are or there are too many for them, because ground the frame
-   has to travel to takes frame time from every player. The regions lie in a
-   grid three regions tall, which two rows of the frame cover, and the world
-   holds at most 150 characters. Residents never keep monsters out of a
-   region: a busy region draws more, up to a ceiling (24 a region by night).
-   The stream stays on one region at a time and moves to the next
-   slowly, without cutting. Characters elsewhere carry on, and show up in the
-   news line and on their own page.
-
-Whether this is enough is not known. It will be tested by capturing the stream
-with 12, 50 and 150 characters and judging it from one player's point of view
-(the "Mine" score in [watch-rubric.md](watch-rubric.md)). The first milestone
-only builds the frame and the spotlight and measures how many characters fit.
-Points 1 and 4 need owners and are planned for M2, and the boards of point 3
-for M7. Four regions exist, and today the view follows the spotlight between
-them.
-
-## What a viewer can do
-
-In the first milestone, only watch; the programs are built in. Later: claim an
-adventurer, read its program, edit it in the browser, and see how it does
-against the others. That part starts in M2; [plan.md](plan.md) has it in
-full, with builds, the store and how the world grows. [chat.md](chat.md) is
-the design for how a stream's chat joins and commands its citizens.
-
 ## Not planned yet
 
-Deployment and hosting, sound, mobile layouts and trading between characters.
+Deployment and hosting, sound, mobile layouts, trading between citizens, and
+programs written by chatters.
