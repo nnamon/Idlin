@@ -224,7 +224,7 @@ their rules and times), and the plate is a different picture in each.
 | 3. The front gathers | Black comes in at the gaps and spreads along the rim on every side. It deepens from one tile to four (two on the first size of landing) as the horde gathers, and its depth is how a viewer at 640 tells how near the march is.       |
 | 4. The march         | The black moves. It takes the ground with the longest walk to the ramp first, on every side at once, so the pale ground shrinks to one shape round the city. The frame closes with it (section 12).                                   |
 | 5. The siege         | The horde meets the city's shield (section 7) and throws itself on it. Citizens fight at its foot. This is the late picture: a lit oblong with the city in it, a wall of light on lamp posts round it, and bodies heaped on the wall. |
-| 6. The break         | The lamps still lit go out together, the heap falls inward and the black takes the ground inside. Citizens run for the ramp from every side with the horde two or three tiles behind them.                                            |
+| 6. The break         | The shield goes all at once, the heap falls inward and the black takes the ground inside. Citizens run for the ramp from every side with the horde two or three tiles behind them.                                                    |
 | 7. Lift-off          | The black reaches the hull. The legs lift out of it and the frame closes on the city (section 12).                                                                                                                                    |
 
 - It is spot black on the ground, a tide of ink. It is never a front that
@@ -739,17 +739,23 @@ are in pixels and do not change. Effects are sized against a citizen
 The city has a shield, and the horde has to break it before it can reach
 the hull. The simulation gives its foot, its level and its strength
 ([slice.md](slice.md), section 1). It is drawn as a dome of light standing
-on lamp posts. The posts are what the city has built, the lamps show where
-the horde has worn it, and the dome is what the horde throws itself on. It
-is drawn with the pen like everything else: hatching and flat wash, no
-glow and no blur.
+on lamp posts. The posts are what the city has built, the lamps show which
+stretches of it still hold well, and the dome is what the horde throws
+itself on. It is drawn with the pen like everything else: hatching and
+flat wash, no glow and no blur.
 
+- **It is one shield.** It has one pool of strength, and the whole dome
+  goes at once when the pool runs out. Nothing gets through it before
+  that, on any side. So no stretch of it is ever drawn open, torn away or
+  missing: a gap on screen would read as a way in that the horde is not
+  using.
 - **Its foot** is one closed curve on the ground round the city, drawn in
   plan through the tiles the simulation gives, with bends no tighter than
   two tiles. The planted feet and the ramp's foot are inside it. It is a
-  heavy line in ink with a band of the lamp accent 6 px wide along its
-  inner side, so it holds against pale ground and against the black. It
-  stays closed until the break.
+  heavy line in ink with a band 6 px wide along its inner side, so it
+  holds against pale ground and against the black. The band is the lamp
+  accent on a lit post's arc and the unlit wash on a dark post's (The
+  wall, below). The ink line stays closed until the break.
 - **Its posts.** Lamp posts stand on the foot at even spacing by its
   length, with the way out from the ramp's foot passing midway between two
   of them. A shield has ten before any upgrade and two more for each level
@@ -767,40 +773,52 @@ glow and no blur.
   A shaft is 8 px wide at contour weight. A lamp is a disc of the accent
   14 px across in an ink ring. Lit, it has one flat halo of the accent at
   30%, 40 px across, with a hard edge.
-- **Its lamps are its posts.** The shield has one pool of strength, and
-  each post has a condition that the horde's blows on its stretch of the
-  wall wear down ([slice.md](slice.md), section 1). A lamp is lit while its
-  post's condition lasts and goes out when it runs out, and is not relit
-  during a siege. Blows on a dark post's stretch cost the shield three
-  times as much, so dark posts come where a side is thin and a viewer sees
-  which side is going. The shield breaks when the pool is gone, with
-  whatever lamps are still lit. No bar, and no number on the map: the
-  count is in the corner (section 11).
+- **A lamp for each arc.** Each post holds the stretch of the foot nearest
+  it, its arc, and its lamp is lit while the post is sound. Blows on an
+  arc wear its post down, and when the post gives out its lamp goes dark.
+  It is not relit during a siege. A blow on a dark post's arc takes three
+  times as much from the pool as one on a lit post's
+  ([slice.md](slice.md), section 1). Posts
+  go dark on the sides where nobody is fighting the horde off, so where
+  some sides are held dark posts come in runs and a viewer sees which
+  side is going. The shield can break with lamps still lit. No bar, and no number on the map: the count
+  is in the corner (section 11).
 - **A dark post** keeps its wash and loses its flame. It leans up to 20
   degrees toward the city and smokes: two loops at contour weight, in paper
   colour where they lie over the black. With a quarter of the lamps or
   fewer lit, one dark post in three is snapped at half its height.
-- **The wall.** The dome's skin hangs from the lit lamps. Between two lit
-  posts it is whole: a wash of the accent at 35%, with open hatching in
-  lamp ink that leans in toward the lantern and a top edge at contour
-  weight in ink. On the far side it stands from the foot to a quarter
-  of a post above the lamps. Toward the two ends it narrows to nothing. On
-  the near side it is a strip half a tile deep lying on the ground outside
-  the foot, so nothing of it stands between a citizen and the viewer.
-  Between a lit post and a dark one it is torn down to half its height
-  with a ragged edge. Between two dark posts only the foot is left.
+- **The wall.** The dome's skin stands on every arc until the break, at
+  the same height whether its post is lit or dark. On the far side it
+  stands from the foot to a quarter of a post above the lamps. Toward the
+  two ends it narrows to nothing. On the near side it is a strip half a
+  tile deep lying on the ground outside the foot, so nothing of it stands
+  between a citizen and the viewer.
+  - **On a lit post's arc** it is a wash of the accent at 35%, with open
+    hatching in lamp ink that leans in toward the lantern and a top edge
+    at contour weight in ink.
+  - **On a dark post's arc** it stands unlit and cracked. The wash is iron
+    and soot (`#5b5048`) at 40%, the hatching is in ink, the top edge is
+    ragged, and its cracks stay (A blow on it, below). It is not torn
+    down and nothing shows through it.
+  - **The strip and the foot's band follow their arc:** the accent where
+    the post is lit, the unlit wash with ink hatching where it is dark.
+    At the ends and on the near side there is no standing wall, so this
+    is what tells a lit stretch from a dark one there.
+  - The change from lit to unlit falls midway between two posts, as a
+    hard edge.
 - **The crown is not drawn.** Nothing of the wall lies over the hull, the
   deck, the mast or the ground inside the foot.
 - **The wall is a backdrop.** It is drawn after the ground and the black
   and before everything that stands, on every side. The horde on it is
-  black on gold, and a citizen beyond the far wall keeps its full colours.
-  Nothing is seen through it.
+  black on gold where it is lit, and a citizen beyond the far wall keeps
+  its full colours. Nothing is seen through it.
 - **A blow on it** is a contact burst in the accent at that place, a
   citizen's height across and thrown inward, and a crack: a jagged line in
   ink at form weight that runs up the wall from the place. Each blow there
-  adds a third of the wall's height to it, and it stays until that stretch
-  tears. Cracks are on the standing wall only. On the near side's strip,
-  and where the wall has narrowed to nothing, a blow is the burst alone.
+  adds a third of the wall's height to it, and it stays until the break,
+  through its post going dark. Cracks are on the standing wall only. On
+  the near side's strip, and where the wall has narrowed to nothing, a
+  blow is the burst alone.
 - **Before the march** the posts stand unlit and are drawn at rest, as a
   pack is (section 6): line at 45% ink and wash at half strength. The foot
   and the wall are not drawn. When the march starts the lamps light in a
@@ -820,12 +838,12 @@ glow and no blur.
   under one tile, so no citizen there is covered. Ground the simulation
   leaves between the foot and the black is drawn trodden: the ground wash
   greyed by a third, with no ground marks.
-- **The break.** Every lamp still lit goes out at once. In that frame the
-  wall and the foot break into drops along their whole length and the drops
-  fall inward. The posts go down inward in a run both ways round from the
-  ramp's side, in 0.6 seconds. The heap falls inward as one held drawing
-  and the black follows it across the foot. Nothing of the shield is drawn
-  after that.
+- **The break.** The pool runs out. In that frame every lamp still lit
+  goes out, and the wall and the foot, lit and unlit, break into drops
+  along their whole length and the drops fall inward. The posts go down
+  inward in a run both ways round from the ramp's side, in 0.6 seconds.
+  The heap falls inward as one held drawing and the black
+  follows it across the foot. Nothing of the shield is drawn after that.
 
 ### Movement
 
