@@ -18,6 +18,7 @@ import {
   MAX_LEVEL,
   PASSAGE_KINDS,
   RAMP_WIDTH,
+  RIM,
   SIZE_CLASSES,
   SIZES,
   type SizeClass,
@@ -52,14 +53,30 @@ const landings: Record<SizeClass, Landing[]> = {
   large: sweep("large"),
 };
 
+/**
+ * Districts besides the city's, which the blocks and SIZES' `cell` fix for
+ * each size: with the ramp to the north or south, and to the east or west.
+ */
+const POCKETS: Record<SizeClass, readonly [number, number]> = {
+  small: [8, 8],
+  medium: [12, 15],
+  large: [17, 18],
+};
+const across = (landing: Landing): 0 | 1 =>
+  landing.rampSide === "north" || landing.rampSide === "south" ? 0 : 1;
+
 const index = (landing: Landing, p: Point): number => p.y * landing.width + p.x;
 const pointAt = (landing: Landing, i: number): Point => ({
   x: i % landing.width,
   y: Math.floor(i / landing.width),
 });
 
-/** Steps of the shortest walk from the ramp to each tile it can reach, by the map's own rules. */
-function walks(landing: Landing): Map<number, number> {
+/**
+ * Steps of the shortest walk from the ramp to each tile it can reach, by the
+ * map's own rules. Without camp ground, the walk steps off the ramp and never
+ * onto camp again, as a monster's must.
+ */
+function walks(landing: Landing, camp = true): Map<number, number> {
   const steps = new Map([[index(landing, landing.ramp), 0]]);
   const queue = [landing.ramp];
   for (let head = 0; head < queue.length; head++) {
@@ -67,6 +84,7 @@ function walks(landing: Landing): Map<number, number> {
     for (const [dx, dy] of NEIGHBOURS) {
       const next = { x: here.x + dx, y: here.y + dy };
       if (!isWalkable(landing, next.x, next.y) || steps.has(index(landing, next))) continue;
+      if (!camp && terrainAt(landing, next.x, next.y) === "camp") continue;
       steps.set(index(landing, next), (steps.get(index(landing, here)) as number) + 1);
       queue.push(next);
     }
@@ -138,7 +156,8 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
     it(`${size}: the ramp's district is the root, and each other one has a ring by its walk from the ramp`, () => {
       for (const landing of landings[size]) {
         const { districts } = landing;
-        expect(districts.length).toBeGreaterThanOrEqual(4);
+        // The pockets besides the city's district, near the counts the spec for packs (#396) works from.
+        expect(districts.length - 1).toBe(POCKETS[size][across(landing)]);
         expect(districts[0]).toMatchObject({
           ...landing.ramp,
           id: 0,
@@ -284,20 +303,55 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
       expect(rivers).toBe(wet);
     });
 
-    it(`${size}: the horde's front comes in at known places and has a known way to the hull`, () => {
+    it(`${size}: the rim is two tiles of barrier, broken by one gap on each side`, () => {
       for (const landing of landings[size]) {
-        expect(landing.entries).toHaveLength(spec.entries);
-        expect(new Set(landing.entries.map((e) => index(landing, e))).size).toBe(spec.entries);
+        const { width, height } = landing;
+        const depth = (x: number, y: number): number =>
+          Math.min(x, y, width - 1 - x, height - 1 - y);
+        const gapTiles = new Set(
+          landing.entries.flatMap((e) => e.gap.map((t) => index(landing, t))),
+        );
+        expect(gapTiles.size).toBe(landing.entries.reduce((n, e) => n + e.gap.length, 0));
+        for (let i = 0; i < landing.tiles.length; i++) {
+          const { x, y } = pointAt(landing, i);
+          if (depth(x, y) >= RIM) continue;
+          if (isWalkable(landing, x, y) !== gapTiles.has(i))
+            throw new Error(`${landing.name}: rim tile (${x}, ${y}) is wrong`);
+        }
+        expect(landing.entries.map((e) => e.edge)).toEqual([...EDGES]);
         for (const entry of landing.entries) {
-          const onEdge =
-            landing.horde === "north"
-              ? entry.y === 0
-              : landing.horde === "south"
-                ? entry.y === landing.height - 1
-                : landing.horde === "west"
-                  ? entry.x === 0
-                  : entry.x === landing.width - 1;
-          expect(onEdge).toBe(true);
+          const side = EDGES.indexOf(entry.edge);
+          /** How far in from the entry's own side, and how far along it. */
+          const inward = (t: Point): number =>
+            [t.y, width - 1 - t.x, height - 1 - t.y, t.x][side] as number;
+          const along = (t: Point): number => (side % 2 === 0 ? t.x : t.y);
+          expect(inward(entry)).toBe(0);
+          // Two deep and two or three wide, centred on the entry.
+          const wide = entry.gap.length / 2;
+          expect([2, 3]).toContain(wide);
+          for (const t of entry.gap) {
+            expect(inward(t)).toBeLessThan(RIM);
+            expect(Math.abs(along(t) - along(entry))).toBeLessThanOrEqual(1);
+            expect(landing.districtAt[index(landing, t)]).toBe(entry.district);
+          }
+          expect(new Set(entry.gap.map(along)).size).toBe(wide);
+          // It opens into its district's ground, not into a border, and never
+          // straight onto the city's.
+          const inner = entry.path[RIM] as Point;
+          expect(inward(inner)).toBe(RIM);
+          expect(landing.districtAt[index(landing, inner)]).toBe(entry.district);
+          expect(entry.district).not.toBe(0);
+        }
+        // The four gaps lead into the ground of at least two districts.
+        expect(new Set(landing.entries.map((e) => e.district)).size).toBeGreaterThan(1);
+      }
+    });
+
+    it(`${size}: the horde's front comes in at each gap and has a known way to the hull`, () => {
+      for (const landing of landings[size]) {
+        expect(landing.entries).toHaveLength(4);
+        expect(new Set(landing.entries.map((e) => index(landing, e))).size).toBe(4);
+        for (const entry of landing.entries) {
           expect(entry.route[0]).toBe(entry.district);
           expect(entry.route.at(-1)).toBe(0);
           expect(entry.passages).toHaveLength(entry.route.length - 1);
@@ -324,10 +378,14 @@ describe("generateLanding: the layout graph", { timeout: SWEEP_TIMEOUT }, () => 
 });
 
 describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT }, () => {
-  it("has the sizes of the slice's spec", () => {
-    expect([SIZES.small.width, SIZES.small.height]).toEqual([40, 22]);
+  it("has the sizes and counts of the slice's spec, the small one made room in", () => {
+    // docs/slice.md has small at 40 by 22; 46 by 26 fits a row of blocks north
+    // and south of the city's ground (SIZES says how).
+    expect([SIZES.small.width, SIZES.small.height]).toEqual([46, 26]);
     expect([SIZES.medium.width, SIZES.medium.height]).toEqual([60, 33]);
     expect([SIZES.large.width, SIZES.large.height]).toEqual([80, 45]);
+    expect([CITY_WIDTH, CITY_HEIGHT, RIM]).toEqual([10, 6, 2]);
+    expect(SIZE_CLASSES.map((s) => SIZES[s].apron)).toEqual([3, 4, 4]);
     expect(SIZE_CLASSES.map((s) => [SIZES[s].dens, SIZES[s].caches, SIZES[s].far])).toEqual([
       [1, 1, 0],
       [3, 2, 5],
@@ -363,9 +421,34 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
       }
     });
 
-    it(`${size}: the city stands on camp ground off the middle, its ramp three wide toward the land`, () => {
+    it(`${size}: a monster, which may not stand on camp ground, can reach every other walkable tile from the ramp`, () => {
       for (const landing of landings[size]) {
-        const { city, ramp } = landing;
+        const seen = walks(landing, false);
+        let open = 0;
+        for (let i = 0; i < landing.tiles.length; i++) {
+          const { x, y } = pointAt(landing, i);
+          if (!isWalkable(landing, x, y) || terrainAt(landing, x, y) === "camp") continue;
+          open++;
+          if (!seen.has(i))
+            throw new Error(`${landing.name}: (${x}, ${y}) cannot be reached without camp`);
+        }
+        // The ramp itself, and everything else.
+        expect(seen.size).toBe(open + 1);
+        // Every den, chest (cache), scrap pile (seam) and gap is among them.
+        for (const s of [
+          ...landing.dens,
+          ...landing.caches,
+          ...landing.seams,
+          ...landing.entries,
+          ...landing.entries.flatMap((e) => e.gap),
+        ])
+          expect(seen.has(index(landing, s))).toBe(true);
+      }
+    });
+
+    it(`${size}: the city's ground is in the middle, the city on camp ground in it, its ramp three wide`, () => {
+      for (const landing of landings[size]) {
+        const { city, ramp, width, height } = landing;
         expect([city.width, city.height]).toEqual([CITY_WIDTH, CITY_HEIGHT]);
         for (let y = city.y; y < city.y + city.height; y++) {
           for (let x = city.x; x < city.x + city.width; x++) {
@@ -373,13 +456,46 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
             expect(landing.districtAt[index(landing, { x, y })]).toBe(0);
           }
         }
+        const side = EDGES.indexOf(landing.rampSide);
         const [toX, toY] = [
           [0, -1],
           [1, 0],
           [0, 1],
           [-1, 0],
-        ][EDGES.indexOf(landing.horde)] as [number, number];
-        // Two tiles out from the side of the footprint with the most land beyond it.
+        ][side] as [number, number];
+        // The city's district is the apron round the footprint, two deeper on the ramp's side.
+        const pad = EDGES.map((_, s) => spec.apron + (s === side ? 2 : 0));
+        const [padN, padE, padS, padW] = pad as [number, number, number, number];
+        const home = (landing.districts[0] as Landing["districts"][0]).bounds;
+        expect(home).toEqual({
+          x: city.x - padW,
+          y: city.y - padN,
+          width: padW + CITY_WIDTH + padE,
+          height: padN + CITY_HEIGHT + padS,
+        });
+        // It is centred on the map, and so are the footprint and the ramp
+        // together; to half a tile where the map's length is odd.
+        const centred = (x: number, y: number, w: number, h: number): void => {
+          expect(Math.abs(2 * x + w - width), landing.name).toBeLessThanOrEqual(width % 2);
+          expect(Math.abs(2 * y + h - height), landing.name).toBeLessThanOrEqual(height % 2);
+        };
+        centred(home.x, home.y, home.width, home.height);
+        centred(
+          city.x - (toX < 0 ? 2 : 0),
+          city.y - (toY < 0 ? 2 : 0),
+          city.width + 2 * Math.abs(toX),
+          city.height + 2 * Math.abs(toY),
+        );
+        // All of it but its outermost tiles is the city's own and open.
+        for (let y = home.y + 1; y < home.y + home.height - 1; y++) {
+          for (let x = home.x + 1; x < home.x + home.width - 1; x++) {
+            expect(landing.districtAt[index(landing, { x, y })]).toBe(0);
+            expect(isWalkable(landing, x, y)).toBe(true);
+          }
+        }
+        // Two tiles out from the middle of its side of the footprint.
+        if (toX !== 0) expect(ramp.y).toBe(city.y + (CITY_HEIGHT >> 1));
+        if (toY !== 0) expect(ramp.x).toBe(city.x + (CITY_WIDTH >> 1));
         if (toX > 0) expect(ramp.x).toBe(city.x + city.width + 1);
         if (toX < 0) expect(ramp.x).toBe(city.x - 2);
         if (toY > 0) expect(ramp.y).toBe(city.y + city.height + 1);
@@ -393,16 +509,42 @@ describe("generateLanding: every landing in the sweep", { timeout: SWEEP_TIMEOUT
             expect(terrainAt(landing, x, y)).toBe("camp");
           }
         }
-        // Off the middle, away from the horde's edge.
-        const middle =
-          toX !== 0 ? city.x + 5 - (landing.width >> 1) : city.y + 3 - (landing.height >> 1);
-        expect(Math.sign(middle)).toBe(-(toX + toY));
-        // Open ground all round the footprint and the ramp.
-        for (let y = city.y - 2; y < city.y + city.height + 2; y++) {
-          for (let x = city.x - 2; x < city.x + city.width + 2; x++) {
-            expect(isWalkable(landing, x, y)).toBe(true);
-          }
+        // Open ground of the city's in front of the ramp: two tiles on a small
+        // landing, three on the others.
+        for (let k = 1; k < spec.apron; k++) {
+          const [x, y] = [ramp.x + k * toX, ramp.y + k * toY];
+          expect(terrainAt(landing, x, y)).not.toBe("camp");
+          expect(isWalkable(landing, x, y)).toBe(true);
+          expect(landing.districtAt[index(landing, { x, y })]).toBe(0);
         }
+      }
+    });
+
+    it(`${size}: has pockets on every side of the city's ground`, () => {
+      for (const landing of landings[size]) {
+        const { width, height } = landing;
+        const home = (landing.districts[0] as Landing["districts"][0]).bounds;
+        // The strip straight across each side, from the city's ground to the rim, in EDGES order.
+        const strips = [
+          [home.x, RIM, home.x + home.width, home.y],
+          [home.x + home.width, home.y, width - RIM, home.y + home.height],
+          [home.x, home.y + home.height, home.x + home.width, height - RIM],
+          [RIM, home.y, home.x, home.y + home.height],
+        ] as const;
+        strips.forEach(([x0, y0, x1, y1], side) => {
+          const where = `${landing.name} ${EDGES[side]}`;
+          // At least a block deep.
+          expect(Math.min(x1 - x0, y1 - y0), where).toBeGreaterThanOrEqual(4);
+          // Ground of another district there, more than a block's worth.
+          let open = 0;
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const district = landing.districtAt[index(landing, { x, y })] as number;
+              if (district > 0 && isWalkable(landing, x, y)) open++;
+            }
+          }
+          expect(open, where).toBeGreaterThanOrEqual(16);
+        });
       }
     });
 
@@ -603,15 +745,15 @@ describe("generateLanding: determinism", () => {
     // a change to the generator that is meant to move them updates them.
     expect(
       hashLanding(generateLanding({ seed: 1, size: "small", biome: "meadow", level: 5 })),
-    ).toBe("659cc6758091af34");
+    ).toBe("ad2347d6ea09af7f");
     expect(hashLanding(generateLanding({ seed: 2, size: "medium", biome: "fen", level: 12 }))).toBe(
-      "f0aa9d0b18c3ea52",
+      "35f8a33629e084b3",
     );
     expect(
       hashLanding(
         generateLanding({ seed: 3, size: "large", biome: "ash_waste", level: 30, extraDens: 2 }),
       ),
-    ).toBe("71b7e4f97fccb23c");
+    ).toBe("838d9d20dbc9ef1d");
   });
 
   it("gives different landings for different seeds", () => {
@@ -625,17 +767,22 @@ describe("generateLanding: determinism", () => {
     }
   });
 
-  it("puts the horde on every edge across seeds", () => {
+  it("puts the ramp on every side of the footprint across seeds", () => {
     for (const size of SIZE_CLASSES) {
-      expect(new Set(landings[size].map((l) => l.horde))).toEqual(new Set(EDGES));
+      const sides = landings[size].map((l) => l.rampSide);
+      // Each side about a quarter of the time: 100 seeds give 15 or more of each.
+      for (const side of EDGES) {
+        expect(sides.filter((s) => s === side).length).toBeGreaterThan(SEEDS * 0.15);
+      }
     }
   });
 });
 
 describe("generateLanding: cost", () => {
   it("takes a bounded time whatever the seed", () => {
-    // Over 2,000 seeds in the dev container the mean is 2.7, 4.1 and 7.5 ms and
-    // the slowest 17, 21 and 23 ms; CI runs the gate about three times slower.
+    // Over 2,000 seeds in the dev container the mean is 2.5, 3.0 and 6.9 ms and
+    // the median 2.4, 2.9 and 6.7 ms; the slowest, at 8 to 49 ms, were pauses
+    // with other work running beside them. CI runs the gate about three times slower.
     const budget: Record<SizeClass, number> = { small: 25, medium: 40, large: 75 };
     const count = LONG ? 200 : 40;
     for (const size of SIZE_CLASSES) {
@@ -677,6 +824,23 @@ describe("generateLanding: cost", () => {
       );
     } finally {
       spec.width = width;
+    }
+  });
+
+  it("refuses a size with no room for a strip of blocks on every side of the city", () => {
+    // 40 by 22 leaves the strips north and south of the city's ground two or
+    // three tiles deep, whichever side the ramp is on.
+    const spec = SIZES.small as { width: number; height: number };
+    const [width, height] = [spec.width, spec.height];
+    try {
+      [spec.width, spec.height] = [40, 22];
+      for (let seed = 0; seed < 8; seed++) {
+        expect(() => generateLanding({ seed, size: "small", biome: "meadow", level: 5 })).toThrow(
+          "no room for blocks on every side of the city",
+        );
+      }
+    } finally {
+      [spec.width, spec.height] = [width, height];
     }
   });
 });
@@ -760,19 +924,20 @@ describe("generateLanding: refuses what is not an input", () => {
 });
 
 describe("landingText", () => {
-  it("prints the header and one line a row, with the horde's edge, the gates and the entries marked", () => {
+  it("prints the header and one line a row, with the gates and the gaps marked", () => {
     for (const size of SIZE_CLASSES) {
       const landing = landings[size][0] as Landing;
       for (const view of ["terrain", "districts", "rings"] as const) {
         const lines = landingText(landing, view).split("\n");
         const grid = lines.slice(5);
-        const across = landing.horde === "north" || landing.horde === "south";
-        expect(grid).toHaveLength(landing.height + (across ? 1 : 0));
-        for (const row of grid) expect(row).toHaveLength(landing.width + (across ? 0 : 1));
+        expect(grid).toHaveLength(landing.height);
+        for (const row of grid) expect(row).toHaveLength(landing.width);
         expect(lines[0]).toContain(`${size} ${landing.width}x${landing.height}, ${landing.biome}`);
+        expect(lines[1]).toContain(`ramp on the ${landing.rampSide}`);
         const drawn = grid.join("");
         expect(drawn).toContain("R");
-        expect(drawn.split("H")).toHaveLength(landing.entries.length + 1);
+        expect(drawn.split("H")).toHaveLength(5);
+        for (const e of landing.entries) expect(grid[e.y]?.[e.x]).toBe("H");
         expect(drawn).toMatch(/[+=%]/);
         if (view !== "districts") {
           expect(drawn.split("D")).toHaveLength(landing.dens.length + 1);

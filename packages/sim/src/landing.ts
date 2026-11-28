@@ -8,16 +8,28 @@
 // The layout is a graph first and ground second. Nothing is placed by trying
 // a spot and checking it, and nothing is repaired afterwards.
 //
-// 1. Blocks. Jittered lines cut the map into blocks of four tiles or more a
-//    side. The blocks under the city's apron are the city's district, which
-//    holds the ramp and is the graph's root.
+// 0. The frame. The map is about 16:9, the shape of the stream's frame. The
+//    rim, its outer two rings of tiles, is the biome's barrier and in no block
+//    and no district. The city's ground is in the middle: its 10 by 6
+//    footprint and the size's apron round it, two tiles deeper on the side
+//    the seed draws for the ramp, so that the footprint and its ramp
+//    together are centred too. Every size leaves a strip at least a block
+//    wide between that ground and the rim on all four sides, so there are
+//    pockets on every side of the city. This is a fact of the sizes, not of
+//    the seed, and a size without the room is refused outright.
+// 1. Blocks. Jittered lines cut the ground inside the rim into blocks of four
+//    tiles or more a side, along the edges of the city's ground. The blocks
+//    under that ground are the city's district, which holds the ramp and is
+//    the graph's root. Every other block lies in one of the four strips or a
+//    corner between two, so none of the city's blocks touches the rim.
 // 2. Districts. The other blocks are counted outward from the city into
 //    bands. Each band gets a seed block for every few of its blocks, each
-//    seed the block farthest from the seeds before it, and so does any piece
-//    of the map the city cuts off from the rest. Then the districts take
-//    turns to add a free block beside one they have, keeping to their band
-//    where they can. A district is a connected, irregular group of blocks,
-//    and every block ends up in one.
+//    seed the block farthest from the seeds before it. Then the districts
+//    take turns to add a free block beside one they have, keeping to their
+//    band where they can. A district is a connected, irregular group of
+//    blocks, and every block ends up in one. The number of districts is a
+//    fact of the size and of which axis the ramp is on: the cuts and the
+//    bands depend on lengths only.
 // 3. Passages. Districts with blocks side by side are neighbours. A spanning
 //    tree is grown outward from the city over the neighbours (Prim's
 //    algorithm, nearer bands first, seeded weights). Where the biome has a
@@ -28,31 +40,38 @@
 //    share: tiles two deep and one to three wide, with a wall tile (a jamb)
 //    at each end. Each district gets lanes, which are 4-connected lines: from
 //    its centre (the hub of its seed block) from block to block, to its side
-//    of every gate, to each den, cache and seam it holds, and to the map's
-//    edge where the horde comes in. A lane tile has all eight tiles round it
-//    in its own district's blocks, so the lanes of two districts are never
-//    nearer than two tiles.
+//    of every gate, and to each den, cache and seam it holds. A lane tile has
+//    all eight tiles round it in its own district's blocks (a rim tile counts
+//    as part of the block inside it), so the lanes of two districts are never
+//    nearer than two tiles. Each side of the map gets a gap in the rim, in a
+//    block on that side drawn from the best by a score: one whose district
+//    has a gap already is worse, and so is one in a corner. The blocks on a
+//    side are all in the strip or the corners there, so the gap's district is
+//    never the city's. Its district lays a lane to the rim's inner face and on
+//    straight through it to the map's edge, and the rim tiles beside that
+//    lane's last two, within the block, are lane tiles too, so a gap is two
+//    deep and three wide where the block allows.
 // 5. Ground. A tile's land is the district of the block under it, looked up
 //    a few tiles to one side by smooth noise. The shift is nothing beside a
 //    lane or a gate and grows away from them, so borders curve where there
 //    is room and stay where the gates are. Then every district is grown from
 //    its lanes, a tile at a time, each next to one it has: over its own land
 //    first, then over any land its owner could not get to. A tile with
-//    another district among the eight round it stays out for good. What
-//    stays out is the border between districts, at least one tile thick,
-//    also diagonally.
+//    another district among the eight round it stays out for good, and so
+//    does the rim. What stays out inside the rim is the border between
+//    districts, at least one tile thick, also diagonally.
 // 6. Barriers. Border tiles become water (the river, where the border has
 //    the far bank on one side only), rock beside a crag, dark trees beside
 //    an old wood, and the biome's own barrier elsewhere. A passage across
 //    the river is a bridge if it is on the tree and a ford if it is a loop,
 //    and nothing else crosses it. Where a passage is "open" the border
-//    between its two districts is taken out instead.
-// 7. Dressing. Woods and the river are thickened, the map's edges get the
-//    biome's barrier (one tile deep on the side the horde comes from), and
-//    cover (groves, ponds, outcrops), cache walls and den walls are stamped
-//    inside districts. Each of these turns walkable tiles into blocked ones,
-//    and a tile is turned only if it is not on a lane and its walkable
-//    4-neighbours stay joined to each other through the eight tiles round it.
+//    between its two districts is taken out instead. The rim, but for its
+//    gaps, becomes the biome's barrier.
+// 7. Dressing. Woods and the river are thickened, and cover (groves, ponds,
+//    outcrops), cache walls and den walls are stamped inside districts. Each
+//    of these turns walkable tiles into blocked ones, and a tile is turned
+//    only if it is not on a lane and its walkable 4-neighbours stay joined
+//    to each other through the eight tiles round it.
 // 8. Rings and contents. A district's ring is the third of the longest walk
 //    from the ramp, along the lanes, that its centre lies in. District kinds
 //    are dealt from the biome's deck. Dens and caches take tiles in the
@@ -63,28 +82,40 @@
 //
 // Why every walkable tile can be reached from the ramp
 //
-// - The neighbour graph is connected: the blocks tile the map and each is in
-//   a district, so any two districts are joined by a chain of blocks side by
-//   side. Prim's algorithm therefore spans every district.
-// - The skeleton is connected. All of a district's lanes run from its centre.
-//   A tree passage joins the centres of its two districts by lane, gate,
-//   lane. The city's centre is the ramp.
+// - The neighbour graph is connected: the blocks tile the ground inside the
+//   rim and each is in a district, so any two districts are joined by a chain
+//   of blocks side by side. Prim's algorithm therefore spans every district.
+//   The other blocks are one piece, a ring of strips and corners round the
+//   city's, so every one of them is grown into from a seed.
+// - The skeleton is connected. All of a district's lanes run from its centre,
+//   and a gap's tiles are lane tiles. A passage joins the centres of its two
+//   districts by lane, gate, lane. The city's centre is the ramp. So a gap,
+//   its lane, and the lanes and gates of the passages on its district's
+//   shortest way to the city's are a walk from the map's edge to the ramp,
+//   and that walk is the entry's path.
 // - After step 5 a walkable tile is in a district or in a gate. A district's
-//   tile was added beside a tile already in the district, so by induction it
-//   is joined to one of the district's lanes. A gate's tiles lie between the
-//   lane ends of its two districts.
+//   tile was a lane tile or was added beside a tile already in the district,
+//   so by induction it is joined to one of the district's lanes. A gate's
+//   tiles lie between the lane ends of its two districts.
 // - A border tile opened in step 6 has a 4-neighbour in one of its passage's
-//   two districts.
+//   two districts. A rim tile is walkable only if it is in a gap.
 // - Step 7 never cuts the ground: if a tile's walkable 4-neighbours are
 //   joined through the eight tiles round it, a walk through the tile can go
 //   round it instead.
 // - Nothing else changes what is walkable. Shore, path, den floor and deep
 //   grass repaint tiles that already were.
+// - The same holds with the camp ground taken away, for a monster, which may
+//   not stand on it. Every tile of the city's ground but its outermost is a
+//   lane tile of the city's. Less the camp, that is a ring at least two tiles
+//   thick round the footprint and the ramp, so it is joined, and it holds
+//   every tile beside camp ground. The city's lanes leave the ramp onto it
+//   and never cross camp again.
 //
 // The graph is also exact. Two districts never touch (step 5). A gate's
 // 4-neighbours are its two districts' lane ends, its own tiles and its jambs.
 // An opened border tile has only its passage's two districts among the eight
-// tiles round it, and is never beside another passage's tile. So a walk
+// tiles round it, and is never beside another passage's tile. A gap's tiles
+// are its own district's, and the rest of the rim is barrier. So a walk
 // leaves a district only through one of its passages, and the routes in the
 // output are the only routes there are.
 //
@@ -105,24 +136,31 @@ export type SizeClass = (typeof SIZE_CLASSES)[number];
 
 /** What a size class holds. Size is difficulty (docs/slice.md, section 1). */
 export interface SizeSpec {
+  /** About 16:9, the shape of the stream's frame. */
   readonly width: number;
   readonly height: number;
-  /** Tiles of open ground kept round the city's footprint. */
+  /**
+   * Tiles of ground round the city's footprint that are the city's district,
+   * and two more on the ramp's side. The ramp takes two of those, the road
+   * round it the third, and the rest is open ground in front of it.
+   */
   readonly apron: number;
   /** How many bands of blocks, counted out from the city, each get their own seed blocks. */
   readonly bands: number;
   /** The side a block aims for, in tiles. Districts are made of blocks. */
   readonly block: number;
-  /** How many blocks a district aims for. */
+  /**
+   * How many blocks a district aims for. With the ramp to the east or west
+   * these give 8, 15 and 18 districts besides the city's, and with it to the
+   * north or south 8, 12 and 17, where the city's ground is a row of blocks
+   * taller and a column narrower. The slice's spec for packs (#396) works
+   * from 7 to 9, 12 to 15 and 18 or 19.
+   */
   readonly cell: number;
   /** The widest a gate is cut, in tiles. */
   readonly gate: number;
   /** Loop passages added to the spanning tree, per 100 districts. */
   readonly loops: number;
-  /** Places on the horde's edge where it comes in. */
-  readonly entries: number;
-  /** How many times the barrier on the quiet edges is thickened. */
-  readonly edge: number;
   /** How many times a wood between districts is thickened. */
   readonly wood: number;
   /** How many times the river is widened, on both banks. */
@@ -141,21 +179,25 @@ export interface SizeSpec {
 }
 
 /**
- * The three size classes, as docs/slice.md has them. The look target (#362)
- * may still change the tile counts; these are the numbers to change when it does.
+ * The three size classes, with the tile counts, dens, caches and level steps
+ * of docs/slice.md, section 1, but for the small one's tiles. A small landing
+ * is 46 by 26, not 40 by 22, so that it has a strip of blocks north and south
+ * of the city as well as east and west. With the ramp to the north, from top
+ * to bottom: the rim (2), a block (4), the apron and the ramp's two more (5),
+ * the footprint (6), the apron (3), a block (4) and the rim (2) make 26 rows,
+ * and 46 keeps it near 16:9. It has about as much ground inside its rim as 40
+ * by 22 had in all.
  */
 export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
   small: {
-    width: 40,
-    height: 22,
+    width: 46,
+    height: 26,
     apron: 3,
     bands: 2,
     block: 4,
-    cell: 4,
+    cell: 5,
     gate: 2,
     loops: 34,
-    entries: 1,
-    edge: 1,
     wood: 1,
     river: 0,
     warp: 2,
@@ -171,11 +213,9 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
     apron: 4,
     bands: 2,
     block: 5,
-    cell: 5,
+    cell: 4,
     gate: 2,
     loops: 30,
-    entries: 2,
-    edge: 2,
     wood: 1,
     river: 1,
     warp: 3,
@@ -194,8 +234,6 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
     cell: 7,
     gate: 3,
     loops: 30,
-    entries: 3,
-    edge: 2,
     wood: 2,
     river: 1,
     warp: 4,
@@ -211,6 +249,8 @@ export const SIZES: Readonly<Record<SizeClass, SizeSpec>> = Object.freeze({
 export const CITY_WIDTH = 10;
 export const CITY_HEIGHT = 6;
 export const RAMP_WIDTH = 3;
+/** How deep the rim of barrier round the map is, in tiles. */
+export const RIM = 2;
 
 /** The apron: ground within this many tiles' walk of the ramp, which stays gentle. */
 export const APRON = 8;
@@ -292,9 +332,18 @@ export interface Passage extends Point {
   readonly tiles: readonly Point[];
 }
 
-/** Where the horde's front comes in, and the way it knows to the hull. */
+/**
+ * A gap in the rim where the horde comes in, and the way it knows to the hull.
+ * There is one on each side of the map. `x`, `y` is its middle tile on the
+ * map's edge.
+ */
 export interface Entry extends Point {
+  /** The side of the map it is on. */
+  readonly edge: Edge;
+  /** The district whose ground it opens into. */
   readonly district: number;
+  /** Its tiles: the rim cut through, two deep and up to three wide. */
+  readonly gap: readonly Point[];
   /** The districts it crosses, from the entry's to the city's. */
   readonly route: readonly number[];
   /** The passages between them, in order. */
@@ -341,8 +390,8 @@ export interface Landing extends TileMap {
   readonly city: Rect;
   /** The foot of the ramp in its middle, also the place `ramp`. */
   readonly ramp: Point;
-  /** The edge the horde's front comes in along. */
-  readonly horde: Edge;
+  /** The side of the footprint the ramp comes out of. */
+  readonly rampSide: Edge;
   /** The layout graph's nodes. The city's district is the first, and the root. */
   readonly districts: readonly District[];
   /** The layout graph's edges. */
@@ -661,57 +710,60 @@ export function generateLanding(input: unknown): Landing {
   const fixed: boolean[] = new Array(N).fill(false);
   /** Tiles no barrier or obstacle may take: lanes, gates and the city's apron. */
   const kept: boolean[] = new Array(N).fill(false);
+  /** How many tiles in from the map's nearest edge a tile is; under RIM is the rim. */
+  const depthOf = (x: number, y: number): number => Math.min(x, y, W - 1 - x, H - 1 - y);
+  const rim: boolean[] = Array.from({ length: N }, (_, i) => depthOf(xOf(i), yOf(i)) < RIM);
 
-  // 0. The city: off the middle, away from the horde's edge, so the plate has room
-  // on the side where things happen. Its ramp comes out on that side, toward the land.
-  const hordeIndex = roll(layoutRng, 4);
-  const horde = EDGES[hordeIndex] as Edge;
-  const [hx, hy] = TOWARD[hordeIndex] as [number, number];
-  const cx = (W >> 1) - hx * (W >> 3);
-  const cy = (H >> 1) - hy * (H >> 3);
+  // 0. The city's ground in the middle: the footprint, the apron round it, two
+  // tiles deeper on the side the seed draws for the ramp, and so the footprint a
+  // tile back from the middle, away from the ramp. Each strip between that ground
+  // and the rim is a block wide or more, which the sizes are chosen for.
+  const rampIndex = roll(layoutRng, 4);
+  const rampSide = EDGES[rampIndex] as Edge;
+  const [rx, ry] = TOWARD[rampIndex] as [number, number];
+  /** The apron on each side, in EDGES order. */
+  const pad = EDGES.map((_, side) => spec.apron + (side === rampIndex ? 2 : 0));
+  const [padN, padE, padS, padW] = pad as [number, number, number, number];
+  const homeX = (W - (padW + CITY_WIDTH + padE)) >> 1;
+  const homeY = (H - (padN + CITY_HEIGHT + padS)) >> 1;
+  const home: Box = {
+    x0: homeX,
+    y0: homeY,
+    x1: homeX + padW + CITY_WIDTH + padE,
+    y1: homeY + padN + CITY_HEIGHT + padS,
+  };
+  if (Math.min(home.x0 - RIM, home.y0 - RIM, W - RIM - home.x1, H - RIM - home.y1) < MIN_BLOCK)
+    throw new Error(`a ${size} landing has no room for blocks on every side of the city`);
   const city: Rect = {
-    x: cx - (CITY_WIDTH >> 1),
-    y: cy - (CITY_HEIGHT >> 1),
+    x: home.x0 + padW,
+    y: home.y0 + padN,
     width: CITY_WIDTH,
     height: CITY_HEIGHT,
   };
+  const cx = city.x + (CITY_WIDTH >> 1);
+  const cy = city.y + (CITY_HEIGHT >> 1);
   const cityRight = city.x + city.width - 1;
   const cityBottom = city.y + city.height - 1;
   // The ramp: RAMP_WIDTH tiles wide and two long, out from the middle of that side.
   const half = RAMP_WIDTH >> 1;
   const rampBase: Rect =
-    hx > 0
+    rx > 0
       ? { x: cityRight + 1, y: cy - half, width: 2, height: RAMP_WIDTH }
-      : hx < 0
+      : rx < 0
         ? { x: city.x - 2, y: cy - half, width: 2, height: RAMP_WIDTH }
-        : hy > 0
+        : ry > 0
           ? { x: cx - half, y: cityBottom + 1, width: RAMP_WIDTH, height: 2 }
           : { x: cx - half, y: city.y - 2, width: RAMP_WIDTH, height: 2 };
   const ramp: Point =
-    hx > 0
+    rx > 0
       ? { x: cityRight + 2, y: cy }
-      : hx < 0
+      : rx < 0
         ? { x: city.x - 2, y: cy }
-        : hy > 0
+        : ry > 0
           ? { x: cx, y: cityBottom + 2 }
           : { x: cx, y: city.y - 2 };
 
-  // 1. Blocks. The apron, two tiles deeper on the ramp's side, is the city's own
-  // ground; a side with no room for a block beyond it gives that ground to the city.
-  const pad = [spec.apron, spec.apron, spec.apron, spec.apron];
-  pad[hordeIndex] = spec.apron + 2;
-  const apron: Box = {
-    x0: Math.max(0, city.x - (pad[3] as number)),
-    y0: Math.max(0, city.y - (pad[0] as number)),
-    x1: Math.min(W, cityRight + 1 + (pad[1] as number)),
-    y1: Math.min(H, cityBottom + 1 + (pad[2] as number)),
-  };
-  const home: Box = {
-    x0: apron.x0 < MIN_BLOCK ? 0 : apron.x0,
-    y0: apron.y0 < MIN_BLOCK ? 0 : apron.y0,
-    x1: W - apron.x1 < MIN_BLOCK ? W : apron.x1,
-    y1: H - apron.y1 < MIN_BLOCK ? H : apron.y1,
-  };
+  // 1. Blocks, inside the rim, cut along the edges of the city's ground.
   /** Cuts a stretch into blocks near the class's size, none under the least: where each ends. */
   const cut = (from: number, to: number): number[] => {
     const length = to - from;
@@ -734,8 +786,8 @@ export function generateLanding(input: unknown): Landing {
     ends.push(to);
     return ends;
   };
-  const xs = [0, ...cut(0, home.x0), ...cut(home.x0, home.x1), ...cut(home.x1, W)];
-  const ys = [0, ...cut(0, home.y0), ...cut(home.y0, home.y1), ...cut(home.y1, H)];
+  const xs = [RIM, ...cut(RIM, home.x0), ...cut(home.x0, home.x1), ...cut(home.x1, W - RIM)];
+  const ys = [RIM, ...cut(RIM, home.y0), ...cut(home.y0, home.y1), ...cut(home.y1, H - RIM)];
   const gw = xs.length - 1;
   const gh = ys.length - 1;
   const B = gw * gh;
@@ -746,6 +798,11 @@ export function generateLanding(input: unknown): Landing {
     y1: ys[Math.floor(b / gw) + 1] as number,
   });
   const boxes = Array.from({ length: B }, (_, b) => boxOf(b));
+  /** Whether a block lies along the rim on a side of the map, by its place in EDGES. */
+  const onSide = (b: number, side: number): boolean => {
+    const box = boxes[b] as Box;
+    return [box.y0 === RIM, box.x1 === W - RIM, box.y1 === H - RIM, box.x0 === RIM][side] === true;
+  };
   /** The blocks beside a block, as NEIGHBOURS or as AROUND. */
   const beside = (b: number, steps: readonly (readonly [number, number])[]): number[] => {
     const out: number[] = [];
@@ -779,9 +836,10 @@ export function generateLanding(input: unknown): Landing {
   );
 
   // Districts. Each ring gets a seed block for every few of its blocks, each seed
-  // the block farthest from the seeds so far; a piece of the map cut off by the
-  // city with no seed in it gets one too. Then the districts take turns to add a
-  // free block next to one they have, staying in their ring where they can.
+  // the block farthest from the seeds so far. The free blocks are one piece, the
+  // strips and corners round the city's, so the growth reaches all of them. Then
+  // the districts take turns to add a free block next to one they have, staying
+  // in their ring where they can.
   const rank: number[] = new Array(B).fill(0);
   shuffle(
     layoutRng,
@@ -811,21 +869,6 @@ export function generateLanding(input: unknown): Landing {
     const pool = free.filter((b) => band[b] === k);
     const wanted = Math.floor((pool.length + (spec.cell >> 1)) / spec.cell);
     for (let n = 0; n < Math.max(1, wanted) && pool.length > 0; n++) seed1(pool, k);
-  }
-  // The pieces the free blocks fall into, by flooding from each in turn.
-  const piece: number[] = new Array(B).fill(-1);
-  for (const start of free) {
-    if (piece[start] !== -1) continue;
-    const members = [start];
-    piece[start] = start;
-    for (let head = 0; head < members.length; head++) {
-      for (const c of beside(members[head] as number, NEIGHBOURS)) {
-        if (districtOf[c] !== -1 || piece[c] !== -1) continue;
-        piece[c] = start;
-        members.push(c);
-      }
-    }
-    if (!members.some((b) => seeds.includes(b))) seed1(members, band[start] as number);
   }
   const count = seeds.length + 1;
   // The growth packs a district into six bits of a heap key, and a tile into twelve.
@@ -861,12 +904,12 @@ export function generateLanding(input: unknown): Landing {
   }
   if (districtOf.includes(-1)) throw new Error("a block of a landing was left to no district");
 
-  /** The block each tile lies in. */
+  /** The block each tile lies in; a rim tile's is the block inside it. */
   const blockUnder: number[] = [];
   for (let y = 0, j = 0; y < H; y++) {
-    if ((ys[j + 1] as number) <= y) j++;
+    if (j < gh - 1 && (ys[j + 1] as number) <= y) j++;
     for (let x = 0, i = 0; x < W; x++) {
-      if ((xs[i + 1] as number) <= x) i++;
+      if (i < gw - 1 && (xs[i + 1] as number) <= x) i++;
       blockUnder.push(j * gw + i);
     }
   }
@@ -951,9 +994,8 @@ export function generateLanding(input: unknown): Landing {
     if (d !== 0) (below[parent[d] as number] as number[]).push(...(below[d] as number[]));
   }
   const onEdge: boolean[] = each.map(() => false);
-  boxes.forEach((box, b) => {
-    if (box.x0 === 0 || box.y0 === 0 || box.x1 === W || box.y1 === H)
-      onEdge[districtOf[b] as number] = true;
+  boxes.forEach((_, b) => {
+    if (EDGES.some((_, side) => onSide(b, side))) onEdge[districtOf[b] as number] = true;
   });
   const edgeCount = onEdge.filter(Boolean).length;
   const far: boolean[] = each.map(() => false);
@@ -992,9 +1034,10 @@ export function generateLanding(input: unknown): Landing {
     kinds[d] = biome.deck[n % biome.deck.length] as DistrictKind;
   });
 
-  // 3. The skeleton. The city first: its footprint, its ramp and the apron round them.
-  for (let y = apron.y0 + 1; y < apron.y1 - 1; y++) {
-    for (let x = apron.x0 + 1; x < apron.x1 - 1; x++) claim(at(x, y), 0);
+  // 3. The skeleton. The city first: its footprint, its ramp and its ground round
+  // them, all but the outermost tile, whose neighbours are not all the city's.
+  for (let y = home.y0 + 1; y < home.y1 - 1; y++) {
+    for (let x = home.x0 + 1; x < home.x1 - 1; x++) claim(at(x, y), 0);
   }
   for (let y = city.y; y <= cityBottom; y++) {
     for (let x = city.x; x <= cityRight; x++) tiles[at(x, y)] = CAMP;
@@ -1016,7 +1059,7 @@ export function generateLanding(input: unknown): Landing {
   for (let x = road.x1; x > road.x0; x--) loop.push([x, road.y1]);
   for (let y = road.y1; y > road.y0; y--) loop.push([road.x0, y]);
   const onLoop = (x: number, y: number): number => loop.findIndex((p) => p[0] === x && p[1] === y);
-  const foot = onLoop(ramp.x + hx, ramp.y + hy);
+  const foot = onLoop(ramp.x + rx, ramp.y + ry);
   const cityLane = (to: number): number[] => {
     let qx = Math.max(road.x0, Math.min(road.x1, xOf(to)));
     let qy = Math.max(road.y0, Math.min(road.y1, yOf(to)));
@@ -1323,39 +1366,54 @@ export function generateLanding(input: unknown): Landing {
     }
   }
 
-  // The horde's entries: blocks on its edge, spread along it, each with a lane to the edge.
-  const facesHorde = (b: number): boolean => {
-    const box = boxes[b] as Box;
-    return hx > 0 ? box.x1 === W : hx < 0 ? box.x0 === 0 : hy > 0 ? box.y1 === H : box.y0 === 0;
-  };
-  const edgeBlocks = boxes.flatMap((_, b) => (facesHorde(b) ? [b] : []));
-  let gateways = edgeBlocks.filter((b) => districtOf[b] !== 0);
-  // With only the city on that edge, the horde comes straight at the ramp.
-  if (gateways.length === 0)
-    gateways = [
-      blockAt(hx > 0 ? W - 1 : hx < 0 ? 0 : ramp.x, hy > 0 ? H - 1 : hy < 0 ? 0 : ramp.y),
-    ];
-  const entryCount = Math.min(spec.entries, gateways.length);
-  const entryPhase = roll(graphRng, gateways.length);
-  const entryLanes = Array.from({ length: entryCount }, (_, n) => {
-    const block = gateways[
-      (entryPhase + Math.floor((n * gateways.length) / entryCount)) % gateways.length
-    ] as number;
+  // The horde's gaps, one on each side, in EDGES order. Each is in a block on
+  // that side, scored: one whose district has a gap already is worse, and so is
+  // one on two sides. One is drawn from the best-scored there are; nothing is
+  // tried and refused. No block of the city's is on a side (step 1).
+  const gapped = new Set<number>();
+  const entryLanes = EDGES.map((_, side) => {
+    const [sx, sy] = TOWARD[side] as [number, number];
+    const unfit = (b: number): number =>
+      (gapped.has(districtOf[b] as number) ? 2 : 0) +
+      (EDGES.filter((_, s) => onSide(b, s)).length > 1 ? 1 : 0);
+    const along1 = boxes.flatMap((_, b) => (onSide(b, side) ? [b] : []));
+    const least = Math.min(...along1.map(unfit));
+    const pool = along1.filter((b) => unfit(b) === least);
+    const block = pool[roll(graphRng, pool.length)] as number;
     const d = districtOf[block] as number;
+    gapped.add(d);
     const box = boxes[block] as Box;
-    const from = d === 0 ? at(ramp.x + hx, ramp.y + hy) : (hub[block] as number);
-    // Straight out for the city; otherwise up to two tiles to either side.
-    const drift = d === 0 ? 0 : between(graphRng, -2, 2);
-    const [lo, hi] = hx !== 0 ? [box.y0 + 1, box.y1 - 2] : [box.x0 + 1, box.x1 - 2];
-    const along = Math.max(lo, Math.min(hi, (hx !== 0 ? yOf(from) : xOf(from)) + drift));
-    const edge = hx > 0 ? W - 1 : hy > 0 ? H - 1 : 0;
-    const lane = lay(d, block, hx !== 0 ? at(edge, along) : at(along, edge));
-    // The way in is three tiles wide where the block allows.
-    for (const beside1 of [along - 1, along + 1]) {
-      if (beside1 < lo || beside1 > hi) continue;
-      claim(hx !== 0 ? at(edge, beside1) : at(beside1, edge), d);
+    // Across from the block's hub, and up to two tiles to either side; a tile in
+    // from the ends of the block's side where there is room, so that the gap is
+    // three wide.
+    const from = hub[block] as number;
+    const [lo, hi] = sx !== 0 ? [box.y0 + 1, box.y1 - 2] : [box.x0 + 1, box.x1 - 2];
+    const room = hi - lo >= 2 ? 1 : 0;
+    const along = Math.max(
+      lo + room,
+      Math.min(hi - room, (sx !== 0 ? yOf(from) : xOf(from)) + between(graphRng, -2, 2)),
+    );
+    /** The tile `depth` tiles in from this side's edge, `across` along it. */
+    const tile = (depth: number, across: number): number =>
+      sx > 0
+        ? at(W - 1 - depth, across)
+        : sx < 0
+          ? at(depth, across)
+          : sy > 0
+            ? at(across, H - 1 - depth)
+            : at(across, depth);
+    // A lane to the rim's inner face, and on through the rim, three wide where the block allows.
+    const lane = lay(d, block, tile(RIM, along));
+    const gap: number[] = [];
+    for (let depth = RIM - 1; depth >= 0; depth--) {
+      for (const across of [along - 1, along, along + 1]) {
+        if (across < lo || across > hi) continue;
+        claim(tile(depth, across), d);
+        gap.push(tile(depth, across));
+      }
+      lane.push(tile(depth, along));
     }
-    return { d, lane };
+    return { side, d, lane, gap };
   });
 
   // 4. The ground. First whose land each tile is. Unbent, that is the district of
@@ -1381,7 +1439,7 @@ export function generateLanding(input: unknown): Landing {
   }
   let land: number[] = owner.map((d, i) => {
     if (d !== -1) return d;
-    if (fixed[i]) return -1;
+    if (fixed[i] || rim[i]) return -1;
     const most = Math.min(spec.warp, (clear[i] as number) - 1);
     const sway = (field: readonly number[]): number =>
       Math.max(-most, Math.min(most, Math.floor((((field[i] as number) - 128) * most) / 40)));
@@ -1391,7 +1449,7 @@ export function generateLanding(input: unknown): Landing {
   });
   for (let pass = 0; pass < 2; pass++) {
     land = land.map((d, i) => {
-      if (owner[i] !== -1 || fixed[i]) return d;
+      if (owner[i] !== -1 || fixed[i] || rim[i]) return d;
       // The district most of the nine tiles here belong to, if five or more do.
       const votes: number[] = [];
       for (const [dx, dy] of AROUND) {
@@ -1406,9 +1464,9 @@ export function generateLanding(input: unknown): Landing {
   // to one it already has. Its own land comes first, nearest the lanes first;
   // land that its district could not reach that way goes after, to whichever
   // district gets to it. A tile with another district among the eight round it
-  // stays out, and is not offered again.
+  // stays out, and is not offered again. The rim is never offered.
   const heap = new Heap();
-  const done: boolean[] = owner.map((d, i) => d !== -1 || (fixed[i] as boolean));
+  const done: boolean[] = owner.map((d, i) => d !== -1 || (fixed[i] as boolean) || rim[i] === true);
   const LATER = 0x1_0000;
   const offer = (i: number): void => {
     const district = owner[i] as number;
@@ -1461,7 +1519,7 @@ export function generateLanding(input: unknown): Landing {
     return found.sort((p, q) => p - q);
   };
   for (let i = 0; i < N; i++) {
-    if (owner[i] !== -1 || label[i] !== -1) continue;
+    if (owner[i] !== -1 || label[i] !== -1 || rim[i]) continue;
     const near = around(i);
     if (near.length !== 2) continue;
     const [a, b] = near as [number, number];
@@ -1486,12 +1544,14 @@ export function generateLanding(input: unknown): Landing {
   });
   // The rest of the border is the river between its two banks, a ridge beside a crag,
   // and a wood anywhere else. `grows` is how many more times a barrier thickens.
+  // The rim, but for its gaps, is the biome's barrier and does not thicken.
+  for (let i = 0; i < N; i++) if (rim[i] && owner[i] === -1) tiles[i] = biome.wall;
   const grows: number[] = new Array(N).fill(0);
   const border: number[] = [];
   /** The river's banks among a border tile's districts: 1 the far one, 2 the near one, 3 both. */
   const banks: number[] = new Array(N).fill(0);
   for (let i = 0; i < N; i++) {
-    if (owner[i] !== -1 || label[i] !== -1) continue;
+    if (owner[i] !== -1 || label[i] !== -1 || rim[i]) continue;
     border.push(i);
     for (const d of around(i)) banks[i] = (banks[i] as number) | (far[d] ? 1 : 2);
   }
@@ -1631,15 +1691,6 @@ export function generateLanding(input: unknown): Landing {
     for (const j of patch(i, terrain === ROCK ? Math.min(r, 2) : r)) block(j, terrain, d);
   }
 
-  // The edge of the map, in the biome's barrier: one tile deep on the horde's side
-  // and thicker elsewhere.
-  for (let i = 0; i < N; i++) {
-    const [x, y] = [xOf(i), yOf(i)];
-    if (x !== 0 && y !== 0 && x !== W - 1 && y !== H - 1) continue;
-    if (!block(i, biome.wall)) continue;
-    const facing = hx > 0 ? x === W - 1 : hx < 0 ? x === 0 : hy > 0 ? y === H - 1 : y === 0;
-    grows[i] = facing ? 0 : spec.edge;
-  }
   // Thickening: a barrier takes the ground next to it, where the noise allows.
   const KEEP: Readonly<Record<number, number>> = {
     [TREE]: 150,
@@ -1647,7 +1698,7 @@ export function generateLanding(input: unknown): Landing {
     [WATER]: 170,
     [ROCK]: 120,
   };
-  for (let pass = Math.max(spec.edge, spec.wood, spec.river, 1); pass > 0; pass--) {
+  for (let pass = Math.max(spec.wood, spec.river, 1); pass > 0; pass--) {
     const taking: [number, number, number][] = [];
     for (let i = 0; i < N; i++) {
       if (kept[i] || owner[i] === -1 || !WALK.has(tiles[i] as number)) continue;
@@ -1737,17 +1788,18 @@ export function generateLanding(input: unknown): Landing {
     ring: ring[d] as number,
   }));
 
-  const entries: Entry[] = entryLanes.map(({ d, lane }) => {
-    const home = wayHome(d);
+  const entries: Entry[] = entryLanes.map(({ side, d, lane, gap }) => {
+    const way = wayHome(d);
+    // The gap's lane ends at its district's centre, where the way home starts.
     const inward = [...lane].reverse();
-    // The city's own entry lane already ends at the ramp.
-    const path = d === 0 ? inward : [...inward, ...home.path.slice(1)];
     return {
       ...point(inward[0] as number),
+      edge: EDGES[side] as Edge,
       district: d,
-      route: home.route,
-      passages: home.through,
-      path: path.map(point),
+      gap: gap.map(point),
+      route: way.route,
+      passages: way.through,
+      path: [...inward, ...way.path.slice(1)].map(point),
     };
   });
 
@@ -1805,7 +1857,7 @@ export function generateLanding(input: unknown): Landing {
     levels,
     city,
     ramp,
-    horde,
+    rampSide,
     districts,
     passages,
     districtAt: owner,
@@ -1834,7 +1886,7 @@ export function hashLanding(landing: Landing): string {
     landing.city.y,
     landing.ramp.x,
     landing.ramp.y,
-    EDGES.indexOf(landing.horde),
+    EDGES.indexOf(landing.rampSide),
     landing.districts.length,
     ...landing.districts.flatMap((d) => [
       d.x,
@@ -1867,7 +1919,10 @@ export function hashLanding(landing: Landing): string {
     ...landing.entries.flatMap((e) => [
       e.x,
       e.y,
+      EDGES.indexOf(e.edge),
       e.district,
+      e.gap.length,
+      ...e.gap.flatMap((t) => [t.x, t.y]),
       e.route.length,
       ...e.route,
       ...e.passages,
@@ -1903,12 +1958,11 @@ const SYMBOL: Readonly<Record<Terrain, string>> = {
 const LETTERS = "0abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /**
- * A landing as text, one character a tile, with the horde's edge marked by a
- * line of arrows outside the map. Terrain as in content/maps. On top of it:
- * `+` a gate tile (`=` on a bridge, `%` on a ford), `'` a border taken out
- * for an open passage, R the ramp, H where the horde comes in, D a den, C a
- * cache and o a seam. Closed borders are the rock, trees and water between
- * districts.
+ * A landing as text, one character a tile. Terrain as in content/maps. On top
+ * of it: `+` a gate tile (`=` on a bridge, `%` on a ford), `'` a border taken
+ * out for an open passage, R the ramp, H the middle of each gap in the rim
+ * where the horde comes in, D a den, C a cache and o a seam. Closed borders
+ * are the rock, trees and water between districts.
  *
  * The `districts` view shows the graph instead: each tile as its district's
  * letter (0 for the city's), `#` for a border, `+` for a gate and `'` for an
@@ -1950,15 +2004,6 @@ export function landingText(
   for (let y = 0; y < landing.height; y++) {
     rows.push(grid.slice(y * landing.width, (y + 1) * landing.width).join(""));
   }
-  const across = (c: string): string => c.repeat(landing.width);
-  const framed =
-    landing.horde === "north"
-      ? [across("v"), ...rows]
-      : landing.horde === "south"
-        ? [...rows, across("^")]
-        : landing.horde === "east"
-          ? rows.map((r) => `${r}<`)
-          : rows.map((r) => `>${r}`);
   const rings = RINGS.slice(1).map(
     (name, k) => `${landing.districts.filter((d) => d.ring === k + 1).length} ${name}`,
   );
@@ -1966,11 +2011,11 @@ export function landingText(
   const crossings = landing.passages.filter((p) => p.kind === "bridge" || p.kind === "ford").length;
   return [
     `${landing.size} ${landing.width}x${landing.height}, ${landing.biome} (element: ${landing.element}), seed ${landing.seed}, level ${landing.level}`,
-    `horde from the ${landing.horde} by ${landing.entries.length} ${landing.entries.length === 1 ? "entry" : "entries"}; ${landing.dens.length} dens, ${landing.caches.length} caches, ${landing.seams.length} seams`,
+    `ramp on the ${landing.rampSide}; horde gaps at ${landing.entries.map((e) => `${e.edge} (${e.x}, ${e.y})`).join(", ")}; ${landing.dens.length} dens, ${landing.caches.length} caches, ${landing.seams.length} seams`,
     `districts: the city and ${rings.join(", ")}; passages: ${landing.passages.length - loops} on the tree and ${loops} loops, ${crossings} over the river`,
     `levels: apron ${landing.levels[0]} at most, ring 1 ${landing.levels[1]}, ring 2 ${landing.levels[2]}, ring 3 ${landing.levels[3]}`,
     `dens: ${landing.dens.map((d) => `${d.name} ring ${d.ring} level ${d.level}`).join("; ")}`,
-    ...framed,
+    ...rows,
   ].join("\n");
 }
 
@@ -1988,7 +2033,7 @@ export function landingGraphText(landing: Landing): string {
     ),
     ...landing.entries.map(
       (e) =>
-        `entry at (${e.x}, ${e.y}): ${e.route.map(letter).join(" > ")}, ${e.path.length} tiles to the ramp`,
+        `entry ${e.edge} at (${e.x}, ${e.y}), ${e.gap.length / 2} wide: ${e.route.map(letter).join(" > ")}, ${e.path.length} tiles to the ramp`,
     ),
   ].join("\n");
 }
