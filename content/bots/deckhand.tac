@@ -2,9 +2,10 @@ bot "Deckhand"
 
 # The shipped program, which every chatter's citizen runs (docs/chat.md,
 # section 9; docs/slice.md, section 5). It goes home to the hold by `lift_eta`
-# and `way_home` (docs/tactics.md). A landing has no packs, dens or anything to
-# work until slice pieces 3, 5 and 14 lay them, so for now a citizen walks
-# about the deck and the landing and fights what it meets.
+# and `way_home` (docs/tactics.md). On a landing it goes for the packs of its
+# range, from 9 under its Arms to `over` above it, near ones first, and then
+# waits at a den of that range for the next pack out. Nothing on a landing can
+# be worked until slice piece 14, so with no pack or den left it walks about.
 
 # Each param is a chat command: !gather, !fight, !careful, !margin 150 and so on.
 param stance = gather of gather, fight, careful
@@ -31,4 +32,13 @@ when flag_down as "to them" -> walk_to(flag)
 when flagged and distance(flag) > 6 as "to the flag" -> walk_to(flag)
 when flagged == 2 as "stay by them" -> walk_to(flag)
 when flagged as "at the flag" -> wait(20)
+
+# The packs of its range, and the dens that hold more. A careful citizen
+# leaves them be.
+when stance != careful and pack_distance(-9) <= 8 as "a pack here" ->
+  walk_to(pack_x(-9), pack_y(-9))
+when stance != careful and pack_distance(-9) < 9999 as "to a pack" ->
+  walk_to(pack_x(-9), pack_y(-9))
+when stance != careful and den_distance(-9) < 9999 as "to a den" ->
+  walk_to(den_x(-9), den_y(-9))
 otherwise as "look about" -> wander; wait(20)

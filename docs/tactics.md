@@ -223,6 +223,12 @@ and a program that names one does not compile.
 | `heard`             | sensor | 0     | Ticks since this citizen's chatter last typed anything, up to 864000.                                                                                                                                                                                                                                              |
 | `lift_eta`          | sensor | 0     | Ticks until lift-off, or 9999 before the front is sighted. Until the shield is built (slice piece 31) it counts as if the shield broke the moment the front reached the bubble: the ticks to the siege and 300 more, and during the siege 300; from the break, the ticks to lift-off. On a world of one map, 9999. |
 | `way_home`          | sensor | 0     | Ticks the walk home takes from here: to the hold on the city's deck, or to `camp` on a world of one map that has one. 9999 if there is no way.                                                                                                                                                                     |
+| `pack_distance`     | sensor | 1     | Steps in a straight grid line to the nearest monster of a pack laid on the landing whose level is from this citizen's Arms plus n to its Arms plus its `over` param, with n from -9 to 30. 9999 if there is none.                                                                                                  |
+| `pack_x`            | sensor | 1     | The column of the monster pack_distance(n) finds, or this actor's own if there is none.                                                                                                                                                                                                                            |
+| `pack_y`            | sensor | 1     | The row of the monster pack_distance(n) finds, or this actor's own if there is none.                                                                                                                                                                                                                               |
+| `den_distance`      | sensor | 1     | Steps in a straight grid line to the mouth of the nearest den with packs still inside whose level is in the range pack_distance(n) takes. 9999 if there is none.                                                                                                                                                   |
+| `den_x`             | sensor | 1     | The column of the den den_distance(n) finds, or this actor's own if there is none.                                                                                                                                                                                                                                 |
+| `den_y`             | sensor | 1     | The row of the den den_distance(n) finds, or this actor's own if there is none.                                                                                                                                                                                                                                    |
 
 <!-- end generated -->
 
@@ -232,7 +238,8 @@ ticks when the landing leaves room for it ([slice.md](slice.md), section 1).
 ## Fighting
 
 Adventurers and monsters are enemies; nobody else is. Each kind of actor has
-hitpoints and one attack. An adventurer has 20 hitpoints, and its blow is the
+hitpoints and one attack. An adventurer has `40 + 10L + L*L/5` hitpoints at
+its Hitpoints level L ([plan.md](plan.md), section 2.1), 50 at level 1, and its blow is the
 base blow of its Melee level, `6 + L + L*L/20`: 7 at level 1, 21 at level 10,
 times its weapon's share of the hit. One swing in 20 is a crit and does
 double. A monster's blow is its kind's `damage`, and monsters do not crit.
@@ -488,7 +495,7 @@ ground.
   spaces.
 - `hp` (1 to 100,000), `damage` (0 to 100,000), `windup` (1 to 100 ticks),
   `recovery` (0 to 100 ticks) and `reach` (1 to 3 tiles): its numbers in a fight.
-- `step`: ticks it takes to walk one tile, 2 to 30. Left out, it is 6, which is
+- `step`: ticks it takes to walk one tile, 2 to 30. Left out, it is 4, which is
   how fast citizens walk.
 - `rank` (`fodder`, `pack`, `brute` or `elite`) and `level` (1 to 99): they
   set its armour (four times its level for a brute or an elite), how long a
@@ -499,14 +506,23 @@ A monster file with a field missing, out of range or unknown is refused with
 the file's name, like a program that does not compile. No monster is put on
 the city's deck, its ramp or the camp's ground, but one may walk onto them.
 
+The monsters laid on a landing ([slice.md](slice.md), section 1) are not
+read from files and run no program. Each is of a rank at a level of its own,
+with its hitpoints and blow from [plan.md](plan.md)'s formulas, a reach of
+1 and a step of 4 ticks, and its pack decides for it: it stands at its post
+until a citizen it will go for comes within 6 tiles of any of the pack inside
+its pocket, then the whole pack goes for that citizen, and breaks off when
+the citizen leaves the pocket. It never walks out of its pocket. Up to three
+fodder share a tile.
+
 A citizen struck down is carried aboard, to the deck tile with room nearest
 the hold, and mends there for 15 seconds (`DOWN_TICKS`) before its program
 runs again; on a world of one map it is carried to the map's `camp`. While it
 mends, blows pass it by and monsters' sensors leave it out: it is nobody's
 `threat`, and `friends_near` and `threat_friends` don't count it.
 
-Wolves walk a tile in 4 ticks, so one 8 tiles behind a citizen catches it
-after the citizen has walked about 16 more. A wolf counts as its pack itself
+The camp's wolves walk a tile in 4 ticks, as citizens do, so one behind a
+citizen that keeps walking does not close on it. A wolf counts as its pack itself
 and the wolves within ten tiles of it (`friends_near(10)`, which counts only
 an actor's own kind), and as its prey's group the prey and the citizens
 within four tiles of it (`threat_friends`). It lunges at its prey when it is

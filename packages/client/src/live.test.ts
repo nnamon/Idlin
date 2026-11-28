@@ -89,13 +89,16 @@ it("reads a city with monsters when given their kinds, and refuses it without th
   // On the landing's grass.
   const { atlas } = world;
   const grass = TERRAINS.indexOf("grass");
-  const tile = atlas.terrain.indexOf(grass);
+  const taken = new Set(
+    world.actors.map((a) => (a.y - atlas.top) * atlas.width + a.x - atlas.left),
+  );
+  const tile = atlas.terrain.findIndex((t, i) => t === grass && !taken.has(i));
   const at = {
     x: atlas.left + (tile % atlas.width),
     y: atlas.top + Math.floor(tile / atlas.width),
   };
   step(world, [{ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...at }]);
-  expect(world.actors).toHaveLength(1);
+  expect(world.actors.filter((a) => a.kind === "wolf")).toHaveLength(1);
   vi.spyOn(console, "error").mockImplementation(() => {});
 
   const frames: ((now: number) => void)[] = [];

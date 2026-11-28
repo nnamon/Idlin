@@ -52,8 +52,13 @@ describe("world", () => {
     // (#405): hashed as version 11 without Deckhand it is 861d9d19d967717c.
     // Changed by the deck (#432): the world is the camp's map alone, with no
     // regions, spawn table or clock, its program table the camp's with the
-    // Deckhand as the camp ran it, hashed as version 13 hashes.
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("e0d7708a22b4e267");
+    // Deckhand as the camp ran it, hashed as version 13 hashes. Changed by the
+    // monsters on a landing (#447): steps of 4 ticks where they were 6, a
+    // citizen's hitpoints from its Hitpoints level (50 at level 1, where they
+    // were 20), Deckhand's pack and den rules in the program table, and the
+    // fields version 14 hashes (each actor's level, pack, carry and place,
+    // and the plate).
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("f35310c08de23af5");
   });
 
   it("the city reaches the pinned state after 4000 ticks from a fixed seed, with chatters aboard", () => {
@@ -68,8 +73,12 @@ describe("world", () => {
     // cut for the first city, so the footprint is the hull's own 13 by 6 with
     // no spare hull tiles round the deck: the ground and dens differ. Changed
     // again by the open yard and what pockets hold (#416): the landing's tiles
-    // and its dens' places.
-    expect(hashWorld(run(city, 4000))).toBe("6bbfd9d62412b49f");
+    // and its dens' places. Changed by the monsters on a landing (#447): the
+    // landing is made at legs-plant with its far level and one den and chest
+    // more for the six awake, its packs are laid and its dens let them out,
+    // and the chatters go out for them; and by 4-tick steps, citizens'
+    // hitpoints by level and the fields version 14 hashes.
+    expect(hashWorld(run(city, 4000))).toBe("32d8e56b04c90a06");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -247,8 +256,8 @@ describe("world", () => {
       step(world);
       if (actor.x !== before) arrivals.push(world.tick);
     }
-    expect(STEP_TICKS).toBe(6);
-    expect(arrivals).toEqual([2, 8, 14]);
+    expect(STEP_TICKS).toBe(4);
+    expect(arrivals).toEqual([2, 6, 10]);
     expect(actor.moveTicksLeft).toBe(0);
     expect([actor.x, actor.fromX]).toEqual([14, 14]);
   });

@@ -12,6 +12,7 @@ import { campMap, campMonsters } from "./testing.ts";
 import {
   type Actor,
   ADVENTURER,
+  ADVENTURER_KIND,
   createWorld,
   DOWN_TICKS,
   hashKinds,
@@ -164,8 +165,9 @@ describe("the sensors wolves hunt with", () => {
   });
 });
 
-describe("wolves walk faster", () => {
-  it("a wolf takes 4 ticks a tile, a citizen 6, and a goblin 6", () => {
+describe("a kind's own step", () => {
+  // The camp's wolf file gives a step of 4, which citizens now walk at too (plan.md, section 2.2).
+  it("a wolf takes its file's 4 ticks a tile, a citizen 4, and a goblin with no step 4", () => {
     expect(MONSTERS.kinds.wolf?.step).toBe(4);
     expect(MONSTERS.kinds.goblin?.step).toBe(STEP_TICKS);
     // Each walks six tiles east along its own open row, again and again.
@@ -175,7 +177,7 @@ describe("wolves walk faster", () => {
       { type: "spawn", name: "Goblin", program: "east", kind: "goblin", x: 8, y: 11 },
     ]);
     const walkers = world.actors as [Actor, Actor, Actor];
-    expect(walkers.map((a) => stepTicks(world, a))).toEqual([4, 6, 6]);
+    expect(walkers.map((a) => stepTicks(world, a))).toEqual([4, 4, 4]);
     // The ticks between one tile and the next, for each of them, over its first walk.
     const changes = walkers.map(() => [] as number[]);
     const last = walkers.map((a) => `${a.x},${a.y}`);
@@ -188,7 +190,7 @@ describe("wolves walk faster", () => {
       });
     }
     const gaps = changes.map((ticks) => ticks.slice(1, 6).map((t, i) => t - (ticks[i] as number)));
-    expect(gaps).toEqual([Array(5).fill(4), Array(5).fill(6), Array(5).fill(6)]);
+    expect(gaps).toEqual([Array(5).fill(4), Array(5).fill(4), Array(5).fill(4)]);
   });
 
   it("the step is in the kinds' fingerprint, and a kind at the citizens' pace hashes as before", () => {
@@ -197,7 +199,7 @@ describe("wolves walk faster", () => {
       hashKinds(createWorld(ATLAS, 1, {}, { wolf: { ...plain.wolf, step: STEP_TICKS } }).kinds),
     );
     expect(hashKinds(createWorld(ATLAS, 1, {}, plain).kinds)).not.toBe(
-      hashKinds(createWorld(ATLAS, 1, {}, { wolf: { ...plain.wolf, step: 4 } }).kinds),
+      hashKinds(createWorld(ATLAS, 1, {}, { wolf: { ...plain.wolf, step: 3 } }).kinds),
     );
   });
 
@@ -346,7 +348,7 @@ describe("a citizen mending after a down", () => {
     );
     expect(blows.length).toBeGreaterThan(3);
     expect(blows.every((e) => e.type === "miss")).toBe(true);
-    expect(ash.hp).toBe(20);
+    expect(ash.hp).toBe(ADVENTURER_KIND.hp);
     // The wolf, beside Ash, takes Elm far out on the road for its nearest enemy.
     expect(steps(watcher, ash)).toBe(1);
     expect(watcher.memory[7]).toBe(steps(watcher, named(world, "Elm")));

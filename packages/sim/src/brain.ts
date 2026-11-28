@@ -29,6 +29,7 @@ import {
 } from "./grid.ts";
 import { NEIGHBOURS, type Point } from "./map.ts";
 import { FLAG_NONE, flagDown, flagPlace, HEARD_MOST, heedOf, liftEta, wayHome } from "./orders.ts";
+import { denNear, NO_PACK, packNear } from "./packs.ts";
 import { findPath, scratchFor } from "./path.ts";
 import { nextInt } from "./rng.ts";
 import { levelFor, SKILLS } from "./skills.ts";
@@ -86,10 +87,23 @@ export function think(world: World, actor: Actor, events: WorldEvent[]): void {
     }
     return side;
   };
+  // The packs and dens `pack_*` and `den_*` find, by their argument, looked for once each.
+  const packs = new Map<number, Actor | undefined>();
+  const dens = new Map<number, Point | undefined>();
+  const near: Near = {
+    pack: (n) => {
+      if (!packs.has(n)) packs.set(n, packNear(world, actor, n));
+      return packs.get(n);
+    },
+    den: (n) => {
+      if (!dens.has(n)) dens.set(n, denNear(world, actor, n));
+      return dens.get(n);
+    },
+  };
   const decision = runDecision(
     program,
     actor.memory,
-    (id, args) => sense(world, actor, foe, node, id, args),
+    (id, args) => sense(world, actor, foe, node, near, id, args),
     actor.params,
   );
   actor.rule = decision.rule;
@@ -492,16 +506,23 @@ function standable(atlas: Atlas): Point[] {
   return ground;
 }
 
+/** The nearest laid monster and den in a level range, as `pack_*(n)` and `den_*(n)` read them (packs.ts). */
+interface Near {
+  readonly pack: (n: number) => Actor | undefined;
+  readonly den: (n: number) => Point | undefined;
+}
+
 /**
  * Answers sensor `id` for `actor`. `foe` gives the nearest enemy (see
- * `threat`), and `node` the nearest tile to work a node of a kind from (see
- * `nearestNode`).
+ * `threat`), `node` the nearest tile to work a node of a kind from (see
+ * `nearestNode`), and `near` the packs and dens.
  */
 function sense(
   world: World,
   actor: Actor,
   foe: () => Actor | undefined,
   node: (kind: number) => Point | null,
+  near: Near,
   id: number,
   args: readonly number[],
 ): number {
@@ -601,6 +622,22 @@ function sense(
       return liftEta(world);
     case "way_home":
       return wayHome(world, actor);
+    case "pack_distance": {
+      const pack = near.pack(a);
+      return pack ? steps(actor, pack) : NO_PACK;
+    }
+    case "pack_x":
+      return (near.pack(a) ?? actor).x;
+    case "pack_y":
+      return (near.pack(a) ?? actor).y;
+    case "den_distance": {
+      const den = near.den(a);
+      return den ? steps(actor, den) : NO_PACK;
+    }
+    case "den_x":
+      return (near.den(a) ?? actor).x;
+    case "den_y":
+      return (near.den(a) ?? actor).y;
     default:
       return 0;
   }
@@ -653,22 +690,9 @@ function act(
       setPath(world, actor, findPath(world.atlas, actor, to) ?? []);
       break;
     }
-    case "attack": {
-      const aim = aimAt(actor, a, b);
-      const tiles = aim < 0 ? [] : blowTiles(world, actor, aim);
-      if (tiles.length === 0) break;
-      actor.aim = aim;
-      actor.windup = blowTimesOf(world, actor).windup;
-      for (const tile of tiles) addMark(world, { x: tile.x, y: tile.y, by: actor.id });
-      events.push({
-        type: "attack",
-        tick: world.tick,
-        actor: actor.id,
-        tiles,
-        lands: actor.windup,
-      });
-      return;
-    }
+    case "attack":
+      if (attackAt(world, actor, a, b, events)) return;
+      break;
     case "step_clear":
       setPath(world, actor, wayClear(world, actor));
       break;
@@ -736,6 +760,27 @@ function act(
   if (actor.path.length === 0) actor.wait = IDLE_TICKS;
   if (actor.path.length === 0 && MOVES.has(name))
     actor.stalled = Math.min(MAX_STALLED, stalled + 1);
+}
+
+/**
+ * Begins a blow towards (x, y): turns to it, marks the tiles it will land on
+ * and winds up. False, and nothing done, if the blow would land on no tile.
+ */
+export function attackAt(
+  world: World,
+  actor: Actor,
+  x: number,
+  y: number,
+  events: WorldEvent[],
+): boolean {
+  const aim = aimAt(actor, x, y);
+  const tiles = aim < 0 ? [] : blowTiles(world, actor, aim);
+  if (tiles.length === 0) return false;
+  actor.aim = aim;
+  actor.windup = blowTimesOf(world, actor).windup;
+  for (const tile of tiles) addMark(world, { x: tile.x, y: tile.y, by: actor.id });
+  events.push({ type: "attack", tick: world.tick, actor: actor.id, tiles, lands: actor.windup });
+  return true;
 }
 
 /** The actions that walk somewhere, which `stalled` counts when they find nowhere to go. */

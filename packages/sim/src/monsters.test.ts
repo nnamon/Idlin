@@ -17,6 +17,7 @@ import { FAULTS } from "./vm.ts";
 import {
   ADVENTURER,
   createWorld,
+  type Kind,
   KindError,
   restore,
   STEP_TICKS,
@@ -173,6 +174,16 @@ describe("monsters from files", () => {
   });
 });
 /**
+ * The camp's wolf biting hard enough to down a resident of 50 hitpoints in
+ * three bites, as the shipped one downed one of 20 before residents' hitpoints
+ * grew with their level.
+ */
+const DUEL_KINDS = {
+  ...MONSTERS.kinds,
+  wolf: { ...(MONSTERS.kinds.wolf as Kind), damage: 20 },
+};
+
+/**
  * One wolf and one resident a few tiles apart in the open ground east of the
  * river, the wolf placed by the fight's own seed. Fought until one goes down,
  * or for two and a half minutes.
@@ -184,7 +195,7 @@ function duel(program: string, fight: number): { winner: string; actions: string
   while (!isWalkable(MAP, wolf.x, wolf.y) || steps(wolf, ash) < 2) {
     wolf = { x: ash.x + nextInt(rng, 9) - 4, y: ash.y + nextInt(rng, 9) - 4 };
   }
-  const world = createWorld(WORLD, fight, PROGRAMS, MONSTERS.kinds);
+  const world = createWorld(WORLD, fight, PROGRAMS, DUEL_KINDS);
   step(world, [
     { type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...wolf },
     { type: "spawn", name: "Ash", program, ...ash },

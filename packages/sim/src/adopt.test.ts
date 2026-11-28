@@ -259,9 +259,10 @@ describe("adopting a snapshot", () => {
   });
 
   it("after a monster kind walks faster: one saved further into a step than it now takes is cut to the new step", () => {
-    // Wolves as they were before they had a step of their own: 6 ticks a tile.
-    const { step: fast, ...slowWolf } = MONSTERS.kinds.wolf as Kinds[string];
+    // Wolves as a slower file had them: 6 ticks a tile, where the shipped file has 4.
+    const fast = (MONSTERS.kinds.wolf as Kinds[string]).step;
     expect(fast).toBe(4);
+    const slowWolf = { ...(MONSTERS.kinds.wolf as Kinds[string]), step: 6 };
     const slow: Content = { ...SHIPPED, kinds: { ...MONSTERS.kinds, wolf: slowWolf } };
     const world = createWorld(WORLD, 3, slow.programs, slow.kinds);
     step(world, [{ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 4, y: 6 }]);

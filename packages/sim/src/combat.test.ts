@@ -32,10 +32,11 @@ import {
 const MAP = firstLight();
 const KINDS: Kinds = {
   wolf: { hp: 12, damage: 5, windup: 10, recovery: 8, reach: 2 },
-  brute: { hp: 500, damage: 30, windup: 10, recovery: 4, reach: 1 },
+  // A citizen at Hitpoints 1 has 50: a brute or a snap downs one in a hit, a thug in five.
+  brute: { hp: 500, damage: 60, windup: 10, recovery: 4, reach: 1 },
   thug: { hp: 500, damage: 12, windup: 10, recovery: 4, reach: 1 },
   slow: { hp: 500, damage: 1, windup: 30, recovery: 4, reach: 1 },
-  snap: { hp: 500, damage: 30, windup: 1, recovery: 4, reach: 3 },
+  snap: { hp: 500, damage: 60, windup: 1, recovery: 4, reach: 3 },
 };
 const PROGRAMS = compileBots(
   {
@@ -96,7 +97,7 @@ describe("fights", () => {
     const stayed = run(stay, 60);
     const hits = stayed.filter((e) => e.type === "hit");
     expect(hits.length).toBeGreaterThanOrEqual(3);
-    expect(hits[0]).toMatchObject({ actor: 1, target: 2, damage: 5, hp: 15 });
+    expect(hits[0]).toMatchObject({ actor: 1, target: 2, damage: 5, hp: ADVENTURER_KIND.hp - 5 });
     // The tiles were marked for the whole wind-up before the first blow.
     // (The very first attack began in the tick the two were spawned, before this log starts.)
     const began = stayed.find((e) => e.type === "attack");
@@ -209,7 +210,7 @@ describe("fights", () => {
   it("someone struck down in the same tick does not get its own blow in", () => {
     // Both begin at once with a wind-up as long as a blade's; the brute's blow
     // lands first (lower id) and takes Ash out.
-    const kinds: Kinds = { brute: { hp: 500, damage: 30, windup: 2, recovery: 4, reach: 1 } };
+    const kinds: Kinds = { brute: { hp: 500, damage: 60, windup: 2, recovery: 4, reach: 1 } };
     const world = createWorld(MAP, 1, PROGRAMS, kinds);
     step(world, [at("Brute", "biter", 20, 9, "brute"), at("Ash", "fighter", 21, 9)]);
     const log = run(world, 8);
@@ -341,16 +342,17 @@ describe("fights", () => {
   });
 
   it("an adventurer does not wake on the camp tile someone is walking to", () => {
-    // Birch is three steps from the camp tile and making for it when Ash goes down.
+    // Birch is four steps from the camp tile and making for it when Ash goes down.
     const world = fight([
       at("Brute", "biter", 20, 11, "brute"),
       at("Ash", "stander", 21, 11),
-      at("Birch", "stander", 14, 12),
+      at("Birch", "stander", 14, 13),
     ]);
     const birch = named(world, "Birch") as World["actors"][number];
     Object.assign(birch, {
       wait: 1000,
       path: [
+        { x: 14, y: 12 },
         { x: 14, y: 11 },
         { x: 14, y: 10 },
         { x: 14, y: 9 },
@@ -420,12 +422,13 @@ describe("fights", () => {
   });
 
   it("the last blow gets the credit, and nobody is struck after going down", () => {
-    // Two thugs' blows land together on one adventurer: twelve, then twelve more, from twenty.
+    // Two thugs' blows land together on one adventurer left with fifteen: twelve, then twelve more.
     const pair = fight([
       at("One", "biter", 14, 11, "thug"),
       at("Two", "biter", 16, 11, "thug"),
       at("Ash", "stander", 15, 11),
     ]);
+    (named(pair, "Ash") as World["actors"][number]).hp = 15;
     const twice = run(pair, 12);
     expect(twice.filter((e) => e.type === "hit" && e.target === 3)).toHaveLength(2);
     expect(twice.find((e) => e.type === "down")).toMatchObject({ actor: 3, by: 2 });

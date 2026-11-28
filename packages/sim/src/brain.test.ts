@@ -203,6 +203,7 @@ describe("actors run programs", () => {
       "marks",
       "nextActorId",
       "nodes",
+      "plate",
       "programs",
       "rng",
       "tick",

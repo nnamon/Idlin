@@ -87,7 +87,8 @@ export const freshOrders = (program: Program, account: string, tick: number): Or
   heed: HEED_NONE,
 });
 
-const NO_PROGRAM: Program = { version: 0, code: [], rules: [], params: [] };
+/** What a laid monster runs: nothing, since its pack decides for it (packs.ts). */
+export const NO_PROGRAM: Program = { version: 0, code: [], rules: [], params: [] };
 
 /**
  * The orders a viewer is not sent (see `viewerMessage`), with the values it

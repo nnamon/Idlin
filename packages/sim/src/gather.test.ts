@@ -41,7 +41,8 @@ const HOUR = 600;
 const DAY = 24 * HOUR;
 const MONSTERS = campMonsters(WORLD);
 // Strong enough to put a resident down in the fight below, fed or not, against a blade's blow every 5 ticks.
-const KINDS = { wolf: { hp: 150, damage: 4, windup: 6, recovery: 10, reach: 1 } };
+// Tough enough to bring a citizen of 50 hitpoints low before it falls.
+const KINDS = { wolf: { hp: 400, damage: 8, windup: 6, recovery: 10, reach: 1 } };
 const SOURCES: Record<string, string> = {
   chopper: "otherwise -> chop",
   fisher: "otherwise -> fish",

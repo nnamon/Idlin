@@ -11,7 +11,8 @@ import { type Atlas, hashAtlas, pointOf, walkable } from "./atlas.ts";
 import { fullNodes } from "./gather.ts";
 import { isInt32 } from "./hash.ts";
 import type { Point, TileMap } from "./map.ts";
-import { fitOrders } from "./orders.ts";
+import { fitOrders, NO_PROGRAM } from "./orders.ts";
+import { SKILLS } from "./skills.ts";
 import { cutStatus, type Status, slowed, statusTicksFor } from "./status.ts";
 import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import { DIRECTIONS, FAMILIES, type Family, WEAPONS } from "./weapons.ts";
@@ -83,6 +84,10 @@ interface Fitting {
   readonly aim: number;
   /** Read for a chill, which makes steps and blows longer, and cut to a rank that now lasts less. */
   status: Status;
+  /** What its numbers are worked out from: a citizen's Hitpoints, a laid monster's level and pack. */
+  readonly xp: readonly number[];
+  readonly level: number;
+  readonly pack: number;
   /** Whether its program changed, so its params go back to the defaults. */
   programChanged: boolean;
 }
@@ -99,9 +104,15 @@ function readActor(item: unknown): Fitting {
   const steps = plainList(path, MOST);
   if (!steps) damaged();
   // readState judges the rest of a status; a chill is read here and must be a count.
-  const { status } = item;
+  const { status, xp, level, pack } = item;
   if (!isRecord(status) || !isInt32(status.chill)) damaged();
+  const skills = plainList(xp, SKILLS.length);
+  if (!skills || skills.length !== SKILLS.length || !skills.every(isInt32)) damaged();
+  if (!isInt32(level) || !isInt32(pack) || level < 0 || level > 99 || pack < 0) damaged();
   return {
+    xp: skills as number[],
+    level,
+    pack,
     item,
     id: id as number,
     name,
@@ -277,17 +288,19 @@ export function adopt(
   for (const item of savedActors) {
     const a = readActor(item);
     if (a.windup > 0) wasStriking.add(a.id);
-    if (a.kind !== ADVENTURER && !Object.hasOwn(kindTable, a.kind)) {
+    // A laid monster is of a kind and program of the simulation's own, which content does not change.
+    const laid = a.pack > 0;
+    if (!laid && a.kind !== ADVENTURER && !Object.hasOwn(kindTable, a.kind)) {
       changes.push(`removed ${who(a)}: there is no monster kind "${a.kind}" now`);
       continue;
     }
-    if (!Object.hasOwn(table, a.program)) {
+    if (!laid && !Object.hasOwn(table, a.program)) {
       changes.push(`removed ${who(a)}: there is no program "${a.program}" now`);
       continue;
     }
-    const program = table[a.program] as Program;
+    const program = laid ? NO_PROGRAM : (table[a.program] as Program);
     const changed =
-      !samePrograms && (byProgram?.[a.program] ?? "") !== hashProgram(a.program, program);
+      !laid && !samePrograms && (byProgram?.[a.program] ?? "") !== hashProgram(a.program, program);
     a.programChanged = changed || a.rule >= program.rules.length;
     if (a.programChanged) {
       // A wait from the old program ends, so that a reset rule reads as mending
@@ -400,7 +413,8 @@ export function adopt(
   const citizens = new Set(kept.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
   let flagsDown = 0;
   const orders = kept.map((a) => {
-    const fit = fitOrders(a.item, table[a.program] as Program, a.programChanged, atlas, citizens);
+    const program = a.pack > 0 ? NO_PROGRAM : (table[a.program] as Program);
+    const fit = fitOrders(a.item, program, a.programChanged, atlas, citizens);
     if (fit.flagDown) flagsDown++;
     return fit.fields;
   });
