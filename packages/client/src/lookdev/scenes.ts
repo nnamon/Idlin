@@ -2,6 +2,7 @@
 
 import type { Draw } from "./draw.ts";
 import { fightScene } from "./fight.ts";
+import { mockupScene } from "./mockup.ts";
 import { figuresSheet, scaleSheet } from "./sheets.ts";
 import { deckScene, revealScene } from "./voyage.ts";
 
@@ -23,6 +24,11 @@ const MAKERS: Readonly<Record<string, () => Scene>> = {
   fight150: () => fightScene({ citizens: 150, monsters: 450, seconds: 24 }),
   // What the renderers are timed on: 150 citizens, 450 monsters, a hundred shots in the air.
   bench: () => fightScene({ citizens: 150, monsters: 450, seconds: 12, volley: true, bare: true }),
+  // Mockups of one landing, four stagings (#362).
+  mockA: () => mockupScene("A"),
+  mockB: () => mockupScene("B"),
+  mockC: () => mockupScene("C"),
+  mockD: () => mockupScene("D"),
   figures: figuresSheet,
   scale: scaleSheet,
 };

@@ -26,6 +26,10 @@ export const PLANS: Readonly<Record<string, Plan>> = {
   reveal150: { stills: [13], burst: 9, clip: [8, 11, 10] },
   fight: { stills: [4.05, 9.1, 15.3], burst: 4, clip: [3, 9, 12.5] },
   fight150: { stills: [9.1], burst: 9, clip: [8, 10, 12.5] },
+  mockA: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  mockB: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  mockC: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
+  mockD: { stills: [0.5], burst: 0.5, clip: [0, 1, 10] },
   figures: { stills: [1], burst: 1, clip: [0, 1, 10] },
   scale: { stills: [1], burst: 1, clip: [0, 1, 10] },
 };

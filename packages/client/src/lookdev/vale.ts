@@ -1063,3 +1063,17 @@ export function drawValeStanding(d: Draw, r: Reveal, front: boolean): void {
     drawThing(d, s, shown, r.flood(s.x, s.y));
   }
 }
+
+// For the landing mockups (mockup.ts): the vale's woods, crags and standing things, laid out by hand elsewhere.
+export type Mass = Row;
+export const VALE_COLOURS = { GROUND, GROWTH, GROWTH_DEEP, WATER, ROCK, STONE, FLOWER, ORE, IRON };
+
+/** A wood or crag mass, as the vale draws them. Keep the same object between frames. */
+export function drawMass(d: Draw, row: Mass): void {
+  drawRow(d, row, SHOWN);
+}
+
+/** One standing thing of the vale's kinds (0-4 trees, 5 bush, 6 boulder, 7 ruin, 8 stone, 9 ore, 10 cairn, 11 wreck, 12 cache, 13 nest, 14 bones) with its foot at the origin. */
+export function drawThingAt(d: Draw, kind: number, size: number, seed: number): void {
+  drawThing(d, { x: 0, y: 0, kind, size, seed }, 1, 1);
+}
