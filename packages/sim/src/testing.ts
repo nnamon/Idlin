@@ -278,7 +278,11 @@ function freeTile(world: World, rng: Rng, taken: Set<number>): Point {
   }
 }
 
-function putMonster(world: World, kind: string, { x, y }: Point): void {
+/**
+ * Puts a monster of `kind` at (x, y), running `program`, the kind's own by
+ * default, past the caps and spawn tables that would turn it away.
+ */
+export function putMonster(world: World, kind: string, { x, y }: Point, program = kind): void {
   world.actors.push({
     id: world.nextActorId++,
     name: kind === "wolf" ? "Wolf" : "Goblin",
@@ -290,7 +294,7 @@ function putMonster(world: World, kind: string, { x, y }: Point): void {
     path: [],
     wait: 0,
     blocked: 0,
-    program: kind,
+    program,
     memory: new Array<number>(MEMORY_SLOTS).fill(0),
     rule: -1,
     fault: 0,

@@ -18,6 +18,7 @@
 // from the world as it is, so there is no grid to go stale.
 
 import { type Region, regionAt } from "./atlas.ts";
+import { workOf } from "./field.ts";
 import type { Point } from "./map.ts";
 import { type Actor, ADVENTURER, type Mark, type World } from "./world.ts";
 
@@ -298,6 +299,7 @@ export function nearest(
   let best: Actor | undefined;
   let bestSteps = 0;
   let bestPlace = 0;
+  let looked = 0;
   for (let k = 0; k <= rings; k++) {
     // Every tile of a cell k rings out is at least this many steps away.
     if (best && (k - 1) * CELL + 1 > bestSteps) break;
@@ -306,7 +308,9 @@ export function nearest(
       const stride = k === 0 || gy === cy - k || gy === cy + k ? 1 : 2 * k;
       for (let gx = cx - k; gx <= cx + k; gx += stride) {
         if (gx < x0 || gx > x1) continue;
-        for (const actor of grid.cells[gy * grid.cols + gx] as Actor[]) {
+        const cell = grid.cells[gy * grid.cols + gx] as Actor[];
+        looked += cell.length;
+        for (const actor of cell) {
           if (!test(actor)) continue;
           const away = steps(actor, x, y);
           const place = grid.order.get(actor) as number;
@@ -319,6 +323,7 @@ export function nearest(
       }
     }
   }
+  workOf(grid.world).actors += looked;
   return best;
 }
 
@@ -342,9 +347,13 @@ export function countWithin(
   const y0 = Math.max(ay0, Math.floor((y - reach - grid.top) / CELL));
   const y1 = Math.min(ay1, Math.floor((y + reach - grid.top) / CELL));
   let count = 0;
+  let looked = 0;
   for (let gy = y0; gy <= y1; gy++)
-    for (let gx = x0; gx <= x1; gx++)
-      for (const actor of grid.cells[gy * grid.cols + gx] as Actor[])
-        if (steps(actor, x, y) <= reach && test(actor)) count++;
+    for (let gx = x0; gx <= x1; gx++) {
+      const cell = grid.cells[gy * grid.cols + gx] as Actor[];
+      looked += cell.length;
+      for (const actor of cell) if (steps(actor, x, y) <= reach && test(actor)) count++;
+    }
+  workOf(grid.world).actors += looked;
   return count;
 }

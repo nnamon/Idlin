@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { linked, pointOf, type Region, regionAt, tileAt, walkable } from "./atlas.ts";
-import { wayTo } from "./brain.ts";
+import { type Atlas, linked, pointOf, type Region, regionAt, tileAt, walkable } from "./atlas.ts";
+import { DETOUR_STEPS, wayTo } from "./brain.ts";
 import {
   addMark,
   allAt,
@@ -232,19 +232,54 @@ describe("what may change where actors stand and walk", () => {
   });
 });
 
-/** The way to `to` as wayTo found it before the search was made lazy and kept in typed arrays. */
-function oldWayTo(world: World, actor: Actor, to: Point): Point[] {
+/**
+ * What wayTo should give, worked out with plain searches over every tile. The
+ * way past people is found with no limit on its length; only an actor that
+ * may not go the long way round is held to DETOUR_STEPS.
+ */
+interface Expected {
+  /** The tile it should lead to: the free tile nearest `to` that the actor could walk to with nobody about. */
+  readonly goal: number;
+  /** The steps of the shortest way there past people, however long, or -1 if people shut it off. */
+  readonly length: number;
+  /** The longest way past people it may take without `round`: DETOUR_STEPS more than going by `to`. */
+  readonly most: number;
+  /** Past that, the tiles a way at most `most` long may end on instead, and the steps to each. */
+  readonly ends: () => ReadonlyMap<number, number>;
+  /** Steps from a tile to `to` with nobody about, and from the goal. */
+  readonly field: (tile: number) => number;
+  readonly rung: number;
+}
+
+/** Breadth-first steps from `from` over `next`, for every tile it gets to, in the order it gets to them. */
+function stepsFrom(atlas: Atlas, from: number, next: (a: Point, b: Point) => boolean) {
+  const steps = new Map<number, number>([[from, 0]]);
+  const order = [from];
+  for (let head = 0; head < order.length; head++) {
+    const at = order[head] as number;
+    const p = pointOf(atlas, at);
+    for (const [dx, dy] of NEIGHBOURS) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      const tile = tileAt(atlas, q.x, q.y);
+      if (tile < 0 || steps.has(tile) || !next(p, q)) continue;
+      steps.set(tile, (steps.get(at) as number) + 1);
+      order.push(tile);
+    }
+  }
+  return { steps, order };
+}
+
+function expected(world: World, actor: Actor, to: Point): Expected | null {
   const { atlas } = world;
-  if (!walkable(atlas, to.x, to.y)) return [];
+  if (!walkable(atlas, to.x, to.y)) return null;
   const start = tileAt(atlas, actor.x, actor.y);
-  const target = tileAt(atlas, to.x, to.y);
   const barred = new Set<number>();
-  const standing = new Set<number>();
+  const taken = new Set<number>();
   for (const other of world.actors) {
     if (other === actor) continue;
-    standing.add(tileAt(atlas, other.x, other.y));
+    taken.add(tileAt(atlas, other.x, other.y));
     const end = other.path[other.path.length - 1];
-    if (end) standing.add(tileAt(atlas, end.x, end.y));
+    if (end) taken.add(tileAt(atlas, end.x, end.y));
     if (blocks(other, actor)) barred.add(tileAt(atlas, other.x, other.y));
   }
   const sharing = world.actors.some(
@@ -255,57 +290,109 @@ function oldWayTo(world: World, actor: Actor, to: Point): Point[] {
       other.path.length === 0 &&
       other.moveTicksLeft === 0,
   );
-  const free = (index: number): boolean => (index === start ? !sharing : !standing.has(index));
-  const cameFrom = new Map<number, number>([[start, start]]);
-  const queue: Point[] = [{ x: actor.x, y: actor.y }];
-  for (let head = 0; head < queue.length && !(cameFrom.has(target) && free(target)); head++) {
-    const at = queue[head] as Point;
-    for (const [dx, dy] of NEIGHBOURS) {
-      const x = at.x + dx;
-      const y = at.y + dy;
-      if (!canStep(world, actor, at.x, at.y, x, y)) continue;
-      const index = tileAt(atlas, x, y);
-      if (cameFrom.has(index) || barred.has(index)) continue;
-      cameFrom.set(index, tileAt(atlas, at.x, at.y));
-      queue.push({ x, y });
+  const free = (tile: number): boolean => (tile === start ? !sharing : !taken.has(tile));
+  const step = (a: Point, b: Point): boolean => canStep(world, actor, a.x, a.y, b.x, b.y);
+  const field = stepsFrom(atlas, tileAt(atlas, to.x, to.y), (a, b) =>
+    linked(atlas, a.x, a.y, b.x, b.y),
+  );
+  const open = stepsFrom(atlas, start, step).steps;
+  const away = field.steps.get(start);
+  if (away === undefined) return null;
+  let goal = -1;
+  for (let i = 0, ring = -1; i < field.order.length && goal < 0; i++) {
+    const tile = field.order[i] as number;
+    const steps = field.steps.get(tile) as number;
+    if (steps !== ring) {
+      ring = steps;
+      if (ring === away && free(start)) goal = start;
     }
+    if (goal < 0 && free(tile) && open.has(tile)) goal = tile;
   }
-  let goal: number | undefined;
-  const seen = new Set<number>([tileAt(atlas, to.x, to.y)]);
-  let ring: Point[] = [to];
-  while (ring.length > 0 && goal === undefined) {
-    for (const at of ring) {
-      const index = tileAt(atlas, at.x, at.y);
-      if (index === start && free(index)) {
-        goal = index;
-        break;
-      }
-      if (goal === undefined && cameFrom.has(index) && free(index)) goal = index;
-    }
-    if (goal !== undefined) break;
-    const next: Point[] = [];
-    for (const at of ring) {
-      for (const [dx, dy] of NEIGHBOURS) {
-        const x = at.x + dx;
-        const y = at.y + dy;
-        if (!linked(atlas, at.x, at.y, x, y) || seen.has(tileAt(atlas, x, y))) continue;
-        seen.add(tileAt(atlas, x, y));
-        next.push({ x, y });
-      }
-    }
-    ring = next;
+  if (goal < 0 || goal === start) return null;
+  const rung = field.steps.get(goal) as number;
+  const most = away + rung + DETOUR_STEPS;
+  const round = stepsFrom(
+    atlas,
+    start,
+    (a, b) => step(a, b) && !barred.has(tileAt(atlas, b.x, b.y)),
+  ).steps;
+  // Every tile a way at most `most` long could pass through, and those of them that look nearest the goal.
+  const ends = (): ReadonlyMap<number, number> => {
+    const g = pointOf(atlas, goal);
+    const guess = (tile: number): number => {
+      const p = pointOf(atlas, tile);
+      const line = Math.abs(p.x - g.x) + Math.abs(p.y - g.y);
+      return Math.max(line, Math.abs((field.steps.get(tile) as number) - rung));
+    };
+    const within = [...round].filter(([tile, steps]) => steps + guess(tile) <= most);
+    const nearest = Math.min(...within.map(([tile]) => guess(tile)));
+    return new Map(within.filter(([tile]) => guess(tile) === nearest));
+  };
+  const steps = (tile: number): number => field.steps.get(tile) as number;
+  return { goal, length: round.get(goal) ?? -1, most, ends, field: steps, rung };
+}
+
+type Outcome = "goal" | "long" | "near" | "none";
+
+/**
+ * Checks the way wayTo gives `actor` for `to`, with `round` or not, against
+ * `want`: the goal by the shortest way past people if it may go the long way
+ * round ("long" when that is more than DETOUR_STEPS too long) or if the way
+ * is short enough ("goal"); otherwise as near as a short enough way gets
+ * ("near"); and nowhere when there is nowhere to go ("none"). With `step`, the
+ * way's first step, or on a way round more than DETOUR_STEPS too long, its
+ * steps up to the first tile from which the rest is not. Gives the outcome
+ * and how many steps `step` gave.
+ */
+function check(
+  world: World,
+  actor: Actor,
+  to: Point,
+  want: Expected | null,
+  round: boolean,
+): [Outcome, number] {
+  const { atlas } = world;
+  const way = wayTo(world, actor, to, round);
+  const where = `${actor.kind} at ${actor.x},${actor.y} to ${to.x},${to.y}, round ${round}`;
+  // Each step is one this actor can take, onto nobody who is in its way.
+  let at: Point = actor;
+  for (const next of way) {
+    expect(canStep(world, actor, at.x, at.y, next.x, next.y), where).toBe(true);
+    expect(
+      world.actors.some((o) => o !== actor && o.x === next.x && o.y === next.y && blocks(o, actor)),
+      where,
+    ).toBe(false);
+    at = next;
   }
-  if (goal === undefined || goal === start) return [];
-  const path: Point[] = [];
-  for (let at = goal; at !== start; at = cameFrom.get(at) as number) path.push(pointOf(atlas, at));
-  return path.reverse();
+  const end = tileAt(atlas, at.x, at.y);
+  let outcome: Outcome;
+  if (!want) {
+    expect(way, where).toEqual([]);
+    outcome = "none";
+  } else if (want.length >= 0 && (round || want.length <= want.most)) {
+    expect([end, way.length], where).toEqual([want.goal, want.length]);
+    outcome = want.length > want.most ? "long" : "goal";
+  } else {
+    expect(want.ends().get(end), where).toBe(way.length);
+    outcome = "near";
+  }
+  let steps = way.length === 0 ? 0 : 1;
+  while (want && steps < way.length) {
+    const p = way[steps - 1] as Point;
+    if (way.length - steps <= want.field(tileAt(atlas, p.x, p.y)) + want.rung + DETOUR_STEPS) break;
+    steps++;
+  }
+  expect(wayTo(world, actor, to, round, true), `${where}, step`).toEqual(way.slice(0, steps));
+  return [outcome, steps];
 }
 
 describe("walk_to's way", () => {
-  it("is the way the search over every tile found, in a crowd, to free tiles and taken ones", () => {
+  it("is the one plain searches over every tile say, in a crowd, to free tiles and taken ones", () => {
     const world = busy();
     const rng = createRng(11);
     const { atlas } = world;
+    const seen = new Map<string, number>();
+    let longer = 0;
     for (let i = 0; i < 400; i++) {
       const actor = world.actors[nextInt(rng, world.actors.length)] as Actor;
       // Half the time somewhere at random, half the time someone's tile, as step_to(threat) does.
@@ -314,8 +401,25 @@ describe("walk_to's way", () => {
         i % 2 === 0
           ? { x: atlas.left + nextInt(rng, atlas.width), y: atlas.top + nextInt(rng, atlas.height) }
           : { x: other.x, y: other.y };
-      expect(wayTo(world, actor, to)).toEqual(oldWayTo(world, actor, to));
+      const want = expected(world, actor, to);
+      for (const round of [false, true]) {
+        const [outcome, steps] = check(world, actor, to, want, round);
+        const key = `${round} ${outcome}`;
+        seen.set(key, (seen.get(key) ?? 0) + 1);
+        if (steps > 1) longer++;
+      }
     }
+    const count = (key: string): number => seen.get(key) ?? 0;
+    // Each kind of answer came up: the goal reached, held up short of it, and nowhere to go.
+    expect(count("false goal")).toBeGreaterThan(100);
+    expect(count("false near")).toBeGreaterThan(10);
+    expect(count("false none")).toBeGreaterThan(10);
+    // Allowed the long way round, some went more than DETOUR_STEPS out of their way
+    // (63 of the 400), and some were held up where people shut the goal off (21).
+    expect(count("true long")).toBeGreaterThan(30);
+    expect(count("true near")).toBeGreaterThan(10);
+    // On some of those long ways, step_to takes more than one step.
+    expect(longer).toBeGreaterThan(10);
   });
 
   it("is the same when the tile asked for, or the one asking, is walled in by monsters", () => {
@@ -336,10 +440,18 @@ describe("walk_to's way", () => {
     [shut.x, shut.y] = [80, 40];
     wall(shut);
     for (const actor of world.actors.slice(0, 60)) {
-      for (const to of [pocket, { x: 31, y: 10 }, { x: shut.x, y: shut.y }, { x: 60, y: 32 }])
-        expect(wayTo(world, actor, to)).toEqual(oldWayTo(world, actor, to));
+      for (const to of [pocket, { x: 31, y: 10 }, { x: shut.x, y: shut.y }, { x: 60, y: 32 }]) {
+        const want = expected(world, actor, to);
+        for (const round of [false, true]) check(world, actor, to, want, round);
+      }
     }
-    for (const to of [pocket, { x: 60, y: 32 }, { x: 81, y: 40 }])
-      expect(wayTo(world, shut, to)).toEqual(oldWayTo(world, shut, to));
+    // Walled in, the resident goes nowhere, however it may go.
+    for (const to of [pocket, { x: 60, y: 32 }, { x: 81, y: 40 }]) {
+      const want = expected(world, shut, to);
+      for (const round of [false, true]) {
+        check(world, shut, to, want, round);
+        expect(wayTo(world, shut, to, round)).toEqual([]);
+      }
+    }
   });
 });

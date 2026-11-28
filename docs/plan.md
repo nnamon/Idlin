@@ -124,24 +124,28 @@ a citizen kills goes in `metrics.json`, and the pace is tuned from there.
 (`bigMap` in `testing.ts`) with the shipped programs: a quarter of the actors
 residents, the rest wolves and goblins in equal numbers, each on a random
 tile, with monsters that go down replaced between ticks so the crowd keeps
-its size. In the dev container under plain Node, 1,000 ticks after 100
-untimed, the range over several runs:
+its size. In the dev container under plain Node, 3,000 ticks after 100
+untimed (`IDLIN_LONG=1`), the range over two runs:
 
-| Actors | Residents | Monsters |  Mean tick | Worst tick |
-| -----: | --------: | -------: | ---------: | ---------: |
-|    150 |        38 |      112 | 0.6–0.7 ms |    5–11 ms |
-|    300 |        75 |      225 | 1.4–1.5 ms |    6–10 ms |
-|    600 |       150 |      450 | 3.5–4.2 ms |   12–18 ms |
+| Actors | Residents | Monsters |    Mean tick | Worst tick |
+| -----: | --------: | -------: | -----------: | ---------: |
+|    150 |        38 |      112 | 0.24–0.37 ms |     5–9 ms |
+|    300 |        75 |      225 | 0.55–0.74 ms |     5–8 ms |
+|    600 |       150 |      450 | 1.47–1.59 ms |    7–11 ms |
 
-The bar is a mean tick of 4 ms or less and a worst tick of 25 ms or less at
-150 residents and 450 monsters, in the dev container; anyone who changes the
-simulation's cost checks it there with `IDLIN_LONG=1`, which times 3,000
-ticks and also 150 and 300 actors. The gate times 300 ticks and prints the
-result without checking it, because a tick's time depends on what else the
-machine is doing. The long run fails above four times the bar, since a shared
-runner is slower than the dev container. The ticks are timed in a Node
-process of their own, as the server runs the world, because under Vitest's
-module loader the same code runs nearly twice as slowly.
+The bar is a mean tick of 2 ms or less at 150 residents and 450 monsters, in
+the dev container; anyone who changes the simulation's cost checks it there
+with `IDLIN_LONG=1`, which times 3,000 ticks and also 150 and 300 actors.
+Neither the gate nor the long run checks the time, because a tick's time
+depends on the machine and on what else it is doing; both print it. What the
+gate checks is the work: over the first 300 ticks of a fresh crowd of 600, the
+tiles the distance fields expanded, the fields started, the tiles the actors'
+own searches looked at, and the actors the grid's queries looked at
+(`workOf` in `field.ts`), each to the exact count. These are the same on
+every machine, and a change that makes path-finding do more, or stops a crowd
+sharing its fields, changes them. The ticks are timed in a Node process of
+their own, as the server runs the world, because under Vitest's module
+loader the same code runs nearly twice as slowly.
 
 Who stands where is kept in `grid.ts`: actors in cells of 8 by 8 tiles, in
 update order, with a count per tile of who stands there and whose walk ends
@@ -150,11 +154,32 @@ grid for the pass in which actors update; every move, walk and mark goes
 through `grid.ts`, which keeps it in step. Sensing the nearest enemy,
 counting friends, blocking, landing blows and finding a free tile to walk to
 look at nearby cells or single tiles of the actor's own region, not at every
-actor. What a tick costs now is mostly path searches: `walk_to` and
-`step_to` search breadth-first until they reach the goal, so a walk costs the
-area around it, and a goal that a crowd has cut off (monsters holding a
-one-tile bridge, say) costs everything the walker can reach. A tick has 100
-ms, and the server stops a wake after 50 ms of work.
+actor.
+
+`walk_to` and `step_to` read a distance field per target tile
+(`field.ts`): a breadth-first search out from the target over the ground,
+people left out, grown only as far as someone has asked and kept for 10
+ticks after its last read, so everyone heading for one place shares one
+search. The field gives the rings round the target, from which the walker
+takes the nearest free tile it could reach with nobody about, and it guides
+the walker's own A* search round the people in the way. That search gives up
+on ways more than 8 steps longer than going by the target itself; then the
+walker goes as near as such a way gets it, so a crowd holding a one-tile
+bridge costs a few hundred tiles and the walker waits at its edge. A walker
+whose last move got nowhere searches with no limit, so people who stand
+still hold it up for one pause. To find out early that no way gets there at
+all, as when monsters hold every bridge, that search walks out from the goal
+at the same time, one tile for each it takes, and stops when the goal's side
+runs out. At 600 actors the fields expand about 4,100 tiles a tick and the
+actors' searches look at about 4,700; before the fields, the searches took
+about 83,000 a tick off their queues. A field's arrays go to a spare list when it is dropped and are never
+freed, so memory stays at the most fields alive at once, at 8 bytes a tile.
+That is bounded by the distinct targets read in 10 ticks: at 600 actors on
+`bigMap`, about 300 fields, or 23 MB, reached in the first 300 ticks and no
+higher over 3,000. The landing's district graph is not used for routes:
+the largest landing is 80 by 45 tiles, under half of `bigMap`, so one field
+covers it. A tick has 100 ms, and the server stops a wake after 50 ms of
+work.
 
 ### 2.5 What a viewer is sent
 

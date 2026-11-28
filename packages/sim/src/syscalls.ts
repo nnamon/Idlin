@@ -50,7 +50,7 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "action",
     args: 2,
     about:
-      "Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.",
+      "Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible. A way round more than 8 steps longer is taken only after a move got nowhere (`stalled` above 0).",
   },
   {
     id: 9,
@@ -145,7 +145,8 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "step_to",
     kind: "action",
     args: 2,
-    about: "Take the first step of the way `walk_to` would go to tile (x, y).",
+    about:
+      "Take the first step of the way `walk_to` would go to tile (x, y). On a way round people more than 8 steps longer, take the steps up to where the rest of it is not.",
   },
   {
     id: 23,

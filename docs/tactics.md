@@ -120,7 +120,7 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `distance`          | sensor | 2     | Steps in a straight grid line from here to (x, y).                                                                                                                                                                                                        |
 | `idle`              | action | 0     | Do nothing for a moment.                                                                                                                                                                                                                                  |
 | `wait`              | action | 1     | Do nothing for the given number of ticks (5 to 600).                                                                                                                                                                                                      |
-| `walk_to`           | action | 2     | Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible.                                                                                                                                                             |
+| `walk_to`           | action | 2     | Walk to tile (x, y), round anyone in the way; if it is taken or cut off, as near as possible. A way round more than 8 steps longer is taken only after a move got nowhere (`stalled` above 0).                                                            |
 | `wander`            | action | 0     | Walk to a walkable tile chosen at random in the region this actor is in.                                                                                                                                                                                  |
 | `hp`                | sensor | 0     | This actor's hitpoints.                                                                                                                                                                                                                                   |
 | `max_hp`            | sensor | 0     | The most hitpoints this actor can have.                                                                                                                                                                                                                   |
@@ -134,7 +134,7 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `step_clear`        | action | 0     | Walk to the nearest tile no enemy attack is about to land on; an ally may be standing there.                                                                                                                                                              |
 | `flee`              | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster).                                              |
 | `threat_recovering` | sensor | 0     | Ticks after this one that the nearest enemy still needs to get its balance back after its last blow: 0 if it can act on the next tick, or if there is no enemy.                                                                                           |
-| `step_to`           | action | 2     | Take the first step of the way `walk_to` would go to tile (x, y).                                                                                                                                                                                         |
+| `step_to`           | action | 2     | Take the first step of the way `walk_to` would go to tile (x, y). On a way round people more than 8 steps longer, take the steps up to where the rest of it is not.                                                                                       |
 | `stalled`           | sensor | 0     | How many decisions in a row, up to 1000, chose to move (`walk_to`, `wander`, `step_clear`, `flee` or `step_to`) and found nowhere to go. 0 after any other decision.                                                                                      |
 | `level`             | sensor | 1     | This adventurer's level, 1 to 99, in a skill: `melee`, `hitpoints`, `woodcutting`, `fishing` or `cooking`. 0 for anything else, and for a monster.                                                                                                        |
 | `xp`                | sensor | 1     | This adventurer's experience in a skill, as for `level`; 0 for anything else.                                                                                                                                                                             |
@@ -218,6 +218,15 @@ when stalled >= 3 as "find another way" -> wander
 `wanderer`, `riverwalker` and both monsters have a rule like this. `homebody`
 does not need one: its fighting moves either come before such a rule would or
 take turns with a `wait`, and a `wait` sets `stalled` back to 0.
+
+`walk_to` and `step_to` go round people in the way by a way at most 8 steps
+longer than the way through them. If there is none, they go to the edge of
+the crowd, since a crowd usually moves on. There they find nowhere to go, so
+`stalled` is above 0 at the next decision, and then they take the shortest
+way round, however long. People who stand still hold an actor up for one
+pause. On such a long way round, `step_to` takes the steps up to the first
+tile from which the rest is no more than 8 steps longer than the way
+through, so that the next `step_to` goes on round instead of back.
 
 The three resident programs fight in different ways. `wanderer` walks up to an
 enemy and trades blows. `riverwalker` steps out of every blow it sees coming and

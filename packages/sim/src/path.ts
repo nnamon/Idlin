@@ -16,6 +16,10 @@ export interface Scratch {
   readonly queue: Int32Array;
   /** Per tile: the stamp of a second search's visit. */
   readonly seen: Uint32Array;
+  /** Per tile: the steps to it a search has found, where `seen` has the stamp. */
+  readonly cost: Int32Array;
+  /** Per tile: the stamp of a third search's visit, walking out from the far end. */
+  readonly back: Uint32Array;
 }
 
 const scratches = new WeakMap<Atlas, { stamp: number } & Omit<Scratch, "stamp">>();
@@ -31,12 +35,15 @@ export function scratchFor(atlas: Atlas): Scratch {
       from: new Int32Array(size),
       queue: new Int32Array(size),
       seen: new Uint32Array(size),
+      cost: new Int32Array(size),
+      back: new Uint32Array(size),
     };
     scratches.set(atlas, scratch);
   }
   if (scratch.stamp === 0xffffffff) {
     scratch.reached.fill(0);
     scratch.seen.fill(0);
+    scratch.back.fill(0);
     scratch.stamp = 0;
   }
   scratch.stamp++;

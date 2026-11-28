@@ -3,6 +3,7 @@
 
 import { type Atlas, pointOf, type Region, regionAt, stepTile, tileAt, walkable } from "./atlas.ts";
 import { atBank, BAG_SLOTS, banked, carrying, deposit, freeSlots, GOODS, withdraw } from "./bag.ts";
+import { type Field, fieldTo, nthTile, partOf, stepsTo, workOf } from "./field.ts";
 import {
   atFire,
   COOK_TICKS,
@@ -240,17 +241,35 @@ function attackTiles(world: World, actor: Actor, x: number, y: number): Point[] 
 /**
  * The way to `to`, going round anyone who gets in the way (adventurers walk
  * through each other; monsters do not). If someone already stands on `to`, or
- * the way is cut off, it leads instead to the nearest tile (by walking,
- * ignoring people) that can be reached and that nobody stands on; among tiles
- * as near as each other, staying where it is comes first. So people sent to
- * one place gather round it and settle instead of piling onto one tile.
- * [] when there is nowhere nearer to go.
+ * is walking there, it leads instead to the nearest tile (by walking, ignoring
+ * people) that nobody stands on or is walking to and that this actor could
+ * walk to if nobody were about; among tiles as near as each other, staying
+ * where it is comes first. So people sent to one place gather round it and
+ * settle instead of piling onto one tile. [] when there is nowhere nearer to go.
+ *
+ * The way round people is the shortest, if it is at most DETOUR_STEPS longer
+ * than going by way of `to`. If people block every such way, it leads as near
+ * the goal as a way that long gets this actor (see searchRound), so someone
+ * held up at a crowd waits at its edge instead of setting off the long way
+ * round. With `round` the way round is the shortest however long, if any
+ * gets there. walk_to and step_to ask for that once the last move got
+ * nowhere, so people who stand still in the way hold an actor up for one
+ * pause and no longer.
+ *
+ * With `step`, the start of the way only, for step_to: its first step, or,
+ * on a way round more than DETOUR_STEPS too long, its steps up to the first
+ * tile from which the rest of it is not. From there the next step_to finds
+ * the rest without `round`; taken one step at a time, the next would lead
+ * back to the crowd's edge instead.
+ *
+ * Everyone sent to `to` reads one distance field (see field.ts), so a crowd
+ * going one way is searched once, and each actor's own search looks at
+ * little more than its way.
  */
-export function wayTo(world: World, actor: Actor, to: Point): Point[] {
+export function wayTo(world: World, actor: Actor, to: Point, round = false, step = false): Point[] {
   const { atlas } = world;
   if (!walkable(atlas, to.x, to.y)) return [];
   const start = tileAt(atlas, actor.x, actor.y);
-  const { stamp, reached: inReach, from: cameFrom, queue, seen } = scratchFor(atlas);
   // Who else stands on a tile, and who else is walking to it, from the grid's
   // tally less this actor's own share.
   const grid = gridOf(world);
@@ -277,56 +296,166 @@ export function wayTo(world: World, actor: Actor, to: Point): Point[] {
       (other) => other !== actor && other.path.length === 0 && other.moveTicksLeft === 0,
     ) !== undefined;
   const free = (tile: number): boolean => (tile === start ? !sharing : !taken(tile));
-  // Everywhere this actor can walk to without stepping on anyone, and the tile
-  // each was first reached from. The search runs only as far as it needs to,
-  // until it reaches the tile asked about or has been everywhere it can. A
-  // tile keeps the step it was first reached from, so the way to any tile is
-  // the same however far the search has run.
   const within = actor.kind !== ADVENTURER;
-  inReach[start] = stamp;
-  queue[0] = start;
-  let head = 0;
-  let tail = 1;
-  const reached = (tile: number): boolean => {
-    for (; head < tail && inReach[tile] !== stamp; head++) {
-      const at = queue[head] as number;
-      for (let d = 0; d < 4; d++) {
-        const next = stepTile(atlas, at, d, within);
-        if (next < 0 || inReach[next] === stamp || barred(next)) continue;
-        inReach[next] = stamp;
-        cameFrom[next] = at;
-        queue[tail++] = next;
-      }
-    }
-    return inReach[tile] === stamp;
-  };
-  // The reachable tile nearest `to`, by walking and ignoring people, ring by
-  // ring outwards from it; in a ring, staying put comes first, then the ring's
-  // order.
+  const field = fieldTo(world, tileAt(atlas, to.x, to.y));
+  const away = stepsTo(world, field, start);
+  if (away < 0) return [];
+  // The free tile nearest `to` that this actor could walk to if nobody were
+  // about, ring by ring outwards from `to`; in a ring, staying put comes
+  // first, then the ring's order.
+  const part = partOf(atlas, start, within);
+  const work = workOf(world);
   let goal = -1;
-  let ring = [tileAt(atlas, to.x, to.y)];
-  seen[ring[0] as number] = stamp;
-  while (ring.length > 0) {
-    if (ring.includes(start) && free(start)) {
-      goal = start;
-      break;
+  let ring = -1;
+  for (let i = 0; goal < 0; i++) {
+    const tile = nthTile(world, field, i);
+    if (tile < 0) return [];
+    work.searchTiles++;
+    const steps = field.steps[tile] as number;
+    if (steps !== ring) {
+      ring = steps;
+      if (ring === away && free(start)) goal = start;
     }
-    goal = ring.find((tile) => free(tile) && reached(tile)) ?? -1;
-    if (goal >= 0) break;
-    const next: number[] = [];
-    for (const at of ring) {
-      for (let d = 0; d < 4; d++) {
-        const tile = stepTile(atlas, at, d, false);
-        if (tile < 0 || seen[tile] === stamp) continue;
-        seen[tile] = stamp;
-        next.push(tile);
+    if (goal < 0 && free(tile) && partOf(atlas, tile, within) === part) goal = tile;
+  }
+  if (goal === start) return [];
+  const rung = field.steps[goal] as number;
+  const most = away + rung + DETOUR_STEPS;
+  // No way past people is longer than there are tiles. Where a way within
+  // the cap gets to the goal, the search with no cap finds the same one.
+  const way =
+    (round
+      ? searchRound(world, actor, field, start, goal, atlas.open.length, barred, true)
+      : null) ?? (searchRound(world, actor, field, start, goal, most, barred, false) as Point[]);
+  if (!step || way.length === 0) return way;
+  let steps = 1;
+  for (; steps < way.length; steps++) {
+    const at = way[steps - 1] as Point;
+    const left = way.length - steps;
+    if (left <= stepsTo(world, field, tileAt(atlas, at.x, at.y)) + rung + DETOUR_STEPS) break;
+  }
+  return way.slice(0, steps);
+}
+
+/** How many steps longer than the way by `to` itself a way round people may be. */
+export const DETOUR_STEPS = 8;
+
+// The search's queues, by how long the way through a tile might be, kept between searches.
+const buckets: number[][] = [];
+
+/**
+ * The shortest way from box tile `start` to `goal` that steps on nobody
+ * `barred` names and is at most `most` steps long. If there is none, the
+ * shortest way to the tile the search got to that looks nearest `goal`, which
+ * may be `start` itself, giving [].
+ *
+ * With `sure`, null instead when no way gets to `goal`. To find that out
+ * without looking at every tile `start` can get to, a second search walks out
+ * from `goal` over the tiles nobody bars, a tile for each tile the first
+ * takes, until the two meet. If it runs out of tiles first, `goal` is shut in.
+ *
+ * It is an A* search guided by `field`: a tile `s` steps from `to`, when
+ * `goal` is `rung` steps from it, is at least |s - rung| steps from `goal`,
+ * and at least as many as in a straight grid line. Among tiles as promising
+ * as each other it takes the one it found last, and it tries the neighbours
+ * of a tile in NEIGHBOURS order, so with nobody in the way it goes straight
+ * down the field and looks at little else.
+ */
+function searchRound(
+  world: World,
+  actor: Actor,
+  field: Field,
+  start: number,
+  goal: number,
+  most: number,
+  barred: (tile: number) => boolean,
+  sure: boolean,
+): Point[] | null {
+  const { atlas } = world;
+  const within = actor.kind !== ADVENTURER;
+  const { stamp, reached: done, from: cameFrom, seen, cost, back, queue: out } = scratchFor(atlas);
+  const work = workOf(world);
+  const rung = field.steps[goal] as number;
+  const gx = goal % atlas.width;
+  const gy = (goal - gx) / atlas.width;
+  const guess = (tile: number): number => {
+    const x = tile % atlas.width;
+    const line = Math.abs(x - gx) + Math.abs((tile - x) / atlas.width - gy);
+    return Math.max(line, Math.abs(stepsTo(world, field, tile) - rung));
+  };
+  const least = guess(start);
+  // Queues up to `top` have been emptied for this search, and nothing is queued past it.
+  let top = -1;
+  const queue = (through: number, tile: number): void => {
+    for (; top < through - least; top++) {
+      const bucket = buckets[top + 1];
+      if (bucket) bucket.length = 0;
+      else buckets[top + 1] = [];
+    }
+    (buckets[through - least] as number[]).push(tile);
+  };
+  seen[start] = stamp;
+  cost[start] = 0;
+  queue(least, start);
+  let best = start;
+  let bestGuess = least;
+  // The walk out from `goal`: tiles out[head..tail) are still to be looked
+  // round. `meeting` while it has not yet met the search from `start`.
+  let meeting = sure;
+  let head = 0;
+  let tail = 0;
+  if (sure) {
+    back[goal] = stamp;
+    out[tail++] = goal;
+  }
+  search: for (let f = least; f <= least + top; f++) {
+    const bucket = buckets[f - least] as number[];
+    while (bucket.length > 0) {
+      const at = bucket.pop() as number;
+      if (done[at] === stamp) continue;
+      done[at] = stamp;
+      work.searchTiles++;
+      if (meeting && back[at] === stamp) meeting = false;
+      if (meeting) {
+        if (head === tail) return null;
+        const from = out[head++] as number;
+        work.searchTiles++;
+        for (let d = 0; d < 4; d++) {
+          const next = stepTile(atlas, from, d, within);
+          if (next < 0 || back[next] === stamp) continue;
+          if (seen[next] === stamp) {
+            meeting = false;
+            break;
+          }
+          if (barred(next)) continue;
+          back[next] = stamp;
+          out[tail++] = next;
+        }
+      }
+      const left = at === goal ? 0 : guess(at);
+      if (left < bestGuess) {
+        best = at;
+        bestGuess = left;
+      }
+      if (at === goal) break search;
+      const steps = (cost[at] as number) + 1;
+      // Pushed last, popped first: the first of NEIGHBOURS is tried first.
+      for (let d = 3; d >= 0; d--) {
+        const next = stepTile(atlas, at, d, within);
+        if (next < 0 || done[next] === stamp || barred(next)) continue;
+        if (seen[next] === stamp && (cost[next] as number) <= steps) continue;
+        const through = steps + guess(next);
+        if (through > most) continue;
+        seen[next] = stamp;
+        cost[next] = steps;
+        cameFrom[next] = at;
+        queue(through, next);
       }
     }
-    ring = next;
   }
-  if (goal < 0 || goal === start) return [];
+  if (sure && best !== goal) return null;
   const path: Point[] = [];
-  for (let at = goal; at !== start; at = cameFrom[at] as number) path.push(pointOf(atlas, at));
+  for (let at = best; at !== start; at = cameFrom[at] as number) path.push(pointOf(atlas, at));
   return path.reverse();
 }
 
@@ -502,12 +631,14 @@ function act(
   // Counts up while the program keeps choosing to move and getting nowhere.
   const stalled = actor.stalled;
   actor.stalled = 0;
+  // One that got nowhere last time goes round whoever is in the way, however far.
+  const round = stalled > 0;
   switch (name) {
     case "wait":
       actor.wait = Math.max(IDLE_TICKS, Math.min(MAX_WAIT_ACTION_TICKS, a));
       return;
     case "walk_to":
-      setPath(world, actor, wayTo(world, actor, { x: a, y: b }));
+      setPath(world, actor, wayTo(world, actor, { x: a, y: b }, round));
       break;
     case "wander": {
       const to = randomWalkableTile(world, actor);
@@ -535,8 +666,8 @@ function act(
       setPath(world, actor, wayFrom(world, actor, { x: a, y: b }));
       break;
     case "step_to":
-      // The first step of the way walk_to would take.
-      setPath(world, actor, wayTo(world, actor, { x: a, y: b }).slice(0, 1));
+      // The first step of the way walk_to would take, or more of a long way round.
+      setPath(world, actor, wayTo(world, actor, { x: a, y: b }, round, true));
       break;
     case "deposit":
     case "withdraw": {
