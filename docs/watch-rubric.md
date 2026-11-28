@@ -28,7 +28,9 @@ review set is:
   ramp down, the peace, the scouts, the front, the march, the siege, the
   break, lift-off and the next legs-plant (`STORYBOARD` in
   `tools/capture/src/index.ts`).
-- **storyboard-640**: the same frames as a 640-wide window shows them.
+- **storyboard-640**: the same frames as a 640-wide window shows them. The
+  tool still writes it, but nothing is judged on it: the viewer watches on a
+  desktop at 1920 by 1080.
 - **showcase**: the README's set: the transit, landing and siege frames, and
   the storyboard at half size. `tools/publish-media.sh captures/<folder>`
   pushes it to the `media` branch.
@@ -86,7 +88,8 @@ second screen. The first six dimensions are that viewer's; the seventh is the
 same viewer once they also own a character.
 
 1. **Legible.** Can I tell what each character is doing, and why, in a
-   three-second glance? Is the text readable at 640 pixels wide?
+   three-second glance? Is the text readable on the 1920 frame viewed at full
+   size, at the sizes in art.md, section 11?
 2. **Alive.** Does something change every few seconds, calmly? Motion with
    weight, no strobing, no frozen frame.
 3. **Consequential.** Do actions lead to visible results: a haul carried home,

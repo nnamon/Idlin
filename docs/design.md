@@ -254,14 +254,13 @@ show, and never goes down, so a taller hat always means more levels whatever
 its shape. A newcomer's point trails back behind its head and stands up as it
 grows. The hat also gets a band in the paper's colour at totals of 20, 50,
 100 and 200, the same on every shape. The tool says which trade. What differs
-sits above or outside the outline so that it still reads on a figure about 13
-pixels tall in a 640-wide window, and a name slip sits above the figure's own
-top. The world counts how often each resident has been struck down (`deaths`
+sits above or outside the outline so that it still reads on a 40 px figure,
+the smallest art.md allows,
+and a name slip sits above the figure's own top. The world counts how often each resident has been struck down (`deaths`
 on the actor, kept in snapshots since version 8), and the cloak wears a
 stitched patch of paper for each, up to five: on the front and back edges by
 the hem, the middle of the hem, then higher up the front and back edges. Each
-sits across the outline, so it shows as a light notch in the silhouette at 640
-wide.
+sits across the outline, so it shows as a light notch in the silhouette.
 
 Small effects show what the residents are doing. Each is read off the world
 once a tick, from how an actor changed since the last one, and drawn from that

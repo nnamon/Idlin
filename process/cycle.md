@@ -410,7 +410,7 @@ when all three have stalled or are out, no art director is reachable.
 It looks once per pull request and posts one comment on it
 (`gh pr comment <P> -R nnamon/Idlin --body-file -`), signed
 `[art director] <model>`, and reports the comment's URL. It opens the
-branch's frames at full size and at 640 wide, by day and at night, and the
+branch's frames at full size, 1920 wide, by day and at night, and the
 comment gives, in this order:
 
 - any hard fail from `docs/watch-rubric.md`;
