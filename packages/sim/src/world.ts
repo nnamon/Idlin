@@ -56,11 +56,13 @@ import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import {
   applyOrder,
   citizenOf,
+  FLAG_NONE,
   flagsHold,
   freshOrders,
   type Orders,
   ordersInts,
   readOrders,
+  unsentOrders,
   withOrders,
 } from "./orders.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
@@ -2265,15 +2267,51 @@ export const knocksOf = (events: readonly WorldEvent[]): Knock[] =>
 /**
  * What the world server sends a viewer after each tick: the snapshot, with the
  * tick's blows and knockbacks beside it. Arrows in flight are in the world
- * itself. `restore` reads it as it reads a snapshot, and `readMessage` gives
- * the blows and knockbacks as well.
+ * itself. The orders a viewer draws nothing from are left out (`unsentOrders`):
+ * each citizen's account and tokens, the flag of a citizen with none, and
+ * every monster's orders. The hash is that of the world with those at the
+ * values `readMessage` puts back, so a message is checked as a snapshot is,
+ * and `restore` refuses one.
  */
 export function viewerMessage(
   world: World,
   blows: readonly Blow[],
   knocks: readonly Knock[] = [],
 ): string {
-  return JSON.stringify({ ...savedOf(world), blows, knocks });
+  const unsent = world.actors.map((a) =>
+    unsentOrders(a.kind === ADVENTURER, a.flag !== FLAG_NONE, world.programs[a.program]),
+  );
+  const seen = savedOf({
+    ...world,
+    actors: world.actors.map((a, i) => ({ ...a, ...unsent[i] })),
+  });
+  const actors = world.actors.map((a, i) => {
+    const sent: Record<string, unknown> = { ...a };
+    for (const key of Object.keys(unsent[i] as object)) delete sent[key];
+    return sent;
+  });
+  return JSON.stringify({ ...seen, state: { ...seen.state, actors }, blows, knocks });
+}
+
+/** A viewer message's actors with the orders it leaves out put back, as `viewerMessage` hashed them. */
+function withUnsent(saved: Saved, programs: Programs): Saved {
+  const { state } = saved;
+  if (saved.version !== SNAPSHOT_VERSION || typeof state !== "object" || state === null)
+    return saved;
+  const { actors } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return saved;
+  const filled = actors.map((item: unknown) => {
+    if (typeof item !== "object" || item === null) return item;
+    const { kind, program } = item as Record<string, unknown>;
+    const table =
+      typeof program === "string" && Object.hasOwn(programs, program)
+        ? programs[program]
+        : undefined;
+    // What the message has stands; a full snapshot has every field, and a
+    // citizen with a flag is sent all of it.
+    return { ...unsentOrders(kind === ADVENTURER, false, table), ...item };
+  });
+  return { ...saved, state: { ...state, actors: filled } };
 }
 
 /** A viewer message read: the world, and the blows and knockbacks of the tick that made it. */
@@ -2285,8 +2323,9 @@ export interface Message {
 
 /**
  * Reads a viewer message as `restore` reads a snapshot, refusing the same
- * things. Blows and knockbacks that are not as `viewerMessage` writes them
- * are left out; a plain snapshot has none.
+ * things, once the orders it leaves out are put back. Blows and knockbacks
+ * that are not as `viewerMessage` writes them are left out; a plain snapshot
+ * has none, and is read as it is.
  */
 export function readMessage(
   text: string,
@@ -2296,7 +2335,8 @@ export function readMessage(
   spawns: Spawns = [],
 ): Message {
   const data = parseJson(text);
-  const world = restoreSaved(savedFrom(data), ground, programs, kinds, spawns);
+  const saved = withUnsent(savedFrom(data), programs);
+  const world = restoreSaved(saved, ground, programs, kinds, spawns, true);
   const { blows, knocks } = data as Record<string, unknown>;
   return {
     world,
@@ -2550,12 +2590,14 @@ export const restore = (
   spawns: Spawns = [],
 ): World => restoreSaved(parseSnapshot(text), ground, programs, kinds, spawns);
 
+/** `seen`: a viewer message, whose citizens have no account (see `readOrders`). */
 function restoreSaved(
   saved: Saved,
   ground: TileMap | Atlas,
   programs: Programs,
   kinds: Kinds,
   spawns: Spawns,
+  seen = false,
 ): World {
   const atlas = atlasOf(ground);
   const {
@@ -2584,7 +2626,7 @@ function restoreSaved(
   }
   const migrated = migrate(version, state, atlas, table);
   if (version === SNAPSHOT_VERSION) {
-    const world = readState(migrated, atlas, table, kindTable, spawnTable);
+    const world = readState(migrated, atlas, table, kindTable, spawnTable, seen);
     if (!world || hashWorldAs(world, version) !== hash)
       throw new SnapshotError("snapshot contents are damaged");
     return world;
@@ -2755,6 +2797,7 @@ const MAX_WAIT_TICKS = 1_000_000;
  * Rebuilds world state field by field, or returns null if anything is not what
  * a world could hold. The hash alone is not trusted for this: it folds every
  * value to 32 bits, so it cannot tell a number from a string that reads the same.
+ * `seen` reads a viewer message's world, whose citizens have no account.
  */
 export function readState(
   raw: unknown,
@@ -2762,6 +2805,7 @@ export function readState(
   programs: Programs,
   kinds: Kinds,
   spawns: Spawns,
+  seen = false,
 ): World | null {
   if (typeof raw !== "object" || raw === null) return null;
   const {
@@ -2927,6 +2971,7 @@ export function readState(
       programs[program] as Program,
       atlas,
       tick,
+      seen,
     );
     if (!orders) return null;
     world.actors.push({

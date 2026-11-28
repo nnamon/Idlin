@@ -870,9 +870,9 @@ describe("the viewer message", () => {
     const text = viewerMessage(world, blows);
     const read = readMessage(text, MAP, PROGRAMS, KINDS);
     expect(read.blows).toEqual(blows);
+    // Nobody here has an account or a flag, and the orders left out are put back as they were.
     expect(read.world).toEqual(world);
-    // `restore` reads a viewer message as a snapshot, and a snapshot as a message with no blows.
-    expect(restore(text, MAP, PROGRAMS, KINDS)).toEqual(world);
+    // A snapshot reads as a message with no blows.
     expect(readMessage(snapshot(world), MAP, PROGRAMS, KINDS).blows).toEqual([]);
   });
 

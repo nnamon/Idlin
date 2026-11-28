@@ -33,8 +33,8 @@ export const TICK_MS = 1000 / TICKS_PER_SECOND;
 
 /**
  * A viewer this far behind on reading (in bytes queued) is dropped rather than
- * buffered for. A message is about 2 KB with six residents and up to about
- * 67 KB with 150, so this is fifteen or more messages, and MAX_VIEWERS of them
+ * buffered for. A message is about 2 KB with six residents and about 108 KB
+ * with 150 chatters joined, so this is nine or more messages, and MAX_VIEWERS of them
  * stay far inside the server's memory limit.
  */
 export const MAX_QUEUED_BYTES = 1024 * 1024;

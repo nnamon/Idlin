@@ -33,9 +33,10 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   be hard-linked) lives in the checkout and is ignored by git.
 - `server` runs the world server (`packages/server/src/main.ts`) on port 4311.
   It resumes from the newest valid snapshot in `data/`, saves one every 600 ticks (a
-  minute of real time) and when the service stops, and sends the whole world to each viewer
+  minute of real time) and when the service stops, and sends the world to each viewer
   after every tick, with that tick's blows and knockbacks beside it (`viewerMessage` in
-  `packages/sim/src/world.ts`). A snapshot taken with other programs, monsters or maps
+  `packages/sim/src/world.ts`). The message leaves out what no viewer draws: each
+  citizen's chat account and tokens, and every monster's orders. A snapshot taken with other programs, monsters or maps
   than the server now has is adopted: the world goes on with the new content,
   and the log lists what that changed (actors removed or moved, memory
   cleared; see `docs/decisions/0021-keeping-the-world-through-content-changes.md`).

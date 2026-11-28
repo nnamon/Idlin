@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { adopt } from "./adopt.ts";
+import { GATHER_TICKS } from "./gather.ts";
 import { parseMap, place, placeConstants } from "./map.ts";
 import {
   FLAG_CITIZEN,
@@ -19,6 +20,7 @@ import {
   resolveGo,
   SIGHTING_TICKS,
   TOKEN_TICKS,
+  unsentOrders,
 } from "./orders.ts";
 import { compileBots } from "./tactics.ts";
 import { botSources, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
@@ -31,11 +33,13 @@ import {
   type Input,
   NIGHT_HOUR,
   type Programs,
+  readMessage,
   restore,
   START_HOUR,
   snapshot,
   step,
   TICKS_PER_GAME_HOUR,
+  viewerMessage,
   type World,
   type WorldEvent,
 } from "./world.ts";
@@ -153,6 +157,30 @@ describe("params from chat", () => {
     expect(fight.kills).toBeGreaterThan(careful.kills);
   });
 
+  it("takes a number below 0 for a param whose range goes there", () => {
+    const source = (botSources().deckhand as string).replace(
+      "param ramp = board of board, guard",
+      "param ramp = board of board, guard\nparam lean = -2 from -5 to 5",
+    );
+    const leaning = {
+      ...PROGRAMS,
+      deckhand: compileBots({ deckhand: source }, placeConstants(ATLAS)).deckhand as Program,
+    };
+    const world = newWorld(["goofguy"], 0, leaning);
+    const tim = citizen(world, "goofguy");
+    expect(tim.params[6]).toBe(-2);
+    run(world, 1, [
+      set("1001", "lean", "-6"),
+      set("1001", "lean", "--4"),
+      set("1001", "lean", "-4"),
+    ]);
+    expect(tim.params[6]).toBe(-4);
+    // -0 is a 0, and saves and hashes as one.
+    run(world, 1, [set("1001", "lean", "-0")]);
+    expect(Object.is(tim.params[6], 0)).toBe(true);
+    expect(tim.tokens).toBe(0);
+  });
+
   it("margin 0 and margin 240 differ in the time a citizen spends out", () => {
     const out = (margin: string): number => {
       const world = newWorld(["goofguy"], NIGHTFALL - SIGHTING_TICKS - 600);
@@ -256,6 +284,114 @@ describe("the flag", () => {
     run(world, 1, [go("1001", "goofguy"), go("1002", "home")]);
     expect(tim.flag).toBe(FLAG_HOME);
     expect(brax.flag).toBe(FLAG_HOME);
+  });
+});
+
+describe("what an accepted order interrupts", () => {
+  /** A world whose goofguy has just decided to chop beside its flag, and so stands for GATHER_TICKS. */
+  const chopping = (): World => {
+    const world = newWorld(["goofguy"]);
+    const tim = citizen(world, "goofguy");
+    for (let t = 0; t < 1500; t++) {
+      const events = step(world, t === 0 ? [go("1001", "near wood")] : []);
+      const chop = events.some(
+        (e) => e.type === "decide" && e.actor === tim.id && labelOf(world, tim) === "chop",
+      );
+      if (chop && t > TOKEN_TICKS) return world;
+    }
+    throw new Error("goofguy never chopped");
+  };
+
+  it("ends a chop's pause for a param a rule reads, and not for one no rule reads", () => {
+    const world = chopping();
+    expect(citizen(world, "goofguy").wait).toBe(GATHER_TICKS);
+    /** The next tick, with one input, and whether goofguy decided in it. */
+    const after = (input: Input) => {
+      const copy = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+      const tim = citizen(copy, "goofguy");
+      const decided = step(copy, [input]).some((e) => e.type === "decide" && e.actor === tim.id);
+      return { tim, decided };
+    };
+    const quiet = after({ type: "heard", account: "1001" });
+    expect(quiet.decided).toBe(false);
+    // Deckhand reads margin in "turn back", and keep in no rule at all.
+    const margin = after(set("1001", "margin", "150"));
+    expect(margin.decided).toBe(true);
+    const keep = after(set("1001", "keep", "magic"));
+    expect(keep.tim.params[2]).toBe(1);
+    expect(keep.tim.tokens).toBe(MAX_TOKENS - 1);
+    expect(keep.decided).toBe(false);
+    expect(keep.tim).toMatchObject({ wait: quiet.tim.wait, path: quiet.tim.path });
+  });
+
+  it("does not end a walk for a flag the program never reads", () => {
+    const wanderers = { ...PROGRAMS, deckhand: shippedPrograms(ATLAS).wanderer as Program };
+    const world = newWorld(["goofguy"], 0, wanderers);
+    while (citizen(world, "goofguy").path.length < 3) step(world);
+    const after = (input: Input) => {
+      const copy = restore(snapshot(world), ATLAS, wanderers, MONSTERS.kinds, MONSTERS.spawns);
+      step(copy, [input]);
+      return citizen(copy, "goofguy");
+    };
+    const quiet = after({ type: "heard", account: "1001" });
+    const sent = after(go("1001", "lower river"));
+    expect(sent.flag).toBe(FLAG_TILE);
+    expect(sent.path.length).toBeGreaterThan(0);
+    expect(sent).toMatchObject({ x: quiet.x, y: quiet.y, path: quiet.path, wait: quiet.wait });
+  });
+});
+
+describe("the viewer message", () => {
+  it("leaves out what a viewer draws nothing from, and reads back to the world without it", () => {
+    const names = Array.from({ length: 150 }, (_, i) => `chatter_${i}`);
+    const world = newWorld(names);
+    run(world, 600, [
+      go("1001", "near wood"),
+      go("1002", "@chatter_0"),
+      set("1003", "margin", "9"),
+    ]);
+    const text = viewerMessage(world, []);
+    const sent = JSON.parse(text).state.actors as Record<string, unknown>[];
+    const monsters = sent.filter((a) => a.kind !== ADVENTURER);
+    expect(monsters.length).toBeGreaterThan(0);
+    const orders = Object.keys(unsentOrders(false, false, undefined));
+    expect(orders).toHaveLength(11);
+    for (const a of monsters) for (const key of orders) expect(a).not.toHaveProperty(key);
+    for (const a of sent.filter((each) => each.kind === ADVENTURER)) {
+      for (const key of ["account", "tokens", "tokenAt"]) expect(a).not.toHaveProperty(key);
+      expect(a).toHaveProperty("params");
+      expect(a).toHaveProperty("heard");
+      expect(Object.hasOwn(a, "flag")).toBe(a.name === "chatter_0" || a.name === "chatter_1");
+    }
+    // Some 74 bytes a citizen; the whole message was the snapshot before.
+    expect(snapshot(world).length - text.length).toBeGreaterThan(10_000);
+    const { world: seen } = readMessage(text, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+    const program = (a: Actor) => world.programs[a.program];
+    expect(seen).toEqual({
+      ...world,
+      actors: world.actors.map((a) => ({
+        ...a,
+        ...unsentOrders(a.kind === ADVENTURER, true, program(a)),
+      })),
+    });
+    expect(citizen(seen, "chatter_0")).toMatchObject({
+      flag: FLAG_TILE,
+      heed: citizen(world, "chatter_0").heed,
+    });
+    expect(citizen(seen, "chatter_2").params[1]).toBe(9);
+    // A snapshot is read as it is; a message is no snapshot.
+    expect(
+      readMessage(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns).world,
+    ).toEqual(world);
+    expect(() => restore(text, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns)).toThrow(
+      /damaged/,
+    );
+    // A message whose actors were changed after it was hashed is refused.
+    const data = JSON.parse(text);
+    data.state.actors[0].tokens = 0;
+    expect(() =>
+      readMessage(JSON.stringify(data), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns),
+    ).toThrow(/damaged/);
   });
 });
 

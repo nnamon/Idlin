@@ -264,7 +264,10 @@ its flag rules together, under the rules that are allowed to hold an order.
 program is asked again. An accepted order or `param` change ends the
 citizen's current action at the next tile, or at the end of the blow it is
 in, and the program decides again. With steps of 4 to 6 ticks and blows of 5,
-that is 0.6 seconds at most.
+that is 0.6 seconds at most. It does so only when it can change the
+decision: a flag for a program that reads the flag, a param for one that
+reads that param. Anything else is kept and costs its token, and the
+citizen carries on.
 
 ### 3.3 Params
 

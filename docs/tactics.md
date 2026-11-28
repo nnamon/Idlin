@@ -88,12 +88,15 @@ param tries = 3
   and cannot be set by the program.
 
 Every param is a chat command for the citizens that run the program:
-`!margin 150` and `!set margin 150` set a number, `!stance fight` and `!fight`
-a named value (docs/chat.md, section 3.3). The values are kept on the citizen
-and read at each decision, so a change needs no compile. Each accepted change
-costs one of the citizen's two tokens, which come back one every 200 ticks,
-and ends what the citizen is doing at the next tile or the end of its blow, so
-its program decides again. Setting the value it already has costs nothing.
+`!margin 150` and `!set margin 150` set a number (`!lean -2` for one whose
+range goes below 0), `!stance fight` and `!fight` a named value
+(docs/chat.md, section 3.3). The values are kept on the citizen and read at
+each decision, so a change needs no compile. Each accepted change costs one
+of the citizen's two tokens, which come back one every 200 ticks. If the
+program reads the param anywhere, the change also ends what the citizen is
+doing at the next tile or the end of its blow, so its program decides again;
+a param no instruction reads leaves the citizen to carry on. Setting the
+value it already has costs nothing.
 
 ## The flag
 
@@ -101,7 +104,9 @@ its program decides again. Setting the value it already has costs nothing.
 takes it down, at the same cost as a param. A program reads it with
 `flagged`, `flag_age`, `flag_down`, and `flag`, which stands for the flag's
 place as `camp` stands for the camp's: `walk_to(flag)`, `distance(flag)`. A
-flag on a citizen is where that citizen is.
+flag on a citizen is where that citizen is. Planting or taking down a flag
+ends what the citizen is doing, as a param change does, only if the program
+reads the flag.
 
 `<where>` is looked up in this order, and the first step that matches wins:
 `home`; a compass point (`north` or `n` to `northwest` or `nw`, a tile 12

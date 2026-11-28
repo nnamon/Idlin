@@ -17,6 +17,7 @@ export {
   FLOOD_MESSAGES,
   Gate,
   type GateOptions,
+  MAX_ACCOUNTS,
   MAX_ID,
 } from "./gate.ts";
 export {

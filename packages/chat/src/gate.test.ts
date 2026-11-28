@@ -1,6 +1,7 @@
+import { TICKS_PER_SECOND } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
 import type { ChatEvent } from "./events.ts";
-import { citizenName, FLOOD_MESSAGES, Gate } from "./gate.ts";
+import { citizenName, FLOOD_MESSAGES, Gate, MAX_ACCOUNTS } from "./gate.ts";
 
 const message = (
   text: string,
@@ -72,6 +73,25 @@ describe("the gate", () => {
       burst.pass(message("!me", { id: `b${i}` }), 0),
     );
     expect(many.filter((inputs) => inputs.length > 0)).toHaveLength(FLOOD_MESSAGES);
+  });
+
+  it(`keeps track of at most ${MAX_ACCOUNTS} accounts, and of none quiet for a second in its flood list`, () => {
+    const gate = new Gate();
+    const from = (n: number, tick: number) =>
+      gate.pass(message("hi", { id: `m${n}`, account: `${n}`, login: `chatter_${n}` }), tick);
+    // One a tick, so each is a second past by the time the tenth after it speaks.
+    for (let n = 1; n <= MAX_ACCOUNTS + 10; n++) from(n, n);
+    expect(gate.tracked).toEqual({ joined: MAX_ACCOUNTS, recent: TICKS_PER_SECOND });
+    // The first ten went quiet longest and were forgotten, so each joins again;
+    // one still kept does not.
+    expect(from(11, MAX_ACCOUNTS + 11)).toEqual([
+      { type: "say", account: "11", id: "m11", text: "hi" },
+    ]);
+    expect(from(1, MAX_ACCOUNTS + 12)[0]).toMatchObject({ type: "join", account: "1" });
+    expect(gate.tracked.joined).toBe(MAX_ACCOUNTS);
+    // Speaking again kept 11 from being the next forgotten: 12 went instead.
+    expect(from(12, MAX_ACCOUNTS + 13)[0]).toMatchObject({ type: "join", account: "12" });
+    expect(from(11, MAX_ACCOUNTS + 14)[0]).toMatchObject({ type: "say" });
   });
 
   it("turns a deletion into an unsay, and a timeout or a ban into the platform's mod input", () => {

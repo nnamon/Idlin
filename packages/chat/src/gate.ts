@@ -10,6 +10,13 @@ import { DEFAULT_VOCABULARY, parseLine, type Vocabulary } from "./parse.ts";
 /** Messages an account may send in any one second; the rest are dropped before they are parsed. */
 export const FLOOD_MESSAGES = 5;
 
+/**
+ * The most accounts the gate keeps track of. Past it, the one quiet longest
+ * is forgotten: its next message makes a `join` again, which the simulation
+ * ignores for a citizen it already has.
+ */
+export const MAX_ACCOUNTS = 10_000;
+
 /** The longest message id the gate passes on. */
 export const MAX_ID = 64;
 
@@ -50,10 +57,22 @@ const text = (value: unknown, most: number): value is string =>
 export class Gate {
   private readonly ignore: Set<string>;
   private readonly vocabulary: Vocabulary;
-  /** Accounts that have sent a message since the gate started, and so have been sent a `join`. */
+  /**
+   * Accounts that have been sent a `join`, at most MAX_ACCOUNTS, the one whose
+   * last message passed longest ago first.
+   */
   private readonly joined = new Set<string>();
-  /** Each account's last FLOOD_MESSAGES arrival ticks, oldest first. */
+  /**
+   * Each account's last FLOOD_MESSAGES arrival ticks, oldest first, for the
+   * accounts with one in the last second, at most MAX_ACCOUNTS of them, the
+   * one heard from longest ago first.
+   */
   private readonly recent = new Map<string, number[]>();
+
+  /** How many accounts the gate is keeping track of, in each of its two lists. */
+  get tracked(): { readonly joined: number; readonly recent: number } {
+    return { joined: this.joined.size, recent: this.recent.size };
+  }
 
   constructor(options: GateOptions = {}) {
     this.ignore = new Set(
@@ -108,10 +127,12 @@ export class Gate {
     if (this.ignore.has(login.toLowerCase()) || this.ignore.has(account.toLowerCase())) return [];
     if (!this.admit(account, tick)) return [];
     const inputs: ChatInput[] = [];
-    if (!this.joined.has(account)) {
-      this.joined.add(account);
+    if (!this.joined.delete(account))
       inputs.push({ type: "join", account, name: citizenName(login, display), role: as });
-    }
+    // Added again, so the account goes to the end of the list.
+    this.joined.add(account);
+    const quiet = this.joined.values().next();
+    if (this.joined.size > MAX_ACCOUNTS && !quiet.done) this.joined.delete(quiet.value);
     const input = parseLine({ account, role: as, id, text: said }, this.vocabulary);
     inputs.push(input ?? { type: "heard", account });
     return inputs;
@@ -125,7 +146,15 @@ export class Gate {
       return false;
     times.push(tick);
     if (times.length > FLOOD_MESSAGES) times.shift();
+    this.recent.delete(account);
     this.recent.set(account, times);
+    // An account with nothing in the last second can send FLOOD_MESSAGES
+    // whether it is kept or not, so it is let go.
+    for (const [first, kept] of this.recent) {
+      const newest = kept[kept.length - 1] ?? tick;
+      if (this.recent.size <= MAX_ACCOUNTS && tick - newest < TICKS_PER_SECOND) break;
+      this.recent.delete(first);
+    }
     return true;
   }
 }

@@ -30,6 +30,7 @@ import {
   spawnsNearCamp,
   step,
   TICKS_PER_DAY,
+  viewerMessage,
   type World,
 } from "@idlin/sim";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -104,6 +105,18 @@ const start = async (
   servers.push(server);
   return server;
 };
+
+/** The hash of `world` as a viewer is sent it, without the orders it draws nothing from. */
+const seenHash = (world: World): string =>
+  hashWorld(
+    readMessage(
+      viewerMessage(world, []),
+      CONTENT.atlas,
+      CONTENT.programs,
+      CONTENT.kinds,
+      CONTENT.spawns,
+    ).world,
+  );
 
 /** The world a new server starts, stepped on to `tick`, without a server. */
 const reference = (tick: number): World => {
@@ -412,7 +425,7 @@ describe("world server", () => {
 
     expect(early.worlds.map((w) => w.tick)).toEqual(Array.from({ length: 251 }, (_, i) => i + 1));
     expect(late.worlds[0]?.tick).toBe(201);
-    const truth = hashWorld(server.world);
+    const truth = seenHash(server.world);
     expect(hashWorld(early.worlds.at(-1) as World)).toBe(truth);
     expect(hashWorld(late.worlds.at(-1) as World)).toBe(truth);
     for (const world of late.worlds) {
@@ -703,7 +716,7 @@ describe("server process", () => {
     await watcher.reach(tickOf(last));
     const shown = watcher.worlds[0] as World;
     expect(shown.tick).toBeGreaterThanOrEqual(tickOf(last));
-    expect(hashWorld(shown)).toBe(hashWorld(reference(shown.tick)));
+    expect(hashWorld(shown)).toBe(seenHash(reference(shown.tick)));
     watcher.close();
 
     second.child.kill("SIGTERM");

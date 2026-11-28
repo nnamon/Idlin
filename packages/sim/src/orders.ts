@@ -103,6 +103,26 @@ export const freshOrders = (program: Program, account: string, tick: number): Or
   heed: HEED_NONE,
 });
 
+const NO_PROGRAM: Program = { version: 0, code: [], rules: [], params: [] };
+
+/**
+ * The orders a viewer is not sent (see `viewerMessage`), with the values it
+ * reads in their place. A citizen's account and tokens are nothing a viewer
+ * draws, and nor is the flag of a citizen with none. A monster has no
+ * chatter, so its orders are always its program's defaults and a full set of
+ * tokens, and none of them is sent.
+ */
+export function unsentOrders(
+  adventurer: boolean,
+  flagged: boolean,
+  program: Program | undefined,
+): Partial<Orders> {
+  if (!adventurer) return freshOrders(program ?? NO_PROGRAM, "", 0);
+  const unsent = { account: "", tokens: MAX_TOKENS, tokenAt: 0 };
+  if (flagged) return unsent;
+  return { ...unsent, flag: FLAG_NONE, flagX: 0, flagY: 0, flagOn: 0, flagAt: 0, heed: HEED_NONE };
+}
+
 /** Both 32-bit halves of a tick, which may outgrow 32 bits. */
 const halvesOf = (n: number): number[] => [
   n % 0x1_0000_0000,
@@ -131,7 +151,9 @@ const tickLike = (n: unknown, most: number): n is number =>
 /**
  * A saved actor's orders, or null if they are not what an actor of that kind
  * on that program could hold at `tick`. A flag on a citizen is checked against
- * the other actors afterwards (see `flagsHold`).
+ * the other actors afterwards (see `flagsHold`). `seen` reads them from a
+ * viewer message, which is not sent a citizen's account, so a flag there
+ * stands on a citizen with none.
  */
 export function readOrders(
   item: Record<string, unknown>,
@@ -139,6 +161,7 @@ export function readOrders(
   program: Program,
   atlas: Atlas,
   tick: number,
+  seen = false,
 ): Orders | null {
   const { account, params, heard, tokens, tokenAt, flag, flagX, flagY, flagOn, flagAt, heed } =
     item;
@@ -165,7 +188,7 @@ export function readOrders(
   if (flag === FLAG_CITIZEN ? flagOn < 1 : flagOn !== 0) return null;
   if (flag === FLAG_NONE && (flagAt !== 0 || heed !== HEED_NONE)) return null;
   // Only a chatter plants a flag, and only on its own citizen.
-  if (flag !== FLAG_NONE && account === "") return null;
+  if (flag !== FLAG_NONE && account === "" && !seen) return null;
   return {
     account,
     params: values,
@@ -203,7 +226,7 @@ export function withOrders(
   const { program } = actor as Record<string, unknown>;
   const table =
     typeof program === "string" && Object.hasOwn(programs, program) ? programs[program] : undefined;
-  const fresh = freshOrders(table ?? { version: 0, code: [], rules: [], params: [] }, "", 0);
+  const fresh = freshOrders(table ?? NO_PROGRAM, "", 0);
   return { ...actor, ...fresh, heard: tickLike(tick, Number.MAX_SAFE_INTEGER) ? tick : 0 };
 }
 
@@ -267,15 +290,35 @@ function spend(actor: Actor, tick: number): void {
 }
 
 /**
- * An accepted order ends what the citizen is doing: the step it is in and a
- * blow it is in finish, and then its program decides again. One mending after
- * a down goes on mending.
+ * An accepted order that can change what the program decides ends what the
+ * citizen is doing: the step it is in and a blow it is in finish, and then its
+ * program decides again. One mending after a down goes on mending.
  */
 function interrupt(world: World, actor: Actor): void {
   if (mending(actor)) return;
   setPath(world, actor, []);
   actor.blocked = 0;
   actor.wait = 0;
+}
+
+/** A flag planted or taken down interrupts a citizen whose program reads the flag. */
+function interruptForFlag(world: World, actor: Actor): void {
+  if (firstFlagRule(world.programs[actor.program] as Program) >= 0) interrupt(world, actor);
+}
+
+const readParams = new WeakMap<Program, ReadonlySet<number>>();
+
+/** The indexes of the params a program's code reads anywhere, read off the bytecode. */
+export function paramsRead(program: Program): ReadonlySet<number> {
+  let read = readParams.get(program);
+  if (read) return read;
+  const found = new Set<number>();
+  const { code } = program;
+  for (let at = 0; at < code.length; at += 1 + operandsOf(code[at] as number))
+    if (code[at] === OP.PARAM) found.add(code[at + 1] as number);
+  read = found;
+  readParams.set(program, read);
+  return read;
 }
 
 type Target =
@@ -468,7 +511,7 @@ export function applyOrder(world: World, fields: Readonly<Record<string, unknown
     spend(actor, tick);
     Object.assign(actor, { flag: FLAG_NONE, flagX: 0, flagY: 0, flagOn: 0, flagAt: 0 });
     actor.heed = HEED_NONE;
-    interrupt(world, actor);
+    interruptForFlag(world, actor);
   } else if (type === "go") {
     const { words } = fields;
     if (typeof words !== "string" || words.length > 64 || !hasToken(actor, tick)) return;
@@ -486,7 +529,7 @@ export function applyOrder(world: World, fields: Readonly<Record<string, unknown
     spend(actor, tick);
     Object.assign(actor, { flag: target.flag, flagX, flagY, flagOn, flagAt: tick });
     actor.heed = HEED_NONE;
-    interrupt(world, actor);
+    interruptForFlag(world, actor);
   } else if (type === "param") {
     const { name, value } = fields;
     if (typeof name !== "string" || typeof value !== "string") return;
@@ -495,14 +538,16 @@ export function applyOrder(world: World, fields: Readonly<Record<string, unknown
     const param = program.params[index];
     if (!param) return;
     // A named value by its name, and a number as digits: `!stance fight`, `!margin 150`.
+    // A number may have a minus sign, for a range below 0; `+ 0` makes -0 a 0.
     let set: number | null = null;
     if (param.values.length > 0)
       set = param.values.includes(value) ? param.values.indexOf(value) : null;
-    else if (/^[0-9]{1,10}$/.test(value)) set = Number(value);
+    else if (/^-?[0-9]{1,10}$/.test(value)) set = Number(value) + 0;
     if (set === null || set < param.min || set > param.max) return;
     if (actor.params[index] === set || !hasToken(actor, tick)) return;
     spend(actor, tick);
     actor.params[index] = set;
-    interrupt(world, actor);
+    // A param no instruction reads cannot change what the program decides.
+    if (paramsRead(program).has(index)) interrupt(world, actor);
   }
 }

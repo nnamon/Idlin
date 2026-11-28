@@ -58,6 +58,7 @@ export const BUILT_IN = [
 ] as const;
 
 const WORD = /^[a-z0-9_]{1,32}$/;
+const NEGATIVE = /^-[0-9]{1,10}$/;
 const SLOT = /^[0-9]{1,2}$/;
 const MINUTES = /^[0-9]{1,5}$/;
 
@@ -183,7 +184,9 @@ function param(
 ): ChatInput | null {
   if (name === undefined || !Object.hasOwn(vocabulary, name)) return null;
   const value = rest[0]?.toLowerCase();
-  if (value === undefined || rest.length > 1 || !WORD.test(value)) return null;
+  // A word, or a number with a minus sign for a param whose range goes below 0.
+  if (value === undefined || rest.length > 1 || !(WORD.test(value) || NEGATIVE.test(value)))
+    return null;
   return { type: "param", account, name, value };
 }
 

@@ -59,6 +59,13 @@ describe("the parser", () => {
       name: "margin",
       value: "999",
     });
+    // A number below 0, for a program whose param has a range that goes there.
+    const lean = { lean: [] };
+    const line = (text: string) => parseLine({ account, role: "viewer", id: "m", text }, lean);
+    expect(line("!lean -2")).toEqual({ type: "param", account, name: "lean", value: "-2" });
+    expect(line("!set lean -15")).toEqual({ type: "param", account, name: "lean", value: "-15" });
+    for (const bad of ["!lean --2", "!lean -", "!lean -x", "!lean 2-", "!lean -1.5"])
+      expect(line(bad), bad).toBeNull();
     // A value word two params share is not enough to say which.
     const shared = { a: ["x"], b: ["x"] };
     expect(parseLine({ account, role: "viewer", id: "m", text: "!x" }, shared)).toBeNull();
