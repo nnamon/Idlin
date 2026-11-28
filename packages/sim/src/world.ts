@@ -1624,10 +1624,12 @@ function setGround(world: World): void {
 function liftOff(world: World, events: WorldEvent[]): void {
   const { atlas } = world;
   const outside: { actor: Actor; ramp: boolean }[] = [];
+  const walking: Actor[] = [];
   world.actors = world.actors.filter((actor) => actor.kind === ADVENTURER);
   world.marks = [];
   world.arrows = [];
   for (const actor of world.actors) {
+    if (actor.path.length > 0 || actor.moveTicksLeft > 0) walking.push(actor);
     setPath(world, actor, []);
     actor.moveTicksLeft = 0;
     putAt(world, actor, actor.x, actor.y);
@@ -1641,6 +1643,14 @@ function liftOff(world: World, events: WorldEvent[]): void {
       outside.push({ actor, ramp: terrain === "ramp" });
   }
   setGround(world);
+  // A citizen stopped mid-walk on the deck may be on a tile two already stand
+  // on. Move it to the nearest free berth; a citizen standing still stays put.
+  for (const actor of walking) {
+    if (!aboard(world.atlas, actor.x, actor.y)) continue;
+    const berth = berthNear(world, actor, actor);
+    if (berth && (berth.x !== actor.x || berth.y !== actor.y))
+      putAt(world, actor, berth.x, berth.y);
+  }
   const hold = homeOf(world);
   for (const { actor, ramp } of outside) {
     // Somewhere to stand, the hold itself if the deck is full: tiles hold two

@@ -248,32 +248,44 @@ describe("the deck and the landing", () => {
     );
   });
 
-  it("never has more than two citizens standing on a tile, through a cycle with a full deck", () => {
-    const world = city(3);
-    // 100 come aboard at once, and the other 50 one every 7 ticks while the
-    // first are walking about the deck.
-    const crowd = joins(BERTHS);
-    step(world, crowd.slice(0, 100));
-    let next = 100;
-    // Through the transit, the landing, the lift and into the next landing.
-    const end = 8850 + LIFT_TICKS + LEGS_PLANT + 600;
-    let most = 0;
-    let worst = -1;
-    while (world.tick < end) {
-      const join = world.tick >= 200 && world.tick % 7 === 0 ? crowd.slice(next, ++next) : [];
-      step(world, join);
-      const perTile = new Map<number, number>();
-      for (const a of world.actors) {
-        if (a.kind !== ADVENTURER || a.path.length > 0 || a.moveTicksLeft > 0) continue;
-        const tile = tileAt(world.atlas, a.x, a.y);
-        const n = (perTile.get(tile) ?? 0) + 1;
-        perTile.set(tile, n);
-        if (n > most) [most, worst] = [n, world.tick];
+  // At the default margin everyone is home and still well before the lift. At
+  // margin 0 the crowd turns back at the last moment, so citizens are still
+  // walking about the deck when it lifts.
+  it.each(["", "0"])(
+    "never has more than two citizens standing on a tile, through a cycle with a full deck (margin %j)",
+    (margin) => {
+      const world = city(3);
+      // 100 come aboard at once, and the other 50 one every 7 ticks while the
+      // first are walking about the deck.
+      const crowd = joins(BERTHS);
+      const orders = (people: Input[]): Input[] =>
+        people.flatMap((p) =>
+          margin === "" || p.type !== "join"
+            ? [p]
+            : [p, { type: "param" as const, account: p.account, name: "margin", value: margin }],
+        );
+      step(world, orders(crowd.slice(0, 100)));
+      let next = 100;
+      // Through the transit, the landing, the lift and into the next landing.
+      const end = 8850 + LIFT_TICKS + LEGS_PLANT + 600;
+      let most = 0;
+      let worst = -1;
+      while (world.tick < end) {
+        const join = world.tick >= 200 && world.tick % 7 === 0 ? crowd.slice(next, ++next) : [];
+        step(world, orders(join));
+        const perTile = new Map<number, number>();
+        for (const a of world.actors) {
+          if (a.kind !== ADVENTURER || a.path.length > 0 || a.moveTicksLeft > 0) continue;
+          const tile = tileAt(world.atlas, a.x, a.y);
+          const n = (perTile.get(tile) ?? 0) + 1;
+          perTile.set(tile, n);
+          if (n > most) [most, worst] = [n, world.tick];
+        }
       }
-    }
-    expect(world.actors.filter((a) => a.kind === ADVENTURER)).toHaveLength(BERTHS);
-    expect({ most, worst: most > 2 ? worst : -1 }).toEqual({ most: 2, worst: -1 });
-  });
+      expect(world.actors.filter((a) => a.kind === ADVENTURER)).toHaveLength(BERTHS);
+      expect({ most, worst: most > 2 ? worst : -1 }).toEqual({ most: 2, worst: -1 });
+    },
+  );
 });
 
 describe("the break and lift-off", () => {
