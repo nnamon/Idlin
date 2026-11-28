@@ -422,24 +422,27 @@ shown the larger it is.
 
 Height is from the feet to the top of the head. The hat stands above that.
 
-| Size | Where                                                           | Height at 1920 | What is drawn                                                                                                                           |
-| ---- | --------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Far  | a landing of the mid city's size or larger                      | 40 to 50 px    | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
-| Mid  | a landing of the first two sizes; the siege; the deck when full | 54 to 76 px    | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
-| Near | the deck in transit with 40 aboard or fewer                     | 96 to 120 px   | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
+| Size | Where                                                                                                  | Height at 1920 | What is drawn                                                                                                                           |
+| ---- | ------------------------------------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Far  | a landing of the mid city's size or larger                                                             | 40 to 50 px    | contour, cloak colour, hat colour and shape, head, the weapon's silhouette, legs as two ticks, arms only while they are doing something |
+| Mid  | a landing of the first two sizes; the siege; the deck when full; the deck in the widened transit frame | 54 to 76 px    | adds feet, the eye, the shade band, cloak pattern, both arms                                                                            |
+| Near | the deck in ordinary transit with 40 aboard or fewer                                                   | 96 to 120 px   | adds form lines, the mark on the cloak, death patches, kit detail, an expression                                                        |
 
 - **A citizen's height comes from the camera**, in every scene. Between two
-  columns it is on the straight line between them.
+  columns it is on the straight line between them, and past the last it
+  stays at 120 px.
 
   | Px a tile       | 14  | 17  | 23  | 31  | 47  | 66  | 100 |
   | --------------- | --- | --- | --- | --- | --- | --- | --- |
   | Citizen, px     | 40  | 42  | 46  | 58  | 76  | 96  | 120 |
   | The same, tiles | 2.9 | 2.5 | 2.0 | 1.9 | 1.6 | 1.5 | 1.2 |
 
-  So a citizen is drawn larger than its tile, and more so the more tiles
-  the frame holds. It is a figure standing on a map, as the lean has it
+  Up to 120 px a tile a citizen is drawn larger than its tile, and more so
+  the more tiles the frame holds. It is a figure standing on a map, as the
+  lean has it
   (section 4). The one exception is a full deck in transit: with over 40
-  aboard a citizen is 0.85 of a tile tall, and 40 px at least.
+  aboard a citizen is 0.85 of a tile tall, 40 px at least and 76 px at
+  most.
 - A citizen is never under 40 px at 1920, and never over three tiles tall. A
   landing too wide for both is not drawn smaller; the generator makes it of
   fewer tiles. That puts the widest landing at about 136 tiles.
@@ -631,10 +634,10 @@ slice draws. Growth, below, has the other sizes.
   along from its middle. Near-side legs are in heavy contour and
   cross in front of the deck's edge. Far-side legs are in contour weight
   with a 55% wash and are drawn before the hull, so the pairs separate. A
-  foot plate lies on the ground at 0.8 with its own shadow. A leg is the
-  largest part of the close-up after the hull and is drawn as machinery:
-  plate seams, rivets, a piston at the knee, and hatching down its shade
-  side.
+  foot plate lies on the ground at 0.8 with its own shadow. A leg is drawn
+  as machinery: plate seams, rivets, a piston at the knee, and hatching
+  down its shade side. In transit the knees are the part of a leg that is
+  in frame (section 12), so the knee carries the most drawing.
 - **The lantern mast.** It stands three and a half tiles high from the middle
   of the deck and its head is the highest thing on the plate, with the
   lantern there, a crow's nest below it and stays to the deck's corners in
@@ -704,17 +707,19 @@ rows are limits. Nothing is built to them before a still mockup of each, at
 
 | Step    | Hull, tiles | Legs | Planted, tiles | Landing, tiles | Px a tile, landed | Citizen, landed | Hull, of the frame's width | City, of the map | Px a tile, transit |
 | ------- | ----------- | ---: | -------------- | -------------- | ----------------: | --------------: | -------------------------: | ---------------: | -----------------: |
-| First   | 10 by 4     |    6 | 14 by 9        | 40 by 22       |                47 |           76 px |                        25% |              14% |                100 |
-| Second  | 12 by 5     |    6 | 16 by 12       | 60 by 33       |                31 |           58 px |                        20% |              10% |                 88 |
-| Mid     | 15 by 6     |    8 | 20 by 14       | 80 by 45       |                23 |           46 px |                        18% |               8% |                 66 |
-| Late    | 18 by 7     |   10 | 25 by 16       | 108 by 60      |                17 |           42 px |                        16% |               6% |                 56 |
-| Largest | 21 by 8     |   12 | 29 by 19       | 136 by 76      |                14 |           40 px |                        15% |               5% |                 48 |
+| First   | 10 by 4     |    6 | 14 by 9        | 40 by 22       |                47 |           76 px |                        25% |              14% |                150 |
+| Second  | 12 by 5     |    6 | 16 by 12       | 60 by 33       |                31 |           58 px |                        20% |              10% |                125 |
+| Mid     | 15 by 6     |    8 | 20 by 14       | 80 by 45       |                23 |           46 px |                        18% |               8% |                100 |
+| Late    | 18 by 7     |   10 | 25 by 16       | 108 by 60      |                17 |           42 px |                        16% |               6% |                 83 |
+| Largest | 21 by 8     |   12 | 29 by 19       | 136 by 76      |                14 |           40 px |                        15% |               5% |                 71 |
 
 - **The whole landing is in frame** from the reveal until the march
   (section 12), so the landed camera is 1880 px over the landing's width, or
   1040 over its height if that is less.
-- **In transit** the planted span is about 1,400 px wide whatever the city's
-  size. A citizen's height comes from the camera at both ends (section 5).
+- **In transit** the hull is about 1,500 px long whatever the city's size,
+  four fifths of the picture's width, and the legs run out of the frame
+  (section 12). A citizen's height comes from the camera at both ends
+  (section 5).
 - **The city's share of the map falls** as both grow, from about a seventh
   to about a twentieth, and its hull from a quarter of the frame's width to
   a seventh. It does not fall further: under a seventh the deck's rooms
@@ -1205,21 +1210,55 @@ The change between transit and landing is one camera move, composed at both
 ends. It is the shot that sells the game, and it happens two or three times
 an hour.
 
-- **In transit** the city with its legs fills about three quarters of the
-  frame's width: 66 px a tile for the mid city (section 7 has the others).
-  The middle of its deck sits a little above the frame's middle, so the
-  lantern and every foot are inside the rule and clear of the corners'
-  slips. The land slides under it in plan, the opposite way to its walk.
-  Every citizen aboard is at near or mid size.
+- **In transit** the frame is the deck. The hull's length is four fifths of
+  the picture's width: 100 px a tile for the mid city, whose hull is then
+  1,500 px long (section 7 has the others). The deck's floor and the walls
+  of its rooms take a little over half the picture's height. The middle of
+  the deck sits just below the picture's middle, so the lantern is inside
+  the rule and clear of the slips, and the hull's near side shows whole
+  under the rim. Every citizen aboard is in frame, at near or mid size.
+  Tags aboard follow section 11's rules for citizens out: every one is
+  named with 40 aboard or fewer, and at most 24 at once with more.
+- **The legs are not framed in transit.** No leg is moved or shortened to
+  fit, and the frame is not widened to hold a foot. What falls inside the
+  picture is drawn in full: the near knees along the rim, with their shins
+  running out under the bottom rule; the far legs rising behind the far
+  walls to knees along the top; and any far foot that comes down in the
+  strip of land above the far walls. A slip lies over whatever leg is
+  under it.
+- **The land** slides past in plan, the opposite way to the walk. It shows
+  in four places: above the far walls, beyond the stern, beyond the prow,
+  and in the hull's shadow under the keel.
+- **When something runs alongside** (a raider rig, and later another
+  city) the frame widens to hold both machines whole, with every foot of
+  each inside the rule and clear of the slips, and the ground between
+  them. What runs alongside is on the city's near side, lower on the plate,
+  so none of it is behind the hull. The frame opens downward to take it
+  in: the lantern stays within 40 px of where it was and the hull keeps to
+  the upper half of the picture. For the mid city and a raider rig that is
+  40 px a tile, where a citizen is 68 px, or 40 px with over 40 aboard
+  (section 5). The widening takes 6 to 8
+  seconds from the sighting, eased at both ends, and what is coming walks
+  into the frame as it opens. Names aboard are then shown as on a landing
+  (section 11), and anyone standing at the near rail or a gun post counts
+  as shooting from it. When the other machine has gone the frame closes on the
+  deck again in about 4 seconds. Nothing else widens the frame in
+  transit.
 - **Landed** the city stands inside the map (section 4), with ground and
   pockets on every side, and the frame holds the whole landing. Its hull is
   a quarter to a seventh of the frame's width, by the city's size
   (section 7).
 - **The move** takes 6 to 8 seconds, eased at both ends, with no cut and no
-  cross-fade of the whole frame. The lantern mast is the anchor: it travels
-  on one smooth curve from where it is in the close-up to where it is on the
-  landing, and everything else scales round it. The city is the same drawing
-  at both ends and loses detail on the way by whole parts.
+  cross-fade of the whole frame. It starts on the deck as the legs plant.
+  The land stops, the far feet in frame come down in the strip above the
+  far walls, and the frame pulls back fast enough that each near foot is
+  inside the rule and clear of the slips when it comes down. By the time
+  the last foot is down the frame holds the whole machine on its legs, and
+  from there it opens onto the land. The lantern mast is the anchor: it
+  travels on one smooth curve
+  from where it is over the deck to where it is on the landing, and
+  everything else scales round it. The city is the same drawing at both
+  ends and loses detail on the way by whole parts.
 - **The land is drawn as it is revealed.** Pulling back, the ground's
   contours are inked outward from the city in every direction, just inside
   the edge of the frame as it widens. Washes flood in half a second behind
@@ -1237,8 +1276,8 @@ an hour.
   frame does not move. So the siege is seen nearer than the expedition, and the horde is
   never more than about 70% of a frame.
 - **Leaving** runs the reveal backward and shorter, in about 4 seconds from
-  wherever the frame is: the close-up closes on the city as the horde's
-  black reaches the ground it stood on.
+  wherever the frame is: it closes on the deck as the horde's black reaches
+  the ground the city stood on.
 - **During the move** line weights hold, figures change size by adding or
   dropping parts (section 5), lettering fades out at the start and in at the
   end at its proper size and is never scaled, and no more than 5% of the
