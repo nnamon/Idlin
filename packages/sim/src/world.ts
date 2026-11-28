@@ -68,18 +68,17 @@ import {
   ARC_REACH,
   ARC_SHARE,
   BURN_JUMP_REACH,
-  CITIZEN_STATUS_TICKS,
   LANDING_RESIST,
-  LOCKOUT_TICKS,
   noStatus,
   passTick,
   SHATTER_REACH,
   SHOCK_MORE,
   STATUS_FIELDS,
-  STATUS_TICKS,
   type Status,
   setBurn,
   slowed,
+  statusFits,
+  statusTicksFor,
   type Taker,
   takeHit,
 } from "./status.ts";
@@ -820,6 +819,8 @@ export type WorldEvent =
       readonly damageType: DamageType;
       /** The target's hitpoints afterwards; 0 or less means it is out. */
       readonly hp: number;
+      /** On an arc, the shocked monster it arced from; a blow has none. */
+      readonly arcFrom?: number;
     }
   | {
       /** An attack landed on a tile with no enemy on it. */
@@ -1030,7 +1031,7 @@ export function defenderOf(world: World, target: Actor): Defender {
 
 /** How long a status lasts on `actor`. */
 const statusTicks = (world: World, actor: Actor): number =>
-  actor.kind === ADVENTURER ? CITIZEN_STATUS_TICKS : STATUS_TICKS[rankOf(world, actor)];
+  statusTicksFor(actor.kind === ADVENTURER, rankOf(world, actor));
 
 /** Who `takeHit` is told it sets statuses on. */
 function takerOf(world: World, actor: Actor): Taker {
@@ -1072,9 +1073,11 @@ function nearestOther(
  * it gives; `struck` records who struck the target last. A target still
  * standing takes the hit's statuses: a stagger starts its wind-up again. A hit
  * on a shocked target takes 20% more, and on a shocked monster arcs to the
- * nearest other monster within 3 tiles for 30% of its lightning part. An arc
- * is a hit that leaves no status and does not arc again. Returns the hit.
- * `lines` are the attacker's; nobody wears gear yet, so only tests pass any.
+ * nearest other monster within 3 tiles for 30% of its lightning part, the
+ * hit that downs it too. An arc is a hit that leaves no status and does not
+ * arc again; `arcFrom` is the id of the shocked monster it came from, and its
+ * event carries it. Returns the hit. `lines` are the attacker's; nobody wears
+ * gear yet, so only tests pass any.
  */
 export function strike(
   world: World,
@@ -1085,7 +1088,7 @@ export function strike(
   events: WorldEvent[],
   struck: Map<number, number>,
   lines: readonly Modifier[] = NO_LINES,
-  arc = false,
+  arcFrom = 0,
 ): Hit {
   const shocked = target.status.shock > 0;
   const result = hit(
@@ -1108,25 +1111,36 @@ export function strike(
     crit,
     damageType: type,
     hp: target.hp,
+    ...(arcFrom === 0 ? {} : { arcFrom }),
   });
   const learner = attacker.kind === ADVENTURER ? attacker : target;
   const skill: Skill = learner === attacker ? "melee" : "hitpoints";
   const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
   if (level > 0) events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
-  if (arc || target.hp <= 0) return result;
-  const took = takeHit(target.status, result.parts, takerOf(world, target), attacker.id);
-  // Broken off, the wind-up starts again from the beginning.
-  if (took.stagger && target.windup > 0) target.windup = blowTimesOf(world, target).windup;
-  for (const status of STATUS_NAMES)
-    if (took[status])
-      events.push({ type: "status", tick: world.tick, actor: target.id, by: attacker.id, status });
+  if (arcFrom !== 0) return result;
+  // One downed takes no status, but a shocked monster's last hit still arcs.
+  if (target.hp > 0) {
+    const took = takeHit(target.status, result.parts, takerOf(world, target), attacker.id);
+    // Broken off, the wind-up starts again from the beginning.
+    if (took.stagger && target.windup > 0) target.windup = blowTimesOf(world, target).windup;
+    for (const status of STATUS_NAMES)
+      if (took[status])
+        events.push({
+          type: "status",
+          tick: world.tick,
+          actor: target.id,
+          by: attacker.id,
+          status,
+        });
+  }
   const lightning = result.parts[3];
   if (!shocked || target.kind === ADVENTURER || lightning === 0) return result;
   const share = (lightning * ARC_SHARE - ((lightning * ARC_SHARE) % FULL)) / FULL;
   const next = share > 0 && nearestOther(world, target, ARC_REACH, (o) => enemies(o, attacker));
   if (next) {
     const added: Modifier = { kind: "added", type: "lightning", amount: share };
-    strike(world, attacker, next, { blow: 0, family: FULL }, false, events, struck, [added], true);
+    const swinger = { blow: 0, family: FULL };
+    strike(world, attacker, next, swinger, false, events, struck, [added], target.id);
   }
   return result;
 }
@@ -1193,7 +1207,8 @@ function knockable(world: World, body: Actor, mx: number, my: number): boolean {
  * Pushes `body` `quarters` quarter tiles in direction `aim`, on top of what
  * earlier pushes left. Each whole tile moves it a tile, until a tile it
  * cannot be knocked onto stops it; the rest of the push is then lost. Returns
- * whether it moved. One that moves stops walking where it lands.
+ * whether it moved. One that moves stops walking where it lands. A frozen
+ * body stands stock still and is not pushed at all.
  */
 function knock(
   world: World,
@@ -1203,7 +1218,7 @@ function knock(
   by: number,
   events: WorldEvent[],
 ): boolean {
-  if (quarters <= 0 || body.hp <= 0) return false;
+  if (quarters <= 0 || body.hp <= 0 || body.status.freeze > 0) return false;
   const [sx, sy] = DIRECTIONS[aim] as readonly [number, number];
   let kx = body.knockX + sx * quarters;
   let ky = body.knockY + sy * quarters;
@@ -1312,7 +1327,7 @@ function flyArrows(
  * Counts the statuses down and burns, flies the arrows, counts every wind-up
  * down but a frozen one, lands the blows that are due, and takes out whoever
  * has no hitpoints left. A frozen monster that goes down shatters and chills
- * every monster within 2 tiles.
+ * everyone standing within 2 tiles, citizens too.
  */
 function landAttacks(world: World, events: WorldEvent[]): void {
   // Who struck each target last, which is who downs it.
@@ -1413,7 +1428,7 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     events.push({ type: "shatter", tick: world.tick, actor: actor.id, x: actor.x, y: actor.y });
     for (const other of world.actors) {
       const steps = Math.max(Math.abs(other.x - actor.x), Math.abs(other.y - actor.y));
-      if (other.kind === ADVENTURER || other.hp <= 0 || steps > SHATTER_REACH) continue;
+      if (other.hp <= 0 || steps > SHATTER_REACH || mending(other)) continue;
       if (!sameRegion(world, other, actor)) continue;
       other.status.chill = statusTicks(world, other);
       events.push({
@@ -2129,12 +2144,23 @@ export interface Blow {
   readonly crit: boolean;
   /** The damage type that did most of it. */
   readonly type: DamageType;
+  /** An arc's shocked monster, which the arc is drawn from; a blow struck by `by` itself has none. */
+  readonly arcFrom?: number;
 }
-/** The blows among a tick's events, in the order they landed. */
+/** The blows among a tick's events, in the order they landed, arcs among them. */
 export const blowsOf = (events: readonly WorldEvent[]): Blow[] =>
   events.flatMap((e) =>
     e.type === "hit"
-      ? [{ by: e.actor, target: e.target, amount: e.damage, crit: e.crit, type: e.damageType }]
+      ? [
+          {
+            by: e.actor,
+            target: e.target,
+            amount: e.damage,
+            crit: e.crit,
+            type: e.damageType,
+            ...(e.arcFrom === undefined ? {} : { arcFrom: e.arcFrom }),
+          },
+        ]
       : [],
   );
 
@@ -2223,13 +2249,14 @@ const isKnock = (raw: unknown): raw is Knock => {
 };
 const isBlow = (raw: unknown): raw is Blow => {
   if (typeof raw !== "object" || raw === null) return false;
-  const { by, target, amount, crit, type } = raw as Record<string, unknown>;
+  const { by, target, amount, crit, type, arcFrom } = raw as Record<string, unknown>;
   return (
     isInt32(by) &&
     isInt32(target) &&
     isInt32(amount) &&
     typeof crit === "boolean" &&
-    DAMAGE_TYPES.includes(type as DamageType)
+    DAMAGE_TYPES.includes(type as DamageType) &&
+    (arcFrom === undefined || isInt32(arcFrom))
   );
 };
 
@@ -2735,8 +2762,6 @@ export function readState(
       kills,
       status: rawStatus,
     } = item as Record<string, unknown>;
-    const status = readStatus(rawStatus, nextActorId);
-    if (!status) return null;
     // An adventurer holds a weapon of one of the families, and a monster none.
     if (kind === ADVENTURER ? !FAMILIES.includes(weapon as Family) : weapon !== "") return null;
     // A monster strikes along the four axes only.
@@ -2768,6 +2793,9 @@ export function readState(
     const stepped = (p: Point, q: Point): boolean =>
       stepsFor(atlas, adventurer, p.x, p.y, q.x, q.y);
     const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
+    const lasts = statusTicksFor(adventurer, numbers.rank);
+    const status = readStatus(rawStatus, nextActorId, lasts, adventurer);
+    if (!status) return null;
     // A blow takes longest at Arms 1, and half as long again begun chilled.
     const longest = kind === ADVENTURER ? WEAPONS[weapon as Family] : numbers;
     if (!isInt32(hp) || hp < 1 || hp > numbers.hp) return null;
@@ -2883,42 +2911,33 @@ export function readState(
   return world;
 }
 
-/** The longest any status lasts, on fodder, pack monsters and citizens. */
-const LONGEST_STATUS = Math.max(CITIZEN_STATUS_TICKS, ...Object.values(STATUS_TICKS));
-
 /**
- * A copy of an actor's status if `value` is one a world could hold, else
- * null: every count within the longest its status lasts, a burn's numbers 0
- * while it does not burn, its setter an id handed out already, and nobody
- * frozen while its lockout from the last freeze runs.
+ * A copy of an actor's status if `value` is one a world could hold on an
+ * actor whose statuses last `ticks`, else null: whole counts, none below 0,
+ * a burn's numbers 0 while it does not burn, its setter an id handed out
+ * already, and everything `statusFits` asks of it.
  */
-function readStatus(value: unknown, nextActorId: number): Status | null {
+function readStatus(
+  value: unknown,
+  nextActorId: number,
+  ticks: number,
+  citizen: boolean,
+): Status | null {
   if (!isPlainObject(value)) return null;
   const status = noStatus();
-  const most: Record<keyof Status, number> = {
-    burn: LONGEST_STATUS,
-    burnDamage: MOST_DAMAGE,
-    burnBy: nextActorId - 1,
-    burnJumps: 1,
-    chill: LONGEST_STATUS,
-    freeze: LONGEST_STATUS / 2,
-    shock: LONGEST_STATUS,
-    staggerLock: LOCKOUT_TICKS,
-    freezeLock: LOCKOUT_TICKS,
-  };
   for (const field of STATUS_FIELDS) {
     const n = own(value, field);
-    if (!isInt32(n) || n < 0 || n > most[field]) return null;
+    if (!isInt32(n) || n < 0) return null;
     status[field] = n;
   }
+  if (status.burnDamage > MOST_DAMAGE || status.burnBy >= nextActorId) return null;
   if (
     status.burn === 0 &&
     (status.burnDamage !== 0 || status.burnBy !== 0 || status.burnJumps !== 0)
   )
     return null;
   if (status.burn > 0 && status.burnBy < 1) return null;
-  if (status.freeze > 0 && status.freezeLock > 0) return null;
-  return status;
+  return statusFits(status, ticks, citizen) ? status : null;
 }
 
 /** The base blow at the highest Arms, which no arrow is loosed harder than. */

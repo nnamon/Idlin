@@ -10,7 +10,7 @@ import { type Atlas, atlasOf, pointOf, regionAt, walkable } from "./atlas.ts";
 import { fullNodes } from "./gather.ts";
 import { isInt32 } from "./hash.ts";
 import type { Point, TileMap } from "./map.ts";
-import { type Status, slowed } from "./status.ts";
+import { cutStatus, type Status, slowed, statusTicksFor } from "./status.ts";
 import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import { DIRECTIONS, FAMILIES, type Family, WEAPONS } from "./weapons.ts";
 import {
@@ -84,8 +84,8 @@ interface Fitting {
   recover: number;
   readonly weapon: string;
   readonly aim: number;
-  /** Passed on as it is, and read for a chill, which makes steps and blows longer. */
-  readonly status: Status;
+  /** Read for a chill, which makes steps and blows longer, and cut to a rank that now lasts less. */
+  status: Status;
 }
 
 function readActor(item: unknown): Fitting {
@@ -202,8 +202,8 @@ const sameTiles = (a: readonly Point[], b: readonly Point[]): boolean =>
  *   and decides again at once unless it is mending after a down.
  *   A snapshot without `byProgram`, from before it was stored, cannot say which
  *   changed, so every program counts as changed.
- * - Hitpoints, wind-up, recovery and the ticks left in a step over what the
- *   actor's kind now allows come down to it. An attack whose marks are no
+ * - Hitpoints, wind-up, recovery, the ticks left in a step and the time left
+ *   of a status over what the actor's kind now allows come down to it. An attack whose marks are no
  *   longer its line is called off.
  * - An actor on a tile it can no longer stand on moves to the nearest one it
  *   can, and stops what it was doing; one in the middle of a step or a walk
@@ -306,6 +306,12 @@ export function adopt(
     if (a.hp > numbers.hp) {
       changes.push(`${who(a)}: hitpoints cut from ${a.hp} to ${numbers.hp}`);
       a.hp = numbers.hp;
+    }
+    const lasts = statusTicksFor(a.kind === ADVENTURER, numbers.rank);
+    const status = cutStatus(a.status, lasts);
+    if (status !== a.status) {
+      changes.push(`${who(a)}: its statuses cut to the ${lasts} ticks they last now`);
+      a.status = status;
     }
     // An adventurer's blow takes longest at Arms 1; readState refuses a weapon that is none of the families.
     const longest = FAMILIES.includes(a.weapon as Family) ? WEAPONS[a.weapon as Family] : numbers;
@@ -427,6 +433,7 @@ export function adopt(
       hp: a.hp,
       windup: a.windup,
       recover: a.recover,
+      status: a.status,
     })),
     marks: marks.filter((m) => striking.has(m.by)),
     nextSpawn: sameMap ? savedSpawn : atlas.regions.map((_, i) => savedSpawn[i] ?? 0),

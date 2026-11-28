@@ -4,6 +4,7 @@
 // lines are fed to `strike` by hand, as piece 4's examples were fed to `hit`.
 
 import { describe, expect, it } from "vitest";
+import { adopt } from "./adopt.ts";
 import { terrainOf, walkable } from "./atlas.ts";
 import type { Element, Modifier } from "./hit.ts";
 import { BIOMES, generateLanding } from "./landing.ts";
@@ -13,6 +14,7 @@ import { compileBots } from "./tactics.ts";
 import { putMonster } from "./testing.ts";
 import {
   type Actor,
+  blowsOf,
   createWorld,
   defenderOf,
   hashWorld,
@@ -44,6 +46,8 @@ const KINDS = {
   slow: { hp: 100, damage: 1, windup: 30, recovery: 5, reach: 1 },
   heavy: { hp: 200, damage: 1, windup: 30, recovery: 5, reach: 1 },
   brute: { hp: 1275, damage: 144, windup: 6, recovery: 14, reach: 1, rank: "brute", level: 27 },
+  // A status lasts 10 ticks on an elite.
+  elite: { hp: 1000, damage: 0, windup: 30, recovery: 5, reach: 1, rank: "elite", level: 27 },
 } as const;
 
 /** An open field, 20 by 9, with the camp in a corner, of `element` if given. */
@@ -244,6 +248,29 @@ describe("stagger, wind-ups and knockback (4.2)", () => {
     expect(parts).toEqual([0, 0, 44, 0]);
     expect(events.some((e) => e.type === "knock")).toBe(false);
   });
+
+  it("a frozen body stands still under a maul's knockback, and is knocked back once it thaws", () => {
+    const { world, ash } = withAsh(field(), 5, 4, "smash", "maul");
+    const post = put(world, "post", 6, 4);
+    post.status.chill = 40;
+    post.status.freeze = 20;
+    let frozenBlows = 0;
+    const knocks: WorldEvent[] = [];
+    for (let i = 0; i < 40 && post.x === 6; i++) {
+      const frozen = post.status.freeze > 1;
+      for (const e of step(world)) {
+        if (e.type === "hit" && e.actor === ash.id && frozen) frozenBlows++;
+        if (e.type === "knock") knocks.push(e);
+      }
+    }
+    // The maul swings every 10 ticks, so it lands at least once on the frozen
+    // body, which does not move, and then on the thawed one, which does.
+    expect(frozenBlows).toBeGreaterThanOrEqual(1);
+    expect(knocks).toEqual([
+      expect.objectContaining({ type: "knock", actor: post.id, fromX: 6, x: 8 }),
+    ]);
+    expect(post.status.freeze).toBe(0);
+  });
 });
 
 describe("burn (4.2)", () => {
@@ -378,6 +405,23 @@ describe("chill and freeze (4.2)", () => {
     expect(far.status.chill).toBe(0);
   });
 
+  it("a shatter chills citizens within 2 tiles too, the one who downed it among them", () => {
+    const { world, ash } = withAsh(field(), 3, 4);
+    step(world, [{ type: "spawn", name: "Bo", program: "still", x: 2, y: 4 }]);
+    const bo = world.actors.find((a) => a.name === "Bo") as Actor;
+    const frozen = put(world, "post", 5, 4);
+    frozen.status.chill = 40;
+    frozen.status.freeze = 20;
+    struckBy(world, ash, frozen, [{ kind: "added", type: "physical", amount: 10_000 }]);
+    const after = run(world, 1);
+    expect(after).toContainEqual(
+      expect.objectContaining({ type: "status", actor: ash.id, by: frozen.id, status: "chill" }),
+    );
+    // A citizen's chill lasts 4 seconds, counted down from this tick on.
+    expect(ash.status.chill).toBe(40);
+    expect(bo.status.chill).toBe(0);
+  });
+
   it("one that goes down unfrozen does not shatter", () => {
     const { world, ash } = withAsh(field(), 2, 4);
     const post = put(world, "post", 5, 4);
@@ -427,9 +471,32 @@ describe("shock (4.2)", () => {
       target: nearest.id,
       damage: 36,
       damageType: "lightning",
+      arcFrom: shocked.id,
     });
+    expect(hits[0]).not.toHaveProperty("arcFrom");
     expect(hits).toHaveLength(2);
     expect(nearest.status).toEqual(noStatus());
+    // The viewer is told which blow is an arc, and where it came from.
+    const blows = blowsOf(events);
+    expect(blows.map((b) => b.arcFrom)).toEqual([undefined, shocked.id]);
+    const { blows: seen } = readMessage(viewerMessage(world, blows), field(), PROGRAMS, KINDS);
+    expect(seen).toEqual(blows);
+  });
+
+  it("the hit that downs a shocked monster arcs too", () => {
+    const { world, ash } = withAsh(field(), 2, 4);
+    const shocked = put(world, "post", 5, 4);
+    const next = put(world, "post", 6, 4);
+    shocked.status.shock = 40;
+    shocked.hp = 5;
+    const hits = struckBy(world, ash, shocked, [lightning(100)]).filter((e) => e.type === "hit");
+    expect(hits).toEqual([
+      expect.objectContaining({ target: shocked.id, damage: 128, hp: -123 }),
+      expect.objectContaining({ target: next.id, damage: 36, arcFrom: shocked.id }),
+    ]);
+    expect(next.hp).toBe(1000 - 36);
+    // Downed, it takes no status from the hit.
+    expect(shocked.status).toEqual({ ...noStatus(), shock: 40 });
   });
 
   it("does not arc past 3 tiles, nor from a hit with no lightning in it", () => {
@@ -455,6 +522,7 @@ describe("statuses in snapshots and the viewer's message", () => {
     const a = put(world, "post", 6, 4, "bite");
     const b = put(world, "post", 7, 4);
     put(world, "biter", 4, 5, "bite");
+    put(world, "elite", 12, 4);
     struckBy(world, ash, a, [fire(30), lightning(20)]);
     struckBy(world, ash, b, [cold(20)]);
     struckBy(world, ash, b, [cold(20)]);
@@ -499,9 +567,25 @@ describe("statuses in snapshots and the viewer's message", () => {
       data.hash = hashWorld({ ...reload(text), ...data.state });
       return JSON.stringify(data);
     };
-    // One the world could hold loads.
+    // Ones the world could hold load: actor 0 is Ash, actor 4 an elite.
     expect(reload(edited(1, (s) => (s.shock = 5))).actors[1]?.status.shock).toBe(5);
+    const eliteFrozen = (s: Record<string, unknown>) => Object.assign(s, { chill: 10, freeze: 5 });
+    expect(reload(edited(4, eliteFrozen)).actors[4]?.status).toMatchObject({ freeze: 5 });
+    const ashBurning = { burn: 40, burnDamage: 1, burnBy: 4, burnJumps: 0 };
+    const ashBurns = (s: Record<string, unknown>) => Object.assign(s, ashBurning);
+    expect(reload(edited(0, ashBurns)).actors[0]?.status).toMatchObject(ashBurning);
     const refused: [number, (s: Record<string, unknown>) => void][] = [
+      // Over what lasts on an elite: 10 ticks, and 5 for a freeze.
+      [4, (s) => (s.chill = 11)],
+      [4, (s) => (s.shock = 40)],
+      [4, (s) => Object.assign(s, { chill: 10, freeze: 6 })],
+      [4, (s) => Object.assign(s, { burn: 11, burnDamage: 5, burnBy: 1 })],
+      // A burn that does nothing, and a freeze that outlasts its chill.
+      [1, (s) => (s.burnDamage = 0)],
+      [2, (s) => (s.chill = s.freeze)],
+      // A citizen is never staggered, and its burn never jumps.
+      [0, (s) => (s.staggerLock = 5)],
+      [0, (s) => Object.assign(s, { ...ashBurning, burnJumps: 1 })],
       [1, (s) => (s.burn = 0)],
       [1, (s) => (s.burnBy = 99)],
       [1, (s) => (s.burnJumps = 2)],
@@ -514,5 +598,23 @@ describe("statuses in snapshots and the viewer's message", () => {
     ];
     for (const [index, change] of refused)
       expect(() => reload(edited(index, change))).toThrow(SnapshotError);
+  });
+
+  it("adopted into kinds where a monster's rank lasts less, its statuses are cut to it", () => {
+    const world = busy();
+    const [, a, b] = world.actors as Actor[];
+    if (!a || !b) throw new Error("busy has its monsters");
+    expect(a.status).toMatchObject({ burn: 37, shock: 37 });
+    expect(b.status).toMatchObject({ chill: 37, freeze: 17 });
+    const kinds = { ...KINDS, post: { ...KINDS.post, rank: "elite" as const } };
+    const { world: adopted, changes } = adopt(snapshot(world), field("cold"), PROGRAMS, kinds);
+    const [, a2, b2] = adopted.actors as Actor[];
+    expect(a2?.status).toMatchObject({ burn: 10, shock: 10 });
+    expect(b2?.status).toMatchObject({ chill: 10, freeze: 5 });
+    expect(changes).toContain(
+      `${a.name} (#${a.id}): its statuses cut to the 10 ticks they last now`,
+    );
+    // Ash's and the elite's statuses are left as they were.
+    expect(adopted.actors[0]?.status).toEqual(world.actors[0]?.status);
   });
 });

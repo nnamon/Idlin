@@ -172,6 +172,44 @@ export function setBurn(
   return true;
 }
 
+/** How long a status lasts on a citizen, or on a monster of `rank`. */
+export const statusTicksFor = (citizen: boolean, rank: Rank = "fodder"): number =>
+  citizen ? CITIZEN_STATUS_TICKS : STATUS_TICKS[rank];
+
+/**
+ * Whether a world could hold `status` on an actor whose statuses last
+ * `ticks`, its counts being whole and not below 0 already. A burn, chill or
+ * shock lasts at most `ticks` and a freeze half that; a burning body's burn
+ * does at least 1. A frozen body is chilled for longer than it stays frozen,
+ * since the hit that freezes chills it afresh and both count down together,
+ * and it is not in the lockout of a freeze. A citizen is never staggered and
+ * its burns never jump.
+ */
+export function statusFits(status: Status, ticks: number, citizen: boolean): boolean {
+  const { burn, burnDamage, burnJumps, chill, freeze, shock, staggerLock, freezeLock } = status;
+  if (burn > ticks || chill > ticks || shock > ticks || freeze > div(ticks, 2)) return false;
+  if (staggerLock > LOCKOUT_TICKS || freezeLock > LOCKOUT_TICKS || burnJumps > 1) return false;
+  if (burn > 0 && burnDamage < 1) return false;
+  if (freeze > 0 && (chill <= freeze || freezeLock > 0)) return false;
+  if (citizen && (staggerLock > 0 || burnJumps > 0)) return false;
+  return true;
+}
+
+/**
+ * `status` with each count cut to what lasts `ticks`, for a monster whose
+ * kind's rank now gives it less time; the same object if nothing was over.
+ * Counts that are not numbers are left for the snapshot reader to refuse.
+ */
+export function cutStatus(status: Status, ticks: number): Status {
+  const most = { burn: ticks, chill: ticks, shock: ticks, freeze: div(ticks, 2) };
+  let cut: Status = status;
+  for (const field of ["burn", "chill", "shock", "freeze"] as const) {
+    const n = status[field];
+    if (typeof n === "number" && n > most[field]) cut = { ...cut, [field]: most[field] };
+  }
+  return cut;
+}
+
 /** What one tick did to a status. */
 export interface Passed {
   /** The burn's damage, if it burnt this tick, else 0. */
