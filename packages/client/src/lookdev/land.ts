@@ -1263,6 +1263,11 @@ export interface Standing {
   draw: () => void;
   /** What of it may stand in front of a citizen, as boxes on screen, for the cover test. */
   covers?: () => [number, number, number, number][];
+  /**
+   * For a thing of the map that does not move: what its drawing depends on besides the map, the
+   * camera and the ink coming in, so the drawing can be kept while these stay the same.
+   */
+  still?: () => number[];
 }
 
 /** Everything that stands on the landing as items to sort by their feet. */
@@ -1292,12 +1297,14 @@ export function standingItems(
         });
         d.pop();
       },
+      still: () => [],
     });
   }
   for (const [x, y, kind, size] of L.things) {
     items.push({
       x,
       y,
+      still: () => [],
       draw: () => {
         const shown = r.ink(x, y);
         if (shown <= 0.01) return;
@@ -1314,6 +1321,8 @@ export function standingItems(
       items.push({
         x,
         y,
+        // A chest's lid opens with time; the rest stand as they are.
+        still: () => (p.kind === "chest" ? [opened(p)] : []),
         draw: () => {
           const shown = r.ink(x, y);
           if (shown <= 0.01) return;

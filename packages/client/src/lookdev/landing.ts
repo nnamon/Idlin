@@ -16,6 +16,7 @@ import {
 } from "./beasts.ts";
 import { crewPlaces } from "./deck.ts";
 import { CONTOUR, type Draw, FORM, INK, PAPER, shade } from "./draw.ts";
+import { type CitizenNow, type Feed, firstFrom } from "./feed.ts";
 import {
   BLOW_CONTACT,
   detailFor,
@@ -34,14 +35,16 @@ import {
 } from "./figure.ts";
 import {
   ACT,
+  type Blow,
   type BodyAt,
   BRUTE,
-  citizenAt,
+  ELITE,
   type Fray,
   type Hit,
   HOUND,
+  type Kill,
   MITE,
-  monsterAt,
+  type Shot,
   type Weapon,
 } from "./fray.ts";
 import {
@@ -60,6 +63,8 @@ import {
   drawUnmade,
   numberBox,
   onTwos,
+  SPILL_DRY,
+  SPILL_GONE,
   type Spill,
 } from "./fx.ts";
 import { clamp, easeOutBack, hash, lerp, mix } from "./geom.ts";
@@ -74,6 +79,7 @@ import {
 } from "./land.ts";
 import type { Probe } from "./scenes.ts";
 import {
+  Boxes,
   band,
   type Corners,
   cornerBoxes,
@@ -87,20 +93,22 @@ import {
   hatBox,
   headBox,
   inside,
+  LiveTags,
   type PlacedTag,
   type Station,
-  TAG_BIG,
-  TAG_CALLED,
   TAG_SIZE,
+  type TagAsk,
   TagTimeline,
+  type TagTrack,
   type TagWant,
   tagBox,
   tagSeen,
+  tagSize,
   UP,
 } from "./stage.ts";
 import { measure } from "./surface.ts";
 import { drawTopCity, type TopCity } from "./topcity.ts";
-import type { Reveal } from "./vale.ts";
+import { type Reveal, SHOWN } from "./vale.ts";
 
 /** Sizes on a landing at its own scale, in frame pixels. */
 export interface Sizes {
@@ -193,9 +201,21 @@ export interface Siege {
   probe(t: number): Record<string, unknown>;
 }
 
+/**
+ * A landing to draw: the map, who is on it and what happens there (the feed), and the scene's
+ * camera, city, corners and the rest. Citizens are named by their id in the feed.
+ */
 export interface Stage {
   land: Landing;
-  fray: () => Fray;
+  feed: Feed;
+  /** The scripted fight behind the feed, for the tests; a live landing has none. */
+  fray?: () => Fray;
+  /**
+   * A live landing: its tags are laid out once a drawn frame, carrying their places forward, and
+   * its numbers forget hits past their life. A scripted one is a function of time, so that any
+   * moment can be drawn in any order.
+   */
+  live?: boolean;
   seconds: number;
   sizes: Sizes;
   view(t: number): View;
@@ -211,17 +231,17 @@ export interface Stage {
   uniques?: Record<number, string>;
   /** How strong the lettering on the map is: it fades out and in during the camera move. */
   lettering?(t: number): number;
-  /** Who gets a tag first when there are too many: citizen indices. */
+  /** Who gets a tag first when there are too many, by id. */
   firstTags?(t: number): number[];
-  /** A pennant on a citizen's bundle, by index. */
+  /** A pennant on a citizen's bundle, by id. */
   pennants?: Record<number, number>;
-  /** How much each citizen carries, by index. */
+  /** How much each citizen carries, by id. */
   hauls?: Record<number, number>;
   /** Routes drawn as a march: a citizen, from when, and the path. */
   routes?: { who: number; from: number; to: number; path: [number, number][] }[];
   /** Those aboard (by look id) who shoot from the rail or a gun post: always named. */
   shooters?(t: number): number[];
-  /** Citizens out (by index) whose tags are called at `t`: 48 px, with a ring at their feet. */
+  /** Citizens out (by id) whose tags are called at `t`: 48 px, with a ring at their feet. */
   called?(t: number): number[];
   /** A citizen's height in pixels at `t`, where the scene sets it from its own camera. */
   size?(t: number): number;
@@ -229,10 +249,10 @@ export interface Stage {
   horde?: boolean;
   /** The shield and the horde on it, for a siege. */
   siege?: Siege;
-  /** Pennants that go up during the scene: a citizen's index, from when, and its rarity. */
+  /** Pennants that go up during the scene: a citizen's id, from when, and its rarity. */
   pennantsFrom?: { who: number; at: number; rarity: number }[];
-  /** How far a citizen out is lifted off the ground at `t`, in tiles: one hauled up on a line. */
-  lift?(i: number, t: number): number;
+  /** How far a citizen out (by id) is lifted off the ground at `t`, in tiles: one hauled up on a line. */
+  lift?(id: number, t: number): number;
   /** A drop that has been taken by `t`, by its marker's seed: its pole is down. */
   taken?(seed: number, t: number): boolean;
 }
@@ -386,8 +406,8 @@ const monsterPose = (b: BodyAt, t: number, j: number, leader = false) => {
 /** What a landing scene needs at a moment, without drawing: who is where, for tags, probes and tests. */
 export interface Moment {
   f: Frame;
-  /** Citizens out: index, feet on screen, height, and their body. */
-  out: { i: number; x: number; y: number; body: BodyAt }[];
+  /** Citizens out: their id, feet on screen, and the citizen. */
+  out: { i: number; x: number; y: number; body: BodyAt; c: CitizenNow }[];
   aboard: { look: Look; x: number; y: number; size: number }[];
   labels: number[];
 }
@@ -427,11 +447,18 @@ interface Laid {
 }
 
 /** What a number keeps off at a moment: heads with their hats, figures, and boxes it never meets. */
-interface Keep {
-  f: Frame;
+interface KeepOff {
   heads: number[];
   figures: number[];
   hard: number[];
+}
+
+/** The same, in grids for asking quickly. */
+interface Keep {
+  f: Frame;
+  heads: Boxes;
+  figures: Boxes;
+  hard: Boxes;
 }
 
 const meets = (b: readonly number[], list: readonly number[], pad = 0): boolean => {
@@ -447,12 +474,20 @@ const meets = (b: readonly number[], list: readonly number[], pad = 0): boolean 
 };
 
 /** The share of box `f` that box `b` lies over. */
-export const overShare = (b: readonly number[], f: readonly number[]): number => {
-  const w = Math.min(b[2] as number, f[2] as number) - Math.max(b[0] as number, f[0] as number);
-  const h = Math.min(b[3] as number, f[3] as number) - Math.max(b[1] as number, f[1] as number);
+export const overShare = (b: readonly number[], f: readonly number[]): number =>
+  overShareAt(b, f, 0);
+
+/** The share of the box at `q` in a flat list that box `b` lies over. */
+function overShareAt(b: readonly number[], list: readonly number[], q: number): number {
+  const fx0 = list[q] as number;
+  const fy0 = list[q + 1] as number;
+  const fx1 = list[q + 2] as number;
+  const fy1 = list[q + 3] as number;
+  const w = Math.min(b[2] as number, fx1) - Math.max(b[0] as number, fx0);
+  const h = Math.min(b[3] as number, fy1) - Math.max(b[1] as number, fy0);
   if (w <= 0 || h <= 0) return 0;
-  return (w * h) / (((f[2] as number) - (f[0] as number)) * ((f[3] as number) - (f[1] as number)));
-};
+  return (w * h) / ((fx1 - fx0) * (fy1 - fy0));
+}
 
 /**
  * The numbers of a landing, each laid out once, when its blow lands (docs/art.md, section 10, and
@@ -462,28 +497,65 @@ export const overShare = (b: readonly number[], f: readonly number[]): number =>
  * steps on along the blow by half its own height, up to three citizens away. A 30 px number with
  * nowhere free is left out; a crit, a 36 and the 72 look further and in other directions. The 72
  * starts a citizen's height or more from its striker's hat, over the bodies the blow throws.
- * Laid out in the order the blows land, so a number is a function of time alone.
+ * Laid out in the order the blows land, so on a scripted landing a number is a function of time
+ * alone. On a live one the hits come as the feed has them, what is still to come is not known,
+ * and hits past their life are forgotten.
  */
 class NumberLayout {
-  private readonly hits: Hit[];
+  private readonly hits: Hit[] = [];
   private readonly laid: Laid[] = [];
   private readonly keeps = new Map<number, Keep>();
   private readonly s: Stage;
-  private readonly keepAt: (t: number) => Omit<Keep, "f">;
-  constructor(s: Stage, keepAt: (t: number) => Omit<Keep, "f">) {
+  private readonly keepAt: (t: number) => KeepOff;
+  /** The time of the last hit taken from a live feed. */
+  private taken = Number.NEGATIVE_INFINITY;
+  constructor(s: Stage, keepAt: (t: number) => KeepOff) {
     this.s = s;
     this.keepAt = keepAt;
-    this.hits = s
-      .fray()
-      .hits.filter((h) => h.value > 0)
-      .sort((a, b) => a.t - b.t || Number(b.crit) - Number(a.crit) || b.value - a.value);
+  }
+
+  private static order = (a: Hit, b: Hit): number =>
+    a.t - b.t || Number(b.crit) - Number(a.crit) || b.value - a.value;
+
+  /** Takes the hits the feed has that this has not, in the order they are laid out. */
+  private take(t: number): void {
+    const feed = this.s.feed;
+    if (feed.scripted) {
+      if (this.taken > Number.NEGATIVE_INFINITY) return;
+      this.hits.push(...feed.hits.filter((h) => h.value > 0).sort(NumberLayout.order));
+      this.taken = Number.POSITIVE_INFINITY;
+      return;
+    }
+    const fresh = feed.hits
+      .slice(firstFrom(feed.hits, this.taken, (h) => h.t))
+      .filter((h) => h.t > this.taken && h.value > 0)
+      .sort(NumberLayout.order);
+    if (fresh.length > 0) {
+      this.hits.push(...fresh);
+      this.taken = (fresh[fresh.length - 1] as Hit).t;
+    }
+    // Forget what has had its life, and what stood in its way.
+    let gone = 0;
+    while (gone < this.laid.length && t - (this.laid[gone] as Laid).h.t > NUMBER_LIFE * 2) gone++;
+    if (gone > 0) {
+      this.laid.splice(0, gone);
+      this.hits.splice(0, gone);
+    }
+    const before = Math.floor((t - NUMBER_LIFE * 2) / NUMBER_GRID);
+    for (const g of this.keeps.keys()) if (g < before) this.keeps.delete(g);
   }
 
   private keep(g: number): Keep {
     let k = this.keeps.get(g);
     if (!k) {
       const t = g * NUMBER_GRID;
-      k = { f: frameOf(this.s, t), ...this.keepAt(t) };
+      const off = this.keepAt(t);
+      k = {
+        f: frameOf(this.s, t),
+        heads: Boxes.of(off.heads),
+        figures: Boxes.of(off.figures),
+        hard: Boxes.of(off.hard),
+      };
       this.keeps.set(g, k);
     }
     return k;
@@ -527,13 +599,10 @@ class NumberLayout {
     const unit = size / 2;
     const g0 = Math.ceil(h.t / NUMBER_GRID - 1e-6);
     const g1 = Math.floor((h.t + NUMBER_LIFE) / NUMBER_GRID - 1e-6);
-    const fray = this.s.fray();
     // The striker's hat at the blow, for the 72.
     let hat: [number, number] | null = null;
-    if (top && h.who >= 0) {
-      const b = citizenAt(fray, h.who, h.t);
-      hat = [f0.sx(b.x), f0.sy(b.y) - f0.size * HAT_TOP];
-    }
+    const striker = top && h.who >= 0 ? this.s.feed.citizen(h.who, h.t) : undefined;
+    if (striker) hat = [f0.sx(striker.body.x), f0.sy(striker.body.y) - f0.size * HAT_TOP];
     const free = (dir: [number, number], step: number): boolean => {
       if (hat) {
         const [x, y] = NumberLayout.at(L, f0, h.t + NUMBER_HOLD, dir, step);
@@ -554,9 +623,10 @@ class NumberLayout {
           box[3] > FRAME.y1 - 6
         )
           return false;
-        if (meets(box, k.heads) || meets(box, k.hard)) return false;
-        for (let q = 0; q < k.figures.length; q += 4)
-          if (overShare(box, k.figures.slice(q, q + 4)) > 1 / 3) return false;
+        const [x0, y0, x1, y1] = box;
+        if (k.heads.meets(x0, y0, x1, y1) || k.hard.meets(x0, y0, x1, y1)) return false;
+        const figs = k.figures.all;
+        if (k.figures.some(x0, y0, x1, y1, (q) => overShareAt(box, figs, q) > 1 / 3)) return false;
         for (const o of live) {
           if (t - o.h.t >= NUMBER_LIFE || t < o.h.t) continue;
           const [ox, oy] = NumberLayout.at(o, k.f, t);
@@ -589,6 +659,7 @@ class NumberLayout {
 
   /** The numbers in frame at `t`: at most 24, the smallest left out first and a crit never. */
   shown(t: number): ShownNumber[] {
+    this.take(t);
     while (this.laid.length < this.hits.length) {
       const h = this.hits[this.laid.length] as Hit;
       if (h.t > t) break;
@@ -622,14 +693,13 @@ class NumberLayout {
 
 export function momentOf(s: Stage, t: number): Moment {
   const f = frameOf(s, t);
-  const fray = s.fray();
   const out: Moment["out"] = [];
-  fray.script.citizens.forEach((_, i) => {
-    const b = citizenAt(fray, i, t);
-    if (b.act === ACT.aboard) return;
-    const z = b.z + (s.lift?.(i, t) ?? 0);
-    out.push({ i, x: f.sx(b.x), y: f.sy(b.y) - z * UP * f.v.T, body: b });
-  });
+  for (const c of s.feed.citizens(t)) {
+    const b = c.body;
+    if (b.act === ACT.aboard) continue;
+    const z = b.z + (s.lift?.(c.id, t) ?? 0);
+    out.push({ i: c.id, x: f.sx(b.x), y: f.sy(b.y) - z * UP * f.v.T, body: b, c });
+  }
   const c = s.city(t);
   const aboard = crewPlaces({
     ...c,
@@ -694,19 +764,36 @@ interface Mark {
   ellipse: boolean;
 }
 
-/** The share of a box, sampled on a grid, that the marks lie over, and whether any lies over `head`. */
+/**
+ * The share of a box, sampled on a grid, that the marks of one kind drawn from `from` on lie over,
+ * and whether any lies over `head`. With `grid`, the marks of that kind by their boxes, only those
+ * near are looked at.
+ */
 function shareUnder(
   marks: readonly Mark[],
   from: number,
   kind: MarkKind,
-  figure: readonly number[],
+  figure: readonly [number, number, number, number],
   head: readonly number[],
+  grid?: { boxes: Boxes; marks: number[] },
 ): { head: boolean; share: number } {
   const near: Mark[] = [];
-  for (let k = from; k < marks.length; k++) {
+  const take = (k: number): void => {
     const m = marks[k] as Mark;
-    if (m.kind === kind && overShare(m.box, figure) > 0) near.push(m);
-  }
+    if (k >= from && m.kind === kind && overShare(m.box, figure) > 0) near.push(m);
+  };
+  if (grid) {
+    const seen = new Set<number>();
+    grid.boxes.some(...figure, (at) => {
+      const k = grid.marks[at / 4] as number;
+      if (!seen.has(k)) {
+        seen.add(k);
+        take(k);
+      }
+      return false;
+    });
+    // The order marks were drawn in does not matter to what they cover.
+  } else for (let k = from; k < marks.length; k++) take(k);
   if (near.length === 0) return { head: false, share: 0 };
   const inside = (m: Mark, x: number, y: number): boolean => {
     const [x0, y0, x1, y1] = m.box;
@@ -760,10 +847,10 @@ export interface LandingProbe {
 }
 
 export function landingScene(s: Stage): LandingScene {
-  const out40 = s.fray().script.citizens.length > 40;
-  const tags = new TagTimeline((t) => {
+  // What a moment asks of the tags.
+  const ask = (t: number): TagAsk => {
     const m = momentOf(s, t);
-    const fray = s.fray();
+    const out40 = s.feed.citizens(t).length > 40;
     const taken = cornerBoxes(s.corners(t));
     // No tag lies over a citizen out, its own or another's, nor over a head aboard.
     for (const o of m.out) taken.push(...figureBox(o.x, o.y, m.f.size));
@@ -780,8 +867,7 @@ export function landingScene(s: Stage): LandingScene {
     // to tags, so a tag does not move for them.
     const soft = [...m.labels];
     const wants: TagWant[] = [];
-    // A tag is 36 px on a landing while 20 or fewer are out, and 30 px with more.
-    const usual = m.out.length <= 20 ? TAG_BIG : TAG_SIZE;
+    const usual = tagSize(m.out.length);
     const called = new Set(s.called?.(t) ?? []);
     const add = (
       key: number,
@@ -798,7 +884,7 @@ export function landingScene(s: Stage): LandingScene {
         y: y - size * HAT_TOP,
         name: look.name,
         rgb: look.cloak,
-        size: call ? TAG_CALLED : tag,
+        size: call ? tagSize(m.out.length, true) : tag,
         called: call,
         feet: [x, y, size],
       });
@@ -818,17 +904,10 @@ export function landingScene(s: Stage): LandingScene {
       // At most 24 tags in all: the four aboard take their share.
       order = order.slice(0, 20);
     }
+    const byId = new Map(m.out.map((o) => [o.i, o]));
     for (const i of order) {
-      const o = m.out.find((q) => q.i === i) as Moment["out"][number];
-      add(
-        i,
-        o.x,
-        o.y,
-        m.f.size,
-        (fray.script.citizens[i] as { look: Look }).look,
-        usual,
-        called.has(i),
-      );
+      const o = byId.get(i) as Moment["out"][number];
+      add(i, o.x, o.y, m.f.size, o.c.look, usual, called.has(i));
     }
     // Aboard on a landing: those shooting are named, and the rest take turns, four at a time.
     const shooters = new Set(s.shooters?.(t) ?? []);
@@ -847,7 +926,8 @@ export function landingScene(s: Stage): LandingScene {
       for (const a of named)
         add(1000 + a.look.id, a.x, a.y, a.size, a.look, m.f.scale > 1.6 ? TAG_SIZE : usual);
     return { wants, taken, must: !out40, soft, homes: true };
-  });
+  };
+  const tags: TagTrack = s.live ? new LiveTags(ask) : new TagTimeline(ask);
 
   // What a number keeps off at a moment: every head and hat, every figure out and aboard, the
   // tags as laid out then, the corners and the dens' letters.
@@ -868,10 +948,11 @@ export function landingScene(s: Stage): LandingScene {
       if (tagSeen(tag) > 0) hard.push(...tagBox(tag.cx, tag.base, tag.w, tag.size));
     return { heads, figures, hard };
   });
-  let drawn: CitizenCover[] = [];
+  let drawn: () => CitizenCover[] = () => [];
 
   const draw = (d: Draw, t: number): void => {
-    const fray = s.fray();
+    const feed = s.feed;
+    tags.advance(t);
     const m = momentOf(s, t);
     const { f } = m;
     const v = f.v;
@@ -881,30 +962,42 @@ export function landingScene(s: Stage): LandingScene {
     const T = v.T;
     const strength = d.strength;
 
-    drawGround(d, s.land, v, r ?? undefined);
+    // The ground is drawn once for a camera and kept, and drawn again only when the camera moves
+    // or, during the reveal, every frame as the ink comes in.
+    const groundKey = `${idOf(s.land)} ${idOf(r ?? SHOWN)} ${v.ox} ${v.oy} ${v.T} ${strength}`;
+    // The layer starts clear, so what a scene drew before the landing (the reveal's land of the
+    // march) still shows through it.
+    d.surface.layer("ground", groundKey, () => drawGround(d, s.land, v, r ?? undefined));
 
-    // Ink on the ground: stains from before, and what the fighting has spilt.
-    const spills: Spill[] = [...(s.stains ?? []).map((st) => ({ ...st, age: st.age + t }))];
-    for (const k of fray.kills) {
-      if (k.t > t) break;
-      const delay = k.kind === MITE ? 0 : k.kind === HOUND ? 0.5 : k.kind === BRUTE ? 0.7 : 1.4;
-      if (t - k.t < delay) continue;
-      spills.push({
-        x: k.x,
-        y: k.y,
-        dx: k.dx,
-        dy: k.dy,
-        age: t - k.t - delay,
-        rank: k.kind === MITE ? 0 : k.kind === HOUND ? 1 : 2,
-        seed: k.seed,
-      });
-    }
+    // Ink on the ground: stains from before, and what the fighting has spilt. Dry stains are kept
+    // as a picture made again four times a second; what is still wet is drawn every frame. The wet
+    // rims go under the dry stains and the wet fills over them, so stains that touch are still
+    // one pool with one edge.
+    const dryAt = Math.floor(t * 4) / 4;
+    const dry = spillsAt(s, dryAt, dryAt, (age) => age >= SPILL_DRY);
+    const wet = spillsAt(s, t, dryAt, (age) => age < SPILL_DRY);
     d.push();
     d.move(v.ox, v.oy);
     d.scale(T);
-    drawSpills(d, spills, spills.length);
+    drawSpills(d, wet, wet.length, 0, 1);
+    d.pop();
+    d.surface.layer(
+      "stains",
+      dry.length > 0 ? `${groundKey} ${dryAt}` : `${groundKey} none`,
+      () => {
+        d.push();
+        d.move(v.ox, v.oy);
+        d.scale(T);
+        drawSpills(d, dry, dry.length, 0, 2);
+        d.pop();
+      },
+    );
+    d.push();
+    d.move(v.ox, v.oy);
+    d.scale(T);
+    drawSpills(d, wet, wet.length, 1, 3);
     // Burns where firepots landed.
-    for (const b of fray.burns) {
+    for (const b of feed.burns) {
       if (b.t > t || t - b.t > 3) continue;
       d.push();
       d.move(b.x, b.y);
@@ -916,7 +1009,7 @@ export function landingScene(s: Stage): LandingScene {
     // Heavy blows coming: the telegraph fills a stroke at a time.
     // Sized against the citizen: an elite's telegraph and a maul's ring at the stage's ring size.
     const [ringW, ringH] = s.sizes.ring;
-    for (const tg of fray.telegraphs) {
+    for (const tg of feed.telegraphs) {
       if (t < tg.t0 || t > tg.t1 + 0.05) continue;
       drawTelegraph(
         d,
@@ -928,7 +1021,7 @@ export function landingScene(s: Stage): LandingScene {
         Math.round(tg.x * 7),
       );
     }
-    for (const sl of fray.slams)
+    for (const sl of feed.slams)
       drawSlam(
         d,
         f.sx(sl.x),
@@ -949,8 +1042,9 @@ export function landingScene(s: Stage): LandingScene {
     // Routes drawn as a march: dashes along the path, the end cross in the walker's colour.
     for (const route of s.routes ?? []) {
       if (t < route.from || t > route.to) continue;
-      const look = (fray.script.citizens[route.who] as { look: Look }).look;
-      const body = citizenAt(fray, route.who, t);
+      const walker = feed.citizen(route.who, t);
+      if (!walker) continue;
+      const { look, body } = walker;
       const pts: [number, number][] = [
         [body.x, body.y],
         ...route.path.filter(
@@ -987,7 +1081,9 @@ export function landingScene(s: Stage): LandingScene {
     // Bursts where blows land: on what was struck, and under the citizens of the fight, so a
     // citizen always lies over its own blow's burst (the precedence on #371: a head, its tag,
     // numbers, then bursts).
-    for (const h of fray.hits) {
+    const hits = feed.hits;
+    for (let k = firstFrom(hits, t - BURST_HOLD, (h) => h.t); k < hits.length; k++) {
+      const h = hits[k] as Hit;
       if (h.t > t) break;
       if (t - h.t > BURST_HOLD) continue;
       const across = s.sizes.burst * Math.min(1, f.scale);
@@ -1003,11 +1099,14 @@ export function landingScene(s: Stage): LandingScene {
     d.push();
     d.move(v.ox, v.oy);
     d.scale(T);
-    for (const b of fray.blows) {
+    const blows = feed.blows;
+    for (let k = firstFrom(blows, t - 0.42, (b) => b.contact); k < blows.length; k++) {
+      const b = blows[k] as Blow;
       if (b.contact > t + 0.01) break;
       const age = t - b.contact;
       if (age > 0.42 || b.weapon !== "blade") continue;
-      const look = (fray.script.citizens[b.who] as { look: Look }).look;
+      const look = feed.citizen(b.who, t)?.look;
+      if (!look) continue;
       const radius = s.sizes.stroke / (2.0 * s.land.T);
       drawSwing(
         d,
@@ -1023,11 +1122,11 @@ export function landingScene(s: Stage): LandingScene {
       );
     }
     d.pop();
-    for (const th of fray.thrusts) {
+    for (const th of feed.thrusts) {
       const age = t - th.t;
       if (age < 0 || age > 0.25) continue;
-      const who = fray.blows.find((b) => Math.abs(b.contact - th.t) < 1e-6 && b.weapon === "spear");
-      const look = who ? (fray.script.citizens[who.who] as { look: Look }).look : null;
+      const who = blows.find((b) => Math.abs(b.contact - th.t) < 1e-6 && b.weapon === "spear");
+      const look = who ? (feed.citizen(who.who, t)?.look ?? null) : null;
       const held = onTwos(age);
       const x0 = f.sx(th.x0);
       const y0 = f.sy(th.y0) - f.size * 0.45;
@@ -1057,10 +1156,19 @@ export function landingScene(s: Stage): LandingScene {
     }
 
     // ---- Everything that stands, sorted by its feet.
+    // What stands on the map does not move: each is drawn once for a camera and kept.
+    const mapKey = [idOf(s.land), idOf(r ?? SHOWN), v.ox, v.oy, v.T, strength];
     const items = standingItems(d, s.land, v, r ?? undefined, (p) => {
-      const ch = (fray.script.chests ?? []).find((c) => Math.hypot(c.x - p.x, c.y - p.y) < 2);
+      const ch = feed.chests.find((c) => Math.hypot(c.x - p.x, c.y - p.y) < 2);
       return ch ? clamp((t - ch.at) / 0.4) : 0;
-    }).filter((it) => !covered(it.x, it.y));
+    })
+      .map((it, k) => {
+        const still = it.still;
+        if (!still) return it;
+        const draw = it.draw;
+        return { ...it, draw: () => d.surface.keep(`stand ${k}`, [...mapKey, ...still()], draw) };
+      })
+      .filter((it) => !covered(it.x, it.y));
     if (s.siege) items.push(...s.siege.items(d, f, t));
     let hull: number[] = [];
     const city = s.city(t);
@@ -1082,7 +1190,7 @@ export function landingScene(s: Stage): LandingScene {
     // Where each citizen out comes in the marks, as it is drawn.
     const starts = new Map<number, number>();
     for (const o of m.out) {
-      const plan = fray.script.citizens[o.i] as { look: Look; weapon: Weapon };
+      const plan = o.c;
       items.push({
         x: o.body.x,
         y: o.body.y,
@@ -1095,7 +1203,7 @@ export function landingScene(s: Stage): LandingScene {
             plan.look,
             plan.weapon,
             t,
-            o.body.act === ACT.work && isChest(fray, o.i, t) ? -1 : haul,
+            o.body.act === ACT.work && plan.chest ? -1 : haul,
           );
           const k = shown(o.body.x, o.body.y);
           d.strength = strength * k;
@@ -1144,8 +1252,9 @@ export function landingScene(s: Stage): LandingScene {
     }
     // Monsters: hounds, brutes and elites singly; each swarm as one drawing at its middle.
     const swarms = new Map<number, { mites: Mite[]; y: number; n: number }>();
-    fray.script.monsters.forEach((plan, j) => {
-      const b = monsterAt(fray, j, t);
+    feed.monsters(t).forEach((plan) => {
+      const j = plan.id;
+      const b = plan.body;
       if (b.act === ACT.hidden) return;
       const sx = f.sx(b.x);
       const sy = f.sy(b.y);
@@ -1257,12 +1366,7 @@ export function landingScene(s: Stage): LandingScene {
         x: Number.NaN,
         y,
         draw: () => {
-          const k = r
-            ? shown(
-                fray.script.groups[group]?.home[0] ?? 0,
-                fray.script.groups[group]?.home[1] ?? 0,
-              )
-            : 1;
+          const k = r ? shown(feed.home(group)?.[0] ?? 0, feed.home(group)?.[1] ?? 0) : 1;
           if (k <= 0.01) return;
           d.strength = strength * clamp(k * 2);
           const size = s.sizes.mite * f.scale;
@@ -1283,7 +1387,7 @@ export function landingScene(s: Stage): LandingScene {
       });
     }
     // Markers stand taller than a figure.
-    for (const mk of fray.markers) {
+    for (const mk of feed.markers) {
       if (mk.t > t || s.taken?.(mk.seed, t) || s.siege?.under(mk.x, mk.y, t)) continue;
       items.push({
         x: mk.x,
@@ -1316,7 +1420,7 @@ export function landingScene(s: Stage): LandingScene {
         const o = m.out.find((q) => q.i === i) as Moment["out"][number];
         const headY = o.y - f.size * 0.8;
         if (!inside(hull, o.x, headY) && !inside(hull, o.x, o.y - f.size * 0.4)) continue;
-        const plan = fray.script.citizens[i] as { look: Look; weapon: Weapon };
+        const plan = o.c;
         const p = { ...citizenPose(o.body, plan.look, plan.weapon, t, 0), outline: true };
         const ink = d.ink;
         d.ink = shade(plan.look.cloak, 0.25);
@@ -1325,7 +1429,10 @@ export function landingScene(s: Stage): LandingScene {
       }
 
     // ---- In the air: shots, and bursts where blows land.
-    for (const sh of fray.shots) {
+    // No shot is in the air for anything like five seconds.
+    const shots = feed.shots;
+    for (let k = firstFrom(shots, t - 5, (q) => q.t0); k < shots.length; k++) {
+      const sh = shots[k] as Shot;
       if (sh.t0 > t) break;
       if (sh.t1 <= t) continue;
       const u = (t - sh.t0) / (sh.t1 - sh.t0);
@@ -1386,6 +1493,12 @@ export function landingScene(s: Stage): LandingScene {
     // ---- Anyone a body in front covers, its head or over a third of it, again on top as an
     // outline in its cloak colour with its head in paper (docs/art.md, section 4).
     const outlined = new Set<number>();
+    const bodies = { boxes: new Boxes(), marks: [] as number[] };
+    marks.forEach((mk, k) => {
+      if (mk.kind !== "body") return;
+      bodies.boxes.add(...mk.box);
+      bodies.marks.push(k);
+    });
     for (const o of m.out) {
       const from = starts.get(o.i);
       if (from === undefined) continue;
@@ -1395,10 +1508,11 @@ export function landingScene(s: Stage): LandingScene {
         "body",
         figureBox(o.x, o.y, f.size),
         hatBox(o.x, o.y, f.size),
+        bodies,
       );
       if (!under.head && under.share <= 1 / 3) continue;
       outlined.add(o.i);
-      const plan = fray.script.citizens[o.i] as { look: Look; weapon: Weapon };
+      const plan = o.c;
       const p = { ...citizenPose(o.body, plan.look, plan.weapon, t, 0), outline: true };
       const ink = d.ink;
       d.ink = shade(plan.look.cloak, 0.25);
@@ -1420,36 +1534,40 @@ export function landingScene(s: Stage): LandingScene {
         marks.push({ kind: "tag", box: tagBox(tag.cx, tag.base, tag.w, tag.size), ellipse: false });
     drawFrameRule(d);
 
-    drawn = [];
-    for (const o of m.out) {
-      const from = starts.get(o.i);
-      if (from === undefined) continue;
-      const figure = figureBox(o.x, o.y, f.size);
-      const head = hatBox(o.x, o.y, f.size);
-      const over = {} as CitizenCover["over"];
-      for (const kind of ["body", "burst", "number", "tag"] as const)
-        over[kind] = shareUnder(marks, from, kind, figure, head);
-      drawn.push({ i: o.i, head, figure, over, outlined: outlined.has(o.i) });
-    }
+    // What lies over each citizen, worked out only if asked for: the tests ask, a viewer does not.
+    drawn = () =>
+      m.out.flatMap((o) => {
+        const from = starts.get(o.i);
+        if (from === undefined) return [];
+        const figure = figureBox(o.x, o.y, f.size);
+        const head = hatBox(o.x, o.y, f.size);
+        const over = {} as CitizenCover["over"];
+        for (const kind of ["body", "burst", "number", "tag"] as const)
+          over[kind] = shareUnder(marks, from, kind, figure, head);
+        return [{ i: o.i, head, figure, over, outlined: outlined.has(o.i) }];
+      });
   };
 
   return {
     duration: s.seconds,
     draw,
-    fray: s.fray,
+    fray:
+      s.fray ??
+      ((): Fray => {
+        throw new Error("a live landing has no script");
+      }),
     land: s.land,
-    covers: () => drawn,
+    covers: () => drawn(),
     probe(t: number) {
-      const fray = s.fray();
       const m = momentOf(s, t);
+      const monsters = s.feed.monsters(t);
       const monsterPoints: number[] = [];
       let awake = 0;
-      fray.script.monsters.forEach((_, j) => {
-        const b = monsterAt(fray, j, t);
-        if (b.act === ACT.dead || b.act === ACT.hidden) return;
+      for (const { body: b } of monsters) {
+        if (b.act === ACT.dead || b.act === ACT.hidden) continue;
         monsterPoints.push(m.f.sx(b.x), m.f.sy(b.y));
         if (b.wake > 1.5) awake++;
-      });
+      }
       return {
         out: m.out.length,
         aboard: s.city(t).crew.length,
@@ -1476,23 +1594,62 @@ export function landingScene(s: Stage): LandingScene {
         numbers: numbers
           .shown(t)
           .map((n) => ({ x: n.x, y: n.y, size: n.size, tx: n.tx, ty: n.ty, value: n.value })),
-        shots: fray.shots.filter((sh) => sh.t0 <= t && sh.t1 > t).length,
+        shots: s.feed.shots.filter((sh) => sh.t0 <= t && sh.t1 > t).length,
         airborne:
           m.out.filter((o) => o.body.z > 0.05).length +
-          fray.script.monsters.filter((_, j) => monsterAt(fray, j, t).z > 0.05).length,
+          monsters.filter((q) => q.body.z > 0.05).length,
       };
     },
   };
 }
 
-const isChest = (f: Fray, i: number, t: number): boolean => {
-  const plan = f.script.citizens[i];
-  if (!plan) return false;
-  for (let k = plan.orders.length - 1; k >= 0; k--) {
-    const o = plan.orders[k];
-    if (o && o.t <= t) return "work" in o && o.kind === "chest";
+/** How long after a kill its ink starts to spill: at once for fodder, after the body has come apart for the rest. */
+const spillDelay = (kind: number): number =>
+  kind === MITE ? 0 : kind === HOUND ? 0.5 : kind === BRUTE ? 0.7 : 1.4;
+
+/**
+ * The ink on the ground at `t`: stains from before the scene and the spills of its kills, each
+ * aged to `t`, that `keep` takes by their age at `pick`. A spill whose stain has gone is left out.
+ */
+function spillsAt(s: Stage, t: number, pick: number, keep: (age: number) => boolean): Spill[] {
+  const out: Spill[] = [];
+  for (const st of s.stains ?? [])
+    if (keep(st.age + pick) && st.age + t < SPILL_GONE) out.push({ ...st, age: st.age + t });
+  const kills = s.feed.kills;
+  // Kills are in time order: skip those whose stains have gone whatever they were.
+  const from = firstFrom(kills, t - SPILL_GONE - spillDelay(ELITE), (k) => k.t);
+  for (let k = from; k < kills.length; k++) {
+    const kill = kills[k] as Kill;
+    if (kill.t > t) break;
+    const delay = spillDelay(kill.kind);
+    if (t - kill.t < delay || !keep(pick - kill.t - delay)) continue;
+    out.push({
+      x: kill.x,
+      y: kill.y,
+      dx: kill.dx,
+      dy: kill.dy,
+      age: t - kill.t - delay,
+      rank: kill.kind === MITE ? 0 : kill.kind === HOUND ? 1 : 2,
+      seed: kill.seed,
+    });
   }
-  return false;
+  return out;
+}
+
+/**
+ * A number for each object, for a layer's key: a layer drawn of one landing, or of one stage of
+ * the ink coming in, is never put down for another. A reveal that changes with time is a new
+ * object each frame, and one that does not is the same one.
+ */
+const ids = new WeakMap<object, number>();
+let idsGiven = 0;
+const idOf = (o: object): number => {
+  let id = ids.get(o);
+  if (id === undefined) {
+    id = ++idsGiven;
+    ids.set(o, id);
+  }
+  return id;
 };
 
 /** The black at the rim, with the drowned map showing through as paper lines. */

@@ -13,6 +13,7 @@ import {
   TRANSIT_Y,
 } from "./deck.ts";
 import type { Draw } from "./draw.ts";
+import { scriptFeed } from "./feed.ts";
 import { type Look, lookOf } from "./figure.ts";
 import {
   aliveAt,
@@ -792,6 +793,7 @@ export function expeditionScene(): LandingScene {
   const stage: Stage = {
     land: L,
     fray: get,
+    feed: scriptFeed(get),
     seconds: 40,
     sizes: MID_SIZES,
     view: () => ({ T: L.T, ox: L.ox, oy: L.oy }),
@@ -1043,6 +1045,7 @@ export function revealScene(): LandingScene {
   const stage: Stage = {
     land: L,
     fray: get,
+    feed: scriptFeed(get),
     seconds: 30,
     sizes: MID_SIZES,
     view,
@@ -1312,6 +1315,7 @@ function midExpedition(o: {
   const stage: Stage = {
     land: L,
     fray: get,
+    feed: scriptFeed(get),
     seconds: 40,
     sizes: MID_SIZES,
     view: () => ({ T: L.T, ox: L.ox, oy: L.oy }),

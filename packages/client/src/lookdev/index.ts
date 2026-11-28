@@ -1,14 +1,15 @@
 // The look-development page: `?lookdev=<scene>`. It draws scripted scenes with
 // no simulation behind them, each a pure function of time, as the target the
 // game's own drawing is then built to (#362). `?renderer=canvas` draws the
-// same scene through Canvas 2D instead of WebGL, for the bench. With
-// `&capture` the page draws only when told to, so the capture tool can take
-// any moment of a scene.
+// same scene through Canvas 2D instead of WebGL, for the bench; a browser with
+// no WebGL 2 gets Canvas 2D anyway, and `body[data-renderer]` says which is
+// drawing. With `&capture` the page draws only when told to, so the capture
+// tool can take any moment of a scene.
 
-import { Draw } from "./draw.ts";
+import { holdSurface } from "./hold.ts";
 import { makePaper } from "./paper.ts";
 import { makeScene, type Probe, SCENES } from "./scenes.ts";
-import { CanvasSurface, fontOf, GlSurface, HEIGHT, type Surface, WIDTH } from "./surface.ts";
+import { CanvasSurface, fontOf, GlSurface, HEIGHT, WIDTH } from "./surface.ts";
 
 export interface BenchResult {
   readonly renderer: string;
@@ -80,13 +81,24 @@ export async function runLookdev(params: URLSearchParams, frame: HTMLElement): P
   addEventListener("resize", fit);
 
   const paper = makePaper();
-  const surface: Surface =
-    params.get("renderer") === "canvas"
-      ? new CanvasSurface(canvas, paper)
-      : new GlSurface(canvas, paper);
-  const d = new Draw(surface);
+  const held = holdSurface(canvas, params.get("renderer"), {
+    gl: (c) => new GlSurface(c, paper),
+    flat: (c) => new CanvasSurface(c, paper),
+    fresh: (c) => {
+      const next = document.createElement("canvas");
+      next.width = WIDTH;
+      next.height = HEIGHT;
+      c.replaceWith(next);
+      return next;
+    },
+  });
+  document.body.dataset.renderer = held.surface.kind;
   const scene = makeScene(params.get("lookdev") || "deck");
   const draw = (seconds: number): void => {
+    // Between losing the WebGL context and getting it back there is nothing to draw on.
+    if (held.lost) return;
+    const { surface, d } = held;
+    document.body.dataset.renderer = surface.kind;
     surface.begin();
     d.reset();
     scene.draw(d, seconds);
@@ -126,22 +138,22 @@ export async function runLookdev(params: URLSearchParams, frame: HTMLElement): P
         const whole: number[] = [];
         // A few frames first, so lettering and buffers are in place.
         for (let i = 0; i < 5; i++) draw(from);
-        surface.finish();
+        held.surface.finish();
         for (let i = 0; i < frames; i++) {
           const start = performance.now();
           draw(from + i / 60);
           const built = performance.now();
-          surface.finish();
+          held.surface.finish();
           const done = performance.now();
           build.push(built - start);
           whole.push(done - start);
         }
         return {
-          renderer: surface.kind,
+          renderer: held.surface.kind,
           frames,
           build: summary(build),
           whole: summary(whole),
-          vertices: surface.vertices,
+          vertices: held.surface.vertices,
           load: counts(from),
         };
       },

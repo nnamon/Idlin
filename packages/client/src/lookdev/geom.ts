@@ -31,6 +31,8 @@ export function rng(seed: number): () => number {
 }
 
 export const clamp = (v: number, lo = 0, hi = 1): number => (v < lo ? lo : Math.min(v, hi));
+/** The length of (x, y). Math.hypot guards against overflow, which costs a lot on the stroke path. */
+export const len = (x: number, y: number): number => Math.sqrt(x * x + y * y);
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 /** 0 below `a`, 1 above `b`, eased between. */
 export function smooth(a: number, b: number, v: number): number {
@@ -81,9 +83,45 @@ export function area2(xy: Flat, n: number): number {
   return sum;
 }
 
+/** How a corner turns: positive one way, negative the other, by twice the area of its triangle. */
+const turn = (xy: Flat, a: number, b: number, c: number): number => {
+  const ax = at(xy, a * 2);
+  const ay = at(xy, a * 2 + 1);
+  const bx = at(xy, b * 2);
+  const by = at(xy, b * 2 + 1);
+  return (bx - ax) * (at(xy, c * 2 + 1) - ay) - (by - ay) * (at(xy, c * 2) - ax);
+};
+
+/**
+ * Whether a ring is convex: every corner turns the same way as the whole, and it goes round once,
+ * so its x and its y each change direction at most twice.
+ */
+function convex(xy: Flat, n: number, sign: number): boolean {
+  let flipsX = 0;
+  let flipsY = 0;
+  let lastX = 0;
+  let lastY = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    if (turn(xy, i, j, (i + 2) % n) * sign < 0) return false;
+    const dx = at(xy, j * 2) - at(xy, i * 2);
+    const dy = at(xy, j * 2 + 1) - at(xy, i * 2 + 1);
+    if (dx !== 0) {
+      if (lastX !== 0 && dx > 0 !== lastX > 0) flipsX++;
+      lastX = dx;
+    }
+    if (dy !== 0) {
+      if (lastY !== 0 && dy > 0 !== lastY > 0) flipsY++;
+      lastY = dy;
+    }
+  }
+  return flipsX <= 2 && flipsY <= 2;
+}
+
 /**
  * Cuts a simple polygon into triangles by clipping ears. Writes point indices
- * to `out` from `offset` and returns how many it wrote (three a triangle).
+ * to `out` from `offset` and returns how many it wrote (three a triangle). A
+ * convex ring is fanned from its first point.
  */
 export function triangulate(xy: Flat, n: number, out: number[] | Uint32Array, offset = 0): number {
   if (n < 3) return 0;
@@ -95,8 +133,29 @@ export function triangulate(xy: Flat, n: number, out: number[] | Uint32Array, of
     return 3;
   }
   const sign = area2(xy, n) >= 0 ? 1 : -1;
+  if (convex(xy, n, sign)) {
+    for (let k = 1; k + 1 < n; k++) {
+      out[offset + count++] = 0;
+      out[offset + count++] = k;
+      out[offset + count++] = k + 1;
+    }
+    return count;
+  }
   const ring: number[] = [];
   for (let i = 0; i < n; i++) ring.push(i);
+  // Only a corner that does not turn the ring's way can lie inside an ear, so only those are
+  // tried against one. Clipping ears only ever makes such a corner turn the right way.
+  const bent: number[] = [];
+  for (let i = 0; i < n; i++)
+    if (turn(xy, (i + n - 1) % n, i, (i + 1) % n) * sign <= 1e-9) bent.push(i);
+  const straighten = (k: number): void => {
+    const m = ring.length;
+    const ib = ring[k] as number;
+    if (turn(xy, ring[(k + m - 1) % m] as number, ib, ring[(k + 1) % m] as number) * sign <= 1e-9)
+      return;
+    const where = bent.indexOf(ib);
+    if (where >= 0) bent.splice(where, 1);
+  };
   let guard = n * n;
   let i = 0;
   while (ring.length > 3 && guard-- > 0) {
@@ -113,8 +172,8 @@ export function triangulate(xy: Flat, n: number, out: number[] | Uint32Array, of
     const cross = ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) * sign;
     let ear = cross > 1e-9;
     if (ear) {
-      for (let k = 0; k < m; k++) {
-        const ip = ring[k] as number;
+      for (let k = 0; k < bent.length; k++) {
+        const ip = bent[k] as number;
         if (ip === ia || ip === ib || ip === ic) continue;
         const px = at(xy, ip * 2);
         const py = at(xy, ip * 2 + 1);
@@ -131,8 +190,16 @@ export function triangulate(xy: Flat, n: number, out: number[] | Uint32Array, of
       out[offset + count++] = ia;
       out[offset + count++] = ib;
       out[offset + count++] = ic;
-      ring.splice(i % m, 1);
-      i = Math.max(0, (i % m) - 1);
+      const cut = i % m;
+      ring.splice(cut, 1);
+      const bentAt = bent.indexOf(ib);
+      if (bentAt >= 0) bent.splice(bentAt, 1);
+      // The corners either side of the ear now turn differently.
+      if (ring.length > 3) {
+        straighten((cut + ring.length - 1) % ring.length);
+        straighten(cut % ring.length);
+      }
+      i = Math.max(0, cut - 1);
     } else i++;
   }
   // What is left is a triangle, or a ring too degenerate to clip: fan it.
@@ -209,47 +276,61 @@ export function hatchLines(
 
 /**
  * A smooth curve through the points (Catmull-Rom), sampled about every `step`.
- * Appends to `out` and returns the number of points appended.
+ * Writes to `out` from point `from` (its end, if not said) and returns the
+ * number of points written. What lies past them in `out` is left as it was, so
+ * a scratch list can be used again without being cut short.
  */
-export function spline(pts: Flat, n: number, step: number, closed: boolean, out: number[]): number {
+export function spline(
+  pts: Flat,
+  n: number,
+  step: number,
+  closed: boolean,
+  out: number[],
+  from = out.length / 2,
+): number {
   if (n < 2) return 0;
-  const get = (i: number, o: number): number => {
-    const k = closed ? ((i % n) + n) % n : i < 0 ? 0 : i >= n ? n - 1 : i;
-    return at(pts, k * 2 + o);
-  };
+  let o = from * 2;
+  // The point before the first and after the last: round the ring, or the end repeated.
+  const index = (i: number): number =>
+    (closed ? (i < 0 ? i + n : i >= n ? i - n : i) : i < 0 ? 0 : i >= n ? n - 1 : i) * 2;
   let count = 0;
   const spans = closed ? n : n - 1;
   for (let s = 0; s < spans; s++) {
-    const x0 = get(s - 1, 0);
-    const y0 = get(s - 1, 1);
-    const x1 = get(s, 0);
-    const y1 = get(s, 1);
-    const x2 = get(s + 1, 0);
-    const y2 = get(s + 1, 1);
-    const x3 = get(s + 2, 0);
-    const y3 = get(s + 2, 1);
-    const parts = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / step));
+    const a = index(s - 1);
+    const b = s * 2;
+    const c = index(s + 1);
+    const e = index(s + 2);
+    const x0 = at(pts, a);
+    const y0 = at(pts, a + 1);
+    const x1 = at(pts, b);
+    const y1 = at(pts, b + 1);
+    const x2 = at(pts, c);
+    const y2 = at(pts, c + 1);
+    const x3 = at(pts, e);
+    const y3 = at(pts, e + 1);
+    const parts = Math.max(1, Math.ceil(len(x2 - x1, y2 - y1) / step));
     for (let k = 0; k < parts; k++) {
       const t = k / parts;
       const t2 = t * t;
       const t3 = t2 * t;
-      out.push(
+      out[o++] =
         0.5 *
-          (2 * x1 +
-            (x2 - x0) * t +
-            (2 * x0 - 5 * x1 + 4 * x2 - x3) * t2 +
-            (3 * x1 - x0 - 3 * x2 + x3) * t3),
+        (2 * x1 +
+          (x2 - x0) * t +
+          (2 * x0 - 5 * x1 + 4 * x2 - x3) * t2 +
+          (3 * x1 - x0 - 3 * x2 + x3) * t3);
+      out[o++] =
         0.5 *
-          (2 * y1 +
-            (y2 - y0) * t +
-            (2 * y0 - 5 * y1 + 4 * y2 - y3) * t2 +
-            (3 * y1 - y0 - 3 * y2 + y3) * t3),
-      );
+        (2 * y1 +
+          (y2 - y0) * t +
+          (2 * y0 - 5 * y1 + 4 * y2 - y3) * t2 +
+          (3 * y1 - y0 - 3 * y2 + y3) * t3);
       count++;
     }
   }
   if (!closed) {
-    out.push(get(n - 1, 0), get(n - 1, 1));
+    out[o++] = at(pts, n * 2 - 2);
+    out[o++] = at(pts, n * 2 - 1);
     count++;
   }
   return count;

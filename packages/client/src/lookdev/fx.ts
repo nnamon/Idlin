@@ -107,20 +107,39 @@ export function drawSwing(
 const scratch: number[] = [];
 /** How many points a blot's edge has. */
 const BLOT = 12;
+/** The turn from one of a blot's points to the next, and that turn two and three times over. */
+const STEP = [Math.cos((Math.PI * 2) / BLOT), Math.sin((Math.PI * 2) / BLOT)] as const;
+const STEP2 = [Math.cos((Math.PI * 4) / BLOT), Math.sin((Math.PI * 4) / BLOT)] as const;
+const STEP3 = [Math.cos((Math.PI * 6) / BLOT), Math.sin((Math.PI * 6) / BLOT)] as const;
 
 /** A seven-sided blot in frame pixels. */
 function blot(x: number, y: number, r: number, seed: number): number[] {
-  scratch.length = 0;
   // Two or three lobes, so no two blots are the same shape and none is a regular polygon.
   const lobes = 2 + (seed % 2);
   const turn = hash(seed, 3) * 6.28;
+  // Each point's angle is a step round from the last: turned by a fixed rotation, not looked up.
+  let c = Math.cos(seed);
+  let s = Math.sin(seed);
+  let lc = Math.cos(seed * lobes + turn);
+  let ls = Math.sin(seed * lobes + turn);
+  const step = lobes === 2 ? STEP2 : STEP3;
   for (let i = 0; i < BLOT; i++) {
-    const a = (i / BLOT) * Math.PI * 2 + seed;
-    const rr = r * (0.8 + 0.22 * Math.sin(a * lobes + turn) + hash(i, seed) * 0.16);
-    scratch.push(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    const rr = r * (0.8 + 0.22 * ls + hash(i, seed) * 0.16);
+    scratch[i * 2] = x + c * rr;
+    scratch[i * 2 + 1] = y + s * rr;
+    const nc = c * STEP[0] - s * STEP[1];
+    s = s * STEP[0] + c * STEP[1];
+    c = nc;
+    const nl = lc * step[0] - ls * step[1];
+    ls = ls * step[0] + lc * step[1];
+    lc = nl;
   }
   return scratch;
 }
+
+/** How old a spill is when it has dried and stopped spreading, and when its stain has gone, in seconds. */
+export const SPILL_DRY = 4.5;
+export const SPILL_GONE = 15;
 
 export interface Spill {
   /** Where the body was, in tiles, and which way the blow went. */
@@ -140,17 +159,25 @@ export interface Spill {
  * along the blow in a fan about sixty degrees wide. Wet ink is solid; it
  * spreads, stops, and dries to a brown stain. All the dry stains are laid
  * with one rim and one fill, so stains that touch are one pool with one edge.
+ * `from` and `to` pick which of the three passes (rim, fill, wet) to lay, so
+ * a caller can put other stains between the rims and the fills.
  */
-export function drawSpills(d: Draw, spills: readonly Spill[], count: number): void {
+export function drawSpills(
+  d: Draw,
+  spills: readonly Spill[],
+  count: number,
+  from = 0,
+  to = 3,
+): void {
   const zoom = d.zoom;
   const surface = d.surface;
   // Rim first, then fill, then whatever is still wet on top.
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = from; pass < to; pass++) {
     for (let i = 0; i < count; i++) {
       const s = spills[i] as Spill;
-      const wetness = 1 - smooth(1, 4.5, s.age);
+      const wetness = 1 - smooth(1, SPILL_DRY, s.age);
       // After a while a stain fades into the paper.
-      const gone = smooth(8, 15, s.age);
+      const gone = smooth(8, SPILL_GONE, s.age);
       if (gone >= 1) continue;
       if (pass === 2 && wetness <= 0) continue;
       const held = onTwos(s.age);

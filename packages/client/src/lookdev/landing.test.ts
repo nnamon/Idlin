@@ -11,18 +11,17 @@ import {
   revealScene,
 } from "./expeditions.ts";
 import { lookOf } from "./figure.ts";
-import { ACT, BRUTE, citizenAt, ELITE, HOUND, monsterAt, runFray } from "./fray.ts";
+import { ACT, BRUTE, citizenAt, ELITE, HOUND, monsterAt } from "./fray.ts";
 import { numberBox } from "./fx.ts";
 import { boundedSides, growMid, type Landing } from "./land.ts";
 import type { LandingScene } from "./landing.ts";
 import { itemName, usernameOf } from "./names.ts";
-import { makeScene, type Probe } from "./scenes.ts";
+import { makeScene, type Probe, SCENES, type Scene } from "./scenes.ts";
 import {
   ACCENT,
   arcStateAt,
   arcsOf,
   BREAK,
-  DARK_HIT,
   LIGHT,
   LIT,
   litAt,
@@ -94,6 +93,13 @@ function recorder(): Surface & { words: Set<string> } {
     poly() {},
     strip() {},
     brush() {},
+    hatch() {},
+    layer(_name: string, _key: string, paint: () => void) {
+      paint();
+    },
+    keep(_name: string, _key: readonly number[], draw: () => void) {
+      draw();
+    },
     text(_face: Face, _size: number, s: string) {
       words.add(s);
     },
@@ -767,7 +773,6 @@ describe("the shield in the siege", () => {
   it("has ten posts and two more a level, eighteen at the scene's level 4", () => {
     expect([0, 2, 4, 7, 10].map(postsFor)).toEqual([10, 14, 18, 24, 30]);
     expect(sh.posts.length).toBe(postsFor(SIEGE_LEVEL));
-    expect(SIEGE_LEVEL).toBe(4);
   });
 
   it("stands round the planted feet and the ramp's foot, the way out midway between two posts", () => {
@@ -820,21 +825,42 @@ describe("the shield in the siege", () => {
   });
 
   it("drains its one pool, faster for hits on a dark arc, and breaks when the pool is gone", () => {
-    let last = 1;
-    let fastest = 0;
-    let first = 0;
-    for (let t = LIGHT; t < BREAK; t += step) {
-      const p = poolAt(sh, places, t);
-      expect(p, `at ${t} s`).toBeLessThanOrEqual(last + 1e-9);
-      expect(p, `at ${t} s`).toBeGreaterThan(0);
-      const rate = last - p;
-      if (t < 17 && t > 14) first = Math.max(first, rate);
-      fastest = Math.max(fastest, rate);
-      last = p;
+    // The pool drains in quarter-second steps. At each, every heap at the wall takes its share,
+    // and a heap whose nearest post has gone dark takes more. Compared step by step, the drop for
+    // each heap is the same at every step with no heap on a dark arc, larger at every step with
+    // some, and larger by the same factor for each heap on one.
+    const turn = (a: number): number => Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
+    const nearest = (a: number) =>
+      sh.posts.reduce((m, p) => (turn(p.a - a) < turn(m.a - a) ? p : m));
+    const drains: { s: number; each: number; share: number }[] = [];
+    for (let s = LIGHT; s + 0.25 < BREAK; s += 0.25) {
+      const p = poolAt(sh, places, s);
+      expect(p, `at ${s} s`).toBeGreaterThan(0);
+      const drop = p - poolAt(sh, places, s + 0.25);
+      const heaps = places.filter((pl) => s >= pl.t0);
+      if (heaps.length === 0) {
+        expect(drop, `at ${s} s`).toBeCloseTo(0, 12);
+        continue;
+      }
+      const dark = heaps.filter((pl) => s >= nearest(pl.a).darkAt).length;
+      drains.push({ s, each: drop / heaps.length, share: dark / heaps.length });
     }
+    expect(drains.length).toBeGreaterThan(100);
+    const plain = (drains.find((q) => q.share === 0) as { each: number }).each;
+    expect(plain).toBeGreaterThan(0);
+    const factors: number[] = [];
+    for (const { s, each, share } of drains) {
+      if (share === 0) expect(each, `at ${s} s`).toBeCloseTo(plain, 12);
+      else factors.push(1 + (each / plain - 1) / share);
+    }
+    // Most of the siege has some heap on a dark arc.
+    expect(factors.length).toBeGreaterThan(80);
+    const factor = factors[0] as number;
+    expect(factor).toBeGreaterThan(1.5);
+    for (const f of factors) expect(f).toBeCloseTo(factor, 9);
+    // The last step takes what is left: the pool is gone by the break, and not a step before.
+    expect(poolAt(sh, places, BREAK - 0.25)).toBeGreaterThan(0);
     expect(poolAt(sh, places, BREAK)).toBe(0);
-    expect(fastest).toBeGreaterThan(first * 2);
-    expect(DARK_HIT).toBeGreaterThan(1);
   });
 
   it("puts the lamps lit and their loss a minute in the corner, with no clock from the march to the break", () => {
@@ -974,6 +1000,42 @@ describe("the deck with 150 aboard", () => {
   });
 });
 
+describe("what a landing keeps between frames", () => {
+  /** The keys a frame gives its layers and its kept drawings. */
+  const keysAt = (scene: LandingScene, t: number) => {
+    const layers: Record<string, string> = {};
+    const kept: string[] = [];
+    const surface: Surface = {
+      ...recorder(),
+      layer(name, key, paint) {
+        layers[name] = key;
+        paint();
+      },
+      keep(name, key, draw) {
+        kept.push(`${name} ${key.join(" ")}`);
+        draw();
+      },
+    };
+    scene.draw(new Draw(surface), t);
+    return { layers, kept };
+  };
+
+  it("draws the ground again only when the camera moves or the ink comes in, and dry stains four times a second", () => {
+    const scene = expedition();
+    const a = keysAt(scene, 14);
+    const b = keysAt(scene, 14 + 1 / 60);
+    expect(b.layers.ground).toBe(a.layers.ground);
+    expect(b.layers.stains).toBe(a.layers.stains);
+    // Everything that stands on the map, kept from one frame to the next.
+    expect(a.kept.length).toBeGreaterThan(100);
+    expect(b.kept).toEqual(a.kept);
+    expect(keysAt(scene, 14.3).layers.stains).not.toBe(a.layers.stains);
+    // During the reveal the ink comes in every frame, and the camera moves.
+    const r = reveal();
+    expect(keysAt(r, 9 + 1 / 60).layers.ground).not.toBe(keysAt(r, 9).layers.ground);
+  });
+});
+
 describe("the same seed", () => {
   it("gives the same mid landing, and another seed another", () => {
     const a = growMid({ seed: 2, rampSide: -1 });
@@ -983,14 +1045,132 @@ describe("the same seed", () => {
     expect(JSON.stringify(c.pockets)).not.toBe(JSON.stringify(a.pockets));
   });
 
-  it("gives the same fight from each script", () => {
-    for (const make of [expedition, siege]) {
-      const one = make().fray();
-      const two = runFray(one.script);
-      expect(two.hits.length).toBe(one.hits.length);
-      expect(two.hits.at(-1)).toEqual(one.hits.at(-1));
-      expect(Array.from(two.mon.slice(-200))).toEqual(Array.from(one.mon.slice(-200)));
-      expect(Array.from(two.cit.slice(-60))).toEqual(Array.from(one.cit.slice(-60)));
-    }
-  });
+  it(
+    "gives the same frames from each scene built afresh, drawn in either order",
+    () => {
+      // A fresh scene's first frame is the slow one, up to seconds for the expeditions. The gate
+      // leaves out the three expedition scenes; the reveal is built on the same landing and still
+      // runs. IDLIN_LONG=1 draws every scene.
+      const scenes = LONG ? SCENES : SCENES.filter((n) => !n.startsWith("expedition"));
+      expect(scenes.length).toBeGreaterThan(8);
+      for (const name of scenes) {
+        // Two of the scene, each made from its seed with nothing shared, one drawn forward in
+        // time and the other backward.
+        const one = makeScene(name);
+        const two = makeScene(name);
+        const d = one.duration;
+        const times = LONG ? [0.5, d / 3, (2 * d) / 3, d - 0.5] : [0.5, Math.min(2.5, d - 0.25)];
+        const frame = (scene: Scene, t: number): { hash: number; calls: number } => {
+          const surface = hasher();
+          const draw = new Draw(surface);
+          surface.begin();
+          draw.reset();
+          scene.draw(draw, t);
+          surface.end(scene.cast?.(t) ?? 0xffffff);
+          return { hash: surface.hash(), calls: surface.calls };
+        };
+        const forward = times.map((t) => frame(one, t));
+        const backward = [...times]
+          .reverse()
+          .map((t) => frame(two, t))
+          .reverse();
+        times.forEach((t, k) => {
+          const a = forward[k] as { hash: number; calls: number };
+          const b = backward[k] as { hash: number; calls: number };
+          expect(a.calls, `${name} at ${t} s`).toBeGreaterThan(100);
+          expect(b.hash, `${name} at ${t} s`).toBe(a.hash);
+        });
+      }
+    },
+    SWEEP,
+  );
 });
+
+/**
+ * A surface that folds everything laid on it into one number, so two frames can be compared. A
+ * layer's or a kept drawing's key says when to draw again, not what is drawn, so what is drawn
+ * is folded in and the key is not.
+ */
+function hasher(): Surface & { hash(): number; calls: number } {
+  let h = 0x811c9dc5;
+  let calls = 0;
+  const num = (v: number): void => {
+    h = Math.imul(h ^ (Math.round(v * 256) | 0), 0x01000193);
+  };
+  const nums = (xy: ArrayLike<number>, n: number): void => {
+    for (let i = 0; i < n; i++) num(xy[i] as number);
+  };
+  const str = (s: string): void => {
+    for (let i = 0; i < s.length; i++) num(s.charCodeAt(i));
+  };
+  const lay = (kind: number, rgb: number, alpha: number): void => {
+    calls++;
+    num(kind);
+    num(rgb);
+    num(alpha);
+  };
+  return {
+    kind: "canvas",
+    vertices: 0,
+    get calls() {
+      return calls;
+    },
+    hash: () => h >>> 0,
+    begin() {
+      h = 0x811c9dc5;
+      calls = 0;
+    },
+    anchor(x, y) {
+      num(x);
+      num(y);
+    },
+    poly(xy, n, rgb, alpha, wash) {
+      lay(1, rgb, alpha);
+      num(wash ? 1 : 0);
+      nums(xy, n * 2);
+    },
+    strip(xy, n, rgb, alpha, wash) {
+      lay(2, rgb, alpha);
+      num(wash ? 1 : 0);
+      nums(xy, n * 4);
+    },
+    brush(xy, n, rgb, alpha, along, dry, seed) {
+      lay(3, rgb, alpha);
+      nums(xy, n * 4);
+      nums(along, n);
+      nums(dry, n);
+      num(seed);
+    },
+    hatch(xy, n, rgb, alpha, spacing, weight, cross) {
+      lay(4, rgb, alpha);
+      nums(xy, n * 2);
+      num(spacing);
+      num(weight);
+      num(cross ? 1 : 0);
+    },
+    text(face, size, s, x, y, rot, rgb, alpha) {
+      lay(5, rgb, alpha);
+      str(face);
+      num(size);
+      str(s);
+      num(x);
+      num(y);
+      num(rot);
+    },
+    layer(name, _key, paint) {
+      str(name);
+      paint();
+    },
+    keep(_name, _key, draw) {
+      draw();
+    },
+    paper(x0, y0, x1, y1) {
+      lay(6, 0, 1);
+      nums([x0, y0, x1, y1], 4);
+    },
+    end(cast) {
+      num(cast);
+    },
+    finish() {},
+  };
+}

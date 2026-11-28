@@ -26,6 +26,7 @@ import {
 import { itemInk } from "./deck.ts";
 import { CONTOUR, type Draw, FORM, HAIR, HEAVY, INK, PAPER, shade } from "./draw.ts";
 import { crowdOf, expeditionLanding, LANDED, MARCH, WEAPONS } from "./expeditions.ts";
+import { scriptFeed } from "./feed.ts";
 import { detailFor, drawCitizen, type Look, pose, standing } from "./figure.ts";
 import {
   aliveAt,
@@ -1879,6 +1880,7 @@ function siege(count: 15 | 150): LandingScene {
   const stage: Stage = {
     land: L,
     fray: get,
+    feed: scriptFeed(get),
     seconds: 60,
     sizes: SIEGE_SIZES,
     view,

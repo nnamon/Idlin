@@ -714,9 +714,33 @@ export const leaderOf = (
 const SHIFTS = [0, 1, -1] as const;
 
 /** A grid of rectangles for asking quickly whether a new one meets any. */
-class Boxes {
+export class Boxes {
   private readonly cells = new Map<number, number[]>();
-  private readonly all: number[] = [];
+  /** Every rectangle added, x0, y0, x1, y1, … in the order added. */
+  readonly all: number[] = [];
+
+  /** The rectangles in a flat list x0, y0, x1, y1, … */
+  static of(list: readonly number[]): Boxes {
+    const boxes = new Boxes();
+    for (let k = 0; k + 3 < list.length; k += 4)
+      boxes.add(
+        list[k] as number,
+        list[k + 1] as number,
+        list[k + 2] as number,
+        list[k + 3] as number,
+      );
+    return boxes;
+  }
+
+  /** Whether `test` holds for any rectangle that may meet this one, by its place in `all`. */
+  some(x0: number, y0: number, x1: number, y1: number, test: (at: number) => boolean): boolean {
+    for (let gx = Math.floor(x0 / 96); gx <= Math.floor(x1 / 96); gx++)
+      for (let gy = Math.floor(y0 / 96); gy <= Math.floor(y1 / 96); gy++) {
+        const cell = this.cells.get(gx * 1000 + gy);
+        if (cell) for (const i of cell) if (test(i)) return true;
+      }
+    return false;
+  }
   add(x0: number, y0: number, x1: number, y1: number): void {
     const i = this.all.length;
     this.all.push(x0, y0, x1, y1);
@@ -913,20 +937,28 @@ export class TagLayout {
         if (ok(h.spot)) target = h.spot;
         else ignoreSoft = false;
       }
+      // What each spot costs: worked out once for the tag, and only if it has to look.
+      let costs: Float64Array | null = null;
       for (tier = 0; tier < (must ? 4 : 3) && target < 0; tier++) {
         if (h && h.spot < count && ok(h.spot)) target = h.spot;
         else {
           // The spot with the shortest leader near where the tag is now, so a move is short; first
           // with room to spare.
-          const fromX = h ? h.ox : 0;
-          const fromY = h ? h.oy : 0;
-          for (spare = h ? 8 : 0; spare >= 0 && target < 0; spare -= 8) {
-            let best = Number.POSITIVE_INFINITY;
+          if (!costs) {
+            costs = new Float64Array(count);
+            const fromX = h ? h.ox : 0;
+            const fromY = h ? h.oy : 0;
             for (let id = 0; id < count; id++) {
               const [ox, oy] = spotXY(id);
               const l = leaderAt(id);
               const length = l ? Math.hypot(l[2] - l[0], l[3] - l[1]) : 0;
-              const cost = Math.hypot(ox - fromX, oy - fromY) * 0.5 + length + Math.abs(oy) * 0.2;
+              costs[id] = Math.hypot(ox - fromX, oy - fromY) * 0.5 + length + Math.abs(oy) * 0.2;
+            }
+          }
+          for (spare = h ? 8 : 0; spare >= 0 && target < 0; spare -= 8) {
+            let best = Number.POSITIVE_INFINITY;
+            for (let id = 0; id < count; id++) {
+              const cost = costs[id] as number;
               if (cost >= best) continue;
               if (ok(id)) {
                 best = cost;
@@ -1009,14 +1041,36 @@ export interface TagAsk {
   homes?: boolean;
 }
 
-/** Tags laid out once per sixtieth of a second from the start, and read back by time. */
-export class TagTimeline {
+/**
+ * A tag's size on a landing, from how many are out: 36 px while 20 or fewer are, 30 with more, and
+ * 48 for a called tag. The one place a landing's tag sizes are chosen.
+ */
+export function tagSize(out: number, called = false): number {
+  if (called) return TAG_CALLED;
+  return out <= 20 ? TAG_BIG : TAG_SIZE;
+}
+
+/** Name tags as a landing lays them out over time. */
+export interface TagTrack {
+  /** Lays the tags out for a frame drawn at `t`, before anything asks for them. */
+  advance(t: number): void;
+  /** The tags as they stand at `t`. */
+  get(t: number): PlacedTag[];
+}
+
+/**
+ * Tags laid out once per sixtieth of a second from the start, and read back by time: a scripted
+ * scene's tags are a function of time, whatever order its moments are drawn in.
+ */
+export class TagTimeline implements TagTrack {
   private readonly frames: PlacedTag[][] = [];
   private readonly layout = new TagLayout();
   private readonly at: (t: number) => TagAsk;
   constructor(at: (t: number) => TagAsk) {
     this.at = at;
   }
+
+  advance(): void {}
 
   /** The tags as they stand `t` seconds in. */
   get(t: number): PlacedTag[] {
@@ -1027,6 +1081,32 @@ export class TagTimeline {
       this.frames.push(this.layout.step(s, wants, taken, must, lines, soft, homes));
     }
     return this.frames[want] as PlacedTag[];
+  }
+}
+
+/**
+ * Tags for a live landing: laid out once a drawn frame with that frame's wants, each tag carrying
+ * its spot forward from the last. Only the newest layout is kept, so asking for another moment
+ * gets the tags as they stand now.
+ */
+export class LiveTags implements TagTrack {
+  private readonly layout = new TagLayout();
+  private readonly at: (t: number) => TagAsk;
+  private placed: PlacedTag[] = [];
+  private stepped = Number.NEGATIVE_INFINITY;
+  constructor(at: (t: number) => TagAsk) {
+    this.at = at;
+  }
+
+  advance(t: number): void {
+    if (!(t > this.stepped)) return;
+    const { wants, taken, must, lines, soft, homes } = this.at(t);
+    this.placed = this.layout.step(t, wants, taken, must, lines, soft, homes);
+    this.stepped = t;
+  }
+
+  get(): PlacedTag[] {
+    return this.placed;
   }
 }
 

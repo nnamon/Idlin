@@ -5,7 +5,7 @@
 // and carries a mass of spot black; the horde is a tide.
 
 import { CONTOUR, type Draw, FORM, HAIR, INK, PAPER } from "./draw.ts";
-import { clamp, lerp, smooth } from "./geom.ts";
+import { clamp, lerp, mix, smooth } from "./geom.ts";
 
 const HIDE = 0x9a948a;
 const HIDE_DARK = 0x77716a;
@@ -197,9 +197,11 @@ export function drawSwarm(d: Draw, mites: readonly Mite[], count: number, size: 
     d.scale(s * m.face * m.stretch, s / m.stretch);
     if ((m.z ?? 0) > 0) d.turn(-0.6);
     if ((m.lunge ?? 0) > 0) d.shear(-0.3 * (m.lunge ?? 0)).move(0.15 * (m.lunge ?? 0), 0);
-    d.fill(BODY, PAPER, 1, true);
+    // Paper and the hide's tone over it, as one fill when the paper is solid: the same colour.
+    if (m.flash || d.strength < 1) d.fill(BODY, PAPER, 1, true);
     if (!m.flash) {
-      d.fill(BODY, TONE.hide, 0.9 * ink.wash, true);
+      if (d.strength < 1) d.fill(BODY, TONE.hide, 0.9 * ink.wash, true);
+      else d.fill(BODY, mix(PAPER, TONE.hide, 0.9 * ink.wash), 1, true);
       if (ink.black > 0.02) d.fill(SHELL, INK, ink.black, true);
       else if (ink.open > 0.05) d.hatch(SHELL, 1, INK, 0.8 * ink.open, true);
     }

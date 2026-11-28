@@ -123,13 +123,21 @@ docker compose run --rm capture captures/look --lookdev all    # the look-develo
   shield siege), `deckside` (#371's side-on deck, kept for comparison until
   the look target is signed off), and the `shield-levels`, `beasts`,
   `figures` and `scale` sheets. Each is a function of time,
-  drawn with WebGL 2 through one pen. The landings run on a scripted fight
-  (`fray.ts`) stepped once from a seed and read back by time. It is the target
-  the game's own drawing is to be rebuilt to (#362); the game itself still
-  draws its plain view with Canvas 2D.
+  drawn with WebGL 2 through one pen, or with Canvas 2D where the browser has
+  no WebGL 2 (`body[data-renderer]` says which); a lost WebGL context is
+  replaced by a new surface when the browser gives it back (`hold.ts`). A
+  landing is drawn from a feed (`feed.ts`): who is where by id, and what has
+  happened in time order. The scripted landings feed it from a fight
+  (`fray.ts`) stepped once from a seed and read back by time; `message.ts`
+  feeds it from the world server's viewer messages, for slice piece 2b. It is
+  the target the game's own drawing is to be rebuilt to (#362); the game
+  itself still draws its plain view with Canvas 2D.
   [decisions/0038](decisions/0038-renderer-scale-and-the-siege.md) has the
-  renderer measurements, the sizes a citizen is drawn at, and how the siege
-  draws the shield.
+  renderer choice, the sizes a citizen is drawn at, and how the siege draws
+  the shield; [decisions/0041](decisions/0041-the-renderer-for-the-live-viewer.md)
+  how a frame is kept under 8 ms and the live seam.
+  `docker compose run --rm dev node packages/client/scripts/bench.ts` times
+  the JavaScript that builds the bench frames, with no GPU in the way.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.
 

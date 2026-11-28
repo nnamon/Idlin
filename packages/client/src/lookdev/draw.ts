@@ -4,7 +4,7 @@
 // falls one way across the plate. Widths are in frame pixels whatever the
 // drawing's scale, so a thing drawn smaller keeps its line.
 
-import { area2, clamp, type Flat, hash, hatchLines, mix, noise1, smooth, spline } from "./geom.ts";
+import { area2, clamp, type Flat, hash, len, mix, noise1, smooth, spline } from "./geom.ts";
 import { type Face, measure, type Surface } from "./surface.ts";
 
 export const INK = 0x2f2621;
@@ -71,8 +71,17 @@ export class Draw {
   private readonly saved: number[] = [];
   private readonly screen: number[] = [];
   private readonly dense: number[] = [];
+  /** A stroke's points on screen, apart from `dense`, which holds the last outline. */
+  private readonly track: number[] = [];
+  /** The transform and points the outline in `dense` was made from, its count, and whether rounded. */
+  private readonly was: number[] = [];
+  private wasCount = -1;
+  private wasPoints = 0;
+  private wasRounded = false;
   private readonly rib: number[] = [];
-  private readonly cuts: number[] = [];
+  /** A stroke's ribbon, and how far down it each station is, grown as long strokes need them. */
+  private ribs = new Float64Array(1024);
+  private runs = new Float64Array(256);
   private readonly local: number[] = [];
 
   readonly surface: Surface;
@@ -156,8 +165,9 @@ export class Draw {
     return Math.sqrt(Math.abs(this.a * this.d - this.b * this.c));
   }
 
+  // The scratch lists below are written by index and never cut short: setting an array's length
+  // costs more than anything else on the stroke path. Each call passes on how many points it wrote.
   private toScreen(pts: Flat, n: number, out: number[]): void {
-    out.length = n * 2;
     const { a, b, c, d, e, f } = this;
     for (let i = 0; i < n; i++) {
       const x = pts[i * 2] as number;
@@ -181,12 +191,18 @@ export class Draw {
     even = false,
   ): void {
     if (n < 2) return;
+    // How far down the stroke each station is.
+    if (this.runs.length < n) this.runs = new Float64Array(n * 2);
+    const runs = this.runs;
     let length = 0;
-    for (let i = 1; i < n; i++)
-      length += Math.hypot(
+    runs[0] = 0;
+    for (let i = 1; i < n; i++) {
+      length += len(
         (p[i * 2] as number) - (p[i * 2 - 2] as number),
         (p[i * 2 + 1] as number) - (p[i * 2 - 1] as number),
       );
+      runs[i] = length;
+    }
     if (length < 0.5) return;
     // Under a pixel a line breaks into dots: keep it a pixel wide and fainter.
     let w = weight;
@@ -195,12 +211,13 @@ export class Draw {
       strength *= w / 1.15;
       w = 1.15;
     }
-    const rib = this.rib;
-    rib.length = n * 4;
+    if (this.ribs.length < n * 4) this.ribs = new Float64Array(n * 8);
+    const rib = this.ribs;
     const enter = Math.min(0.2, 16 / length);
     const leave = Math.min(0.3, 22 / length);
     const wander = Math.min(0.6 * weight, 1.6);
-    let run = 0;
+    const swell = weight * 4 + 9;
+    const drift = weight * 6 + 14;
     for (let i = 0; i < n; i++) {
       const x = p[i * 2] as number;
       const y = p[i * 2 + 1] as number;
@@ -208,16 +225,16 @@ export class Draw {
       const ib = i < n - 1 ? i + 1 : n - 1;
       let tx = (p[ib * 2] as number) - (p[ia * 2] as number);
       let ty = (p[ib * 2 + 1] as number) - (p[ia * 2 + 1] as number);
-      const tl = Math.hypot(tx, ty) || 1;
+      const tl = len(tx, ty) || 1;
       tx /= tl;
       ty /= tl;
-      if (i > 0) run += Math.hypot(x - (p[i * 2 - 2] as number), y - (p[i * 2 - 1] as number));
+      const run = runs[i] as number;
       const u = run / length;
       const press = even
         ? 1
         : (0.4 + 0.6 * smooth(0, enter, u)) * (0.16 + 0.84 * smooth(1, 1 - leave, u));
-      const half = (w * press * (1 + 0.16 * noise1(run / (weight * 4 + 9), seed + 7))) / 2;
-      const off = wander * noise1(run / (weight * 6 + 14), seed);
+      const half = (w * press * (1 + 0.16 * noise1(run / swell, seed + 7))) / 2;
+      const off = wander * noise1(run / drift, seed);
       const cx = x - ty * off;
       const cy = y + tx * off;
       rib[i * 4] = cx - ty * half;
@@ -230,30 +247,32 @@ export class Draw {
 
   /** Resamples a screen polyline so a stroke along it has room to wander. */
   private densify(p: number[], n: number, step: number, out: number[]): number {
-    out.length = 0;
+    let o = 0;
     for (let i = 0; i + 1 < n; i++) {
       const x0 = p[i * 2] as number;
       const y0 = p[i * 2 + 1] as number;
       const x1 = p[i * 2 + 2] as number;
       const y1 = p[i * 2 + 3] as number;
-      const parts = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / step));
-      for (let k = 0; k < parts; k++)
-        out.push(x0 + ((x1 - x0) * k) / parts, y0 + ((y1 - y0) * k) / parts);
+      const parts = Math.max(1, Math.ceil(len(x1 - x0, y1 - y0) / step));
+      for (let k = 0; k < parts; k++) {
+        out[o++] = x0 + ((x1 - x0) * k) / parts;
+        out[o++] = y0 + ((y1 - y0) * k) / parts;
+      }
     }
-    out.push(p[n * 2 - 2] as number, p[n * 2 - 1] as number);
-    return out.length / 2;
+    out[o++] = p[n * 2 - 2] as number;
+    out[o++] = p[n * 2 - 1] as number;
+    return o / 2;
   }
 
   /** A straight stroke. */
   line(x0: number, y0: number, x1: number, y1: number, weight = FORM, seed = 0, alpha = 1): void {
     const p = this.screen;
-    p.length = 4;
     p[0] = this.sx(x0, y0);
     p[1] = this.sy(x0, y0);
     p[2] = this.sx(x1, y1);
     p[3] = this.sy(x1, y1);
-    const n = this.densify(p, 2, clamp(weight * 3, 5, 12), this.dense);
-    this.lay(this.dense, n, weight, seed || hash(x0 * 7 + x1, y0 * 5 + y1) * 9999, this.ink, alpha);
+    const n = this.densify(p, 2, clamp(weight * 3, 5, 12), this.track);
+    this.lay(this.track, n, weight, seed || hash(x0 * 7 + x1, y0 * 5 + y1) * 9999, this.ink, alpha);
   }
 
   /** A stroke through the points with its corners kept, each side a stroke of its own. */
@@ -278,44 +297,66 @@ export class Draw {
   curve(pts: Flat, weight = FORM, seed = 1, closed = false, alpha = 1): void {
     const n = pts.length / 2;
     this.toScreen(pts, n, this.screen);
-    this.dense.length = 0;
     const step = clamp(weight * 3, 4, 11);
-    let count = spline(this.screen, n, step, closed, this.dense);
+    const p = this.track;
+    let count = spline(this.screen, n, step, closed, p, 0);
     if (closed && count > 3) {
-      this.dense.push(
-        this.dense[0] as number,
-        this.dense[1] as number,
-        this.dense[2] as number,
-        this.dense[3] as number,
-      );
+      p[count * 2] = p[0] as number;
+      p[count * 2 + 1] = p[1] as number;
+      p[count * 2 + 2] = p[2] as number;
+      p[count * 2 + 3] = p[3] as number;
       count += 2;
     }
-    this.lay(this.dense, count, weight, seed, this.ink, alpha);
+    this.lay(p, count, weight, seed, this.ink, alpha);
   }
 
   /** A stroke of even width with no flick: a ruled line. */
   rule(x0: number, y0: number, x1: number, y1: number, weight: number, seed = 3, alpha = 1): void {
     const p = this.screen;
-    p.length = 4;
     p[0] = this.sx(x0, y0);
     p[1] = this.sy(x0, y0);
     p[2] = this.sx(x1, y1);
     p[3] = this.sy(x1, y1);
-    const n = this.densify(p, 2, 14, this.dense);
-    this.lay(this.dense, n, weight, seed, this.ink, alpha, true);
+    const n = this.densify(p, 2, 14, this.track);
+    this.lay(this.track, n, weight, seed, this.ink, alpha, true);
   }
 
-  /** The outline's points on screen, rounded or not, left in `this.dense`. */
+  /**
+   * The outline's points on screen, rounded or not, left in `this.dense`. The same points under
+   * the same transform give the same outline, so a body's fill, wash and hatch round it once.
+   */
   private outline(pts: Flat, rounded: boolean): number {
     const n = pts.length / 2;
-    this.toScreen(pts, n, this.screen);
+    const was = this.was;
+    let same =
+      this.wasCount >= 0 &&
+      this.wasRounded === rounded &&
+      this.wasPoints === n &&
+      was[0] === this.a &&
+      was[1] === this.b &&
+      was[2] === this.c &&
+      was[3] === this.d &&
+      was[4] === this.e &&
+      was[5] === this.f;
+    for (let i = 0; same && i < n * 2; i++) same = was[i + 6] === pts[i];
+    if (same) return this.wasCount;
+    this.wasPoints = n;
+    was[0] = this.a;
+    was[1] = this.b;
+    was[2] = this.c;
+    was[3] = this.d;
+    was[4] = this.e;
+    was[5] = this.f;
+    for (let i = 0; i < n * 2; i++) was[i + 6] = pts[i] as number;
+    this.wasRounded = rounded;
     if (!rounded) {
-      this.dense.length = n * 2;
-      for (let i = 0; i < n * 2; i++) this.dense[i] = this.screen[i] as number;
-      return n;
+      this.toScreen(pts, n, this.dense);
+      this.wasCount = n;
+    } else {
+      this.toScreen(pts, n, this.screen);
+      this.wasCount = spline(this.screen, n, 7, true, this.dense, 0);
     }
-    this.dense.length = 0;
-    return spline(this.screen, n, 7, true, this.dense);
+    return this.wasCount;
   }
 
   /** A flat fill, exactly on its points. */
@@ -334,6 +375,8 @@ export class Draw {
   }
 
   private washScreen(p: number[], n: number, rgb: number, alpha: number): void {
+    // The outline is moved off its place here, so it is not the last outline any more.
+    if (p === this.dense) this.wasCount = -1;
     const off = this.offset;
     for (let i = 0; i < n * 2; i++) p[i] = (p[i] as number) + off;
     const strength = alpha * this.strength;
@@ -341,12 +384,10 @@ export class Draw {
     // The pooled edge, along the sides that face down and right.
     const sign = area2(p, n) >= 0 ? 1 : -1;
     const rib = this.rib;
-    rib.length = 0;
     let stations = 0;
     const pool = mix(rgb, INK, 0.3);
     const flush = (): void => {
       if (stations >= 2) this.surface.strip(rib, stations, pool, strength * 0.5, true);
-      rib.length = 0;
       stations = 0;
     };
     const depth = Math.min(2.6, 1 + this.zoom * 14);
@@ -356,7 +397,7 @@ export class Draw {
       const j = (i + 1) % n;
       let nx = ((p[j * 2 + 1] as number) - (p[h * 2 + 1] as number)) * sign;
       let ny = -((p[j * 2] as number) - (p[h * 2] as number)) * sign;
-      const nl = Math.hypot(nx, ny) || 1;
+      const nl = len(nx, ny) || 1;
       nx /= nl;
       ny /= nl;
       const facing = (nx + ny) * Math.SQRT1_2;
@@ -364,7 +405,10 @@ export class Draw {
         const deep = depth * smooth(0.15, 0.6, facing);
         const x = p[i * 2] as number;
         const y = p[i * 2 + 1] as number;
-        rib.push(x, y, x - nx * deep, y - ny * deep);
+        rib[stations * 4] = x;
+        rib[stations * 4 + 1] = y;
+        rib[stations * 4 + 2] = x - nx * deep;
+        rib[stations * 4 + 3] = y - ny * deep;
         stations++;
       } else flush();
     }
@@ -385,63 +429,15 @@ export class Draw {
   ): void {
     const n = this.outline(pts, rounded);
     const spacing = tone === 1 ? 6 : 3;
-    for (let pass = 0; pass < (tone === 3 ? 2 : 1); pass++) {
-      const cuts = this.cuts;
-      cuts.length = 0;
-      const pieces = hatchLines(this.dense, n, spacing, this.e, this.f, pass === 1, cuts);
-      this.hatchPieces(cuts, pieces, weight, rgb, alpha);
-    }
-  }
-
-  private hatchPieces(
-    cuts: number[],
-    pieces: number,
-    weight: number,
-    rgb: number,
-    alpha: number,
-  ): void {
+    // Under a pixel a line breaks into dots: keep it a pixel wide and fainter.
     let w = weight;
     let strength = alpha * this.strength;
     if (w < 1.15) {
       strength *= w / 1.15;
       w = 1.15;
     }
-    const rib = this.rib;
-    for (let k = 0; k < pieces; k++) {
-      let x0 = cuts[k * 4] as number;
-      let y0 = cuts[k * 4 + 1] as number;
-      let x1 = cuts[k * 4 + 2] as number;
-      let y1 = cuts[k * 4 + 3] as number;
-      const length = Math.hypot(x1 - x0, y1 - y0);
-      const ux = (x1 - x0) / length;
-      const uy = (y1 - y0) / length;
-      // A hand does not start or stop each stroke on the outline.
-      const key = hash(Math.round(x0 - this.e), Math.round(y0 - this.f), k);
-      const trim0 = Math.min(length * 0.3, 0.5 + key * 2.5);
-      const trim1 = Math.min(length * 0.3, 0.5 + ((key * 7.3) % 1) * 3.5);
-      x0 += ux * trim0;
-      y0 += uy * trim0;
-      x1 -= ux * trim1;
-      y1 -= uy * trim1;
-      const nx = (-uy * w) / 2;
-      const ny = (ux * w) / 2;
-      const mx = x0 + (x1 - x0) * 0.3;
-      const my = y0 + (y1 - y0) * 0.3;
-      rib.length = 12;
-      rib[0] = x0 + nx * 0.6;
-      rib[1] = y0 + ny * 0.6;
-      rib[2] = x0 - nx * 0.6;
-      rib[3] = y0 - ny * 0.6;
-      rib[4] = mx + nx;
-      rib[5] = my + ny;
-      rib[6] = mx - nx;
-      rib[7] = my - ny;
-      rib[8] = x1 + nx * 0.3;
-      rib[9] = y1 + ny * 0.3;
-      rib[10] = x1 - nx * 0.3;
-      rib[11] = y1 - ny * 0.3;
-      this.surface.strip(rib, 3, rgb, strength);
-    }
+    this.surface.hatch(this.dense, n, rgb, strength, spacing, w, false);
+    if (tone === 3) this.surface.hatch(this.dense, n, rgb, strength, spacing, w, true);
   }
 
   /**
@@ -481,9 +477,8 @@ export class Draw {
   dot(x: number, y: number, r: number, rgb = this.ink, alpha = 1): void {
     const cx = this.sx(x, y);
     const cy = this.sy(x, y);
-    const p = this.dense;
+    const p = this.track;
     const points = r < 2.5 ? 6 : r < 7 ? 9 : 14;
-    p.length = points * 2;
     for (let i = 0; i < points; i++) {
       const angle = (i / points) * Math.PI * 2;
       p[i * 2] = cx + Math.cos(angle) * r;

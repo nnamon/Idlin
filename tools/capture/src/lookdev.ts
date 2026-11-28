@@ -113,7 +113,7 @@ export async function captureLookdev(
     for (let t = from; t < to; t += 1 / fps) clip.push(shrink(await shot(t), 3));
     await save(`${scene}.gif`, encodeGif(clip, Math.round(1000 / fps)));
   }
-  // The bench is `expedition150` on both renderers: 150 citizens, 450
+  // The bench is `expedition150` on both renderers: 150 citizens, about 590
   // monsters and what is in the air, 240 frames from ten seconds in. It runs
   // only when that scene was asked for.
   if (stillsOnly || !scenes.includes(BENCH)) return;
