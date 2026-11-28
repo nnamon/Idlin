@@ -55,7 +55,10 @@ describe("a tick at scale", () => {
     // the crowd's programs: the camp's wolves and goblins wander where they
     // walked their day rounds, and nobody reads the clock or the firelight.
     // It also changed what version 13 hashes: no shifts and no spawn waits.
-    expect(hashWorld(world)).toBe("e47a099c5b2f153d");
+    // The monsters on a landing (#447) changed the step from 6 ticks to 4, a
+    // resident's hitpoints to its Hitpoints level's (50 at level 1), and what
+    // version 14 hashes.
+    expect(hashWorld(world)).toBe("c37b7095093ecee0");
     // Over the 300 ticks: some 4,400 field tiles and 750 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
     // 83,000 tiles a tick off their queues at this load. A blow now moves every
@@ -64,12 +67,13 @@ describe("a tick at scale", () => {
     // A staggered monster stands through its wind-up again instead of
     // walking, which brought them down from 3,800 and 3,100. With the camp's
     // monsters wandering where they walked their rounds (#432) they are some
-    // 4,400 and 750.
+    // 4,400 and 750. With residents of 50 hitpoints and steps of 4 ticks
+    // (#447) they are some 2,900 and 440.
     expect(workOf(world)).toEqual({
-      fieldTiles: 1_311_057,
-      fields: 2_998,
-      searchTiles: 223_808,
-      actors: 2_005_925,
+      fieldTiles: 879_913,
+      fields: 3_329,
+      searchTiles: 131_231,
+      actors: 1_151_597,
     });
   });
 
@@ -81,5 +85,25 @@ describe("a tick at scale", () => {
     }
     expect(t.mean).toBeGreaterThan(0);
     // The long run times 9,300 ticks in all, well past the runner's 5 s default.
+  }, 120_000);
+
+  it("times a tick on a full 80 by 45 landing at 150 citizens, and prints it", () => {
+    // #363's bar on the second city's medium landing (docs/slice.md, piece
+    // 5): 4 ms on average in the dev container, with the plate held at its
+    // room of 600 (see timeLanding). On a seed that lays its full room at 150
+    // awake, 1,200 ticks began with 577 to 600 monsters: 2.4 ms on average,
+    // 7.8 ms at worst.
+    const ticks = LONG ? 1_200 : 100;
+    const script = `import { timeLanding } from ${JSON.stringify(TESTING)};
+console.log(JSON.stringify(timeLanding(50, ${ticks}, true)));`;
+    const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+      encoding: "utf8",
+    });
+    const t = JSON.parse(out) as Timing & { fewest: number; most: number };
+    console.log(
+      `150 citizens and ${t.fewest} to ${t.most} monsters on 80 by 45: mean ${t.mean.toFixed(2)} ms, worst ${t.worst.toFixed(2)} ms`,
+    );
+    expect(t.fewest).toBeGreaterThanOrEqual(550);
+    expect(t.most).toBeLessThanOrEqual(700);
   }, 120_000);
 });

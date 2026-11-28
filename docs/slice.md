@@ -14,7 +14,13 @@ world runs every blow, and section 3.1's four weapon families and the flask
 reads `stance`, `margin` and the flag (`packages/sim/src/orders.ts`,
 `content/bots/deckhand.tac`). That Deckhand has the defaults from before
 the siege was specified: a margin of 120, `stance` at gather, and `ramp` as
-board or guard. Pieces 14 and 31 move them to section 5's. Every rate
+board or guard. Pieces 14 and 31 move them to section 5's. Piece 5's
+simulation is built too: section 1's packs, shares, posts and dens laid at
+legs-plant from the citizens awake, the room and the map's own packs, the
+dens' clocks, pay, keeping to the pocket, 4-tick steps, and `pack_*` and
+`den_*` with Deckhand's pack and den rules (`packages/sim/src/laying.ts`
+and `packs.ts`, decision 0041); nothing of it is drawn yet. Citizens have
+plan.md's hitpoints at their Hitpoints level. Every rate
 is arithmetic from a rule on this page; section 11 names the piece that
 tests the rule.
 

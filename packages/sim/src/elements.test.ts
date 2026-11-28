@@ -14,6 +14,7 @@ import { compileBots } from "./tactics.ts";
 import { putMonster } from "./testing.ts";
 import {
   type Actor,
+  ADVENTURER_KIND,
   blowsOf,
   createWorld,
   defenderOf,
@@ -372,7 +373,7 @@ describe("chill and freeze (4.2)", () => {
       recovered = Math.max(recovered, biter.recover);
     }
     expect(recovered).toBe(slowed(5) - 1);
-    expect(ash.hp).toBe(20 - 10);
+    expect(ash.hp).toBe(ADVENTURER_KIND.hp - 10);
   });
 
   it("a second cold hit freezes a chilled monster for 2 seconds: its wind-up stands still, then runs on", () => {
@@ -393,7 +394,7 @@ describe("chill and freeze (4.2)", () => {
       step(world);
       expect(biter.windup).toBe(4);
     }
-    expect(ash.hp).toBe(20);
+    expect(ash.hp).toBe(ADVENTURER_KIND.hp);
     step(world);
     expect(world.tick).toBe(t0 + 20);
     expect(biter.status).toMatchObject({ freeze: 0, freezeLock: 20 });

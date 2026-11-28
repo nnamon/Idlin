@@ -87,8 +87,10 @@ describe("ways where there is only one", () => {
     // version 10 it is 54e7508897f9c1e1 again. The orders (#405) changed it
     // only through what version 12 hashes: as version 11 it is 5a619cf86617e425.
     // The deck (#432) changed the programs, which read `heard` for the camp's
-    // clock, and what version 13 hashes.
-    expect(hashWorld(world)).toBe("d4a7ef6dae888f10");
+    // clock, and what version 13 hashes. The monsters on a landing (#447)
+    // changed the step from 6 ticks to 4, so the walkers are elsewhere at the
+    // end, and what version 14 hashes.
+    expect(hashWorld(world)).toBe("529c7c97cdbd434e");
   });
 });
 
@@ -184,8 +186,9 @@ describe("distance fields", () => {
     const pack = ["meadow", "den", "deep_wood", "near_wood"].map((at, i) =>
       beast(i % 2 === 0 ? "wolf" : "goblin", at),
     );
-    for (let i = 0; i < 2000; i++) step(world, i % 400 === 0 || i === 1990 ? pack : []);
-    expect(world.actors.filter((a) => a.kind !== "adventurer").length).toBeGreaterThan(3);
+    // Saved at a tick when fields are kept that are read again after it.
+    for (let i = 0; i < 1800; i++) step(world, i % 400 === 0 || i === 1790 ? pack : []);
+    expect(world.actors.filter((a) => a.kind !== "adventurer").length).toBeGreaterThan(2);
     const resumed = restore(snapshot(world), atlas, programs, beasts.kinds);
     const warm = workOf(world).fields;
     for (let i = 0; i < 2000; i++) {

@@ -118,13 +118,13 @@ describe("experience from fighting", () => {
       wasp: { hp: 1_000, damage: 3, windup: 5, recovery: 0, reach: 1 },
     });
     step(world, [at("Ash", "stander", 20, 11), at("Wasp", "biter", 21, 11, "wasp")]);
-    const log = run(world, 120);
+    const log = run(world, 150);
     const ash = world.actors.find((a) => a.kind === ADVENTURER);
     const blows = log.filter((e) => e.type === "hit" && e.target === ash?.id);
-    // 20 hitpoints at 3 a blow: six blows take 18, the seventh only the 2 left.
+    // 50 hitpoints at 3 a blow: sixteen blows take 48, the seventeenth only the 2 left.
     expect(log.some((e) => e.type === "down" && e.actor === ash?.id)).toBe(true);
-    expect(ash?.xp[hitpoints]).toBe(4 * (18 + 2));
-    expect(blows.length).toBe(7);
+    expect(ash?.xp[hitpoints]).toBe(4 * (48 + 2));
+    expect(blows.length).toBe(17);
     expect(ash?.xp[melee]).toBe(0);
   });
 

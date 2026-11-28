@@ -448,6 +448,51 @@ export const SYSCALLS: readonly Syscall[] = [
     about:
       "Ticks the walk home takes from here: to the hold on the city's deck, or to `camp` on a world of one map that has one. 9999 if there is no way.",
   },
+  {
+    id: 59,
+    name: "pack_distance",
+    kind: "sensor",
+    args: 1,
+    about:
+      "Steps in a straight grid line to the nearest monster of a pack laid on the landing whose level is from this citizen's Arms plus n to its Arms plus its `over` param, with n from -9 to 30. 9999 if there is none.",
+  },
+  {
+    id: 60,
+    name: "pack_x",
+    kind: "sensor",
+    args: 1,
+    about:
+      "The column of the monster pack_distance(n) finds, or this actor's own if there is none.",
+  },
+  {
+    id: 61,
+    name: "pack_y",
+    kind: "sensor",
+    args: 1,
+    about: "The row of the monster pack_distance(n) finds, or this actor's own if there is none.",
+  },
+  {
+    id: 62,
+    name: "den_distance",
+    kind: "sensor",
+    args: 1,
+    about:
+      "Steps in a straight grid line to the mouth of the nearest den with packs still inside whose level is in the range pack_distance(n) takes. 9999 if there is none.",
+  },
+  {
+    id: 63,
+    name: "den_x",
+    kind: "sensor",
+    args: 1,
+    about: "The column of the den den_distance(n) finds, or this actor's own if there is none.",
+  },
+  {
+    id: 64,
+    name: "den_y",
+    kind: "sensor",
+    args: 1,
+    about: "The row of the den den_distance(n) finds, or this actor's own if there is none.",
+  },
 ];
 
 export const syscall = (id: number): Syscall | undefined => SYSCALLS[id];

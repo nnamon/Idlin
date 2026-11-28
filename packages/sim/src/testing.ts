@@ -2,10 +2,13 @@
 // the camp world's programs, monsters and map that the older mechanics tests
 // are written on (fixtures/), and the large crowded map the tick is timed on.
 import { readdirSync, readFileSync } from "node:fs";
-import { linked, tileAt } from "./atlas.ts";
+import { linked, tileAt, walkable } from "./atlas.ts";
 import { emptyBag, emptyBank } from "./bag.ts";
+import { type Cycle, RAMP_DOWN } from "./cycle.ts";
 import { deckMap } from "./deck.ts";
+import type { Rank } from "./hit.ts";
 import { type ItemTable, loadItems } from "./items.ts";
+import type { Biome, CitySize, SizeClass } from "./landing.ts";
 import {
   NEIGHBOURS,
   type Point,
@@ -18,12 +21,24 @@ import {
 import { loadMonsters, type Monsters } from "./monsters.ts";
 import { NODE_KINDS } from "./nodes.ts";
 import { freshOrders } from "./orders.ts";
+import { inPocket } from "./packs.ts";
 import { createRng, nextInt, type Rng } from "./rng.ts";
-import { noXp } from "./skills.ts";
+import { noXp, SKILLS, XP_TABLE } from "./skills.ts";
 import { noStatus } from "./status.ts";
 import { compileBots } from "./tactics.ts";
 import { MEMORY_SLOTS, type Program } from "./vm.ts";
-import { createWorld, type Input, type Programs, step, type World } from "./world.ts";
+import {
+  type Actor,
+  ADVENTURER,
+  addMonster,
+  createCity,
+  createWorld,
+  type Input,
+  kindOf,
+  type Programs,
+  step,
+  type World,
+} from "./world.ts";
 
 const content = (path: string): URL => new URL(`../../../content/${path}`, import.meta.url);
 const fixture = (path: string): URL => new URL(`fixtures/${path}`, import.meta.url);
@@ -281,6 +296,76 @@ export function timeCrowd(
   return { mean: total / ticks, worst };
 }
 
+/** A landing's tick timed: as Timing, with the fewest and most monsters on the plate while it ran. */
+export interface LandingTiming extends Timing {
+  readonly fewest: number;
+  readonly most: number;
+}
+
+/**
+ * Times `ticks` ticks of the second city's medium landing, 80 by 45, with the
+ * 150 crowd on Deckhand, from `warm` ticks after the ramp comes down, while
+ * the citizens go for the packs. 150 kill faster than the dens' clocks let
+ * packs out, and a den refills only its own pocket, so with `full` the plate
+ * is held as it was when the ramp came down, as timeCrowd holds its crowd:
+ * between timed ticks every den with packs inside has its next turn brought
+ * to the coming tick, and a laid monster killed is put back on the tile it
+ * stood on then, if nobody is there and its pack still stands.
+ */
+export function timeLanding(warm: number, ticks: number, full = false, seed = 2): LandingTiming {
+  const world = crewCity({ seed, city: 2, size: "medium", level: 23, tiers: CROWDS[2][150] });
+  const held = new Map<number, Actor>();
+  const topUp = (): void => {
+    if (!full || !world.plate) return;
+    for (const den of world.plate.dens) if (den.queue.length > 0) den.next = world.tick + 1;
+    const standing = new Set(world.actors.map((a) => a.id));
+    const taken = new Set(world.actors.map((a) => `${a.x},${a.y}`));
+    for (const [id, was] of [...held]) {
+      if (standing.has(id)) continue;
+      // Gone with its pack, or its tile and those round it in its pocket taken for now: it waits.
+      const pack = world.plate.packs.find((p) => p.id === was.pack);
+      if (!pack) held.delete(id);
+      const spot = [[0, 0], ...NEIGHBOURS]
+        .map(([dx, dy]) => ({ x: was.x + (dx as number), y: was.y + (dy as number) }))
+        .find(
+          (p) =>
+            !taken.has(`${p.x},${p.y}`) &&
+            pack !== undefined &&
+            inPocket(world, pack.pocket, p.x, p.y) &&
+            walkable(world.atlas, p.x, p.y),
+        );
+      if (!held.has(id) || !spot) continue;
+      held.delete(id);
+      addMonster(world, was.kind as Rank, was.level, was.pack, spot.x, spot.y);
+      const back = world.actors[world.actors.length - 1] as Actor;
+      held.set(back.id, { ...back, x: was.x, y: was.y });
+      taken.add(`${spot.x},${spot.y}`);
+    }
+  };
+  while (world.tick < RAMP_DOWN + warm) {
+    topUp();
+    step(world);
+  }
+  for (const a of world.actors) if (a.pack > 0) held.set(a.id, { ...a });
+  let total = 0;
+  let worst = 0;
+  let fewest = Number.MAX_SAFE_INTEGER;
+  let most = 0;
+  for (let i = 0; i < ticks; i++) {
+    topUp();
+    // What the tick starts with; its blows take some of them.
+    const monsters = world.actors.filter((a) => a.kind !== ADVENTURER).length;
+    fewest = Math.min(fewest, monsters);
+    most = Math.max(most, monsters);
+    const start = performance.now();
+    step(world);
+    const took = performance.now() - start;
+    total += took;
+    worst = Math.max(worst, took);
+  }
+  return { mean: total / ticks, worst, fewest, most };
+}
+
 /** A tile of bigMap a crowd may be put on, not in `taken`, drawn from `rng`; it is added to `taken`. */
 function freeTile(world: World, rng: Rng, taken: Set<number>): Point {
   const { map } = world.atlas;
@@ -293,6 +378,92 @@ function freeTile(world: World, rng: Rng, taken: Set<number>): Point {
     taken.add(i);
     return { x, y };
   }
+}
+
+/** The usernames of a crowd file in content/chat/, in the order its `names` lines give them. */
+export const crowdNames = (file: "crowd-15" | "crowd-150"): string[] =>
+  readFileSync(content(`chat/${file}.txt`), "utf8")
+    .split("\n")
+    .filter((line) => line.startsWith("names "))
+    .flatMap((line) => line.slice("names ".length).trim().split(/\s+/));
+
+/** A tier of a scripted crowd: its citizens' Arms, and how many of them. */
+export type Tier = readonly [arms: number, citizens: number];
+
+/**
+ * The crowds plate.ts lays (docs/slice.md, section 1): for the second city a
+ * level-23 landing with the worked tiers, for the first a level-8 landing
+ * with a young crowd.
+ */
+export const CROWDS: Readonly<Record<CitySize, { level: number; 15: Tier[]; 150: Tier[] }>> = {
+  1: {
+    level: 8,
+    15: [
+      [3, 3],
+      [8, 9],
+      [15, 3],
+    ],
+    150: [
+      [3, 30],
+      [8, 90],
+      [15, 30],
+    ],
+  },
+  2: {
+    level: 23,
+    15: [
+      [6, 2],
+      [23, 10],
+      [40, 2],
+      [58, 1],
+    ],
+    150: [
+      [6, 30],
+      [23, 90],
+      [40, 20],
+      [58, 10],
+    ],
+  },
+};
+
+/**
+ * A city of size `city` with citizens of the tiers given, at Arms and
+ * Hitpoints of their tier, running the shipped programs, whose next landing
+ * is the one asked for. It stands at tick 1, in transit; its legs plant at
+ * LEGS_PLANT. Each citizen is named from the 150 crowd's usernames.
+ */
+export function crewCity(options: {
+  readonly seed: number;
+  readonly city: CitySize;
+  readonly size: SizeClass;
+  readonly level: number;
+  readonly tiers: readonly Tier[];
+  readonly biome?: Biome;
+  /** Programs beside the shipped ones, for a test to give a citizen. */
+  readonly programs?: Programs;
+}): World {
+  const { seed, city, size, level, tiers, biome = "meadow" } = options;
+  const world = createCity(seed, { ...shippedPrograms(), ...options.programs }, {}, city);
+  (world.cycle as Cycle).landing = { seed: (seed * 7919) | 0, size, biome, level };
+  const names = crowdNames("crowd-150");
+  const levels = tiers.flatMap(([arms, n]) => new Array<number>(n).fill(arms));
+  step(
+    world,
+    levels.map((_, i) => ({
+      type: "join",
+      account: String(100_000 + i),
+      name: names[i] ?? `citizen${1000 + i}`,
+      role: "viewer",
+    })),
+  );
+  const citizens = world.actors.filter((a) => a.kind === ADVENTURER);
+  citizens.forEach((c, i) => {
+    const xp = XP_TABLE[levels[i] as number] as number;
+    c.xp[SKILLS.indexOf("melee")] = xp;
+    c.xp[SKILLS.indexOf("hitpoints")] = xp;
+    c.hp = kindOf(world, c).hp;
+  });
+  return world;
 }
 
 /**
@@ -332,6 +503,10 @@ export function putMonster(world: World, kind: string, { x, y }: Point, program 
     flask: 0,
     kills: 0,
     status: noStatus(),
+    level: 0,
+    pack: 0,
+    carry: 0,
+    place: 0,
   });
 }
 

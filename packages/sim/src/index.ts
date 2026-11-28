@@ -139,6 +139,21 @@ export {
   type Tier,
 } from "./items.ts";
 export {
+  CAP,
+  DEN_GATE,
+  dropChance,
+  dropsFor,
+  type LaidPack,
+  type Layout,
+  layPlate,
+  MEMBERS,
+  ORDER,
+  PACK_KINDS,
+  type PackKind,
+  roomOf,
+  shareOf,
+} from "./laying.ts";
+export {
   ABOARD,
   inBounds,
   isWalkable,
@@ -158,6 +173,14 @@ export {
 } from "./map.ts";
 export { loadMonsters, MONSTER_NAME, type Monsters } from "./monsters.ts";
 export { NODE_KINDS, type NodeKind, nodeKind, nodeKindId } from "./nodes.ts";
+export {
+  type DenState,
+  type Letter,
+  NO_PACK,
+  type PackState,
+  type Plate,
+  plateLetters,
+} from "./packs.ts";
 export { findPath } from "./path.ts";
 export { chance, createRng, nextInt, nextU32, type Rng } from "./rng.ts";
 export {

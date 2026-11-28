@@ -18,7 +18,6 @@ import { Chat } from "@idlin/chat";
 import {
   type Actor,
   ADVENTURER,
-  aboard,
   type Blow,
   blowsOf,
   compileBots,
@@ -33,11 +32,10 @@ import {
   step,
   viewerMessage,
   type World,
-  walkable,
 } from "@idlin/sim";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { botSources, campMonsters } from "../../sim/src/testing.ts";
+import { botSources } from "../../sim/src/testing.ts";
 import { loadContent, loadCrowd } from "./content.ts";
 import { logName } from "./inputlog.ts";
 import {
@@ -405,38 +403,12 @@ describe("world server", () => {
   });
 
   it("sends each tick's blows with its world, and none with the world sent on connect", async () => {
-    // No landing has monsters until slice piece 5, so this city has the camp's
-    // wolves put on its landing by hand, by a crowd of citizens out on it.
-    const beasts = campMonsters();
-    const content = {
-      programs: { ...CONTENT.programs, ...beasts.programs },
-      kinds: beasts.kinds,
-    };
+    // A crowd of citizens out on the landing among the packs laid on it.
+    const content = CONTENT;
     const city = createCity(SEED, content.programs, content.kinds);
     const chat = new Chat({ crowd: CROWD, start: 0 });
     while (city.tick < 2400) step(city, chat.take(city.tick));
-    const { atlas } = city;
-    const open: { x: number; y: number }[] = [];
-    for (const citizen of city.actors) {
-      for (const [dx, dy] of [
-        [2, 0],
-        [-2, 0],
-        [0, 2],
-        [0, -2],
-      ] as const) {
-        const at = { x: citizen.x + dx, y: citizen.y + dy };
-        if (!walkable(atlas, at.x, at.y) || aboard(atlas, at.x, at.y)) continue;
-        if (city.actors.some((a) => a.x === at.x && a.y === at.y)) continue;
-        if (!open.some((p) => p.x === at.x && p.y === at.y)) open.push(at);
-      }
-    }
-    step(
-      city,
-      open
-        .slice(0, 12)
-        .map((at) => ({ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...at })),
-    );
-    expect(city.actors.filter((a) => a.kind === "wolf").length).toBeGreaterThan(4);
+    expect(city.actors.filter((a) => a.pack > 0).length).toBeGreaterThan(100);
     const dir = tempDir();
     saveSnapshot(dir, city);
     const server = await start(dir, [], 100, { content, quiet: true });
@@ -445,11 +417,13 @@ describe("world server", () => {
     const sent: unknown[] = [];
     socket.on("message", (data) => sent.push(JSON.parse(String(data)).blows));
     await new Promise((resolve) => socket.once("open", resolve));
-    // In batches that stay well inside what the server queues for a viewer before dropping it.
+    // In batches that stay well inside what the server queues for a viewer
+    // before dropping it: a world with a landing's packs is a few hundred
+    // kilobytes.
     const ticks = 1_000;
-    for (let done = 0; done < ticks; done += 50) {
-      server.advance(50);
-      await vi.waitFor(() => expect(sent).toHaveLength(done + 51));
+    for (let done = 0; done < ticks; done += 4) {
+      server.advance(4);
+      await vi.waitFor(() => expect(sent).toHaveLength(done + 5));
     }
     expect(sent[0]).toEqual([]);
     // The same world stepped without a server makes the same blows on each tick.

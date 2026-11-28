@@ -102,6 +102,12 @@ describe("the system call table", () => {
       "56 heard sensor 0",
       "57 lift_eta sensor 0",
       "58 way_home sensor 0",
+      "59 pack_distance sensor 1",
+      "60 pack_x sensor 1",
+      "61 pack_y sensor 1",
+      "62 den_distance sensor 1",
+      "63 den_x sensor 1",
+      "64 den_y sensor 1",
     ]);
   });
 

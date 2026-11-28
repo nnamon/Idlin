@@ -42,12 +42,14 @@ import { campMonsters, shippedPrograms } from "./testing.ts";
 import {
   ADVENTURER,
   aboard,
+  actorAt as actorOn,
   beat,
   createCity,
   groundOf,
   hashWorld,
   type Input,
   restore,
+  SNAPSHOT_VERSION,
   SnapshotError,
   snapshot,
   step,
@@ -321,28 +323,30 @@ describe("the break and lift-off", () => {
     const [out, onRamp, home, joined] = world.actors;
     if (!out || !onRamp || !home || !joined) throw new Error("four citizens");
     const { atlas } = world;
-    const ground: { x: number; y: number }[] = [];
-    for (let y = atlas.top; y < atlas.top + atlas.height; y++)
-      for (let x = atlas.left; x < atlas.left + atlas.width; x++)
-        if (walkable(atlas, x, y) && terrainOf(atlas, x, y) === "grass") ground.push({ x, y });
-    const [field, den] = [ground[0], ground[ground.length - 1]] as { x: number; y: number }[];
-    out.x = out.fromX = (field as { x: number }).x;
-    out.y = out.fromY = (field as { y: number }).y;
-    const foot = rampTiles(landingFor(1, cycleOf(world).landing))[0] as { x: number; y: number };
+    // Out in the yard, where no pack goes.
+    const landing = landingFor(1, cycleOf(world).landing);
+    const yard = landing.districtAt.findIndex(
+      (d, i) =>
+        d === 0 &&
+        walkable(
+          atlas,
+          (i % landing.width) + atlas.left,
+          Math.floor(i / landing.width) + atlas.top,
+        ) &&
+        terrainOf(
+          atlas,
+          (i % landing.width) + atlas.left,
+          Math.floor(i / landing.width) + atlas.top,
+        ) === "grass",
+    );
+    out.x = out.fromX = (yard % landing.width) + atlas.left;
+    out.y = out.fromY = Math.floor(yard / landing.width) + atlas.top;
+    const foot = rampTiles(landing)[0] as { x: number; y: number };
     onRamp.x = onRamp.fromX = foot.x + atlas.left;
     onRamp.y = onRamp.fromY = foot.y + atlas.top;
     expect(terrainOf(atlas, onRamp.x, onRamp.y)).toBe("ramp");
-    step(world, [
-      {
-        type: "spawn",
-        name: "Wolf",
-        program: "still",
-        kind: "wolf",
-        ...(den as { x: number; y: number }),
-      },
-      { type: "go", account: joined.account, words: "guns" },
-    ]);
-    expect(world.actors.some((x) => x.kind === "wolf")).toBe(true);
+    step(world, [{ type: "go", account: joined.account, words: "guns" }]);
+    expect(world.actors.some((x) => x.kind !== ADVENTURER)).toBe(true);
     expect(joined.flag).not.toBe(0);
     const events = runTo(world, 6900, new Map([[6599, [{ type: "break" }]]]));
     expect(world.actors.every((x) => x.kind === ADVENTURER)).toBe(true);
@@ -414,7 +418,7 @@ describe("saving the city", () => {
   });
 
   it("refuses a snapshot of the camp world with a message that says so", () => {
-    const text = snapshot(city()).replace('"version":13', '"version":12');
+    const text = snapshot(city()).replace(`"version":${SNAPSHOT_VERSION}`, '"version":12');
     expect(() => restore(text, null, CONTENT, BEASTS.kinds)).toThrow(SnapshotError);
     expect(() => restore(text, null, CONTENT, BEASTS.kinds)).toThrow(/camp world/);
   });
@@ -435,7 +439,8 @@ describe("saving the city", () => {
     let den: { x: number; y: number } | undefined;
     for (let y = atlas.top + atlas.height - 1; y >= atlas.top && !den; y--)
       for (let x = atlas.left; x < atlas.left + atlas.width && !den; x++)
-        if (walkable(atlas, x, y) && terrainOf(atlas, x, y) === "grass") den = { x, y };
+        if (walkable(atlas, x, y) && terrainOf(atlas, x, y) === "grass" && !actorOn(world, x, y))
+          den = { x, y };
     if (!den) throw new Error("a grass tile on the landing");
     step(world, [{ type: "spawn", name: "Wolf", program: "still", kind: "wolf", ...den }]);
     const wolf = world.actors.find((x) => x.kind === "wolf");

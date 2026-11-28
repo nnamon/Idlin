@@ -124,6 +124,10 @@ function plant(world: World, x: number, y: number, kind = "post", program = "sta
     flask: 0,
     kills: 0,
     status: noStatus(),
+    level: 0,
+    pack: 0,
+    carry: 0,
+    place: 0,
   };
   world.actors.push(post);
   return post;
@@ -552,7 +556,7 @@ describe("knockback", () => {
 
 describe("the flask", () => {
   it("holds three drinks of 40% of life, and a drink at full hitpoints is kept", () => {
-    expect(drinkOf(ADVENTURER_KIND.hp)).toBe(8);
+    expect(drinkOf(ADVENTURER_KIND.hp)).toBe(20);
     expect(drinkOf(1_292)).toBe(516);
     const world = armed("blade", "drinker");
     const ash = world.actors[0] as Actor;
@@ -562,11 +566,11 @@ describe("the flask", () => {
     ash.hp = 1;
     const log = run(world, 40);
     const drinks = log.filter((e) => e.type === "drink");
-    // 1, then 9, then 17, then full at 20 with one drink left.
+    // 1, then 21, then 41, then full at 50 with the flask empty.
     expect(drinks.map((e) => e.type === "drink" && [e.hp, e.flask])).toEqual([
-      [9, 2],
-      [17, 1],
-      [20, 0],
+      [21, 2],
+      [41, 1],
+      [50, 0],
     ]);
     ash.hp = 3;
     expect(run(world, 20).some((e) => e.type === "drink")).toBe(false);

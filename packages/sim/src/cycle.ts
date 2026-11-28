@@ -10,6 +10,8 @@ import {
   type Biome,
   type CitySize,
   type LandingInput,
+  MAX_EXTRA,
+  MAX_LEVEL,
   SIZE_CLASSES,
   type SizeClass,
 } from "./landing.ts";
@@ -183,13 +185,24 @@ export function readCycle(raw: unknown, tick: number): Cycle | null {
   return cycle;
 }
 
+/**
+ * A saved landing input: the four fields drawn at 0:00, and from legs-plant
+ * the far level and the extra dens and chests made for the crew awake then
+ * (world.ts), all three or none.
+ */
 function readLandingInput(raw: unknown): LandingInput | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const { seed, size, biome, level } = raw as Record<string, unknown>;
-  if (Object.keys(raw).length !== 4 || !isInt32(seed)) return null;
+  const { seed, size, biome, level, far, extraDens, extraCaches } = raw as Record<string, unknown>;
+  const crew = Object.keys(raw).length === 7;
+  if ((!crew && Object.keys(raw).length !== 4) || !isInt32(seed)) return null;
   if (!SIZE_CLASSES.includes(size as SizeClass) || !BIOMES.includes(biome as Biome)) return null;
   if (!isInt32(level) || level < 1 || level > 99) return null;
-  return { seed, size: size as SizeClass, biome: biome as Biome, level };
+  const input = { seed, size: size as SizeClass, biome: biome as Biome, level };
+  if (!crew) return input;
+  if (!isInt32(far) || far < level || far > MAX_LEVEL) return null;
+  const extra = (n: unknown): n is number => isInt32(n) && n >= 0 && n <= MAX_EXTRA;
+  if (!extra(extraDens) || !extra(extraCaches)) return null;
+  return { ...input, far, extraDens, extraCaches };
 }
 
 /** The cycle as numbers, for the world's hash. */
@@ -202,6 +215,9 @@ export const cycleInts = (cycle: Cycle): number[] => [
   BIOMES.indexOf(cycle.landing.biome),
   cycle.landing.level,
   ...halves(cycle.broke),
+  ...(cycle.landing.far === undefined
+    ? []
+    : [-1, cycle.landing.far, cycle.landing.extraDens ?? 0, cycle.landing.extraCaches ?? 0]),
 ];
 
 /** Both 32-bit halves of a whole number that may outgrow 32 bits. */

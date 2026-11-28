@@ -38,7 +38,7 @@ import {
   readCycle,
   siegeAt,
 } from "./cycle.ts";
-import { BERTHS, deckGround, landingGround, PER_TILE } from "./deck.ts";
+import { BERTHS, deckGround, landingFor, landingGround, PER_TILE } from "./deck.ts";
 import { fullNodes, type NodeState, regrowNodes } from "./gather.ts";
 import {
   addMark,
@@ -65,14 +65,18 @@ import {
   FULL,
   type Hit,
   hit,
+  life,
   MOST_DAMAGE,
   type Modifier,
   monsterArmour,
+  monsterBlow,
+  monsterLife,
   RANKS,
   type Rank,
   rollCrit,
 } from "./hit.ts";
 import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./inputs.ts";
+import { type CitySize, FAR_STEP } from "./landing.ts";
 import { ABOARD, MapError, NEIGHBOURS, type Point, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import {
@@ -81,11 +85,26 @@ import {
   FLAG_NONE,
   flagsHold,
   freshOrders,
+  NO_PROGRAM,
   type Orders,
   ordersInts,
   readOrders,
   unsentOrders,
 } from "./orders.ts";
+import {
+  blowCounts,
+  ELITE,
+  FODDER_PER_TILE,
+  layLanding,
+  mayStand,
+  type Plate,
+  packOf,
+  packThink,
+  plateInts,
+  readPlate,
+  runPlate,
+  struckBy,
+} from "./packs.ts";
 import { createRng, type Rng } from "./rng.ts";
 import {
   gainXp,
@@ -139,8 +158,8 @@ import {
 } from "./weapons.ts";
 
 export const TICKS_PER_SECOND = 10;
-/** Ticks an actor takes to walk from one tile to the next. */
-export const STEP_TICKS = 6;
+/** Ticks an actor takes to walk from one tile to the next (plan.md, section 2.2). */
+export const STEP_TICKS = 4;
 /** Ticks an actor waits for a blocked tile to clear before giving up its path. */
 export const BLOCKED_PATIENCE_TICKS = 10;
 /** A chat username can be 25 characters, and a citizen is named by it. */
@@ -185,14 +204,59 @@ export const MOST_KIND_LEVEL = 99;
 
 /** The kind every adventurer is. Any other kind is a monster, and the two are enemies. */
 export const ADVENTURER = "adventurer";
+/**
+ * A citizen's numbers at Hitpoints level 1. Its hitpoints grow with its
+ * Hitpoints level (`citizenKind`); its blow comes from its Arms and its
+ * weapon, so `damage`, `windup` and `recovery` here are not read.
+ */
 export const ADVENTURER_KIND: Kind = Object.freeze({
-  hp: 20,
+  hp: life(1),
   damage: 4,
   windup: 6,
   recovery: 6,
   reach: 1,
   step: STEP_TICKS,
 });
+
+const citizenKinds: Kind[] = [];
+/** A citizen's numbers at Hitpoints level `level`: plan.md's `40 + 10L + L*L/5` hitpoints. */
+export function citizenKind(level: number): Kind {
+  let kind = citizenKinds[level];
+  if (!kind) {
+    kind = Object.freeze({ ...ADVENTURER_KIND, hp: life(level) });
+    citizenKinds[level] = kind;
+  }
+  return kind;
+}
+
+/**
+ * The kinds of the monsters laid on a landing, one for each rank, at a level
+ * each monster has of its own (`Actor.level`). A laid monster is told by its
+ * pack (`Actor.pack`), not its kind's name, which a content kind may share.
+ */
+export const LAID_KINDS: readonly Rank[] = ["fodder", "pack", "brute", "elite"];
+const laidKinds = new Map<number, Kind>();
+/** A laid monster's numbers: hit.ts's formulas at its rank and level, a reach of 1 and a 4-tick step. */
+export function laidKind(rank: Rank, level: number): Kind {
+  const key = LAID_KINDS.indexOf(rank) * 128 + level;
+  let kind = laidKinds.get(key);
+  if (!kind) {
+    const { windup, recovery } = RANKS[rank];
+    kind = Object.freeze({
+      hp: monsterLife(rank, level),
+      damage: monsterBlow(rank, level),
+      windup,
+      recovery,
+      reach: 1,
+      step: STEP_TICKS,
+      rank,
+      level,
+    });
+    laidKinds.set(key, kind);
+  }
+  return kind;
+}
+const isLaid = (kind: string): kind is Rank => (LAID_KINDS as readonly string[]).includes(kind);
 const KIND_LIMITS: Readonly<Record<Exclude<keyof Kind, "rank">, readonly [number, number]>> = {
   hp: [1, 100_000],
   damage: [0, 100_000],
@@ -384,6 +448,17 @@ export interface Actor extends Orders {
   kills: number;
   /** The statuses hits have left on it, and their lockouts (status.ts). */
   status: Status;
+  /** A laid monster's level, 1 to 99; 0 for a citizen and for a monster of a content kind, whose level is its kind's. */
+  readonly level: number;
+  /** The id of the laid pack a monster stands in (packs.ts); 0 for anyone else. */
+  readonly pack: number;
+  /**
+   * A citizen's share between landings (docs/slice.md, section 1): the
+   * hundredths of a pack it carries, 0 to 99, and its place in the order of
+   * ten, 0 to 9. Both 0 for a monster.
+   */
+  carry: number;
+  place: number;
 }
 
 /**
@@ -430,6 +505,8 @@ export interface World {
   arrows: Arrow[];
   /** The walking city's cycle; null for a world on one fixed map. */
   cycle: Cycle | null;
+  /** The packs and dens laid on the landing (packs.ts), from legs-plant to lift-off; null otherwise. */
+  plate: Plate | null;
 }
 
 export type Input =
@@ -505,10 +582,18 @@ function checkGround(atlas: Atlas): void {
 /**
  * The walking city: city 1 on its deck at the first cycle's 0:00, with no
  * citizens until chatters join. Throws a ProgramError or a KindError for bad
- * content, as `createWorld` does.
+ * content, as `createWorld` does. `city` 2 starts as the second city, which
+ * only tests and the landing metrics use until the works build it (piece
+ * 32): its snapshots are refused (cycle.ts), and the programs are compiled
+ * with the first city's deck places.
  */
-export function createCity(seed: number, programs: Programs = {}, kinds: Kinds = {}): World {
-  return newWorld(deckGround(1), seed, programs, kinds, (rng) => firstCycle(1, rng));
+export function createCity(
+  seed: number,
+  programs: Programs = {},
+  kinds: Kinds = {},
+  city: CitySize = 1,
+): World {
+  return newWorld(deckGround(city), seed, programs, kinds, (rng) => firstCycle(city, rng));
 }
 
 function newWorld(
@@ -533,6 +618,7 @@ function newWorld(
     nodes: fullNodes(atlas),
     arrows: [],
     cycle: cycle(rng),
+    plate: null,
   };
 }
 
@@ -547,9 +633,17 @@ export function groundOf(cycle: Cycle, tick: number): Atlas {
 export const beat = (world: World): BeatSpan | null =>
   world.cycle ? beatOf(world.cycle, world.tick) : null;
 
-/** The numbers an actor fights with. */
+/**
+ * The numbers an actor fights with: a citizen's at its Hitpoints level, a
+ * laid monster's at its rank and level, or its content kind's.
+ */
 export const kindOf = (world: World, actor: Actor): Kind =>
-  actor.kind === ADVENTURER ? ADVENTURER_KIND : (world.kinds[actor.kind] as Kind);
+  actor.kind === ADVENTURER
+    ? citizenKind(levelFor(actor.xp[HITPOINTS] as number))
+    : actor.pack > 0
+      ? laidKind(actor.kind as Rank, actor.level)
+      : (world.kinds[actor.kind] as Kind);
+const HITPOINTS = SKILLS.indexOf("hitpoints");
 
 /**
  * The tiles an actor's attack lands on in one direction: a line out from it,
@@ -603,7 +697,8 @@ export function blowTimesOf(world: World, actor: Actor): BlowTimes {
 
 /** A monster's rank and level; an adventurer has neither, and reads as level-1 fodder. */
 export const rankOf = (world: World, actor: Actor): Rank => kindOf(world, actor).rank ?? "fodder";
-export const levelOf = (world: World, actor: Actor): number => kindOf(world, actor).level ?? 1;
+export const levelOf = (world: World, actor: Actor): number =>
+  actor.level > 0 ? actor.level : (kindOf(world, actor).level ?? 1);
 
 /** The element of the landing the world stands on, if it has one. */
 export function elementAt(world: World, _x: number, _y: number): Element | undefined {
@@ -634,14 +729,27 @@ export const actorAt = (world: World, x: number, y: number): Actor | undefined =
 /**
  * Whether `a` and `b` get in each other's way. Adventurers walk through each
  * other, so no one can hold a narrow way against the rest; anything involving
- * a monster blocks.
+ * a monster blocks, but fodder, up to three of which share a tile
+ * (`blockerAt`), does not block fodder.
  */
 export const blocks = (a: Actor, b: Actor): boolean =>
-  a !== b && (a.kind !== ADVENTURER || b.kind !== ADVENTURER);
+  a !== b && (a.kind !== ADVENTURER || b.kind !== ADVENTURER) && !(laidFodder(a) && laidFodder(b));
 
-/** Someone on (x, y) who gets in `mover`'s way, if anyone does. */
-export const blockerAt = (world: World, x: number, y: number, mover: Actor): Actor | undefined =>
-  firstAt(gridOf(world), x, y, (a) => blocks(a, mover));
+/** A laid monster of fodder rank, which shares its tile with up to two more. */
+export const laidFodder = (a: Actor): boolean => a.pack > 0 && a.kind === "fodder";
+
+/**
+ * Someone on (x, y) who gets in `mover`'s way, if anyone does: for fodder,
+ * anyone but fodder, or one of the fodder there when FODDER_PER_TILE stand on
+ * it already.
+ */
+export function blockerAt(world: World, x: number, y: number, mover: Actor): Actor | undefined {
+  const grid = gridOf(world);
+  const other = firstAt(grid, x, y, (a) => blocks(a, mover));
+  if (other || !laidFodder(mover)) return other;
+  const fodder = allAt(grid, x, y, (a) => a !== mover && laidFodder(a));
+  return fodder.length >= FODDER_PER_TILE ? fodder[0] : undefined;
+}
 
 /**
  * Something that happened during a tick, for whoever is watching: the ticker,
@@ -689,6 +797,8 @@ export type WorldEvent =
       readonly hp: number;
       /** On an arc, the shocked monster it arced from; a blow has none. */
       readonly arcFrom?: number;
+      /** The experience it gave the citizen in it. */
+      readonly xp: number;
     }
   | {
       /** An attack landed on a tile with no enemy on it. */
@@ -710,6 +820,31 @@ export type WorldEvent =
       /** Where it fell. */
       readonly x: number;
       readonly y: number;
+      /** A laid monster's level and pack (packs.ts); 0 for anyone else. */
+      readonly level: number;
+      readonly pack: number;
+    }
+  | {
+      /** The landing's monsters were laid at legs-plant: how many stand, against its room. */
+      readonly type: "laid";
+      readonly tick: number;
+      readonly monsters: number;
+      readonly room: number;
+    }
+  | {
+      /**
+       * A den's turn came: it let its next pack out (`out`), or the turn
+       * passed because the plate was at its room and 50 (`cap`) or its
+       * pocket had no free post (`post`).
+       */
+      readonly type: "den";
+      readonly tick: number;
+      /** The den, as an index into the landing's dens. */
+      readonly den: number;
+      /** What the plate held when the turn was taken, before the pack it let out, if any. */
+      readonly monsters: number;
+      readonly out: boolean;
+      readonly why: "" | "cap" | "post";
     }
   | {
       /** A monster went home because the part of the day it came out for is over. */
@@ -866,6 +1001,7 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
   for (const input of inputs) applyInput(world, input);
   world.tick++;
   runCycle(world, events);
+  runPlate(world, events);
   regrowNodes(world, events);
   landAttacks(world, events);
   // Nobody joins or leaves the world while the actors update, and only a step
@@ -884,6 +1020,29 @@ const NO_LINES: readonly Modifier[] = [];
 const UNARMOURED: Defender = { armour: 0 };
 /** What a shocked target takes from every hit. */
 const SHOCKED: Modifier = { kind: "more", pct: SHOCK_MORE };
+/** A blow that does nothing: one on a laid monster from outside its pocket. */
+const NO_HIT: Hit = Object.freeze({
+  parts: [0, 0, 0, 0] as const,
+  amount: 0,
+  crit: false,
+  type: "physical",
+});
+
+/**
+ * The experience `base` comes to for the one it goes to. A citizen's hit on a
+ * laid monster is multiplied by its pack's pay and rounded down, and a
+ * monster ten or more levels under the citizen gives a quarter of that
+ * (docs/slice.md, sections 1 and 3.2).
+ */
+function experienceOf(world: World, attacker: Actor, target: Actor, base: number): number {
+  if (attacker.kind !== ADVENTURER) return base;
+  const pack = packOf(world, target);
+  if (!pack) return base;
+  const paid = Math.floor((base * pack.pay) / pack.per);
+  // A den's elite always pays.
+  const under = pack.kind !== ELITE && pack.level + 10 <= armsOf(attacker);
+  return under ? Math.floor(paid / 4) : paid;
+}
 
 /**
  * What an actor swings with. An adventurer's blow is the base blow of its
@@ -972,6 +1131,11 @@ export function strike(
   lines: readonly Modifier[] = NO_LINES,
   arcFrom = 0,
 ): Hit {
+  // A citizen's blow on a laid monster from outside its pocket does nothing at all.
+  if (!blowCounts(world, attacker, target)) {
+    events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: target.x, y: target.y });
+    return NO_HIT;
+  }
   const shocked = target.status.shock > 0;
   const result = hit(
     swinger,
@@ -984,6 +1148,10 @@ export function strike(
   const taken = Math.min(amount, target.hp);
   target.hp -= amount;
   struck.set(target.id, attacker.id);
+  struckBy(world, target, attacker);
+  const learner = attacker.kind === ADVENTURER ? attacker : target;
+  const skill: Skill = learner === attacker ? "melee" : "hitpoints";
+  const xp = experienceOf(world, attacker, target, taken * XP_PER_DAMAGE);
   events.push({
     type: "hit",
     tick: world.tick,
@@ -994,10 +1162,9 @@ export function strike(
     damageType: type,
     hp: target.hp,
     ...(arcFrom === 0 ? {} : { arcFrom }),
+    xp,
   });
-  const learner = attacker.kind === ADVENTURER ? attacker : target;
-  const skill: Skill = learner === attacker ? "melee" : "hitpoints";
-  const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
+  const level = gainXp(learner.xp, skill, xp);
   if (level > 0) events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
   if (arcFrom !== 0) return result;
   // One downed takes no status, but a shocked monster's last hit still arcs.
@@ -1080,6 +1247,8 @@ function knockable(world: World, body: Actor, mx: number, my: number): boolean {
   const x = body.x + mx;
   const y = body.y + my;
   if (!walkable(atlas, x, y) || !floorsJoin(atlas, body.x, body.y, x, y)) return false;
+  // A laid monster is never pushed out of its pocket.
+  if (!mayStand(world, body, x, y)) return false;
   if (mx !== 0 && my !== 0 && !(walkable(atlas, x, body.y) && walkable(atlas, body.x, y)))
     return false;
   return blockerAt(world, x, y, body) === undefined;
@@ -1329,6 +1498,8 @@ function landAttacks(world: World, events: WorldEvent[]): void {
       by: struck.get(actor.id) ?? 0,
       x: actor.x,
       y: actor.y,
+      level: actor.level,
+      pack: actor.pack,
     });
     if (actor.kind !== ADVENTURER) continue;
     // A citizen is carried aboard and rests there. What it loses by this is piece 17's.
@@ -1592,7 +1763,12 @@ function runCycle(world: World, events: WorldEvent[]): void {
   const { cycle, tick } = world;
   if (!cycle) return;
   const before = beatOf(cycle, tick - 1).beat;
-  if (tick === cycle.start + LEGS_PLANT || tick === cycle.start + RAMP_DOWN) setGround(world);
+  if (tick === cycle.start + LEGS_PLANT) {
+    cycle.landing = forCrew(world, cycle);
+    setGround(world);
+    layLanding(world, events);
+  }
+  if (tick === cycle.start + RAMP_DOWN) setGround(world);
   if (cycle.broke === 0 && tick === breakAt(cycle)) cycle.broke = tick;
   if (cycle.broke > 0 && tick === liftAt(cycle)) liftOff(world, events);
   if (cycle.broke > 0 && tick >= liftAt(cycle) && tick === nextStart(cycle)) {
@@ -1603,6 +1779,26 @@ function runCycle(world: World, events: WorldEvent[]): void {
   }
   const now = beatOf(cycle, tick).beat;
   if (now !== before) events.push({ type: "beat", tick, beat: now });
+}
+
+/**
+ * The landing the cycle drew, made for the crew awake as the legs plant
+ * (docs/slice.md, section 1): its far level the highest Arms awake, or its
+ * level if that is higher, plus its class's step, and 99 at most; and one
+ * den and one chest more for each 15 citizens awake, rounded up.
+ */
+function forCrew(world: World, cycle: Cycle): Cycle["landing"] {
+  const { seed, size, biome, level } = cycle.landing;
+  let strongest = level;
+  let awake = 0;
+  for (const actor of world.actors) {
+    if (actor.kind !== ADVENTURER) continue;
+    awake++;
+    strongest = Math.max(strongest, armsOf(actor));
+  }
+  const extra = Math.ceil(awake / 15);
+  const far = Math.min(MAX_LEVEL, strongest + FAR_STEP[size]);
+  return { seed, size, biome, level, far, extraDens: extra, extraCaches: extra };
 }
 
 /** Sets the city's ground to what its cycle has at this tick, with the nodes it holds. */
@@ -1623,6 +1819,7 @@ function liftOff(world: World, events: WorldEvent[]): void {
   const { atlas } = world;
   const outside: { actor: Actor; ramp: boolean }[] = [];
   world.actors = world.actors.filter((actor) => actor.kind === ADVENTURER);
+  world.plate = null;
   world.marks = [];
   world.arrows = [];
   for (const actor of world.actors) {
@@ -1666,10 +1863,16 @@ function addActor(
   kind: string,
   weapon: Family = "blade",
   account = "",
+  laid: { readonly level: number; readonly pack: number } = { level: 0, pack: 0 },
 ): void {
   const adventurer = kind === ADVENTURER;
+  const numbers = adventurer
+    ? ADVENTURER_KIND
+    : laid.pack > 0
+      ? laidKind(kind as Rank, laid.level)
+      : (world.kinds[kind] as Kind);
   world.actors.push({
-    ...freshOrders(world.programs[program] as Program, account, world.tick),
+    ...freshOrders(world.programs[program] ?? NO_PROGRAM, account, world.tick),
     id: world.nextActorId++,
     name,
     x,
@@ -1685,7 +1888,7 @@ function addActor(
     rule: -1,
     fault: 0,
     kind,
-    hp: (adventurer ? ADVENTURER_KIND : (world.kinds[kind] as Kind)).hp,
+    hp: numbers.hp,
     windup: 0,
     recover: 0,
     stalled: 0,
@@ -1700,7 +1903,33 @@ function addActor(
     flask: adventurer ? FLASK_DRINKS : 0,
     kills: 0,
     status: noStatus(),
+    level: laid.level,
+    pack: laid.pack,
+    carry: 0,
+    place: adventurer ? placeOf(account) : 0,
   });
+}
+
+/** A new citizen's place in the order of ten, drawn from its account (docs/slice.md, section 1). */
+export function placeOf(account: string): number {
+  let h = 0;
+  for (let i = 0; i < account.length; i++) h = (Math.imul(h, 31) + account.charCodeAt(i)) | 0;
+  return ((h % 10) + 10) % 10;
+}
+
+/**
+ * Puts a laid monster of `rank` at `level`, in pack `pack`, on (x, y). Only
+ * packs.ts lays them, at legs-plant and out of a den's mouth; no input can.
+ */
+export function addMonster(
+  world: World,
+  rank: Rank,
+  level: number,
+  pack: number,
+  x: number,
+  y: number,
+): void {
+  addActor(world, rank, x, y, "", rank, "blade", "", { level, pack });
 }
 
 function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
@@ -1720,10 +1949,18 @@ function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
   }
   const next = actor.path[0];
   if (!next) {
-    think(world, actor, events);
+    if (actor.pack > 0) packThink(world, actor, events);
+    else think(world, actor, events);
     return;
   }
   const ahead = blockerAt(world, next.x, next.y, actor);
+  // A laid monster never steps out of its pocket, and one held up decides again.
+  if (actor.pack > 0 && (ahead || !mayStand(world, actor, next.x, next.y))) {
+    setPath(world, actor, []);
+    actor.blocked = 0;
+    actor.wait = ahead ? 2 : 0;
+    return;
+  }
   if (ahead) {
     // Someone stands where this actor wants to step. Wait a little, then look
     // once for a way round the people in the way, no more than a couple of
@@ -1913,6 +2150,10 @@ export function hashStateAs(world: World, prints: Prints): string {
       a.kills,
       ...STATUS_FIELDS.map((field) => a.status[field]),
       ...ordersInts(a),
+      a.level,
+      a.pack,
+      a.carry,
+      a.place,
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
@@ -1921,14 +2162,17 @@ export function hashStateAs(world: World, prints: Prints): string {
     world.arrows.length,
     ...world.arrows.flatMap((r) => [r.by, r.x, r.y, r.aim, r.left, r.blow, r.crit ? 1 : 0]),
     ...(world.cycle ? [1, ...cycleInts(world.cycle)] : [0]),
+    ...(world.plate ? [1, ...plateInts(world.plate)] : [0]),
   ]);
 }
 
 /**
- * Version 13 is the walking city's first: the deck, the cycle and the
- * landing. Snapshots before it are of the camp world, and are refused.
+ * Version 13 was the walking city's first: the deck, the cycle and the
+ * landing. 14 has the monsters laid on a landing: each actor's level, pack,
+ * carry and place, the plate, and the landing's far level and extra dens.
+ * Snapshots before 13 are of the camp world, and are refused.
  */
-export const SNAPSHOT_VERSION = 13;
+export const SNAPSHOT_VERSION = 14;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
@@ -2026,9 +2270,10 @@ export function viewerMessage(
   blows: readonly Blow[],
   knocks: readonly Knock[] = [],
 ): string {
-  const unsent = world.actors.map((a) =>
-    unsentOrders(a.kind === ADVENTURER, a.flag !== FLAG_NONE, world.programs[a.program]),
-  );
+  const unsent = world.actors.map((a) => ({
+    ...unsentOrders(a.kind === ADVENTURER, a.flag !== FLAG_NONE, world.programs[a.program]),
+    ...(a.pack > 0 ? laidUnsent(a.kind) : {}),
+  }));
   const seen = savedOf({
     ...world,
     actors: world.actors.map((a, i) => ({ ...a, ...unsent[i] })),
@@ -2047,6 +2292,33 @@ export function viewerMessage(
   });
 }
 
+/**
+ * The fields of a laid monster that never change from what `addMonster`
+ * gives it, which a viewer message leaves out (`viewerMessage`): a landing
+ * holds up to 700, and these are most of each one's size. Its statuses are
+ * sent, since hits change them.
+ */
+function laidUnsent(kind: string): Partial<Actor> {
+  return {
+    name: kind,
+    blocked: 0,
+    program: "",
+    memory: new Array<number>(MEMORY_SLOTS).fill(0),
+    rule: -1,
+    fault: 0,
+    stalled: 0,
+    xp: noXp(),
+    bag: emptyBag(),
+    bank: emptyBank(),
+    deaths: 0,
+    weapon: "",
+    flask: 0,
+    kills: 0,
+    carry: 0,
+    place: 0,
+  };
+}
+
 /** A viewer message's actors with the orders it leaves out put back, as `viewerMessage` hashed them. */
 function withUnsent(saved: Saved, programs: Programs): Saved {
   const { state } = saved;
@@ -2055,14 +2327,15 @@ function withUnsent(saved: Saved, programs: Programs): Saved {
   if (!Array.isArray(actors)) return saved;
   const filled = actors.map((item: unknown) => {
     if (typeof item !== "object" || item === null) return item;
-    const { kind, program } = item as Record<string, unknown>;
+    const { kind, program, pack } = item as Record<string, unknown>;
     const table =
       typeof program === "string" && Object.hasOwn(programs, program)
         ? programs[program]
         : undefined;
     // What the message has stands; a full snapshot has every field, and a
     // citizen with a flag is sent all of it.
-    return { ...unsentOrders(kind === ADVENTURER, false, table), ...item };
+    const laid = isInt32(pack) && pack > 0 && typeof kind === "string" ? laidUnsent(kind) : {};
+    return { ...unsentOrders(kind === ADVENTURER, false, table), ...laid, ...item };
   });
   return { ...saved, state: { ...state, actors: filled } };
 }
@@ -2292,6 +2565,7 @@ export function readState(
     nodes: rawNodes,
     arrows: rawArrows,
     cycle: rawCycle,
+    plate: rawPlate,
   } = raw as Record<string, unknown>;
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
   let cycle: Cycle | null = null;
@@ -2307,6 +2581,14 @@ export function readState(
   if (typeof rng !== "object" || rng === null) return null;
   const { a, b, c, d } = rng as Record<string, unknown>;
   if (!isInt32(a) || !isInt32(b) || !isInt32(c) || !isInt32(d)) return null;
+  // A plate stands on a landing from legs-plant to lift-off, and only then.
+  let plate: Plate | null = null;
+  const onLanding = cycle !== null && landed(cycle, tick);
+  if (onLanding !== (rawPlate !== null)) return null;
+  if (cycle && onLanding) {
+    plate = readPlate(rawPlate, landingFor(cycle.city, cycle.landing), nextActorId);
+    if (!plate) return null;
+  }
 
   const world: World = {
     atlas,
@@ -2320,6 +2602,7 @@ export function readState(
     nodes,
     arrows: [],
     cycle,
+    plate,
   };
   let lastId = 0;
   for (const item of actors as unknown[]) {
@@ -2355,6 +2638,10 @@ export function readState(
       flask,
       kills,
       status: rawStatus,
+      level,
+      pack,
+      carry,
+      place,
     } = item as Record<string, unknown>;
     // An adventurer holds a weapon of one of the families, and a monster none.
     if (kind === ADVENTURER ? !FAMILIES.includes(weapon as Family) : weapon !== "") return null;
@@ -2379,11 +2666,28 @@ export function readState(
     if (!isInt32(id) || id <= lastId || id >= nextActorId) return null;
     lastId = id;
     if (typeof kind !== "string") return null;
-    if (kind !== ADVENTURER && !Object.hasOwn(kinds, kind)) return null;
+    if (!isInt32(level) || !isInt32(pack) || pack < 0) return null;
+    // A laid monster is of a rank's kind, at a level of its own, in a pack on the plate.
+    const laidOne = pack > 0;
+    if (laidOne) {
+      if (!isLaid(kind) || level < 1 || level > MOST_KIND_LEVEL) return null;
+      if (!plate?.packs.some((p) => p.id === pack)) return null;
+    } else {
+      if (level !== 0) return null;
+      if (kind !== ADVENTURER && !Object.hasOwn(kinds, kind)) return null;
+    }
     const adventurer = kind === ADVENTURER;
+    // Only a citizen has a share to carry between landings.
+    if (!isInt32(carry) || !isInt32(place)) return null;
+    if (adventurer ? carry < 0 || carry > 99 || place < 0 || place > 9 : carry !== 0 || place !== 0)
+      return null;
     const ground = (px: number, py: number): boolean => walkable(atlas, px, py);
     const stepped = (p: Point, q: Point): boolean => linked(atlas, p.x, p.y, q.x, q.y);
-    const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
+    const numbers = adventurer
+      ? citizenKind(levelFor(xp[HITPOINTS] as number))
+      : laidOne
+        ? laidKind(kind as Rank, level)
+        : (kinds[kind] as Kind);
     const lasts = statusTicksFor(adventurer, numbers.rank);
     const status = readStatus(rawStatus, nextActorId, lasts, adventurer);
     if (!status) return null;
@@ -2420,17 +2724,20 @@ export function readState(
     if (steps.length === 0 && blocked !== 0) return null;
     // An attack is only begun standing still with nowhere to go.
     if (windup > 0 && (steps.length > 0 || moveTicksLeft > 0)) return null;
-    if (typeof program !== "string" || !Object.hasOwn(programs, program)) return null;
+    // A laid monster runs no program: its pack decides for it.
+    if (typeof program !== "string") return null;
+    if (laidOne ? program !== "" : !Object.hasOwn(programs, program)) return null;
+    const table = laidOne ? NO_PROGRAM : (programs[program] as Program);
     if (!Array.isArray(memory) || memory.length !== MEMORY_SLOTS || !memory.every(isInt32))
       return null;
-    if (!isInt32(rule) || rule < -1 || rule >= (programs[program] as Program).rules.length) {
+    if (!isInt32(rule) || rule < -1 || rule >= table.rules.length) {
       return null;
     }
     if (!isInt32(fault) || fault < 0 || fault >= FAULTS.length) return null;
     const orders = readOrders(
       item as Record<string, unknown>,
       adventurer,
-      programs[program] as Program,
+      table,
       atlas,
       tick,
       seen,
@@ -2468,6 +2775,10 @@ export function readState(
       flask,
       kills,
       status,
+      level,
+      pack,
+      carry,
+      place,
     });
   }
   // A city berths no more citizens than it has room for.
@@ -2475,14 +2786,18 @@ export function readState(
   // In transit the ground is the deck alone: lift-off leaves every monster
   // behind, and none is put on the city's own ground.
   if (cycle && !landed(cycle, tick) && world.actors.some((a) => a.kind !== ADVENTURER)) return null;
-  // Only adventurers share a tile.
+  // Only adventurers share a tile, and up to three fodder; a laid monster stands in its pocket.
+  const onTile = new Map<number, Actor[]>();
   for (const actor of world.actors) {
-    if (
-      world.actors.some(
-        (other) => other.x === actor.x && other.y === actor.y && blocks(other, actor),
-      )
-    )
-      return null;
+    if (!mayStand(world, actor, actor.x, actor.y)) return null;
+    const key = (actor.y - atlas.top) * atlas.width + (actor.x - atlas.left);
+    const here = onTile.get(key);
+    if (here) here.push(actor);
+    else onTile.set(key, [actor]);
+  }
+  for (const here of onTile.values()) {
+    if (here.filter(laidFodder).length > FODDER_PER_TILE) return null;
+    if (here.some((a) => here.some((b) => blocks(a, b)))) return null;
   }
   // Every mark belongs to an actor in wind-up, and an actor in wind-up has
   // exactly the marks of its blow, the way it aims, from where it stands.
