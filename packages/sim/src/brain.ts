@@ -649,8 +649,14 @@ function act(
       setPath(world, actor, wayTo(world, actor, { x: a, y: b }, round));
       break;
     case "wander": {
+      // A citizen stops on the tile with room nearest the one drawn, as
+      // walk_to does, so the deck keeps PER_TILE to a tile.
       const to = randomWalkableTile(world, actor);
-      setPath(world, actor, findPath(world.atlas, actor, to) ?? []);
+      const way =
+        actor.kind === ADVENTURER
+          ? wayTo(world, actor, to, round)
+          : (findPath(world.atlas, actor, to) ?? []);
+      setPath(world, actor, way);
       break;
     }
     case "attack": {

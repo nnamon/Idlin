@@ -55,7 +55,10 @@ describe("a tick at scale", () => {
     // the crowd's programs: the camp's wolves and goblins wander where they
     // walked their day rounds, and nobody reads the clock or the firelight.
     // It also changed what version 13 hashes: no shifts and no spawn waits.
-    expect(hashWorld(world)).toBe("e47a099c5b2f153d");
+    // Changed by a resident's wander ending on the free tile nearest the one
+    // drawn, through wayTo (#438), where it used to stop on that tile even
+    // with someone on it.
+    expect(hashWorld(world)).toBe("5842c31b7edb4372");
     // Over the 300 ticks: some 4,400 field tiles and 750 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
     // 83,000 tiles a tick off their queues at this load. A blow now moves every
@@ -64,12 +67,13 @@ describe("a tick at scale", () => {
     // A staggered monster stands through its wind-up again instead of
     // walking, which brought them down from 3,800 and 3,100. With the camp's
     // monsters wandering where they walked their rounds (#432) they are some
-    // 4,400 and 750.
+    // 4,400 and 750. A resident's wander reading a field to the tile it drew
+    // (#438) added 9 fields and about 1% to both counts.
     expect(workOf(world)).toEqual({
-      fieldTiles: 1_311_057,
-      fields: 2_998,
-      searchTiles: 223_808,
-      actors: 2_005_925,
+      fieldTiles: 1_327_928,
+      fields: 3_007,
+      searchTiles: 224_671,
+      actors: 2_006_140,
     });
   });
 

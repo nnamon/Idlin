@@ -77,7 +77,8 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "wander",
     kind: "action",
     args: 0,
-    about: "Walk to a walkable tile chosen at random on the ground this actor stands on.",
+    about:
+      "Walk to a walkable tile chosen at random on the ground this actor stands on. A resident stops on the free tile nearest it, as `walk_to` does.",
   },
   { id: 10, name: "hp", kind: "sensor", args: 0, about: "This actor's hitpoints." },
   {

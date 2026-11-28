@@ -52,8 +52,10 @@ describe("world", () => {
     // (#405): hashed as version 11 without Deckhand it is 861d9d19d967717c.
     // Changed by the deck (#432): the world is the camp's map alone, with no
     // regions, spawn table or clock, its program table the camp's with the
-    // Deckhand as the camp ran it, hashed as version 13 hashes.
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("e0d7708a22b4e267");
+    // Deckhand as the camp ran it, hashed as version 13 hashes. Changed by a
+    // resident's wander ending on the free tile nearest the one drawn, through
+    // wayTo (#438), where it used to stop on that tile even with someone on it.
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("66bada63961c5522");
   });
 
   it("the city reaches the pinned state after 4000 ticks from a fixed seed, with chatters aboard", () => {

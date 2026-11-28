@@ -1505,8 +1505,9 @@ export function homeOf(world: World): Point {
 
 /**
  * The deck tile nearest `from` by walking over the deck with room for one
- * more citizen (PER_TILE to a tile), or null if every one is full. `self` is
- * not counted where it stands.
+ * more citizen (PER_TILE to a tile), or null if every one is full. A citizen
+ * walking somewhere counts where its walk ends, as `wayTo` counts it, so a
+ * newcomer does not take the room it is headed for. `self` is not counted.
  */
 function berthNear(world: World, from: Point, self?: Actor): Point | null {
   const { atlas } = world;
@@ -1514,7 +1515,8 @@ function berthNear(world: World, from: Point, self?: Actor): Point | null {
   const count = new Map<number, number>();
   for (const other of world.actors) {
     if (other === self) continue;
-    const tile = tileAt(atlas, other.x, other.y);
+    const at = (other.kind === ADVENTURER && other.path[other.path.length - 1]) || other;
+    const tile = tileAt(atlas, at.x, at.y);
     count.set(tile, (count.get(tile) ?? 0) + (other.kind === ADVENTURER ? 1 : PER_TILE));
   }
   const start = tileAt(atlas, from.x, from.y);
