@@ -32,18 +32,21 @@ import { nextInt } from "./rng.ts";
 import { levelFor, SKILLS } from "./skills.ts";
 import { syscall } from "./syscalls.ts";
 import { FAULTS, type Program, runDecision } from "./vm.ts";
+import { directionTo, drinkOf } from "./weapons.ts";
 import {
   type Actor,
   ADVENTURER,
   blockerAt,
+  blowTiles,
+  blowTimesOf,
   canStep,
   clock,
   enemies,
   inFirelight,
   kindOf,
   LIGHT_REACH,
-  lineOfAttack,
   mending,
+  reachOf,
   sameRegion,
   type World,
   type WorldEvent,
@@ -229,13 +232,17 @@ function wayFrom(world: World, actor: Actor, from: Point): Point[] {
   return path.reverse().slice(0, FLEE_STEPS);
 }
 
-/** The tiles an attack towards (x, y) would land on. */
-function attackTiles(world: World, actor: Actor, x: number, y: number): Point[] {
+/**
+ * The way an attack towards (x, y) faces, as an index into DIRECTIONS, or -1
+ * at the actor's own tile. An adventurer turns to the nearest of the eight
+ * directions; a monster to the nearer of up, down, left and right.
+ */
+function aimAt(actor: Actor, x: number, y: number): number {
   const dx = x - actor.x;
   const dy = y - actor.y;
-  if (dx === 0 && dy === 0) return [];
-  const [sx, sy] = Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
-  return lineOfAttack(world, actor, sx, sy);
+  if (dx === 0 && dy === 0) return -1;
+  if (actor.weapon !== "") return directionTo(dx, dy);
+  return Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 4) : dy > 0 ? 2 : 6;
 }
 
 /**
@@ -612,9 +619,32 @@ function sense(
           inFirelight(world, other.x, other.y),
       );
     }
+    case "weapon_reach":
+      return reachOf(world, actor);
+    case "flask":
+      return actor.flask;
     default:
       return 0;
   }
+}
+
+/**
+ * Drinks from the flask: a drink gives back DRINK_SHARE of the most
+ * hitpoints the actor can have, up to that most. At full hitpoints, or with
+ * an empty flask, nothing happens and the drink is kept.
+ */
+function drink(world: World, actor: Actor, events: WorldEvent[]): void {
+  const most = kindOf(world, actor).hp;
+  if (actor.flask <= 0 || actor.hp >= most) return;
+  actor.flask--;
+  actor.hp = Math.min(most, actor.hp + drinkOf(most));
+  events.push({
+    type: "drink",
+    tick: world.tick,
+    actor: actor.id,
+    hp: actor.hp,
+    flask: actor.flask,
+  });
 }
 
 function act(
@@ -646,9 +676,11 @@ function act(
       break;
     }
     case "attack": {
-      const tiles = attackTiles(world, actor, a, b);
+      const aim = aimAt(actor, a, b);
+      const tiles = aim < 0 ? [] : blowTiles(world, actor, aim);
       if (tiles.length === 0) break;
-      actor.windup = kindOf(world, actor).windup;
+      actor.aim = aim;
+      actor.windup = blowTimesOf(world, actor).windup;
       for (const tile of tiles) addMark(world, { x: tile.x, y: tile.y, by: actor.id });
       events.push({
         type: "attack",
@@ -712,6 +744,9 @@ function act(
     case "eat":
       // Quick enough to do between blows: the same short pause as any action that ends at once.
       eat(world, actor, events);
+      break;
+    case "drink":
+      drink(world, actor, events);
       break;
     default:
       // `idle`, and any action this build does not know.

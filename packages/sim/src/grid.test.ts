@@ -415,8 +415,9 @@ describe("walk_to's way", () => {
     expect(count("false near")).toBeGreaterThan(10);
     expect(count("false none")).toBeGreaterThan(10);
     // Allowed the long way round, some went more than DETOUR_STEPS out of their way
-    // (63 of the 400), and some were held up where people shut the goal off (21).
-    expect(count("true long")).toBeGreaterThan(30);
+    // (13 of the 400 since the weapons changed who fights where), and some were
+    // held up where people shut the goal off.
+    expect(count("true long")).toBeGreaterThan(10);
     expect(count("true near")).toBeGreaterThan(10);
     // On some of those long ways, step_to takes more than one step.
     expect(longer).toBeGreaterThan(10);

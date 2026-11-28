@@ -29,6 +29,7 @@ import {
   mending,
   type Programs,
   restore,
+  SNAPSHOT_VERSION,
   SnapshotError,
   type Spawns,
   snapshot,
@@ -96,7 +97,7 @@ const data = (): Data => JSON.parse(lived);
 const actors = (d: Data): Record<string, unknown>[] => d.state.actors as Record<string, unknown>[];
 /** `d` as text, with the hash its state would need to pass as undamaged. */
 const forge = (d: Data): string => {
-  d.hash = hashStateAs(d.state as unknown as World, 9, {
+  d.hash = hashStateAs(d.state as unknown as World, SNAPSHOT_VERSION, {
     map: d.map as string,
     programs: d.programs as string,
     kinds: d.kinds as string,

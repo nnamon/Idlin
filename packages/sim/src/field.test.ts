@@ -72,8 +72,10 @@ describe("ways where there is only one", () => {
     }
     // They went the length of the comb, not stood about.
     expect(been.has("26,1") && been.has("2,19") && been.has("14,1")).toBe(true);
-    // Taken on main before the ways were shared.
-    expect(hashWorld(world)).toBe("ad90ea6b0d31a58e");
+    // Taken on main before the ways were shared, as ad90ea6b0d31a58e. The comb
+    // has no monsters, so nobody swings; the weapons (#393) changed the hash
+    // only through the weapon and flask that snapshot version 10 hashes.
+    expect(hashWorld(world)).toBe("54e7508897f9c1e1");
   });
 });
 

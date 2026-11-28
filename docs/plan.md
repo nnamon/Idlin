@@ -184,8 +184,12 @@ work.
 ### 2.5 What a viewer is sent
 
 Each tick's message is the whole snapshot, about 440 bytes an actor, with the
-tick's blows beside it. A blow is cut to what a frame draws of it: who struck,
-whom, how much, whether it crit and the type that did most of it. At 600
+tick's blows and knockbacks beside it. A blow is cut to what a frame draws of
+it: who struck, whom, how much, whether it crit and the type that did most of
+it. A knockback is who pushed whom, the tile it went from and the one it
+ended on, and whether a wall or a body stopped it short; what is left under a
+tile is on the actor. Arrows in flight are in the snapshot, each with its
+tile, its direction and the tiles it has left. At 600
 actors the snapshot is 264 KB a tick, and the server drops a viewer that
 falls 1 MiB behind. The fields one frame draws come to about 170 bytes an
 actor, or 100 KB a tick. The viewer restores a whole world from each message

@@ -1,8 +1,8 @@
 // The world as a running process: steps it in real time, saves it on an
 // interval and on stop, and streams it to viewers over a WebSocket. Every
 // message a viewer receives is the sim's viewer message: the snapshot of the
-// world after a tick, with that tick's blows. The first comes on connect, with
-// no blows, then one per tick. Chat reaches the world through the queue in
+// world after a tick, with that tick's blows and knockbacks. The first comes
+// on connect, with neither, then one per tick. Chat reaches the world through the queue in
 // packages/chat, and each tick's inputs go in the input log beside the newest
 // snapshot before the world is stepped with them.
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
@@ -14,6 +14,8 @@ import {
   type Blow,
   blowsOf,
   createWorld,
+  type Knock,
+  knocksOf,
   spawnsNearCamp,
   step,
   TICKS_PER_SECOND,
@@ -342,12 +344,12 @@ export class WorldServer {
     this.inputLog?.append(this.world.tick, inputs);
     const events = step(this.world, inputs);
     if (this.world.tick - this.savedTick >= this.options.snapshotTicks) this.save();
-    this.send(blowsOf(events));
+    this.send(blowsOf(events), knocksOf(events));
   }
 
-  private send(blows: readonly Blow[]): void {
+  private send(blows: readonly Blow[], knocks: readonly Knock[]): void {
     if (this.sockets.clients.size === 0) return;
-    const text = viewerMessage(this.world, blows);
+    const text = viewerMessage(this.world, blows, knocks);
     for (const socket of this.sockets.clients) {
       if (socket.readyState !== WebSocket.OPEN) continue;
       if (socket.bufferedAmount > MAX_QUEUED_BYTES) {

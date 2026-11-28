@@ -56,6 +56,21 @@ import {
   ProgramError,
   validateProgram,
 } from "./vm.ts";
+import {
+  ARROW_RANGE,
+  type BlowTimes,
+  blowShape,
+  blowTimes,
+  DIRECTIONS,
+  directionTo,
+  FAMILIES,
+  type Family,
+  FLASK_DRINKS,
+  isLine,
+  KILLS_PER_DRINK,
+  QUARTERS_PER_TILE,
+  WEAPONS,
+} from "./weapons.ts";
 
 export const TICKS_PER_SECOND = 10;
 /** A game hour lasts one minute of stream time, so a game day lasts 24 minutes. */
@@ -470,6 +485,42 @@ export interface Actor {
   bank: number[];
   /** Times this adventurer has been struck down, up to MAX_DEATHS. Always 0 for a monster, which leaves the world. */
   deaths: number;
+  /** The weapon family an adventurer fights with. Empty for a monster, which strikes in its kind's line. */
+  readonly weapon: Family | "";
+  /** The way its blow faces, as an index into DIRECTIONS: the one being wound up, or else the last. */
+  aim: number;
+  /**
+   * Knockback not yet come to a whole tile, in quarter tiles along each axis,
+   * from -3 to 3. A step of its own puts it back to 0.
+   */
+  knockX: number;
+  knockY: number;
+  /** Drinks left in an adventurer's flask, up to FLASK_DRINKS. Always 0 for a monster. */
+  flask: number;
+  /**
+   * Kills towards the next drink back, below KILLS_PER_DRINK. Only counted
+   * while a drink is missing, so 0 with a full flask, and always 0 for a monster.
+   */
+  kills: number;
+}
+
+/**
+ * An arrow in flight. It moves a tile a tick in direction `aim` and stops in
+ * the first enemy of its shooter it meets, at a wall or the edge of its
+ * region, or when it has flown ARROW_RANGE tiles.
+ */
+export interface Arrow {
+  /** Id of the adventurer that loosed it. */
+  readonly by: number;
+  /** The tile it is over. */
+  readonly x: number;
+  readonly y: number;
+  readonly aim: number;
+  /** Tiles it has still to fly, 1 to ARROW_RANGE. */
+  readonly left: number;
+  /** The shooter's blow when it was loosed, and whether that swing crit. */
+  readonly blow: number;
+  readonly crit: boolean;
 }
 
 export type Shift = "" | "day" | "night";
@@ -495,6 +546,8 @@ export interface World {
   nextSpawn: number[];
   /** What each of the atlas's nodes has left, in the atlas's order. */
   nodes: NodeState[];
+  /** Arrows in flight, in the order they were loosed. */
+  arrows: Arrow[];
 }
 
 export type Input =
@@ -505,6 +558,8 @@ export type Input =
       readonly program: string;
       /** A monster kind from the world's table. Left out, the actor is an adventurer. */
       readonly kind?: string;
+      /** An adventurer's weapon family; left out, a blade. A monster takes none. */
+      readonly weapon?: Family;
     } & Point)
   | ChatInput;
 
@@ -556,6 +611,7 @@ export function createWorld(
     marks: [],
     nextSpawn: atlas.regions.map(() => 0),
     nodes: fullNodes(atlas),
+    arrows: [],
   };
 }
 
@@ -579,6 +635,42 @@ export function lineOfAttack(world: World, actor: Actor, sx: number, sy: number)
   }
   return tiles;
 }
+
+/**
+ * The tiles an actor's blow facing `aim` (an index into DIRECTIONS) lands on.
+ * A monster strikes in its kind's line. An adventurer's weapon gives the
+ * shape, without the tiles that cannot be walked on or are in another region;
+ * a spear's or a bow's line ends at the first of those.
+ */
+export function blowTiles(world: World, actor: Actor, aim: number): Point[] {
+  const [sx, sy] = DIRECTIONS[aim] as readonly [number, number];
+  if (actor.weapon === "") return lineOfAttack(world, actor, sx, sy);
+  const { atlas } = world;
+  const region = regionAt(atlas, actor.x, actor.y);
+  const tiles: Point[] = [];
+  for (const offset of blowShape(actor.weapon, aim)) {
+    const tile = { x: actor.x + offset.x, y: actor.y + offset.y };
+    if (walkable(atlas, tile.x, tile.y) && regionAt(atlas, tile.x, tile.y) === region)
+      tiles.push(tile);
+    else if (isLine(actor.weapon)) break;
+  }
+  return tiles;
+}
+
+const MELEE = SKILLS.indexOf("melee");
+
+/** An adventurer's Arms, which its Melee level stands in for until the deck's citizens have Arms. */
+export const armsOf = (actor: Actor): number => levelFor(actor.xp[MELEE] as number);
+
+/** An actor's wind-up and recovery: its weapon's at its Arms for an adventurer, its kind's for a monster. */
+export const blowTimesOf = (world: World, actor: Actor): BlowTimes =>
+  actor.weapon === ""
+    ? { ...kindOf(world, actor), carry: 0 }
+    : blowTimes(actor.weapon, armsOf(actor));
+
+/** How far an actor's blow reaches, as `weapon_reach` reads it. */
+export const reachOf = (world: World, actor: Actor): number =>
+  actor.weapon === "" ? kindOf(world, actor).reach : WEAPONS[actor.weapon].reach;
 
 /** Adventurers and monsters are enemies; nobody else is. */
 export const enemies = (a: Actor, b: Actor): boolean =>
@@ -734,6 +826,46 @@ export type WorldEvent =
       readonly actor: number;
       /** Its hitpoints afterwards. */
       readonly hp: number;
+    }
+  | {
+      readonly type: "drink";
+      readonly tick: number;
+      readonly actor: number;
+      /** Its hitpoints and the drinks left afterwards. */
+      readonly hp: number;
+      readonly flask: number;
+    }
+  | {
+      /** A drink came back to the flask, for kills. */
+      readonly type: "refill";
+      readonly tick: number;
+      readonly actor: number;
+      readonly flask: number;
+    }
+  | {
+      /** An arrow was loosed from (x, y). */
+      readonly type: "shoot";
+      readonly tick: number;
+      readonly actor: number;
+      readonly x: number;
+      readonly y: number;
+      readonly aim: number;
+    }
+  | {
+      /**
+       * A hit pushed a body back. It went from (fromX, fromY) to (x, y), which
+       * is the same tile when the push was under a whole tile or a wall or
+       * someone stood right behind it. `stopped` says it was stopped short.
+       */
+      readonly type: "knock";
+      readonly tick: number;
+      readonly actor: number;
+      readonly by: number;
+      readonly fromX: number;
+      readonly fromY: number;
+      readonly x: number;
+      readonly y: number;
+      readonly stopped: boolean;
     };
 
 /**
@@ -765,20 +897,186 @@ const UNARMOURED: Defender = { armour: 0 };
 
 /**
  * What an actor swings with. An adventurer's blow is the base blow of its
- * Melee level, which is the slice's Arms, with the bare blade every citizen
- * holds. A monster's is its kind's damage, until monsters have ranks and levels.
+ * Arms, with its weapon family's share of the hit. A monster's is its kind's
+ * damage, until monsters have ranks and levels.
  */
 function swingerOf(actor: Actor, kind: Kind): Attacker {
-  if (actor.kind !== ADVENTURER) return { blow: kind.damage, family: FULL };
-  return { blow: blow(levelFor(actor.xp[MELEE] as number)), family: FAMILY_HIT.blade };
+  if (actor.weapon === "") return { blow: kind.damage, family: FULL };
+  return { blow: blow(armsOf(actor)), family: FAMILY_HIT[actor.weapon] };
 }
-const MELEE = SKILLS.indexOf("melee");
 
-/** Counts every wind-up down, lands the attacks that are due, and takes out whoever has no hitpoints left. */
+/** One hit by `attacker` on `target`, worked out by `hit`, and the experience it gives. */
+function strike(
+  world: World,
+  attacker: Actor,
+  target: Actor,
+  swinger: Attacker,
+  crit: boolean,
+  events: WorldEvent[],
+): void {
+  // Nobody wears armour yet: coats come with wearing gear.
+  const { amount, type } = hit(swinger, UNARMOURED, NO_LINES, crit);
+  // Experience counts the hitpoints a blow actually took, not what it would have.
+  const taken = Math.min(amount, target.hp);
+  target.hp -= amount;
+  events.push({
+    type: "hit",
+    tick: world.tick,
+    actor: attacker.id,
+    target: target.id,
+    damage: amount,
+    crit,
+    damageType: type,
+    hp: target.hp,
+  });
+  const learner = attacker.kind === ADVENTURER ? attacker : target;
+  const skill: Skill = learner === attacker ? "melee" : "hitpoints";
+  const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
+  if (level > 0) events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
+}
+
+/**
+ * Whether a body knocked from where it stands one tile by (mx, my) can go
+ * there: ground in its own region, with nobody on it who blocks it, and for a
+ * diagonal, no wall on either side of the corner it passes.
+ */
+function knockable(world: World, body: Actor, mx: number, my: number): boolean {
+  const { atlas } = world;
+  const x = body.x + mx;
+  const y = body.y + my;
+  if (!walkable(atlas, x, y) || regionAt(atlas, x, y) !== regionAt(atlas, body.x, body.y))
+    return false;
+  if (mx !== 0 && my !== 0 && !(walkable(atlas, x, body.y) && walkable(atlas, body.x, y)))
+    return false;
+  return blockerAt(world, x, y, body) === undefined;
+}
+
+/**
+ * Pushes `body` `quarters` quarter tiles in direction `aim`, on top of what
+ * earlier pushes left. Each whole tile moves it a tile, until a tile it
+ * cannot be knocked onto stops it; the rest of the push is then lost. Returns
+ * whether it moved. One that moves stops walking where it lands.
+ */
+function knock(
+  world: World,
+  body: Actor,
+  aim: number,
+  quarters: number,
+  by: number,
+  events: WorldEvent[],
+): boolean {
+  if (quarters <= 0 || body.hp <= 0) return false;
+  const [sx, sy] = DIRECTIONS[aim] as readonly [number, number];
+  let kx = body.knockX + sx * quarters;
+  let ky = body.knockY + sy * quarters;
+  const fromX = body.x;
+  const fromY = body.y;
+  const whole = (n: number): number =>
+    n >= QUARTERS_PER_TILE ? 1 : n <= -QUARTERS_PER_TILE ? -1 : 0;
+  let stopped = false;
+  for (;;) {
+    const mx = whole(kx);
+    const my = whole(ky);
+    if (mx === 0 && my === 0) break;
+    if (!knockable(world, body, mx, my)) {
+      kx = 0;
+      ky = 0;
+      stopped = true;
+      break;
+    }
+    putAt(world, body, body.x + mx, body.y + my);
+    kx -= mx * QUARTERS_PER_TILE;
+    ky -= my * QUARTERS_PER_TILE;
+  }
+  body.knockX = kx;
+  body.knockY = ky;
+  const moved = body.x !== fromX || body.y !== fromY;
+  if (moved) {
+    body.moveTicksLeft = 0;
+    setPath(world, body, []);
+    body.blocked = 0;
+  }
+  events.push({
+    type: "knock",
+    tick: world.tick,
+    actor: body.id,
+    by,
+    fromX,
+    fromY,
+    x: body.x,
+    y: body.y,
+    stopped,
+  });
+  return moved;
+}
+
+/**
+ * Moves the marks of `body`'s blow to where it now stands, facing the same
+ * way, and returns them. A body knocked back in its wind-up takes its blow
+ * with it; aimed at a wall, the blow lands on nothing.
+ */
+function reaim(world: World, body: Actor): Mark[] {
+  world.marks = world.marks.filter((mark) => mark.by !== body.id);
+  const marks = blowTiles(world, body, body.aim).map((tile) => ({ ...tile, by: body.id }));
+  for (const mark of marks) addMark(world, mark);
+  return marks;
+}
+
+/**
+ * Flies every arrow on a tile: into the first enemy of its shooter on that
+ * tile, which it hits and stops in, or on, or out at a wall, at its region's
+ * edge or at the end of its range.
+ */
+function flyArrows(
+  world: World,
+  events: WorldEvent[],
+  struck: Map<number, number>,
+  push: (body: Actor, aim: number, quarters: number, by: number) => void,
+): void {
+  if (world.arrows.length === 0) return;
+  const { atlas } = world;
+  const grid = gridOf(world);
+  const flying: Arrow[] = [];
+  for (const arrow of world.arrows) {
+    const [sx, sy] = DIRECTIONS[arrow.aim] as readonly [number, number];
+    const x = arrow.x + sx;
+    const y = arrow.y + sy;
+    // Adventurers never leave the world, so the shooter is still in it.
+    const shooter = grid.byId.get(arrow.by) as Actor;
+    const inWay = (a: Actor): boolean => a.hp > 0 && enemies(a, shooter) && !mending(a);
+    // An enemy that came onto the arrow's own tile since it got there is in its way too.
+    const met = firstAt(grid, arrow.x, arrow.y, inWay);
+    if (
+      !met &&
+      (!walkable(atlas, x, y) || regionAt(atlas, x, y) !== regionAt(atlas, arrow.x, arrow.y))
+    ) {
+      events.push({ type: "miss", tick: world.tick, actor: arrow.by, x: arrow.x, y: arrow.y });
+      continue;
+    }
+    const target = met ?? firstAt(grid, x, y, inWay);
+    if (target) {
+      const swinger = { blow: arrow.blow, family: FAMILY_HIT.bow };
+      strike(world, shooter, target, swinger, arrow.crit, events);
+      struck.set(target.id, shooter.id);
+      push(target, arrow.aim, WEAPONS.bow.knockback, shooter.id);
+      continue;
+    }
+    if (arrow.left <= 1) {
+      events.push({ type: "miss", tick: world.tick, actor: arrow.by, x, y });
+      continue;
+    }
+    flying.push({ ...arrow, x, y, left: arrow.left - 1 });
+  }
+  world.arrows = flying;
+}
+
+/**
+ * Flies the arrows, counts every wind-up down, lands the blows that are due,
+ * and takes out whoever has no hitpoints left.
+ */
 function landAttacks(world: World, events: WorldEvent[]): void {
+  // Who struck each target last, which is who downs it.
   const struck = new Map<number, number>();
-  // Nobody moves while blows land, so one grid serves them all.
-  let grid: Grid | undefined;
   // Each attacker's marks, in the order they were made.
   const marksBy = new Map<number, Mark[]>();
   for (const mark of world.marks) {
@@ -786,61 +1084,76 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     if (own) own.push(mark);
     else marksBy.set(mark.by, [mark]);
   }
+  const push = (body: Actor, aim: number, quarters: number, by: number): void => {
+    if (knock(world, body, aim, quarters, by, events) && body.windup > 0)
+      marksBy.set(body.id, reaim(world, body));
+  };
   const landed = new Set<number>();
-  for (const attacker of world.actors) {
-    if (attacker.windup === 0) continue;
-    attacker.windup--;
-    // Someone struck down earlier this tick does not get its own blow in.
-    if (attacker.windup > 0 || attacker.hp <= 0) continue;
-    const kind = kindOf(world, attacker);
-    attacker.recover = kind.recovery;
-    landed.add(attacker.id);
-    const citizen = attacker.kind === ADVENTURER;
-    const swinger = swingerOf(attacker, kind);
-    // One roll a swing, however many it lands on; monsters do not crit.
-    const crit = citizen && rollCrit(world.rng, NO_LINES);
-    for (const mark of marksBy.get(attacker.id) ?? []) {
-      // Adventurers can share a tile, so a blow lands on every enemy standing
-      // there. One mending at camp after a down is passed by.
-      grid ??= gridOf(world);
-      const targets = allAt(
-        grid,
-        mark.x,
-        mark.y,
-        (a) => a.hp > 0 && enemies(a, attacker) && !mending(a),
-      );
-      if (targets.length === 0) {
-        events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
+  // Bodies are knocked back while blows land, so the grid is kept in step with them.
+  holdGrid(world);
+  try {
+    flyArrows(world, events, struck, push);
+    const grid = gridOf(world);
+    for (const attacker of world.actors) {
+      if (attacker.windup === 0) continue;
+      attacker.windup--;
+      // Someone struck down earlier this tick does not get its own blow in.
+      if (attacker.windup > 0 || attacker.hp <= 0) continue;
+      const kind = kindOf(world, attacker);
+      attacker.recover = blowTimesOf(world, attacker).recovery;
+      landed.add(attacker.id);
+      const citizen = attacker.kind === ADVENTURER;
+      const swinger = swingerOf(attacker, kind);
+      // One roll a swing, however many it lands on; monsters do not crit.
+      const crit = citizen && rollCrit(world.rng, NO_LINES);
+      if (attacker.weapon === "bow") {
+        // The arrow sets off from the bow and flies from the next tick on.
+        const { id: by, x, y, aim } = attacker;
+        world.arrows.push({ by, x, y, aim, left: ARROW_RANGE, blow: swinger.blow, crit });
+        events.push({ type: "shoot", tick: world.tick, actor: by, x, y, aim });
         continue;
       }
-      for (const target of targets) {
-        // Nobody wears armour yet: coats come with wearing gear.
-        const { amount, type } = hit(swinger, UNARMOURED, NO_LINES, crit);
-        // Experience counts the hitpoints a blow actually took, not what it would have.
-        const taken = Math.min(amount, target.hp);
-        target.hp -= amount;
-        struck.set(target.id, attacker.id);
-        events.push({
-          type: "hit",
-          tick: world.tick,
-          actor: attacker.id,
-          target: target.id,
-          damage: amount,
-          crit,
-          damageType: type,
-          hp: target.hp,
-        });
-        const learner = citizen ? attacker : target;
-        const skill: Skill = learner === attacker ? "melee" : "hitpoints";
-        const level = gainXp(learner.xp, skill, taken * XP_PER_DAMAGE);
-        if (level > 0)
-          events.push({ type: "level", tick: world.tick, actor: learner.id, skill, level });
+      // Every enemy on the blow's tiles is hit before anyone is knocked back,
+      // so nobody is hit twice by one blow. Adventurers can share a tile, so
+      // a blow lands on every enemy standing there. One mending at camp after
+      // a down is passed by.
+      const targets: Actor[] = [];
+      for (const mark of marksBy.get(attacker.id) ?? []) {
+        const here = allAt(
+          grid,
+          mark.x,
+          mark.y,
+          (a) => a.hp > 0 && enemies(a, attacker) && !mending(a),
+        );
+        if (here.length === 0)
+          events.push({ type: "miss", tick: world.tick, actor: attacker.id, x: mark.x, y: mark.y });
+        targets.push(...here);
       }
+      for (const target of targets) {
+        strike(world, attacker, target, swinger, crit, events);
+        struck.set(target.id, attacker.id);
+      }
+      const quarters = attacker.weapon === "" ? 0 : WEAPONS[attacker.weapon].knockback;
+      for (const target of targets) push(target, attacker.aim, quarters, attacker.id);
     }
+  } finally {
+    releaseGrid(world);
   }
   if (landed.size > 0) world.marks = world.marks.filter((mark) => !landed.has(mark.by));
   const out = world.actors.filter((actor) => actor.hp <= 0);
   if (out.length === 0) return;
+  // A kill brings a drink back to a flask that is missing one, every KILLS_PER_DRINK kills.
+  const byId = new Map(world.actors.map((actor) => [actor.id, actor]));
+  for (const actor of out) {
+    const killer = byId.get(struck.get(actor.id) ?? 0);
+    if (actor.kind === ADVENTURER || killer?.kind !== ADVENTURER) continue;
+    if (killer.flask >= FLASK_DRINKS) continue;
+    killer.kills++;
+    if (killer.kills < KILLS_PER_DRINK) continue;
+    killer.kills = 0;
+    killer.flask++;
+    events.push({ type: "refill", tick: world.tick, actor: killer.id, flask: killer.flask });
+  }
   const gone = new Set(out.map((actor) => actor.id));
   world.marks = world.marks.filter((mark) => !gone.has(mark.by));
   world.actors = world.actors.filter((actor) => actor.hp > 0 || actor.kind === ADVENTURER);
@@ -867,12 +1180,17 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     actor.blocked = 0;
     actor.windup = 0;
     actor.recover = 0;
+    actor.knockX = 0;
+    actor.knockY = 0;
     actor.wait = DOWN_TICKS;
     // No rule is in charge while it mends; see `mending`.
     actor.rule = -1;
     actor.fault = 0;
     actor.hp = ADVENTURER_KIND.hp;
     actor.deaths = Math.min(MAX_DEATHS, actor.deaths + 1);
+    // Camp stands in for the deck, where a flask fills again, until the deck is built.
+    actor.flask = FLASK_DRINKS;
+    actor.kills = 0;
   }
 }
 
@@ -940,8 +1258,11 @@ function applyInput(world: World, input: Input): void {
   let fields: Record<string, unknown>;
   try {
     // Read every field once, before anything changes, so a property that throws changes nothing.
-    const { type, name, x, y, program, kind, account, role } = raw as Record<string, unknown>;
-    fields = { type, name, x, y, program, kind, account, role };
+    const { type, name, x, y, program, kind, weapon, account, role } = raw as Record<
+      string,
+      unknown
+    >;
+    fields = { type, name, x, y, program, kind, weapon, account, role };
   } catch {
     return;
   }
@@ -974,7 +1295,10 @@ function applyInput(world: World, input: Input): void {
     // the world on that next tick, so the hour is counted from there.
     holdSpawns(world, region, world.tick + 1);
   }
-  addActor(world, name, x, y, program, kind, "");
+  const weapon = fields.weapon ?? "blade";
+  if (!FAMILIES.includes(weapon as Family) || (kind !== ADVENTURER && fields.weapon !== undefined))
+    return;
+  addActor(world, name, x, y, program, kind, "", weapon as Family);
 }
 
 /**
@@ -1166,7 +1490,9 @@ function addActor(
   program: string,
   kind: string,
   shift: Shift,
+  weapon: Family = "blade",
 ): void {
+  const adventurer = kind === ADVENTURER;
   world.actors.push({
     id: world.nextActorId++,
     name,
@@ -1183,7 +1509,7 @@ function addActor(
     rule: -1,
     fault: 0,
     kind,
-    hp: (kind === ADVENTURER ? ADVENTURER_KIND : (world.kinds[kind] as Kind)).hp,
+    hp: (adventurer ? ADVENTURER_KIND : (world.kinds[kind] as Kind)).hp,
     windup: 0,
     recover: 0,
     shift,
@@ -1192,6 +1518,12 @@ function addActor(
     bag: emptyBag(),
     bank: emptyBank(),
     deaths: 0,
+    weapon: adventurer ? weapon : "",
+    aim: 0,
+    knockX: 0,
+    knockY: 0,
+    flask: adventurer ? FLASK_DRINKS : 0,
+    kills: 0,
   });
 }
 
@@ -1247,6 +1579,9 @@ function updateActor(world: World, actor: Actor, events: WorldEvent[]): void {
   actor.blocked =
     actor.blocked >= BLOCKED_PATIENCE_TICKS && actor.path.length > 0 ? BLOCKED_PATIENCE_TICKS : 0;
   stepOnto(world, actor, next.x, next.y);
+  // A step of its own leaves a knocked body square on its tile again.
+  actor.knockX = 0;
+  actor.knockY = 0;
   actor.moveTicksLeft = stepTicks(world, actor);
 }
 
@@ -1364,7 +1699,8 @@ const halves = (n: number): number[] => [
  * they hashed that map and, in versions 5 and 6, one `nextSpawn`. Version 4
  * had no spawn table, no `nextSpawn`, and no `shift` or `stalled` on actors,
  * versions 4 and 5 had no experience, bag or bank, versions before 8 no
- * death count, and versions before 9 no nodes, so those are left out. Banks
+ * death count, versions before 9 no nodes, and versions before 10 no
+ * weapons, aims, knockback, flasks or arrows, so those are left out. Banks
  * before version 9 held the first V8_GOODS goods only.
  */
 function hashWorldAs(world: World, version: number): string {
@@ -1397,6 +1733,7 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
   const before6 = version < 6;
   const before8 = version < 8;
   const before9 = version < 9;
+  const before10 = version < 10;
   return hashInts([
     ...stringInts(prints.map),
     ...stringInts(prints.programs),
@@ -1432,6 +1769,9 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
       ...(v4 ? [] : [SHIFTS.indexOf(a.shift), a.stalled]),
       ...(before6 ? [] : [...a.xp, ...a.bag, ...(before9 ? a.bank.slice(0, V8_GOODS) : a.bank)]),
       ...(before8 ? [] : [a.deaths]),
+      ...(before10
+        ? []
+        : [FAMILIES.indexOf(a.weapon as Family), a.aim, a.knockX, a.knockY, a.flask, a.kills]),
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
@@ -1444,6 +1784,12 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
     ...(before9
       ? []
       : [world.nodes.length, ...world.nodes.flatMap((n) => [n.left, ...halves(n.back)])]),
+    ...(before10
+      ? []
+      : [
+          world.arrows.length,
+          ...world.arrows.flatMap((r) => [r.by, r.x, r.y, r.aim, r.left, r.blow, r.crit ? 1 : 0]),
+        ]),
   ]);
 }
 
@@ -1474,7 +1820,7 @@ export function hashSpawns(spawns: Spawns): string {
   ]);
 }
 
-export const SNAPSHOT_VERSION = 9;
+export const SNAPSHOT_VERSION = 10;
 /** How many goods there were up to version 8: `logs`, `raw_fish` and `cooked_fish`. */
 const V8_GOODS = 3;
 
@@ -1502,7 +1848,6 @@ export interface Blow {
   /** The damage type that did most of it. */
   readonly type: DamageType;
 }
-
 /** The blows among a tick's events, in the order they landed. */
 export const blowsOf = (events: readonly WorldEvent[]): Blow[] =>
   events.flatMap((e) =>
@@ -1512,24 +1857,65 @@ export const blowsOf = (events: readonly WorldEvent[]): Blow[] =>
   );
 
 /**
- * What the world server sends a viewer after each tick: the snapshot, with the
- * tick's blows beside it. `restore` reads it as it reads a snapshot, and
- * `readMessage` gives the blows as well.
+ * A knockback as a viewer is sent it: who was pushed, by whom, and the tiles
+ * it went from and to, which are the same when it moved less than a tile or
+ * was stopped at once. What is left under a tile is on the actor, as
+ * `knockX` and `knockY`.
  */
-export function viewerMessage(world: World, blows: readonly Blow[]): string {
-  return JSON.stringify({ ...savedOf(world), blows });
+export interface Knock {
+  readonly by: number;
+  readonly target: number;
+  readonly fromX: number;
+  readonly fromY: number;
+  readonly x: number;
+  readonly y: number;
+  /** A wall or a body stopped it short. */
+  readonly stopped: boolean;
 }
 
-/** A viewer message read: the world, and the blows of the tick that made it. */
+/** The knockbacks among a tick's events, in the order they happened. */
+export const knocksOf = (events: readonly WorldEvent[]): Knock[] =>
+  events.flatMap((e) =>
+    e.type === "knock"
+      ? [
+          {
+            by: e.by,
+            target: e.actor,
+            fromX: e.fromX,
+            fromY: e.fromY,
+            x: e.x,
+            y: e.y,
+            stopped: e.stopped,
+          },
+        ]
+      : [],
+  );
+
+/**
+ * What the world server sends a viewer after each tick: the snapshot, with the
+ * tick's blows and knockbacks beside it. Arrows in flight are in the world
+ * itself. `restore` reads it as it reads a snapshot, and `readMessage` gives
+ * the blows and knockbacks as well.
+ */
+export function viewerMessage(
+  world: World,
+  blows: readonly Blow[],
+  knocks: readonly Knock[] = [],
+): string {
+  return JSON.stringify({ ...savedOf(world), blows, knocks });
+}
+
+/** A viewer message read: the world, and the blows and knockbacks of the tick that made it. */
 export interface Message {
   readonly world: World;
   readonly blows: readonly Blow[];
+  readonly knocks: readonly Knock[];
 }
 
 /**
  * Reads a viewer message as `restore` reads a snapshot, refusing the same
- * things. Blows that are not as `viewerMessage` writes them are left out; a
- * plain snapshot has none.
+ * things. Blows and knockbacks that are not as `viewerMessage` writes them
+ * are left out; a plain snapshot has none.
  */
 export function readMessage(
   text: string,
@@ -1540,11 +1926,19 @@ export function readMessage(
 ): Message {
   const data = parseJson(text);
   const world = restoreSaved(savedFrom(data), ground, programs, kinds, spawns);
-  const listed = (data as Record<string, unknown>).blows;
-  const blows = Array.isArray(listed) ? listed.filter(isBlow) : [];
-  return { world, blows };
+  const { blows, knocks } = data as Record<string, unknown>;
+  return {
+    world,
+    blows: Array.isArray(blows) ? blows.filter(isBlow) : [],
+    knocks: Array.isArray(knocks) ? knocks.filter(isKnock) : [],
+  };
 }
 
+const isKnock = (raw: unknown): raw is Knock => {
+  if (typeof raw !== "object" || raw === null) return false;
+  const { by, target, fromX, fromY, x, y, stopped } = raw as Record<string, unknown>;
+  return [by, target, fromX, fromY, x, y].every(isInt32) && typeof stopped === "boolean";
+};
 const isBlow = (raw: unknown): raw is Blow => {
   if (typeof raw !== "object" || raw === null) return false;
   const { by, target, amount, crit, type } = raw as Record<string, unknown>;
@@ -1646,7 +2040,80 @@ export function migrate(version: number, state: unknown, atlas: Atlas): unknown 
   const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
   const v7 = old ? fromVersion6(v6) : v6;
   const v8 = version < 8 ? fromVersion7(v7) : v7;
-  return version < 9 ? fromVersion8(v8, atlas) : v8;
+  const v9 = version < 9 ? fromVersion8(v8, atlas) : v8;
+  return version < 10 ? fromVersion9(v9) : v9;
+}
+
+/**
+ * A version 9 world's state with what version 10 added: every adventurer
+ * holds a blade and a full flask, nobody has been knocked back, each actor in
+ * a wind-up faces the way of its marks, and no arrows are in flight. An
+ * adventurer's wind-up and recovery from then do not fit a blade, so
+ * `restore` calls them off afterwards (see callOffOldBlows), once the
+ * version 9 hash has been checked.
+ */
+function fromVersion9(state: unknown): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors, marks } = state as Record<string, unknown>;
+  if (!Array.isArray(actors)) return state;
+  const firstMark = new Map<unknown, Record<string, unknown>>();
+  if (Array.isArray(marks))
+    for (const mark of marks as unknown[]) {
+      if (typeof mark !== "object" || mark === null) continue;
+      const { by } = mark as Record<string, unknown>;
+      if (!firstMark.has(by)) firstMark.set(by, mark as Record<string, unknown>);
+    }
+  return {
+    ...state,
+    arrows: [],
+    actors: actors.map((actor: unknown) => {
+      if (typeof actor !== "object" || actor === null) return actor;
+      const { id, kind, x, y } = actor as Record<string, unknown>;
+      const adventurer = kind === ADVENTURER;
+      const mark = firstMark.get(id);
+      const aim =
+        mark && typeof mark.x === "number" && typeof mark.y === "number"
+          ? directionTo(mark.x - (x as number), mark.y - (y as number))
+          : 0;
+      return {
+        ...actor,
+        weapon: adventurer ? "blade" : "",
+        aim: Math.max(0, aim),
+        knockX: 0,
+        knockY: 0,
+        flask: adventurer ? FLASK_DRINKS : 0,
+        kills: 0,
+      };
+    }),
+  };
+}
+
+/**
+ * A version 9 world as version 10 can run it: an adventurer's wind-up is
+ * called off, with its marks, and its recovery cut to a blade's longest.
+ */
+function callOffOldBlows(state: unknown): unknown {
+  if (typeof state !== "object" || state === null) return state;
+  const { actors, marks } = state as Record<string, unknown>;
+  if (!Array.isArray(actors) || !Array.isArray(marks)) return state;
+  const striking = new Set<unknown>();
+  const settled = actors.map((actor: unknown) => {
+    if (typeof actor !== "object" || actor === null) return actor;
+    const { id, kind, windup, recover } = actor as Record<string, unknown>;
+    if (kind !== ADVENTURER || typeof recover !== "number") return actor;
+    if (windup !== 0) striking.add(id);
+    return { ...actor, windup: 0, recover: Math.min(recover, WEAPONS.blade.recovery) };
+  });
+  return {
+    ...state,
+    actors: settled,
+    marks: (marks as unknown[]).filter(
+      (mark) =>
+        typeof mark !== "object" ||
+        mark === null ||
+        !striking.has((mark as Record<string, unknown>).by),
+    ),
+  };
 }
 
 /**
@@ -1665,7 +2132,9 @@ export function migrate(version: number, state: unknown, atlas: Atlas): unknown 
  * In a version 4 or 5 snapshot, from before skills and the bank, everyone
  * starts with no experience, an empty bag and an empty bank. In a snapshot
  * from before version 8, nobody has died yet. In one from before version 9,
- * every node stands with its full yield and nobody has a burnt fish.
+ * every node stands with its full yield and nobody has a burnt fish. In one
+ * from before version 10, every adventurer holds a blade and a full flask,
+ * and its wind-up, if it was in one, is called off.
  */
 export const restore = (
   text: string,
@@ -1707,9 +2176,27 @@ function restoreSaved(
   if (version !== 4 && spawnsHash !== hashSpawns(spawnTable)) {
     throw new SnapshotError("snapshot was taken with different spawns");
   }
-  const world = readState(migrate(version, state, atlas), atlas, table, kindTable, spawnTable);
-  if (!world || hashWorldAs(world, version) !== hash)
+  const migrated = migrate(version, state, atlas);
+  if (version === SNAPSHOT_VERSION) {
+    const world = readState(migrated, atlas, table, kindTable, spawnTable);
+    if (!world || hashWorldAs(world, version) !== hash)
+      throw new SnapshotError("snapshot contents are damaged");
+    return world;
+  }
+  // An older world is checked against its hash as it was saved, before its
+  // adventurers' blows are fitted to version 10's weapons.
+  let hashed: string;
+  try {
+    const content = { atlas, programs: table, kinds: kindTable, spawns: spawnTable };
+    hashed = hashWorldAs({ ...(migrated as World), ...content }, version);
+  } catch {
     throw new SnapshotError("snapshot contents are damaged");
+  }
+  const world =
+    hashed === hash
+      ? readState(callOffOldBlows(migrated), atlas, table, kindTable, spawnTable)
+      : null;
+  if (!world) throw new SnapshotError("snapshot contents are damaged");
   return world;
 }
 
@@ -1881,6 +2368,7 @@ export function readState(
     marks,
     nextSpawn,
     nodes: rawNodes,
+    arrows: rawArrows,
   } = raw as Record<string, unknown>;
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
   const nodes = readNodes(rawNodes, atlas, tick);
@@ -1912,6 +2400,7 @@ export function readState(
     marks: [],
     nextSpawn: arrivals,
     nodes,
+    arrows: [],
   };
   // Monsters a region holds, by region.
   const monsters = new Map<number, number>();
@@ -1943,7 +2432,24 @@ export function readState(
       bag: rawBag,
       bank: rawBank,
       deaths,
+      weapon,
+      aim,
+      knockX,
+      knockY,
+      flask,
+      kills,
     } = item as Record<string, unknown>;
+    // An adventurer holds a weapon of one of the families, and a monster none.
+    if (kind === ADVENTURER ? !FAMILIES.includes(weapon as Family) : weapon !== "") return null;
+    // A monster strikes along the four axes only.
+    if (!isInt32(aim) || aim < 0 || aim >= DIRECTIONS.length) return null;
+    if (kind !== ADVENTURER && aim % 2 !== 0) return null;
+    const under = (n: unknown): boolean => isInt32(n) && Math.abs(n) < QUARTERS_PER_TILE;
+    if (!under(knockX) || !under(knockY)) return null;
+    if (!isInt32(flask) || flask < 0 || flask > (kind === ADVENTURER ? FLASK_DRINKS : 0))
+      return null;
+    if (!isInt32(kills) || kills < 0 || kills >= KILLS_PER_DRINK) return null;
+    if ((kind !== ADVENTURER || flask === FLASK_DRINKS) && kills !== 0) return null;
     const xp = counts(rawXp, SKILLS.length, MAX_XP);
     const bag = counts(rawBag, BAG_SLOTS, GOODS.length);
     const bank = counts(rawBank, GOODS.length, MAX_BANKED);
@@ -1964,9 +2470,11 @@ export function readState(
     const stepped = (p: Point, q: Point): boolean =>
       stepsFor(atlas, adventurer, p.x, p.y, q.x, q.y);
     const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
+    // A blow takes longest at Arms 1.
+    const longest = kind === ADVENTURER ? WEAPONS[weapon as Family] : numbers;
     if (!isInt32(hp) || hp < 1 || hp > numbers.hp) return null;
-    if (!isInt32(windup) || windup < 0 || windup > numbers.windup) return null;
-    if (!isInt32(recover) || recover < 0 || recover > numbers.recovery) return null;
+    if (!isInt32(windup) || windup < 0 || windup > longest.windup) return null;
+    if (!isInt32(recover) || recover < 0 || recover > longest.recovery) return null;
     if (windup > 0 && recover > 0) return null;
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
     if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
@@ -2030,6 +2538,12 @@ export function readState(
       bag,
       bank,
       deaths,
+      weapon: weapon as Family | "",
+      aim,
+      knockX: knockX as number,
+      knockY: knockY as number,
+      flask,
+      kills,
     });
   }
   // Only adventurers share a tile.
@@ -2042,7 +2556,7 @@ export function readState(
       return null;
   }
   // Every mark belongs to an actor in wind-up, and an actor in wind-up has
-  // exactly the marks of one attack: its line in one of the four directions.
+  // exactly the marks of its blow, the way it aims, from where it stands.
   const marksOf = new Map<number, Point[]>();
   for (const item of marks as unknown[]) {
     if (typeof item !== "object" || item === null) return null;
@@ -2058,11 +2572,44 @@ export function readState(
   }
   const same = (a: readonly Point[], b: readonly Point[]): boolean =>
     a.length === b.length && a.every((p, i) => p.x === b[i]?.x && p.y === b[i]?.y);
+  // A blow is begun only where it reaches some tile, but one knocked back
+  // against a wall in its wind-up may reach none and have no marks.
   for (const actor of world.actors) {
     if (actor.windup === 0) continue;
-    const own = marksOf.get(actor.id);
-    if (!own || own.length === 0) return null;
-    if (!NEIGHBOURS.some(([sx, sy]) => same(own, lineOfAttack(world, actor, sx, sy)))) return null;
+    if (!same(marksOf.get(actor.id) ?? [], blowTiles(world, actor, actor.aim))) return null;
   }
+  const arrows = readArrows(rawArrows, world);
+  if (!arrows) return null;
+  world.arrows = arrows;
   return world;
+}
+
+/**
+ * The arrows in flight if `value` lists them as a world could hold them, each
+ * loosed by an adventurer in it over ground, else null. A shooter looses one
+ * at most every SHORTEST_BLOW ticks and it flies ARROW_RANGE, so no more than
+ * that many are in flight for each adventurer.
+ */
+function readArrows(value: unknown, world: World): Arrow[] | null {
+  const shooters = new Set(world.actors.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
+  const list = plainList(value, shooters.size * ARROW_RANGE);
+  if (!list) return null;
+  const arrows: Arrow[] = [];
+  for (const item of list) {
+    if (!isPlainObject(item)) return null;
+    const by = own(item, "by");
+    const x = own(item, "x");
+    const y = own(item, "y");
+    const aim = own(item, "aim");
+    const left = own(item, "left");
+    const blow = own(item, "blow");
+    const crit = own(item, "crit");
+    if (!isInt32(by) || !shooters.has(by)) return null;
+    if (!isInt32(x) || !isInt32(y) || !walkable(world.atlas, x, y)) return null;
+    if (!isInt32(aim) || aim < 0 || aim >= DIRECTIONS.length) return null;
+    if (!isInt32(left) || left < 1 || left > ARROW_RANGE) return null;
+    if (!isInt32(blow) || blow < 0 || typeof crit !== "boolean") return null;
+    arrows.push({ by, x, y, aim, left, blow, crit });
+  }
+  return arrows;
 }

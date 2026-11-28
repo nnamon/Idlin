@@ -130,7 +130,7 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `threat_hp`         | sensor | 0     | The nearest enemy's hitpoints, or 0 if there is none.                                                                                                                                                                                                     |
 | `danger`            | sensor | 2     | Ticks until an enemy's attack lands on tile (x, y), or 0 if none is coming.                                                                                                                                                                               |
 | `danger_here`       | sensor | 0     | Ticks until an enemy's attack lands where this actor stands, or 0.                                                                                                                                                                                        |
-| `attack`            | action | 2     | Wind up and strike in a line out from this actor, in the direction of (x, y).                                                                                                                                                                             |
+| `attack`            | action | 2     | Wind up and strike towards (x, y): an adventurer with its weapon, in the nearest of eight directions; a monster in a line up, down, left or right.                                                                                                        |
 | `step_clear`        | action | 0     | Walk to the nearest tile no enemy attack is about to land on; an ally may be standing there.                                                                                                                                                              |
 | `flee`              | action | 2     | Walk up to three tiles along the way that leads farthest from (x, y); five if it has to go round something that steps into the way and blocks it (a monster for an adventurer, an adventurer for a monster).                                              |
 | `threat_recovering` | sensor | 0     | Ticks after this one that the nearest enemy still needs to get its balance back after its last blow: 0 if it can act on the next tick, or if there is no enemy.                                                                                           |
@@ -160,6 +160,9 @@ they go after `->`. A sensor that takes no values is written without brackets.
 | `threat_moving`     | sensor | 0     | 1 if the nearest enemy is walking (partway through a step, or with more of a walk ahead of it), else 0, and 0 if there is none.                                                                                                                           |
 | `lit_enemies`       | sensor | 0     | How many of this actor's enemies stand in the camp's firelight, in its region, not counting residents mending after a down.                                                                                                                               |
 | `lit_mending`       | sensor | 0     | How many residents lie mending after a down in the camp's firelight, in this actor's region.                                                                                                                                                              |
+| `weapon_reach`      | sensor | 0     | How many steps out this actor's blow reaches, counting a diagonal step as one: 2 with a blade, 3 with a maul, 4 with a spear, 9 with a bow, and a monster's reach.                                                                                        |
+| `flask`             | sensor | 0     | Drinks left in this actor's flask, 0 to 3; always 0 for a monster.                                                                                                                                                                                        |
+| `drink`             | action | 0     | Drink from the flask for 40% of the most hitpoints this actor can have. At full hitpoints, or with the flask empty, nothing happens.                                                                                                                      |
 <!-- end generated -->
 
 There are ten ticks in a second of stream time, and a game hour lasts one
@@ -169,18 +172,60 @@ minute.
 
 Adventurers and monsters are enemies; nobody else is. Each kind of actor has
 hitpoints and one attack. An adventurer has 20 hitpoints, and its blow is the
-base blow of its Melee level, `6 + L + L*L/20`: 7 at level 1, 21 at level 10.
-One swing in 20 is a crit and does double. A monster's blow is its kind's
-`damage`, and monsters do not crit. What a blow takes off is worked out as
-section 4.1 of [slice.md](slice.md) says; nobody wears armour yet, so for now
-that is the blow itself.
+base blow of its Melee level, `6 + L + L*L/20`: 7 at level 1, 21 at level 10,
+times its weapon's share of the hit. One swing in 20 is a crit and does
+double. A monster's blow is its kind's `damage`, and monsters do not crit.
+What a blow takes off is worked out as section 4.1 of [slice.md](slice.md)
+says; nobody wears armour yet, so for now that is the blow and the weapon's
+share.
 
-`attack(x, y)` strikes in the direction of (x, y): up, down, left or right,
-whichever is nearer to it. It does not land at once. The tiles it will hit are
-marked for the length of the wind-up (six ticks for an adventurer), then the
-blow lands on any enemy standing on them, and the attacker needs a moment to
+`attack(x, y)` strikes in the direction of (x, y). It does not land at once.
+The tiles it will hit are marked for the length of the wind-up, then the blow
+lands on any enemy standing on them, and the attacker needs a moment to
 recover. It cannot move or decide anything from the start of the wind-up to the
-end of the recovery.
+end of the recovery. A monster strikes in a line as long as its kind's
+`reach`, up, down, left or right, whichever is nearer to (x, y). An adventurer
+turns to the nearest of eight directions, the diagonals included, and strikes
+with its weapon. Every adventurer holds a blade for now; a `spawn` input can
+give it another family.
+
+| Weapon  | Tiles it strikes                                          | Wind-up + recovery | Hit  | Knockback | `weapon_reach` |
+| ------- | --------------------------------------------------------- | ------------------ | ---- | --------- | -------------- |
+| `blade` | an arc: the three tiles facing it and the three beyond    | 2 + 3 ticks        | 100% | a quarter | 2              |
+| `maul`  | the nine tiles of the square centred two tiles out        | 5 + 5              | 220% | two tiles | 3              |
+| `spear` | a line four tiles long, through everyone on it            | 3 + 3              | 120% | one tile  | 4              |
+| `bow`   | an arrow's line, nine tiles; the arrow stops in the first | 3 + 2              | 100% | a quarter | 9              |
+
+The times are at Melee 1. A tick comes off the recovery at Melee 30 and one
+off the wind-up at Melee 60. Ground that cannot be walked on, and ground in
+another region, is never struck, and a spear's or a bow's line ends at the
+first such tile.
+
+An arrow is loosed when the bow's wind-up ends and flies a tile a tick along
+its line, so it reaches a monster six tiles off six ticks later. It hits the
+first enemy it comes to and stops in it; a monster that has stepped off the
+line by then is missed. `weapon_reach` gives the farthest tile a blow
+reaches, counting a diagonal step as one, so a program can keep its
+distance with a bow and close in with a maul:
+
+```
+when threat_distance <= weapon_reach as "shoot" -> attack(threat_x, threat_y)
+otherwise -> step_to(threat_x, threat_y)
+```
+
+A hit knocks the monster back along the way the blow faced, in quarter
+tiles: a blade's four hits move it a tile. Knockback moves it a whole tile at
+a time, and a wall, the edge of its region or someone in its way stops it,
+and what is left of the push is lost. A monster that is moved stops walking,
+and one winding up a blow takes it with it: the blow lands from where it now
+stands, facing the same way. What is left under a tile is put back to 0 when
+it next takes a step.
+
+`flask` is how many drinks are left in the flask, 3 when full. `drink` gives
+back 40% of the most hitpoints, 8 of an adventurer's 20, and at full
+hitpoints, or with the flask empty, nothing happens. A drink comes back for
+every 20 kills, counted only while one is missing, and the flask is full
+again after a down.
 
 `danger(x, y)` and `danger_here` say how many ticks are left before an enemy's
 blow lands on a tile, so a program can get out of the way:
@@ -335,7 +380,7 @@ any other, and must not share a name with a program in `content/bots/`.
 ```json
 {
   "name": "Wolf",
-  "hp": 42,
+  "hp": 101,
   "damage": 8,
   "windup": 8,
   "recovery": 20,

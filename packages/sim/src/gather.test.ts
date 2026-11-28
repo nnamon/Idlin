@@ -39,8 +39,8 @@ import {
 const LONG = process.env.IDLIN_LONG === "1";
 const WORLD = shippedWorld();
 const MONSTERS = shippedMonsters(WORLD);
-// Strong enough to put a resident down in the fight below, fed or not.
-const KINDS = { wolf: { hp: 60, damage: 4, windup: 6, recovery: 10, reach: 1 } };
+// Strong enough to put a resident down in the fight below, fed or not, against a blade's blow every 5 ticks.
+const KINDS = { wolf: { hp: 150, damage: 4, windup: 6, recovery: 10, reach: 1 } };
 const SOURCES: Record<string, string> = {
   chopper: "otherwise -> chop",
   fisher: "otherwise -> fish",
@@ -49,9 +49,11 @@ const SOURCES: Record<string, string> = {
   stander: "otherwise -> wait(600)",
   reader: `otherwise -> set d = node_distance(tree); set x = node_x(tree); set y = node_y(tree);
     set o = node_distance(old_tree); set f = at_fire; set p = node_distance(deep_pool); idle`,
-  // Eats between blows once it is down to 10, and otherwise trades blows.
+  // Eats between blows once it is down to 10, and otherwise trades blows,
+  // following the wolf when its blade has knocked it back.
   fighter: `when hp <= 10 and carrying(cooked_fish) > 0 -> eat
     when threat_distance <= 1 -> attack(threat_x, threat_y)
+    when threat_distance <= 3 -> step_to(threat_x, threat_y)
     otherwise -> wait(5)`,
   biter: "when threat_distance <= 1 -> attack(threat_x, threat_y)\notherwise -> wait(5)",
 };

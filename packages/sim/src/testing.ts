@@ -308,5 +308,11 @@ export function putMonster(world: World, kind: string, { x, y }: Point, program 
     bag: emptyBag(),
     bank: emptyBank(),
     deaths: 0,
+    weapon: "",
+    aim: 0,
+    knockX: 0,
+    knockY: 0,
+    flask: 0,
+    kills: 0,
   });
 }

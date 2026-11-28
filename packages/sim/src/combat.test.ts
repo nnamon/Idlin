@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { atlasOf } from "./atlas.ts";
 import { NO_THREAT } from "./brain.ts";
 import { blow } from "./hit.ts";
-import { placeConstants } from "./map.ts";
+import { isWalkable, placeConstants } from "./map.ts";
 import { XP_TABLE } from "./skills.ts";
 import { compileBots } from "./tactics.ts";
 import { firstLight } from "./testing.ts";
+import { blowShape } from "./weapons.ts";
 import {
   ADVENTURER,
   ADVENTURER_KIND,
@@ -46,6 +47,9 @@ const PROGRAMS = compileBots(
 otherwise as "watch" -> idle`,
     fighter: `when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)
 otherwise as "wait for it" -> idle`,
+    // As fighter, and follows what its blows knock back.
+    chaser: `when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)
+otherwise as "close in" -> step_to(threat_x, threat_y)`,
     coward: `when threat_distance < 6 as "run" -> flee(threat_x, threat_y)
 otherwise as "calm" -> idle`,
     lonely: `when threat_distance == ${NO_THREAT} and threat_hp == 0 and hp == max_hp as "alone" -> idle
@@ -152,7 +156,8 @@ describe("fights", () => {
   it("an adventurer's blow is the base blow of its Melee level, doubled on one swing in 20", () => {
     const kinds: Kinds = { post: { hp: 100_000, damage: 0, windup: 10, recovery: 4, reach: 1 } };
     const world = createWorld(MAP, 3, PROGRAMS, kinds);
-    step(world, [at("Ash", "fighter", 20, 9), at("Post", "stander", 21, 9, "post")]);
+    // The blade knocks the post back a quarter of a tile a blow, so Ash follows it.
+    step(world, [at("Ash", "chaser", 20, 9), at("Post", "stander", 21, 9, "post")]);
     const ash = named(world, "Ash") as World["actors"][number];
     ash.xp[0] = XP_TABLE[10] as number;
     let level = 10;
@@ -202,8 +207,9 @@ describe("fights", () => {
   });
 
   it("someone struck down in the same tick does not get its own blow in", () => {
-    // Both begin at once; the brute's blow lands first (lower id) and takes Ash out.
-    const kinds: Kinds = { brute: { hp: 500, damage: 30, windup: 6, recovery: 4, reach: 1 } };
+    // Both begin at once with a wind-up as long as a blade's; the brute's blow
+    // lands first (lower id) and takes Ash out.
+    const kinds: Kinds = { brute: { hp: 500, damage: 30, windup: 2, recovery: 4, reach: 1 } };
     const world = createWorld(MAP, 1, PROGRAMS, kinds);
     step(world, [at("Brute", "biter", 20, 9, "brute"), at("Ash", "fighter", 21, 9)]);
     const log = run(world, 8);
@@ -408,7 +414,9 @@ describe("fights", () => {
       at("Second", "stander", 16, 11, "wolf"),
       at("Ash", "fighter", 15, 11),
     ]);
-    expect(began.find((e) => e.type === "attack")).toMatchObject({ tiles: [{ x: 14, y: 11 }] });
+    // The first tile of a blade's arc is the one it faces.
+    const swing = began.find((e) => e.type === "attack");
+    expect(swing?.type === "attack" && swing.tiles[0]).toEqual({ x: 14, y: 11 });
   });
 
   it("the last blow gets the credit, and nobody is struck after going down", () => {
@@ -581,9 +589,15 @@ describe("hostile input to a fight", () => {
     const log = run(world, 300);
     // Striking at oneself is no attack at all.
     expect(log.some((e) => e.type === "attack" && e.actor === 2)).toBe(false);
-    // A far-off target only gives a direction: the tile next door is what gets marked.
+    // A far-off target only gives a direction, here north-east, and the
+    // blade's arc that way from (14, 11) is what gets marked.
     const wild = log.find((e) => e.type === "attack" && e.actor === 1);
-    expect(wild).toMatchObject({ tiles: [{ x: 14, y: 10 }] });
+    expect(wild?.type === "attack" && wild.tiles).toEqual(
+      blowShape("blade", 7)
+        .map((o) => ({ x: 14 + o.x, y: 11 + o.y }))
+        .filter((p) => isWalkable(MAP, p.x, p.y)),
+    );
+    expect(wild?.type === "attack" && wild.tiles[0]).toEqual({ x: 15, y: 10 });
     for (const actor of world.actors) {
       expect(Number.isInteger(actor.x) && Number.isInteger(actor.y)).toBe(true);
       expect(actor.hp).toBeGreaterThan(0);
@@ -672,7 +686,7 @@ describe("fights and determinism", () => {
     const kinds: Kinds = { post: { hp: 100_000, damage: 0, windup: 10, recovery: 4, reach: 1 } };
     const training = (): World => {
       const world = createWorld(MAP, 9, PROGRAMS, kinds);
-      step(world, [at("Ash", "fighter", 20, 9), at("Post", "stander", 21, 9, "post")]);
+      step(world, [at("Ash", "chaser", 20, 9), at("Post", "stander", 21, 9, "post")]);
       run(world, 150);
       return world;
     };

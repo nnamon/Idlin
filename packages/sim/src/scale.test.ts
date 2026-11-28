@@ -41,18 +41,20 @@ describe("a tick at scale", () => {
   it("a crowd's world comes out the same every run, for the same work", () => {
     const world = crowd(150, 450);
     for (let i = 0; i < 300; i++) step(world);
-    // Changed by the hit (#383), which changes who fights and so who walks, and
-    // by an actor that got nowhere going round the people in its way however
-    // far (see wayTo in brain.ts).
-    expect(hashWorld(world)).toBe("aa75184e7920e3f7");
-    // Over the 300 ticks: some 4,100 field tiles and 4,700 search tiles a
+    // Changed by the hit (#383), which changes who fights and so who walks; by
+    // an actor that got nowhere going round the people in its way however far
+    // (see wayTo in brain.ts); and by the weapons (#393): a blade's arc, times
+    // and knockback, the wolf's hitpoints, and the fields snapshot version 10
+    // hashes.
+    expect(hashWorld(world)).toBe("32f44c272a180d72");
+    // Over the 300 ticks: some 3,400 field tiles and 2,800 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
     // 83,000 tiles a tick off their queues at this load.
     expect(workOf(world)).toEqual({
-      fieldTiles: 1_225_478,
-      fields: 2_457,
-      searchTiles: 1_410_255,
-      actors: 2_744_832,
+      fieldTiles: 1_034_583,
+      fields: 2_679,
+      searchTiles: 831_145,
+      actors: 2_359_094,
     });
   });
 

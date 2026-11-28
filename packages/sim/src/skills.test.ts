@@ -49,8 +49,9 @@ describe("the experience curve", () => {
 describe("experience from fighting", () => {
   const PROGRAMS = compileBots(
     {
+      // Follows what its blade knocks back.
       fighter:
-        'when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)\notherwise -> idle',
+        'when threat_distance <= 1 as "strike" -> attack(threat_x, threat_y)\notherwise -> step_to(threat_x, threat_y)',
       biter: 'otherwise as "bite" -> attack(threat_x, threat_y)',
       stander: 'otherwise as "stand" -> wait(100)',
       reader:
@@ -75,7 +76,7 @@ describe("experience from fighting", () => {
   it("gives Melee for every hitpoint a blow takes, and the level at the blow that crosses 83", () => {
     // A training dummy that never strikes back.
     const world = createWorld(MAP, 1, PROGRAMS, {
-      dummy: { hp: 1_000, damage: 0, windup: 5, recovery: 0, reach: 1 },
+      dummy: { hp: 10_000, damage: 0, windup: 5, recovery: 0, reach: 1 },
     });
     step(world, [at("Ash", "fighter", 20, 11), at("Post", "stander", 21, 11, "dummy")]);
     const log = run(world, 400);

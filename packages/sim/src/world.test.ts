@@ -44,7 +44,11 @@ describe("world", () => {
   // The golden hash. It changes only when the simulation's behaviour or state
   // layout changes on purpose; say why in the commit that updates it.
   it("reaches the pinned state after 2000 ticks from a fixed seed", () => {
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("c8b882d51c753024");
+    // Changed by the weapons (#393): a blade's arc, times and knockback, the
+    // wolf's hitpoints, and the fields snapshot version 10 hashes. With the
+    // blade a 6 + 6 line of one tile with no knockback, the wolf's 42
+    // hitpoints and the version 9 hash, it is c8b882d51c753024 again.
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("e38225492ab9de5c");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {

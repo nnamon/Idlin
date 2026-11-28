@@ -6,15 +6,17 @@
 // content could hold, and it runs on deterministically from there.
 // docs/decisions/0021-keeping-the-world-through-content-changes.md has the reasons.
 
-import { type Atlas, atlasOf, pointOf, regionAt } from "./atlas.ts";
+import { type Atlas, atlasOf, pointOf, regionAt, walkable } from "./atlas.ts";
 import { fullNodes } from "./gather.ts";
 import { isInt32 } from "./hash.ts";
-import { NEIGHBOURS, type Point, type TileMap } from "./map.ts";
+import type { Point, TileMap } from "./map.ts";
 import { MEMORY_SLOTS, type Program } from "./vm.ts";
+import { DIRECTIONS, FAMILIES, type Family, WEAPONS } from "./weapons.ts";
 import {
   type Actor,
   ADVENTURER,
   blocks,
+  blowTiles,
   canStep,
   checkKinds,
   checkPrograms,
@@ -26,7 +28,6 @@ import {
   hashStateAs,
   type Kinds,
   kindOf,
-  lineOfAttack,
   MONSTER_CEILING,
   mending,
   migrate,
@@ -80,14 +81,17 @@ interface Fitting {
   hp: number;
   windup: number;
   recover: number;
+  readonly weapon: string;
+  readonly aim: number;
 }
 
 function readActor(item: unknown): Fitting {
   if (!isRecord(item)) damaged();
   const { id, name, kind, program, x, y, fromX, fromY, moveTicksLeft, path, rule, hp } = item;
-  const { windup, recover } = item;
+  const { windup, recover, weapon, aim } = item;
   if (typeof name !== "string" || typeof kind !== "string" || typeof program !== "string")
     damaged();
+  if (typeof weapon !== "string" || !isInt32(aim) || aim < 0 || aim >= DIRECTIONS.length) damaged();
   const ints = [id, x, y, fromX, fromY, moveTicksLeft, rule, hp, windup, recover];
   if (!ints.every(isInt32)) damaged();
   const steps = plainList(path, MOST);
@@ -115,6 +119,8 @@ function readActor(item: unknown): Fitting {
     hp: hp as number,
     windup: windup as number,
     recover: recover as number,
+    weapon,
+    aim,
   };
 }
 
@@ -154,6 +160,23 @@ function nearestGround(world: World, actor: Fitting, placed: readonly Fitting[])
     bestSteps = steps;
   }
   return best;
+}
+
+/**
+ * The saved arrows still in flight in the adopted world: those whose shooter
+ * is kept and whose tile can still be stood on. readState judges the rest.
+ */
+function arrowsFor(value: unknown, kept: readonly Fitting[], world: World): unknown {
+  const list = plainList(value, MOST);
+  if (!list) damaged();
+  const shooters = new Set(kept.filter((a) => a.kind === ADVENTURER).map((a) => a.id));
+  return list.filter(
+    (arrow) =>
+      !isRecord(arrow) ||
+      !isInt32(arrow.x) ||
+      !isInt32(arrow.y) ||
+      (shooters.has(arrow.by as number) && walkable(world.atlas, arrow.x, arrow.y)),
+  );
 }
 
 const sameTiles = (a: readonly Point[], b: readonly Point[]): boolean =>
@@ -277,8 +300,10 @@ export function adopt(
       changes.push(`${who(a)}: hitpoints cut from ${a.hp} to ${numbers.hp}`);
       a.hp = numbers.hp;
     }
-    a.windup = Math.min(a.windup, numbers.windup);
-    a.recover = Math.min(a.recover, numbers.recovery);
+    // An adventurer's blow takes longest at Arms 1; readState refuses a weapon that is none of the families.
+    const longest = FAMILIES.includes(a.weapon as Family) ? WEAPONS[a.weapon as Family] : numbers;
+    a.windup = Math.min(a.windup, longest.windup);
+    a.recover = Math.min(a.recover, longest.recovery);
     // A kind that walks faster now would have this actor further into its step than one takes.
     a.moveTicksLeft = Math.min(a.moveTicksLeft, stepTicks(rules, a as unknown as Actor));
 
@@ -355,11 +380,10 @@ export function adopt(
   for (const a of kept) {
     if (a.windup === 0) continue;
     const line = marks.filter((m) => m.by === a.id);
+    // Facing where it faced, from where it stands; readState refuses a weapon that is none of the families.
     const fits =
-      line.length > 0 &&
-      NEIGHBOURS.some(([sx, sy]) =>
-        sameTiles(line, lineOfAttack(rules, a as unknown as Actor, sx, sy)),
-      );
+      (a.weapon === "" || FAMILIES.includes(a.weapon as Family)) &&
+      sameTiles(line, blowTiles(rules, a as unknown as Actor, a.aim));
     if (!fits) {
       a.windup = 0;
       changes.push(`${who(a)}: its attack is called off, as it no longer reaches the tiles marked`);
@@ -398,6 +422,7 @@ export function adopt(
     marks: marks.filter((m) => striking.has(m.by)),
     nextSpawn: sameMap ? savedSpawn : atlas.regions.map((_, i) => savedSpawn[i] ?? 0),
     nodes: sameMap ? state.nodes : fullNodes(atlas),
+    arrows: arrowsFor(state.arrows, kept, rules),
   };
   const world = readState(fitted, atlas, table, kindTable, spawnTable);
   if (!world) throw new SnapshotError("snapshot could not be fitted to the new content");

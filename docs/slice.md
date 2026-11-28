@@ -2,9 +2,11 @@
 
 One 13-minute cycle of the walking city, specified to build from. It is the
 spec for [#361](https://github.com/nnamon/Idlin/issues/361) and replaces the
-milestones that were in [plan.md](plan.md). Only section 4.1's hit is built
-so far (`packages/sim/src/hit.ts`); the world runs every blow through it, with
-no gear, ranks or armour yet. Every rate
+milestones that were in [plan.md](plan.md). Built so far: section 4.1's hit
+(`packages/sim/src/hit.ts`), through which the world runs every blow, and
+section 3.1's four weapon families and the flask
+(`packages/sim/src/weapons.ts`), in the camp world, with no gear, ranks or
+armour yet. Every rate
 is arithmetic from a rule on this page; section 11 names the piece that
 tests the rule.
 
@@ -219,6 +221,38 @@ tick and the remainder carries into the next blow, so every percent counts;
 no blow is shorter than 2 ticks. A program reads `weapon_reach`, so one
 preset kites with a bow and wades in with a maul. Coats carry armour (three
 times the item level). Charms are bare.
+
+**The rules in full**, as `packages/sim/src/weapons.ts` and the world work them:
+
+- The ground is a flat grid seen from above. A blow faces the nearest of
+  eight directions to its target, a diagonal covering from 5 in 12 off an
+  axis to 12 in 5. The blade's arc is the three tiles facing that way and
+  the three beyond them; the maul's square is centred two tiles out, so it
+  takes in the tile next to the citizen; the spear's line and the arrow's
+  run straight out. Ground that cannot be walked on, or in another region,
+  is not struck, and the spear's and the arrow's lines end at it.
+- `weapon_reach` is the farthest tile a blow reaches in steps, a diagonal
+  counting one: 2, 3, 4 and 9.
+- A "faster" line takes `windup * 100 * pct / 10,000` hundredths off, and
+  the same for the recovery, rounding down. The carry comes first into the
+  wind-up and what is left of it into the recovery. A wind-up is at least 1
+  tick. The carry is in `blowTimes`; it is kept on the citizen once
+  "faster" lines can be worn.
+- An arrow is loosed when the wind-up ends and flies one tile a tick from the
+  next tick on, so it can miss a target that steps off its line. It stops in
+  the first enemy it reaches, at a wall or a region's edge, or after nine
+  tiles. Its blow and crit are rolled when it is loosed.
+- Knockback is along the way the blow faced. Each hit adds its quarters to
+  what the body still has under a tile, a whole tile moves it, and a tile it
+  cannot stand on, someone in its way, or a diagonal past a wall's corner
+  stops it there and loses the rest. A body that moves stops walking; one
+  winding up takes its blow with it, aimed the same way from where it lands.
+  Its own next step puts what is under a tile back to 0. A blow's targets
+  are all hit before any is knocked back, so nobody is hit twice by one
+  blow.
+- The flask's drink gives back `life * 40 / 100`, rounded down, up to full,
+  and is refused at full life. A drink comes back at the 20th kill counted
+  while one is missing; a kill with the flask full counts for nothing.
 
 **Rarity.** Magic has 1 or 2 lines, rare 3 or 4, with room for 6: three
 prefixes and three suffixes. The fifth and sixth can only be added at the

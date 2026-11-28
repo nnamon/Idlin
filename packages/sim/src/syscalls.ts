@@ -114,7 +114,8 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "attack",
     kind: "action",
     args: 2,
-    about: "Wind up and strike in a line out from this actor, in the direction of (x, y).",
+    about:
+      "Wind up and strike towards (x, y): an adventurer with its weapon, in the nearest of eight directions; a monster in a line up, down, left or right.",
   },
   {
     id: 19,
@@ -338,6 +339,29 @@ export const SYSCALLS: readonly Syscall[] = [
     args: 0,
     about:
       "How many residents lie mending after a down in the camp's firelight, in this actor's region.",
+  },
+  {
+    id: 48,
+    name: "weapon_reach",
+    kind: "sensor",
+    args: 0,
+    about:
+      "How many steps out this actor's blow reaches, counting a diagonal step as one: 2 with a blade, 3 with a maul, 4 with a spear, 9 with a bow, and a monster's reach.",
+  },
+  {
+    id: 49,
+    name: "flask",
+    kind: "sensor",
+    args: 0,
+    about: "Drinks left in this actor's flask, 0 to 3; always 0 for a monster.",
+  },
+  {
+    id: 50,
+    name: "drink",
+    kind: "action",
+    args: 0,
+    about:
+      "Drink from the flask for 40% of the most hitpoints this actor can have. At full hitpoints, or with the flask empty, nothing happens.",
   },
 ];
 

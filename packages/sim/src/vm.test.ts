@@ -91,6 +91,9 @@ describe("the system call table", () => {
       "45 threat_moving sensor 0",
       "46 lit_enemies sensor 0",
       "47 lit_mending sensor 0",
+      "48 weapon_reach sensor 0",
+      "49 flask sensor 0",
+      "50 drink action 0",
     ]);
   });
 
