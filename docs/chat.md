@@ -8,14 +8,16 @@ what the first slice measures.
 **What is built** is C1, C2, C5 and C6 of section 12. The input kinds are
 types in `packages/sim/src/inputs.ts`. `join` makes a citizen named by the
 username and kept under the account, on the shipped program
-(`content/bots/deckhand.tac`), on the free tile nearest the camp; a name
-another citizen has is refused. `go`, `free` and `param` act on the citizen
+(`content/bots/deckhand.tac`), aboard: on the deck tile with room nearest a
+hatch, the hatches taken in turn, two citizens to a tile, until the city's
+150 berths are full. Past that the join is not made yet (the queue under the
+hatch is C3's). A name another citizen has is refused. `go`, `free` and `param` act on the citizen
 of their account (`packages/sim/src/orders.ts`), with tokens, the lookup of
 section 3.2 and the interrupt, and every input from a chatter's messages
 marks them heard. Deckhand declares section 9's params and slice.md's four
-more, and reads `stance`, `margin` and the flag; in the camp, nightfall
-stands in for the horde ([decisions/0033](decisions/0033-params-and-the-flag-in-the-camp-world.md)).
-Flags do not come down at a lift yet, since nothing lifts. The built
+more, and reads `stance`, `margin` and the flag. It goes home to the hold by
+`lift_eta`, which counts to the siege's start and 300 ticks more until the
+shield is built (slice piece 31), and every flag comes down at lift-off. The built
 Deckhand's margin is 120 and its `ramp` is board or guard, as they were
 before the siege was specified; slice pieces 14 and 31 move its defaults to
 section 9's. The gate,
@@ -660,7 +662,7 @@ Its `aboard` and `alarm` sections go to the flagged station or post if there
 is one, and otherwise to whichever is shortest of hands.
 
 The sketch shows the order of the rules and how they sit round the flag. Its
-gathering and eating rules are written for the camp the code still runs; the
+gathering and eating rules are written for the camp world, which is gone; the
 slice's Deckhand fights the packs of a pocket and then works what it holds,
 drinks from a flask, picks up drops, fights at the shield, and declares
 `keep`, `over`, `aid` and `ramp` as well, with `stance` at `fight` by
@@ -977,8 +979,7 @@ is the first thing a rival chat would abuse.
 Twelve issue-sized pieces, C1 to C13 without C9. Chatters reach all of it
 through chat; C13 is the streamer's site, and no piece builds a page for a
 chatter, an editor or pairing. C1 to C8, C10, C12 and C13 can be built on the
-world as it is today, with the camp's ground standing in for the deck and
-today's places (`river`, `hills`) for a site's. C11 depends only on C2 and
+city as it is today: its deck, and a landing's places for a site's. C11 depends only on C2 and
 can wait until there is a stream to read.
 
 | Piece                                  | What to build                                                                                                                                                                                                                                                            | Shown to work by                                                                                                                                                                                                                                                                                                                                                                                                                       | Leaves out                                    | After    |

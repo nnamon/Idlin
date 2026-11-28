@@ -2,7 +2,7 @@
 // BAG_SLOTS slots, each empty or holding one good. The bank holds a count of
 // each good and has no slots. Each adventurer has its own bank.
 
-import { regionAt, terrainOf } from "./atlas.ts";
+import { terrainOf } from "./atlas.ts";
 import { NEIGHBOURS } from "./map.ts";
 import type { Actor, World } from "./world.ts";
 
@@ -37,17 +37,10 @@ export const freeSlots = (actor: Actor): number => actor.bag.filter((slot) => sl
 
 /**
  * Whether `actor` stands next to a bank tile, where it can deposit and
- * withdraw. A bank across a closed border in another region does not count.
+ * withdraw.
  */
 export const atBank = (world: World, actor: Actor): boolean =>
-  NEIGHBOURS.some(([dx, dy]) => {
-    const x = actor.x + dx;
-    const y = actor.y + dy;
-    return (
-      terrainOf(world.atlas, x, y) === "bank" &&
-      regionAt(world.atlas, x, y) === regionAt(world.atlas, actor.x, actor.y)
-    );
-  });
+  NEIGHBOURS.some(([dx, dy]) => terrainOf(world.atlas, actor.x + dx, actor.y + dy) === "bank");
 
 /**
  * Moves up to `count` of good `id` from the bag into the bank, emptying the

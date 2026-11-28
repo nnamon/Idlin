@@ -18,7 +18,7 @@ const assemble = (code: number[], rules: string[] = []): Program =>
   validateProgram({ version: BYTECODE_VERSION, code, rules });
 
 const SELF_X = 0;
-const HOUR = 2;
+const SELF_Y = 1;
 const WALKABLE = 4;
 const DISTANCE = 5;
 const IDLE = 6;
@@ -82,7 +82,7 @@ const PROGRAMS: Programs = {
     OP.STORE,
     0,
     OP.SENSE,
-    HOUR,
+    SELF_Y,
     OP.STORE,
     1,
     OP.PUSH,
@@ -152,7 +152,7 @@ describe("actors run programs", () => {
 
   it("sensors report the world as it is", () => {
     const w = world([["Ash", "probe", 14, 9]]);
-    expect(w.actors[0]?.memory.slice(0, 5)).toEqual([14, 6, 0, 1, 2 ** 31 - 1]);
+    expect(w.actors[0]?.memory.slice(0, 5)).toEqual([14, 9, 0, 1, 2 ** 31 - 1]);
   });
 
   it("a faulting program leaves its actor confused and the world running", () => {
@@ -198,14 +198,13 @@ describe("actors run programs", () => {
       "actors",
       "arrows",
       "atlas",
+      "cycle",
       "kinds",
       "marks",
       "nextActorId",
-      "nextSpawn",
       "nodes",
       "programs",
       "rng",
-      "spawns",
       "tick",
     ]);
   });
@@ -411,7 +410,7 @@ describe("programs and determinism", () => {
               atlas: atlasOf(map),
               programs: PROGRAMS,
               kinds: {},
-              spawns: [],
+              cycle: null,
             });
           } catch {
             // Not hashable; the saved hash stays.

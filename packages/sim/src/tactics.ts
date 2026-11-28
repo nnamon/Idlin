@@ -313,7 +313,7 @@ const describe = (token: Token): string =>
     : `"${shown(token.text, 24)}"`;
 
 const listOf = (kind: Syscall["kind"]): string =>
-  SYSCALLS.filter((c) => c.kind === kind)
+  SYSCALLS.filter((c) => c.kind === kind && !c.retired)
     .map((c) => c.name)
     .join(", ");
 
@@ -809,6 +809,7 @@ class Generator {
 
   private call(kind: Syscall["kind"], name: string, args: readonly Expr[], at: Token): void {
     const found = SYSCALLS.find((c) => c.name === name);
+    if (found?.retired) throw new Problem(at, `"${name}" is gone: ${found.retired}`);
     if (!found || found.kind !== kind) {
       const what =
         found?.kind === "sensor"

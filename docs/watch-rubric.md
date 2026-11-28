@@ -13,56 +13,33 @@ experiences them, not game-clock time.
 ## The capture
 
 `docker compose run --rm capture captures/<folder> --review` runs the built
-viewer in capture mode from seed 1 with 15 residents and a stepped clock, and
-writes to that folder. It takes five or six minutes. Two runs of the same code
-give the same files, byte for byte. With `--baseline <folder>` it also writes
-`compare.png`, that folder's storyboard above the new one. Every sheet has 15
-residents unless it says otherwise. Moments that depend on what the world
-does (the busiest moment, the first pan, the figures' moment, the fight) are
-found by running the same world headless and searching it, so they move with
-the world when it changes.
+viewer in capture mode from seed 1, with the 15-chatter crowd
+(`content/chat/crowd-15.txt`) as its chat, and writes to that folder. Two
+runs of the same code give the same files, byte for byte. With
+`--baseline <folder>` it also writes `compare.png`, that folder's storyboard
+above the new one.
 
-- **storyboard**: 12 frames, one every 10 seconds, as one image, from 19:20
-  through nightfall. Shows what a viewer sees over two minutes.
-- **residents-6**: the storyboard's first frame at full size with six
-  residents, the number the page was first built for, to compare with.
-- **burst**: 12 consecutive rendered frames, a sixth of a tick apart, from the
-  busiest two ticks of the day after 07:00 (the most residents on the map
-  changing tile). Shows motion, and exposes flicker. If the twelve frames are
-  all the same, `metrics.json` says so (`burstStill`).
-- **drift**: 12 frames from the first time in the day the view pans to
-  another region to when it gets there. The flicker index is also taken in
-  the middle of that pan, where it goes fastest, and a day in which the view
-  never pans is a hard fail.
-- **day strip**: 6 frames across a full day. Shows the light changing.
-- **figures**: the residents with a spread of levels and deaths (`?levels`
-  and `?deaths`, which only a capture's own world takes), at the moment from
-  07:00 to 09:00 when the map shows the most of them, so every kit tier and
-  walk can be seen in a crowd: the full frame, a crop round where they stand
-  at twice the size, the same frame as a 640-wide window shows it, and that
-  crop at four times the size. Shows whether residents can be told apart and
-  ranked at a glance. `metrics.json` gives the moment and how many were on
-  the map.
-- **fight**, **fight burst** and **fight down**: the same seed with the
-  shipped monsters let in (`?monsters`), which the world does not have by
-  default yet. The fight is the first in the day in which a resident goes
-  down on the map and a monster goes down within 70 ticks of it. The fight
-  sheet is 12 frames a second apart from two seconds before the earlier of
-  the two; the burst is 12 frames half a tick apart round the last blow that
-  landed on that resident; the down sheet is 12 frames half a second apart
-  from its fall to waking at camp. The flicker index is also taken a tick
-  before that blow and a tick before the first blow on the map after 19:00.
-  With no such fight in the day there are no fight sheets, and the capture
-  says so.
-- **showcase**: the README's set: four full frames, a short looping clip of
-  night falling, and smaller copies of the storyboard and day strip.
-  `tools/publish-media.sh captures/<folder>` pushes it to the `media` branch.
-- **crowd sheets**: the storyboard again with the world filled to 12, 50 and
-  150 characters running the built-in programs, and once more at 50 with the
-  figures sheet's spread of levels (`crowd-50-levels`), so the kit and the
-  hats are seen in a crowd. The frames are exactly what a viewer would see;
-  nothing is drawn on them for the judge.
-- **metrics.json**: numbers from the same runs (below).
+Until slice piece 2b draws the deck and the landing, the view is plain: the
+ground as flat tiles, citizens as dots, and the beat along the top. The
+review set is:
+
+- **storyboard**: 12 frames as one image, one from each beat of the first
+  cycle and the next legs-plant: transit, the raid window, legs-plant, the
+  ramp down, the peace, the scouts, the front, the march, the siege, the
+  break, lift-off and the next legs-plant (`STORYBOARD` in
+  `tools/capture/src/index.ts`).
+- **storyboard-640**: the same frames as a 640-wide window shows them.
+- **showcase**: the README's set: the transit, landing and siege frames, and
+  the storyboard at half size. `tools/publish-media.sh captures/<folder>`
+  pushes it to the `media` branch.
+- **metrics.json**: the tick, beat and citizens of each frame, the flicker
+  index, console errors and hard fails.
+
+The camp's sheets (residents-6, burst, drift, day strip, figures, the fight
+sheets and the crowd sheets) went with the camp world, and so did the
+metrics the tool worked out from a headless run of it. Piece 2b and the
+pieces after it bring back what the review needs for the city; until then
+only the flicker index and console errors below are computed.
 
 The same seed is used for the baseline and for a change, so two captures can be
 compared frame by frame.

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { type Atlas, linked, pointOf, type Region, regionAt, tileAt, walkable } from "./atlas.ts";
+import { type Atlas, linked, pointOf, tileAt, walkable } from "./atlas.ts";
 import { DETOUR_STEPS, wayTo } from "./brain.ts";
 import {
   addMark,
@@ -10,7 +10,6 @@ import {
   firstAt,
   gridOf,
   holdGrid,
-  inRegion,
   marksOn,
   nearest,
   putAt,
@@ -22,17 +21,8 @@ import {
 } from "./grid.ts";
 import { NEIGHBOURS, type Point } from "./map.ts";
 import { createRng, nextInt } from "./rng.ts";
-import { crowd, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
-import {
-  type Actor,
-  blocks,
-  canStep,
-  createWorld,
-  enemies,
-  spawnsNearCamp,
-  step,
-  type World,
-} from "./world.ts";
+import { crowd } from "./testing.ts";
+import { type Actor, blocks, canStep, enemies, step, type World } from "./world.ts";
 
 const steps = (a: Point, x: number, y: number): number => Math.abs(a.x - x) + Math.abs(a.y - y);
 
@@ -61,7 +51,7 @@ describe("the grid of who stands where", () => {
     reach: nextInt(rng, 30) - 2,
   }));
 
-  const all = atlas.regions[0] as Region;
+  const all = atlas;
 
   it("finds the nearest, first in update order among the nearest, as a pass over every actor does", () => {
     const grid = gridOf(world);
@@ -133,52 +123,6 @@ describe("the grid of who stands where", () => {
     } finally {
       releaseGrid(world);
     }
-  });
-});
-
-describe("the grid on the shipped world's four regions", () => {
-  it("looks for the nearest enemy and counts friends in the asker's region only, as a pass does", () => {
-    const atlas = shippedWorld();
-    const beasts = shippedMonsters(atlas);
-    const world = createWorld(
-      atlas,
-      5,
-      { ...shippedPrograms(atlas), ...beasts.programs },
-      beasts.kinds,
-      beasts.spawns,
-    );
-    step(
-      world,
-      spawnsNearCamp(
-        world,
-        Array.from({ length: 40 }, (_, i) => ({ name: `R${i}`, program: "wanderer" })),
-      ),
-    );
-    let asked = 0;
-    for (let t = 0; t < 4000; t++) {
-      step(world);
-      if (t % 100 !== 0) continue;
-      const grid = gridOf(world);
-      for (const who of world.actors) {
-        const region = regionAt(atlas, who.x, who.y);
-        const area = atlas.regions[region] as Region;
-        const enemy = (a: Actor): boolean =>
-          enemies(who, a) && regionAt(atlas, a.x, a.y) === region;
-        let expected: Actor | undefined;
-        for (const a of world.actors)
-          if (enemy(a) && (!expected || steps(a, who.x, who.y) < steps(expected, who.x, who.y)))
-            expected = a;
-        const none = inRegion(grid, region, who.kind === "adventurer") === 0;
-        expect(none ? undefined : nearest(grid, who.x, who.y, area, enemy)).toBe(expected);
-        const friend = (a: Actor): boolean =>
-          a !== who && a.kind === who.kind && regionAt(atlas, a.x, a.y) === region;
-        const within = world.actors.filter((a) => friend(a) && steps(a, who.x, who.y) <= 10);
-        expect(countWithin(grid, who.x, who.y, 10, area, friend)).toBe(within.length);
-        asked++;
-      }
-    }
-    // Monsters came out in more than one region, so the regions were really tried.
-    expect(asked).toBeGreaterThan(1000);
   });
 });
 
@@ -422,9 +366,10 @@ describe("walk_to's way", () => {
     // Allowed the long way round, some went more than DETOUR_STEPS out of their way
     // (9 of the 400 since a blow pushes bodies in a row from the far end, which
     // changes where the crowd stands), and some were held up where people shut
-    // the goal off.
+    // the goal off (4 of them since the camp's wolves roam by `wander` instead
+    // of their day round, which spreads the crowd differently).
     expect(count("true long")).toBeGreaterThan(5);
-    expect(count("true near")).toBeGreaterThan(10);
+    expect(count("true near")).toBeGreaterThan(2);
     // On some of those long ways (8), step_to takes more than one step.
     expect(longer).toBeGreaterThan(5);
   });

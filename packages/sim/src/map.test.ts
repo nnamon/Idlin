@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { atlasOf, hashMap } from "./atlas.ts";
 import { isWalkable, MapError, parseMap, place, terrainAt } from "./map.ts";
 import { firstLight, rawFirstLight } from "./testing.ts";
+import { createWorld } from "./world.ts";
 
 const tiny = (overrides: Record<string, unknown> = {}) => ({
   name: "tiny",
@@ -22,6 +23,7 @@ describe("parseMap", () => {
       "camp",
       "deep_wood",
       "den",
+      "hold",
       "meadow",
       "near_wood",
       "river",
@@ -82,20 +84,22 @@ describe("parseMap", () => {
     });
   }
 
-  it("leaves camp and reachability to the world, which refuses a map without them", () => {
-    expect(() => parseMap(tiny({ places: { den: { x: 0, y: 0 } } }))).not.toThrow();
-    expect(() => atlasOf(parseMap(tiny({ places: { den: { x: 0, y: 0 } } })))).toThrow(
-      /"camp" is required/,
+  it("leaves reachability to the world, which refuses a map with ground cut off", () => {
+    // A camp is not needed: the city has none, and a world on one map need not either.
+    expect(() => createWorld(parseMap(tiny({ places: { den: { x: 0, y: 0 } } })), 1)).not.toThrow();
+    expect(() => atlasOf(parseMap(tiny({ rows: [".#.", ".#."] })))).not.toThrow();
+    expect(() => createWorld(parseMap(tiny({ rows: [".#.", ".#."] })), 1)).toThrow(
+      /map "tiny" has walkable ground that cannot be reached from the rest/,
     );
-    expect(() => atlasOf(parseMap(tiny({ rows: [".#.", ".#."] })))).toThrow(
-      /\(2, 0\) of "tiny" cannot be reached from camp/,
+    expect(() => createWorld(parseMap(tiny({ rows: ["###", "###"], places: {} })), 1)).toThrow(
+      /has no ground that can be walked on/,
     );
   });
 
   it("refuses the fixture once it is damaged", () => {
     const raw = rawFirstLight();
     (raw.rows as string[])[8] = "t,,,,,,....:cccLccc:::::~~::::";
-    expect(() => atlasOf(parseMap(raw))).toThrow(/cannot be reached from camp/);
+    expect(() => createWorld(parseMap(raw), 1)).toThrow(/cannot be reached from the rest/);
   });
 });
 

@@ -1,12 +1,13 @@
 // Carrying a world over to content that changed since it was saved: other
-// programs, monster kinds, spawns or maps. `restore` refuses such a snapshot.
+// programs, monster kinds or ground (a fixed map, or a landing the generator
+// now makes differently). `restore` refuses such a snapshot.
 // `adopt` checks it against the fingerprints it was saved with, fits its
 // actors to the content passed in, and says what it changed. The world it
 // returns is read by the same readState as `restore`'s, so it is one the new
 // content could hold, and it runs on deterministically from there.
 // docs/decisions/0021-keeping-the-world-through-content-changes.md has the reasons.
 
-import { type Atlas, atlasOf, pointOf, regionAt, walkable } from "./atlas.ts";
+import { type Atlas, hashAtlas, pointOf, walkable } from "./atlas.ts";
 import { fullNodes } from "./gather.ts";
 import { isInt32 } from "./hash.ts";
 import type { Point, TileMap } from "./map.ts";
@@ -22,25 +23,20 @@ import {
   canStep,
   checkKinds,
   checkPrograms,
-  checkSpawns,
   hashKinds,
   hashProgram,
   hashPrograms,
-  hashSpawns,
   hashStateAs,
   type Kinds,
   kindOf,
-  MONSTER_CEILING,
   mending,
-  migrate,
   type Programs,
   parseSnapshot,
   plainList,
   readState,
   restore,
   SnapshotError,
-  type Spawns,
-  sameGround,
+  savedGround,
   stepTicks,
   type World,
   walkableFor,
@@ -156,7 +152,6 @@ function nearestGround(world: World, actor: Fitting, placed: readonly Fitting[])
   let best: Point | null = null;
   let bestSteps = Number.POSITIVE_INFINITY;
   for (let tile = 0; tile < atlas.width * atlas.height; tile++) {
-    if ((atlas.regionOf[tile] as number) < 0) continue;
     const p = pointOf(atlas, tile);
     const steps = Math.abs(p.x - actor.x) + Math.abs(p.y - actor.y);
     if (steps >= bestSteps || !walkableFor(world, actor as unknown as Actor, p.x, p.y)) continue;
@@ -198,8 +193,9 @@ const sameTiles = (a: readonly Point[], b: readonly Point[]): boolean =>
  * and says what it changed to fit. With the same content it is `restore`.
  * Otherwise the snapshot is checked against the content fingerprints it
  * carries, so damage or a forged hash is still refused with a SnapshotError, as
- * is another version than 4 to SNAPSHOT_VERSION; older versions are brought up
- * to date first, as `restore` does. Then:
+ * is another version than SNAPSHOT_VERSION. A city's ground is worked out from
+ * its saved cycle, as `restore` does, so it differs only when the deck or the
+ * landing generator has changed. Then:
  *
  * - An actor whose program or monster kind is gone is removed.
  * - An actor whose program changed has its memory cleared, its rule reset and
@@ -214,63 +210,55 @@ const sameTiles = (a: readonly Point[], b: readonly Point[]): boolean =>
  *   longer its line is called off.
  * - An actor on a tile it can no longer stand on moves to the nearest one it
  *   can, and stops what it was doing; one in the middle of a step or a walk
- *   over ground that changed stops where it stands. A monster that would make
- *   its region hold more than MONSTER_CEILING is removed.
- * - If the map changed, every node stands full and each region keeps its wait
- *   for monsters by index, a new region having none: the snapshot does not
- *   record where its nodes or regions were.
+ *   over ground that changed stops where it stands.
+ * - If the ground changed, every node stands full: the snapshot does not
+ *   record where its nodes were.
  *
- * Everything else (places, levels, bags, banks, deaths, the tick, the seeded
- * generator) is kept. Throws a ProgramError, KindError or MapError if the
+ * Everything else (places, levels, bags, banks, deaths, the cycle, the tick,
+ * the seeded generator) is kept. `ground` is the map of a world of one map,
+ * and null for a city. Throws a ProgramError, KindError or MapError if the
  * content passed in is itself invalid.
  */
 export function adopt(
   text: string,
-  ground: TileMap | Atlas,
+  ground: TileMap | Atlas | null,
   programs: Programs = {},
   kinds: Kinds = {},
-  spawns: Spawns = [],
 ): Adopted {
-  const atlas = atlasOf(ground);
   const table = checkPrograms(programs);
   const kindTable = checkKinds(kinds);
-  const spawnTable = checkSpawns(spawns, atlas, table, kindTable);
   const saved = parseSnapshot(text);
-  const { version, map, programs: programsPrint, kinds: kindsPrint } = saved;
-  const spawnsPrint = version === 4 ? "" : saved.spawns;
-  const sameMap = sameGround(version, map, atlas);
+  const { map, programs: programsPrint, kinds: kindsPrint } = saved;
+  const atlas = savedGround(saved.state, ground);
+  const sameMap = map === hashAtlas(atlas);
   const samePrograms = programsPrint === hashPrograms(table);
   const sameKinds = kindsPrint === hashKinds(kindTable);
-  const sameSpawns = version === 4 || spawnsPrint === hashSpawns(spawnTable);
-  if (sameMap && samePrograms && sameKinds && sameSpawns)
-    return { world: restore(text, atlas, table, kindTable, spawnTable), changes: [] };
+  if (sameMap && samePrograms && sameKinds)
+    return { world: restore(text, ground, table, kindTable), changes: [] };
 
   if (
     typeof map !== "string" ||
     typeof programsPrint !== "string" ||
-    typeof kindsPrint !== "string" ||
-    typeof spawnsPrint !== "string"
+    typeof kindsPrint !== "string"
   )
     damaged();
-  const state = migrate(version, saved.state, atlas, table);
+  const state = saved.state;
   let hash: string;
   try {
-    const prints = { map, programs: programsPrint, kinds: kindsPrint, spawns: spawnsPrint };
-    hash = hashStateAs(state as World, version, prints);
+    const prints = { map, programs: programsPrint, kinds: kindsPrint };
+    hash = hashStateAs(state as World, prints);
   } catch {
     damaged();
   }
   if (hash !== saved.hash || !isRecord(state)) damaged();
   const savedActors = plainList(state.actors, MOST);
   const savedMarks = plainList(state.marks, MOST);
-  const savedSpawn = plainList(state.nextSpawn, MOST);
-  if (!savedActors || !savedMarks || !savedSpawn) damaged();
+  if (!savedActors || !savedMarks) damaged();
 
   const changes: string[] = [];
   if (!sameMap) changes.push("the map has changed");
   if (!samePrograms) changes.push("the programs have changed");
   if (!sameKinds) changes.push("the monster kinds have changed");
-  if (!sameSpawns) changes.push("the spawns have changed");
   const byProgram = samePrograms ? null : readByProgram(saved.byProgram);
   if (!samePrograms && !byProgram)
     changes.push(
@@ -278,7 +266,7 @@ export function adopt(
     );
 
   // Enough of a world for the rules on where actors stand, step and strike.
-  const rules = { atlas, programs: table, kinds: kindTable, spawns: spawnTable } as World;
+  const rules = { atlas, programs: table, kinds: kindTable } as unknown as World;
   const who = (a: Fitting): string => `${a.name} (#${a.id})`;
   const cleared = new Map<string, number>();
   let stopped = 0;
@@ -347,7 +335,7 @@ export function adopt(
     }
     let at: Point = a;
     const walk =
-      a.path.length <= atlas.regionOf.length &&
+      a.path.length <= atlas.open.length &&
       a.path.every((p) => {
         const ok = steps(at, p) && stands(p);
         at = p;
@@ -380,19 +368,7 @@ export function adopt(
   }
   placed.sort((p, q) => p.id - q.id);
 
-  const monsters = new Map<number, number>();
-  const kept = placed.filter((a) => {
-    if (a.kind === ADVENTURER) return true;
-    const region = regionAt(atlas, a.x, a.y);
-    const count = (monsters.get(region) ?? 0) + 1;
-    if (count <= MONSTER_CEILING) {
-      monsters.set(region, count);
-      return true;
-    }
-    const name = atlas.regions[region]?.map.name ?? "its region";
-    changes.push(`removed ${who(a)}: ${name} already holds ${MONSTER_CEILING} monsters`);
-    return false;
-  });
+  const kept = placed;
 
   const marks = savedMarks.map((m) => {
     if (!isRecord(m) || !isInt32(m.x) || !isInt32(m.y) || !isInt32(m.by)) damaged();
@@ -418,8 +394,6 @@ export function adopt(
     changes.push(`cleared the memory and rule of ${count} actor(s) running "${name}"`);
   if (stopped > 0)
     changes.push(`${stopped} actor(s) stopped walking: the ground on their way has changed`);
-  if (!sameMap && savedSpawn.length !== atlas.regions.length)
-    changes.push(`the world has ${atlas.regions.length} regions where it had ${savedSpawn.length}`);
   if (!sameMap && atlas.nodes.length > 0)
     changes.push(`all ${atlas.nodes.length} nodes stand full again`);
 
@@ -455,11 +429,10 @@ export function adopt(
       status: a.status,
     })),
     marks: marks.filter((m) => striking.has(m.by)),
-    nextSpawn: sameMap ? savedSpawn : atlas.regions.map((_, i) => savedSpawn[i] ?? 0),
     nodes: sameMap ? state.nodes : fullNodes(atlas),
     arrows: arrowsFor(state.arrows, kept, rules),
   };
-  const world = readState(fitted, atlas, table, kindTable, spawnTable);
+  const world = readState(fitted, atlas, table, kindTable);
   if (!world) throw new SnapshotError("snapshot could not be fitted to the new content");
   return { world, changes };
 }

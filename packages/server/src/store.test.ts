@@ -4,7 +4,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorld, hashWorld, step, type World } from "@idlin/sim";
+import { createCity, hashWorld, step, type World } from "@idlin/sim";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadContent } from "./content.ts";
 import { listSnapshots, loadNewest, saveSnapshot, snapshotName } from "./store.ts";
@@ -60,7 +60,7 @@ const tempDir = (): string => {
 };
 
 const worldAt = (tick: number): World => {
-  const world = createWorld(CONTENT.atlas, 5, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
+  const world = createCity(5, CONTENT.programs, CONTENT.kinds);
   while (world.tick < tick) step(world);
   return world;
 };

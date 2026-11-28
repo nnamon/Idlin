@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { atlasOf, regionAt } from "./atlas.ts";
 import { CONFUSED_TICKS } from "./brain.ts";
 import { isWalkable, NEIGHBOURS, type Point, place, terrainAt } from "./map.ts";
 import { loadMonsters } from "./monsters.ts";
@@ -7,57 +6,32 @@ import { createRng, nextInt } from "./rng.ts";
 import { BotError, compileBots } from "./tactics.ts";
 import {
   botSources,
-  firstLight,
+  campBotSources,
+  campMap,
+  campMonsters,
+  campPrograms,
   monsterSources,
   monsterStats,
-  shippedMonsters,
-  shippedPrograms,
-  shippedWorld,
 } from "./testing.ts";
 import { FAULTS } from "./vm.ts";
 import {
   ADVENTURER,
-  capFor,
-  checkSpawns,
   createWorld,
-  DAY_HOUR,
-  GROUP_SPREAD,
-  groupOf,
-  hashWorld,
-  inFirelight,
-  isNight,
   KindError,
-  LEAVE_DISTANCE,
-  MONSTER_CAPS,
-  MONSTER_CEILING,
-  MOST_IN_GROUP,
-  MOST_IN_NIGHT_GROUP,
-  mostOf,
-  NIGHT_HOUR,
-  RESPAWN_TICKS,
   restore,
-  SnapshotError,
-  type Spawns,
-  START_HOUR,
   STEP_TICKS,
   snapshot,
-  spawnsNearCamp,
   step,
-  TICKS_PER_DAY,
-  TICKS_PER_GAME_HOUR,
   type World,
   type WorldEvent,
 } from "./world.ts";
 
-// The worlds here are made on the shipped world, as the shipped programs need.
-// Its camp's region, where every monster comes out, is MAP at the same
-// coordinates, so the tests read the ground off MAP.
-const MAP = firstLight();
-const WORLD = shippedWorld();
-/** The camp's region, where every shipped monster comes out. */
-const CAMP_REGION = regionAt(WORLD, place(MAP, "camp").x, place(MAP, "camp").y);
-const MONSTERS = shippedMonsters();
-const PROGRAMS = { ...shippedPrograms(), ...MONSTERS.programs };
+// The worlds here are made on the camp's map, which has every place the
+// camp's programs and monsters name.
+const MAP = campMap();
+const WORLD = MAP;
+const MONSTERS = campMonsters(MAP);
+const PROGRAMS = { ...campPrograms(MAP), ...MONSTERS.programs };
 
 const run = (world: World, ticks: number): WorldEvent[] => {
   const log: WorldEvent[] = [];
@@ -65,20 +39,11 @@ const run = (world: World, ticks: number): WorldEvent[] => {
   return log;
 };
 const steps = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-/** A list of three with nothing at index 1. */
-const gap = <T>(value: T): T[] => Object.assign(new Array<T>(3), { 0: value, 2: value });
 const without = (record: Record<string, unknown>, key: string): Record<string, unknown> =>
   Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
-/** A list holding `entries`, whose iterator yields `shown` instead. */
-const lying = <T>(entries: T[], shown: readonly T[]): T[] =>
-  Object.assign([...entries], {
-    *[Symbol.iterator]() {
-      yield* shown;
-    },
-  });
 
-describe("monsters from content", () => {
-  it("loads each monster's numbers, program and places from content/monsters", () => {
+describe("monsters from files", () => {
+  it("loads each monster's numbers, name and program", () => {
     expect(Object.keys(MONSTERS.kinds)).toEqual(["goblin", "wolf"]);
     for (const [kind, raw] of Object.entries(monsterStats())) {
       const stats = raw as Record<string, unknown>;
@@ -92,37 +57,16 @@ describe("monsters from content", () => {
         rank: stats.rank ?? "fodder",
         level: stats.level ?? 1,
       });
-      const spawn = MONSTERS.spawns.find((s) => s.kind === kind);
-      const range = (value: unknown) => (Array.isArray(value) ? value : [value, value]);
-      const [group, dayMost] = range(stats.group);
-      const [fewest, most] = range(stats.night_group ?? group);
-      expect(spawn).toMatchObject({
-        name: stats.name,
-        program: stats.program,
-        group,
-        most: dayMost,
-        nightGroup: fewest,
-        nightMost: most,
-      });
-      expect(spawn?.day).toEqual(
-        (stats.day as string[]).map((p) => ({ x: place(MAP, p).x, y: place(MAP, p).y })),
-      );
-      expect(spawn?.night).toEqual(
-        (stats.night as string[]).map((p) => ({ x: place(MAP, p).x, y: place(MAP, p).y })),
-      );
+      expect(MONSTERS.names[kind]).toBe(stats.name);
+      expect(MONSTERS.runs[kind]).toBe(stats.program);
     }
     expect(Object.keys(MONSTERS.programs).sort()).toEqual(Object.keys(monsterSources()).sort());
-    // Monster programs share the world's program table with the residents', so no name is used twice.
-    for (const name of Object.keys(MONSTERS.programs))
+    // Monster programs share the world's program table with the citizens', so no name is used twice.
+    for (const name of Object.keys(MONSTERS.programs)) {
       expect(botSources()).not.toHaveProperty(name);
-    // Night brings each kind closer to camp than day does.
-    const camp = place(MAP, "camp");
-    const nearest = (tiles: readonly Point[]) => Math.min(...tiles.map((t) => steps(t, camp)));
-    for (const spawn of MONSTERS.spawns) {
-      expect(nearest(spawn.night)).toBeLessThan(nearest(spawn.day));
+      expect(campBotSources()).not.toHaveProperty(name);
     }
-    // The shipped content makes a world.
-    expect(() => createWorld(WORLD, 1, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns)).not.toThrow();
+    expect(() => createWorld(WORLD, 1, PROGRAMS, MONSTERS.kinds)).not.toThrow();
   });
 
   it("refuses monster files that are wrong, with the file named", () => {
@@ -135,55 +79,25 @@ describe("monsters from content", () => {
       { wolf: { ...wolf, recovery: undefined } },
       { wolf: { ...wolf, program: "nobody" } },
       { wolf: { ...wolf, program: 3 } },
-      { wolf: { ...wolf, day: ["nowhere"] } },
-      { wolf: { ...wolf, day: ["toString"] } },
-      { wolf: { ...wolf, day: "deep_wood" } },
-      { wolf: { ...wolf, night: [null] } },
-      { wolf: { ...wolf, group: 1.5 } },
-      { wolf: { ...wolf, group: [] } },
-      { wolf: { ...wolf, group: [2] } },
-      { wolf: { ...wolf, group: [1, 2, 3] } },
-      { wolf: { ...wolf, group: [3, 2] } },
-      { wolf: { ...wolf, group: [0, 2] } },
-      { wolf: { ...wolf, group: [2, MOST_IN_GROUP + 1] } },
-      { wolf: { ...wolf, group: [2, "3"] } },
-      { wolf: { ...wolf, group: gap(2).slice(0, 2) } },
-      { wolf: { ...wolf, most: 3 } },
       { wolf: { ...wolf, step: 1 } },
       { wolf: { ...wolf, step: 31 } },
       { wolf: { ...wolf, step: "4" } },
       { wolf: { ...wolf, step: null } },
-      { wolf: { ...wolf, night_group: 2.5 } },
-      { wolf: { ...wolf, night_group: "2" } },
-      { wolf: { ...wolf, night_group: null } },
-      { wolf: { ...wolf, night_group: [] } },
-      { wolf: { ...wolf, night_group: [3] } },
-      { wolf: { ...wolf, night_group: [3, 4, 5] } },
-      { wolf: { ...wolf, night_group: [5, 3] } },
-      { wolf: { ...wolf, night_group: [0, 3] } },
-      { wolf: { ...wolf, night_group: [3, MOST_IN_NIGHT_GROUP + 1] } },
-      { wolf: { ...wolf, night_group: [3, "5"] } },
-      { wolf: { ...wolf, night_group: [3, 4.5] } },
-      { wolf: { ...wolf, night_group: gap(3).slice(0, 2) } },
-      { wolf: { ...wolf, night_group: { 0: 3, 1: 5, length: 2 } } },
-      { wolf: { ...wolf, nightGroup: 2 } },
-      { wolf: { ...wolf, nightMost: 2 } },
+      // The spawn table went with the camp: its fields are unknown now.
+      { wolf: { ...wolf, group: 2 } },
+      { wolf: { ...wolf, day: ["deep_wood"] } },
+      { wolf: { ...wolf, night: [] } },
+      { wolf: { ...wolf, night_group: 3 } },
       { wolf: { ...wolf, colour: "grey" } },
       { wolf: null },
       { wolf: [] },
       { wolf: "wolf" },
       { Wolf: wolf },
       JSON.parse(`{"__proto__": ${JSON.stringify(wolf)}}`),
-      // Values that throw when made into text, and lists with holes.
+      // Values that throw when made into text, and fields from a prototype.
       { wolf: { ...wolf, program: { toString: null } } },
-      { wolf: { ...wolf, day: [{ toString: null }] } },
-      { wolf: { ...wolf, night: [Symbol("x")] } },
-      { wolf: { ...wolf, day: Array(1) } },
-      { wolf: { ...wolf, night: gap("near_wood") } },
-      // Fields from a prototype, and a list whose iterator hides what it holds.
       { wolf: Object.assign(Object.create({ hp: wolf.hp }), without(wolf, "hp")) },
       { wolf: Object.assign(Object.create(wolf), { name: wolf.name }) },
-      { wolf: { ...wolf, day: lying(["nowhere"], ["deep_wood"]) } },
       {
         wolf: Object.defineProperty({ ...wolf }, "hp", {
           enumerable: true,
@@ -198,75 +112,49 @@ describe("monsters from content", () => {
     }
     expect(() => loadMonsters(stats, monsterSources(), MAP)).not.toThrow();
     expect(() => loadMonsters({ wolf: { ...wolf, hp: 0 } }, monsterSources(), MAP)).toThrow(/wolf/);
-    // A program that does not compile fails with its file, like a resident's.
+    // A program that does not compile fails with its file, like a citizen's.
     expect(() =>
       loadMonsters(stats, { ...monsterSources(), wolf: "when -> nothing" }, MAP),
     ).toThrow(/wolf\.tac, line 1/);
     expect(() =>
       loadMonsters(stats, { ...monsterSources(), wolf: "\u0000".repeat(50) }, MAP),
     ).toThrow(BotError);
-    // A name or group the world would not take is refused here too, with the file named.
+    // A name the world would not take is refused here too, with the file named.
     for (const change of [
       { name: "" },
       { name: "wolf" },
       { name: "A".repeat(20) },
       { name: 7 },
       { name: undefined },
-      { group: 0 },
-      { group: MOST_IN_GROUP + 1 },
-      { group: [3, 1] },
-      { night_group: 0 },
-      { night_group: MOST_IN_NIGHT_GROUP + 1 },
-      { night_group: [4, 2] },
     ]) {
       expect(
         () => loadMonsters({ wolf: { ...wolf, ...change } }, monsterSources(), MAP),
         JSON.stringify(change),
-      ).toThrow(/^wolf\.json: (name|group|night_group) must be/);
+      ).toThrow(/^wolf\.json: name must be/);
     }
-    // Either may be left out: a kind with no step walks as residents do, and
-    // one with no night group comes in the fewest of its day group by night.
-    const plain = loadMonsters(
-      { wolf: without(without(wolf, "step"), "night_group") },
-      monsterSources(),
-      MAP,
-    );
+    // A kind with no step walks as citizens do.
+    const plain = loadMonsters({ wolf: without(wolf, "step") }, monsterSources(), MAP);
     expect(plain.kinds.wolf?.step).toBe(STEP_TICKS);
-    expect(plain.spawns[0]).toMatchObject({ group: 2, most: 3, nightGroup: 2, nightMost: 2 });
-    // A group of one number is both the fewest and the most.
-    const one = loadMonsters({ wolf: { ...wolf, group: 1 } }, monsterSources(), MAP);
-    expect(one.spawns[0]).toMatchObject({ group: 1, most: 1 });
-    // A night group of one number is both the fewest and the most, and up to the night's cap.
-    const six = loadMonsters(
-      { wolf: { ...wolf, night_group: MOST_IN_NIGHT_GROUP } },
-      monsterSources(),
-      MAP,
-    );
-    expect(six.spawns[0]).toMatchObject({
-      nightGroup: MOST_IN_NIGHT_GROUP,
-      nightMost: MOST_IN_NIGHT_GROUP,
-    });
   });
 
   it("a monster whose program is broken stands confused, and the world keeps running", () => {
-    // Shipped wolf numbers and places, with a program that divides by zero on every decision.
+    // The wolf's numbers, with a program that divides by zero on every decision.
     const broken = loadMonsters(
       { wolf: monsterStats().wolf },
       { wolf: 'otherwise as "think" -> wait(1 / 0)' },
       MAP,
     );
-    const programs = { ...shippedPrograms(), ...broken.programs };
-    const world = createWorld(WORLD, 4, programs, broken.kinds, broken.spawns);
-    step(world, spawnsNearCamp(world, [{ name: "Ash", program: "homebody" }]));
-    const log = run(world, 3 * TICKS_PER_GAME_HOUR);
+    const programs = { ...campPrograms(MAP), ...broken.programs };
+    const world = createWorld(WORLD, 4, programs, broken.kinds);
+    const camp = place(MAP, "camp");
+    step(world, [
+      { type: "spawn", name: "Ash", program: "homebody", ...camp },
+      { type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...place(MAP, "deep_wood") },
+      { type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...place(MAP, "meadow") },
+    ]);
+    const log = run(world, 1800);
     const wolves = world.actors.filter((a) => a.kind === "wolf");
-    // Two or three wolves a wait, from the first tick on, until the region is at
-    // its cap, four by day with one resident, or one short of it, where a pair
-    // has no room.
-    const cap = capFor(world, CAMP_REGION);
-    expect(cap).toBe(MONSTER_CAPS.day.base);
-    expect(wolves.length).toBeGreaterThanOrEqual(cap - 1);
-    expect(wolves.length).toBeLessThanOrEqual(cap);
+    expect(wolves).toHaveLength(2);
     for (const wolf of wolves) {
       expect(FAULTS[wolf.fault]).toBe("divide_by_zero");
       // A confused wolf does nothing: no decision, no step.
@@ -274,17 +162,16 @@ describe("monsters from content", () => {
       expect([wolf.x, wolf.y]).toEqual([wolf.fromX, wolf.fromY]);
       // It tries again after standing confused for a while, and fails the same way.
       const ticks = log.filter((e) => e.type === "fault" && e.actor === wolf.id).map((e) => e.tick);
-      expect(ticks.length).toBeGreaterThan(wolf === wolves[0] ? 30 : 0);
+      expect(ticks.length).toBeGreaterThan(30);
       for (let i = 1; i < ticks.length; i++) {
         expect((ticks[i] as number) - (ticks[i - 1] as number)).toBe(CONFUSED_TICKS + 1);
       }
     }
-    // The resident carries on, and the world still saves and loads.
+    // The citizen carries on, and the world still saves and loads.
     expect(log.filter((e) => e.type === "decide" && e.actor === 1).length).toBeGreaterThan(20);
-    expect(restore(snapshot(world), WORLD, programs, broken.kinds, broken.spawns)).toEqual(world);
+    expect(restore(snapshot(world), WORLD, programs, broken.kinds)).toEqual(world);
   });
 });
-
 /**
  * One wolf and one resident a few tiles apart in the open ground east of the
  * river, the wolf placed by the fight's own seed. Fought until one goes down,
@@ -388,245 +275,6 @@ describe("three ways to fight", () => {
   });
 });
 
-describe("spawning", () => {
-  const world = (seed = 1, spawns = MONSTERS.spawns): World =>
-    createWorld(WORLD, seed, PROGRAMS, MONSTERS.kinds, spawns);
-  const monsters = (w: World) => w.actors.filter((a) => a.kind !== ADVENTURER);
-
-  it("by day monsters come out near their day places, up to the cap, and stay away from camp", () => {
-    const kinds = new Set<string>();
-    let ticks = 0;
-    let near = 0;
-    for (let seed = 1; seed <= 6; seed++) {
-      const w = world(seed);
-      const seen = new Set<number>();
-      const lit = new Map<number, number>();
-      let most = 0;
-      for (let t = 0; t < 12 * TICKS_PER_GAME_HOUR; t++) {
-        step(w);
-        expect(isNight(w)).toBe(false);
-        for (const actor of monsters(w)) {
-          // With nobody to fight them they keep away from camp. One that gets
-          // nowhere and wanders off may cross the light, but never stays in it.
-          ticks++;
-          if (steps(actor, place(MAP, "camp")) <= 4) near++;
-          const inLight = inFirelight(w, actor.x, actor.y) ? (lit.get(actor.id) ?? 0) + 1 : 0;
-          lit.set(actor.id, inLight);
-          expect(inLight).toBeLessThanOrEqual(60);
-          if (seen.has(actor.id)) continue;
-          seen.add(actor.id);
-          kinds.add(actor.kind);
-          if (seen.size === 1) expect(w.tick).toBe(1);
-          const spawn = MONSTERS.spawns.find((s) => s.kind === actor.kind) as Spawns[number];
-          expect(Math.min(...spawn.day.map((p) => steps(p, actor)))).toBeLessThanOrEqual(2);
-        }
-        most = Math.max(most, monsters(w).length);
-      }
-      // Nobody dies, so the cap is reached, or one short of it where no group
-      // fits, and nothing more arrives: four by day with no residents.
-      expect(capFor(w, CAMP_REGION)).toBe(MONSTER_CAPS.day.base);
-      expect(most).toBeGreaterThanOrEqual(MONSTER_CAPS.day.base - 1);
-      expect(most).toBeLessThanOrEqual(MONSTER_CAPS.day.base);
-      expect(seen.size).toBe(most);
-    }
-    expect([...kinds].sort()).toEqual(["goblin", "wolf"]);
-    expect(near / ticks).toBeLessThan(0.002);
-  });
-
-  it("night places are used at night, and one that dies is replaced a wait later", () => {
-    const night = world(2);
-    night.tick = (NIGHT_HOUR - START_HOUR) * TICKS_PER_GAME_HOUR;
-    run(night, 1);
-    expect(isNight(night)).toBe(true);
-    const first = monsters(night);
-    expect(first.length).toBeGreaterThan(0);
-    for (const actor of first) {
-      const spawn = MONSTERS.spawns.find((s) => s.kind === actor.kind) as Spawns[number];
-      expect(Math.min(...spawn.night.map((p) => steps(p, actor)))).toBeLessThanOrEqual(2);
-    }
-    // With wolves that come one at a time, fill the night's cap, then take one
-    // out as a fatal blow would.
-    const [wolves] = MONSTERS.spawns.filter((s) => s.kind === "wolf") as [Spawns[number]];
-    const ones = world(2, [{ ...wolves, nightGroup: 1, nightMost: 1 }]);
-    ones.tick = night.tick - 1;
-    run(ones, 1);
-    // With no residents the night's cap is its base.
-    const cap = capFor(ones, CAMP_REGION);
-    expect(cap).toBe(MONSTER_CAPS.night.base);
-    for (let t = 0; t < 2 * TICKS_PER_GAME_HOUR && monsters(ones).length < cap; t++) step(ones);
-    run(ones, 3 * RESPAWN_TICKS);
-    expect(monsters(ones)).toHaveLength(cap);
-    const gone = monsters(ones)[0] as World["actors"][number];
-    ones.actors = ones.actors.filter((a) => a !== gone);
-    const lost = ones.tick;
-    let back = 0;
-    for (let t = 0; t < 2 * RESPAWN_TICKS && back === 0; t++) {
-      step(ones);
-      if (monsters(ones).length === cap) back = ones.tick;
-    }
-    // The wait starts again on every tick the region is full, so it is a full wait from the loss.
-    expect(back - lost).toBe(RESPAWN_TICKS);
-  });
-
-  it("a world without a spawn table has no monsters", () => {
-    const w = createWorld(WORLD, 1, PROGRAMS, MONSTERS.kinds);
-    step(w, spawnsNearCamp(w, [{ name: "Ash", program: "wanderer" }]));
-    run(w, TICKS_PER_DAY);
-    expect(w.actors.map((a) => a.name)).toEqual(["Ash"]);
-  });
-
-  it("the same seed gives the same day, and a snapshot taken mid-day resumes to the same state", () => {
-    const cast = (w: World) =>
-      spawnsNearCamp(
-        w,
-        ["Ash", "Birch", "Cedar"].map((name, i) => ({
-          name,
-          program: ["wanderer", "riverwalker", "homebody"][i] as string,
-        })),
-      );
-    const a = world(9);
-    const b = world(9);
-    step(a, cast(a));
-    step(b, cast(b));
-    for (let i = 0; i < 24; i++) {
-      run(a, TICKS_PER_GAME_HOUR);
-      run(b, TICKS_PER_GAME_HOUR);
-      expect(hashWorld(a)).toBe(hashWorld(b));
-    }
-    const other = world(10);
-    step(other, cast(other));
-    run(other, TICKS_PER_DAY);
-    expect(hashWorld(other)).not.toBe(hashWorld(a));
-
-    const straight = world(9);
-    step(straight, cast(straight));
-    run(straight, 5000);
-    const saved = snapshot(straight);
-    const resumed = restore(saved, WORLD, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
-    expect(resumed).toEqual(straight);
-    run(straight, 5000);
-    run(resumed, 5000);
-    expect(hashWorld(resumed)).toBe(hashWorld(straight));
-    // Other spawns than it was taken with, or none, are refused.
-    expect(() => restore(saved, WORLD, PROGRAMS, MONSTERS.kinds)).toThrow(/different spawns/);
-    const moved = MONSTERS.spawns.map((s) => ({ ...s, group: s.group === 1 ? 2 : 1 }));
-    expect(() => restore(saved, WORLD, PROGRAMS, MONSTERS.kinds, moved)).toThrow(SnapshotError);
-    // A next arrival a world could not have set is refused, even with a hash worked out for it.
-    for (const next of [-1, 1.5, "600", null, straight.tick + RESPAWN_TICKS + 1]) {
-      const data = JSON.parse(saved);
-      data.state.nextSpawn = next;
-      try {
-        data.hash = hashWorld({
-          ...data.state,
-          atlas: atlasOf(WORLD),
-          programs: PROGRAMS,
-          kinds: MONSTERS.kinds,
-          spawns: MONSTERS.spawns,
-        });
-      } catch {
-        // Not even hashable; the saved hash stays.
-      }
-      expect(() =>
-        restore(JSON.stringify(data), WORLD, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns),
-      ).toThrow(SnapshotError);
-    }
-  }, 30_000);
-
-  it("refuses spawn tables that are wrong, whatever is passed in", () => {
-    const [good] = MONSTERS.spawns as [Spawns[number]];
-    const check = (spawns: unknown) =>
-      checkSpawns(spawns as Spawns, WORLD, PROGRAMS, MONSTERS.kinds);
-    expect(() => check([good])).not.toThrow();
-    const thrower = Object.defineProperty({ ...good }, "group", {
-      enumerable: true,
-      get() {
-        throw new Error("boom");
-      },
-    });
-    for (const bad of [
-      null,
-      "wolf",
-      { length: 1, 0: good },
-      [null],
-      [7],
-      [{ ...good, kind: "ghost" }],
-      [{ ...good, kind: ADVENTURER }],
-      [{ ...good, kind: "__proto__" }],
-      [{ ...good, program: "nobody" }],
-      [{ ...good, program: "constructor" }],
-      [{ ...good, name: "x" }],
-      [{ ...good, name: 5 }],
-      [{ ...good, group: 0 }],
-      [{ ...good, group: MOST_IN_GROUP + 1 }],
-      [{ ...good, group: Number.NaN }],
-      [{ ...good, group: 2, most: 1 }],
-      [{ ...good, group: 1, most: MOST_IN_GROUP + 1 }],
-      [{ ...good, group: 1, most: "2" }],
-      [{ ...good, group: 1, most: null }],
-      [{ ...good, nightGroup: 0 }],
-      [{ ...good, nightGroup: MOST_IN_GROUP + 1 }],
-      [{ ...good, nightGroup: null }],
-      [{ ...good, nightGroup: "2" }],
-      [{ ...good, day: [{ x: 0, y: 0 }] }],
-      [{ ...good, day: [{ x: -1, y: 5 }] }],
-      [{ ...good, day: [{ x: 4.5, y: 6 }] }],
-      [{ ...good, day: [{ x: "4", y: 6 }] }],
-      [{ ...good, day: [null] }],
-      [{ ...good, night: "near_wood" }],
-      [{ ...good, night: Array(17).fill({ x: 4, y: 6 }) }],
-      Array(65).fill(good),
-      [thrower],
-      // Holes, which a loop over the list would skip and a spawn would then pick.
-      [{ ...good, day: Array(1) }],
-      [{ ...good, night: gap({ x: 4, y: 6 }) }],
-      Array(1),
-      gap(good),
-      // Values that are not plain data.
-      [Object.assign(Object.create({ group: 1 }), { ...good })],
-      [{ ...good, day: [Object.assign(Object.create({ x: 4 }), { y: 6 })] }],
-      [{ ...good, day: [[4, 6]] }],
-      [{ ...good, kind: { toString: null } }],
-      [{ ...good, program: { toString: null } }],
-      // The camp's ground, which monsters keep off.
-      [{ ...good, day: [{ x: 14, y: 9 }] }],
-      // A list whose own entries are wrong, with an iterator that hands out good ones.
-      [{ ...good, day: lying([{ x: 14, y: 9 }], good.day) }],
-      lying([null], [good]),
-    ]) {
-      expect(() => check(bad)).toThrow(KindError);
-      expect(() => createWorld(WORLD, 1, PROGRAMS, MONSTERS.kinds, bad as Spawns)).toThrow(
-        KindError,
-      );
-    }
-    // Only a spawn's own fields are read, even ones every object inherits.
-    const noGroup = Object.fromEntries(Object.entries(good).filter(([k]) => k !== "group"));
-    const proto = Object.prototype as Record<string, unknown>;
-    proto.group = 1;
-    try {
-      expect(() => check([noGroup])).toThrow(KindError);
-    } finally {
-      delete proto.group;
-    }
-    // A night group left out is the group, whatever an object inherits.
-    const noNight = Object.fromEntries(Object.entries(good).filter(([k]) => k !== "nightGroup"));
-    proto.nightGroup = MOST_IN_GROUP + 5;
-    try {
-      expect(check([noNight])[0]?.nightGroup).toBe(good.group);
-    } finally {
-      delete proto.nightGroup;
-    }
-    // Restoring checks the table it is given the same way.
-    const saved = snapshot(world());
-    const holed = [{ ...good, day: Array(1) }] as unknown as Spawns;
-    expect(() => restore(saved, WORLD, PROGRAMS, MONSTERS.kinds, holed)).toThrow(KindError);
-    // What a world keeps cannot be changed afterwards.
-    const kept = world().spawns;
-    expect(Object.isFrozen(kept) && Object.isFrozen(kept[0]) && Object.isFrozen(kept[0]?.day)).toBe(
-      true,
-    );
-  });
-});
-
 // Residents for the tests below: one that strikes once and then stands, and one
 // that only stands.
 const EXTRA = compileBots({
@@ -635,37 +283,6 @@ otherwise as "stand" -> wait(5)`,
   post: 'otherwise as "stand" -> wait(100)',
 });
 const ALL = { ...PROGRAMS, ...EXTRA };
-const monstersIn = (w: World) => w.actors.filter((a) => a.kind !== ADVENTURER);
-/** A free tile next to `p` that anyone can stand on. */
-const besides = (w: World, p: Point): Point[] =>
-  NEIGHBOURS.map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy })).filter(
-    (q) =>
-      isWalkable(MAP, q.x, q.y) &&
-      terrainAt(MAP, q.x, q.y) !== "camp" &&
-      !w.actors.some((a) => a.x === q.x && a.y === q.y),
-  );
-/** Tiles a monster can stand on within `most` steps' walk of `from`, `from` included. */
-function within(from: Point, most: number): Point[] {
-  const key = (p: Point) => p.y * MAP.width + p.x;
-  const seen = new Set([key(from)]);
-  let ring = [from];
-  const all = [from];
-  for (let depth = 0; depth < most; depth++) {
-    const next: Point[] = [];
-    for (const p of ring) {
-      for (const [dx, dy] of NEIGHBOURS) {
-        const q = { x: p.x + dx, y: p.y + dy };
-        if (!isWalkable(MAP, q.x, q.y) || terrainAt(MAP, q.x, q.y) === "camp" || seen.has(key(q)))
-          continue;
-        seen.add(key(q));
-        next.push(q);
-      }
-    }
-    all.push(...next);
-    ring = next;
-  }
-  return all;
-}
 
 describe("goblins", () => {
   it("a goblin hit once runs", () => {
@@ -731,317 +348,6 @@ describe("goblins", () => {
       }
     }
     expect(ends).toBeGreaterThan(0);
-  });
-});
-
-describe("the cap and the wait", () => {
-  it("one that dies is replaced a wait after it died at the earliest, however few are out", () => {
-    for (const seed of [3, 4, 5]) {
-      const world = createWorld(WORLD, seed, ALL, MONSTERS.kinds, MONSTERS.spawns);
-      step(world);
-      const target = monstersIn(world)[0] as World["actors"][number];
-      expect(world.tick).toBe(1);
-      // Whichever of the group Ash strikes dies of it, and they stand still for Ash.
-      for (const monster of monstersIn(world))
-        Object.assign(monster, { hp: 1, wait: 30, path: [] });
-      step(world, [
-        { type: "spawn", name: "Ash", program: "once", ...(besides(world, target)[0] as Point) },
-      ]);
-      let died = 0;
-      let back = 0;
-      const known = new Set(world.actors.map((a) => a.id));
-      for (let t = 0; t < 3 * RESPAWN_TICKS && back === 0; t++) {
-        for (const event of step(world)) {
-          if (event.type === "down" && event.kind !== ADVENTURER && died === 0) died = event.tick;
-        }
-        if (monstersIn(world).some((a) => !known.has(a.id))) back = world.tick;
-      }
-      // It died within the first few seconds, before the wait was up.
-      expect(died).toBeGreaterThan(0);
-      expect(died).toBeLessThan(30);
-      expect(back - died).toBeGreaterThanOrEqual(RESPAWN_TICKS);
-    }
-  });
-
-  it("monsters put in by hand count against the cap and the wait", () => {
-    const row = Array.from({ length: 7 }, (_, i) => ({ x: 8 + i, y: 15 }));
-    const crowd = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-    step(
-      crowd,
-      row.map((p) => ({
-        type: "spawn" as const,
-        name: "Wolf",
-        program: "wolf",
-        kind: "wolf",
-        ...p,
-      })),
-    );
-    expect(monstersIn(crowd)).toHaveLength(capFor(crowd, CAMP_REGION));
-    // A wolf put in by hand holds the table's first group back for a full wait
-    // from the tick it is first in the world.
-    const early = createWorld(WORLD, 1, ALL, MONSTERS.kinds, MONSTERS.spawns);
-    step(early, [{ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 8, y: 15 }]);
-    const arrived = early.tick;
-    run(early, RESPAWN_TICKS - 1);
-    expect(early.tick - arrived).toBe(RESPAWN_TICKS - 1);
-    expect(monstersIn(early)).toHaveLength(1);
-    run(early, 1);
-    expect(monstersIn(early).length).toBeGreaterThan(1);
-    // Monsters are not put on the camp's ground; adventurers are.
-    const camp = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-    step(camp, [
-      { type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 14, y: 9 },
-      { type: "spawn", name: "Ash", program: "post", x: 13, y: 9 },
-    ]);
-    expect(camp.actors.map((a) => a.name)).toEqual(["Ash"]);
-  });
-
-  it("a group comes whole and near its place, and the cap holds at every tick", () => {
-    let groups = 0;
-    for (let seed = 1; seed <= 6; seed++) {
-      const world = createWorld(WORLD, seed, ALL, MONSTERS.kinds, MONSTERS.spawns);
-      const known = new Set<number>();
-      for (let t = 0; t < 2 * TICKS_PER_DAY; t++) {
-        step(world);
-        const out = monstersIn(world);
-        // Night packs may still be on their way out after dawn, but no group
-        // comes past the cap for its part of the day.
-        expect(out.length).toBeLessThanOrEqual(MONSTER_CAPS.night.base);
-        const fresh = out.filter((a) => !known.has(a.id));
-        for (const a of out) known.add(a.id);
-        if (fresh.length === 0) continue;
-        groups++;
-        const night = fresh[0]?.shift === "night";
-        expect(out.length).toBeLessThanOrEqual(capFor(world, CAMP_REGION));
-        expect(fresh.length).toBeLessThanOrEqual(night ? MOST_IN_NIGHT_GROUP : MOST_IN_GROUP);
-        const spawn = MONSTERS.spawns.find((s) => s.kind === fresh[0]?.kind) as Spawns[number];
-        expect(fresh.every((a) => a.kind === spawn.kind)).toBe(true);
-        expect(fresh.length).toBeGreaterThanOrEqual(groupOf(spawn, night));
-        expect(fresh.length).toBeLessThanOrEqual(mostOf(spawn, night));
-        const places = night ? spawn.night : spawn.day;
-        // All of them near one of the places for this part of the day.
-        expect(
-          places.some((p) =>
-            fresh.every((a) => within(p, GROUP_SPREAD).some((q) => steps(q, a) === 0)),
-          ),
-        ).toBe(true);
-      }
-    }
-    // Groups by day and by night, over two days and six seeds.
-    expect(groups).toBeGreaterThan(6 * 4);
-  }, 20_000);
-
-  it("a place too crowded for the whole group gets none, until there is room", () => {
-    const den = { x: 26, y: 15 };
-    const spawns: Spawns = [
-      { kind: "goblin", name: "Goblin", program: "goblin", group: 3, day: [den], night: [] },
-    ];
-    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, spawns);
-    const near = within(den, GROUP_SPREAD);
-    expect(near.length).toBeGreaterThan(5);
-    // Everyone but two of the tiles near the place has someone standing on it.
-    step(
-      world,
-      near
-        .slice(2)
-        .map((p, i) => ({ type: "spawn" as const, name: `A${i}`, program: "post", ...p })),
-    );
-    expect(monstersIn(world)).toHaveLength(0);
-    run(world, RESPAWN_TICKS - 2);
-    expect(monstersIn(world)).toHaveLength(0);
-    // One steps away: now there is room for three, and three come at the next try.
-    world.actors = world.actors.slice(1);
-    run(world, 2);
-    const out = monstersIn(world);
-    expect(out).toHaveLength(3);
-    for (const goblin of out) expect(near.some((q) => steps(q, goblin) === 0)).toBe(true);
-  });
-});
-
-describe("day and night", () => {
-  const H = TICKS_PER_GAME_HOUR;
-  /** Runs to the last tick before `hour` on day `day`. */
-  const until = (world: World, hour: number, day = 0): WorldEvent[] =>
-    run(world, day * TICKS_PER_DAY + (hour - START_HOUR) * H - 1 - world.tick);
-
-  it("day monsters go home at dusk and night ones come; at dawn it turns round", () => {
-    for (const seed of [1, 2, 3]) {
-      const world = createWorld(WORLD, seed, ALL, MONSTERS.kinds, MONSTERS.spawns);
-      until(world, NIGHT_HOUR);
-      const day = monstersIn(world);
-      expect(day.length).toBeGreaterThanOrEqual(MONSTER_CAPS.day.base - 1);
-      expect(day.length).toBeLessThanOrEqual(MONSTER_CAPS.day.base);
-      expect(day.every((a) => a.shift === "day")).toBe(true);
-      // Nobody is near them, so they go the moment night falls.
-      const dusk = run(world, 1);
-      expect(
-        dusk.filter((e) => e.type === "leave").map((e) => e.type === "leave" && e.actor),
-      ).toEqual(day.map((a) => a.id));
-      // The night's first group may come on the same tick.
-      expect(monstersIn(world).filter((a) => a.shift === "day")).toHaveLength(0);
-      // The night's monsters come within the next hour or so, and fill up by midnight.
-      until(world, NIGHT_HOUR + 2);
-      expect(monstersIn(world).length).toBeGreaterThan(0);
-      until(world, 23);
-      const night = monstersIn(world);
-      expect(night.every((a) => a.shift === "night")).toBe(true);
-      expect(night.length).toBeGreaterThanOrEqual(MONSTER_CAPS.night.base - 2);
-      // At dawn they go in turn, and the day's come back.
-      until(world, DAY_HOUR, 1);
-      const late = monstersIn(world);
-      expect(late.length).toBeGreaterThan(0);
-      // The last night monsters going leave room under the day's cap, so a day group may come on the same tick.
-      run(world, 1);
-      expect(monstersIn(world).filter((a) => late.includes(a))).toHaveLength(0);
-      expect(monstersIn(world).every((a) => a.shift === "day")).toBe(true);
-      until(world, DAY_HOUR + 2, 1);
-      expect(monstersIn(world).every((a) => a.shift === "day")).toBe(true);
-      expect(monstersIn(world).length).toBeGreaterThan(0);
-    }
-  });
-
-  it("one with an adventurer near it at dusk stays until it is clear", () => {
-    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, MONSTERS.spawns);
-    until(world, NIGHT_HOUR);
-    const stays = monstersIn(world)[0] as World["actors"][number];
-    // An adventurer that only stands, a few tiles off, within LEAVE_DISTANCE.
-    const spot = within(stays, 3)
-      .filter((p) => steps(p, stays) === 3 && !world.actors.some((a) => steps(a, p) === 0))
-      .at(0) as Point;
-    expect(steps(spot, stays)).toBeLessThanOrEqual(LEAVE_DISTANCE);
-    step(world, [{ type: "spawn", name: "Ash", program: "post", ...spot }]);
-    // It stays, and so does anyone else that near the adventurer (give or take the
-    // step it took after); the rest go.
-    expect(monstersIn(world)).toContain(stays);
-    for (const m of monstersIn(world).filter((a) => a.shift === "day"))
-      expect(steps(m, spot)).toBeLessThanOrEqual(LEAVE_DISTANCE + 1);
-    // For as long as an adventurer is near it, it stays. The goblins go at Ash,
-    // who only stands, so Ash goes down in time and wakes at camp, far off.
-    let near = 0;
-    for (let t = 0; t < 600 && world.actors.includes(stays); t++) {
-      const close = world.actors.some(
-        (a) => a.kind === ADVENTURER && steps(a, stays) <= LEAVE_DISTANCE,
-      );
-      step(world);
-      if (close) {
-        near++;
-        expect(world.actors.includes(stays)).toBe(true);
-      }
-    }
-    expect(near).toBeGreaterThan(20);
-    // Once nobody is near, it goes.
-    world.actors = world.actors.filter((a) => a.kind !== ADVENTURER);
-    run(world, 20);
-    expect(world.actors.includes(stays)).toBe(false);
-  });
-
-  it("refuses snapshots with a monster where none could be", () => {
-    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, MONSTERS.spawns);
-    run(world, 2 * RESPAWN_TICKS + 1);
-    const saved = snapshot(world);
-    expect(restore(saved, WORLD, ALL, MONSTERS.kinds, MONSTERS.spawns)).toEqual(world);
-    const forge = (change: (state: { actors: Record<string, unknown>[] }) => void): string => {
-      const data = JSON.parse(saved);
-      change(data.state);
-      data.hash = hashWorld({
-        ...data.state,
-        atlas: atlasOf(WORLD),
-        programs: ALL,
-        kinds: MONSTERS.kinds,
-        spawns: MONSTERS.spawns,
-      });
-      return JSON.stringify(data);
-    };
-    const first = (s: { actors: Record<string, unknown>[] }) =>
-      s.actors[0] as Record<string, unknown>;
-    for (const bad of [
-      forge((s) => Object.assign(first(s), { shift: "dusk" })),
-      forge((s) => Object.assign(first(s), { shift: undefined })),
-      // On rock.
-      forge((s) =>
-        Object.assign(first(s), { x: 0, y: 13, fromX: 0, fromY: 13, path: [], moveTicksLeft: 0 }),
-      ),
-      // More than a region ever holds.
-      forge((s) => {
-        const free: Point[] = [];
-        for (let y = 0; y < MAP.height; y++)
-          for (let x = 0; x < MAP.width; x++)
-            if (
-              isWalkable(MAP, x, y) &&
-              terrainAt(MAP, x, y) !== "camp" &&
-              !s.actors.some((a) => a.x === x && a.y === y)
-            )
-              free.push({ x, y });
-        for (const [i, p] of free.slice(0, MONSTER_CEILING).entries())
-          s.actors.push({ ...first(s), id: 1000 + i, ...p, fromX: p.x, fromY: p.y, path: [] });
-        (s as unknown as { nextActorId: number }).nextActorId = 2000;
-      }),
-    ]) {
-      expect(() => restore(bad, WORLD, ALL, MONSTERS.kinds, MONSTERS.spawns)).toThrow(
-        SnapshotError,
-      );
-    }
-    // An adventurer is never out for a part of the day.
-    const lived = createWorld(WORLD, 1, ALL, MONSTERS.kinds, MONSTERS.spawns);
-    step(lived, [{ type: "spawn", name: "Ash", program: "post", x: 13, y: 9 }]);
-    const text = JSON.parse(snapshot(lived));
-    text.state.actors[0].shift = "day";
-    text.hash = hashWorld({
-      ...text.state,
-      atlas: atlasOf(WORLD),
-      programs: ALL,
-      kinds: MONSTERS.kinds,
-      spawns: MONSTERS.spawns,
-    });
-    expect(() =>
-      restore(JSON.stringify(text), WORLD, ALL, MONSTERS.kinds, MONSTERS.spawns),
-    ).toThrow(SnapshotError);
-  });
-});
-
-describe("the camp's edge", () => {
-  it("by day and by night, a monster put in the firelight with two residents in it walks out of it at once", () => {
-    // Every tile in the light that a monster can stand on.
-    const lit: Point[] = [];
-    const probe = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-    for (let y = 0; y < MAP.height; y++)
-      for (let x = 0; x < MAP.width; x++)
-        if (isWalkable(MAP, x, y) && terrainAt(MAP, x, y) !== "camp" && inFirelight(probe, x, y))
-          lit.push({ x, y });
-    expect(lit.length).toBeGreaterThan(20);
-    for (const kind of ["wolf", "goblin"] as const) {
-      for (const night of [false, true]) {
-        for (const at of lit) {
-          const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-          if (night) world.tick = (NIGHT_HOUR - START_HOUR + 1) * TICKS_PER_GAME_HOUR;
-          expect(isNight(world)).toBe(night);
-          // Two residents stand by the fire, so a lone wolf is outnumbered in the light.
-          const log = step(world, [
-            { type: "spawn", name: "M", program: kind, kind, ...at },
-            { type: "spawn", name: "Ash", program: "post", x: 14, y: 8 },
-            { type: "spawn", name: "Birch", program: "post", x: 13, y: 8 },
-          ]);
-          expect(world.actors).toHaveLength(3);
-          // Out of the light within six seconds: a flee goes three tiles at a
-          // time. A wolf's round may take it back across the light's edge
-          // later, and out again.
-          const [monster] = world.actors as [World["actors"][number]];
-          let out = -1;
-          for (let t = 0; t < 60 && out < 0; t++) {
-            log.push(...step(world));
-            if (!inFirelight(world, monster.x, monster.y)) out = t;
-          }
-          const program = world.programs[kind] as (typeof world.programs)[string];
-          const rules = log.flatMap((e) =>
-            e.type === "decide" && e.actor === monster.id ? [program.rules[e.rule] as string] : [],
-          );
-          const where = `${kind} at ${at.x},${at.y}${night ? " by night" : ""}`;
-          // Its first decision is to walk out.
-          expect(rules[0], where).toBe("out of the light");
-          expect(out, where).toBeGreaterThanOrEqual(0);
-        }
-      }
-    }
   });
 });
 

@@ -1,6 +1,7 @@
 // Trees, fishing spots, cooking and eating.
 
 import { describe, expect, it } from "vitest";
+import { atlasOf } from "./atlas.ts";
 import { BAG_SLOTS, GOODS, goodId } from "./bag.ts";
 import {
   burnOdds,
@@ -18,7 +19,7 @@ import { MapError, parseMap } from "./map.ts";
 import { NODE_KINDS, nodeKindId } from "./nodes.ts";
 import { levelFor, SKILLS, type Skill, XP_TABLE } from "./skills.ts";
 import { compileBots } from "./tactics.ts";
-import { rawWorld, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
+import { campMap, campMonsters, campPrograms, rawCamp, spawnsNearCamp } from "./testing.ts";
 import {
   type Actor,
   ADVENTURER,
@@ -28,17 +29,17 @@ import {
   restore,
   SnapshotError,
   snapshot,
-  spawnsNearCamp,
   step,
-  TICKS_PER_DAY,
-  TICKS_PER_GAME_HOUR,
   type World,
   type WorldEvent,
 } from "./world.ts";
 
 const LONG = process.env.IDLIN_LONG === "1";
-const WORLD = shippedWorld();
-const MONSTERS = shippedMonsters(WORLD);
+const WORLD = atlasOf(campMap());
+/** What the camp world called a game hour and a game day, in ticks. */
+const HOUR = 600;
+const DAY = 24 * HOUR;
+const MONSTERS = campMonsters(WORLD);
 // Strong enough to put a resident down in the fight below, fed or not, against a blade's blow every 5 ticks.
 const KINDS = { wolf: { hp: 150, damage: 4, windup: 6, recovery: 10, reach: 1 } };
 const SOURCES: Record<string, string> = {
@@ -75,7 +76,7 @@ const RAW = goodId("raw_fish");
 const COOKED = goodId("cooked_fish");
 const BURNT = goodId("burnt_fish");
 
-/** The index of the node on (x, y) of the shipped world. */
+/** The index of the node on (x, y) of the camp's map. */
 const nodeAt = (x: number, y: number): number => {
   const index = WORLD.nodes.findIndex((n) => n.x === x && n.y === y);
   if (index < 0) throw new Error(`no node at ${x}, ${y}`);
@@ -87,18 +88,29 @@ const BY_TREE = { x: 12, y: 6 };
 // An old tree in the deep wood, worked from (8, 4).
 const OLD_TREE = nodeAt(7, 4);
 const BY_OLD_TREE = { x: 8, y: 4 };
-// A deep pool on the lower river, at its (20, 4), worked from its (21, 4).
-const POOL = nodeAt(20, 25);
-const BY_POOL = { x: 21, y: 25 };
+// A deep pool, of which the camp has none, at (23, 0) of a copy of it, worked from (22, 0).
+const POOL_MAP = atlasOf(
+  parseMap({
+    ...rawCamp(),
+    name: "camp_with_pool",
+    nodes: [...(rawCamp().nodes as unknown[]), { kind: "deep_pool", x: 23, y: 0 }],
+  }),
+);
+const POOL = POOL_MAP.nodes.findIndex((n) => n.kind === nodeKindId("deep_pool"));
+const BY_POOL = { x: 22, y: 0 };
 // A fishing spot on the camp's river, worked from (23, 10), the `river` place.
 const SPOT = nodeAt(24, 10);
 const BY_SPOT = { x: 23, y: 10 };
 // Beside the camp fire at (14, 7).
 const BY_FIRE = { x: 14, y: 8 };
 
-/** A world of the shipped ground with one adventurer, Ash, on `where`, running `program`. */
-function withOne(program: string, where: { x: number; y: number }): { world: World; ash: Actor } {
-  const world = createWorld(WORLD, 1, PROGRAMS, KINDS);
+/** A world of the camp's map with one adventurer, Ash, on `where`, running `program`. */
+function withOne(
+  program: string,
+  where: { x: number; y: number },
+  map = WORLD,
+): { world: World; ash: Actor } {
+  const world = createWorld(map, 1, PROGRAMS, KINDS);
   step(world, [{ type: "spawn", name: "Ash", program, ...where }]);
   const ash = world.actors[0];
   if (!ash) throw new Error("no actor");
@@ -128,16 +140,13 @@ describe("nodes in the map files", () => {
     const count = (name: string): number =>
       WORLD.nodes.filter((n) => n.kind === nodeKindId(name)).length;
     expect([count("tree"), count("old_tree"), count("fishing_spot"), count("deep_pool")]).toEqual([
-      18, 9, 8, 3,
+      12, 3, 5, 0,
     ]);
-    // The camp's come first, as its region does, then the pinewood's, then the lower river's.
     expect(WORLD.nodes[0]).toEqual({ kind: nodeKindId("tree"), x: 12, y: 5 });
-    expect(WORLD.nodes.some((n) => n.x < 0)).toBe(true);
-    expect(WORLD.nodes.some((n) => n.y >= 21)).toBe(true);
   });
 
   it("refuses a node off its terrain, cut off, doubled, of no kind, or not a list", () => {
-    const camp = rawWorld().maps.camp as Record<string, unknown>;
+    const camp = rawCamp();
     const withNodes = (nodes: unknown) => () => parseMap({ ...camp, nodes });
     expect(withNodes([{ kind: "tree", x: 14, y: 9 }])).toThrow(/a tree must stand on tree/);
     expect(withNodes([{ kind: "fishing_spot", x: 12, y: 5 }])).toThrow(/must stand on water/);
@@ -277,10 +286,10 @@ describe("level gates", () => {
   });
 
   it("keep a deep pool from anyone under Fishing 15", () => {
-    const low = withOne("fisher", BY_POOL);
+    const low = withOne("fisher", BY_POOL, POOL_MAP);
     setLevel(low.ash, "fishing", 14);
     expect(run(low.world, 1200).some((e) => e.type === "gather")).toBe(false);
-    const high = withOne("fisher", BY_POOL);
+    const high = withOne("fisher", BY_POOL, POOL_MAP);
     setLevel(high.ash, "fishing", 15);
     const got = run(high.world, 1200).filter((e) => e.type === "gather");
     expect(got.length).toBeGreaterThan(0);
@@ -301,7 +310,7 @@ describe("level gates", () => {
 });
 
 describe("the node sensors", () => {
-  it("point to the nearest free side of a standing node in this actor's region", () => {
+  it("point to the nearest free side of a standing node", () => {
     const { world, ash } = withOne("reader", BY_TREE);
     run(world, 10);
     expect(ash.memory.slice(0, 3)).toEqual([0, BY_TREE.x, BY_TREE.y]);
@@ -327,11 +336,7 @@ describe("the node sensors", () => {
     expect(ash.memory.slice(0, 3)).toEqual([2, 12, 4]);
   });
 
-  it("see no node in another region, and a fire only within two steps", () => {
-    // In the hills there is no node at all.
-    const { world, ash } = withOne("reader", { x: 53, y: 10 });
-    run(world, 10);
-    expect(ash.memory.slice(0, 6)).toEqual([NO_NODE, 53, 10, NO_NODE, 0, NO_NODE]);
+  it("see a fire only within two steps", () => {
     const fire = withOne("reader", { x: 14, y: 9 });
     run(fire.world, 10);
     expect(fire.ash.memory[4]).toBe(1);
@@ -473,8 +478,8 @@ describe("a snapshot of nodes", () => {
     const copy = restore(snapshot(world), WORLD, PROGRAMS, KINDS);
     expect(copy.nodes).toEqual(world.nodes);
     expect(copy).toEqual(world);
-    run(world, 2 * TICKS_PER_GAME_HOUR);
-    run(copy, 2 * TICKS_PER_GAME_HOUR);
+    run(world, 2 * HOUR);
+    run(copy, 2 * HOUR);
     expect(hashWorld(copy)).toBe(hashWorld(world));
     expect(copy.nodes[TREE]?.left).toBeGreaterThan(0);
   });
@@ -496,7 +501,7 @@ describe("a snapshot of nodes", () => {
       (n) => ((n[1] as Record<string, unknown>).back = tick + 5),
       (n) => ((n[TREE] as Record<string, unknown>).back = 0),
       (n) => ((n[TREE] as Record<string, unknown>).back = tick),
-      (n) => ((n[TREE] as Record<string, unknown>).back = tick + 2 * TICKS_PER_GAME_HOUR + 1),
+      (n) => ((n[TREE] as Record<string, unknown>).back = tick + 2 * HOUR + 1),
       (n) => ((n[TREE] as Record<string, unknown>).back = 2 ** 60),
       (n) => (n[TREE] = null as unknown as Record<string, unknown>),
     ];
@@ -534,11 +539,11 @@ const SOAKS: [seed: number, residents: number][] = LONG
     ]
   : [[1, 6]];
 
-describe("a game day of gathering", () => {
+describe("a camp day of gathering", () => {
   for (const [seed, residents] of SOAKS)
     it(`seed ${seed}, ${residents} residents, 24 game hours: goods come only from nodes and go only into cooking and eating`, () => {
-      const programs = { ...shippedPrograms(WORLD), ...MONSTERS.programs };
-      const world = createWorld(WORLD, seed, programs, MONSTERS.kinds, MONSTERS.spawns);
+      const programs = { ...campPrograms(WORLD), ...MONSTERS.programs };
+      const world = createWorld(WORLD, seed, programs, MONSTERS.kinds);
       const names = ["wanderer", "homebody", "riverwalker"];
       let events = step(
         world,
@@ -564,7 +569,7 @@ describe("a game day of gathering", () => {
       };
       const idOf = (good: string): number => goodId(good as (typeof GOODS)[number]);
       const tally = { gathered: 0, cooked: 0, burnt: 0, eaten: 0, ranOut: 0, regrew: 0 };
-      for (let t = 0; t < TICKS_PER_DAY; t++) {
+      for (let t = 0; t < DAY; t++) {
         events = step(world);
         for (const e of events) {
           if (e.type === "gather") {
@@ -610,8 +615,6 @@ describe("a game day of gathering", () => {
       expect(
         Math.max(...world.actors.map((a) => levelFor(a.xp[SKILLS.indexOf("woodcutting")] ?? 0))),
       ).toBeGreaterThan(residents <= 6 ? 10 : 5);
-      expect(restore(snapshot(world), WORLD, programs, MONSTERS.kinds, MONSTERS.spawns)).toEqual(
-        world,
-      );
+      expect(restore(snapshot(world), WORLD, programs, MONSTERS.kinds)).toEqual(world);
     }, 120_000);
 });

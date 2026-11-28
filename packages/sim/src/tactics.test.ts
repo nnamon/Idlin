@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { regionAt } from "./atlas.ts";
+import { deckMap } from "./deck.ts";
 import { place, placeConstants } from "./map.ts";
 import { createRng, nextInt } from "./rng.ts";
 import { SYSCALLS } from "./syscalls.ts";
 import { BotError, type Compiled, type Constants, compileBots, compileTactics } from "./tactics.ts";
-import { botSources, firstLight, shippedWorld } from "./testing.ts";
+import { botSources, campBotSources, campMap, spawnsNearCamp } from "./testing.ts";
 import {
   type Decision,
   MAX_CODE_LENGTH,
@@ -14,7 +14,7 @@ import {
   type Program,
   runDecision,
 } from "./vm.ts";
-import { clock, createWorld, spawnsNearCamp, step, TICKS_PER_DAY } from "./world.ts";
+import { createWorld, step } from "./world.ts";
 
 const id = (name: string): number => SYSCALLS.find((c) => c.name === name)?.id as number;
 const PLACES: Constants = { camp: { x: 14, y: 9 }, bank: { x: 15, y: 9 }, far: 20 };
@@ -46,13 +46,15 @@ const action = (decision: Decision): string => {
 
 describe("compiling", () => {
   it("compiles a small program to exactly this bytecode", () => {
-    const program = compiled('bot "Tiny"\nwhen hour >= 20 -> walk_to(camp)\notherwise -> wander\n');
-    expect(program.rules).toEqual(["hour >= 20", "otherwise"]);
+    const program = compiled(
+      'bot "Tiny"\nwhen flask >= 20 -> walk_to(camp)\notherwise -> wander\n',
+    );
+    expect(program.rules).toEqual(["flask >= 20", "otherwise"]);
     expect([...program.code]).toEqual([
       OP.RULE,
       0,
       OP.SENSE,
-      id("hour"),
+      id("flask"),
       OP.PUSH,
       20,
       OP.GE,
@@ -83,30 +85,30 @@ describe("compiling", () => {
 
   it("the first rule whose condition holds chooses the action", () => {
     const program = compiled(`
-      when hour < 6 -> wait(50)
-      when hour < 12 -> walk_to(bank)
-      when hour < 12 -> wander          # never reached while the rule above holds
+      when flask < 6 -> wait(50)
+      when flask < 12 -> walk_to(bank)
+      when flask < 12 -> wander          # never reached while the rule above holds
       otherwise -> idle
     `);
-    expect([3, 8, 15].map((hour) => action(decide(program, { hour })))).toEqual([
+    expect([3, 8, 15].map((flask) => action(decide(program, { flask })))).toEqual([
       "wait(50)",
       "walk_to(15, 9)",
       "idle()",
     ]);
-    expect([3, 8, 15].map((hour) => decide(program, { hour }).rule)).toEqual([0, 1, 3]);
+    expect([3, 8, 15].map((flask) => decide(program, { flask }).rule)).toEqual([0, 1, 3]);
   });
 
   it("a rule that always holds hides every rule after it", () => {
-    const program = compiled("when 1 -> wait(10)\nwhen hour == 3 -> wander\n");
-    for (let hour = 0; hour < 24; hour++)
-      expect(action(decide(program, { hour }))).toBe("wait(10)");
+    const program = compiled("when 1 -> wait(10)\nwhen flask == 3 -> wander\n");
+    for (let flask = 0; flask < 24; flask++)
+      expect(action(decide(program, { flask }))).toBe("wait(10)");
   });
 
   it("stands still when no rule matches and there is no otherwise", () => {
-    const program = compiled("when hour == 3 -> wander\n");
-    expect(program.rules).toEqual(["hour == 3", "otherwise"]);
-    expect(action(decide(program, { hour: 4 }))).toBe("idle()");
-    expect(decide(program, { hour: 4 }).rule).toBe(1);
+    const program = compiled("when flask == 3 -> wander\n");
+    expect(program.rules).toEqual(["flask == 3", "otherwise"]);
+    expect(action(decide(program, { flask: 4 }))).toBe("idle()");
+    expect(decide(program, { flask: 4 }).rule).toBe(1);
   });
 
   it("does arithmetic and comparison with the usual precedence", () => {
@@ -126,22 +128,22 @@ describe("compiling", () => {
     expect(value("not 0")).toBe(1);
     expect(value("40%")).toBe(40);
     expect(value("far + 1")).toBe(21);
-    expect(value("hour * 2", { hour: 9 })).toBe(18);
+    expect(value("flask * 2", { flask: 9 })).toBe(18);
     expect(value("distance(camp)", { distance: 6 })).toBe(6);
     expect(value("2147483647")).toBe(2147483647);
   });
 
   it("and/or give 1 or 0, bind as expected, and do not evaluate what they do not need", () => {
     const truth = (expression: string): string =>
-      action(decide(compiled(`when ${expression} -> wander\notherwise -> idle`), { hour: 5 }));
+      action(decide(compiled(`when ${expression} -> wander\notherwise -> idle`), { flask: 5 }));
     expect(truth("1 and 1")).toBe("wander()");
     expect(truth("1 and 0")).toBe("idle()");
     expect(truth("0 or 7")).toBe("wander()");
     expect(truth("0 or 0")).toBe("idle()");
     expect(truth("1 or 0 and 0")).toBe("wander()");
     expect(truth("(1 or 0) and 0")).toBe("idle()");
-    expect(truth("not 0 and hour == 5")).toBe("wander()");
-    expect(truth("not (hour == 5 or hour == 6)")).toBe("idle()");
+    expect(truth("not 0 and flask == 5")).toBe("wander()");
+    expect(truth("not (flask == 5 or flask == 6)")).toBe("idle()");
     // The right side would divide by zero; the left side settles it first.
     expect(truth("0 and 1 / 0")).toBe("idle()");
     expect(truth("1 or 1 / 0")).toBe("wander()");
@@ -166,11 +168,11 @@ describe("compiling", () => {
 
   it("does a sequence of actions one per decision, and starts again if another rule cuts in", () => {
     const program = compiled(`
-      when hour == 0 -> wait(99)
+      when flask == 0 -> wait(99)
       otherwise -> walk_to(bank); wait(30); wander
     `);
     const memory = new Array<number>(MEMORY_SLOTS).fill(0);
-    const next = (hour: number): string => action(decide(program, { hour }, memory));
+    const next = (flask: number): string => action(decide(program, { flask }, memory));
     expect([next(5), next(5), next(5), next(5), next(5)]).toEqual([
       "walk_to(15, 9)",
       "wait(30)",
@@ -184,11 +186,11 @@ describe("compiling", () => {
 
   it("lets two rules each run their own sequence", () => {
     const program = compiled(`
-      when hour < 12 -> wait(11); wait(12)
+      when flask < 12 -> wait(11); wait(12)
       otherwise -> wait(21); wait(22); wait(23)
     `);
     const memory = new Array<number>(MEMORY_SLOTS).fill(0);
-    const next = (hour: number): string => action(decide(program, { hour }, memory));
+    const next = (flask: number): string => action(decide(program, { flask }, memory));
     expect([
       next(1),
       next(1),
@@ -216,15 +218,15 @@ describe("compiling", () => {
 
   it("labels rules with what was written, or with the condition", () => {
     const program = compiled(`
-      when hour >= 20 as "night falls" -> walk_to(camp)
+      when flask >= 20 as "night falls" -> walk_to(camp)
       when   distance( camp )   >   5 -> wander
-      when hour == 1 or hour == 2 or hour == 3 or hour == 4 or hour == 5 -> idle
+      when flask == 1 or flask == 2 or flask == 3 or flask == 4 or flask == 5 -> idle
       otherwise -> idle
     `);
     expect(program.rules).toEqual([
       "night falls",
       "distance(camp) > 5",
-      "hour == 1 or hour == 2 or hour == 3...",
+      "flask == 1 or flask == 2 or flask ==...",
       "otherwise",
     ]);
   });
@@ -233,24 +235,24 @@ describe("compiling", () => {
     const program = compiled(`# a comment
       bot "Wrapped"   # trailing comment
 
-      when hour >= 20 and
+      when flask >= 20 and
            distance(camp) > 0 ->
         walk_to(
           camp
         );
         wait(40)
     `);
-    expect(program.rules).toEqual(["hour >= 20 and distance(camp) > 0", "otherwise"]);
-    expect(action(decide(program, { hour: 22, distance: 3 }))).toBe("walk_to(14, 9)");
+    expect(program.rules).toEqual(["flask >= 20 and distance(camp) > 0", "otherwise"]);
+    expect(action(decide(program, { flask: 22, distance: 3 }))).toBe("walk_to(14, 9)");
   });
 });
 
 describe("errors", () => {
   it("says what is wrong, where, in words a newcomer can act on", () => {
     const cases: [string, RegExp][] = [
-      ["when hour > 5 wander", /^1:15 I expected "->" after the condition, but found "wander"/],
+      ["when flask > 5 wander", /^1:16 I expected "->" after the condition, but found "wander"/],
       ["otherwise wander", /^1:11 I expected "->" after "otherwise"/],
-      ["hour > 5 -> wander", /^1:1 a rule starts with "when" or "otherwise"/],
+      ["flask > 5 -> wander", /^1:1 a rule starts with "when" or "otherwise"/],
       [
         "when mana < 40 -> wander",
         /^1:6 I do not know what "mana" is\. Sensors: self_x, .* set mana = 0/,
@@ -259,10 +261,10 @@ describe("errors", () => {
         "otherwise -> dance",
         /^1:14 there is no action called "dance"\. Actions: idle, wait, walk_to, wander/,
       ],
-      ["otherwise -> hour", /"hour" is a sensor: it reads, it does not act/],
+      ["otherwise -> flask", /"flask" is a sensor: it reads, it does not act/],
       ["when wander -> idle", /^1:6 "wander" is an action: it can only come after ->/],
       ["otherwise -> wait(camp)", /was given 2 \(a place counts as two: its x and its y\)/],
-      ["when hour % 2 == 0 -> idle", /^1:11 for a remainder write "mod", not "%"/],
+      ["when flask % 2 == 0 -> idle", /^1:12 for a remainder write "mod", not "%"/],
       [
         "otherwise -> wait(10 % 3)",
         /"%" after a number only marks a percentage; for a remainder write "mod", like: 10 mod 3/,
@@ -271,7 +273,7 @@ describe("errors", () => {
         "when 1 < 2 < 3 -> idle",
         /^1:12 comparisons cannot be chained; join two of them with "and"/,
       ],
-      ['when hour > 1 as "\u200B" -> idle', /after "as" comes a short label in quotes/],
+      ['when flask > 1 as "\u200B" -> idle', /after "as" comes a short label in quotes/],
       ['bot "\u202E"\notherwise -> idle', /after "bot" comes the bot's name in quotes/],
       ["when idle() -> idle", /there is no sensor called "idle" \("idle" is an action/],
       ["otherwise -> walk_to(3)", /^1:14 "walk_to" takes 2 values, but was given 1/],
@@ -280,12 +282,12 @@ describe("errors", () => {
         "otherwise -> wait(camp + 1)",
         /"camp" is a place, so it can only be given to a sensor or an action/,
       ],
-      ["when hour = 5 -> idle", /^1:11 to compare two values write "==", not "="/],
+      ["when flask = 5 -> idle", /^1:12 to compare two values write "==", not "="/],
       ["otherwise -> set x = 1", /a rule must end with an action, not with "set"/],
-      ["otherwise -> set hour = 1; idle", /"hour" already means something/],
+      ["otherwise -> set flask = 1; idle", /"flask" already means something/],
       ["otherwise -> set camp = 1; idle", /"camp" already means something/],
       [
-        "otherwise -> idle\nwhen hour == 1 -> idle",
+        "otherwise -> idle\nwhen flask == 1 -> idle",
         /^2:1 no rule can come after "otherwise" \(line 1\)/,
       ],
       ["otherwise -> wait(99999999999)", /99999999999 is too large/],
@@ -295,7 +297,7 @@ describe("errors", () => {
       ["otherwise -> idle @", /"@" is not something Tactics understands/],
       ["bot Lumberjack\notherwise -> idle", /after "bot" comes the bot's name in quotes/],
       ['bot "Unclosed\notherwise -> idle', /missing its closing "/],
-      ["when hour > 1 as night -> idle", /after "as" comes a short label in quotes/],
+      ["when flask > 1 as night -> idle", /after "as" comes a short label in quotes/],
       ["", /a program needs at least one rule/],
       ["# only a comment\n\n", /a program needs at least one rule/],
     ];
@@ -319,7 +321,7 @@ describe("errors", () => {
     ]);
     expect(lines("otherwise -> idle\nwhen 1 -> idle\nwhen bogus -> idle")).toEqual(["2:1", "3:1"]);
     // A bad slot name is one error among the others.
-    expect(lines("when 1 -> set hour = 1; idle\nwhen zork -> idle")).toEqual(["1:11", "2:6"]);
+    expect(lines("when 1 -> set flask = 1; idle\nwhen zork -> idle")).toEqual(["1:11", "2:6"]);
     // An unclosed bracket ends at the next rule.
     expect(lines("when distance(camp > 3 -> idle\nwhen foo -> idle\nwhen 1 -> idle")).toEqual([
       "1:24",
@@ -328,8 +330,8 @@ describe("errors", () => {
     // Nor does a line that stops in the middle of something: after "(", ",", "->", ";" or an operator.
     for (const broken of [
       "when distance(",
-      "when hour > 3 and",
-      "when hour > 3 ->",
+      "when flask > 3 and",
+      "when flask > 3 ->",
       "otherwise -> walk_to(camp,",
       "when 1 -> idle;",
       "when 1 -",
@@ -344,22 +346,22 @@ describe("errors", () => {
     // Size errors point at the rule that went over, not at the last rule.
     const deep = `when ${"1 < 1 + 1 * (".repeat(30)}1${")".repeat(30)} -> idle\n${"when 1 -> idle\n".repeat(5)}`;
     expect(errorsOf(deep)[0]).toMatch(/^1:1 an expression in this rule needs more room/);
-    const long = `${`when ${Array.from({ length: 290 }, () => "hour").join(" + ")} > 0 -> idle\n`.repeat(4)}${"when hour -> idle\n".repeat(10)}`;
+    const long = `${`when ${Array.from({ length: 290 }, () => "flask").join(" + ")} > 0 -> idle\n`.repeat(4)}${"when flask -> idle\n".repeat(10)}`;
     expect(errorsOf(long)[0]).toMatch(/^4:1 this program is too long to finish a decision/);
     // Text in quotes is never a reason to join two lines.
     expect(
-      compiled('bot "or"\nwhen hour > 1 as "and" -> idle\notherwise as "->" -> wander').rules,
+      compiled('bot "or"\nwhen flask > 1 as "and" -> idle\notherwise as "->" -> wander').rules,
     ).toEqual(["and", "->"]);
   });
 
   it("treats every kind of line ending as a line break", () => {
     for (const ending of ["\n", "\r\n", "\r", "\u2028", "\u2029", "\u0085", "\f", "\v"]) {
-      const program = compiled(`when hour > 1 -> idle${ending}otherwise -> wander${ending}`);
-      expect(program.rules).toEqual(["hour > 1", "otherwise"]);
+      const program = compiled(`when flask > 1 -> idle${ending}otherwise -> wander${ending}`);
+      expect(program.rules).toEqual(["flask > 1", "otherwise"]);
     }
     expect(errorsOf("otherwise -> idle\r\rwhen zork -> idle")[0]).toMatch(/^3:1 /);
     // A no-break space is a space; a character that cannot be shown is named by its code point.
-    expect(compiled("when\u00a0hour\u00a0>\u00a01 -> idle").rules[0]).toBe("hour > 1");
+    expect(compiled("when\u00a0flask\u00a0>\u00a01 -> idle").rules[0]).toBe("flask > 1");
     expect(errorsOf("otherwise -> idle \u0007")[0]).toMatch(
       /^1:19 the character U\+0007 is not something Tactics understands/,
     );
@@ -367,7 +369,7 @@ describe("errors", () => {
 
   it("reports several mistakes at once, each on its own line, and stops at ten", () => {
     // Line 1 and line 3 cannot be parsed; line 2 parses but names an action that does not exist.
-    const errors = errorsOf("when hour > -> idle\nwhen hour == 2 -> dance\nwhen -> idle\n");
+    const errors = errorsOf("when flask > -> idle\nwhen flask == 2 -> dance\nwhen -> idle\n");
     expect(errors.map((e) => e.split(":")[0])).toEqual(["1", "2", "3"]);
     expect(errors[1]).toMatch(/no action called "dance"/);
     const many = Array.from({ length: 40 }, () => "nonsense here").join("\n");
@@ -376,7 +378,7 @@ describe("errors", () => {
 
   it("refuses programs that are too big, with the reason and the place", () => {
     const rule =
-      "when hour == 1 and minute == 2 and distance(camp) > 3 -> walk_to(bank); wait(30); wander\n";
+      "when flask == 1 and heard == 2 and distance(camp) > 3 -> walk_to(bank); wait(30); wander\n";
     expect(errorsOf(rule.repeat(70))[0]).toMatch(/^64:1 a program can have at most 63 rules/);
     expect(errorsOf("x".repeat(20_001))[0]).toMatch(/at most 20000 characters/);
     const slots = Array.from({ length: 16 }, (_, i) => `set s${i} = 1`).join("; ");
@@ -390,7 +392,7 @@ describe("errors", () => {
 
     // Many rules that are fine one by one. With k sensor reads a rule compiles to 3k + 8 words and 2k + 4 steps.
     const sum = (k: number): string =>
-      `when ${Array.from({ length: k }, () => "hour").join(" + ")} > 0 -> idle\n`;
+      `when ${Array.from({ length: k }, () => "flask").join(" + ")} > 0 -> idle\n`;
     expect(errorsOf(sum(20).repeat(63))[0]).toMatch(
       /^6[0-3]:1 this program is too long: it compiles to 42\d\d words and the limit is 4096/,
     );
@@ -427,20 +429,20 @@ describe("errors", () => {
   it("the largest programs it accepts finish their decision", () => {
     // The largest programs the compiler accepts, run with every sensor answering so that all rules are tried.
     const sum = (k: number): string =>
-      `when ${Array.from({ length: k }, () => "hour").join(" + ")} > 9999 -> idle\n`;
+      `when ${Array.from({ length: k }, () => "flask").join(" + ")} > 9999 -> idle\n`;
     for (const source of [sum(13).repeat(63), sum(190).repeat(3), sum(40).repeat(20)]) {
       const result = compileTactics(source);
       if (!result.ok) {
         expect(result.errors[0]?.message).toMatch(/too long/);
         continue;
       }
-      const decision = decide(result.program, { hour: 0 });
+      const decision = decide(result.program, { flask: 0 });
       expect(decision.fault).toBe("none");
       expect(decision.gasUsed).toBeLessThanOrEqual(2000);
     }
     // And the long chains from the review are refused, not compiled into something that cannot finish.
     expect(errorsOf(`when ${"not ".repeat(2100)}1 -> idle`)[0]).toMatch(/nested too deeply/);
-    expect(errorsOf(`when hour${"+hour".repeat(1300)} > 0 -> idle`)[0]).toMatch(
+    expect(errorsOf(`when flask${"+flask".repeat(1300)} > 0 -> idle`)[0]).toMatch(
       /this rule is too long/,
     );
   });
@@ -451,10 +453,10 @@ describe("errors", () => {
     const tooMany = errorsOf(`otherwise -> ${waits(33)}`);
     expect(tooMany[0]).toMatch(/a rule can do at most 32 actions in sequence/);
     const program = compiled(
-      `when hour < 12 -> ${waits(32)}\nwhen 1 -> wait(1); wait(2); wait(3)\n`,
+      `when flask < 12 -> ${waits(32)}\nwhen 1 -> wait(1); wait(2); wait(3)\n`,
     );
     const memory = new Array<number>(MEMORY_SLOTS).fill(0);
-    const next = (hour: number): string => action(decide(program, { hour }, memory));
+    const next = (flask: number): string => action(decide(program, { flask }, memory));
     const first: string[] = [];
     for (let i = 0; i < 34; i++) first.push(next(1));
     expect(first.slice(0, 3)).toEqual(["wait(100)", "wait(101)", "wait(102)"]);
@@ -469,22 +471,22 @@ describe("errors", () => {
   });
 
   it("everything it accepts fits the machine's limits", () => {
-    const rule = "when hour == 1 and minute == 2 -> walk_to(bank); wait(30)\n";
+    const rule = "when flask == 1 and heard == 2 -> walk_to(bank); wait(30)\n";
     const big = compiled(rule.repeat(63));
     expect(big.code.length).toBeLessThanOrEqual(MAX_CODE_LENGTH);
     expect(big.rules).toHaveLength(64);
-    expect(action(decide(big, { hour: 1, minute: 2 }))).toBe("walk_to(15, 9)");
+    expect(action(decide(big, { flask: 1, heard: 2 }))).toBe("walk_to(15, 9)");
   });
 });
 
 describe("names and labels", () => {
   it("keeps comments out of labels and tidies the spacing", () => {
     const program = compiled(
-      "when hour > 1 and # late\n  hour <   5 -> idle\nwhen distance( camp )>3 or -hour < - 2 -> idle",
+      "when flask > 1 and # late\n  flask <   5 -> idle\nwhen distance( camp )>3 or -flask < - 2 -> idle",
     );
     expect(program.rules).toEqual([
-      "hour > 1 and hour < 5",
-      "distance(camp) > 3 or - hour < - 2",
+      "flask > 1 and flask < 5",
+      "distance(camp) > 3 or - flask < - 2",
       "otherwise",
     ]);
   });
@@ -519,7 +521,7 @@ describe("names and labels", () => {
 
   it("refuses constants a program could not use, with the reason", () => {
     const refused: [Constants, RegExp][] = [
-      [{ hour: { x: 1, y: 2 } }, /"hour" is already a sensor or an action/],
+      [{ flask: { x: 1, y: 2 } }, /"flask" is already a sensor or an action/],
       [{ wander: 3 }, /"wander" is already a sensor or an action/],
       [{ when: 3 }, /"when" cannot be used as a name/],
       [{ "old mill": { x: 1, y: 2 } }, /"old mill" cannot be used as a name/],
@@ -561,8 +563,8 @@ describe("hostile source", () => {
     "/",
     "%",
     "\n",
-    "hour",
-    "minute",
+    "flask",
+    "heard",
     "distance",
     "walkable",
     "self_x",
@@ -588,9 +590,9 @@ describe("hostile source", () => {
   ];
   const SEED_PROGRAM = [
     'bot "Seed" \n',
-    'when hour >= 20 and distance ( camp ) > 0 as "home" -> walk_to ( camp ) ; wait ( 40 ) \n',
+    'when flask >= 20 and distance ( camp ) > 0 as "home" -> walk_to ( camp ) ; wait ( 40 ) \n',
     "when trips < 3 or not walkable ( 3 , far ) -> set trips = trips + 1 ; wander \n",
-    "when ( hour mod 2 ) == 0 -> wait ( 10 * 2 - 1 ) \n",
+    "when ( flask mod 2 ) == 0 -> wait ( 10 * 2 - 1 ) \n",
     "otherwise -> idle",
   ]
     .join("")
@@ -635,7 +637,7 @@ describe("hostile source", () => {
       for (let turn = 0; turn < 3; turn++) {
         const decision = decide(
           result.program,
-          { hour: nextInt(rng, 24), distance: nextInt(rng, 9) },
+          { flask: nextInt(rng, 24), distance: nextInt(rng, 9) },
           memory,
         );
         // A compiled program can divide by zero; it can do nothing worse.
@@ -652,7 +654,7 @@ describe("hostile source", () => {
     const expression = (depth: number): string => {
       const roll = nextInt(rng, depth > 3 ? 4 : 9);
       if (roll === 0) return String(nextInt(rng, 50));
-      if (roll === 1) return pick(["hour", "minute", "self_x", "self_y", "far", "trips", "mood"]);
+      if (roll === 1) return pick(["flask", "heard", "self_x", "self_y", "far", "trips", "mood"]);
       if (roll === 2) return `distance(${pick(["camp", "bank", "3, 4"])})`;
       if (roll === 3) return `walkable(${expression(depth + 1)}, 2)`;
       if (roll === 4)
@@ -822,31 +824,40 @@ describe("the language reference", () => {
       doc.indexOf("```\nbot") + 4,
       doc.indexOf("```", doc.indexOf("```\nbot") + 4),
     );
-    const result = compileTactics(example, placeConstants(firstLight()));
+    const result = compileTactics(example, placeConstants(deckMap(1)));
     expect(result.ok ? result.program.rules : result).toEqual([
       "heading home",
-      "hour >= 20",
+      "lift_eta < 9999",
       "otherwise",
     ]);
   });
 });
 
 describe("shipped programs", () => {
-  it("every program in content/bots compiles", () => {
-    const sources = botSources();
-    expect(Object.keys(sources).sort()).toEqual([
+  it("every program in content/bots and the camp's fixtures compiles", () => {
+    expect(Object.keys(botSources()).sort()).toEqual(["deckhand"]);
+    expect(Object.keys(campBotSources()).sort()).toEqual([
       "deckhand",
       "homebody",
       "riverwalker",
       "wanderer",
     ]);
-    const programs = compileBots(sources, placeConstants(shippedWorld()));
-    expect(Object.keys(programs).sort()).toEqual(Object.keys(sources).sort());
+    const shipped = compileBots(botSources(), placeConstants(deckMap(1)));
+    expect(Object.keys(shipped)).toEqual(["deckhand"]);
+    const camp = compileBots(campBotSources(), placeConstants(campMap()));
+    expect(Object.keys(camp).sort()).toEqual(Object.keys(campBotSources()).sort());
   });
 
-  it("the shipped programs behave as their labels say, over a full day", () => {
-    const map = shippedWorld();
-    const world = createWorld(map, 9, compileBots(botSources(), placeConstants(map)));
+  it("refuses the camp's clock and firelight, which are gone", () => {
+    for (const name of ["hour", "minute", "lit_here", "threat_lit", "lit_enemies", "lit_mending"])
+      expect(() => compileBots({ old: `when ${name} > 0 -> idle\notherwise -> idle` })).toThrow(
+        new RegExp(`"${name}" is gone: there is no (game hour|firelight)`),
+      );
+  });
+
+  it("the camp's programs behave as their labels say, over 14,400 ticks", () => {
+    const map = campMap();
+    const world = createWorld(map, 9, compileBots(campBotSources(), placeConstants(map)));
     step(
       world,
       spawnsNearCamp(world, [
@@ -864,38 +875,24 @@ describe("shipped programs", () => {
     let hobFarthest = 0;
     let rillReachedRiver = false;
     const wrenTiles = new Set<string>();
-    const wrenRegions = new Set<number>();
     const labels = new Set<string>();
-    for (let tick = 0; tick < TICKS_PER_DAY; tick++) {
+    for (let tick = 0; tick < 14_400; tick++) {
       step(world);
       for (const actor of world.actors) {
         expect(actor.fault).toBe(0);
         labels.add(`${actor.program}: ${world.programs[actor.program]?.rules[actor.rule]}`);
       }
-      const { hour } = clock(world);
       wrenTiles.add(`${wren.x},${wren.y}`);
-      wrenRegions.add(regionAt(map, wren.x, wren.y));
-      if (hour >= 8 && hour < 18) hobFarthest = Math.max(hobFarthest, far(hob, camp));
+      hobFarthest = Math.max(hobFarthest, far(hob, camp));
       if (far(rill, river) === 0) rillReachedRiver = true;
-      // Deep in the night both of them are settled near the lantern.
-      if (hour === 2) {
-        expect(far(hob, camp)).toBeLessThanOrEqual(3);
-        expect(far(rill, camp)).toBeLessThanOrEqual(3);
-        // The wanderer strolls about the camp's region, which the viewer shows.
-        expect(regionAt(map, wren.x, wren.y)).toBe(regionAt(map, camp.x, camp.y));
-      }
     }
     expect(rillReachedRiver).toBe(true);
-    expect(wrenTiles.size).toBeGreaterThan(200);
-    // The wanderer's bags come from the camp's trees and the lower river's, and
-    // once it can cut old trees, the pinewood's, which it cannot on its first
-    // day. The hills have no trees.
-    const region = (name: string): number => map.regions.findIndex((r) => r.map.name === name);
-    expect([...wrenRegions].sort()).toEqual([region("camp"), region("lower-river")].sort());
+    // The wanderer keeps to the one map now, and still gets about it.
+    expect(wrenTiles.size).toBeGreaterThan(120);
     // The homebody goes to the trees near camp and never gets across the map.
     expect(hobFarthest).toBeGreaterThan(6);
     expect(hobFarthest).toBeLessThan(30);
-    // Every gathering rule is used at least once in the day.
+    // Every gathering rule is used at least once.
     const used = [...labels];
     for (const label of [
       "homebody: chop",
@@ -906,14 +903,13 @@ describe("shipped programs", () => {
       "riverwalker: bank",
       "wanderer: chop",
       "wanderer: bank the logs",
-      "wanderer: off to the lower river",
     ])
       expect(used).toContain(label);
   });
 
   it("a map whose place names no program could use is blamed, not the programs", () => {
-    expect(() => compileBots({ fine: "otherwise -> idle" }, { hour: { x: 1, y: 2 } })).toThrow(
-      /^the names given to programs are not usable: "hour" is already a sensor or an action/,
+    expect(() => compileBots({ fine: "otherwise -> idle" }, { flask: { x: 1, y: 2 } })).toThrow(
+      /^the names given to programs are not usable: "flask" is already a sensor or an action/,
     );
   });
 
@@ -926,9 +922,9 @@ describe("shipped programs", () => {
 
   it("a broken content program is refused with its file, line and column", () => {
     expect(() =>
-      compileBots({ good: "otherwise -> idle", broken: "otherwise -> idle\nwhen hour > -> idle" }),
+      compileBots({ good: "otherwise -> idle", broken: "otherwise -> idle\nwhen flask > -> idle" }),
     ).toThrow(BotError);
-    expect(() => compileBots({ broken: "otherwise -> idle\nwhen hour > -> idle" })).toThrow(
+    expect(() => compileBots({ broken: "otherwise -> idle\nwhen flask > -> idle" })).toThrow(
       /^broken\.tac, line 2, column \d+: /,
     );
   });

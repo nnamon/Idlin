@@ -1,47 +1,41 @@
 // Adopting a snapshot into content that changed after it was taken.
 
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { adopt } from "./adopt.ts";
-import {
-  type Atlas,
-  atlasOf,
-  parseWorld,
-  pointOf,
-  regionAt,
-  terrainOf,
-  walkable,
-} from "./atlas.ts";
-import { MapError, type Point, placeConstants } from "./map.ts";
+import { type Atlas, atlasOf, walkable } from "./atlas.ts";
+import { MapError, parseMap, placeConstants } from "./map.ts";
 import { NODE_KINDS } from "./nodes.ts";
 import { compileBots } from "./tactics.ts";
-import { botSources, firstLight, rawWorld, shippedMonsters, shippedWorld } from "./testing.ts";
+import {
+  botSources,
+  campBotSources,
+  campMap,
+  campMonsters,
+  rawCamp,
+  spawnsNearCamp,
+} from "./testing.ts";
 import { MEMORY_SLOTS } from "./vm.ts";
 import {
   type Actor,
   ADVENTURER,
+  createCity,
   createWorld,
   DOWN_TICKS,
   hashStateAs,
   hashWorld,
   type Kinds,
-  MONSTER_CEILING,
   mending,
   type Programs,
   restore,
-  SNAPSHOT_VERSION,
   SnapshotError,
-  type Spawns,
   snapshot,
-  spawnsNearCamp,
   step,
-  TICKS_PER_DAY,
   type World,
 } from "./world.ts";
 
-const WORLD = shippedWorld();
-const MONSTERS = shippedMonsters(WORLD);
-const BOTS = botSources();
+const WORLD = atlasOf(campMap());
+const MONSTERS = campMonsters(WORLD);
+const BOTS = campBotSources();
 const programsWith = (sources: Record<string, string>, atlas: Atlas = WORLD): Programs => ({
   ...compileBots(sources, placeConstants(atlas)),
   ...MONSTERS.programs,
@@ -51,13 +45,11 @@ interface Content {
   readonly atlas: Atlas;
   readonly programs: Programs;
   readonly kinds: Kinds;
-  readonly spawns: Spawns;
 }
 const SHIPPED: Content = {
   atlas: WORLD,
   programs: programsWith(BOTS),
   kinds: MONSTERS.kinds,
-  spawns: MONSTERS.spawns,
 };
 const CAST = ["Ada", "Bram", "Cole", "Dena", "Edda", "Finn"].map((name, i) => ({
   name,
@@ -67,20 +59,32 @@ const CAST = ["Ada", "Bram", "Cole", "Dena", "Edda", "Finn"].map((name, i) => ({
 const MARK = 77;
 
 /**
- * The shipped world after a morning: residents with some experience and, once
- * one has come, monsters about. Every actor's last memory slot holds MARK.
+ * The camp after a morning: citizens with some experience and monsters
+ * about, put in by hand as the camp has no spawn table now. Every actor's
+ * last memory slot holds MARK.
  */
 const lived = ((): string => {
-  const world = createWorld(WORLD, 260, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns);
+  const world = createWorld(WORLD, 260, SHIPPED.programs, SHIPPED.kinds);
   step(world, spawnsNearCamp(world, CAST));
-  const monster = (): boolean => world.actors.some((a) => a.kind !== ADVENTURER);
-  while ((world.tick < 3000 || !monster()) && world.tick < TICKS_PER_DAY) step(world);
+  const beast = (kind: string, at: string) => {
+    const where = WORLD.places.find((p) => p.name === at) as { x: number; y: number };
+    return {
+      type: "spawn" as const,
+      name: kind === "wolf" ? "Wolf" : "Goblin",
+      program: kind,
+      kind,
+      ...where,
+    };
+  };
+  step(world, [beast("wolf", "meadow"), beast("goblin", "den"), beast("goblin", "deep_wood")]);
+  while (world.tick < 3000) step(world);
+  if (!world.actors.some((a) => a.kind !== ADVENTURER)) step(world, [beast("wolf", "meadow")]);
   for (const actor of world.actors) actor.memory[MEMORY_SLOTS - 1] = MARK;
   return snapshot(world);
 })();
-const before = restore(lived, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns);
+const before = restore(lived, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds);
 
-const adoptInto = (text: string, c: Content) => adopt(text, c.atlas, c.programs, c.kinds, c.spawns);
+const adoptInto = (text: string, c: Content) => adopt(text, c.atlas, c.programs, c.kinds);
 
 /** The shipped content with Homebody's idle wait a tick longer. */
 const EDITED: Content = {
@@ -97,15 +101,13 @@ const data = (): Data => JSON.parse(lived);
 const actors = (d: Data): Record<string, unknown>[] => d.state.actors as Record<string, unknown>[];
 /** `d` as text, with the hash its state would need to pass as undamaged. */
 const forge = (d: Data): string => {
-  d.hash = hashStateAs(d.state as unknown as World, SNAPSHOT_VERSION, {
+  d.hash = hashStateAs(d.state as unknown as World, {
     map: d.map as string,
     programs: d.programs as string,
     kinds: d.kinds as string,
-    spawns: d.spawns as string,
   });
   return JSON.stringify(d);
 };
-
 /**
  * Adopts `text` into `c` twice and checks both give the same world, which runs
  * on to the same hash straight through as through a snapshot and a strict
@@ -119,7 +121,7 @@ function continues(text: string, c: Content, ticks = 600): World {
   expect(hashWorld(straight)).toBe(hashWorld(world));
   for (let i = 0; i < ticks; i++) step(straight);
   for (let i = 0; i < ticks / 2; i++) step(halfway);
-  const resumed = restore(snapshot(halfway), c.atlas, c.programs, c.kinds, c.spawns);
+  const resumed = restore(snapshot(halfway), c.atlas, c.programs, c.kinds);
   expect(hashWorld(resumed)).toBe(hashWorld(halfway));
   for (let i = 0; i < ticks / 2; i++) step(resumed);
   expect(hashWorld(resumed)).toBe(hashWorld(straight));
@@ -153,9 +155,9 @@ describe("adopting a snapshot", () => {
   it("after a program is edited: everyone stays, and only that program's actors forget", () => {
     const content = EDITED;
     expect(content.programs.homebody).not.toEqual(SHIPPED.programs.homebody);
-    expect(() =>
-      restore(lived, content.atlas, content.programs, content.kinds, content.spawns),
-    ).toThrow(/different programs/);
+    expect(() => restore(lived, content.atlas, content.programs, content.kinds)).toThrow(
+      /different programs/,
+    );
 
     const { changes } = adoptInto(lived, content);
     const world = continues(lived, content);
@@ -186,7 +188,7 @@ describe("adopting a snapshot", () => {
     Object.assign(down, { wait: DOWN_TICKS, rule: -1, fault: 0 });
     Object.assign(idle, { wait: 100, rule: 0, fault: 0 });
     const text = forge(d);
-    const saved = restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns);
+    const saved = restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds);
     const mender = saved.actors.find((a) => a.id === down.id) as Actor;
     const waiter = saved.actors.find((a) => a.id === idle.id) as Actor;
     expect([mending(mender), mending(waiter)]).toEqual([true, false]);
@@ -236,9 +238,9 @@ describe("adopting a snapshot", () => {
     const kind = MONSTERS.kinds[monster.kind] as Kinds[string];
     const weaker = { ...kind, hp: 1, windup: 1, recovery: 0, damage: kind.damage + 1 };
     const content = { ...SHIPPED, kinds: { ...MONSTERS.kinds, [monster.kind]: weaker } };
-    expect(() =>
-      restore(lived, content.atlas, content.programs, content.kinds, content.spawns),
-    ).toThrow(/different monster kinds/);
+    expect(() => restore(lived, content.atlas, content.programs, content.kinds)).toThrow(
+      /different monster kinds/,
+    );
 
     const { changes } = adoptInto(lived, content);
     const world = continues(lived, content);
@@ -261,7 +263,7 @@ describe("adopting a snapshot", () => {
     const { step: fast, ...slowWolf } = MONSTERS.kinds.wolf as Kinds[string];
     expect(fast).toBe(4);
     const slow: Content = { ...SHIPPED, kinds: { ...MONSTERS.kinds, wolf: slowWolf } };
-    const world = createWorld(WORLD, 3, slow.programs, slow.kinds, slow.spawns);
+    const world = createWorld(WORLD, 3, slow.programs, slow.kinds);
     step(world, [{ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 4, y: 6 }]);
     const wolf = world.actors[0] as Actor;
     const mid: Record<number, string> = {};
@@ -272,11 +274,11 @@ describe("adopting a snapshot", () => {
     for (const ticks of [5, 6]) {
       const text = mid[ticks] as string;
       expect(text, `a wolf ${ticks} ticks into a step`).toBeDefined();
-      expect(() =>
-        restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns),
-      ).toThrow(/different monster kinds/);
+      expect(() => restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds)).toThrow(
+        /different monster kinds/,
+      );
       const adopted = continues(text, SHIPPED);
-      const saved = restore(text, slow.atlas, slow.programs, slow.kinds, slow.spawns);
+      const saved = restore(text, slow.atlas, slow.programs, slow.kinds);
       const was = saved.actors.find((a) => a.kind === "wolf") as Actor;
       const now = adopted.actors.find((a) => a.id === was.id) as Actor;
       expect(was.moveTicksLeft).toBe(ticks);
@@ -293,8 +295,7 @@ describe("adopting a snapshot", () => {
   it("after a monster kind is removed: its monsters go, with the reason", () => {
     const monster = before.actors.find((a) => a.kind !== ADVENTURER) as Actor;
     const { [monster.kind]: _, ...kinds } = MONSTERS.kinds;
-    const spawns = MONSTERS.spawns.filter((s) => s.kind !== monster.kind);
-    const content = { ...SHIPPED, kinds, spawns };
+    const content = { ...SHIPPED, kinds };
     const { changes } = adoptInto(lived, content);
     const world = continues(lived, content);
     expect(world.actors).toEqual(before.actors.filter((a) => a.kind !== monster.kind));
@@ -305,8 +306,7 @@ describe("adopting a snapshot", () => {
   });
 
   it("after a map gains a node: everyone keeps their place and the new node stands full", () => {
-    const { world: layout, maps } = rawWorld();
-    const camp = maps.camp as { rows: string[]; nodes: { kind: string; x: number; y: number }[] };
+    const camp = rawCamp() as { rows: string[]; nodes: { kind: string; x: number; y: number }[] };
     let atlas: Atlas | null = null;
     // The first tree in camp's map that is not a node yet and can be one.
     for (let y = 0; y < camp.rows.length && !atlas; y++) {
@@ -314,7 +314,7 @@ describe("adopting a snapshot", () => {
         if (camp.rows[y]?.[x] !== "T" || camp.nodes.some((n) => n.x === x && n.y === y)) continue;
         const nodes = [...camp.nodes, { kind: "tree", x, y }];
         try {
-          atlas = parseWorld(layout, { ...maps, camp: { ...camp, nodes } });
+          atlas = atlasOf(parseMap({ ...camp, nodes }));
         } catch (error) {
           if (!(error instanceof MapError)) throw error;
         }
@@ -330,7 +330,6 @@ describe("adopting a snapshot", () => {
     expect(world.nodes).toEqual(
       atlas.nodes.map((n) => ({ left: NODE_KINDS[n.kind - 1]?.yield, back: 0 })),
     );
-    expect(world.nextSpawn).toEqual(before.nextSpawn);
     expect(changes).toEqual([
       "the map has changed",
       `all ${atlas.nodes.length} nodes stand full again`,
@@ -338,18 +337,14 @@ describe("adopting a snapshot", () => {
   });
 
   it("after the ground under an actor turns to rock: it moves to the nearest tile it can stand on", () => {
-    const { world: layout, maps } = rawWorld();
-    const regions = (layout as { regions: { map: string; x: number; y: number }[] }).regions;
+    const camp = rawCamp() as { rows: string[] };
     let found: { atlas: Atlas; actor: Actor } | null = null;
     for (const actor of before.actors) {
-      const region = regions[regionAt(WORLD, actor.x, actor.y)] as (typeof regions)[number];
-      const map = maps[region.map] as { rows: string[] };
-      const [lx, ly] = [actor.x - region.x, actor.y - region.y];
-      const rows = map.rows.map((row, y) =>
-        y === ly ? `${row.slice(0, lx)}#${row.slice(lx + 1)}` : row,
+      const rows = camp.rows.map((row, y) =>
+        y === actor.y ? `${row.slice(0, actor.x)}#${row.slice(actor.x + 1)}` : row,
       );
       try {
-        const atlas = parseWorld(layout, { ...maps, [region.map]: { ...map, rows } });
+        const atlas = atlasOf(parseMap({ ...camp, rows }));
         found = { atlas, actor };
         break;
       } catch (error) {
@@ -379,83 +374,6 @@ describe("adopting a snapshot", () => {
     expect(world.actors.filter((a) => a !== moved).map(kept)).toEqual(
       before.actors.filter((a) => a.id !== actor.id).map(kept),
     );
-  });
-
-  it("removes a monster that would take its region past the cap", () => {
-    // A change of map can put more monsters in a region than it may hold. The
-    // same state is made here by adding copies of a monster beside it.
-    const d = data();
-    const raw = actors(d) as (Record<string, unknown> & Point)[];
-    const monster = raw.find((a) => a.kind !== ADVENTURER) as (typeof raw)[number];
-    const region = regionAt(WORLD, monster.x, monster.y);
-    const monstersThere = () =>
-      raw.filter((a) => a.kind !== ADVENTURER && regionAt(WORLD, a.x, a.y) === region).length;
-    const free: Point[] = [];
-    for (let tile = 0; tile < WORLD.width * WORLD.height; tile++) {
-      const p = pointOf(WORLD, tile);
-      if (regionAt(WORLD, p.x, p.y) !== region || !walkable(WORLD, p.x, p.y)) continue;
-      if (terrainOf(WORLD, p.x, p.y) === "camp" || raw.some((a) => a.x === p.x && a.y === p.y))
-        continue;
-      free.push(p);
-    }
-    let last = 0;
-    while (monstersThere() <= MONSTER_CEILING) {
-      const { x, y } = free.shift() as Point;
-      last = d.state.nextActorId as number;
-      d.state.nextActorId = last + 1;
-      raw.push({ ...monster, id: last, x, y, fromX: x, fromY: y, moveTicksLeft: 0, path: [] });
-      Object.assign(raw.at(-1) as object, { blocked: 0, windup: 0, recover: 0 });
-    }
-    const text = forge(d);
-    expect(() =>
-      restore(text, SHIPPED.atlas, SHIPPED.programs, SHIPPED.kinds, SHIPPED.spawns),
-    ).toThrow(/damaged/);
-
-    const { world, changes } = adoptInto(text, EDITED);
-    const there = world.actors.filter(
-      (a) => a.kind !== ADVENTURER && regionAt(WORLD, a.x, a.y) === region,
-    );
-    expect(there.length).toBe(MONSTER_CEILING);
-    expect(there.some((a) => a.id === last)).toBe(false);
-    const name = WORLD.regions[region]?.map.name;
-    expect(changes).toContain(
-      `removed ${monster.name} (#${last}): ${name} already holds ${MONSTER_CEILING} monsters`,
-    );
-  });
-
-  it("still migrates an older snapshot first: version 8, after its program was edited", () => {
-    const map = firstLight();
-    const sources = {
-      stroller:
-        'bot "Stroller"\nwhen threat_distance <= 1 -> attack(threat_x, threat_y)\notherwise -> walk_to(deep_wood); wait(21)\n',
-      biter:
-        'bot "Biter"\nwhen threat_distance <= 1 -> attack(threat_x, threat_y)\nwhen threat_distance < 12 -> walk_to(threat_x, threat_y)\notherwise -> wander; wait(10)\n',
-    };
-    const kinds = { wolf: { hp: 60, damage: 5, windup: 8, recovery: 10, reach: 1 } };
-    const spawns = [
-      {
-        kind: "wolf",
-        name: "Wolf",
-        program: "biter",
-        group: 2,
-        day: [{ x: 4, y: 6 }],
-        night: [{ x: 4, y: 6 }],
-      },
-    ];
-    const text = readFileSync(new URL("./fixtures/snapshot-v8.json", import.meta.url), "utf8");
-    const programs = compileBots(sources, placeConstants(map));
-    const content = { atlas: atlasOf(map), programs, kinds, spawns };
-    expect(() => restore(text, map, programs, kinds, spawns)).toThrow(/different programs/);
-    const { world, changes } = adoptInto(text, content);
-    continues(text, content);
-    expect(world.tick).toBe(3001);
-    expect(world.actors.map((a) => a.name)).toEqual(["Ash", "Bryn", "Cole"]);
-    expect(world.actors[0]?.bank).toEqual([5, 2, 7, 0]);
-    expect(world.actors.every((a) => a.memory.every((n) => n === 0))).toBe(true);
-    expect(changes.slice(0, 2)).toEqual([
-      "the programs have changed",
-      "the snapshot does not say which programs changed, so all of them count as changed",
-    ]);
   });
 });
 
@@ -529,5 +447,38 @@ describe("adopting a snapshot refuses what it cannot trust", () => {
     const d = data();
     (actors(d)[1] as Record<string, unknown>).hp = 0;
     expect(() => adoptInto(forge(d), SHIPPED)).toThrow(/damaged/);
+  });
+});
+
+describe("adopting a city's snapshot", () => {
+  it("works its ground out of the saved cycle, and keeps everyone on it when a program changes", () => {
+    const shipped = compileBots(botSources(), placeConstants(atlasOf(campMap())));
+    const city = createCity(31, shipped);
+    step(
+      city,
+      ["ana_", "brax", "cole99"].map((name, i) => ({
+        type: "join" as const,
+        account: String(500 + i),
+        name,
+        role: "viewer" as const,
+      })),
+    );
+    while (city.tick < 3000) step(city);
+    const text = snapshot(city);
+    expect(adopt(text, null, shipped).changes).toEqual([]);
+    const edited = compileBots(
+      { deckhand: (botSources().deckhand as string).replace("wait(20)", "wait(21)") },
+      placeConstants(atlasOf(campMap())),
+    );
+    const { world, changes } = adopt(text, null, edited);
+    expect(changes[0]).toBe("the programs have changed");
+    expect(world.atlas).toBe(city.atlas);
+    expect(world.cycle).toEqual(city.cycle);
+    expect(world.actors.map((a) => [a.id, a.x, a.y])).toEqual(
+      city.actors.map((a) => [a.id, a.x, a.y]),
+    );
+    // And it runs on, and saves and resumes, as a city.
+    for (let i = 0; i < 200; i++) step(world);
+    expect(hashWorld(restore(snapshot(world), null, edited))).toBe(hashWorld(world));
   });
 });

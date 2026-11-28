@@ -1,11 +1,13 @@
-// Shared by tests only: loads the shipped world, programs, monsters and items
-// from content/, the one-map world the older mechanics tests are written on,
-// and the large crowded map the tick is timed on.
+// Shared by tests only: loads the shipped programs and items from content/,
+// the camp world's programs, monsters and map that the older mechanics tests
+// are written on (fixtures/), and the large crowded map the tick is timed on.
 import { readdirSync, readFileSync } from "node:fs";
-import { type Atlas, parseWorld, type Region, tileAt } from "./atlas.ts";
+import { linked, tileAt } from "./atlas.ts";
 import { emptyBag, emptyBank } from "./bag.ts";
+import { deckMap } from "./deck.ts";
 import { type ItemTable, loadItems } from "./items.ts";
 import {
+  NEIGHBOURS,
   type Point,
   parseMap,
   placeConstants,
@@ -24,61 +26,76 @@ import { MEMORY_SLOTS, type Program } from "./vm.ts";
 import { createWorld, type Input, type Programs, step, type World } from "./world.ts";
 
 const content = (path: string): URL => new URL(`../../../content/${path}`, import.meta.url);
+const fixture = (path: string): URL => new URL(`fixtures/${path}`, import.meta.url);
 
 /**
  * The map the world was before it had regions, kept as a fixture: a world of
- * one region, with every place the shipped programs and monsters name.
+ * one map, with every place the camp's programs and monsters name, and a
+ * `hold` on the camp's tile for the shipped Deckhand.
  */
 export const rawFirstLight = (): Record<string, unknown> =>
-  JSON.parse(readFileSync(new URL("fixtures/first-light.json", import.meta.url), "utf8"));
+  JSON.parse(readFileSync(fixture("first-light.json"), "utf8"));
 
 export const firstLight = (): TileMap => parseMap(rawFirstLight());
 
-/** Every file in a content folder with the given extension, by name without it. */
-const files = (folder: string, extension: string): Record<string, string> =>
+/**
+ * The camp: the shipped world's first region when it had regions, kept as a
+ * fixture for the tests written on it. It has the camp's fire, bank and
+ * trees, every place the camp's programs and monsters name, and a `hold` on
+ * the camp's tile for the shipped Deckhand.
+ */
+export const rawCamp = (): Record<string, unknown> =>
+  JSON.parse(readFileSync(fixture("camp.json"), "utf8"));
+
+export const campMap = (): TileMap => parseMap(rawCamp());
+
+/** Every file in a folder with the given extension, by name without it. */
+const files = (folder: URL, extension: string): Record<string, string> =>
   Object.fromEntries(
-    readdirSync(content(`${folder}/`))
+    readdirSync(folder)
       .filter((file) => file.endsWith(extension))
       .map((file) => [
         file.slice(0, -extension.length),
-        readFileSync(content(`${folder}/${file}`), "utf8"),
+        readFileSync(new URL(file, folder), "utf8"),
       ]),
   );
 
-/** content/world.json and every map file, parsed but not validated. */
-export const rawWorld = (): { world: unknown; maps: Record<string, unknown> } => ({
-  world: JSON.parse(readFileSync(content("world.json"), "utf8")),
-  maps: Object.fromEntries(
-    Object.entries(files("maps", ".json")).map(([name, text]) => [name, JSON.parse(text)]),
-  ),
-});
-
-/** The shipped world: its regions and the exits between them. */
-export const shippedWorld = (): Atlas => {
-  const { world, maps } = rawWorld();
-  return parseWorld(world, maps);
-};
-
 /** Every shipped program's source, by file name without the extension. */
-export const botSources = (): Record<string, string> => files("bots", ".tac");
+export const botSources = (): Record<string, string> => files(content("bots/"), ".tac");
 
-/** The shipped programs, compiled with the places of `ground`: the shipped world unless told otherwise. */
-export const shippedPrograms = (ground: Pick<TileMap, "places"> = shippedWorld()): Programs =>
+/**
+ * The camp world's programs (homebody, riverwalker, wanderer, and the
+ * Deckhand as the camp ran it), which only tests run now.
+ */
+export const campBotSources = (): Record<string, string> => files(fixture("bots/"), ".tac");
+
+/** The shipped programs, compiled with the places of `ground`: the first city's deck unless told otherwise. */
+export const shippedPrograms = (ground: Pick<TileMap, "places"> = deckMap(1)): Programs =>
   compileBots(botSources(), placeConstants(ground));
 
-/** Every monster file, parsed, by kind. */
+/** The camp world's programs, its Deckhand in place of the shipped one, compiled with the places of `ground`. */
+export const campPrograms = (ground: Pick<TileMap, "places">): Programs =>
+  compileBots({ ...botSources(), ...campBotSources() }, placeConstants(ground));
+
+/** Every camp monster file, parsed, by kind. */
 export const monsterStats = (): Record<string, unknown> =>
   Object.fromEntries(
-    Object.entries(files("monsters", ".json")).map(([kind, text]) => [kind, JSON.parse(text)]),
+    Object.entries(files(fixture("monsters/"), ".json")).map(([kind, text]) => [
+      kind,
+      JSON.parse(text),
+    ]),
   );
 
-/** Every monster program's source, by file name without the extension. */
-export const monsterSources = (): Record<string, string> => files("monsters", ".tac");
+/** Every camp monster program's source, by file name without the extension. */
+export const monsterSources = (): Record<string, string> => files(fixture("monsters/"), ".tac");
 
-/** The shipped monsters, placed by the places of `ground`: the shipped world unless told otherwise. */
-export const shippedMonsters = (ground: Pick<TileMap, "places"> = shippedWorld()): Monsters =>
+/**
+ * The camp world's monsters, the wolf and the goblin, with their programs
+ * compiled with the places of `ground`. No landing has monsters until slice
+ * piece 5, so only the fight tests use these.
+ */
+export const campMonsters = (ground: Pick<TileMap, "places"> = { places: [] }): Monsters =>
   loadMonsters(monsterStats(), monsterSources(), ground);
-
 /** The three item files from content/items/, parsed but not validated. */
 export const rawItems = (): { rarities: unknown; bases: unknown; affixes: unknown } => ({
   rarities: JSON.parse(readFileSync(content("items/rarities.json"), "utf8")),
@@ -98,8 +115,8 @@ const OPEN = new Set<string>(["grass", "path", "camp", "shore", "deep_grass", "d
  * A 120 by 80 map drawn from a fixed seed: grass inside a rock border, rock
  * outcrops, a river across the south with three bridges and fishing spots,
  * trees and old trees, and the camp in the middle with its fire and bank. It
- * has every place the shipped programs and monsters name. Built in code, as
- * the largest map file is 30 by 21.
+ * has every place the camp's programs and monsters name, and a `hold` for the
+ * Deckhand. Built in code, as the largest map file is 30 by 21.
  */
 export function bigMap(): TileMap {
   const width = BIG_WIDTH;
@@ -160,6 +177,7 @@ export function bigMap(): TileMap {
     { name: "deep_wood", x: 20, y: 20 },
     { name: "den", x: 20, y: 45 },
     { name: "fire", x: camp.x, y: camp.y + 1 },
+    { name: "hold", x: camp.x, y: camp.y + 2 },
     { name: "lower_river", x: 60, y: 66 },
     { name: "meadow", x: 95, y: 20 },
     { name: "near_wood", x: 45, y: 25 },
@@ -186,19 +204,16 @@ export function bigMap(): TileMap {
 }
 
 /**
- * A world on bigMap with `residents` adventurers running the shipped programs
+ * A world on bigMap with `residents` adventurers running the camp's programs
  * in turn and `monsters` wolves and goblins, half each, every one on a tile of
- * its own drawn from `seed`. Monsters are put in directly, as the caps that
- * keep a region of the shipped world to 24 would turn most of them away. The
- * world starts at 10:00 and has no spawn table, so no more come unless
- * `refill` puts them in.
+ * its own drawn from `seed`. No more come unless `refill` puts them in.
  */
 export function crowd(residents: number, monsters: number, seed = 1): World {
   const map = bigMap();
-  const beasts = shippedMonsters(map);
-  const programs = { ...shippedPrograms(map), ...beasts.programs };
+  const beasts = campMonsters(map);
+  const programs = { ...campPrograms(map), ...beasts.programs };
   const world = createWorld(map, seed, programs, beasts.kinds);
-  world.tick = 4 * 600;
+  world.tick = 2400;
   const rng = createRng(seed + 1000);
   const taken = new Set<number>();
   const bots = ["homebody", "riverwalker", "wanderer"];
@@ -268,7 +283,7 @@ export function timeCrowd(
 
 /** A tile of bigMap a crowd may be put on, not in `taken`, drawn from `rng`; it is added to `taken`. */
 function freeTile(world: World, rng: Rng, taken: Set<number>): Point {
-  const map = (world.atlas.regions[0] as Region).map;
+  const { map } = world.atlas;
   for (;;) {
     const x = 1 + nextInt(rng, BIG_WIDTH - 2);
     const y = 1 + nextInt(rng, BIG_HEIGHT - 2);
@@ -282,7 +297,7 @@ function freeTile(world: World, rng: Rng, taken: Set<number>): Point {
 
 /**
  * Puts a monster of `kind` at (x, y), running `program`, the kind's own by
- * default, past the caps and spawn tables that would turn it away.
+ * default, where a `spawn` input might be turned away.
  */
 export function putMonster(world: World, kind: string, { x, y }: Point, program = kind): void {
   world.actors.push({
@@ -305,7 +320,6 @@ export function putMonster(world: World, kind: string, { x, y }: Point, program 
     hp: world.kinds[kind]?.hp as number,
     windup: 0,
     recover: 0,
-    shift: "",
     stalled: 0,
     xp: noXp(),
     bag: emptyBag(),
@@ -319,4 +333,35 @@ export function putMonster(world: World, kind: string, { x, y }: Point, program 
     kills: 0,
     status: noStatus(),
   });
+}
+
+/**
+ * Spawn inputs that put the given actors on the free walkable tiles nearest
+ * the map's `camp`, in order, for tests on the camp's maps. The city has no
+ * camp: its citizens join aboard (`join`).
+ */
+export function spawnsNearCamp(
+  world: World,
+  cast: readonly { readonly name: string; readonly program: string }[],
+): Input[] {
+  const { atlas } = world;
+  const camp = atlas.places.find((p) => p.name === "camp") as Point;
+  const seen = new Set<number>([tileAt(atlas, camp.x, camp.y)]);
+  const queue: Point[] = [camp];
+  const inputs: Input[] = [];
+  for (let head = 0; head < queue.length && inputs.length < cast.length; head++) {
+    const at = queue[head] as Point;
+    if (!world.actors.some((a) => a.x === at.x && a.y === at.y)) {
+      const { name, program } = cast[inputs.length] as (typeof cast)[number];
+      inputs.push({ type: "spawn", name, x: at.x, y: at.y, program });
+    }
+    for (const [dx, dy] of NEIGHBOURS) {
+      const x = at.x + dx;
+      const y = at.y + dy;
+      if (!linked(atlas, at.x, at.y, x, y) || seen.has(tileAt(atlas, x, y))) continue;
+      seen.add(tileAt(atlas, x, y));
+      queue.push({ x, y });
+    }
+  }
+  return inputs;
 }

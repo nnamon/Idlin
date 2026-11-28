@@ -1,24 +1,14 @@
-// The shipped content the server runs: the world (its regions and exits), the
-// programs, and the monsters with their spawns, read from content/.
+// The shipped content the server runs: the programs citizens run, read from
+// content/. The city's ground is its own (deck.ts), and no landing has
+// monsters until slice piece 5 lays them, so there is no map or monster file.
 import { readdirSync, readFileSync } from "node:fs";
 import { type Crowd, CrowdError, parseCrowd } from "@idlin/chat";
-import {
-  type Atlas,
-  compileBots,
-  type Kinds,
-  loadMonsters,
-  type Programs,
-  parseWorld,
-  placeConstants,
-  type Spawns,
-} from "@idlin/sim";
+import { compileBots, deckMap, type Kinds, type Programs, placeConstants } from "@idlin/sim";
 
 export interface Content {
-  readonly atlas: Atlas;
-  /** The residents' programs and the monsters' programs together. */
+  /** The citizens' programs, compiled with the places of the first city's deck. */
   readonly programs: Programs;
   readonly kinds: Kinds;
-  readonly spawns: Spawns;
 }
 
 const CONTENT = new URL("../../../content/", import.meta.url);
@@ -32,9 +22,6 @@ function read(dir: URL, folder: string, extension: string): Record<string, strin
       .map((file) => [file.slice(0, -extension.length), readFileSync(new URL(file, at), "utf8")]),
   );
 }
-
-const parsed = (files: Record<string, string>): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(files).map(([name, text]) => [name, JSON.parse(text)]));
 
 /**
  * A crowd file from content/chat/ by its name without `.txt`, such as
@@ -51,22 +38,10 @@ export function loadCrowd(name: string, dir: URL = CONTENT): Crowd {
   return parseCrowd(text);
 }
 
-/** Throws a MapError, BotError, KindError or ProgramError if the content is bad. */
+/** Throws a BotError or ProgramError if the content is bad. */
 export function loadContent(dir: URL = CONTENT): Content {
-  const maps = parsed(read(dir, "maps", ".json"));
-  const atlas = parseWorld(JSON.parse(readFileSync(new URL("world.json", dir), "utf8")), maps);
-  const monsters = loadMonsters(
-    parsed(read(dir, "monsters", ".json")),
-    read(dir, "monsters", ".tac"),
-    atlas,
-  );
   return {
-    atlas,
-    programs: {
-      ...compileBots(read(dir, "bots", ".tac"), placeConstants(atlas)),
-      ...monsters.programs,
-    },
-    kinds: monsters.kinds,
-    spawns: monsters.spawns,
+    programs: compileBots(read(dir, "bots", ".tac"), placeConstants(deckMap(1))),
+    kinds: {},
   };
 }

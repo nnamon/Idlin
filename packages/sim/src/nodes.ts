@@ -24,7 +24,7 @@ export interface NodeKind {
   readonly regrow: number;
 }
 
-/** Ticks in a game hour, as in world.ts, which this file cannot import. */
+/** A minute of ticks, which the camp world called a game hour. */
 const HOUR = 600;
 
 export const NODE_KINDS: readonly NodeKind[] = Object.freeze([

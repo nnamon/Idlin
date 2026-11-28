@@ -15,14 +15,14 @@ describe("the capture command's arguments", () => {
     expect(parseArgs(["captures/now", "dawn:6"])).toMatchObject({ shots: ["dawn:6"] });
   });
 
-  it("falls back to four shots across the day, and a default folder", () => {
+  it("falls back to four shots across the first cycle, and a default folder", () => {
     expect(parseArgs([])).toMatchObject({
       outDir: "captures/manual",
-      shots: ["dawn:6", "noon:12", "dusk:19", "midnight:0"],
+      shots: ["transit:300", "legs:1800", "peace:3000", "siege:6600"],
     });
     expect(parseArgs(["out"])).toMatchObject({
       outDir: "out",
-      shots: ["dawn:6", "noon:12", "dusk:19", "midnight:0"],
+      shots: ["transit:300", "legs:1800", "peace:3000", "siege:6600"],
     });
   });
 

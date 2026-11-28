@@ -51,20 +51,25 @@ describe("a tick at scale", () => {
     // stagger and the version 10 hash it is 845d29c3f38cdb9e again, with the
     // same work counts. #405 changed only what is hashed: the orders of
     // snapshot version 12 and Deckhand in the program table. As version 11
-    // without Deckhand it is c9c56e2a16e6f737 still.
-    expect(hashWorld(world)).toBe("1195d9ec95d3c73d");
-    // Over the 300 ticks: some 3,150 field tiles and 2,600 search tiles a
+    // without Deckhand it is c9c56e2a16e6f737 still. The deck (#432) changed
+    // the crowd's programs: the camp's wolves and goblins wander where they
+    // walked their day rounds, and nobody reads the clock or the firelight.
+    // It also changed what version 13 hashes: no shifts and no spawn waits.
+    expect(hashWorld(world)).toBe("e47a099c5b2f153d");
+    // Over the 300 ticks: some 4,400 field tiles and 750 search tiles a
     // tick. Before the fields were shared, walk_to and step_to took some
     // 83,000 tiles a tick off their queues at this load. A blow now moves every
     // body in a row it hits that has room, and a body that is moved loses its
     // walk and finds a new one, which took the counts up from 3,400 and 2,800.
     // A staggered monster stands through its wind-up again instead of
-    // walking, which brought them down from 3,800 and 3,100.
+    // walking, which brought them down from 3,800 and 3,100. With the camp's
+    // monsters wandering where they walked their rounds (#432) they are some
+    // 4,400 and 750.
     expect(workOf(world)).toEqual({
-      fieldTiles: 945_674,
-      fields: 2_754,
-      searchTiles: 780_738,
-      actors: 2_318_352,
+      fieldTiles: 1_311_057,
+      fields: 2_998,
+      searchTiles: 223_808,
+      actors: 2_005_925,
     });
   });
 

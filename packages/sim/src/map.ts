@@ -21,6 +21,12 @@ export const TERRAINS = [
   "campfire",
   "bank",
   "tent",
+  // The city (deck.ts): its deck, the hatches in it, the ramp, and the parts
+  // of the hull nobody walks on.
+  "deck",
+  "hatch",
+  "ramp",
+  "hull",
 ] as const;
 
 export type Terrain = (typeof TERRAINS)[number];
@@ -33,7 +39,13 @@ const WALKABLE: ReadonlySet<Terrain> = new Set<Terrain>([
   "deep_grass",
   "den",
   "bridge",
+  "deck",
+  "hatch",
+  "ramp",
 ]);
+
+/** The city's own ground: a citizen on it is aboard, and no monster is put there. */
+export const ABOARD: ReadonlySet<Terrain> = new Set<Terrain>(["deck", "hatch", "ramp"]);
 
 export interface Point {
   readonly x: number;
@@ -103,9 +115,8 @@ const isCount = (v: unknown): v is number => typeof v === "number" && Number.isI
 
 /**
  * Turns parsed map content into a TileMap, or throws a MapError that says what
- * is wrong and where. A map is one region of the world; that the world has a
- * camp and that all of it can be reached from there is checked when the
- * regions are put together (see atlas.ts).
+ * is wrong and where. That all of it can be walked to from anywhere on it is
+ * checked when a world is made on it (`createWorld`).
  */
 export function parseMap(raw: unknown): TileMap {
   if (!isRecord(raw)) throw new MapError("a map must be an object");

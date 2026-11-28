@@ -2,11 +2,15 @@
 
 One 13-minute cycle of the walking city, specified to build from. It is the
 spec for [#361](https://github.com/nnamon/Idlin/issues/361) and replaces the
-milestones that were in [plan.md](plan.md). Built so far: section 4.1's hit
-(`packages/sim/src/hit.ts`), through which the world runs every blow, and
-section 3.1's four weapon families and the flask
-(`packages/sim/src/weapons.ts`), in the camp world, with no gear, ranks or
-armour yet; and section 5's params and the flag, with a first Deckhand that
+milestones that were in [plan.md](plan.md). Built so far: section 1's cycle
+on the first city's deck, piece 2's simulation half (`packages/sim/src/cycle.ts`
+and `deck.ts`): its beats on their ticks, a generated landing set down at
+legs-plant and the deck again at lift-off, and the next 0:00 at 13:00 or at
+lift-off, the later, with the break a stand-in (`PLACEHOLDER_SIEGE`, 2,400
+ticks into the siege, or a test's `break` input) until piece 31 builds the
+shield; section 4.1's hit (`packages/sim/src/hit.ts`), through which the
+world runs every blow, and section 3.1's four weapon families and the flask
+(`packages/sim/src/weapons.ts`), with no gear, ranks or armour yet; and section 5's params and the flag, with a first Deckhand that
 reads `stance`, `margin` and the flag (`packages/sim/src/orders.ts`,
 `content/bots/deckhand.tac`). That Deckhand has the defaults from before
 the siege was specified: a margin of 120, `stance` at gather, and `ramp` as
@@ -974,8 +978,8 @@ times the item level). Charms are bare.
   axis to 12 in 5. The blade's arc is the three tiles facing that way and
   the three beyond them; the maul's square is centred two tiles out, so it
   takes in the tile next to the citizen; the spear's line and the arrow's
-  run straight out. Ground that cannot be walked on, or in another region,
-  is not struck, and the spear's and the arrow's lines end at it.
+  run straight out. Ground that cannot be walked on is not struck, and the
+  spear's and the arrow's lines end at it.
 - `weapon_reach` is the farthest tile a blow reaches in steps, a diagonal
   counting one: 2, 3, 4 and 9.
 - A "faster" line takes `windup * 100 * pct / 10,000` hundredths off, and
@@ -985,7 +989,7 @@ times the item level). Charms are bare.
   "faster" lines can be worn.
 - An arrow is loosed when the wind-up ends and flies one tile a tick from the
   next tick on, so it can miss a target that steps off its line. It stops in
-  the first enemy it reaches, at a wall or a region's edge, or after nine
+  the first enemy it reaches, at a wall or the ground's edge, or after nine
   tiles. Its blow and crit are rolled when it is loosed.
 - Knockback is along the way the blow faced. Each hit adds its quarters to
   what the body still has under a tile, a whole tile moves it, and a tile it
@@ -1736,9 +1740,10 @@ points below.
     sooner than the reading, and a citizen that goes aboard by it is aboard
     in time. The world works it once a tick, not once for each citizen, and
     a run is at most 8,191 ticks of 30 posts. Both read 9999 before the
-    sighting. `lift_eta` is built already, with the camp's
-    nightfall standing in for the horde ([tactics.md](tactics.md)); pieces
-    16 and 31 give the two sensors these meanings. `shield` is the part of
+    sighting. `lift_eta` is built already, with the cycle's
+    ticks and, until piece 31 builds the shield, a break at the siege's start
+    standing in for the forward run ([tactics.md](tactics.md)); pieces 16
+    and 31 give the two sensors these meanings. `shield` is the part of
     its pool the shield has left, 0 to 100. `way_home` is the ticks of
     the citizen's walk as it is loaded: to the bubble's edge while it is
     outside before the siege, and to the ramp once it is inside or from the

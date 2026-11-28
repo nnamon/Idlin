@@ -2,7 +2,7 @@
 // the same world, and a snapshot taken partway resumes to the same hash.
 import {
   ADVENTURER,
-  createWorld,
+  createCity,
   hashWorld,
   type Input,
   restore,
@@ -11,15 +11,12 @@ import {
   type World,
 } from "@idlin/sim";
 import { describe, expect, it } from "vitest";
-import { shippedMonsters, shippedPrograms, shippedWorld } from "../../sim/src/testing.ts";
+import { shippedPrograms } from "../../sim/src/testing.ts";
 import { Chat } from "./chat.ts";
 import { parseCrowd } from "./crowd.ts";
 
-const ATLAS = shippedWorld();
-const MONSTERS = shippedMonsters(ATLAS);
-const PROGRAMS = { ...shippedPrograms(ATLAS), ...MONSTERS.programs };
-const newWorld = (seed: number): World =>
-  createWorld(ATLAS, seed, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+const PROGRAMS = shippedPrograms();
+const newWorld = (seed: number): World => createCity(seed, PROGRAMS);
 
 const CROWD = parseCrowd(
   [
@@ -80,7 +77,7 @@ describe("a world with chat", () => {
     );
     expect(hashWorld(live(3, ticks, 1500).world)).toBe(hashWorld(world));
     expect(hashWorld(replay(newWorld(3), log))).toBe(hashWorld(world));
-    const resumed = restore(saved, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+    const resumed = restore(saved, null, PROGRAMS);
     expect(resumed.tick).toBe(1500);
     expect(hashWorld(replay(resumed, log))).toBe(hashWorld(world));
     // And the log matters: the same seed without it is another world.

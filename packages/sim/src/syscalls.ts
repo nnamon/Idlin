@@ -1,6 +1,8 @@
 // The interface between a program and the world: sensors read, actions do.
 // A program refers to a system call by number, so numbers are permanent.
-// Append new calls at the end; never renumber, reuse or remove one.
+// Append new calls at the end; never renumber, reuse or remove one. A call
+// that no longer does anything is `retired`: it keeps its number, and the
+// compiler and the machine refuse it.
 
 export interface Syscall {
   readonly id: number;
@@ -9,6 +11,8 @@ export interface Syscall {
   /** How many values the call takes from the stack. */
   readonly args: number;
   readonly about: string;
+  /** Why a call is retired, if it is. */
+  readonly retired?: string;
 }
 
 export const SYSCALLS: readonly Syscall[] = [
@@ -20,8 +24,24 @@ export const SYSCALLS: readonly Syscall[] = [
     about: "The tile column this actor stands on.",
   },
   { id: 1, name: "self_y", kind: "sensor", args: 0, about: "The tile row this actor stands on." },
-  { id: 2, name: "hour", kind: "sensor", args: 0, about: "The game hour, 0 to 23." },
-  { id: 3, name: "minute", kind: "sensor", args: 0, about: "The game minute, 0 to 59." },
+  {
+    id: 2,
+    name: "hour",
+    kind: "sensor",
+    args: 0,
+    about: "Retired: the camp's game hour.",
+    retired:
+      "there is no game hour: the camp's clock and firelight went with the camp world (docs/slice.md, section 10)",
+  },
+  {
+    id: 3,
+    name: "minute",
+    kind: "sensor",
+    args: 0,
+    about: "Retired: the camp's game minute.",
+    retired:
+      "there is no game hour: the camp's clock and firelight went with the camp world (docs/slice.md, section 10)",
+  },
   {
     id: 4,
     name: "walkable",
@@ -57,7 +77,7 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "wander",
     kind: "action",
     args: 0,
-    about: "Walk to a walkable tile chosen at random in the region this actor is in.",
+    about: "Walk to a walkable tile chosen at random on the ground this actor stands on.",
   },
   { id: 10, name: "hp", kind: "sensor", args: 0, about: "This actor's hitpoints." },
   {
@@ -231,7 +251,7 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "sensor",
     args: 1,
     about:
-      "Steps in a straight grid line to the nearest free tile beside a node of a kind (`tree`, `old_tree`, `fishing_spot` or `deep_pool`) that stands, is in this actor's region and that its level allows: 0 when it is standing on one. 9999 if there is none.",
+      "Steps in a straight grid line to the nearest free tile beside a node of a kind (`tree`, `old_tree`, `fishing_spot` or `deep_pool`) that stands and that its level allows: 0 when it is standing on one. 9999 if there is none.",
   },
   {
     id: 34,
@@ -267,7 +287,7 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "at_fire",
     kind: "sensor",
     args: 0,
-    about: "1 if this actor stands within two steps of the camp fire, where it can cook, else 0.",
+    about: "1 if this actor stands within two steps of a campfire tile, where it can cook, else 0.",
   },
   {
     id: 39,
@@ -299,22 +319,25 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "sensor",
     args: 1,
     about:
-      "How many of this actor's own kind (residents, or monsters of its kind), not counting itself or residents mending after a down, stand within the given number of steps of it in its region; 0 below 0.",
+      "How many of this actor's own kind (citizens, or monsters of its kind), not counting itself or citizens mending after a down, stand within the given number of steps of it; 0 below 0.",
   },
   {
     id: 43,
     name: "lit_here",
     kind: "sensor",
     args: 0,
-    about:
-      "1 if this actor stands in the camp's firelight (in the camp's region, at most 5 tiles from `camp` in a straight line), else 0.",
+    about: "Retired: whether this actor stood in the camp's firelight.",
+    retired:
+      "there is no firelight: the camp's clock and firelight went with the camp world (docs/slice.md, section 10)",
   },
   {
     id: 44,
     name: "threat_lit",
     kind: "sensor",
     args: 0,
-    about: "1 if the nearest enemy stands in the camp's firelight, else 0, and 0 if there is none.",
+    about: "Retired: whether the nearest enemy stood in the camp's firelight.",
+    retired:
+      "there is no firelight: the camp's clock and firelight went with the camp world (docs/slice.md, section 10)",
   },
   {
     id: 45,
@@ -329,16 +352,18 @@ export const SYSCALLS: readonly Syscall[] = [
     name: "lit_enemies",
     kind: "sensor",
     args: 0,
-    about:
-      "How many of this actor's enemies stand in the camp's firelight, in its region, not counting residents mending after a down.",
+    about: "Retired: how many of this actor's enemies stood in the camp's firelight.",
+    retired:
+      "there is no firelight: the camp's clock and firelight went with the camp world (docs/slice.md, section 10)",
   },
   {
     id: 47,
     name: "lit_mending",
     kind: "sensor",
     args: 0,
-    about:
-      "How many residents lie mending after a down in the camp's firelight, in this actor's region.",
+    about: "Retired: how many citizens lay mending in the camp's firelight.",
+    retired:
+      "there is no firelight: the camp's clock and firelight went with the camp world (docs/slice.md, section 10)",
   },
   {
     id: 48,
@@ -413,7 +438,7 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "sensor",
     args: 0,
     about:
-      "Ticks until the horde reaches the hull, or 9999 before it is sighted. In the camp, which has no cycle yet, nightfall stands in for the horde: it is sighted 3000 ticks before 19:00 and this reads 0 through the night.",
+      "Ticks until lift-off, or 9999 before the front is sighted. Until the shield is built (slice piece 31) it counts as if the shield broke the moment the front reached the bubble: the ticks to the siege and 300 more, and during the siege 300; from the break, the ticks to lift-off. On a world of one map, 9999.",
   },
   {
     id: 58,
@@ -421,7 +446,7 @@ export const SYSCALLS: readonly Syscall[] = [
     kind: "sensor",
     args: 0,
     about:
-      "Ticks the walk home takes from here: to the ramp, and in the camp, which stands in for the deck, to `camp`. 9999 if there is no way.",
+      "Ticks the walk home takes from here: to the hold on the city's deck, or to `camp` on a world of one map that has one. 9999 if there is no way.",
   },
 ];
 

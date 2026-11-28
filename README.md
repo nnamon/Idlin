@@ -1,43 +1,31 @@
 # Idlin
 
 Idlin is an idle RPG built to run unattended on a livestream. Nobody plays it
-directly. Each character is driven by a small script running in a sandboxed
-VM, and monsters work the same way. The plan is that viewers get to write
-the scripts.
+directly. The streamer's city is a machine on legs that walks from landing to
+landing, every chatter is a citizen aboard it named by their username, and
+each citizen is driven by a small script running in a sandboxed VM. Chat
+steers a citizen by changing what its script reads.
 
-It's early. The world is four regions, six characters and a day/night cycle.
-The camp's region holds the lantern, the wood, the river, the den and the
-meadow, and a pinewood, hills and a lower river lie past its edges. The
-viewer shows one region at a time, the one the spotlit character is in, and
-pans slowly to the next when the spotlight moves; a small map on the page
-shows all four and where everyone is. The characters run one of three scripts from
-`content/bots/`, which tell them where to walk, when to go back to camp, and
-how to fight. Wolves and goblins
-(`content/monsters/`) fight them in the simulation, and the viewer draws the
-fights, both in the world server's world and in a world of its own opened with
-`?monsters`. The scripting language is described in
-[docs/tactics.md](docs/tactics.md). Fighting earns Melee and Hitpoints
-experience, each character has a bag and a bank, and the page beside the map
-shows hitpoints and skill levels. Gathering, cooking and loot don't exist yet;
-[docs/roadmap.md](docs/roadmap.md) has the order they're planned in.
+It's early, and it is being rebuilt as the slice in
+[docs/slice.md](docs/slice.md): one cycle of the walking city at the quality
+of a finished game. What runs today is the city's deck and its cycle: a
+13-minute loop of transit, the landing set down at 3:00, the peace, the
+horde's beats, the siege and lift-off, with a generated landing to walk on
+each time. Chatters join aboard and run the shipped script, Deckhand
+(`content/bots/`), which walks about the landing and comes home before the
+lift. The landing has no monsters, loot or shield yet, and the viewer draws
+the ground as flat tiles and the citizens as dots until the look target
+([#362](https://github.com/nnamon/Idlin/issues/362)) is drawn in.
+[docs/roadmap.md](docs/roadmap.md) has the order the rest comes in, and the
+scripting language is described in [docs/tactics.md](docs/tactics.md).
 
-![Night falling over the camp, at twice the speed](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/clip.gif)
+A frame from each beat of the first cycle, with the 15-chatter crowd aboard:
 
-![Screenshot of the game at night](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/midnight.png)
+![Twelve frames across a cycle](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/storyboard.png)
 
-Dawn, noon and dusk:
-
-|                                                                                 |                                                                                 |                                                                                 |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| ![Dawn](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dawn.png) | ![Noon](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/noon.png) | ![Dusk](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/dusk.png) |
-
-Two minutes around nightfall, one frame every ten seconds:
-
-![Twelve frames from 19:20 to 21:10](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/storyboard.png)
-
-And six moments across a day:
-
-![Six frames across a game day](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/daystrip.png)
+|                                                                                       |                                                                                       |                                                                                   |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| ![Transit](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/transit.png) | ![Landing](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/landing.png) | ![Siege](https://raw.githubusercontent.com/nnamon/Idlin/media/showcase/siege.png) |
 
 All of these are taken from the running game by `tools/capture` and are
 refreshed from `main`, so they should be close to what you get if you run it.
@@ -51,9 +39,11 @@ docker compose run --rm dev pnpm install
 docker compose up server client   # http://localhost:4310
 ```
 
-The viewer shows the world the server is running; the server keeps it in
-`data/` across restarts. `?seed=7` in the URL instead runs a world of seed 7 in
-the page, and `?hour=21` starts that one at a different time of day.
+The viewer shows the city the server is running; the server keeps it in
+`data/` across restarts. With no chat the city walks its cycle with nobody
+aboard: `IDLIN_CHAT=crowd:crowd-15` gives it a scripted crowd. `?chat=crowd-15`
+in the URL instead runs a city of the page's own with that crowd aboard,
+`?seed=7` another seed, and `?tick=1800` starts it at that tick.
 
 To run the checks CI runs (lint, typecheck, tests):
 
@@ -71,7 +61,7 @@ docker compose run --rm dev pnpm gate
 - [AGENTS.md](AGENTS.md): most of this repo is written by AI agents working
   from the issue tracker, and this is the process they follow
 
-The map and characters are drawn in code; there are no art assets. The
+The game is drawn in code; there are no art assets. The
 typeface is IM Fell English (SIL Open Font License); see
 [assets/CREDITS.md](assets/CREDITS.md).
 

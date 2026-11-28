@@ -2,20 +2,12 @@ import { describe, expect, it } from "vitest";
 import { wayTo } from "./brain.ts";
 import { placeConstants } from "./map.ts";
 import { compileBots } from "./tactics.ts";
-import { firstLight, shippedPrograms, shippedWorld } from "./testing.ts";
-import {
-  createWorld,
-  hashWorld,
-  type Input,
-  restore,
-  snapshot,
-  spawnsNearCamp,
-  step,
-} from "./world.ts";
+import { campMap, campPrograms, firstLight, spawnsNearCamp } from "./testing.ts";
+import { createWorld, hashWorld, type Input, restore, snapshot, step } from "./world.ts";
 
 const MAP = firstLight();
 // The shipped world, whose camp region is MAP at the same coordinates, for the shipped programs.
-const SHIPPED = shippedWorld();
+const SHIPPED = campMap();
 // The full sweep runs in the capture workflow; the gate runs a few of its seeds.
 const LONG = process.env.IDLIN_LONG === "1";
 // Something that stands in the way and never moves.
@@ -151,20 +143,17 @@ describe("crowds", () => {
     expect(wayTo(world, ash, home)).toHaveLength(1);
   });
 
-  it("on the shipped programs nobody goes a minute without deciding, and the sleepers settle", () => {
+  it("on the camp's programs nobody goes a minute without deciding", () => {
     const names = ["wanderer", "homebody", "riverwalker"];
     for (const [residents, seeds] of [
       [6, LONG ? [1, 2, 3, 4, 5] : [1, 2]],
       [50, LONG ? [1, 2, 3] : [1]],
     ] as const) {
       for (const seed of seeds) {
-        const world = createWorld(SHIPPED, seed, shippedPrograms());
+        const world = createWorld(SHIPPED, seed, campPrograms(campMap()));
         const last = new Map<number, number>();
         let longest = 0;
         let worst = "";
-        const moves = new Map<number, number>();
-        let sleepersAtMidnight: string[] = [];
-        const trail = new Map<number, Set<string>>();
         let events = step(
           world,
           spawnsNearCamp(
@@ -185,38 +174,11 @@ describe("crowds", () => {
               worst = `${a.name} at tick ${tick}`;
             }
           }
-          const before = new Map(world.actors.map((a) => [a.id, `${a.x},${a.y}`]));
           events = step(world);
-          // Sleepers who have stopped; someone still walking home may pass over another's tile.
-          if (tick === 18 * 600)
-            sleepersAtMidnight = world.actors
-              .filter(
-                (a) => a.program !== "wanderer" && a.path.length === 0 && a.moveTicksLeft === 0,
-              )
-              .map((a) => `${a.x},${a.y}`);
-          // 23:00 to 24:00: count how often each camp sleeper steps back onto a tile it
-          // left. Walking home late is fine; going back and forth is shuffling.
-          if (tick > 17 * 600 && tick <= 18 * 600) {
-            for (const a of world.actors) {
-              if (a.program === "wanderer") continue;
-              const here = `${a.x},${a.y}`;
-              if (before.get(a.id) === here) continue;
-              const been = trail.get(a.id) ?? new Set<string>();
-              if (been.has(here)) moves.set(a.id, (moves.get(a.id) ?? 0) + 1);
-              been.add(before.get(a.id) as string);
-              trail.set(a.id, been);
-            }
-          }
         }
         expect(longest, `${residents} residents, seed ${seed}: ${worst}`).toBeLessThanOrEqual(600);
-        const restless = [...moves.values()].filter((n) => n > 2).length;
-        expect(restless, `${residents} residents, seed ${seed}: sleepers still walking`).toBe(0);
-        expect(
-          new Set(sleepersAtMidnight).size,
-          `${residents} residents, seed ${seed}: sleepers sharing`,
-        ).toBe(sleepersAtMidnight.length);
-        expect(restore(snapshot(world), SHIPPED, shippedPrograms())).toEqual(world);
-        expect(hashWorld(restore(snapshot(world), SHIPPED, shippedPrograms()))).toBe(
+        expect(restore(snapshot(world), SHIPPED, campPrograms(campMap()))).toEqual(world);
+        expect(hashWorld(restore(snapshot(world), SHIPPED, campPrograms(campMap())))).toBe(
           hashWorld(world),
         );
       }

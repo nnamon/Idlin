@@ -70,7 +70,8 @@ const SPEECH = [
   "who has the rare",
 ];
 
-const PLACES = ["river", "hills", "camp", "north", "east", "south", "west", "home"];
+/** What `!go` names: the deck's places, the middle of the hull on a landing, compass points and home. */
+const PLACES = ["guns", "hold", "fore hatch", "city", "north", "east", "south", "west", "home"];
 
 interface Chatter {
   readonly login: string;

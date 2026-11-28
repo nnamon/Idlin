@@ -72,7 +72,6 @@ const start = async (dataDir: string, extra: Partial<ServerOptions> = {}, lines:
     port: 0,
     host: "127.0.0.1",
     seed: 8,
-    residents: 0,
     snapshotTicks: 100,
     log: (line) => lines.push(line),
     content: CONTENT,
@@ -112,10 +111,10 @@ describe("the input log", () => {
     const dir = tempDir();
     const live = await start(dir, { crowd: FIFTY, snapshotTicks: 5000 });
     live.advance(12_000);
-    expect(live.world.tick).toBe(12_001);
+    expect(live.world.tick).toBe(12_000);
     expect(live.world.actors.filter((actor) => actor.kind === ADVENTURER)).toHaveLength(50);
     // The last snapshot is at 10,001, and its log holds every tick since.
-    const text = readFileSync(join(dir, logName(10_001)), "utf8");
+    const text = readFileSync(join(dir, logName(10_000)), "utf8");
     expect(text.split("\n")).toHaveLength(2001);
     expect(text).toContain('"type":"go"');
 
@@ -123,8 +122,8 @@ describe("the input log", () => {
     const lines: string[] = [];
     const again = await start(dir, { crowd: FIFTY, snapshotTicks: 5000 }, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000010001.json at tick 10001",
-      "replayed 2000 ticks of its input log, to tick 12001",
+      "resumed world-0000000000010000.json at tick 10000",
+      "replayed 2000 ticks of its input log, to tick 12000",
     ]);
     expect(hashWorld(again.world)).toBe(hashWorld(live.world));
   });
@@ -138,7 +137,7 @@ describe("the input log", () => {
     expect(live.world.actors.filter((actor) => actor.kind === ADVENTURER)).toHaveLength(150);
     const lines: string[] = [];
     const again = await start(dir, { crowd, snapshotTicks: 4000 }, lines);
-    expect(lines[1]).toBe("replayed 3600 ticks of its input log, to tick 7601");
+    expect(lines[1]).toBe("replayed 3600 ticks of its input log, to tick 7600");
     expect(hashWorld(again.world)).toBe(hashWorld(live.world));
   });
 
@@ -146,29 +145,29 @@ describe("the input log", () => {
     const dir = tempDir();
     const live = await start(dir, { crowd: FIFTY });
     live.advance(150);
-    const name = logName(101);
+    const name = logName(100);
     // A crash in the middle of a write.
-    appendFileSync(join(dir, name), '{"tick":151,"inputs":[{"type":"jo');
+    appendFileSync(join(dir, name), '{"tick":150,"inputs":[{"type":"jo');
     const lines: string[] = [];
     const again = await start(dir, { crowd: FIFTY }, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000000101.json at tick 101",
-      "replayed 50 ticks of its input log, to tick 151",
+      "resumed world-0000000000000100.json at tick 100",
+      "replayed 50 ticks of its input log, to tick 150",
     ]);
     expect(hashWorld(again.world)).toBe(hashWorld(live.world));
     // The torn line is gone from the file, and the world was saved where the replay ended.
     const kept = readFileSync(join(dir, name), "utf8");
     expect(kept.endsWith("}\n")).toBe(true);
     expect(kept.split("\n")).toHaveLength(51);
-    expect(listSnapshots(dir)[0]).toBe(snapshotName(151));
+    expect(listSnapshots(dir)[0]).toBe(snapshotName(150));
     again.advance(30);
     await again.stop({ save: false });
     servers.splice(servers.indexOf(again), 1);
     const third: string[] = [];
     const resumed = await start(dir, { crowd: FIFTY }, third);
     expect(third).toEqual([
-      `resumed ${snapshotName(151)} at tick 151`,
-      "replayed 30 ticks of its input log, to tick 181",
+      `resumed ${snapshotName(150)} at tick 150`,
+      "replayed 30 ticks of its input log, to tick 180",
     ]);
     expect(hashWorld(resumed.world)).toBe(hashWorld(again.world));
   });
@@ -179,19 +178,19 @@ describe("the input log", () => {
     live.advance(120);
     await live.stop({ save: false });
     servers.splice(servers.indexOf(live), 1);
-    appendFileSync(join(dir, logName(101)), '{"tick":999,"inputs":[]}\n{"tick":121,"inputs":[]}\n');
-    const whole = readFileSync(join(dir, logName(101)), "utf8");
+    appendFileSync(join(dir, logName(100)), '{"tick":999,"inputs":[]}\n{"tick":120,"inputs":[]}\n');
+    const whole = readFileSync(join(dir, logName(100)), "utf8");
     const lines: string[] = [];
     const again = await start(dir, {}, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000000101.json at tick 101",
-      `the input log ${logName(101)} stops being usable at line 21; the rest is ignored`,
-      "replayed 20 ticks of its input log, to tick 121",
+      "resumed world-0000000000000100.json at tick 100",
+      `the input log ${logName(100)} stops being usable at line 21; the rest is ignored`,
+      "replayed 20 ticks of its input log, to tick 120",
     ]);
-    expect(again.world.tick).toBe(121);
+    expect(again.world.tick).toBe(120);
     // The whole file is kept aside to look at; the lines used stay beside their snapshot.
-    expect(readFileSync(join(dir, `${logName(101)}.bad`), "utf8")).toBe(whole);
-    expect(readFileSync(join(dir, logName(101)), "utf8")).toBe(
+    expect(readFileSync(join(dir, `${logName(100)}.bad`), "utf8")).toBe(whole);
+    expect(readFileSync(join(dir, logName(100)), "utf8")).toBe(
       `${whole.split("\n").slice(0, 20).join("\n")}\n`,
     );
   });
@@ -223,16 +222,16 @@ describe("the input log", () => {
     live.advance(150);
     await live.stop({ save: false });
     servers.splice(servers.indexOf(live), 1);
-    const name = logName(101);
+    const name = logName(100);
     const text = readFileSync(join(dir, name), "utf8");
     fail.read = name;
     const lines: string[] = [];
     const again = await start(dir, { crowd: FIFTY }, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000000101.json at tick 101",
+      "resumed world-0000000000000100.json at tick 100",
       `could not read the input log ${name}: Error: EIO: i/o error, read`,
     ]);
-    expect(again.world.tick).toBe(101);
+    expect(again.world.tick).toBe(100);
     expect(readFileSync(join(dir, `${name}.bad`), "utf8")).toBe(text);
   });
 
@@ -249,7 +248,7 @@ describe("the input log", () => {
       seen.push(lines);
     }
     expect(seen).toEqual(
-      [1, 61, 121].map((tick) => [
+      [0, 60, 120].map((tick) => [
         `resumed ${snapshotName(tick)} at tick ${tick}`,
         `replayed 60 ticks of its input log, to tick ${tick + 60}`,
       ]),
@@ -265,43 +264,43 @@ describe("the input log", () => {
     live.advance(250);
     await live.stop({ save: false });
     servers.splice(servers.indexOf(live), 1);
-    writeFileSync(join(dir, snapshotName(201)), "{ not a snapshot");
+    writeFileSync(join(dir, snapshotName(200)), "{ not a snapshot");
     const lines: string[] = [];
     const again = await start(dir, { crowd: FIFTY }, lines);
     expect(lines).toEqual([
-      `skipping snapshot ${snapshotName(201)}: snapshot is not valid JSON`,
-      "resumed world-0000000000000101.json at tick 101",
-      "replayed 100 ticks of its input log, to tick 201",
-      `went on into the input log ${logName(201)}: 50 more ticks, to tick 251`,
+      `skipping snapshot ${snapshotName(200)}: snapshot is not valid JSON`,
+      "resumed world-0000000000000100.json at tick 100",
+      "replayed 100 ticks of its input log, to tick 200",
+      `went on into the input log ${logName(200)}: 50 more ticks, to tick 250`,
     ]);
     expect(hashWorld(again.world)).toBe(hashWorld(live.world));
   });
 
   it("sets aside a refused snapshot's log that its replay fell short of, so a later start cannot go on into it", async () => {
     const dir = tempDir();
-    // Life 1: snapshots at 1, 101 and 201, with chat.
+    // Life 1: snapshots at 1, 100 and 200, with chat.
     const first = await start(dir, { crowd: FIFTY });
     first.advance(250);
     await first.stop({ save: false });
     servers.splice(servers.indexOf(first), 1);
-    const abandoned = readFileSync(join(dir, logName(201)), "utf8");
-    writeFileSync(join(dir, snapshotName(201)), "{ not a snapshot");
-    // Life 2: 201 is refused and 101's log cannot be read, so the world goes on
-    // live from 101 with no chat, and is killed at 201 before it saves there.
-    fail.read = logName(101);
+    const abandoned = readFileSync(join(dir, logName(200)), "utf8");
+    writeFileSync(join(dir, snapshotName(200)), "{ not a snapshot");
+    // Life 2: 200 is refused and 100's log cannot be read, so the world goes on
+    // live from 100 with no chat, and is killed at 200 before it saves there.
+    fail.read = logName(100);
     const second = await start(dir, { snapshotTicks: 1000 });
     second.advance(100);
     await second.stop({ save: false });
     servers.splice(servers.indexOf(second), 1);
-    // Life 3 replays life 2's log to 201 and stops: life 1's log of 201 belongs to another history.
+    // Life 3 replays life 2's log to 200 and stops: life 1's log of 200 belongs to another history.
     const lines: string[] = [];
     const third = await start(dir, { snapshotTicks: 1000 }, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000000101.json at tick 101",
-      "replayed 100 ticks of its input log, to tick 201",
+      "resumed world-0000000000000100.json at tick 100",
+      "replayed 100 ticks of its input log, to tick 200",
     ]);
     expect(hashWorld(third.world)).toBe(hashWorld(second.world));
-    expect(readFileSync(join(dir, `${logName(201)}.bad`), "utf8")).toBe(abandoned);
+    expect(readFileSync(join(dir, `${logName(200)}.bad`), "utf8")).toBe(abandoned);
   });
 
   it("leaves a log it stops in at its name until the new log replaces it", async () => {
@@ -310,7 +309,7 @@ describe("the input log", () => {
     live.advance(150);
     await live.stop({ save: false });
     servers.splice(servers.indexOf(live), 1);
-    const name = logName(101);
+    const name = logName(100);
     const rows = readFileSync(join(dir, name), "utf8").split("\n");
     rows[30] = "not a line";
     const damaged = rows.join("\n");
@@ -325,11 +324,11 @@ describe("the input log", () => {
     const lines: string[] = [];
     const again = await start(dir, { crowd: FIFTY }, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000000101.json at tick 101",
+      "resumed world-0000000000000100.json at tick 100",
       `the input log ${name} stops being usable at line 31; the rest is ignored`,
-      "replayed 30 ticks of its input log, to tick 131",
+      "replayed 30 ticks of its input log, to tick 130",
     ]);
-    expect(again.world.tick).toBe(131);
+    expect(again.world.tick).toBe(130);
     expect(readFileSync(join(dir, `${name}.1.bad`), "utf8")).toBe(damaged);
   });
 
@@ -339,9 +338,9 @@ describe("the input log", () => {
     old.advance(150);
     await old.stop({ save: false });
     servers.splice(servers.indexOf(old), 1);
-    const before = readFileSync(join(dir, logName(101)), "utf8");
+    const before = readFileSync(join(dir, logName(100)), "utf8");
     for (const file of listSnapshots(dir)) unlinkSync(join(dir, file));
-    // A new world killed at tick 101, the old world's snapshot tick, before it saved there.
+    // A new world killed at tick 100, the old world's snapshot tick, before it saved there.
     const fresh = await start(dir, { seed: 9, snapshotTicks: 1000 });
     fresh.advance(100);
     await fresh.stop({ save: false });
@@ -349,21 +348,21 @@ describe("the input log", () => {
     const lines: string[] = [];
     const again = await start(dir, { seed: 9, snapshotTicks: 1000 }, lines);
     expect(lines).toEqual([
-      "resumed world-0000000000000001.json at tick 1",
-      "replayed 100 ticks of its input log, to tick 101",
+      "resumed world-0000000000000000.json at tick 0",
+      "replayed 100 ticks of its input log, to tick 100",
     ]);
     expect(hashWorld(again.world)).toBe(hashWorld(fresh.world));
-    expect(readFileSync(join(dir, `${logName(101)}.bad`), "utf8")).toBe(before);
+    expect(readFileSync(join(dir, `${logName(100)}.bad`), "utf8")).toBe(before);
   });
 
   it("keeps a log beside each snapshot kept, and deletes it with its snapshot", async () => {
     const dir = tempDir();
     const server = await start(dir);
     server.advance(550);
-    expect(logs(dir)).toEqual([301, 401, 501].map(logName));
+    expect(logs(dir)).toEqual([300, 400, 500].map(logName));
     await server.stop();
     servers.length = 0;
-    expect(logs(dir)).toEqual([401, 501, 551].map(logName));
+    expect(logs(dir)).toEqual([400, 500, 550].map(logName));
   });
 
   it("queues what an adapter hears and applies it at the next tick", async () => {

@@ -1,28 +1,50 @@
 // The world and the one function that advances it. Everything here is a pure
-// function of the seed, the maps and the inputs: integers only, no clock.
+// function of the seed, the content and the inputs: integers only, no clock.
+//
+// A world is the walking city (`createCity`): its ground is the deck in
+// transit and a landing once the legs plant, and its cycle (cycle.ts) runs on
+// the ticks. A world can also be made on one fixed map (`createWorld`), with
+// no cycle, which is what the tests of fighting, walking and programs use.
 
 import {
   type Atlas,
   atlasOf,
+  floorsJoin,
   hashAtlas,
-  hashMap,
+  joined,
   linked,
-  type Region,
-  regionAt,
   terrainOf,
   tileAt,
   walkable,
 } from "./atlas.ts";
 import { BAG_SLOTS, emptyBag, emptyBank, GOODS, MAX_BANKED } from "./bag.ts";
 import { MAX_STALLED, think, wayTo } from "./brain.ts";
+import {
+  type BEATS,
+  type BeatSpan,
+  beatOf,
+  breakAt,
+  type Cycle,
+  cycleInts,
+  drawLanding,
+  firstCycle,
+  halves,
+  LEGS_PLANT,
+  landed,
+  liftAt,
+  nextStart,
+  RAMP_DOWN,
+  rampDown,
+  readCycle,
+  siegeAt,
+} from "./cycle.ts";
+import { BERTHS, deckGround, landingGround, PER_TILE } from "./deck.ts";
 import { fullNodes, type NodeState, regrowNodes } from "./gather.ts";
 import {
   addMark,
   allAt,
-  countWithin,
   dropMarks,
   firstAt,
-  type Grid,
   gridOf,
   holdGrid,
   putAt,
@@ -51,7 +73,7 @@ import {
   rollCrit,
 } from "./hit.ts";
 import { ACCOUNT, type ChatInput, NEWCOMER_PROGRAM, ROLES, USERNAME } from "./inputs.ts";
-import { NEIGHBOURS, type Point, place, type TileMap } from "./map.ts";
+import { ABOARD, MapError, NEIGHBOURS, type Point, type TileMap } from "./map.ts";
 import { NODE_KINDS, type NodeKind } from "./nodes.ts";
 import {
   applyOrder,
@@ -63,9 +85,8 @@ import {
   ordersInts,
   readOrders,
   unsentOrders,
-  withOrders,
 } from "./orders.ts";
-import { createRng, nextInt, type Rng } from "./rng.ts";
+import { createRng, type Rng } from "./rng.ts";
 import {
   gainXp,
   levelFor,
@@ -108,7 +129,6 @@ import {
   blowShape,
   blowTimes,
   DIRECTIONS,
-  directionTo,
   FAMILIES,
   type Family,
   FLASK_DRINKS,
@@ -119,12 +139,6 @@ import {
 } from "./weapons.ts";
 
 export const TICKS_PER_SECOND = 10;
-/** A game hour lasts one minute of stream time, so a game day lasts 24 minutes. */
-export const TICKS_PER_GAME_HOUR = 60 * TICKS_PER_SECOND;
-export const TICKS_PER_GAME_MINUTE = TICKS_PER_GAME_HOUR / 60;
-export const TICKS_PER_DAY = 24 * TICKS_PER_GAME_HOUR;
-/** The world begins at dawn. */
-export const START_HOUR = 6;
 /** Ticks an actor takes to walk from one tile to the next. */
 export const STEP_TICKS = 6;
 /** Ticks an actor waits for a blocked tile to clear before giving up its path. */
@@ -133,7 +147,7 @@ export const BLOCKED_PATIENCE_TICKS = 10;
 export const MAX_NAME_LENGTH = 25;
 /** No actor's id reaches this; a world stops taking spawns first. */
 export const MAX_ACTOR_ID = 0x7fffffff;
-/** Ticks an adventurer rests at camp after being struck down, before its program runs again. */
+/** Ticks an adventurer rests aboard after being struck down, before its program runs again. */
 export const DOWN_TICKS = 150;
 /** An adventurer's death count stops here. */
 export const MAX_DEATHS = 0x7fffffff;
@@ -239,54 +253,6 @@ export function checkKinds(kinds: Kinds): Kinds {
   return Object.freeze(table);
 }
 
-/** The most monsters in a group that comes by day, and in one that comes by night. */
-export const MOST_IN_GROUP = 3;
-export const MOST_IN_NIGHT_GROUP = 6;
-/**
- * How many monsters a region may hold at once: `base`, and one more for every
- * `residents` adventurers in the region, up to `most`. Residents never keep
- * monsters away; a busy region draws more. At six residents in a region that
- * is 6 by day and 13 by night, at fifteen 9 and 17, and from 28 on 12 and 24.
- */
-export const MONSTER_CAPS = {
-  day: { base: 4, residents: 3, most: 12 },
-  night: { base: 10, residents: 2, most: 24 },
-} as const;
-/** The most monsters any region holds at any hour. */
-export const MONSTER_CEILING = MONSTER_CAPS.night.most;
-/**
- * The shortest time from a monster arriving or going down in a region, or from
- * the region last being at its cap, to the next group arriving there: six game
- * minutes, so a region refills within a few game minutes after a fight.
- */
-export const RESPAWN_TICKS = 60;
-/** The longest wait a snapshot may hold; worlds saved before the wait was shortened held a game hour. */
-const MOST_SPAWN_WAIT = TICKS_PER_GAME_HOUR;
-/** Monsters come out at their night places from this hour until DAY_HOUR. */
-export const NIGHT_HOUR = 19;
-export const DAY_HOUR = 6;
-/** How far, in steps, a group's monsters may stand from the place they come out at. */
-export const GROUP_SPREAD = 2;
-/**
- * A monster out for the other part of the day goes home once no adventurer is
- * nearer than this many steps.
- */
-export const LEAVE_DISTANCE = 8;
-/** Places a spawn may list for one part of the day. */
-const MAX_SPAWN_PLACES = 16;
-export const MONSTER_NAME = /^[A-Z][A-Za-z ]{0,15}$/;
-const SPAWN_FIELDS = [
-  "kind",
-  "name",
-  "program",
-  "group",
-  "day",
-  "night",
-  "nightGroup",
-  "nightMost",
-  "most",
-] as const;
-
 /** A plain object, as JSON makes: not null, not a list, no prototype but Object's or none. */
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -312,179 +278,29 @@ export function plainList(value: unknown, most: number): unknown[] | null {
 export const own = (record: object, key: string): unknown =>
   Object.hasOwn(record, key) ? (record as Record<string, unknown>)[key] : undefined;
 
-/**
- * Whether `actor` may stand on (x, y). Anyone may stand on any walkable tile,
- * the camp's ground included; monsters only keep to their region.
- */
+/** Whether `actor` may stand on (x, y): anyone may stand on any walkable tile. */
 export const walkableFor = (world: World, _actor: Actor, x: number, y: number): boolean =>
   walkable(world.atlas, x, y);
 
-/** Whether a monster may come out on (x, y): walkable and off the camp's ground. */
-const spawnGround = (atlas: Atlas, x: number, y: number): boolean =>
-  walkable(atlas, x, y) && terrainOf(atlas, x, y) !== "camp";
+/** Whether (x, y) is the city's own ground, where a citizen is aboard. */
+export const aboard = (atlas: Atlas, x: number, y: number): boolean => {
+  const terrain = terrainOf(atlas, x, y);
+  return terrain !== undefined && ABOARD.has(terrain);
+};
 
-/**
- * Whether one step takes an adventurer, or a monster, from (ax, ay) to (bx, by). Adventurers
- * cross exits into other regions; monsters keep to the region they are in.
- */
-function stepsFor(
-  atlas: Atlas,
-  adventurer: boolean,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-) {
-  if (!linked(atlas, ax, ay, bx, by)) return false;
-  if (adventurer) return true;
-  return regionAt(atlas, ax, ay) === regionAt(atlas, bx, by);
-}
+/** Whether a monster may be put on (x, y): walkable, off the camp's ground and off the city's. */
+const monsterGround = (atlas: Atlas, x: number, y: number): boolean =>
+  walkable(atlas, x, y) && terrainOf(atlas, x, y) !== "camp" && !aboard(atlas, x, y);
 
 /** Whether one step takes `actor` from (ax, ay) to (bx, by). */
 export const canStep = (
   world: World,
-  actor: Actor,
+  _actor: Actor,
   ax: number,
   ay: number,
   bx: number,
   by: number,
-): boolean => stepsFor(world.atlas, actor.kind === ADVENTURER, ax, ay, bx, by);
-
-/** Whether two actors are in the same region. */
-export const sameRegion = (world: World, a: Point, b: Point): boolean =>
-  regionAt(world.atlas, a.x, a.y) === regionAt(world.atlas, b.x, b.y);
-
-/** Where and how a kind of monster comes into the world. Content, like kinds. */
-export interface Spawn {
-  /** One of the world's monster kinds. */
-  readonly kind: string;
-  /** The name each one is given, such as "Wolf". */
-  readonly name: string;
-  /** The program each one runs; one of the world's. */
-  readonly program: string;
-  /** The fewest that arrive together by day, 1 to MOST_IN_GROUP. */
-  readonly group: number;
-  /**
-   * The most that arrive together by day, from `group` to MOST_IN_GROUP;
-   * `group` when left out. Between the two, the number is drawn when they
-   * come out.
-   */
-  readonly most?: number;
-  /**
-   * The fewest that arrive together by night, 1 to MOST_IN_NIGHT_GROUP; `group`
-   * when left out.
-   */
-  readonly nightGroup?: number;
-  /**
-   * The most that arrive together by night, from `nightGroup` to
-   * MOST_IN_NIGHT_GROUP; `nightGroup` when left out. Between the two, the
-   * number is drawn when they come out.
-   */
-  readonly nightMost?: number;
-  /** Where they come out by day, and by night. Either may be empty. */
-  readonly day: readonly Point[];
-  readonly night: readonly Point[];
-}
-export type Spawns = readonly Spawn[];
-
-/** The fewest of a spawn that arrive together, by night or by day. */
-export const groupOf = (spawn: Spawn, night: boolean): number =>
-  night ? (spawn.nightGroup ?? spawn.group) : spawn.group;
-
-/** The most of a spawn that arrive together, by night or by day. */
-export const mostOf = (spawn: Spawn, night: boolean): number =>
-  night ? (spawn.nightMost ?? groupOf(spawn, true)) : (spawn.most ?? spawn.group);
-
-/**
- * Validates a spawn table against the world, programs and kinds it will be used
- * with, and returns a frozen copy. Throws a KindError for anything wrong.
- */
-export function checkSpawns(
-  spawns: Spawns,
-  ground: TileMap | Atlas,
-  programs: Programs,
-  kinds: Kinds,
-): Spawns {
-  const atlas = atlasOf(ground);
-  const table: Spawn[] = [];
-  try {
-    const list = plainList(spawns, 64);
-    if (!list) throw new KindError("the spawn table must be a list of at most 64 spawns, no gaps");
-    for (const raw of list) {
-      if (!isPlainObject(raw)) throw new KindError("a spawn is not a plain object");
-      const [
-        kind,
-        name,
-        program,
-        group,
-        day,
-        night,
-        nightGroup = group,
-        nightMost = nightGroup,
-        most = group,
-      ] = SPAWN_FIELDS.map((field) => own(raw, field));
-      if (typeof kind !== "string" || !Object.hasOwn(kinds, kind))
-        throw new KindError(`spawn of an unknown kind ${show(kind).slice(0, 40)}`);
-      if (typeof name !== "string" || !MONSTER_NAME.test(name))
-        throw new KindError(
-          `spawn of "${kind}": the name must be a capital letter and up to 15 letters or spaces`,
-        );
-      if (typeof program !== "string" || !Object.hasOwn(programs, program))
-        throw new KindError(`spawn of "${kind}": no program called ${show(program).slice(0, 40)}`);
-      if (!isInt32(group) || group < 1 || group > MOST_IN_GROUP)
-        throw new KindError(
-          `spawn of "${kind}": group must be a whole number from 1 to ${MOST_IN_GROUP}`,
-        );
-      if (!isInt32(most) || most < group || most > MOST_IN_GROUP)
-        throw new KindError(
-          `spawn of "${kind}": the most by day must be a whole number from the group to ${MOST_IN_GROUP}`,
-        );
-      if (!isInt32(nightGroup) || nightGroup < 1 || nightGroup > MOST_IN_NIGHT_GROUP)
-        throw new KindError(
-          `spawn of "${kind}": the night group must be a whole number from 1 to ${MOST_IN_NIGHT_GROUP}`,
-        );
-      if (!isInt32(nightMost) || nightMost < nightGroup || nightMost > MOST_IN_NIGHT_GROUP)
-        throw new KindError(
-          `spawn of "${kind}": the most by night must be a whole number from the night group to ${MOST_IN_NIGHT_GROUP}`,
-        );
-      const points = (value: unknown, part: string): Point[] => {
-        const tiles = plainList(value, MAX_SPAWN_PLACES);
-        if (!tiles)
-          throw new KindError(
-            `spawn of "${kind}": ${part} must be a list of at most ${MAX_SPAWN_PLACES} tiles, no gaps`,
-          );
-        return tiles.map((p) => {
-          if (!isPlainObject(p))
-            throw new KindError(`spawn of "${kind}": a ${part} tile is not x and y`);
-          const [x, y] = [own(p, "x"), own(p, "y")];
-          // Monsters never come out on the camp's ground.
-          if (!isInt32(x) || !isInt32(y) || !spawnGround(atlas, x, y))
-            throw new KindError(
-              `spawn of "${kind}": a ${part} tile is not ground a monster can stand on`,
-            );
-          return Object.freeze({ x: x | 0, y: y | 0 });
-        });
-      };
-      table.push(
-        Object.freeze({
-          kind,
-          name,
-          program,
-          group,
-          most,
-          nightGroup,
-          nightMost,
-          day: Object.freeze(points(day, "day")),
-          night: Object.freeze(points(night, "night")),
-        }),
-      );
-    }
-  } catch (error) {
-    if (error instanceof KindError) throw error;
-    throw new KindError("the spawn table could not be read");
-  }
-  return Object.freeze(table);
-}
+): boolean => linked(world.atlas, ax, ay, bx, by);
 
 /** A tile an attack is about to land on. It lands when its attacker's wind-up runs out. */
 export interface Mark {
@@ -537,12 +353,6 @@ export interface Actor extends Orders {
   /** Ticks left before it can act again after a hit. */
   recover: number;
   /**
-   * The part of the day a monster from the spawn table came out for; it goes
-   * home when that part is over. Empty for adventurers and for monsters put in
-   * by an input, which stay.
-   */
-  readonly shift: Shift;
-  /**
    * Decisions in a row that chose to walk somewhere and found nowhere to go, up
    * to MAX_STALLED. Programs read it as `stalled`.
    */
@@ -578,8 +388,8 @@ export interface Actor extends Orders {
 
 /**
  * An arrow in flight. It moves a tile a tick in direction `aim` and stops in
- * the first enemy of its shooter it meets, at a wall or the edge of its
- * region, or when it has flown ARROW_RANGE tiles.
+ * the first enemy of its shooter it meets, at a wall or the edge of the
+ * ground, or when it has flown ARROW_RANGE tiles.
  */
 export interface Arrow {
   /** Id of the adventurer that loosed it. */
@@ -595,18 +405,18 @@ export interface Arrow {
   readonly crit: boolean;
 }
 
-export type Shift = "" | "day" | "night";
-const SHIFTS: readonly Shift[] = ["", "day", "night"];
-
-/** Validated programs by name. Like the map, they are content: fixed for the life of a world. */
+/** Validated programs by name. They are content: fixed for the life of a world. */
 export type Programs = Readonly<Record<string, Program>>;
 
 export interface World {
-  /** The regions and the exits between them. */
-  readonly atlas: Atlas;
+  /**
+   * The ground everyone stands on now. A city's is worked out from its cycle,
+   * and changes only when the legs plant, the ramp comes down and the city
+   * lifts; a world made on one map keeps that map.
+   */
+  atlas: Atlas;
   readonly programs: Programs;
   readonly kinds: Kinds;
-  readonly spawns: Spawns;
   tick: number;
   rng: Rng;
   nextActorId: number;
@@ -614,12 +424,12 @@ export interface World {
   actors: Actor[];
   /** Tiles that attacks in wind-up are about to land on, in the order the attacks began. */
   marks: Mark[];
-  /** Per region, in the atlas's order, the tick from which the next group of monsters may arrive there. */
-  nextSpawn: number[];
-  /** What each of the atlas's nodes has left, in the atlas's order. */
+  /** What each of the ground's nodes has left, in the ground's order. */
   nodes: NodeState[];
   /** Arrows in flight, in the order they were loosed. */
   arrows: Arrow[];
+  /** The walking city's cycle; null for a world on one fixed map. */
+  cycle: Cycle | null;
 }
 
 export type Input =
@@ -633,6 +443,12 @@ export type Input =
       /** An adventurer's weapon family; left out, a blade. A monster takes none. */
       readonly weapon?: Family;
     } & Point)
+  /**
+   * Breaks the shield, during the siege only. Until piece 31 builds the
+   * shield nothing else breaks it before the stand-in does (cycle.ts), and
+   * only tests send this; chat cannot.
+   */
+  | { readonly type: "break" }
   | ChatInput;
 
 /**
@@ -656,36 +472,80 @@ export function checkPrograms(programs: Programs): Programs {
 }
 
 /**
- * Throws a ProgramError if `programs` holds a bad name or an invalid program,
- * and a KindError if `kinds` holds a bad monster kind or `spawns` a bad spawn.
- * A single map is a world of one region; it throws a MapError if it has no
- * camp or ground that cannot be reached from it.
+ * A world on one fixed map, with no cycle. Throws a ProgramError if
+ * `programs` holds a bad name or an invalid program, a KindError if `kinds`
+ * holds a bad monster kind, and a MapError if the map has no walkable tile or
+ * walkable ground that cannot be walked to from the rest.
  */
 export function createWorld(
   ground: TileMap | Atlas,
   seed: number,
   programs: Programs = {},
   kinds: Kinds = {},
-  spawns: Spawns = [],
 ): World {
   const atlas = atlasOf(ground);
+  checkGround(atlas);
+  return newWorld(atlas, seed, programs, kinds, () => null);
+}
+
+/** Throws a MapError for a fixed map that would strand anyone on it. */
+function checkGround(atlas: Atlas): void {
+  const first = atlas.open.indexOf(true);
+  if (first < 0) throw new MapError(`map "${atlas.name}" has no ground that can be walked on`);
+  const at = {
+    x: atlas.left + (first % atlas.width),
+    y: atlas.top + Math.floor(first / atlas.width),
+  };
+  if (!joined(atlas, at))
+    throw new MapError(
+      `map "${atlas.name}" has walkable ground that cannot be reached from the rest`,
+    );
+}
+
+/**
+ * The walking city: city 1 on its deck at the first cycle's 0:00, with no
+ * citizens until chatters join. Throws a ProgramError or a KindError for bad
+ * content, as `createWorld` does.
+ */
+export function createCity(seed: number, programs: Programs = {}, kinds: Kinds = {}): World {
+  return newWorld(deckGround(1), seed, programs, kinds, (rng) => firstCycle(1, rng));
+}
+
+function newWorld(
+  atlas: Atlas,
+  seed: number,
+  programs: Programs,
+  kinds: Kinds,
+  cycle: (rng: Rng) => Cycle | null,
+): World {
   const programTable = checkPrograms(programs);
   const kindTable = checkKinds(kinds);
+  const rng = createRng(seed);
   return {
     atlas,
     programs: programTable,
     kinds: kindTable,
-    spawns: checkSpawns(spawns, atlas, programTable, kindTable),
     tick: 0,
-    rng: createRng(seed),
+    rng,
     nextActorId: 1,
     actors: [],
     marks: [],
-    nextSpawn: atlas.regions.map(() => 0),
     nodes: fullNodes(atlas),
     arrows: [],
+    cycle: cycle(rng),
   };
 }
+
+/** The ground a city stands on at `tick`: its deck, or its landing with the ramp up or down. */
+export function groundOf(cycle: Cycle, tick: number): Atlas {
+  return landed(cycle, tick)
+    ? landingGround(cycle.city, cycle.landing, rampDown(cycle, tick))
+    : deckGround(cycle.city);
+}
+
+/** The beat a city is in, with the ticks it runs from and to; null for a world on one map. */
+export const beat = (world: World): BeatSpan | null =>
+  world.cycle ? beatOf(world.cycle, world.tick) : null;
 
 /** The numbers an actor fights with. */
 export const kindOf = (world: World, actor: Actor): Kind =>
@@ -693,16 +553,14 @@ export const kindOf = (world: World, actor: Actor): Kind =>
 
 /**
  * The tiles an actor's attack lands on in one direction: a line out from it,
- * as long as its reach, cut short by anything that cannot be walked on and by
- * the edge of its region: fights stay in one region.
+ * as long as its reach, cut short by anything that cannot be walked on.
  */
 export function lineOfAttack(world: World, actor: Actor, sx: number, sy: number): Point[] {
   const { atlas } = world;
-  const region = regionAt(atlas, actor.x, actor.y);
   const tiles: Point[] = [];
   for (let k = 1; k <= kindOf(world, actor).reach; k++) {
     const tile = { x: actor.x + sx * k, y: actor.y + sy * k };
-    if (!walkable(atlas, tile.x, tile.y) || regionAt(atlas, tile.x, tile.y) !== region) break;
+    if (!walkable(atlas, tile.x, tile.y)) break;
     tiles.push(tile);
   }
   return tiles;
@@ -711,19 +569,17 @@ export function lineOfAttack(world: World, actor: Actor, sx: number, sy: number)
 /**
  * The tiles an actor's blow facing `aim` (an index into DIRECTIONS) lands on.
  * A monster strikes in its kind's line. An adventurer's weapon gives the
- * shape, without the tiles that cannot be walked on or are in another region;
- * a spear's or a bow's line ends at the first of those.
+ * shape, without the tiles that cannot be walked on; a spear's or a bow's
+ * line ends at the first of those.
  */
 export function blowTiles(world: World, actor: Actor, aim: number): Point[] {
   const [sx, sy] = DIRECTIONS[aim] as readonly [number, number];
   if (actor.weapon === "") return lineOfAttack(world, actor, sx, sy);
   const { atlas } = world;
-  const region = regionAt(atlas, actor.x, actor.y);
   const tiles: Point[] = [];
   for (const offset of blowShape(actor.weapon, aim)) {
     const tile = { x: actor.x + offset.x, y: actor.y + offset.y };
-    if (walkable(atlas, tile.x, tile.y) && regionAt(atlas, tile.x, tile.y) === region)
-      tiles.push(tile);
+    if (walkable(atlas, tile.x, tile.y)) tiles.push(tile);
     else if (isLine(actor.weapon)) break;
   }
   return tiles;
@@ -749,10 +605,9 @@ export function blowTimesOf(world: World, actor: Actor): BlowTimes {
 export const rankOf = (world: World, actor: Actor): Rank => kindOf(world, actor).rank ?? "fodder";
 export const levelOf = (world: World, actor: Actor): number => kindOf(world, actor).level ?? 1;
 
-/** The element of the landing that (x, y) is on, if it has one. */
-export function elementAt(world: World, x: number, y: number): Element | undefined {
-  const { atlas } = world;
-  const element = (atlas.regions[regionAt(atlas, x, y)] as Region).map.element;
+/** The element of the landing the world stands on, if it has one. */
+export function elementAt(world: World, _x: number, _y: number): Element | undefined {
+  const { element } = world.atlas.map;
   return element === "none" ? undefined : element;
 }
 
@@ -765,7 +620,7 @@ export const enemies = (a: Actor, b: Actor): boolean =>
   (a.kind === ADVENTURER) !== (b.kind === ADVENTURER);
 
 /**
- * Is `actor` a resident lying at camp after a down, not yet up? A down leaves
+ * Is `actor` a citizen lying aboard after a down, not yet up? A down leaves
  * it waiting with no rule in charge and no fault (rule -1, fault 0), which no
  * decision does, until the wait runs out. Blows pass it by, and monsters'
  * sensors leave it out.
@@ -984,6 +839,22 @@ export type WorldEvent =
       readonly actor: number;
       readonly x: number;
       readonly y: number;
+    }
+  | {
+      /** The city's cycle came to a beat (cycle.ts). */
+      readonly type: "beat";
+      readonly tick: number;
+      readonly beat: (typeof BEATS)[number];
+    }
+  | {
+      /**
+       * A citizen outside at lift-off was hauled aboard. `stripped` is false
+       * for one that was on the ramp, which counts as aboard.
+       */
+      readonly type: "winch";
+      readonly tick: number;
+      readonly actor: number;
+      readonly stripped: boolean;
     };
 
 /**
@@ -994,9 +865,8 @@ export function step(world: World, inputs: readonly Input[] = []): WorldEvent[] 
   const events: WorldEvent[] = [];
   for (const input of inputs) applyInput(world, input);
   world.tick++;
+  runCycle(world, events);
   regrowNodes(world, events);
-  sendHome(world, events);
-  spawnMonsters(world);
   landAttacks(world, events);
   // Nobody joins or leaves the world while the actors update, and only a step
   // moves one, so one grid of who stands where serves the whole pass.
@@ -1059,8 +929,7 @@ function takerOf(world: World, actor: Actor): Taker {
 
 /**
  * The living monster other than `from` that `fits`, nearest it within `reach`
- * steps (as a king moves) in its region; of those as near, the first in
- * update order.
+ * steps (as a king moves); of those as near, the first in update order.
  */
 function nearestOther(
   world: World,
@@ -1073,7 +942,7 @@ function nearestOther(
   for (const other of world.actors) {
     if (other === from || other.hp <= 0 || other.kind === ADVENTURER || !fits(other)) continue;
     const steps = Math.max(Math.abs(other.x - from.x), Math.abs(other.y - from.y));
-    if (steps < bestSteps && sameRegion(world, other, from)) {
+    if (steps < bestSteps) {
       best = other;
       bestSteps = steps;
     }
@@ -1202,15 +1071,15 @@ function passStatuses(world: World, events: WorldEvent[], struck: Map<number, nu
 
 /**
  * Whether a body knocked from where it stands one tile by (mx, my) can go
- * there: ground in its own region, with nobody on it who blocks it, and for a
+ * there: ground on a floor it can be pushed to (never off the deck's edge),
+ * with nobody on it who blocks it, and for a
  * diagonal, no wall on either side of the corner it passes.
  */
 function knockable(world: World, body: Actor, mx: number, my: number): boolean {
   const { atlas } = world;
   const x = body.x + mx;
   const y = body.y + my;
-  if (!walkable(atlas, x, y) || regionAt(atlas, x, y) !== regionAt(atlas, body.x, body.y))
-    return false;
+  if (!walkable(atlas, x, y) || !floorsJoin(atlas, body.x, body.y, x, y)) return false;
   if (mx !== 0 && my !== 0 && !(walkable(atlas, x, body.y) && walkable(atlas, body.x, y)))
     return false;
   return blockerAt(world, x, y, body) === undefined;
@@ -1290,7 +1159,7 @@ function reaim(world: World, body: Actor): Mark[] {
 
 /**
  * Flies every arrow on a tile: into the first enemy of its shooter on that
- * tile, which it hits and stops in, or on, or out at a wall, at its region's
+ * tile, which it hits and stops in, or on, or out at a wall, at the ground's
  * edge or at the end of its range.
  */
 function flyArrows(
@@ -1312,10 +1181,7 @@ function flyArrows(
     const inWay = (a: Actor): boolean => a.hp > 0 && enemies(a, shooter) && !mending(a);
     // An enemy that came onto the arrow's own tile since it got there is in its way too.
     const met = firstAt(grid, arrow.x, arrow.y, inWay);
-    if (
-      !met &&
-      (!walkable(atlas, x, y) || regionAt(atlas, x, y) !== regionAt(atlas, arrow.x, arrow.y))
-    ) {
+    if (!met && !walkable(atlas, x, y)) {
       events.push({ type: "miss", tick: world.tick, actor: arrow.by, x: arrow.x, y: arrow.y });
       continue;
     }
@@ -1443,7 +1309,6 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     for (const other of world.actors) {
       const steps = Math.max(Math.abs(other.x - actor.x), Math.abs(other.y - actor.y));
       if (other.kind === ADVENTURER || other.hp <= 0 || steps > SHATTER_REACH) continue;
-      if (!sameRegion(world, other, actor)) continue;
       other.status.chill = statusTicks(world, other);
       events.push({
         type: "status",
@@ -1454,9 +1319,6 @@ function landAttacks(world: World, events: WorldEvent[]): void {
       });
     }
   }
-  // One that dies is replaced a wait later at the earliest, in the region it was in.
-  for (const actor of out)
-    if (actor.kind !== ADVENTURER) holdSpawns(world, regionAt(world.atlas, actor.x, actor.y));
   for (const actor of out) {
     events.push({
       type: "down",
@@ -1469,8 +1331,8 @@ function landAttacks(world: World, events: WorldEvent[]): void {
       y: actor.y,
     });
     if (actor.kind !== ADVENTURER) continue;
-    // An adventurer is carried back to camp and rests there. What it loses by this is not decided here.
-    const bed = freeTileNear(world, place(world.atlas, "camp"), actor) ?? actor;
+    // A citizen is carried aboard and rests there. What it loses by this is piece 17's.
+    const bed = bedFor(world, actor);
     putAt(world, actor, bed.x, bed.y);
     actor.moveTicksLeft = 0;
     setPath(world, actor, []);
@@ -1485,7 +1347,7 @@ function landAttacks(world: World, events: WorldEvent[]): void {
     actor.fault = 0;
     actor.hp = ADVENTURER_KIND.hp;
     actor.deaths = Math.min(MAX_DEATHS, actor.deaths + 1);
-    // Camp stands in for the deck, where a flask fills again, until the deck is built.
+    // Aboard, a flask fills again.
     actor.flask = FLASK_DRINKS;
     actor.kills = 0;
     actor.status = noStatus();
@@ -1585,6 +1447,10 @@ function applyInput(world: World, input: Input): void {
     join(world, fields.account, name, fields.role);
     return;
   }
+  if (type === "break") {
+    breakShield(world);
+    return;
+  }
   // Every other input from a chat account says its chatter was heard; `go`,
   // `free` and `param` act on its citizen, and the rest have no effect yet (see inputs.ts).
   if (typeof type === "string" && HEARD_FROM.has(type)) {
@@ -1604,30 +1470,93 @@ function applyInput(world: World, input: Input): void {
   if (world.nextActorId >= MAX_ACTOR_ID) return;
   const kind = fields.kind ?? ADVENTURER;
   if (typeof kind !== "string") return;
-  // Checked before a monster holds its region's spawns, so a spawn dropped for its weapon holds none.
   const weapon = fields.weapon ?? "blade";
   if (!FAMILIES.includes(weapon as Family) || (kind !== ADVENTURER && fields.weapon !== undefined))
     return;
   if (kind !== ADVENTURER) {
-    // A monster put in by hand counts against its region's cap and wait like any other.
-    if (!Object.hasOwn(world.kinds, kind)) return;
-    const region = regionAt(world.atlas, x, y);
-    if (!spawnGround(world.atlas, x, y) || monstersIn(world, region) >= capFor(world, region))
-      return;
-    // Inputs are applied before the tick moves on, and the monster is first in
-    // the world on that next tick, so the hour is counted from there.
-    holdSpawns(world, region, world.tick + 1);
+    if (!Object.hasOwn(world.kinds, kind) || !monsterGround(world.atlas, x, y)) return;
   }
-  addActor(world, name, x, y, program, kind, "", weapon as Family);
+  addActor(world, name, x, y, program, kind, weapon as Family);
 }
 
 /**
+ * The `break` input: during the siege, the shield breaks on the tick the
+ * input is applied for. At any other time it does nothing.
+ */
+function breakShield(world: World): void {
+  const { cycle } = world;
+  const tick = world.tick + 1;
+  if (!cycle || cycle.broke > 0 || tick < siegeAt(cycle) || tick >= breakAt(cycle)) return;
+  cycle.broke = tick;
+}
+
+/**
+ * Where a newcomer comes up and where a downed citizen is carried: on a city,
+ * the deck's hatches and its hold; on a world of one map, its `camp` place if
+ * it has one, else its first walkable tile.
+ */
+export function homeOf(world: World): Point {
+  const { atlas } = world;
+  const named = atlas.places.find((p) => p.name === (world.cycle ? "hold" : "camp"));
+  if (named) return named;
+  const first = atlas.open.indexOf(true);
+  return { x: atlas.left + (first % atlas.width), y: atlas.top + Math.floor(first / atlas.width) };
+}
+
+/**
+ * The deck tile nearest `from` by walking over the deck with room for one
+ * more citizen (PER_TILE to a tile), or null if every one is full. `self` is
+ * not counted where it stands.
+ */
+function berthNear(world: World, from: Point, self?: Actor): Point | null {
+  const { atlas } = world;
+  if (!aboard(atlas, from.x, from.y)) return null;
+  const count = new Map<number, number>();
+  for (const other of world.actors) {
+    if (other === self) continue;
+    const tile = tileAt(atlas, other.x, other.y);
+    count.set(tile, (count.get(tile) ?? 0) + (other.kind === ADVENTURER ? 1 : PER_TILE));
+  }
+  const start = tileAt(atlas, from.x, from.y);
+  const seen = new Set<number>([start]);
+  const queue: Point[] = [from];
+  for (let head = 0; head < queue.length; head++) {
+    const at = queue[head] as Point;
+    const tile = tileAt(atlas, at.x, at.y);
+    const deck = terrainOf(atlas, at.x, at.y) !== "ramp";
+    if (deck && (count.get(tile) ?? 0) < PER_TILE) return at;
+    for (const [dx, dy] of NEIGHBOURS) {
+      const x = at.x + dx;
+      const y = at.y + dy;
+      const next = tileAt(atlas, x, y);
+      if (seen.has(next) || !linked(atlas, at.x, at.y, x, y) || !aboard(atlas, x, y)) continue;
+      seen.add(next);
+      queue.push({ x, y });
+    }
+  }
+  return null;
+}
+
+/** Where a downed citizen rests: a berth by the hold on a city, the free tile nearest home on one map. */
+function bedFor(world: World, actor: Actor): Point {
+  const home = homeOf(world);
+  if (world.cycle) return berthNear(world, home, actor) ?? home;
+  return freeTileNear(world, home, actor) ?? actor;
+}
+
+/** How many citizens the world has. */
+const citizens = (world: World): number =>
+  world.actors.reduce((n, actor) => n + (actor.kind === ADVENTURER ? 1 : 0), 0);
+
+/**
  * A chatter's first message makes their citizen: an adventurer named by their
- * username and kept under their account, on NEWCOMER_PROGRAM, on the free
- * tile nearest the camp. An account that has a citizen already is only
- * heard. A name another citizen has, in any capitals, is refused, so `!go`
- * never finds two. The hatch, the name rule and colours from the account
- * are C3's.
+ * username and kept under their account, on NEWCOMER_PROGRAM. On a city it
+ * comes up through a hatch, the hatches taken in turn, onto the deck tile
+ * with room nearest it, until the city's BERTHS are full. On a world of one
+ * map it stands on the free tile nearest home. An account that has a citizen
+ * already is only heard. A name another citizen has, in any capitals, is
+ * refused, so `!go` never finds two. The queue under the hatch, the name rule
+ * and colours from the account are C3's.
  */
 function join(world: World, account: unknown, name: unknown, role: unknown): void {
   if (typeof account !== "string" || !ACCOUNT.test(account)) return;
@@ -1643,170 +1572,90 @@ function join(world: World, account: unknown, name: unknown, role: unknown): voi
   const lower = name.toLowerCase();
   if (world.actors.some((actor) => actor.kind === ADVENTURER && actor.name.toLowerCase() === lower))
     return;
-  const at = freeTileNear(world, place(world.atlas, "camp"));
+  let at: Point | null;
+  if (world.cycle) {
+    const count = citizens(world);
+    if (count >= BERTHS) return;
+    const hatches = world.atlas.places.filter((p) => terrainOf(world.atlas, p.x, p.y) === "hatch");
+    at = berthNear(world, hatches[count % hatches.length] as Point);
+  } else at = freeTileNear(world, homeOf(world));
   if (!at) return;
-  addActor(world, name, at.x, at.y, NEWCOMER_PROGRAM, ADVENTURER, "", "blade", account);
+  addActor(world, name, at.x, at.y, NEWCOMER_PROGRAM, ADVENTURER, "blade", account);
 }
 
 /**
- * How far the camp's firelight reaches, in tiles, straight-line from the
- * `camp` place. The viewer's lantern light fades out at about this distance.
+ * Moves the city's cycle on to the tick the world has just come to: sets the
+ * landing down at legs-plant, lowers the ramp, has the stand-in break the
+ * shield, lifts off, and begins the next cycle.
  */
-export const LIGHT_REACH = 5;
-
-/** Whether tile (x, y) is in the camp's firelight: in the camp's region and within LIGHT_REACH of `camp`. */
-export function inFirelight(world: World, x: number, y: number): boolean {
-  const camp = place(world.atlas, "camp");
-  if (!walkable(world.atlas, x, y) || !sameRegion(world, camp, { x, y })) return false;
-  const dx = x - camp.x;
-  const dy = y - camp.y;
-  return dx * dx + dy * dy <= LIGHT_REACH * LIGHT_REACH;
-}
-
-/** Is it the part of the day when monsters come out at their night places? */
-export function isNight(world: World): boolean {
-  const { hour } = clock(world);
-  return hour >= NIGHT_HOUR || hour < DAY_HOUR;
-}
-
-/** The most monsters a region may hold at this time of day. */
-export function capFor(world: World, region: number): number {
-  const cap = isNight(world) ? MONSTER_CAPS.night : MONSTER_CAPS.day;
-  let residents = 0;
-  for (const actor of world.actors)
-    if (actor.kind === ADVENTURER && regionAt(world.atlas, actor.x, actor.y) === region)
-      residents++;
-  return Math.min(cap.most, cap.base + Math.floor(residents / cap.residents));
-}
-
-/** How many monsters are in the region with this index. */
-export const monstersIn = (world: World, region: number): number =>
-  world.actors.filter(
-    (actor) => actor.kind !== ADVENTURER && regionAt(world.atlas, actor.x, actor.y) === region,
-  ).length;
-
-/** How many actors, adventurers and monsters, are in the region with this index. */
-export const actorsIn = (world: World, region: number): number =>
-  world.actors.filter((actor) => regionAt(world.atlas, actor.x, actor.y) === region).length;
-
-/** No group arrives in the region for RESPAWN_TICKS from now. */
-const holdSpawns = (world: World, region: number, from = world.tick): void => {
-  world.nextSpawn[region] = Math.max(world.nextSpawn[region] as number, from + RESPAWN_TICKS);
-};
-
-/**
- * Sends home the monsters out for the part of the day that is over, each once
- * no adventurer in its region is within LEAVE_DISTANCE and it is not in the
- * middle of a blow. One that is still fighting stays until it is clear.
- */
-function sendHome(world: World, events: WorldEvent[]): void {
-  const now: Shift = isNight(world) ? "night" : "day";
-  let grid: Grid | undefined;
-  const going = world.actors.filter((actor) => {
-    if (actor.shift === "" || actor.shift === now || actor.windup !== 0) return false;
-    grid ??= gridOf(world);
-    const near = (other: Actor): boolean =>
-      other.kind === ADVENTURER && sameRegion(world, other, actor);
-    const area = world.atlas.regions[regionAt(world.atlas, actor.x, actor.y)] as Region;
-    return countWithin(grid, actor.x, actor.y, LEAVE_DISTANCE, area, near) === 0;
-  });
-  if (going.length === 0) return;
-  const gone = new Set(going);
-  world.actors = world.actors.filter((actor) => !gone.has(actor));
-  for (const actor of going) {
-    const { id, name, kind, x, y } = actor;
-    events.push({ type: "leave", tick: world.tick, actor: id, name, kind, x, y });
+function runCycle(world: World, events: WorldEvent[]): void {
+  const { cycle, tick } = world;
+  if (!cycle) return;
+  const before = beatOf(cycle, tick - 1).beat;
+  if (tick === cycle.start + LEGS_PLANT || tick === cycle.start + RAMP_DOWN) setGround(world);
+  if (cycle.broke === 0 && tick === breakAt(cycle)) cycle.broke = tick;
+  if (cycle.broke > 0 && tick === liftAt(cycle)) liftOff(world, events);
+  if (cycle.broke > 0 && tick >= liftAt(cycle) && tick === nextStart(cycle)) {
+    cycle.start = tick;
+    cycle.count = Math.min(0x7fffffff, cycle.count + 1);
+    cycle.broke = 0;
+    cycle.landing = drawLanding(world.rng, cycle.city);
   }
+  const now = beatOf(cycle, tick).beat;
+  if (now !== before) events.push({ type: "beat", tick, beat: now });
+}
+
+/** Sets the city's ground to what its cycle has at this tick, with the nodes it holds. */
+function setGround(world: World): void {
+  const cycle = world.cycle as Cycle;
+  world.atlas = groundOf(cycle, world.tick);
+  world.nodes = fullNodes(world.atlas);
 }
 
 /**
- * Region by region, in the atlas's order, brings in a whole group of monsters
- * when it is time there and the group fits: under the region's cap (capFor,
- * which counts monsters only and grows with the residents there), and on free
- * tiles within GROUP_SPREAD steps of one of its places in that region. A group
- * that does not fit near its place does not come, and the region's wait starts
- * again. While a region is at its cap its wait starts again too. A spawn whose
- * number by night is a range has the number drawn, and comes in as many of it
- * as there is room for, at least its fewest.
+ * Lift-off: the ramp goes up and the city takes to the road. Every monster,
+ * blow in wind-up and arrow is left behind, every flag comes down, and every
+ * citizen stops what it was doing. Each one not on the deck is hauled aboard
+ * onto a berth by the hold, and one that was not on the ramp either is
+ * stripped (`strip`).
  */
-function spawnMonsters(world: World): void {
-  if (world.spawns.length === 0) return;
-  const night = isNight(world);
+function liftOff(world: World, events: WorldEvent[]): void {
   const { atlas } = world;
-  const placesIn = (spawn: Spawn, region: number): readonly Point[] =>
-    (night ? spawn.night : spawn.day).filter((p) => regionAt(atlas, p.x, p.y) === region);
-  atlas.regions.forEach((_ground, region) => {
-    const alive = monstersIn(world, region);
-    const cap = capFor(world, region);
-    if (alive >= cap) {
-      holdSpawns(world, region);
-      return;
-    }
-    if (world.tick < (world.nextSpawn[region] as number)) return;
-    const room = cap - alive;
-    const open = world.spawns.filter(
-      (spawn) => placesIn(spawn, region).length > 0 && groupOf(spawn, night) <= room,
-    );
-    // Nothing fits yet; look again when one more has gone.
-    if (open.length === 0) return;
-    holdSpawns(world, region);
-    const spawn = open[nextInt(world.rng, open.length)] as Spawn;
-    const places = placesIn(spawn, region);
-    const at = places[nextInt(world.rng, places.length)] as Point;
-    const fewest = groupOf(spawn, night);
-    const most = mostOf(spawn, night);
-    const drawn = most > fewest ? fewest + nextInt(world.rng, most - fewest + 1) : fewest;
-    const group = Math.min(drawn, room);
-    const tiles = groupTiles(world, at, group);
-    if (!tiles || world.nextActorId > MAX_ACTOR_ID - group) return;
-    for (const tile of tiles) {
-      addActor(
-        world,
-        spawn.name,
-        tile.x,
-        tile.y,
-        spawn.program,
-        spawn.kind,
-        night ? "night" : "day",
-      );
-    }
-  });
+  const outside: { actor: Actor; ramp: boolean }[] = [];
+  world.actors = world.actors.filter((actor) => actor.kind === ADVENTURER);
+  world.marks = [];
+  world.arrows = [];
+  for (const actor of world.actors) {
+    setPath(world, actor, []);
+    actor.moveTicksLeft = 0;
+    putAt(world, actor, actor.x, actor.y);
+    actor.blocked = 0;
+    actor.windup = 0;
+    actor.knockX = 0;
+    actor.knockY = 0;
+    Object.assign(actor, { flag: FLAG_NONE, flagX: 0, flagY: 0, flagOn: 0, flagAt: 0, heed: 0 });
+    const terrain = terrainOf(atlas, actor.x, actor.y);
+    if (terrain !== "deck" && terrain !== "hatch")
+      outside.push({ actor, ramp: terrain === "ramp" });
+  }
+  setGround(world);
+  const hold = homeOf(world);
+  for (const { actor, ramp } of outside) {
+    // Somewhere to stand, the hold itself if the deck is full: tiles hold two
+    // citizens and the city berths no more than it has room for.
+    const berth = berthNear(world, hold, actor) ?? hold;
+    putAt(world, actor, berth.x, berth.y);
+    if (!ramp) strip(world, actor);
+    events.push({ type: "winch", tick: world.tick, actor: actor.id, stripped: !ramp });
+  }
 }
 
 /**
- * The first `count` tiles, nearest first by walking, within GROUP_SPREAD steps
- * of `at` and in its region, that a monster can come out on (off the camp's
- * ground) and nobody stands on or is walking to; null if there are not that many.
+ * What a citizen outside at lift-off loses: its haul and everything it wears
+ * (docs/slice.md, section 8). Nothing yet: the haul and worn gear come with
+ * pieces 12 and 13, and piece 17 strips them here.
  */
-function groupTiles(world: World, at: Point, count: number): Point[] | null {
-  const { atlas } = world;
-  const taken = new Set<number>();
-  for (const other of world.actors) {
-    taken.add(tileAt(atlas, other.x, other.y));
-    const end = other.path[other.path.length - 1];
-    if (end) taken.add(tileAt(atlas, end.x, end.y));
-  }
-  const tiles: Point[] = [];
-  const seen = new Set<number>([tileAt(atlas, at.x, at.y)]);
-  let ring: Point[] = [at];
-  for (let depth = 0; depth <= GROUP_SPREAD && tiles.length < count; depth++) {
-    const next: Point[] = [];
-    for (const tile of ring) {
-      const free = !taken.has(tileAt(atlas, tile.x, tile.y)) && spawnGround(atlas, tile.x, tile.y);
-      if (free && tiles.length < count) tiles.push(tile);
-      for (const [dx, dy] of NEIGHBOURS) {
-        const x = tile.x + dx;
-        const y = tile.y + dy;
-        if (!stepsFor(atlas, false, tile.x, tile.y, x, y) || seen.has(tileAt(atlas, x, y)))
-          continue;
-        seen.add(tileAt(atlas, x, y));
-        next.push({ x, y });
-      }
-    }
-    ring = next;
-  }
-  return tiles.length === count ? tiles : null;
-}
+function strip(_world: World, _actor: Actor): void {}
 
 function addActor(
   world: World,
@@ -1815,7 +1664,6 @@ function addActor(
   y: number,
   program: string,
   kind: string,
-  shift: Shift,
   weapon: Family = "blade",
   account = "",
 ): void {
@@ -1840,7 +1688,6 @@ function addActor(
     hp: (adventurer ? ADVENTURER_KIND : (world.kinds[kind] as Kind)).hp,
     windup: 0,
     recover: 0,
-    shift,
     stalled: 0,
     xp: noXp(),
     bag: emptyBag(),
@@ -1922,51 +1769,6 @@ export function stepTicks(world: World, actor: Actor): number {
   return actor.status.chill > 0 ? slowed(ticks) : ticks;
 }
 
-/** Spawn inputs that put the given actors on the free walkable tiles nearest the camp, in order. */
-export function spawnsNearCamp(
-  world: World,
-  cast: readonly { readonly name: string; readonly program: string }[],
-): Input[] {
-  const { atlas } = world;
-  const camp = place(atlas, "camp");
-  const seen = new Set<number>([tileAt(atlas, camp.x, camp.y)]);
-  const queue: Point[] = [camp];
-  const inputs: Input[] = [];
-  for (let head = 0; head < queue.length && inputs.length < cast.length; head++) {
-    const at = queue[head] as Point;
-    if (!actorAt(world, at.x, at.y)) {
-      const { name, program } = cast[inputs.length] as (typeof cast)[number];
-      inputs.push({ type: "spawn", name, x: at.x, y: at.y, program });
-    }
-    for (const [dx, dy] of NEIGHBOURS) {
-      const x = at.x + dx;
-      const y = at.y + dy;
-      if (!linked(atlas, at.x, at.y, x, y) || seen.has(tileAt(atlas, x, y))) continue;
-      seen.add(tileAt(atlas, x, y));
-      queue.push({ x, y });
-    }
-  }
-  return inputs;
-}
-
-export interface Clock {
-  /** Days since the world began, starting at 0. */
-  readonly day: number;
-  readonly hour: number;
-  readonly minute: number;
-}
-
-export function clock(world: World): Clock {
-  const ticks = world.tick + START_HOUR * TICKS_PER_GAME_HOUR;
-  const ofDay = ticks % TICKS_PER_DAY;
-  const ofHour = ofDay % TICKS_PER_GAME_HOUR;
-  return {
-    day: (ticks - ofDay) / TICKS_PER_DAY,
-    hour: (ofDay - ofHour) / TICKS_PER_GAME_HOUR,
-    minute: (ofHour - (ofHour % TICKS_PER_GAME_MINUTE)) / TICKS_PER_GAME_MINUTE,
-  };
-}
-
 /**
  * A program as its fingerprint takes it. One with params follows its labels
  * with -1 and the params; one without hashes as programs did before they had
@@ -2043,57 +1845,29 @@ export function hashKinds(kinds: Kinds): string {
 
 /** A fingerprint of everything that decides the world's future. */
 export function hashWorld(world: World): string {
-  return hashWorldAs(world, SNAPSHOT_VERSION);
+  return hashStateAs(world, printsOf(world));
 }
 
-/** Both 32-bit halves of a whole number that may outgrow 32 bits. */
-const halves = (n: number): number[] => [
-  n % 0x1_0000_0000,
-  (n - (n % 0x1_0000_0000)) / 0x1_0000_0000,
-];
-
-/**
- * The hash a snapshot of `version` stored. Versions 4 to 6 ran on one map, so
- * they hashed that map and, in versions 5 and 6, one `nextSpawn`. Version 4
- * had no spawn table, no `nextSpawn`, and no `shift` or `stalled` on actors,
- * versions 4 and 5 had no experience, bag or bank, versions before 8 no
- * death count, versions before 9 no nodes, versions before 10 no weapons,
- * aims, knockback, flasks or arrows, versions before 11 no statuses, and
- * versions before 12 no accounts, params, tokens or flags, so those are left
- * out. Banks before version 9 held the first V8_GOODS goods only.
- */
-function hashWorldAs(world: World, version: number): string {
-  const { atlas } = world;
-  return hashStateAs(world, version, {
-    map: version >= 7 ? hashAtlas(atlas) : hashMap((atlas.regions[0] as Region).map),
-    programs: hashPrograms(world.programs),
-    kinds: hashKinds(world.kinds),
-    spawns: hashSpawns(world.spawns),
-  });
-}
-
-/** The fingerprints of a world's content, as a snapshot of it stores them. */
+/** The fingerprints of a world's ground and content, as a snapshot of it stores them. */
 export interface Prints {
   readonly map: string;
   readonly programs: string;
   readonly kinds: string;
-  /** Not hashed in version 4, which had no spawn table. */
-  readonly spawns: string;
 }
 
+export const printsOf = (world: World): Prints => ({
+  map: hashAtlas(world.atlas),
+  programs: hashPrograms(world.programs),
+  kinds: hashKinds(world.kinds),
+});
+
 /**
- * The hash a snapshot of `version` stored, with the content given by its
- * fingerprints only. `adopt` uses it to check a snapshot taken with content
- * it no longer has; the world's own atlas, programs, kinds and spawns are not read.
+ * The hash of a world's state with its ground and content given by their
+ * fingerprints only. `adopt` uses it to check a snapshot taken with content it
+ * no longer has; the world's own atlas, programs and kinds are not read.
  */
-export function hashStateAs(world: World, version: number, prints: Prints): string {
+export function hashStateAs(world: World, prints: Prints): string {
   const { rng } = world;
-  const v4 = version === 4;
-  const before6 = version < 6;
-  const before8 = version < 8;
-  const before9 = version < 9;
-  const before10 = version < 10;
-  const before11 = version < 11;
   return hashInts([
     ...stringInts(prints.map),
     ...stringInts(prints.programs),
@@ -2126,74 +1900,45 @@ export function hashStateAs(world: World, version: number, prints: Prints): stri
       a.hp,
       a.windup,
       a.recover,
-      ...(v4 ? [] : [SHIFTS.indexOf(a.shift), a.stalled]),
-      ...(before6 ? [] : [...a.xp, ...a.bag, ...(before9 ? a.bank.slice(0, V8_GOODS) : a.bank)]),
-      ...(before8 ? [] : [a.deaths]),
-      ...(before10
-        ? []
-        : [FAMILIES.indexOf(a.weapon as Family), a.aim, a.knockX, a.knockY, a.flask, a.kills]),
-      ...(before11 ? [] : STATUS_FIELDS.map((field) => a.status[field])),
-      ...(version < 12 ? [] : ordersInts(a)),
+      a.stalled,
+      ...a.xp,
+      ...a.bag,
+      ...a.bank,
+      a.deaths,
+      FAMILIES.indexOf(a.weapon as Family),
+      a.aim,
+      a.knockX,
+      a.knockY,
+      a.flask,
+      a.kills,
+      ...STATUS_FIELDS.map((field) => a.status[field]),
+      ...ordersInts(a),
     ]),
     world.marks.length,
     ...world.marks.flatMap((m) => [m.x, m.y, m.by]),
-    ...(v4 ? [] : stringInts(prints.spawns)),
-    ...(v4
-      ? []
-      : version < 7
-        ? halves(world.nextSpawn[0] as number)
-        : [world.nextSpawn.length, ...world.nextSpawn.flatMap(halves)]),
-    ...(before9
-      ? []
-      : [world.nodes.length, ...world.nodes.flatMap((n) => [n.left, ...halves(n.back)])]),
-    ...(before10
-      ? []
-      : [
-          world.arrows.length,
-          ...world.arrows.flatMap((r) => [r.by, r.x, r.y, r.aim, r.left, r.blow, r.crit ? 1 : 0]),
-        ]),
+    world.nodes.length,
+    ...world.nodes.flatMap((n) => [n.left, ...halves(n.back)]),
+    world.arrows.length,
+    ...world.arrows.flatMap((r) => [r.by, r.x, r.y, r.aim, r.left, r.blow, r.crit ? 1 : 0]),
+    ...(world.cycle ? [1, ...cycleInts(world.cycle)] : [0]),
   ]);
 }
 
 /**
- * A fingerprint of the spawn table, in order. A spawn that comes in the same
- * number by night as by day hashes as spawns did before they had a night
- * group; any other follows its night places with -1, its fewest by night and
- * its most by night, as in hashKinds. One whose most by day is more than its
- * group then adds -2 and that most.
+ * Version 13 is the walking city's first: the deck, the cycle and the
+ * landing. Snapshots before it are of the camp world, and are refused.
  */
-export function hashSpawns(spawns: Spawns): string {
-  return hashInts([
-    spawns.length,
-    ...spawns.flatMap((s) => [
-      ...stringInts(s.kind),
-      ...stringInts(s.name),
-      ...stringInts(s.program),
-      s.group,
-      s.day.length,
-      ...s.day.flatMap((p) => [p.x, p.y]),
-      s.night.length,
-      ...s.night.flatMap((p) => [p.x, p.y]),
-      ...(groupOf(s, true) === s.group && mostOf(s, true) === s.group
-        ? []
-        : [-1, groupOf(s, true), mostOf(s, true)]),
-      ...(mostOf(s, false) === s.group ? [] : [-2, mostOf(s, false)]),
-    ]),
-  ]);
-}
-
-export const SNAPSHOT_VERSION = 12;
-/** How many goods there were up to version 8: `logs`, `raw_fish` and `cooked_fish`. */
-const V8_GOODS = 3;
+export const SNAPSHOT_VERSION = 13;
 
 export class SnapshotError extends Error {
   override name = "SnapshotError";
 }
 
 /**
- * The world as text. The maps are not stored, only a fingerprint of the regions
- * and exits. `byProgram` holds a fingerprint of each program by name, so that
- * `adopt` can tell which programs changed; it is not part of the hash.
+ * The world as text. The ground is not stored, only its fingerprint: a
+ * city's is worked out again from its cycle. `byProgram` holds a fingerprint
+ * of each program by name, so that `adopt` can tell which programs changed;
+ * it is not part of the hash.
  */
 export function snapshot(world: World): string {
   return JSON.stringify(savedOf(world));
@@ -2266,12 +2011,15 @@ export const knocksOf = (events: readonly WorldEvent[]): Knock[] =>
 
 /**
  * What the world server sends a viewer after each tick: the snapshot, with the
- * tick's blows and knockbacks beside it. Arrows in flight are in the world
- * itself. The orders a viewer draws nothing from are left out (`unsentOrders`):
- * each citizen's account and tokens, the flag of a citizen with none, and
- * every monster's orders. The hash is that of the world with those at the
- * values `readMessage` puts back, so a message is checked as a snapshot is,
- * and `restore` refuses one.
+ * tick's blows and knockbacks beside it, and the beat the city is in (null
+ * on a world of one map). The state holds the cycle: the city's size, the
+ * landing it sets down on and the ticks of its beats, from which `readMessage`
+ * works out the deck or the landing the world stands on. Arrows in flight are
+ * in the world itself. The orders a viewer draws nothing from are left out
+ * (`unsentOrders`): each citizen's account and tokens, the flag of a citizen
+ * with none, and every monster's orders. The hash is that of the world with
+ * those at the values `readMessage` puts back, so a message is checked as a
+ * snapshot is, and `restore` refuses one.
  */
 export function viewerMessage(
   world: World,
@@ -2290,14 +2038,19 @@ export function viewerMessage(
     for (const key of Object.keys(unsent[i] as object)) delete sent[key];
     return sent;
   });
-  return JSON.stringify({ ...seen, state: { ...seen.state, actors }, blows, knocks });
+  return JSON.stringify({
+    ...seen,
+    state: { ...seen.state, actors },
+    beat: beat(world),
+    blows,
+    knocks,
+  });
 }
 
 /** A viewer message's actors with the orders it leaves out put back, as `viewerMessage` hashed them. */
 function withUnsent(saved: Saved, programs: Programs): Saved {
   const { state } = saved;
-  if (saved.version !== SNAPSHOT_VERSION || typeof state !== "object" || state === null)
-    return saved;
+  if (typeof state !== "object" || state === null) return saved;
   const { actors } = state as Record<string, unknown>;
   if (!Array.isArray(actors)) return saved;
   const filled = actors.map((item: unknown) => {
@@ -2325,18 +2078,18 @@ export interface Message {
  * Reads a viewer message as `restore` reads a snapshot, refusing the same
  * things, once the orders it leaves out are put back. Blows and knockbacks
  * that are not as `viewerMessage` writes them are left out; a plain snapshot
- * has none, and is read as it is.
+ * has none, and is read as it is. The beat is worked out from the world
+ * (`beat`), so it is not read back.
  */
 export function readMessage(
   text: string,
-  ground: TileMap | Atlas,
+  ground: TileMap | Atlas | null,
   programs: Programs = {},
   kinds: Kinds = {},
-  spawns: Spawns = [],
 ): Message {
   const data = parseJson(text);
   const saved = withUnsent(savedFrom(data), programs);
-  const world = restoreSaved(saved, ground, programs, kinds, spawns, true);
+  const world = restoreSaved(saved, ground, programs, kinds, true);
   const { blows, knocks } = data as Record<string, unknown>;
   return {
     world,
@@ -2364,7 +2117,7 @@ const isBlow = (raw: unknown): raw is Blow => {
 };
 
 function savedOf(world: World) {
-  const { atlas, programs, kinds, spawns, ...state } = world;
+  const { atlas, programs, kinds, ...state } = world;
   return {
     version: SNAPSHOT_VERSION,
     map: hashAtlas(atlas),
@@ -2375,7 +2128,6 @@ function savedOf(world: World) {
         .map((name) => [name, hashProgram(name, programs[name] as Program)]),
     ),
     kinds: hashKinds(kinds),
-    spawns: hashSpawns(spawns),
     hash: hashWorld(world),
     state,
   };
@@ -2388,7 +2140,6 @@ export interface Saved {
   readonly programs: unknown;
   readonly byProgram: unknown;
   readonly kinds: unknown;
-  readonly spawns: unknown;
   readonly hash: unknown;
   readonly state: unknown;
 }
@@ -2408,209 +2159,66 @@ function savedFrom(data: unknown): Saved {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     throw new SnapshotError("snapshot is not an object");
   }
-  const { version, map, programs, byProgram, kinds, spawns, hash, state } = data as Record<
-    string,
-    unknown
-  >;
-  if (
-    typeof version !== "number" ||
-    !Number.isInteger(version) ||
-    version < 4 ||
-    version > SNAPSHOT_VERSION
-  ) {
-    throw new SnapshotError(`snapshot version ${show(version)} is not 4 to ${SNAPSHOT_VERSION}`);
+  const { version, map, programs, byProgram, kinds, hash, state } = data as Record<string, unknown>;
+  if (version !== SNAPSHOT_VERSION) {
+    const old =
+      typeof version === "number" && Number.isInteger(version) && version >= 1 && version < 13;
+    throw new SnapshotError(
+      old
+        ? `snapshot version ${version} is of the camp world, which this build no longer runs; a new city starts in its place`
+        : `snapshot version ${show(version)} is not ${SNAPSHOT_VERSION}`,
+    );
   }
-  return { version, map, programs, byProgram, kinds, spawns, hash, state };
+  return { version, map, programs, byProgram, kinds, hash, state };
 }
 
 /**
- * Whether a snapshot's map fingerprint is that of `atlas`. Versions 4 to 6,
- * from before regions, ran on one map, so the atlas must be that map alone at (0, 0).
+ * The ground a saved world stands on: a city's, worked out from the cycle in
+ * its state, or the map passed in for a world of one map. Throws a
+ * SnapshotError if the state is neither, or is of a world of one map and no
+ * map is passed.
  */
-export function sameGround(version: number, mapHash: unknown, atlas: Atlas): boolean {
-  if (version >= 7) return mapHash === hashAtlas(atlas);
-  const only = atlas.regions[0] as Region;
-  return (
-    atlas.regions.length === 1 &&
-    only.x === 0 &&
-    only.y === 0 &&
-    atlas.exits.length === 0 &&
-    mapHash === hashMap(only.map)
-  );
+export function savedGround(state: unknown, ground: TileMap | Atlas | null): Atlas {
+  if (typeof state !== "object" || state === null)
+    throw new SnapshotError("snapshot contents are damaged");
+  const { cycle, tick } = state as Record<string, unknown>;
+  if (cycle === null) {
+    if (!ground) throw new SnapshotError("snapshot is of a world on one map, and no map was given");
+    return atlasOf(ground);
+  }
+  if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0)
+    throw new SnapshotError("snapshot contents are damaged");
+  const read = readCycle(cycle, tick);
+  if (!read) throw new SnapshotError("snapshot contents are damaged");
+  return groundOf(read, tick);
 }
 
 /**
- * A snapshot's state brought up to the current version, each older version to
- * the next in order. Throws a SnapshotError for old monsters that today's
- * rules do not allow (see refuseOldMonsters); anything else is left for
- * readState to judge.
- */
-export function migrate(
-  version: number,
-  state: unknown,
-  atlas: Atlas,
-  programs: Programs,
-): unknown {
-  const old = version < 7;
-  if (old) refuseOldMonsters(state);
-  const v5 = version === 4 ? fromVersion4(state) : state;
-  const v6 = version === 4 || version === 5 ? fromVersion5(v5) : v5;
-  const v7 = old ? fromVersion6(v6) : v6;
-  const v8 = version < 8 ? fromVersion7(v7) : v7;
-  const v9 = version < 9 ? fromVersion8(v8, atlas) : v8;
-  const v10 = version < 10 ? fromVersion9(v9) : v9;
-  const v11 = version < 11 ? fromVersion10(v10) : v10;
-  return version < 12 ? fromVersion11(v11, programs) : v11;
-}
-
-/**
- * A version 11 world's state with what version 12 added (see `withOrders`):
- * every actor has its program's defaults for its params, a full set of
- * tokens, no flag and no account, and was last heard at the snapshot's tick.
- */
-function fromVersion11(state: unknown, programs: Programs): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors, tick } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  return { ...state, actors: actors.map((actor: unknown) => withOrders(actor, programs, tick)) };
-}
-
-/** A version 10 world's state with what version 11 added: nobody has a status. */
-function fromVersion10(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  return {
-    ...state,
-    actors: actors.map((actor: unknown) =>
-      typeof actor === "object" && actor !== null ? { ...actor, status: noStatus() } : actor,
-    ),
-  };
-}
-
-/**
- * A version 9 world's state with what version 10 added: every adventurer
- * holds a blade and a full flask, nobody has been knocked back, each actor in
- * a wind-up faces the way of its marks, and no arrows are in flight. An
- * adventurer's wind-up and recovery from then do not fit a blade, so
- * `restore` calls them off afterwards (see callOffOldBlows), once the
- * version 9 hash has been checked.
- */
-function fromVersion9(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors, marks } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  const firstMark = new Map<unknown, Record<string, unknown>>();
-  if (Array.isArray(marks))
-    for (const mark of marks as unknown[]) {
-      if (typeof mark !== "object" || mark === null) continue;
-      const { by } = mark as Record<string, unknown>;
-      if (!firstMark.has(by)) firstMark.set(by, mark as Record<string, unknown>);
-    }
-  return {
-    ...state,
-    arrows: [],
-    actors: actors.map((actor: unknown) => {
-      if (typeof actor !== "object" || actor === null) return actor;
-      const { id, kind, x, y } = actor as Record<string, unknown>;
-      const adventurer = kind === ADVENTURER;
-      const mark = firstMark.get(id);
-      const aim =
-        mark && typeof mark.x === "number" && typeof mark.y === "number"
-          ? directionTo(mark.x - (x as number), mark.y - (y as number))
-          : 0;
-      return {
-        ...actor,
-        weapon: adventurer ? "blade" : "",
-        aim: Math.max(0, aim),
-        knockX: 0,
-        knockY: 0,
-        flask: adventurer ? FLASK_DRINKS : 0,
-        kills: 0,
-      };
-    }),
-  };
-}
-
-/**
- * A version 9 world as version 10 can run it: an adventurer's wind-up is
- * called off, with its marks, and its recovery cut to a blade's longest.
- */
-function callOffOldBlows(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors, marks } = state as Record<string, unknown>;
-  if (!Array.isArray(actors) || !Array.isArray(marks)) return state;
-  const striking = new Set<unknown>();
-  const settled = actors.map((actor: unknown) => {
-    if (typeof actor !== "object" || actor === null) return actor;
-    const { id, kind, windup, recover } = actor as Record<string, unknown>;
-    if (kind !== ADVENTURER || typeof recover !== "number") return actor;
-    if (windup !== 0) striking.add(id);
-    return { ...actor, windup: 0, recover: Math.min(recover, WEAPONS.blade.recovery) };
-  });
-  return {
-    ...state,
-    actors: settled,
-    marks: (marks as unknown[]).filter(
-      (mark) =>
-        typeof mark !== "object" ||
-        mark === null ||
-        !striking.has((mark as Record<string, unknown>).by),
-    ),
-  };
-}
-
-/**
- * Rebuilds a world from a snapshot and the content it was taken with. Refuses,
- * with a SnapshotError, anything it cannot be sure it reads correctly: another
- * version, other maps or exits, other programs, monster kinds or spawns, or
- * contents that do not hash to what was saved. Throws a ProgramError, KindError
- * or MapError instead if the content passed in is itself invalid. This is the
- * strict path, which tests and the viewer use; `adopt` carries a world over
- * to content that has changed.
- *
- * Versions 4 to 6, from before regions, are read too, into a world of the one
- * map they ran on (which must be passed in as that map, or as a world of that
- * map alone at (0, 0)). A version 4 snapshot, from before monsters spawned on
- * their own, has no spawn table to compare and takes on the spawns passed in.
- * In a version 4 or 5 snapshot, from before skills and the bank, everyone
- * starts with no experience, an empty bag and an empty bank. In a snapshot
- * from before version 8, nobody has died yet. In one from before version 9,
- * every node stands with its full yield and nobody has a burnt fish. In one
- * from before version 10, every adventurer holds a blade and a full flask,
- * and its wind-up, if it was in one, is called off. In one from before
- * version 11, nobody has a status. In one from before version 12, nobody
- * belongs to a chat account, has a flag or has set a param.
+ * Rebuilds a world from a snapshot and the content it was taken with.
+ * Refuses, with a SnapshotError, anything it cannot be sure it reads
+ * correctly: another version, another map, other programs or monster kinds,
+ * or contents that do not hash to what was saved. Throws a ProgramError or
+ * KindError instead if the content passed in is itself invalid. A city's
+ * ground comes from its own state, so `ground` is passed only for a world of
+ * one map, and is null for a city. This is the strict path, which tests and
+ * the viewer use; `adopt` carries a world over to content that has changed.
  */
 export const restore = (
   text: string,
-  ground: TileMap | Atlas,
+  ground: TileMap | Atlas | null,
   programs: Programs = {},
   kinds: Kinds = {},
-  spawns: Spawns = [],
-): World => restoreSaved(parseSnapshot(text), ground, programs, kinds, spawns);
+): World => restoreSaved(parseSnapshot(text), ground, programs, kinds);
 
 /** `seen`: a viewer message, whose citizens have no account (see `readOrders`). */
 function restoreSaved(
   saved: Saved,
-  ground: TileMap | Atlas,
+  ground: TileMap | Atlas | null,
   programs: Programs,
   kinds: Kinds,
-  spawns: Spawns,
   seen = false,
 ): World {
-  const atlas = atlasOf(ground);
-  const {
-    version,
-    map: mapHash,
-    programs: programsHash,
-    kinds: kindsHash,
-    spawns: spawnsHash,
-    hash,
-    state,
-  } = saved;
-  if (!sameGround(version, mapHash, atlas))
-    throw new SnapshotError("snapshot was taken on a different map");
+  const { map: mapHash, programs: programsHash, kinds: kindsHash, hash, state } = saved;
   const table = checkPrograms(programs);
   if (programsHash !== hashPrograms(table)) {
     throw new SnapshotError("snapshot was taken with different programs");
@@ -2619,92 +2227,12 @@ function restoreSaved(
   if (kindsHash !== hashKinds(kindTable)) {
     throw new SnapshotError("snapshot was taken with different monster kinds");
   }
-  const spawnTable = checkSpawns(spawns, atlas, table, kindTable);
-  // A version 4 world had no spawn table, so it takes on the one it is restored with.
-  if (version !== 4 && spawnsHash !== hashSpawns(spawnTable)) {
-    throw new SnapshotError("snapshot was taken with different spawns");
-  }
-  const migrated = migrate(version, state, atlas, table);
-  if (version === SNAPSHOT_VERSION) {
-    const world = readState(migrated, atlas, table, kindTable, spawnTable, seen);
-    if (!world || hashWorldAs(world, version) !== hash)
-      throw new SnapshotError("snapshot contents are damaged");
-    return world;
-  }
-  // An older world is checked against its hash as it was saved, before the
-  // blows of adventurers from before version 10 are fitted to its weapons.
-  let hashed: string;
-  try {
-    const content = { atlas, programs: table, kinds: kindTable, spawns: spawnTable };
-    hashed = hashWorldAs({ ...(migrated as World), ...content }, version);
-  } catch {
-    throw new SnapshotError("snapshot contents are damaged");
-  }
-  const fitted = version < 10 ? callOffOldBlows(migrated) : migrated;
-  const world = hashed === hash ? readState(fitted, atlas, table, kindTable, spawnTable) : null;
-  if (!world) throw new SnapshotError("snapshot contents are damaged");
+  const atlas = savedGround(state, ground);
+  if (mapHash !== hashAtlas(atlas))
+    throw new SnapshotError("snapshot was taken on a different map");
+  const world = readState(state, atlas, table, kindTable, seen);
+  if (!world || hashWorld(world) !== hash) throw new SnapshotError("snapshot contents are damaged");
   return world;
-}
-
-/**
- * Version 4 had no monster cap, and versions 5 and 6 allowed six monsters by
- * day and night alike, where a region may now hold up to MONSTER_CEILING. A world
- * saved like that cannot go on under today's rules, so it is refused with a
- * message that says so, before readState would call it damaged.
- */
-function refuseOldMonsters(state: unknown): void {
-  if (typeof state !== "object" || state === null) return;
-  const { actors } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return;
-  let monsters = 0;
-  for (const actor of actors as unknown[]) {
-    if (typeof actor !== "object" || actor === null) continue;
-    const { kind } = actor as Record<string, unknown>;
-    if (typeof kind !== "string" || kind === ADVENTURER) continue;
-    monsters++;
-  }
-  if (monsters > MONSTER_CEILING)
-    throw new SnapshotError(
-      `snapshot holds ${monsters} monsters, more than the ${MONSTER_CEILING} a region now allows`,
-    );
-}
-
-/**
- * A version 4 world's state with the fields version 5 added: no group has
- * been held back, so one may arrive from the tick it was saved at; every
- * actor was put in by hand or is an adventurer, so it has no part of the day
- * to go home at; and none has been counted as stalled. Anything else is left
- * for readState to judge.
- */
-function fromVersion4(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors, tick } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  return {
-    ...state,
-    nextSpawn: tick,
-    actors: actors.map((actor: unknown) =>
-      typeof actor === "object" && actor !== null ? { ...actor, shift: "", stalled: 0 } : actor,
-    ),
-  };
-}
-
-/**
- * A version 5 world's state with the fields version 6 added: nobody has any
- * experience yet, and every bag and bank is empty.
- */
-function fromVersion5(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  return {
-    ...state,
-    actors: actors.map((actor: unknown) =>
-      typeof actor === "object" && actor !== null
-        ? { ...actor, xp: noXp(), bag: emptyBag(), bank: new Array<number>(V8_GOODS).fill(0) }
-        : actor,
-    ),
-  };
 }
 
 /** A copy of `value` if it is a list of `length` whole numbers from 0 to `most`, else null. */
@@ -2713,59 +2241,6 @@ function counts(value: unknown, length: number, most: number): number[] | null {
   if (!list || list.length !== length) return null;
   if (!list.every((n) => isInt32(n) && n >= 0 && n <= most)) return null;
   return (list as number[]).map((n) => n | 0);
-}
-
-/**
- * A version 6 world's state as version 7 holds it: its one map is the only
- * region, so its one `nextSpawn` is that region's. Anything else is left for
- * readState to judge.
- */
-function fromVersion6(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { nextSpawn } = state as Record<string, unknown>;
-  return { ...state, nextSpawn: [nextSpawn] };
-}
-
-/** A version 7 world's state with the field version 8 added: nobody has died yet. */
-function fromVersion7(state: unknown): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  return {
-    ...state,
-    actors: actors.map((actor: unknown) =>
-      typeof actor === "object" && actor !== null ? { ...actor, deaths: 0 } : actor,
-    ),
-  };
-}
-
-/**
- * A version 8 world's state with what version 9 added: every node stands with
- * its full yield, and each bank gets a count of 0 for every good added since.
- * A version 8 bag or bank that holds anything but the goods of its day is
- * made unreadable, so readState refuses it, as nothing then could have made it.
- */
-function fromVersion8(state: unknown, atlas: Atlas): unknown {
-  if (typeof state !== "object" || state === null) return state;
-  const { actors } = state as Record<string, unknown>;
-  if (!Array.isArray(actors)) return state;
-  const old = (value: unknown, length: number, most: number): boolean =>
-    counts(value, length, most) !== null;
-  return {
-    ...state,
-    nodes: fullNodes(atlas),
-    actors: actors.map((actor: unknown) => {
-      if (typeof actor !== "object" || actor === null) return actor;
-      const { bag, bank } = actor as Record<string, unknown>;
-      return {
-        ...actor,
-        bag: old(bag, BAG_SLOTS, V8_GOODS) ? bag : null,
-        bank: old(bank, V8_GOODS, MAX_BANKED)
-          ? [...(bank as number[]), ...new Array<number>(GOODS.length - V8_GOODS).fill(0)]
-          : null,
-      };
-    }),
-  };
 }
 
 /**
@@ -2797,6 +2272,7 @@ const MAX_WAIT_TICKS = 1_000_000;
  * Rebuilds world state field by field, or returns null if anything is not what
  * a world could hold. The hash alone is not trusted for this: it folds every
  * value to 32 bits, so it cannot tell a number from a string that reads the same.
+ * `atlas` is the ground the state stands on (`savedGround`).
  * `seen` reads a viewer message's world, whose citizens have no account.
  */
 export function readState(
@@ -2804,7 +2280,6 @@ export function readState(
   atlas: Atlas,
   programs: Programs,
   kinds: Kinds,
-  spawns: Spawns,
   seen = false,
 ): World | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -2814,21 +2289,18 @@ export function readState(
     nextActorId,
     actors,
     marks,
-    nextSpawn,
     nodes: rawNodes,
     arrows: rawArrows,
+    cycle: rawCycle,
   } = raw as Record<string, unknown>;
   if (typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) return null;
+  let cycle: Cycle | null = null;
+  if (rawCycle !== null) {
+    cycle = readCycle(rawCycle, tick);
+    if (!cycle || hashAtlas(groundOf(cycle, tick)) !== hashAtlas(atlas)) return null;
+  }
   const nodes = readNodes(rawNodes, atlas, tick);
   if (!nodes) return null;
-  // One arrival time per region, each set at most MOST_SPAWN_WAIT ahead, and only ever from a tick already reached.
-  if (!Array.isArray(nextSpawn) || nextSpawn.length !== atlas.regions.length) return null;
-  const arrivals: number[] = [];
-  for (const at of nextSpawn as unknown[]) {
-    if (typeof at !== "number" || !Number.isSafeInteger(at) || at < 0) return null;
-    if (at > tick + MOST_SPAWN_WAIT) return null;
-    arrivals.push(at);
-  }
   // Ids are handed out in order and monsters leave, so ids rise and stay below the next one.
   if (!Array.isArray(actors) || !Array.isArray(marks)) return null;
   if (!isInt32(nextActorId) || nextActorId < 1) return null;
@@ -2840,18 +2312,15 @@ export function readState(
     atlas,
     programs,
     kinds,
-    spawns,
     tick,
     rng: { a, b, c, d },
     nextActorId,
     actors: [],
     marks: [],
-    nextSpawn: arrivals,
     nodes,
     arrows: [],
+    cycle,
   };
-  // Monsters a region holds, by region.
-  const monsters = new Map<number, number>();
   let lastId = 0;
   for (const item of actors as unknown[]) {
     if (typeof item !== "object" || item === null) return null;
@@ -2874,7 +2343,6 @@ export function readState(
       hp,
       windup,
       recover,
-      shift,
       stalled,
       xp: rawXp,
       bag: rawBag,
@@ -2912,12 +2380,9 @@ export function readState(
     lastId = id;
     if (typeof kind !== "string") return null;
     if (kind !== ADVENTURER && !Object.hasOwn(kinds, kind)) return null;
-    if (!SHIFTS.includes(shift as Shift) || (kind === ADVENTURER && shift !== "")) return null;
-    // Monsters keep to their region, and a region never holds more than the night's cap.
     const adventurer = kind === ADVENTURER;
     const ground = (px: number, py: number): boolean => walkable(atlas, px, py);
-    const stepped = (p: Point, q: Point): boolean =>
-      stepsFor(atlas, adventurer, p.x, p.y, q.x, q.y);
+    const stepped = (p: Point, q: Point): boolean => linked(atlas, p.x, p.y, q.x, q.y);
     const numbers = kind === ADVENTURER ? ADVENTURER_KIND : (kinds[kind] as Kind);
     const lasts = statusTicksFor(adventurer, numbers.rank);
     const status = readStatus(rawStatus, nextActorId, lasts, adventurer);
@@ -2931,9 +2396,6 @@ export function readState(
     if (typeof name !== "string" || name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
     if (!isInt32(x) || !isInt32(y) || !isInt32(fromX) || !isInt32(fromY)) return null;
     if (!ground(x, y) || !ground(fromX, fromY)) return null;
-    const region = regionAt(atlas, x, y);
-    if (!adventurer) monsters.set(region, (monsters.get(region) ?? 0) + 1);
-    if ((monsters.get(region) ?? 0) > MONSTER_CEILING) return null;
     const stepLength = slowed(numbers.step ?? STEP_TICKS);
     if (!isInt32(moveTicksLeft) || moveTicksLeft < 0 || moveTicksLeft > stepLength) return null;
     const here = { x, y };
@@ -2942,7 +2404,7 @@ export function readState(
     if (!isInt32(wait) || wait < 0 || wait > MAX_WAIT_TICKS) return null;
     if (!isInt32(blocked) || blocked < 0 || blocked >= 2 * BLOCKED_PATIENCE_TICKS) return null;
     if (!isInt32(stalled) || stalled < 0 || stalled > MAX_STALLED) return null;
-    if (!Array.isArray(path) || path.length > atlas.regionOf.length) return null;
+    if (!Array.isArray(path) || path.length > atlas.open.length) return null;
     const steps: Point[] = [];
     let at: Point = here;
     for (const stepTo of path as unknown[]) {
@@ -2994,7 +2456,6 @@ export function readState(
       hp,
       windup,
       recover,
-      shift: shift as Shift,
       stalled,
       xp,
       bag,
@@ -3009,6 +2470,11 @@ export function readState(
       status,
     });
   }
+  // A city berths no more citizens than it has room for.
+  if (cycle && world.actors.filter((a) => a.kind === ADVENTURER).length > BERTHS) return null;
+  // In transit the ground is the deck alone: lift-off leaves every monster
+  // behind, and none is put on the city's own ground.
+  if (cycle && !landed(cycle, tick) && world.actors.some((a) => a.kind !== ADVENTURER)) return null;
   // Only adventurers share a tile.
   for (const actor of world.actors) {
     if (

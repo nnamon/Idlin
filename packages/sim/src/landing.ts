@@ -2275,6 +2275,10 @@ const SYMBOL: Readonly<Record<Terrain, string>> = {
   campfire: "f",
   bank: "B",
   tent: "A",
+  deck: "_",
+  hatch: "h",
+  ramp: "r",
+  hull: "H",
 };
 const LETTERS = "0abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 

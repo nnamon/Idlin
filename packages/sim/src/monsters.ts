@@ -1,64 +1,50 @@
 // Monsters as content: one JSON file of numbers per kind, and the Tactics
-// program it runs. Turns what was read from content/monsters/ into the kinds,
-// programs and spawns a world is created with.
+// program it runs. Turns what was read from a folder of monster files into the
+// kinds and programs a world is created with.
 
-import { isInt32, show } from "./hash.ts";
+import { show } from "./hash.ts";
 import { type Point, placeConstants, type TileMap } from "./map.ts";
 import { compileBots } from "./tactics.ts";
 import { PROGRAM_NAME, type Program } from "./vm.ts";
-import {
-  checkKinds,
-  type Kind,
-  KindError,
-  type Kinds,
-  MONSTER_NAME,
-  MOST_IN_GROUP,
-  MOST_IN_NIGHT_GROUP,
-  own,
-  plainList,
-  type Spawn,
-  type Spawns,
-} from "./world.ts";
+import { checkKinds, type Kind, KindError, type Kinds, own } from "./world.ts";
 
 export interface Monsters {
   readonly kinds: Kinds;
   /** Compiled from the monsters' own program files. */
   readonly programs: Readonly<Record<string, Program>>;
-  readonly spawns: Spawns;
+  /** What each kind is called on screen, such as "Wolf". */
+  readonly names: Readonly<Record<string, string>>;
+  /** The program each kind runs. */
+  readonly runs: Readonly<Record<string, string>>;
 }
+
+/** A capital letter and up to 15 letters or spaces. */
+export const MONSTER_NAME = /^[A-Z][A-Za-z ]{0,15}$/;
 
 /**
  * A kind's numbers, and its rank. `step` may be left out, and then the kind
  * walks as adventurers do; `rank` and `level`, and then it is level-1 fodder.
  */
 const NUMBERS = ["hp", "damage", "windup", "recovery", "reach", "step", "rank", "level"] as const;
-const FIELDS = new Set<string>([
-  ...NUMBERS,
-  "name",
-  "program",
-  "group",
-  "night_group",
-  "day",
-  "night",
-]);
-/** More places than a spawn may list; the world refuses those with a clearer message. */
-const MOST_PLACES = 64;
+const FIELDS = new Set<string>([...NUMBERS, "name", "program"]);
 
 /**
  * `stats` holds each monster file's parsed JSON by kind name, `sources` each
- * monster program's source by name. Throws a KindError for a monster file
- * that is wrong, whatever it holds, and a BotError for a program that does not
- * compile. The spawns are checked in full when a world is created from them.
+ * monster program's source by name, compiled with the places of `map` as
+ * constants if one is given. Throws a KindError for a monster file that is
+ * wrong, whatever it holds, and a BotError for a program that does not
+ * compile.
  */
 export function loadMonsters(
   stats: Readonly<Record<string, unknown>>,
   sources: Readonly<Record<string, string>>,
-  map: Pick<TileMap, "places">,
+  map: Pick<TileMap, "places"> = { places: [] },
 ): Monsters {
-  const places = placeConstants(map);
+  const places: Record<string, Point> = placeConstants(map);
   const programs = compileBots(sources, places);
   const kinds: Record<string, Kind> = Object.create(null);
-  const spawns: Spawn[] = [];
+  const names: Record<string, string> = Object.create(null);
+  const runs: Record<string, string> = Object.create(null);
   let file = "a monster file";
   try {
     for (const kind of Object.keys(stats).sort()) {
@@ -78,67 +64,19 @@ export function loadMonsters(
       const numbers: Record<string, unknown> = {};
       for (const field of NUMBERS) numbers[field] = own(raw, field);
       kinds[kind] = numbers as unknown as Kind;
-      const where = (part: "day" | "night"): Point[] => {
-        const list = plainList(own(raw, part), MOST_PLACES);
-        if (!list) throw new KindError(`${file}: ${part} must be a list of places, no gaps`);
-        return list.map((name) => {
-          if (typeof name !== "string" || !Object.hasOwn(places, name))
-            throw new KindError(`${file}: the map has no place called ${show(name).slice(0, 40)}`);
-          return places[name] as Point;
-        });
-      };
       const [name, program] = [own(raw, "name"), own(raw, "program")];
-      // Each a number, or the fewest and the most as a list of two.
-      const day = own(raw, "group");
-      const dayRange = Array.isArray(day) ? plainList(day, 2) : null;
-      const [group, most] = dayRange ? dayRange : [day, day];
-      const night = own(raw, "night_group");
-      const range = Array.isArray(night) ? plainList(night, 2) : null;
-      const [nightGroup, nightMost] =
-        night === undefined ? [group, group] : range ? range : [night, night];
       if (typeof name !== "string" || !MONSTER_NAME.test(name))
         throw new KindError(
           `${file}: name must be a capital letter and up to 15 letters or spaces`,
-        );
-      if (
-        (dayRange && dayRange.length !== 2) ||
-        !isInt32(group) ||
-        !isInt32(most) ||
-        group < 1 ||
-        most < group ||
-        most > MOST_IN_GROUP
-      )
-        throw new KindError(
-          `${file}: group must be a whole number from 1 to ${MOST_IN_GROUP}, or the fewest and the most as two of those`,
-        );
-      if (
-        (range && range.length !== 2) ||
-        !isInt32(nightGroup) ||
-        !isInt32(nightMost) ||
-        nightGroup < 1 ||
-        nightMost < nightGroup ||
-        nightMost > MOST_IN_NIGHT_GROUP
-      )
-        throw new KindError(
-          `${file}: night_group must be a whole number from 1 to ${MOST_IN_NIGHT_GROUP}, or the fewest and the most as two of those`,
         );
       if (typeof program !== "string" || !Object.hasOwn(programs, program))
         throw new KindError(
           `${file}: there is no monster program called ${show(program).slice(0, 40)}`,
         );
-      spawns.push({
-        kind,
-        name,
-        program,
-        group,
-        most,
-        nightGroup,
-        nightMost,
-        day: where("day"),
-        night: where("night"),
-      });
+      names[kind] = name;
+      runs[kind] = program;
     }
-    return { kinds: checkKinds(kinds), programs, spawns };
+    return { kinds: checkKinds(kinds), programs, names, runs };
   } catch (error) {
     if (error instanceof KindError) throw error;
     // Anything else came from reading a value that is not plain data.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NEWCOMER_PROGRAM } from "./inputs.ts";
 import { place } from "./map.ts";
-import { shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
+import { campMap, campMonsters, campPrograms, spawnsNearCamp } from "./testing.ts";
 import {
   ADVENTURER,
   createWorld,
@@ -9,17 +9,16 @@ import {
   type Input,
   restore,
   snapshot,
-  spawnsNearCamp,
   step,
   type World,
 } from "./world.ts";
 
-const ATLAS = shippedWorld();
-const MONSTERS = shippedMonsters(ATLAS);
-const PROGRAMS = { ...shippedPrograms(ATLAS), ...MONSTERS.programs };
+const ATLAS = campMap();
+const MONSTERS = campMonsters(ATLAS);
+const PROGRAMS = { ...campPrograms(ATLAS), ...MONSTERS.programs };
 
 const newWorld = (): World => {
-  const world = createWorld(ATLAS, 4, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+  const world = createWorld(ATLAS, 4, PROGRAMS, MONSTERS.kinds);
   step(world, spawnsNearCamp(world, [{ name: "Ash", program: "wanderer" }]));
   return world;
 };
@@ -59,13 +58,13 @@ describe("join", () => {
     expect(name).toHaveLength(25);
     step(world, [join("1001", name)]);
     expect(world.actors.some((actor) => actor.name === name)).toBe(true);
-    const back = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+    const back = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds);
     expect(hashWorld(back)).toBe(hashWorld(world));
   });
 
   it("is dropped in a world without the newcomer's program", () => {
-    const world = createWorld(ATLAS, 4, MONSTERS.programs, MONSTERS.kinds, MONSTERS.spawns);
-    const copy = createWorld(ATLAS, 4, MONSTERS.programs, MONSTERS.kinds, MONSTERS.spawns);
+    const world = createWorld(ATLAS, 4, MONSTERS.programs, MONSTERS.kinds);
+    const copy = createWorld(ATLAS, 4, MONSTERS.programs, MONSTERS.kinds);
     step(world, [join("1001", "goofguy")]);
     step(copy);
     expect(hashWorld(world)).toBe(hashWorld(copy));

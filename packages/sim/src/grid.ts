@@ -17,7 +17,7 @@
 // other simulation file makes them). Anywhere else, `gridOf` builds a grid
 // from the world as it is, so there is no grid to go stale.
 
-import { type Region, regionAt } from "./atlas.ts";
+import type { Atlas } from "./atlas.ts";
 import { workOf } from "./field.ts";
 import type { Point } from "./map.ts";
 import { type Actor, ADVENTURER, type Mark, type World } from "./world.ts";
@@ -52,7 +52,7 @@ export interface Grid {
   tally: Tally | null;
   /** The world's marks by box tile, each tile's in the world's order; listed the first time they are asked for. */
   marks: Map<number, Mark[]> | null;
-  /** Per region, in the atlas's order: residents standing in it, then monsters. */
+  /** Citizens standing on the ground, then monsters. */
   readonly sides: Int32Array;
   readonly world: World;
 }
@@ -79,14 +79,14 @@ function build(world: World): Grid {
     byId,
     tally: null,
     marks: null,
-    sides: new Int32Array(atlas.regions.length * 2),
+    sides: new Int32Array(2),
     world,
   };
   world.actors.forEach((actor, i) => {
     order.set(actor, i);
     byId.set(actor.id, actor);
     cells[cellOf(grid, actor.x, actor.y)]?.push(actor);
-    side(grid, actor, actor.x, actor.y, 1);
+    side(grid, actor, 1);
   });
   return grid;
 }
@@ -203,8 +203,6 @@ function move(world: World, actor: Actor, x: number, y: number): void {
     count(grid, grid.tally, actor, fromX, fromY, -1);
     count(grid, grid.tally, actor, x, y, 1);
   }
-  side(grid, actor, fromX, fromY, -1);
-  side(grid, actor, x, y, 1);
   const from = cellOf(grid, fromX, fromY);
   const to = cellOf(grid, x, y);
   if (from === to) return;
@@ -261,28 +259,26 @@ export function allAt(grid: Grid, x: number, y: number, test: (actor: Actor) => 
 
 const steps = (a: Actor, x: number, y: number): number => Math.abs(a.x - x) + Math.abs(a.y - y);
 
-/** A rectangle of world tiles: a region's map where it lies. */
-export type Area = Pick<Region, "x" | "y" | "map">;
+/** A rectangle of world tiles: the ground's box. */
+export type Area = Pick<Atlas, "left" | "top" | "width" | "height">;
 
 /** The cells, as [first column, last column, first row, last row], that hold any tile of `area`. */
 function cellsOver(grid: Grid, area: Area): [number, number, number, number] {
   const clamp = (v: number, most: number): number => Math.min(most, Math.max(0, v));
   return [
-    clamp(Math.floor((area.x - grid.left) / CELL), grid.cols - 1),
-    clamp(Math.floor((area.x + area.map.width - 1 - grid.left) / CELL), grid.cols - 1),
-    clamp(Math.floor((area.y - grid.top) / CELL), grid.rows - 1),
-    clamp(Math.floor((area.y + area.map.height - 1 - grid.top) / CELL), grid.rows - 1),
+    clamp(Math.floor((area.left - grid.left) / CELL), grid.cols - 1),
+    clamp(Math.floor((area.left + area.width - 1 - grid.left) / CELL), grid.cols - 1),
+    clamp(Math.floor((area.top - grid.top) / CELL), grid.rows - 1),
+    clamp(Math.floor((area.top + area.height - 1 - grid.top) / CELL), grid.rows - 1),
   ];
 }
 
-/** How many residents (`monsters` false) or monsters stand in region `region`. */
-export const inRegion = (grid: Grid, region: number, monsters: boolean): number =>
-  grid.sides[region * 2 + (monsters ? 1 : 0)] ?? 0;
+/** How many citizens (`monsters` false) or monsters stand on the ground. */
+export const onGround = (grid: Grid, monsters: boolean): number =>
+  grid.sides[monsters ? 1 : 0] ?? 0;
 
-function side(grid: Grid, actor: Actor, x: number, y: number, by: number): void {
-  const region = regionAt(grid.world.atlas, x, y);
-  if (region < 0) return;
-  const i = region * 2 + (actor.kind === ADVENTURER ? 0 : 1);
+function side(grid: Grid, actor: Actor, by: number): void {
+  const i = actor.kind === ADVENTURER ? 0 : 1;
   grid.sides[i] = (grid.sides[i] as number) + by;
 }
 

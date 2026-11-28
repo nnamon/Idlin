@@ -24,7 +24,7 @@ docker compose run --rm dev pnpm install                       # install depende
 docker compose run --rm dev pnpm gate                          # lint + typecheck + test (same as CI)
 docker compose up server client                                # the world server and the viewer, at http://localhost:4310
 docker compose run --rm dev pnpm --filter @idlin/client build  # build the viewer for captures
-docker compose run --rm capture captures/now                   # frames at dawn, noon, dusk and midnight
+docker compose run --rm capture captures/now                   # frames from the first cycle: transit, legs-plant, the peace, the siege
 docker compose run --rm capture captures/review --review       # the watch-review set (docs/watch-rubric.md)
 docker compose run --rm capture captures/look --lookdev all    # the look-development scenes, and the renderer bench
 ```
@@ -33,12 +33,17 @@ docker compose run --rm capture captures/look --lookdev all    # the look-develo
   `node_modules` (Linux builds, and the pnpm store beside them so packages can
   be hard-linked) lives in the checkout and is ignored by git.
 - `server` runs the world server (`packages/server/src/main.ts`) on port 4311.
-  It resumes from the newest valid snapshot in `data/`, saves one every 600 ticks (a
+  The world is the walking city (`createCity` in `packages/sim/src/world.ts`):
+  a new one starts at its first cycle's 0:00 on its deck, with nobody aboard
+  until chatters join. It resumes from the newest valid snapshot in `data/`, saves one every 600 ticks (a
   minute of real time) and when the service stops, and sends the world to each viewer
-  after every tick, with that tick's blows and knockbacks beside it (`viewerMessage` in
-  `packages/sim/src/world.ts`). The message leaves out what no viewer draws: each
-  citizen's chat account and tokens, and every monster's orders. A snapshot taken with other programs, monsters or maps
-  than the server now has is adopted: the world goes on with the new content,
+  after every tick, with that tick's blows and knockbacks and the beat the city
+  is in beside it (`viewerMessage` in `packages/sim/src/world.ts`). The state
+  holds the cycle, from which the viewer works out the deck or the landing the
+  city stands on. The message leaves out what no viewer draws: each
+  citizen's chat account and tokens, and every monster's orders. A snapshot taken with other programs or
+  monsters than the server now has, or on a landing the generator now makes
+  differently, is adopted: the world goes on with the new content,
   and the log lists what that changed (actors removed or moved, memory
   cleared; see `docs/decisions/0021-keeping-the-world-through-content-changes.md`).
   A snapshot it cannot use is skipped with the reason in the
@@ -48,7 +53,11 @@ docker compose run --rm capture captures/look --lookdev all    # the look-develo
   copy where links are refused, and the old name is removed only after that
   works. If neither works, the file stays under its own name and that run of
   the server neither saves over it nor deletes it. One that cannot be read from
-  disk at all is left where it is. After each save it keeps the newest three snapshots up to
+  disk at all is left where it is. Snapshots from before version 13 are of
+  the camp world and are refused, so a `data/` folder from then is set aside
+  snapshot by snapshot, its logs with them, and the server starts a new city
+  in it; nothing is deleted. To start a new city by hand, stop the server and
+  move `data/` away. After each save it keeps the newest three snapshots up to
   the current tick and deletes the rest; snapshots at a later tick, which it
   could not resume from, are never deleted. An old snapshot that cannot be
   deleted is logged and left.
@@ -71,8 +80,7 @@ docker compose run --rm capture captures/look --lookdev all    # the look-develo
   already under its tick's name, and fails if it cannot. A log is deleted
   once its snapshot is.
   `IDLIN_CHAT=crowd:crowd-150` reads that crowd file from `content/chat/` as
-  the server's chat, from the tick it starts at, and a new world then starts
-  with no residents.
+  the server's chat, from the tick it starts at.
   Settings are environment variables, listed at the top of `main.ts`. Memory is capped at 256 MB. It takes up to 16
   viewers, only from the viewer's own page (`http://localhost:4310` or
   `http://127.0.0.1:4310`, plus any listed in `IDLIN_ORIGINS`, a
@@ -84,19 +92,23 @@ docker compose run --rm capture captures/look --lookdev all    # the look-develo
   be written makes it exit with status 1.
 - `client` runs the viewer with hot reload. By default it follows the server
   (`?server=ws://host:port` for another address). With `?local`, or with
-  `?seed=3`, `?hour=19`, `?crowd=50` or `?chat=crowd-15`, it drives the
-  simulation itself instead. `?chat=` reads a crowd file from `content/chat/`
-  as the world's chat, and its chatters are the citizens in place of the
-  residents.
+  `?seed=3`, `?tick=1800` or `?chat=crowd-15`, it runs a city of its own
+  instead. `?chat=` reads a crowd file from `content/chat/` as the city's
+  chat, and its chatters are the citizens; `?tick=` runs the city on to that
+  tick before the first frame. The view is plain until slice piece 2b draws
+  the deck and the landing (`packages/client/src/plain.ts`): the ground as
+  flat tiles, citizens as dots, and the beat with the time to the next.
   Until the server sends a world, and while it cannot be reached, the page says
-  "waiting for the world". Until the first world arrives the clock shows a dash.
+  "waiting for the world".
   Ports bind to 127.0.0.1 only.
 - `capture` is the Playwright image. It serves the built viewer, opens it in
   capture mode (`?capture`: the page draws only when told to, so a frame is a
   pure function of seed and tick) and saves frames. Arguments after the output
-  folder are `name:hour[:ticks[:width[:height]]]`, and `--chat crowd-15` opens
-  the page with `?chat=crowd-15` for them; the `--review` set does not take a
-  crowd yet. It also prints a flicker index.
+  folder are `name:tick[:width[:height]]`, the tick of the city's first cycles
+  to draw, and `--chat crowd-15` opens the page with `?chat=crowd-15` for
+  them. The `--review` set is a frame from each beat of the first cycle with
+  the 15-chatter crowd aboard (`tools/capture/src/index.ts` lists it), and
+  prints a flicker index.
   With `--lookdev <scenes>` (`all`, or names separated by commas) it shoots the
   look-development page instead: for each scene, stills at 1920 and the same
   frames averaged down to 640, `<scene>.json` with who is out and aboard and
@@ -114,7 +126,7 @@ docker compose run --rm capture captures/look --lookdev all    # the look-develo
   drawn with WebGL 2 through one pen. The landings run on a scripted fight
   (`fray.ts`) stepped once from a seed and read back by time. It is the target
   the game's own drawing is to be rebuilt to (#362); the game itself still
-  draws with Canvas 2D.
+  draws its plain view with Canvas 2D.
   [decisions/0038](decisions/0038-renderer-scale-and-the-siege.md) has the
   renderer measurements, the sizes a citizen is drawn at, and how the siege
   draws the shield.

@@ -1,24 +1,15 @@
 import { Chat, parseCrowd } from "@idlin/chat";
 import {
-  ADVENTURER,
-  blowsOf,
+  beat,
   compileBots,
-  createWorld,
-  loadMonsters,
-  parseWorld,
+  createCity,
+  deckMap,
   placeConstants,
-  START_HOUR,
-  spawnsNearCamp,
   step,
-  TICKS_PER_GAME_HOUR,
   TICKS_PER_SECOND,
-  XP_TABLE,
 } from "@idlin/sim";
-import worldJson from "../../../content/world.json";
-import { castOf, spreadDeaths, spreadLevels } from "./cast.ts";
-import { fitFrame } from "./frame.ts";
 import { follow } from "./live.ts";
-import { Scene } from "./scene.ts";
+import { HEIGHT, PlainView, WIDTH } from "./plain.ts";
 import "./style.css";
 
 /** Files by their name without the folder or the extension. */
@@ -40,20 +31,6 @@ const botSources = (): Record<string, string> =>
     }),
   );
 
-/** The shipped monsters: each one's numbers, and its program's source. */
-const monsterFiles = (): { stats: Record<string, unknown>; sources: Record<string, string> } => ({
-  stats: byName(
-    import.meta.glob("../../../content/monsters/*.json", { import: "default", eager: true }),
-  ),
-  sources: byName(
-    import.meta.glob("../../../content/monsters/*.tac", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }),
-  ),
-});
-
 /** The shipped crowd files' text, by file name without the extension. */
 const crowdFiles = (): Record<string, string> =>
   byName(
@@ -64,20 +41,16 @@ const crowdFiles = (): Record<string, string> =>
     }),
   );
 
-/** The shipped map files, parsed, by file name without the extension. */
-const mapFiles = (): Record<string, unknown> =>
-  byName(import.meta.glob("../../../content/maps/*.json", { import: "default", eager: true }));
-
 /** What the page offers a capture tool in capture mode. */
 export interface CaptureApi {
   /** Moves time on by this many ticks (fractions allowed, for frames between ticks) and draws. */
   advance(ticks: number): void;
-  /** Mean brightness of the frame, one value per tile-sized block. */
+  /** Mean brightness of the frame, one value per block of 40 by 40 pixels. */
   brightness(): number[];
-  /** The frame scaled by `scale` (1 is the frame's own size, 1920 by 1080 in a 16:9 window), as base64 RGBA, with its size. */
+  /** The frame scaled by `scale` (1 is its own size, 1920 by 1080), as base64 RGBA, with its size. */
   pixels(scale: number): { width: number; height: number; rgba: string };
-  /** The world's tick, and who is in it. */
-  state(): { tick: number; actors: { id: number; name: string }[] };
+  /** The world's tick, the beat it is in, and who is in it. */
+  state(): { tick: number; beat: string; actors: { id: number; name: string }[] };
 }
 
 declare global {
@@ -96,8 +69,6 @@ const must = (id: string): HTMLElement => {
 async function main(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const seed = Number.parseInt(params.get("seed") ?? "1", 10) | 0;
-  const startHour = Number.parseFloat(params.get("hour") ?? String(START_HOUR));
-
   const frame = must("frame");
 
   // `?lookdev=<scene>`: the look-development scenes, which have no world behind them.
@@ -107,109 +78,59 @@ async function main(): Promise<void> {
     return;
   }
 
-  const maps = mapFiles();
-  const atlas = parseWorld(worldJson, maps);
-  const programs = compileBots(botSources(), placeConstants(atlas));
-  // The world server runs the shipped monsters, so live mode reads its world
-  // with them. A world of the page's own has them only with `?monsters`, so
-  // that a capture can show fights.
-  const files = monsterFiles();
-  const monsters = loadMonsters(files.stats, files.sources, atlas);
-  const shipped = {
-    atlas,
-    programs: { ...programs, ...monsters.programs },
-    kinds: monsters.kinds,
-    spawns: monsters.spawns,
+  const programs = compileBots(botSources(), placeConstants(deckMap(1)));
+  const view = new PlainView(frame);
+  // The frame is drawn at 1920 by 1080 and scaled as a whole to fit the window.
+  const fit = (): void => {
+    frame.style.transform = `scale(${Math.min(innerWidth / WIDTH, innerHeight / HEIGHT)})`;
   };
-  const world = params.has("monsters")
-    ? createWorld(atlas, seed, shipped.programs, shipped.kinds, shipped.spawns)
-    : createWorld(atlas, seed, programs);
-  // `?chat=crowd-15` reads that crowd file from content/chat/ as the world's
-  // chat, and its chatters are the citizens. Otherwise `?crowd=50` fills the
-  // camp with that many residents, to see how a crowd reads.
+  fit();
+  addEventListener("resize", fit);
+  await document.fonts.ready;
+
+  // By default the page follows the world server (`?server=ws://host:port` for another
+  // address). It runs a city of its own for captures, or when the URL asks for one with
+  // `?local` or any of the settings only a city of its own can take.
+  if (!["capture", "local", "seed", "tick", "chat"].some((name) => params.has(name))) {
+    const server = params.get("server") || `ws://${location.hostname}:4311`;
+    follow(view, { programs }, server);
+    return;
+  }
+
+  // `?chat=crowd-15` reads that crowd file from content/chat/ as the city's
+  // chat, and its chatters are the citizens; with none, nobody is aboard.
+  const world = createCity(seed, programs);
   const chatName = params.get("chat");
   const crowdText = chatName === null ? undefined : crowdFiles()[chatName];
   if (chatName !== null && crowdText === undefined)
     throw new Error(`no crowd file content/chat/${chatName}.txt`);
-  const crowd = Number.parseInt(params.get("crowd") ?? "", 10);
-  step(
-    world,
-    crowdText === undefined ? spawnsNearCamp(world, castOf(Number.isNaN(crowd) ? 6 : crowd)) : [],
-  );
   const chat =
     crowdText === undefined ? null : new Chat({ crowd: parseCrowd(crowdText), start: world.tick });
-  // `?levels` gives the residents a spread of levels, so a capture can show every kit tier.
-  if (params.has("levels"))
-    spreadLevels(
-      world.actors.filter((actor) => actor.kind === ADVENTURER),
-      (level) => XP_TABLE[level] ?? 0,
-    );
-  // `?deaths` gives the residents a spread of death counts, so a capture can show the patches.
-  if (params.has("deaths")) spreadDeaths(world.actors.filter((actor) => actor.kind === ADVENTURER));
-  // The world starts at dawn (06:00); `?hour=` runs it forward to another time of day.
-  const skip = Math.round(((((startHour - START_HOUR) % 24) + 24) % 24) * TICKS_PER_GAME_HOUR);
-
-  // The map shows the region the spotlight is on, and drifts to the next (see camera.ts).
-  const scene = await Scene.create(frame, atlas, maps);
-  const drawAt = (time: number): void => scene.draw(world, time);
-  // The frame fills the window: scaled as a whole, and wider or taller than 16:9 where the window is.
-  const fit = (): void => {
-    const { width, height, scale, below, columns } = fitFrame(
-      innerWidth,
-      innerHeight,
-      scene.width,
-      scene.height,
-    );
-    scene.resize(width, height, below, columns);
-    frame.style.width = `${width}px`;
-    frame.style.height = `${height}px`;
-    frame.style.transform = `scale(${scale})`;
-  };
-  fit();
-  addEventListener("resize", () => {
-    fit();
-    // In capture mode nothing else would redraw.
-    if (params.has("capture")) drawAt(world.tick);
-  });
-  // By default the page follows the world server (`?server=ws://host:port` for another
-  // address). It runs a world of its own for captures, or when the URL asks for one with
-  // `?local` or any of the settings only a world of its own can take.
-  if (
-    !["capture", "local", "seed", "hour", "crowd", "chat", "monsters", "levels", "deaths"].some(
-      (name) => params.has(name),
-    )
-  ) {
-    await document.fonts.ready;
-    const server = params.get("server") || `ws://${location.hostname}:4311`;
-    follow(scene, shipped, server);
-    return;
-  }
-
-  const draw = (fraction: number): void => drawAt(world.tick + fraction);
   const tick = (): void => {
-    scene.observe(world, blowsOf(step(world, chat?.take(world.tick) ?? [])));
+    step(world, chat?.take(world.tick) ?? []);
   };
-  scene.observe(world, []);
-  for (let i = 0; i < skip; i++) tick();
-  await document.fonts.ready;
+  // `?tick=1800` runs the city on to that tick before the first frame.
+  const skip = Number.parseInt(params.get("tick") ?? "0", 10);
+  while (world.tick < skip) tick();
 
   if (params.has("capture")) {
     let fraction = 0;
+    const draw = (): void => view.draw(world, fraction);
     window.idlin = {
       advance(ticks) {
         const total = fraction + Math.max(0, ticks);
         const whole = Math.floor(total + 1e-9);
         for (let i = 0; i < whole; i++) tick();
         fraction = Math.max(0, total - whole);
-        draw(fraction);
+        draw();
       },
       brightness() {
-        draw(fraction);
-        return scene.brightness();
+        draw();
+        return view.brightness();
       },
       pixels(scale) {
-        draw(fraction);
-        const { width, height, data } = scene.pixels(scale);
+        draw();
+        const { width, height, data } = view.pixels(scale);
         let binary = "";
         for (let i = 0; i < data.length; i += 0x8000) {
           binary += String.fromCharCode(...data.subarray(i, i + 0x8000));
@@ -218,10 +139,11 @@ async function main(): Promise<void> {
       },
       state: () => ({
         tick: world.tick,
+        beat: beat(world)?.beat ?? "",
         actors: world.actors.map(({ id, name }) => ({ id, name })),
       }),
     };
-    draw(0);
+    draw();
     document.body.dataset.ready = "1";
     return;
   }
@@ -231,15 +153,14 @@ async function main(): Promise<void> {
   let owed = 0;
   const loop = (now: number): void => {
     // Time since the last frame, never negative. After a long pause (a hidden
-    // tab) the world does not race to catch up: at most three ticks are owed, so
-    // the worst a returning viewer sees is one step of under a tile.
+    // tab) the world does not race to catch up: at most three ticks are owed.
     owed = Math.min(owed + Math.max(0, now - (last ?? now)), tickMs * 3);
     last = now;
     while (owed >= tickMs) {
       tick();
       owed -= tickMs;
     }
-    draw(owed / tickMs);
+    view.draw(world, owed / tickMs);
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

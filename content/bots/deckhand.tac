@@ -1,9 +1,10 @@
 bot "Deckhand"
 
 # The shipped program, which every chatter's citizen runs (docs/chat.md,
-# section 9; docs/slice.md, section 5). Until the deck and the cycle are
-# built, the camp stands in for the deck and nightfall for the horde: see
-# `lift_eta` and `way_home` in docs/tactics.md.
+# section 9; docs/slice.md, section 5). It goes home to the hold by `lift_eta`
+# and `way_home` (docs/tactics.md). A landing has no packs, dens or anything to
+# work until slice pieces 3, 5 and 14 lay them, so for now a citizen walks
+# about the deck and the landing and fights what it meets.
 
 # Each param is a chat command: !gather, !fight, !careful, !margin 150 and so on.
 param stance = gather of gather, fight, careful
@@ -18,20 +19,16 @@ param ramp = board of board, guard
 
 when danger_here > 0 as "step out" -> step_clear
 when hp * 3 < max_hp and flask > 0 as "drink" -> drink
-when at_bank and bag_free < 12 as "bank" -> bank_all
-when lift_eta < margin * 10 + way_home as "turn back" -> walk_to(camp)
+when lift_eta < margin * 10 + way_home as "turn back" -> walk_to(hold)
 when stance == careful and threat_distance <= 3 as "keep clear" -> flee(threat_x, threat_y)
 when threat_distance <= weapon_reach as "strike" -> attack(threat_x, threat_y)
 when stance == fight and threat_distance <= 8 as "go at it" -> step_to(threat_x, threat_y)
-when bag_free == 0 as "bag full" -> walk_to(bank)
 
-# The flag rules, together under the ones allowed to hold an order. One that
-# has reached its flag goes back to chopping beside it, and that counts as
-# following it. One sent to a citizen keeps by them.
-when flagged == 3 as "called home" -> walk_to(camp)
+# The flag rules, together under the ones allowed to hold an order. One sent
+# to a citizen keeps by them.
+when flagged == 3 as "called home" -> walk_to(hold)
 when flag_down as "to them" -> walk_to(flag)
 when flagged and distance(flag) > 6 as "to the flag" -> walk_to(flag)
-when node_distance(tree) == 0 as "chop" -> chop
 when flagged == 2 as "stay by them" -> walk_to(flag)
-when node_distance(tree) < 9999 as "to a tree" -> walk_to(node_x(tree), node_y(tree))
+when flagged as "at the flag" -> wait(20)
 otherwise as "look about" -> wander; wait(20)

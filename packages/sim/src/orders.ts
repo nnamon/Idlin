@@ -5,26 +5,15 @@
 // tick the order is applied, so a replay of the log resolves them the same way.
 
 import { type Atlas, tileAt, walkable } from "./atlas.ts";
+import { LIFT_TICKS, landed, liftAt, SIGHTING, siegeAt } from "./cycle.ts";
 import { fieldTo, stepsTo } from "./field.ts";
 import { setPath } from "./grid.ts";
 import { isInt32, stringInts } from "./hash.ts";
 import { ACCOUNT } from "./inputs.ts";
-import { type Point, place } from "./map.ts";
+import type { Point } from "./map.ts";
 import { SYSCALLS } from "./syscalls.ts";
 import { OP, operandsOf, type Program } from "./vm.ts";
-import {
-  type Actor,
-  ADVENTURER,
-  DAY_HOUR,
-  isNight,
-  mending,
-  NIGHT_HOUR,
-  START_HOUR,
-  stepTicks,
-  TICKS_PER_DAY,
-  TICKS_PER_GAME_HOUR,
-  type World,
-} from "./world.ts";
+import { type Actor, ADVENTURER, homeOf, mending, stepTicks, type World } from "./world.ts";
 
 /** Orders and param changes a citizen can hold at once, and the ticks one takes to come back (section 8). */
 export const MAX_TOKENS = 2;
@@ -33,14 +22,9 @@ export const TOKEN_TICKS = 200;
 export const HEARD_MOST = 864_000;
 /** A name typed in `!go` matches any prefix of at least this many letters that only one name has. */
 export const SHORTEST_PREFIX = 3;
-/** How far from the camp a compass point's flag goes, in tiles along each axis it names. */
+/** How far from home a compass point's flag goes, in tiles along each axis it names. */
 export const COMPASS_REACH = 12;
-/**
- * In the camp, which has no cycle yet, nightfall stands in for the horde at
- * the hull, sighted this many ticks before it. `lift_eta` reads NOT_SIGHTED
- * until then.
- */
-export const SIGHTING_TICKS = 3000;
+/** What `lift_eta` reads before the front is sighted. It reads 9998 at most from then. */
 export const NOT_SIGHTED = 9999;
 /** What `way_home` reads where there is no way home. */
 export const NO_WAY = 9999;
@@ -356,26 +340,26 @@ const compassTiles = new WeakMap<Atlas, Point[]>();
 
 /**
  * Where each compass point's flag stands: the walkable tile nearest the point
- * COMPASS_REACH tiles from the camp that way, the first in row order of those
- * as near. The slice's landings have no sectors, whose hearts these will be;
- * in the camp they are somewhere a citizen can walk to. Worked out once per atlas.
+ * COMPASS_REACH tiles from home (the hold, aboard) that way, the first in row
+ * order of those as near. The slice's landings have no sectors, whose hearts
+ * these will be; until then they are somewhere a citizen can walk to. Worked
+ * out once per atlas.
  */
-function compassOf(atlas: Atlas): Point[] {
+function compassOf(world: World): Point[] {
+  const { atlas } = world;
   let tiles = compassTiles.get(atlas);
   if (tiles) return tiles;
-  const camp = place(atlas, "camp");
+  const home = homeOf(world);
   tiles = COMPASS.map(([, , dx, dy]) => {
-    const to = { x: camp.x + dx * COMPASS_REACH, y: camp.y + dy * COMPASS_REACH };
-    let best: Point = camp;
+    const to = { x: home.x + dx * COMPASS_REACH, y: home.y + dy * COMPASS_REACH };
+    let best: Point = home;
     let bestSteps = Number.MAX_SAFE_INTEGER;
-    for (const region of atlas.regions) {
-      for (let y = region.y; y < region.y + region.map.height; y++) {
-        for (let x = region.x; x < region.x + region.map.width; x++) {
-          const steps = Math.abs(x - to.x) + Math.abs(y - to.y);
-          if (steps >= bestSteps || !walkable(atlas, x, y)) continue;
-          best = { x, y };
-          bestSteps = steps;
-        }
+    for (let y = atlas.top; y < atlas.top + atlas.height; y++) {
+      for (let x = atlas.left; x < atlas.left + atlas.width; x++) {
+        const steps = Math.abs(x - to.x) + Math.abs(y - to.y);
+        if (steps >= bestSteps || !walkable(atlas, x, y)) continue;
+        best = { x, y };
+        bestSteps = steps;
       }
     }
     return best;
@@ -399,12 +383,12 @@ export function resolveGo(world: World, self: Actor, typed: string): Target | nu
   const { atlas } = world;
   if (!citizen) {
     if (word === "home") {
-      const camp = place(atlas, "camp");
-      return { flag: FLAG_HOME, x: camp.x, y: camp.y };
+      const home = homeOf(world);
+      return { flag: FLAG_HOME, x: home.x, y: home.y };
     }
     const point = COMPASS.findIndex(([short, long]) => word === short || word === long);
     if (point >= 0) {
-      const at = compassOf(atlas)[point] as Point;
+      const at = compassOf(world)[point] as Point;
       return { flag: FLAG_TILE, x: at.x, y: at.y };
     }
     // A place's name is written with underscores and typed with spaces.
@@ -471,21 +455,29 @@ export function heedOf(program: Program, actor: Actor, rule: number): number {
   return rule >= first ? HEED_FOLLOWED : HEED_HELD;
 }
 
-/** Ticks until the horde reaches the hull, as `lift_eta` reads it; in the camp, until nightfall. */
+/**
+ * Ticks until lift-off, as `lift_eta` reads it: NOT_SIGHTED before the front
+ * is sighted and on a world with no cycle. Until piece 31 builds the shield,
+ * which alone decides the break, it counts as if the shield broke the moment
+ * the front reached the bubble, so it never reads past a real lift-off and
+ * the cycle's stand-in break means nothing to a program. From the break it
+ * counts to the lift.
+ */
 export function liftEta(world: World): number {
-  if (isNight(world)) return 0;
-  const ofDay = (world.tick + START_HOUR * TICKS_PER_GAME_HOUR) % TICKS_PER_DAY;
-  const left = NIGHT_HOUR * TICKS_PER_GAME_HOUR - ofDay;
-  return ofDay >= DAY_HOUR * TICKS_PER_GAME_HOUR && left <= SIGHTING_TICKS ? left : NOT_SIGHTED;
+  const { cycle, tick } = world;
+  if (!cycle || !landed(cycle, tick) || tick < cycle.start + SIGHTING) return NOT_SIGHTED;
+  const left =
+    cycle.broke > 0 ? liftAt(cycle) - tick : Math.max(0, siegeAt(cycle) - tick) + LIFT_TICKS;
+  return Math.min(NOT_SIGHTED - 1, left);
 }
 
-/** Ticks the walk home takes the actor from where it stands, as `way_home` reads it. */
+/** Ticks the walk home (`homeOf`) takes the actor from where it stands, as `way_home` reads it. */
 export function wayHome(world: World, actor: Actor): number {
   const { atlas } = world;
-  const camp = place(atlas, "camp");
+  const home = homeOf(world);
   const steps = stepsTo(
     world,
-    fieldTo(world, tileAt(atlas, camp.x, camp.y)),
+    fieldTo(world, tileAt(atlas, home.x, home.y)),
     tileAt(atlas, actor.x, actor.y),
   );
   return steps < 0 ? NO_WAY : Math.min(NO_WAY, steps * stepTicks(world, actor));

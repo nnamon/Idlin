@@ -14,30 +14,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
+import { Chat } from "@idlin/chat";
 import {
   type Actor,
   ADVENTURER,
+  aboard,
   type Blow,
   blowsOf,
   compileBots,
-  createWorld,
-  GROUP_SPREAD,
+  createCity,
+  deckMap,
   hashWorld,
   placeConstants,
   readMessage,
   restore,
   SNAPSHOT_VERSION,
-  spawnsNearCamp,
+  snapshot,
   step,
-  TICKS_PER_DAY,
   viewerMessage,
   type World,
+  walkable,
 } from "@idlin/sim";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { castOf } from "../../client/src/cast.ts";
-import { shippedPrograms as botPrograms, botSources } from "../../sim/src/testing.ts";
-import { loadContent } from "./content.ts";
+import { botSources, campMonsters } from "../../sim/src/testing.ts";
+import { loadContent, loadCrowd } from "./content.ts";
 import { logName } from "./inputlog.ts";
 import {
   CLOSE_DEADLINE_MS,
@@ -66,10 +67,10 @@ vi.mock("node:fs", async (importOriginal) => {
 
 const CONTENT = loadContent();
 /** A snapshot read with the shipped content, as the server and the viewer read it. */
-const read = (text: string): World =>
-  restore(text, CONTENT.atlas, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
+const read = (text: string): World => restore(text, null, CONTENT.programs, CONTENT.kinds);
 const SEED = 5;
-const RESIDENTS = 6;
+/** The servers here hear the 15-chatter crowd as their chat, so the city has citizens. */
+const CROWD = loadCrowd("crowd-15");
 
 const dirs: string[] = [];
 const servers: WorldServer[] = [];
@@ -89,18 +90,19 @@ const start = async (
   dataDir: string,
   lines: string[] = [],
   snapshotTicks = 100,
-  extra: Partial<ServerOptions> = {},
+  extra: Partial<ServerOptions> & { quiet?: boolean } = {},
 ) => {
+  const { quiet = false, ...rest } = extra;
   const server = await WorldServer.start({
     dataDir,
     port: 0,
     host: "127.0.0.1",
     seed: SEED,
-    residents: RESIDENTS,
+    ...(quiet ? {} : { crowd: CROWD }),
     snapshotTicks,
     log: (line) => lines.push(line),
     content: CONTENT,
-    ...extra,
+    ...rest,
   });
   servers.push(server);
   return server;
@@ -108,21 +110,16 @@ const start = async (
 
 /** The hash of `world` as a viewer is sent it, without the orders it draws nothing from. */
 const seenHash = (world: World): string =>
-  hashWorld(
-    readMessage(
-      viewerMessage(world, []),
-      CONTENT.atlas,
-      CONTENT.programs,
-      CONTENT.kinds,
-      CONTENT.spawns,
-    ).world,
-  );
+  hashWorld(readMessage(viewerMessage(world, []), null, CONTENT.programs, CONTENT.kinds).world);
 
-/** The world a new server starts, stepped on to `tick`, without a server. */
-const reference = (tick: number): World => {
-  const world = createWorld(CONTENT.atlas, SEED, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
-  step(world, spawnsNearCamp(world, castOf(RESIDENTS)));
-  while (world.tick < tick) step(world);
+/**
+ * The city a new server starts, stepped on to `tick` with the crowd's chat
+ * (or none, `quiet`), without a server.
+ */
+const reference = (tick: number, quiet = false): World => {
+  const world = createCity(SEED, CONTENT.programs, CONTENT.kinds);
+  const chat = new Chat({ ...(quiet ? {} : { crowd: CROWD }), start: 0 });
+  while (world.tick < tick) step(world, chat.take(world.tick));
   return world;
 };
 
@@ -135,13 +132,7 @@ const viewer = async (port: number, origin?: string) => {
   const waiting: { tick: number; resolve: () => void }[] = [];
   socket.on("message", (data) => {
     // As the viewer reads it.
-    const { world } = readMessage(
-      String(data),
-      CONTENT.atlas,
-      CONTENT.programs,
-      CONTENT.kinds,
-      CONTENT.spawns,
-    );
+    const { world } = readMessage(String(data), null, CONTENT.programs, CONTENT.kinds);
     worlds.push(world);
     for (const wait of waiting.filter((w) => world.tick >= w.tick)) wait.resolve();
   });
@@ -166,29 +157,33 @@ describe("world server", () => {
     const dir = tempDir();
     const server = await start(dir);
     server.advance(550);
-    expect(listSnapshots(dir).map(tickOf)).toEqual([501, 401, 301]);
+    expect(listSnapshots(dir).map(tickOf)).toEqual([500, 400, 300]);
     expect(await server.stop()).toBe(true);
     servers.length = 0;
-    expect(listSnapshots(dir).map(tickOf)).toEqual([551, 501, 401]);
+    expect(listSnapshots(dir).map(tickOf)).toEqual([550, 500, 400]);
   });
 
   it("after a kill, resumes from the last snapshot and its log and runs on as if never stopped", async () => {
+    // A crowd's timeline starts with the server, so these hear no chat: a
+    // resumed server would hear the crowd from its own start again.
     const dir = tempDir();
-    const first = await start(dir);
+    const first = await start(dir, [], 100, { quiet: true });
     first.advance(350);
     // As if killed: no save on the way down.
     await first.stop({ save: false });
     servers.length = 0;
 
     const lines: string[] = [];
-    const second = await start(dir, lines);
+    const second = await start(dir, lines, 100, { quiet: true });
     expect(lines).toEqual([
-      "resumed world-0000000000000301.json at tick 301",
-      "replayed 50 ticks of its input log, to tick 351",
+      "resumed world-0000000000000300.json at tick 300",
+      "replayed 50 ticks of its input log, to tick 350",
     ]);
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(351)));
-    second.advance(700);
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(1051)));
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(350, true)));
+    // On past legs-plant and the ramp coming down.
+    second.advance(1750);
+    expect(second.world.cycle?.landing).toEqual(reference(2100, true).cycle?.landing);
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(2100, true)));
   });
 
   it("skips a damaged snapshot, or one of another version, for the one before, saying why", async () => {
@@ -208,15 +203,15 @@ describe("world server", () => {
     const lines: string[] = [];
     const second = await start(dir, lines);
     expect(lines).toEqual([
-      "skipping snapshot world-0000000000000301.json: snapshot is not valid JSON",
-      `skipping snapshot world-0000000000000201.json: snapshot version ${SNAPSHOT_VERSION + 1} is not 4 to ${SNAPSHOT_VERSION}`,
-      "resumed world-0000000000000101.json at tick 101",
-      "replayed 100 ticks of its input log, to tick 201",
-      `went on into the input log ${logName(201)}: 100 more ticks, to tick 301`,
-      `went on into the input log ${logName(301)}: 50 more ticks, to tick 351`,
+      "skipping snapshot world-0000000000000300.json: snapshot is not valid JSON",
+      `skipping snapshot world-0000000000000200.json: snapshot version ${SNAPSHOT_VERSION + 1} is not ${SNAPSHOT_VERSION}`,
+      "resumed world-0000000000000100.json at tick 100",
+      "replayed 100 ticks of its input log, to tick 200",
+      `went on into the input log ${logName(200)}: 100 more ticks, to tick 300`,
+      `went on into the input log ${logName(300)}: 50 more ticks, to tick 350`,
     ]);
     // Each log runs up to the snapshot after it, so the refused ones' logs carry the world on.
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(351)));
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(350)));
     // Refused files are kept aside and not tried again.
     expect(readdirSync(dir).filter((f) => f.endsWith(".bad"))).toHaveLength(2);
   });
@@ -236,10 +231,10 @@ describe("world server", () => {
     const lines: string[] = [];
     const second = await start(dir, lines);
     expect(lines[0]).toBe(
-      "skipping snapshot world-0000000000000201.json: snapshot contents are damaged",
+      "skipping snapshot world-0000000000000200.json: snapshot contents are damaged",
     );
-    expect(lines[1]).toBe("resumed world-0000000000000101.json at tick 101");
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(251)));
+    expect(lines[1]).toBe("resumed world-0000000000000100.json at tick 100");
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(250)));
   });
 
   it("goes on to an older snapshot when a bad one cannot be set aside, and does not save over it", async () => {
@@ -251,23 +246,23 @@ describe("world server", () => {
     const [newest] = listSnapshots(dir) as [string];
     writeFileSync(join(dir, newest), "{ not a snapshot");
     // Without its log the older snapshot resumes at its own tick, so the next save lands on the bad one's name.
-    rmSync(join(dir, logName(101)));
+    rmSync(join(dir, logName(100)));
     refuse.setAside = true;
 
     const lines: string[] = [];
     const second = await start(dir, lines);
     expect(lines[0]).toBe(`skipping snapshot ${newest}: snapshot is not valid JSON`);
     expect(lines[1]).toMatch(new RegExp(`^could not set ${newest} aside as ${newest}\\.bad: `));
-    expect(lines[2]).toBe("resumed world-0000000000000101.json at tick 101");
+    expect(lines[2]).toBe("resumed world-0000000000000100.json at tick 100");
     // Its log is past where this start goes on from, so it is set aside too, and that fails as well.
     expect(lines[3]).toMatch(
-      new RegExp(`^could not set ${logName(201)} aside as ${logName(201)}\\.bad: `),
+      new RegExp(`^could not set ${logName(200)} aside as ${logName(200)}\\.bad: `),
     );
-    expect(hashWorld(second.world)).toBe(hashWorld(reference(101)));
+    expect(hashWorld(second.world)).toBe(hashWorld(reference(100)));
     // The save that lands on its name is refused and logged; the world runs on.
     second.advance(100);
     expect(lines[4]).toBe(
-      `snapshot at tick 201 failed: Error: ${newest} holds a refused snapshot that could not be set aside`,
+      `snapshot at tick 200 failed: Error: ${newest} holds a refused snapshot that could not be set aside`,
     );
     expect(readFileSync(join(dir, newest), "utf8")).toBe("{ not a snapshot");
   });
@@ -304,76 +299,49 @@ describe("world server", () => {
     writeFileSync(dir, "");
     server.advance(350);
     expect(lines.filter((line) => line.includes("failed"))).toEqual([
-      expect.stringMatching(/^snapshot at tick 101 failed: /),
-      expect.stringMatching(/^snapshot at tick 201 failed: /),
-      expect.stringMatching(/^snapshot at tick 301 failed: /),
+      expect.stringMatching(/^snapshot at tick 100 failed: /),
+      expect.stringMatching(/^snapshot at tick 200 failed: /),
+      expect.stringMatching(/^snapshot at tick 300 failed: /),
     ]);
     expect(await server.stop()).toBe(false);
     servers.length = 0;
     rmSync(dir);
   });
 
-  it("starts a new world when there is no snapshot", async () => {
-    const lines: string[] = [];
-    const server = await start(tempDir(), lines);
-    expect(lines[0]).toBe(`no snapshot to resume; new world from seed ${SEED}`);
-    expect(hashWorld(server.world)).toBe(hashWorld(reference(1)));
-  });
-
-  it("runs the shipped monsters: one comes at its spawn place within a game day, and viewers see it", async () => {
-    const server = await start(tempDir());
-    expect(Object.keys(server.world.kinds).sort()).toEqual(["goblin", "wolf"]);
-    expect(server.world.spawns.map((spawn) => spawn.kind).sort()).toEqual(["goblin", "wolf"]);
-    // Looked at on the tick it came, before it has walked anywhere. With seed 5 a
-    // group of goblins comes to the den on the first tick, with the residents.
-    const first = (): Actor | undefined =>
-      server.world.actors.find((actor) => actor.kind !== ADVENTURER);
-    let monster = first();
-    while (!monster && server.world.tick <= TICKS_PER_DAY) {
-      server.advance(1);
-      monster = first();
-    }
-    expect(monster, "no monster came in a game day").toBeDefined();
-    const { x, y, id, kind } = monster as Actor;
-    const spawn = server.world.spawns.find((each) => each.kind === kind);
-    const places = [...(spawn?.day ?? []), ...(spawn?.night ?? [])];
-    const nearest = Math.min(...places.map((p) => Math.abs(x - p.x) + Math.abs(y - p.y)));
-    expect(nearest).toBeLessThanOrEqual(GROUP_SPREAD);
-    // A viewer that connects now is sent the world with the monster in it, and can read it.
-    const watcher = await viewer(server.port);
-    await watcher.reach(server.world.tick);
-    expect(watcher.worlds.at(-1)?.actors.find((actor) => actor.id === id)?.kind).toBe(kind);
-    watcher.close();
-  });
-
-  it("keeps the residents of a snapshot saved without monsters, and monsters come", async () => {
+  it("starts a new city in a data folder of the camp world, setting its files aside", async () => {
     const dir = tempDir();
-    const without = createWorld(CONTENT.atlas, SEED, botPrograms());
-    step(without, spawnsNearCamp(without, castOf(RESIDENTS)));
-    while (without.tick < 500) step(without);
-    saveSnapshot(dir, without);
-
+    // As the camp world saved them: version 12, a snapshot and its log.
+    const camp = JSON.stringify({ version: 12, map: "0", hash: "0", state: { tick: 900 } });
+    writeFileSync(join(dir, snapshotName(900)), camp);
+    writeFileSync(join(dir, logName(900)), '{"tick":900,"inputs":[]}\n');
     const lines: string[] = [];
     const server = await start(dir, lines);
     expect(lines).toEqual([
-      "snapshot world-0000000000000500.json was taken with other content; keeping its world:",
-      "  the programs have changed",
-      "  the monster kinds have changed",
-      "  the spawns have changed",
-      "resumed world-0000000000000500.json at tick 500",
+      `skipping snapshot ${snapshotName(900)}: snapshot version 12 is of the camp world, which this build no longer runs; a new city starts in its place`,
+      `no snapshot to resume; new city from seed ${SEED}`,
     ]);
-    expect(readdirSync(dir).sort()).toEqual([
-      "world-0000000000000500.json",
-      "world-0000000000000500.log",
-    ]);
-    expect(server.world.actors).toEqual(without.actors);
-    expect(server.world.spawns).toEqual(CONTENT.spawns);
-    while (server.world.tick <= TICKS_PER_DAY && server.world.actors.length === RESIDENTS)
-      server.advance(1);
-    expect(server.world.actors.some((actor) => actor.kind !== ADVENTURER)).toBe(true);
+    expect(server.world.tick).toBe(0);
+    expect(hashWorld(server.world)).toBe(hashWorld(reference(0)));
+    // Nothing is deleted: both old files are kept under `.bad` names.
+    expect(
+      readdirSync(dir)
+        .filter((f) => f.endsWith(".bad"))
+        .sort(),
+    ).toEqual([`${snapshotName(900)}.bad`, `${logName(900)}.bad`]);
+    expect(readFileSync(join(dir, `${snapshotName(900)}.bad`), "utf8")).toBe(camp);
   });
 
-  it("keeps a world through a program edit: residents keep their places and levels", async () => {
+  it("starts a new city when there is no snapshot", async () => {
+    const lines: string[] = [];
+    const server = await start(tempDir(), lines);
+    expect(lines[0]).toBe(`no snapshot to resume; new city from seed ${SEED}`);
+    expect(hashWorld(server.world)).toBe(hashWorld(reference(0)));
+    // It is the city: on its deck, with its cycle from 0:00.
+    expect(server.world.cycle?.start).toBe(0);
+    expect(server.world.atlas.map).toBe(deckMap(1));
+  });
+
+  it("keeps a world through a program edit: citizens keep their places and levels", async () => {
     const dir = tempDir();
     const world = reference(3000);
     // Levels from a long life, so there is something to lose.
@@ -382,61 +350,96 @@ describe("world server", () => {
     });
     saveSnapshot(dir, world);
     const sources = botSources();
-    const edited = sources.homebody?.replace("wander; wait(30)", "wander; wait(31)") as string;
-    expect(edited).not.toBe(sources.homebody);
+    const edited = sources.deckhand?.replace("wander; wait(20)", "wander; wait(21)") as string;
+    expect(edited).not.toBe(sources.deckhand);
     const content = {
       ...CONTENT,
       programs: {
         ...CONTENT.programs,
-        ...compileBots({ homebody: edited }, placeConstants(CONTENT.atlas)),
+        ...compileBots({ deckhand: edited }, placeConstants(deckMap(1))),
       },
     };
-    const homebodies = world.actors.filter((actor) => actor.program === "homebody").length;
-    expect(homebodies).toBeGreaterThan(0);
+    const deckhands = world.actors.filter((actor) => actor.program === "deckhand").length;
+    expect(deckhands).toBeGreaterThan(10);
 
     const lines: string[] = [];
     const server = await start(dir, lines, 100, { content });
     expect(lines).toEqual([
       "snapshot world-0000000000003000.json was taken with other content; keeping its world:",
       "  the programs have changed",
-      `  cleared the memory and rule of ${homebodies} actor(s) running "homebody"`,
+      `  cleared the memory and rule of ${deckhands} actor(s) running "deckhand"`,
       "resumed world-0000000000003000.json at tick 3000",
     ]);
     expect(server.world.tick).toBe(3000);
     const kept = (actor: Actor) => [actor.id, actor.name, actor.x, actor.y, actor.hp, actor.xp];
     expect(server.world.actors.map(kept)).toEqual(world.actors.map(kept));
-    expect(server.world.actors.filter((a) => a.kind === ADVENTURER).length).toBe(RESIDENTS);
+    expect(server.world.actors.filter((a) => a.kind === ADVENTURER).length).toBe(deckhands);
     // It runs on and saves with the new content.
     server.advance(100);
     const saved = readFileSync(join(dir, snapshotName(3100)), "utf8");
-    const { atlas, programs, kinds, spawns } = content;
-    expect(hashWorld(restore(saved, atlas, programs, kinds, spawns))).toBe(hashWorld(server.world));
+    expect(hashWorld(restore(saved, null, content.programs, content.kinds))).toBe(
+      hashWorld(server.world),
+    );
   });
 
   it("sends the world on connect and after every tick; a late viewer sees what an early one sees", async () => {
     const server = await start(tempDir());
     const early = await viewer(server.port);
-    await early.reach(1);
+    await early.reach(0);
     server.advance(200);
     const late = await viewer(server.port);
-    await late.reach(201);
+    await late.reach(200);
     server.advance(50);
-    await Promise.all([early.reach(251), late.reach(251)]);
+    await Promise.all([early.reach(250), late.reach(250)]);
 
-    expect(early.worlds.map((w) => w.tick)).toEqual(Array.from({ length: 251 }, (_, i) => i + 1));
-    expect(late.worlds[0]?.tick).toBe(201);
+    expect(early.worlds.map((w) => w.tick)).toEqual(Array.from({ length: 251 }, (_, i) => i));
+    expect(late.worlds[0]?.tick).toBe(200);
     const truth = seenHash(server.world);
     expect(hashWorld(early.worlds.at(-1) as World)).toBe(truth);
     expect(hashWorld(late.worlds.at(-1) as World)).toBe(truth);
     for (const world of late.worlds) {
-      expect(hashWorld(world)).toBe(hashWorld(early.worlds[world.tick - 1] as World));
+      expect(hashWorld(world)).toBe(hashWorld(early.worlds[world.tick] as World));
     }
     early.close();
     late.close();
   });
 
   it("sends each tick's blows with its world, and none with the world sent on connect", async () => {
-    const server = await start(tempDir());
+    // No landing has monsters until slice piece 5, so this city has the camp's
+    // wolves put on its landing by hand, by a crowd of citizens out on it.
+    const beasts = campMonsters();
+    const content = {
+      programs: { ...CONTENT.programs, ...beasts.programs },
+      kinds: beasts.kinds,
+    };
+    const city = createCity(SEED, content.programs, content.kinds);
+    const chat = new Chat({ crowd: CROWD, start: 0 });
+    while (city.tick < 2400) step(city, chat.take(city.tick));
+    const { atlas } = city;
+    const open: { x: number; y: number }[] = [];
+    for (const citizen of city.actors) {
+      for (const [dx, dy] of [
+        [2, 0],
+        [-2, 0],
+        [0, 2],
+        [0, -2],
+      ] as const) {
+        const at = { x: citizen.x + dx, y: citizen.y + dy };
+        if (!walkable(atlas, at.x, at.y) || aboard(atlas, at.x, at.y)) continue;
+        if (city.actors.some((a) => a.x === at.x && a.y === at.y)) continue;
+        if (!open.some((p) => p.x === at.x && p.y === at.y)) open.push(at);
+      }
+    }
+    step(
+      city,
+      open
+        .slice(0, 12)
+        .map((at) => ({ type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...at })),
+    );
+    expect(city.actors.filter((a) => a.kind === "wolf").length).toBeGreaterThan(4);
+    const dir = tempDir();
+    saveSnapshot(dir, city);
+    const server = await start(dir, [], 100, { content, quiet: true });
     // Only the blows are read here: restoring thousands of worlds would take too long.
     const socket = new WebSocket(`ws://127.0.0.1:${server.port}`);
     const sent: unknown[] = [];
@@ -450,10 +453,9 @@ describe("world server", () => {
     }
     expect(sent[0]).toEqual([]);
     // The same world stepped without a server makes the same blows on each tick.
-    const world = createWorld(CONTENT.atlas, SEED, CONTENT.programs, CONTENT.kinds, CONTENT.spawns);
-    step(world, spawnsNearCamp(world, castOf(RESIDENTS)));
+    const world = restore(snapshot(city), null, content.programs, content.kinds);
     const made: (readonly Blow[])[] = [];
-    while (world.tick < ticks + 1) made.push(blowsOf(step(world)));
+    while (world.tick < city.tick + ticks) made.push(blowsOf(step(world)));
     expect(sent.slice(1)).toEqual(made);
     expect(made.flat().length).toBeGreaterThan(0);
     socket.close();
@@ -464,7 +466,7 @@ describe("world server", () => {
     const server = await start(tempDir(), lines);
     const stuck = await viewer(server.port);
     const reader = await viewer(server.port);
-    await Promise.all([stuck.reach(1), reader.reach(1)]);
+    await Promise.all([stuck.reach(0), reader.reach(0)]);
     stuck.socket.pause();
     const closed = new Promise((resolve) => stuck.socket.once("close", resolve));
     const dropped = () => lines.find((line) => line.startsWith("dropping a viewer"));
@@ -491,7 +493,7 @@ describe("world server", () => {
     const garbled = await viewer(server.port);
     const greedy = await viewer(server.port);
     const reader = await viewer(server.port);
-    await Promise.all([garbled.reach(1), greedy.reach(1), reader.reach(1)]);
+    await Promise.all([garbled.reach(0), greedy.reach(0), reader.reach(0)]);
     const closed = (socket: WebSocket) => new Promise((resolve) => socket.once("close", resolve));
     const gone = [closed(garbled.socket), closed(greedy.socket)];
     // A final frame with opcode 15, which does not exist, written past the client's own checks.
@@ -501,7 +503,7 @@ describe("world server", () => {
     greedy.socket.send("x".repeat(4096));
     await Promise.all(gone);
     server.advance(5);
-    await reader.reach(6);
+    await reader.reach(5);
     expect(lines.filter((line) => line.startsWith("closing a viewer: "))).toHaveLength(2);
     reader.close();
   });
@@ -587,9 +589,9 @@ describe("world server", () => {
     expect(server.world.tick - from).toBeLessThanOrEqual(13);
   });
 
-  // The capture workflow runs the whole day; the gate runs six hours of it.
+  // The capture workflow runs 24 minutes of the city, two cycles; the gate runs six.
   const hours = process.env.IDLIN_LONG === "1" ? 24 : 6;
-  it(`runs ${hours} game hours at speed with a viewer attached and memory stays flat`, async () => {
+  it(`runs ${hours} minutes at speed with a viewer attached and memory stays flat`, async () => {
     setFlagsFromString("--expose-gc");
     const gc = runInNewContext("gc") as () => void;
     const heap = (): number => {
@@ -602,7 +604,7 @@ describe("world server", () => {
     // Only the newest world is kept, so the viewer itself holds no history.
     watcher.socket.on("message", () => watcher.worlds.splice(0, watcher.worlds.length - 1));
     const samples: number[] = [];
-    const hour = TICKS_PER_DAY / 24;
+    const hour = 600;
     for (let h = 0; h < hours; h++) {
       for (let i = 0; i < hour; i += 50) {
         server.advance(50);
@@ -610,8 +612,8 @@ describe("world server", () => {
       }
       samples.push(heap());
     }
-    expect(server.world.tick).toBe(1 + hours * hour);
-    // Measured from the end of the first hour, once everything is warm.
+    expect(server.world.tick).toBe(hours * hour);
+    // Measured from the end of the first minute, once everything is warm.
     const [base, ...rest] = samples as [number, ...number[]];
     const growth = Math.max(...rest) - base;
     expect(

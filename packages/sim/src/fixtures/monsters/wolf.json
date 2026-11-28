@@ -1,0 +1,10 @@
+{
+  "name": "Wolf",
+  "hp": 101,
+  "damage": 8,
+  "windup": 8,
+  "recovery": 20,
+  "reach": 2,
+  "step": 4,
+  "program": "wolf"
+}

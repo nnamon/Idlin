@@ -1,35 +1,28 @@
 import { atlasOf } from "./atlas.ts";
 // The smaller rules around monsters and getting nowhere, each tested where it
-// changes what happens: the residents' and monsters' rules for being stuck, a
-// monster's blow at dusk, the camp's ground, and the `stalled` count.
+// changes what happens: the residents' and monsters' rules for being stuck,
+// the camp's ground, and the `stalled` count.
 
 import { describe, expect, it } from "vitest";
 import { MAX_STALLED } from "./brain.ts";
 import { isWalkable, NEIGHBOURS, type Point, parseMap, place, terrainAt } from "./map.ts";
 import { compileBots } from "./tactics.ts";
-import { firstLight, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
+import { campMap, campMonsters, campPrograms } from "./testing.ts";
 import {
   createWorld,
-  GROUP_SPREAD,
   hashWorld,
-  isNight,
-  NIGHT_HOUR,
   restore,
   SnapshotError,
-  START_HOUR,
   snapshot,
   step,
-  TICKS_PER_GAME_HOUR,
   type World,
   type WorldEvent,
 } from "./world.ts";
 
-// The worlds here are made on the shipped world, as the shipped programs need.
-// Its camp's region, where every monster comes out, is MAP at the same
-// coordinates, so the tests read the ground off MAP.
-const MAP = firstLight();
-const WORLD = shippedWorld();
-const MONSTERS = shippedMonsters();
+// The worlds here are made on the camp's map, as the camp's programs need.
+const MAP = campMap();
+const WORLD = MAP;
+const MONSTERS = campMonsters(MAP);
 const EXTRA = compileBots({
   post: 'otherwise as "stand" -> wait(100)',
   swing: 'otherwise as "swing" -> attack(self_x - 1, self_y)',
@@ -38,7 +31,7 @@ const EXTRA = compileBots({
   stuck: 'otherwise as "go nowhere" -> walk_to(self_x, self_y)',
   to_wood: 'otherwise as "go" -> walk_to(4, 6); wait(100)',
 });
-const ALL = { ...shippedPrograms(), ...MONSTERS.programs, ...EXTRA };
+const ALL = { ...campPrograms(campMap()), ...MONSTERS.programs, ...EXTRA };
 type Actor = World["actors"][number];
 
 const run = (world: World, ticks: number): WorldEvent[] => {
@@ -155,55 +148,28 @@ describe("prowling and loitering", () => {
     return all;
   }
 
-  it("a lone wolf or goblin on any tile it can come out on walks about without going nowhere", () => {
+  it("a lone wolf or goblin near any of the camp's haunts walks about without going nowhere", () => {
     let homes = 0;
-    for (const spawn of MONSTERS.spawns) {
-      for (const part of ["day", "night"] as const) {
-        for (const at of spawn[part]) {
-          for (const home of within(at, GROUP_SPREAD)) {
-            homes++;
-            const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-            if (part === "night") world.tick = (NIGHT_HOUR - START_HOUR + 1) * TICKS_PER_GAME_HOUR;
-            step(world, [
-              { type: "spawn", name: "M", program: spawn.program, kind: spawn.kind, ...home },
-            ]);
-            const monster = world.actors[0] as Actor;
-            const tiles = new Set<string>();
-            for (let t = 0; t < 400; t++) {
-              step(world);
-              tiles.add(`${monster.x},${monster.y}`);
-              // Every walk it chose went somewhere.
-              expect(monster.stalled, `${spawn.kind} from ${home.x},${home.y}`).toBe(0);
-            }
-            expect(tiles.size, `${spawn.kind} from ${home.x},${home.y}`).toBeGreaterThan(2);
+    for (const kind of Object.keys(MONSTERS.kinds)) {
+      for (const haunt of ["deep_wood", "den", "meadow", "near_wood"]) {
+        for (const home of within(place(MAP, haunt), 2)) {
+          homes++;
+          const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
+          const program = MONSTERS.runs[kind] as string;
+          step(world, [{ type: "spawn", name: "M", program, kind, ...home }]);
+          const monster = world.actors[0] as Actor;
+          const tiles = new Set<string>();
+          for (let t = 0; t < 400; t++) {
+            step(world);
+            tiles.add(`${monster.x},${monster.y}`);
+            // Every walk it chose went somewhere.
+            expect(monster.stalled, `${kind} from ${home.x},${home.y}`).toBe(0);
           }
+          expect(tiles.size, `${kind} from ${home.x},${home.y}`).toBeGreaterThan(2);
         }
       }
     }
     expect(homes).toBeGreaterThan(10);
-  });
-});
-
-describe("going home", () => {
-  it("a monster in the middle of a blow at dusk stays until the blow lands", () => {
-    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds);
-    const dusk = (NIGHT_HOUR - START_HOUR) * TICKS_PER_GAME_HOUR;
-    world.tick = dusk - 4;
-    // A goblin out for the day, alone, that swings at the empty tile beside it.
-    step(world, [{ type: "spawn", name: "Goblin", program: "swing", kind: "goblin", x: 4, y: 6 }]);
-    const goblin = world.actors[0] as Actor;
-    Object.assign(goblin, { shift: "day" });
-    expect(goblin.windup).toBeGreaterThan(0);
-    const log: WorldEvent[] = [];
-    while (world.tick < dusk) log.push(...step(world));
-    expect(isNight(world)).toBe(true);
-    expect(world.actors).toContain(goblin);
-    while (world.actors.includes(goblin) && world.tick < dusk + 30) log.push(...step(world));
-    const landed = log.find((e) => e.type === "miss" && e.actor === goblin.id);
-    const left = log.find((e) => e.type === "leave" && e.actor === goblin.id);
-    expect(landed).toBeDefined();
-    // It goes on the tick after its blow lands.
-    expect(left?.tick).toBe((landed?.tick as number) + 1);
   });
 });
 
@@ -286,7 +252,7 @@ describe("`stalled`", () => {
         atlas: atlasOf(WORLD),
         programs: ALL,
         kinds: MONSTERS.kinds,
-        spawns: [],
+        cycle: null,
       });
       return JSON.stringify(data);
     };
@@ -296,34 +262,5 @@ describe("`stalled`", () => {
         SnapshotError,
       );
     }
-  });
-});
-
-describe("where a group comes out", () => {
-  it("not on a tile someone is walking to", () => {
-    // One goblin by day at `deep_wood`, the first group held back a tick, and Ash
-    // beside it making for that very tile when the goblin comes.
-    const spawns = [
-      {
-        kind: "goblin",
-        name: "Goblin",
-        program: "post",
-        group: 1,
-        day: [{ x: 4, y: 6 }],
-        night: [],
-      },
-    ];
-    const world = createWorld(WORLD, 1, ALL, MONSTERS.kinds, spawns);
-    world.nextSpawn = [2];
-    step(world, [{ type: "spawn", name: "Ash", program: "to_wood", x: 3, y: 6 }]);
-    const ash = world.actors[0] as Actor;
-    expect(ash.path).toEqual([{ x: 4, y: 6 }]);
-    step(world);
-    const goblin = world.actors.find((a) => a.kind === "goblin") as Actor;
-    expect(goblin).toBeDefined();
-    expect([goblin.x, goblin.y]).not.toEqual([4, 6]);
-    expect(steps(goblin, { x: 4, y: 6 })).toBe(1);
-    run(world, 20);
-    expect([ash.x, ash.y]).toEqual([4, 6]);
   });
 });

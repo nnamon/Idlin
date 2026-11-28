@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { COLOURS, HOODS, identity, PAIRS } from "./identity.ts";
-import { DAY, NIGHT } from "./palette.ts";
 
 const rgb = (hex: string): [number, number, number] => [
   Number.parseInt(hex.slice(1, 3), 16),
@@ -49,12 +48,8 @@ describe("telling residents apart", () => {
     }
   });
 
-  it("draws no hood in the colour of the faces: the paper's cream by day, its dark blue by night", () => {
-    for (const face of [DAY.paper, NIGHT.paper]) {
-      const [r, g, b] = face.map((c) => Math.round(c * 255)) as [number, number, number];
-      const paper = hex((r << 16) | (g << 8) | b);
-      for (const hood of HOODS) expect(apart(hex(hood), paper)).toBeGreaterThan(80);
-    }
+  it("draws no hood in the colour of the faces, the paper's cream", () => {
+    for (const hood of HOODS) expect(apart(hex(hood), "#f1e6cd")).toBeGreaterThan(80);
   });
 
   it("always answers, whatever the id", () => {

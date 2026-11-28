@@ -182,6 +182,7 @@ export function validateProgram(raw: unknown): Program {
       const kind = op === OP.SENSE ? "sensor" : "action";
       if (!call || call.kind !== kind)
         throw new ProgramError(`word ${at}: system call ${operand} is not a ${kind}`);
+      if (call.retired) throw new ProgramError(`word ${at}: system call ${operand} is retired`);
     } else if (op === OP.RULE) {
       if (operand < 0 || operand >= rules.length)
         throw new ProgramError(`word ${at}: no rule ${operand}`);

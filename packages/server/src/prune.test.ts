@@ -39,7 +39,6 @@ it("counts a save as made when the new snapshot is written but an old one cannot
     port: 0,
     host: "127.0.0.1",
     seed: 5,
-    residents: 6,
     snapshotTicks: 100,
     log: (line) => lines.push(line),
     content: loadContent(),
@@ -48,8 +47,8 @@ it("counts a save as made when the new snapshot is written but an old one cannot
   expect(listSnapshots(dir)).toHaveLength(3);
   refuse.deletes = true;
   expect(await server.stop()).toBe(true);
-  expect(listSnapshots(dir)[0]).toBe("world-0000000000000351.json");
+  expect(listSnapshots(dir)[0]).toBe("world-0000000000000350.json");
   expect(lines.at(-1)).toMatch(
-    /^saved world-0000000000000351\.json but could not delete world-0000000000000101\.json: .*EPERM/,
+    /^saved world-0000000000000350\.json but could not delete world-0000000000000100\.json: .*EPERM/,
   );
 });

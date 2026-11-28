@@ -1,0 +1,9 @@
+{
+  "name": "Goblin",
+  "hp": 14,
+  "damage": 3,
+  "windup": 8,
+  "recovery": 10,
+  "reach": 1,
+  "program": "goblin"
+}

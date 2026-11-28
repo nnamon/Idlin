@@ -5,7 +5,14 @@ import { fieldTo, KEEP_TICKS, nthTile, partOf, stepsTo, workOf } from "./field.t
 import { parseMap, type TileMap } from "./map.ts";
 import { createRng, nextInt } from "./rng.ts";
 import { compileBots } from "./tactics.ts";
-import { bigMap, putMonster, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
+import {
+  bigMap,
+  campMap,
+  campMonsters,
+  campPrograms,
+  putMonster,
+  spawnsNearCamp,
+} from "./testing.ts";
 import {
   type Actor,
   createWorld,
@@ -14,7 +21,6 @@ import {
   type Programs,
   restore,
   snapshot,
-  spawnsNearCamp,
   step,
   type World,
 } from "./world.ts";
@@ -49,11 +55,13 @@ function comb(): TileMap {
 }
 
 const COMB_PROGRAMS = compileBots({
-  // Half an hour to the far north-east tooth's end, half an hour to the
-  // south-west one's: five of them share each end, so they gather along it.
-  pace: "when (hour * 60 + minute) mod 60 < 30 -> walk_to(26, 1)\notherwise -> walk_to(2, 19)",
+  // 300 ticks to the far north-east tooth's end, 300 to the south-west
+  // one's: five of them share each end, so they gather along it. `heard`
+  // counts the ticks since an actor came into the world, the camp's clock
+  // gone; in tens of ticks it reads as the camp's minutes did.
+  pace: "when (heard / 10) mod 60 < 30 -> walk_to(26, 1)\notherwise -> walk_to(2, 19)",
   // One step at a time, between the ends of the middle teeth.
-  stepper: "when (hour * 60 + minute) mod 40 < 20 -> step_to(14, 1)\notherwise -> step_to(14, 19)",
+  stepper: "when (heard / 10) mod 40 < 20 -> step_to(14, 1)\notherwise -> step_to(14, 19)",
 });
 
 describe("ways where there is only one", () => {
@@ -78,7 +86,9 @@ describe("ways where there is only one", () => {
     // the statuses (#402) only through the ones version 11 hashes: hashed as
     // version 10 it is 54e7508897f9c1e1 again. The orders (#405) changed it
     // only through what version 12 hashes: as version 11 it is 5a619cf86617e425.
-    expect(hashWorld(world)).toBe("4e61e01a3af69aaf");
+    // The deck (#432) changed the programs, which read `heard` for the camp's
+    // clock, and what version 13 hashes.
+    expect(hashWorld(world)).toBe("d4a7ef6dae888f10");
   });
 });
 
@@ -151,11 +161,11 @@ describe("distance fields", () => {
   });
 
   it("change how much is worked out, never what: a world resumed with no fields ends the same", () => {
-    // The shipped world, its regions joined by exits, with residents and the monsters' spawns.
-    const atlas = shippedWorld();
-    const beasts = shippedMonsters(atlas);
-    const programs = { ...shippedPrograms(atlas), ...beasts.programs };
-    const world = createWorld(atlas, 5, programs, beasts.kinds, beasts.spawns);
+    // The camp, with citizens, and monsters put in by hand.
+    const atlas = campMap();
+    const beasts = campMonsters(atlas);
+    const programs = { ...campPrograms(atlas), ...beasts.programs };
+    const world = createWorld(atlas, 5, programs, beasts.kinds);
     const bots = ["homebody", "riverwalker", "wanderer"];
     step(
       world,
@@ -164,10 +174,19 @@ describe("distance fields", () => {
         Array.from({ length: 30 }, (_, i) => ({ name: `R${i}`, program: bots[i % 3] as string })),
       ),
     );
-    for (let i = 0; i < 2000; i++) step(world);
-    // Monsters come and go: between 3 and 12 of them in this run's first 4,000 ticks.
+    const beast = (kind: string, at: string): Input => ({
+      type: "spawn",
+      name: kind === "wolf" ? "Wolf" : "Goblin",
+      program: kind,
+      kind,
+      ...(atlas.places.find((p) => p.name === at) as { x: number; y: number }),
+    });
+    const pack = ["meadow", "den", "deep_wood", "near_wood"].map((at, i) =>
+      beast(i % 2 === 0 ? "wolf" : "goblin", at),
+    );
+    for (let i = 0; i < 2000; i++) step(world, i % 400 === 0 || i === 1990 ? pack : []);
     expect(world.actors.filter((a) => a.kind !== "adventurer").length).toBeGreaterThan(3);
-    const resumed = restore(snapshot(world), atlas, programs, beasts.kinds, beasts.spawns);
+    const resumed = restore(snapshot(world), atlas, programs, beasts.kinds);
     const warm = workOf(world).fields;
     for (let i = 0; i < 2000; i++) {
       step(world);
@@ -183,15 +202,12 @@ describe("pieces of ground", () => {
   it("join the tiles one can walk between, and nothing else", () => {
     const world = standing([]);
     const { atlas } = world;
-    const camp = partOf(atlas, tileAt(atlas, 60, 40), false);
+    const camp = partOf(atlas, tileAt(atlas, 60, 40));
     expect(camp).toBeGreaterThanOrEqual(0);
-    expect(partOf(atlas, tileAt(atlas, 60, 70), false)).toBe(camp);
-    expect(partOf(atlas, tileAt(atlas, 60, 70), true)).toBe(
-      partOf(atlas, tileAt(atlas, 60, 40), true),
-    );
+    expect(partOf(atlas, tileAt(atlas, 60, 70))).toBe(camp);
     // Rock and water are in no piece.
-    expect(partOf(atlas, tileAt(atlas, 0, 0), false)).toBe(-1);
-    expect(partOf(atlas, tileAt(atlas, 59, 56), false)).toBe(-1);
+    expect(partOf(atlas, tileAt(atlas, 0, 0))).toBe(-1);
+    expect(partOf(atlas, tileAt(atlas, 59, 56))).toBe(-1);
   });
 });
 
@@ -236,7 +252,7 @@ function board(world: World): void {
 /** The guards and the 150 residents for boarding, after the tick they are spawned in. */
 function boardingWorld(programs: Programs): World {
   const map = bigMap();
-  const world = createWorld(map, 1, programs, shippedMonsters(map).kinds);
+  const world = createWorld(map, 1, programs, campMonsters(map).kinds);
   for (const [x, y] of GUARDS) putMonster(world, "goblin", { x, y }, "guard");
   const { atlas } = world;
   const rng = createRng(3);
@@ -280,7 +296,7 @@ const HEAD_ON = compileBots({
 /** The forty goblins each side of the river for headOn, before the first tick. */
 function headOnWorld() {
   const map = bigMap();
-  const world = createWorld(map, 1, HEAD_ON, shippedMonsters(map).kinds);
+  const world = createWorld(map, 1, HEAD_ON, campMonsters(map).kinds);
   const { atlas } = world;
   const rng = createRng(4);
   const taken = new Set<number>();
@@ -327,7 +343,7 @@ describe("a walker held up by people who stand still", () => {
     for (const call of ["walk_to", "step_to"] as const) {
       const programs = boarders(call);
       const world = boardingWorld(programs);
-      const kinds = shippedMonsters(bigMap()).kinds;
+      const kinds = campMonsters(bigMap()).kinds;
       const saved: string[] = [];
       let held = 0;
       for (let tick = 1; tick <= 600; tick++) {

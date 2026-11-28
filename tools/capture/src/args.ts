@@ -2,7 +2,7 @@
 
 export interface Args {
   readonly outDir: string;
-  /** Named single frames, as `name:hour[:ticks[:width[:height]]]`. */
+  /** Named single frames, as `name:tick[:width[:height]]`: the tick of the city's first cycles to draw. */
   readonly shots: readonly string[];
   readonly review: boolean;
   /** A folder holding an earlier review's storyboard to compare with. */
@@ -15,7 +15,8 @@ export interface Args {
   readonly stills: boolean;
 }
 
-const DEFAULT_SHOTS = ["dawn:6", "noon:12", "dusk:19", "midnight:0"];
+/** Transit, the landing set down, the peace and the siege of the first cycle. */
+const DEFAULT_SHOTS = ["transit:300", "legs:1800", "peace:3000", "siege:6600"];
 
 /** Returns the arguments, or a message saying what is wrong with them. */
 export function parseArgs(argv: readonly string[]): Args | string {
@@ -46,7 +47,7 @@ export function parseArgs(argv: readonly string[]): Args | string {
     else plain.push(arg);
   }
   if (baseline !== null && !review) return "--baseline only works with --review";
-  // The review's sheets follow the page's world in a world of their own, which has no chat yet.
+  // The review always hears the 15-chatter crowd, so two runs of it compare.
   if (chat !== null && review) return "--chat works with shots, not with --review";
   if (lookdev !== null && review) return "--lookdev and --review are separate runs";
   if (lookdev !== null && chat !== null) return "--lookdev draws its own crowd, not --chat";

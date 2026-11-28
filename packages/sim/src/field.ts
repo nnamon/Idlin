@@ -6,8 +6,9 @@
 // A field is a breadth-first search out from its target over `stepTile` with
 // exits allowed, in NEIGHBOURS order, so the tiles come out ring by ring and in
 // the same order every time. It runs only as far as someone has asked about,
-// and carries on from there when someone asks about a tile further out. The
-// ground never changes under a world, so a field never goes stale; it is kept
+// and carries on from there when someone asks about a tile further out. A
+// city's ground changes at legs-plant, ramp-down and lift-off; the fields are
+// dropped whenever `world.atlas` changes, so none goes stale. A field is kept
 // while anyone reads it and dropped KEEP_TICKS ticks after the last read.
 //
 // Fields and the work counters below are kept beside the world, not in it:
@@ -118,7 +119,7 @@ function expand(world: World, field: Field): boolean {
   const at = field.order[field.expanded++] as number;
   const next = (field.steps[at] as number) + 1;
   for (let d = 0; d < 4; d++) {
-    const tile = stepTile(world.atlas, at, d, false);
+    const tile = stepTile(world.atlas, at, d);
     if (tile < 0 || (field.steps[tile] as number) >= 0) continue;
     field.steps[tile] = next;
     field.order[field.reached++] = tile;
@@ -143,23 +144,23 @@ export function nthTile(world: World, field: Field, i: number): number {
   return i < field.reached ? (field.order[i] as number) : -1;
 }
 
-const parts = new WeakMap<Atlas, { readonly across: Int32Array; readonly within: Int32Array }>();
+const parts = new WeakMap<Atlas, Int32Array>();
 
 /**
- * Which piece of ground box tile `tile` is in: two tiles have the same number
- * when one can be walked to from the other, people left out, crossing exits
- * unless `within`. -1 for a tile nobody can stand on. Worked out once per atlas.
+ * Which piece of ground tile `tile` is in: two tiles have the same number
+ * when one can be walked to from the other, people left out. -1 for a tile
+ * nobody can stand on. Worked out once per atlas.
  */
-export function partOf(atlas: Atlas, tile: number, within: boolean): number {
-  let both = parts.get(atlas);
-  if (!both) {
-    both = { across: label(atlas, false), within: label(atlas, true) };
-    parts.set(atlas, both);
+export function partOf(atlas: Atlas, tile: number): number {
+  let part = parts.get(atlas);
+  if (!part) {
+    part = label(atlas);
+    parts.set(atlas, part);
   }
-  return (within ? both.within : both.across)[tile] as number;
+  return part[tile] as number;
 }
 
-function label(atlas: Atlas, within: boolean): Int32Array {
+function label(atlas: Atlas): Int32Array {
   const size = atlas.open.length;
   const part = new Int32Array(size).fill(-1);
   const queue = new Int32Array(size);
@@ -171,7 +172,7 @@ function label(atlas: Atlas, within: boolean): Int32Array {
     for (let head = 0, tail = 1; head < tail; head++) {
       const at = queue[head] as number;
       for (let d = 0; d < 4; d++) {
-        const next = stepTile(atlas, at, d, within);
+        const next = stepTile(atlas, at, d);
         if (next < 0 || (part[next] as number) >= 0) continue;
         part[next] = count;
         queue[tail++] = next;

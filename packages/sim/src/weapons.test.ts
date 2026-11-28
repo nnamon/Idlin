@@ -34,7 +34,6 @@ import {
   knocksOf,
   readMessage,
   restore,
-  SNAPSHOT_VERSION,
   SnapshotError,
   snapshot,
   step,
@@ -113,7 +112,6 @@ function plant(world: World, x: number, y: number, kind = "post", program = "sta
     hp: (KINDS[kind] as { hp: number }).hp,
     windup: 0,
     recover: 0,
-    shift: "",
     stalled: 0,
     xp: noXp(),
     bag: emptyBag(),
@@ -734,11 +732,10 @@ describe("weapons in the world's state", () => {
       const data = JSON.parse(text);
       change(data.state);
       try {
-        data.hash = hashStateAs(data.state as World, SNAPSHOT_VERSION, {
+        data.hash = hashStateAs(data.state as World, {
           map: data.map,
           programs: data.programs,
           kinds: data.kinds,
-          spawns: data.spawns,
         });
       } catch {
         // Arrows that are not a list cannot be hashed, so the old hash stays.
@@ -769,21 +766,6 @@ describe("weapons in the world's state", () => {
       spawn("Bryn", "stander", { x: 18, y: 11 }),
     ]);
     expect(world.actors.map((a) => [a.name, a.weapon])).toEqual([["Bryn", "blade"]]);
-  });
-
-  it("a monster spawn dropped for its weapon holds back none of its region's spawns", () => {
-    const quiet = createWorld(MAP, 1, PROGRAMS, KINDS);
-    const tried = createWorld(MAP, 1, PROGRAMS, KINDS);
-    step(quiet);
-    step(tried, [spawn("Post", "stander", { x: 20, y: 13 }, "bow", "post")]);
-    expect(tried.actors).toEqual([]);
-    expect(tried.nextSpawn).toEqual(quiet.nextSpawn);
-    expect(hashWorld(tried)).toBe(hashWorld(quiet));
-    // Without the weapon the same spawn is honoured and holds them.
-    step(tried, [spawn("Post", "stander", { x: 20, y: 13 }, undefined, "post")]);
-    step(quiet);
-    expect(tried.actors.map((a) => a.kind)).toEqual(["post"]);
-    expect(tried.nextSpawn).not.toEqual(quiet.nextSpawn);
   });
 });
 

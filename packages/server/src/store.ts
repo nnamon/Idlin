@@ -170,8 +170,7 @@ export function loadNewest(
       continue;
     }
     try {
-      const { atlas, programs, kinds, spawns } = content;
-      const { world, changes } = adopt(text, atlas, programs, kinds, spawns);
+      const { world, changes } = adopt(text, null, content.programs, content.kinds);
       if (changes.length > 0) {
         log(`snapshot ${file} was taken with other content; keeping its world:`);
         for (const change of changes) log(`  ${change}`);

@@ -1,30 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { atlasOf, walkable } from "./atlas.ts";
 import { compileBots } from "./tactics.ts";
-import { shippedPrograms, shippedWorld } from "./testing.ts";
+import { campMap, campPrograms, spawnsNearCamp } from "./testing.ts";
 import {
-  clock,
+  createCity,
   createWorld,
   hashWorld,
   restore,
   SnapshotError,
   STEP_TICKS,
   snapshot,
-  spawnsNearCamp,
   step,
-  TICKS_PER_DAY,
   type World,
 } from "./world.ts";
 
 const NAMES = ["Ash", "Birch", "Cedar", "Dara", "Elm", "Fen"];
-const PROGRAMS = shippedPrograms(shippedWorld());
+const PROGRAMS = campPrograms(campMap());
 const KINDS = { wolf: { hp: 10, damage: 1, windup: 5, recovery: 5, reach: 1 } };
 // For walking tests with a monster in them: the shipped programs fight when an
 // enemy is near, so here everyone runs one that only stands.
 const STILL = compileBots({ still: 'otherwise as "stand" -> wait(100)' });
 
 const newWorld = (seed: number): World => {
-  const world = createWorld(shippedWorld(), seed, PROGRAMS);
+  const world = createWorld(campMap(), seed, PROGRAMS);
   step(
     world,
     spawnsNearCamp(
@@ -52,7 +50,24 @@ describe("world", () => {
     // hashes: hashed as version 10 it is e38225492ab9de5c again. Changed by
     // the orders version 12 hashes and Deckhand joining the program table
     // (#405): hashed as version 11 without Deckhand it is 861d9d19d967717c.
-    expect(hashWorld(run(newWorld(1), 2000))).toBe("ba0787361ed8a39b");
+    // Changed by the deck (#432): the world is the camp's map alone, with no
+    // regions, spawn table or clock, its program table the camp's with the
+    // Deckhand as the camp ran it, hashed as version 13 hashes.
+    expect(hashWorld(run(newWorld(1), 2000))).toBe("e0d7708a22b4e267");
+  });
+
+  it("the city reaches the pinned state after 4000 ticks from a fixed seed, with chatters aboard", () => {
+    const city = createCity(1, campPrograms(campMap()));
+    step(
+      city,
+      NAMES.map((name, i) => ({ type: "join", account: String(100 + i), name, role: "viewer" })),
+    );
+    // Pinned with the deck (#432): six chatters aboard, the first landing set
+    // down at 1,800 and its ramp down at 2,000. Changed by the landing
+    // generator's city sizes (#415), and by the deck asking it for a landing
+    // cut for the first city, so the footprint is the hull's own 13 by 6 with
+    // no spare hull tiles round the deck: the ground and dens differ.
+    expect(hashWorld(run(city, 4000))).toBe("72fc6eb3fda6eb8a");
   });
 
   it("two worlds from one seed stay identical; another seed diverges", () => {
@@ -71,12 +86,12 @@ describe("world", () => {
   it("a world restored from a snapshot continues exactly as the original", () => {
     const straight = run(newWorld(3), 1500);
     const saved = snapshot(run(newWorld(3), 700));
-    const resumed = restore(saved, shippedWorld(), PROGRAMS);
+    const resumed = restore(saved, campMap(), PROGRAMS);
     expect(hashWorld(run(resumed, 800))).toBe(hashWorld(straight));
   });
 
   it("refuses snapshots it cannot trust", () => {
-    const map = shippedWorld();
+    const map = campMap();
     const saved = snapshot(run(newWorld(3), 50));
     const edit = (change: (data: Record<string, unknown>) => void): string => {
       const data = JSON.parse(saved);
@@ -119,7 +134,7 @@ describe("world", () => {
   });
 
   it("refuses snapshots whose contents hash the same but are not a possible world", () => {
-    const map = shippedWorld();
+    const map = campMap();
     const world = createWorld(map, 3, PROGRAMS);
     step(world, [{ type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" }]);
     const ash = world.actors[0];
@@ -148,7 +163,7 @@ describe("world", () => {
             atlas: atlasOf(map),
             programs: PROGRAMS,
             kinds: {},
-            spawns: [],
+            cycle: null,
           });
         } catch {
           // Not even hashable; the saved hash stays.
@@ -218,7 +233,7 @@ describe("world", () => {
   });
 
   it("takes exactly STEP_TICKS ticks per tile", () => {
-    const world = createWorld(shippedWorld(), 1, PROGRAMS);
+    const world = createWorld(campMap(), 1, PROGRAMS);
     step(world, [{ type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" }]);
     const actor = world.actors[0];
     if (!actor) throw new Error("no actor");
@@ -237,7 +252,7 @@ describe("world", () => {
   });
 
   it("adventurers walk through each other", () => {
-    const world = createWorld(shippedWorld(), 1, PROGRAMS);
+    const world = createWorld(campMap(), 1, PROGRAMS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 8, program: "wanderer" },
       { type: "spawn", name: "Birch", x: 12, y: 8, program: "wanderer" },
@@ -257,7 +272,7 @@ describe("world", () => {
   });
 
   it("an adventurer held up by a monster waits, then gives up its walk", () => {
-    const world = createWorld(shippedWorld(), 1, STILL, KINDS);
+    const world = createWorld(campMap(), 1, STILL, KINDS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 13, program: "still" },
       { type: "spawn", name: "Birch", x: 12, y: 13, program: "still", kind: "wolf" },
@@ -275,7 +290,7 @@ describe("world", () => {
   });
 
   it("of two walkers head to head, only the later one turns aside", () => {
-    const world = createWorld(shippedWorld(), 1, STILL, KINDS);
+    const world = createWorld(campMap(), 1, STILL, KINDS);
     step(world, [
       { type: "spawn", name: "Ash", x: 11, y: 11, program: "still" },
       { type: "spawn", name: "Birch", x: 12, y: 11, program: "still", kind: "wolf" },
@@ -300,7 +315,7 @@ describe("world", () => {
   });
 
   it("drops spawn inputs it cannot honour", () => {
-    const world = createWorld(shippedWorld(), 1, PROGRAMS);
+    const world = createWorld(campMap(), 1, PROGRAMS);
     step(world, [
       { type: "spawn", name: "Ash", x: 14, y: 9, program: "wanderer" },
       { type: "spawn", name: "OnAsh", x: 14, y: 9, program: "wanderer" },
@@ -333,7 +348,7 @@ describe("world", () => {
   });
 
   it("runs, hashes and resumes past the 32-bit tick boundary", () => {
-    const map = shippedWorld();
+    const map = campMap();
     const world = newWorld(4);
     world.tick = 2 ** 31 - 2;
     const before = hashWorld(world);
@@ -358,15 +373,5 @@ describe("world", () => {
     step(world, [{ type: "spawn", name: "Ash", x: -0, y: -0, program: "wanderer" }]);
     expect(Object.is(world.actors[0]?.x, 0)).toBe(true);
     expect(Object.is(world.actors[0]?.fromY, 0)).toBe(true);
-  });
-
-  it("starts at dawn and turns a day over every 24 minutes of ticks", () => {
-    const world = createWorld(shippedWorld(), 1, PROGRAMS);
-    expect(clock(world)).toEqual({ day: 0, hour: 6, minute: 0 });
-    world.tick = 615;
-    expect(clock(world)).toEqual({ day: 0, hour: 7, minute: 1 });
-    world.tick = TICKS_PER_DAY - 6 * 600;
-    expect(clock(world)).toEqual({ day: 1, hour: 0, minute: 0 });
-    expect(TICKS_PER_DAY).toBe(24 * 60 * 10);
   });
 });

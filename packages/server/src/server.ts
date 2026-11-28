@@ -13,17 +13,15 @@ import { Chat, type ChatEvent, type Crowd } from "@idlin/chat";
 import {
   type Blow,
   blowsOf,
-  createWorld,
+  createCity,
   type Knock,
   knocksOf,
-  spawnsNearCamp,
   step,
   TICKS_PER_SECOND,
   viewerMessage,
   type World,
 } from "@idlin/sim";
 import { WebSocket, WebSocketServer } from "ws";
-import { castOf } from "../../client/src/cast.ts";
 import { type Content, loadContent } from "./content.ts";
 import { InputLog, logName, replayLog } from "./inputlog.ts";
 import { Pacer } from "./pacer.ts";
@@ -68,8 +66,6 @@ export interface ServerOptions {
   readonly host: string;
   /** For a new world, when there is no snapshot to resume. */
   readonly seed: number;
-  /** Residents of a new world. */
-  readonly residents: number;
   /** Ticks between snapshots. */
   readonly snapshotTicks: number;
   readonly log: (line: string) => void;
@@ -200,16 +196,9 @@ export class WorldServer {
       // world. It is set aside, so that it cannot be taken for this world's.
       for (const file of readdirSync(options.dataDir))
         if (/^world-\d{16}\.log$/.test(file)) setAside(options.dataDir, file, options.log);
-      world = createWorld(
-        content.atlas,
-        options.seed,
-        content.programs,
-        content.kinds,
-        content.spawns,
-      );
-      const cast = options.residents > 0 ? castOf(options.residents) : [];
-      step(world, spawnsNearCamp(world, cast));
-      options.log(`no snapshot to resume; new world from seed ${options.seed}`);
+      // A new city on its deck, with nobody aboard until chatters join.
+      world = createCity(options.seed, content.programs, content.kinds);
+      options.log(`no snapshot to resume; new city from seed ${options.seed}`);
     }
     const origins = options.origins ?? VIEWER_ORIGINS;
     // The HTTP server is our own so that stop can close connections that never

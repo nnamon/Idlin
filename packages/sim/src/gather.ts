@@ -4,7 +4,7 @@
 // raw fish and a log into a cooked fish, or a burnt one, at the camp fire.
 // Eating a cooked fish heals.
 
-import { type Atlas, regionAt, terrainOf, tileAt, walkable } from "./atlas.ts";
+import { type Atlas, terrainOf, tileAt, walkable } from "./atlas.ts";
 import { goodId } from "./bag.ts";
 import { gridOf, tallyOf, tileOf } from "./grid.ts";
 import { NEIGHBOURS, type Point } from "./map.ts";
@@ -65,14 +65,12 @@ export function regrowNodes(world: World, events: WorldEvent[]): void {
   });
 }
 
-/** Whether node `index` stands and `actor` may work it: an adventurer in its region with the level for it. */
+/** Whether node `index` stands and `actor` may work it: an adventurer with the level for it. */
 function workable(world: World, actor: Actor, index: number): boolean {
   const node = world.atlas.nodes[index];
   const kind = node && nodeKind(node.kind);
   if (!node || !kind || actor.kind !== ADVENTURER) return false;
   if ((world.nodes[index] as NodeState).left === 0) return false;
-  if (regionAt(world.atlas, node.x, node.y) !== regionAt(world.atlas, actor.x, actor.y))
-    return false;
   return levelIn(actor, kind.skill) >= kind.level;
 }
 
@@ -80,9 +78,8 @@ const steps = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y
 
 /**
  * The tile to work a node of kind `kindId` from that is nearest `actor` in a
- * straight grid line: beside a node of that kind that stands, in the actor's
- * region and that its level allows, on walkable ground in the node's region
- * that nobody else stands on or is walking to. Ties go to the node listed
+ * straight grid line: beside a node of that kind that stands and that its
+ * level allows, on walkable ground that nobody else stands on or is walking to. Ties go to the node listed
  * first, then to the side in NEIGHBOURS order. Null if there is none.
  */
 export function nearestNode(world: World, actor: Actor, kindId: number): Point | null {
@@ -100,10 +97,9 @@ export function nearestNode(world: World, actor: Actor, kindId: number): Point |
   for (let index = 0; index < atlas.nodes.length; index++) {
     const node = atlas.nodes[index] as (typeof atlas.nodes)[number];
     if (node.kind !== kindId || !workable(world, actor, index)) continue;
-    const region = regionAt(atlas, node.x, node.y);
     for (const [dx, dy] of NEIGHBOURS) {
       const side = { x: node.x + dx, y: node.y + dy };
-      if (!walkable(atlas, side.x, side.y) || regionAt(atlas, side.x, side.y) !== region) continue;
+      if (!walkable(atlas, side.x, side.y)) continue;
       if (taken(tileAt(atlas, side.x, side.y))) continue;
       if (!best || steps(actor, side) < steps(actor, best)) best = side;
     }
@@ -152,19 +148,16 @@ export function work(world: World, actor: Actor, skill: Skill, events: WorldEven
 export const FIRE_REACH = 2;
 
 /**
- * Whether `actor` stands within FIRE_REACH steps of a campfire tile in its own
- * region. Two steps, not one, so that a cook sent to a fire whose tiles beside
+ * Whether `actor` stands within FIRE_REACH steps of a campfire tile. Two steps, not one, so that a cook sent to a fire whose tiles beside
  * it are taken still ends up where it can cook.
  */
 export function atFire(world: World, actor: Actor): boolean {
-  const region = regionAt(world.atlas, actor.x, actor.y);
   for (let dy = -FIRE_REACH; dy <= FIRE_REACH; dy++) {
     for (let dx = -FIRE_REACH; dx <= FIRE_REACH; dx++) {
       if (Math.abs(dx) + Math.abs(dy) > FIRE_REACH) continue;
       const x = actor.x + dx;
       const y = actor.y + dy;
-      if (terrainOf(world.atlas, x, y) === "campfire" && regionAt(world.atlas, x, y) === region)
-        return true;
+      if (terrainOf(world.atlas, x, y) === "campfire") return true;
     }
   }
   return false;

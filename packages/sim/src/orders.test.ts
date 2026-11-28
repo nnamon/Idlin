@@ -1,7 +1,8 @@
 // What chat changes on a citizen: params, the flag, tokens, and whether its
 // program followed the flag (docs/chat.md, sections 3 and 8; pieces C5 and
-// C6). The worlds here are the shipped one, with its monsters, and citizens
-// who joined from chat on the shipped program, Deckhand.
+// C6). The worlds here are the camp's map, with its monsters, and citizens
+// who joined from chat on the Deckhand as the camp ran it (testing.ts); the
+// ones that need the horde's timing are the city, on the shipped Deckhand.
 
 import { describe, expect, it } from "vitest";
 import { adopt } from "./adopt.ts";
@@ -18,37 +19,33 @@ import {
   HEED_UNREAD,
   MAX_TOKENS,
   resolveGo,
-  SIGHTING_TICKS,
   TOKEN_TICKS,
   unsentOrders,
 } from "./orders.ts";
 import { compileBots } from "./tactics.ts";
-import { botSources, shippedMonsters, shippedPrograms, shippedWorld } from "./testing.ts";
+import { campBotSources, campMap, campMonsters, campPrograms, shippedPrograms } from "./testing.ts";
 import type { Program } from "./vm.ts";
 import {
   type Actor,
   ADVENTURER,
+  aboard,
+  createCity,
   createWorld,
   hashWorld,
   type Input,
-  NIGHT_HOUR,
   type Programs,
   readMessage,
   restore,
-  START_HOUR,
   snapshot,
   step,
-  TICKS_PER_GAME_HOUR,
   viewerMessage,
   type World,
   type WorldEvent,
 } from "./world.ts";
 
-const ATLAS = shippedWorld();
-const MONSTERS = shippedMonsters(ATLAS);
-const PROGRAMS = { ...shippedPrograms(ATLAS), ...MONSTERS.programs };
-/** The tick of nightfall on the first day, which stands in for the horde at the hull. */
-const NIGHTFALL = (NIGHT_HOUR - START_HOUR) * TICKS_PER_GAME_HOUR;
+const ATLAS = campMap();
+const MONSTERS = campMonsters(ATLAS);
+const PROGRAMS = { ...campPrograms(ATLAS), ...MONSTERS.programs };
 
 const join = (account: string, name: string): Input => ({
   type: "join",
@@ -66,7 +63,7 @@ const set = (account: string, name: string, value: string): Input => ({
 
 /** A world with the given chatters joined on its first tick, starting at `tick`. */
 function newWorld(names: readonly string[], tick = 0, programs: Programs = PROGRAMS): World {
-  const world = createWorld(ATLAS, 405, programs, MONSTERS.kinds, MONSTERS.spawns);
+  const world = createWorld(ATLAS, 405, programs, MONSTERS.kinds);
   world.tick = tick;
   step(
     world,
@@ -139,9 +136,20 @@ describe("params from chat", () => {
 
   it("stance fight and stance careful differ in kills and in downs over a landing's length", () => {
     const names = ["joshyboy88", "goofguy", "pixel_pete", "moss_and_mud", "tinytoaster", "zzz_jen"];
+    // The camp has no spawn table now, so its monsters are put in by hand.
+    const beasts: Input[] = [
+      ...["near_wood", "deep_wood", "den"].map((at) => ({
+        type: "spawn" as const,
+        name: "Goblin",
+        program: "goblin",
+        kind: "goblin",
+        ...place(ATLAS, at),
+      })),
+      { type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", ...place(ATLAS, "meadow") },
+    ];
     const outcome = (stance: string) => {
       const world = newWorld(names);
-      const inputs = names.map((_, i) => set(`${1001 + i}`, "stance", stance));
+      const inputs = [...names.map((_, i) => set(`${1001 + i}`, "stance", stance)), ...beasts];
       const events = run(world, 6000, inputs);
       const ours = new Set(names.map((name) => citizen(world, name).id));
       const downs = events.filter((e) => e.type === "down");
@@ -158,7 +166,7 @@ describe("params from chat", () => {
   });
 
   it("takes a number below 0 for a param whose range goes there", () => {
-    const source = (botSources().deckhand as string).replace(
+    const source = (campBotSources().deckhand as string).replace(
       "param ramp = board of board, guard",
       "param ramp = board of board, guard\nparam lean = -2 from -5 to 5",
     );
@@ -183,24 +191,24 @@ describe("params from chat", () => {
 
   it("margin 0 and margin 240 differ in the time a citizen spends out", () => {
     const out = (margin: string): number => {
-      const world = newWorld(["goofguy"], NIGHTFALL - SIGHTING_TICKS - 600);
+      const world = createCity(405, shippedPrograms());
+      step(world, [join("1001", "goofguy")]);
       run(world, 1, [set("1001", "margin", margin)]);
       const tim = citizen(world, "goofguy");
-      const camp = place(ATLAS, "camp");
       let ticks = 0;
-      while (world.tick < NIGHTFALL) {
-        step(world);
-        if (Math.abs(tim.x - camp.x) + Math.abs(tim.y - camp.y) > 4) ticks++;
+      while (world.tick < 6900) {
+        step(world, world.tick === 6599 ? [{ type: "break" }] : []);
+        if (!aboard(world.atlas, tim.x, tim.y)) ticks++;
       }
       return ticks;
     };
     const early = out("240");
     const late = out("0");
-    // 240 seconds turns back a minute after the horde is sighted, 300 seconds
-    // before nightfall; 0 cuts it to the walk home. The two are some 2,400
-    // ticks apart, less the walks.
+    // 240 seconds turns back at the sighting, which `lift_eta` reads as 1,950
+    // ticks before the lift could be; 0 cuts it to the walk home. The two are
+    // some 1,900 ticks apart, less the walks.
     expect(early).toBeGreaterThan(0);
-    expect(late - early).toBeGreaterThan(1800);
+    expect(late - early).toBeGreaterThan(1200);
   });
 });
 
@@ -211,10 +219,10 @@ describe("the flag", () => {
     let longest = 0;
     for (let t = 0; t < 120; t++) {
       run(world, 1);
-      const copy = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+      const copy = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds);
       const tim = citizen(copy, "goofguy");
       const ordered = copy.tick;
-      const events = run(copy, 12, [go("1001", "lower river")]);
+      const events = run(copy, 12, [go("1001", "meadow")]);
       const decided = events.find((e) => e.type === "decide" && e.actor === tim.id);
       if (decided?.type !== "decide") throw new Error(`no decision after the order at ${ordered}`);
       longest = Math.max(longest, decided.tick - ordered);
@@ -224,15 +232,18 @@ describe("the flag", () => {
   });
 
   it("is reported as held under a winning turn back, and as unread by a program that never reads it", () => {
-    const world = newWorld(["goofguy"], NIGHTFALL - 600);
+    const world = createCity(405, shippedPrograms());
+    step(world, [join("1001", "goofguy")]);
+    while (world.tick < 6000) step(world);
     const tim = citizen(world, "goofguy");
-    run(world, 10, [go("1001", "lower river")]);
+    run(world, 10, [go("1001", "north")]);
     expect(tim.flag).toBe(FLAG_TILE);
     expect(labelOf(world, tim)).toBe("turn back");
     expect(tim.heed).toBe(HEED_HELD);
-    const wanderers = { ...PROGRAMS, deckhand: shippedPrograms(ATLAS).wanderer as Program };
+    const wanderers = { ...PROGRAMS, deckhand: campPrograms(ATLAS).wanderer as Program };
     const other = newWorld(["goofguy"], 0, wanderers);
-    run(other, 10, [go("1001", "lower river")]);
+    // A program that never reads the flag is not interrupted for it, so this is after its next decision.
+    run(other, 40, [go("1001", "meadow")]);
     expect(citizen(other, "goofguy").heed).toBe(HEED_UNREAD);
   });
 
@@ -256,12 +267,12 @@ describe("the flag", () => {
   it("gives two programs that are sent to the same place different hauls", () => {
     const haul = (programs: Programs): number => {
       const world = newWorld(["goofguy"], 0, programs);
-      run(world, 4000, [go("1001", "lower river")]);
+      run(world, 4000, [go("1001", "meadow")]);
       const tim = citizen(world, "goofguy");
       // What it carries, a good a slot, and what it has banked.
       return tim.bag.filter((good) => good !== 0).length + tim.bank.reduce((sum, n) => sum + n, 0);
     };
-    const wanderers = { ...PROGRAMS, deckhand: shippedPrograms(ATLAS).wanderer as Program };
+    const wanderers = { ...PROGRAMS, deckhand: campPrograms(ATLAS).wanderer as Program };
     const deckhand = haul(PROGRAMS);
     expect(deckhand).toBeGreaterThan(0);
     expect(haul(wanderers)).not.toBe(deckhand);
@@ -307,7 +318,7 @@ describe("what an accepted order interrupts", () => {
     expect(citizen(world, "goofguy").wait).toBe(GATHER_TICKS);
     /** The next tick, with one input, and whether goofguy decided in it. */
     const after = (input: Input) => {
-      const copy = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+      const copy = restore(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds);
       const tim = citizen(copy, "goofguy");
       const decided = step(copy, [input]).some((e) => e.type === "decide" && e.actor === tim.id);
       return { tim, decided };
@@ -325,16 +336,16 @@ describe("what an accepted order interrupts", () => {
   });
 
   it("does not end a walk for a flag the program never reads", () => {
-    const wanderers = { ...PROGRAMS, deckhand: shippedPrograms(ATLAS).wanderer as Program };
+    const wanderers = { ...PROGRAMS, deckhand: campPrograms(ATLAS).wanderer as Program };
     const world = newWorld(["goofguy"], 0, wanderers);
     while (citizen(world, "goofguy").path.length < 3) step(world);
     const after = (input: Input) => {
-      const copy = restore(snapshot(world), ATLAS, wanderers, MONSTERS.kinds, MONSTERS.spawns);
+      const copy = restore(snapshot(world), ATLAS, wanderers, MONSTERS.kinds);
       step(copy, [input]);
       return citizen(copy, "goofguy");
     };
     const quiet = after({ type: "heard", account: "1001" });
-    const sent = after(go("1001", "lower river"));
+    const sent = after(go("1001", "meadow"));
     expect(sent.flag).toBe(FLAG_TILE);
     expect(sent.path.length).toBeGreaterThan(0);
     expect(sent).toMatchObject({ x: quiet.x, y: quiet.y, path: quiet.path, wait: quiet.wait });
@@ -349,6 +360,11 @@ describe("the viewer message", () => {
       go("1001", "near wood"),
       go("1002", "@chatter_0"),
       set("1003", "margin", "9"),
+    ]);
+    // Monsters about, put in by hand as the camp has no spawn table.
+    step(world, [
+      { type: "spawn", name: "Wolf", program: "wolf", kind: "wolf", x: 27, y: 4 },
+      { type: "spawn", name: "Goblin", program: "goblin", kind: "goblin", x: 2, y: 17 },
     ]);
     const text = viewerMessage(world, []);
     const sent = JSON.parse(text).state.actors as Record<string, unknown>[];
@@ -365,7 +381,7 @@ describe("the viewer message", () => {
     }
     // Some 74 bytes a citizen; the whole message was the snapshot before.
     expect(snapshot(world).length - text.length).toBeGreaterThan(10_000);
-    const { world: seen } = readMessage(text, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+    const { world: seen } = readMessage(text, ATLAS, PROGRAMS, MONSTERS.kinds);
     const program = (a: Actor) => world.programs[a.program];
     expect(seen).toEqual({
       ...world,
@@ -380,18 +396,14 @@ describe("the viewer message", () => {
     });
     expect(citizen(seen, "chatter_2").params[1]).toBe(9);
     // A snapshot is read as it is; a message is no snapshot.
-    expect(
-      readMessage(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns).world,
-    ).toEqual(world);
-    expect(() => restore(text, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns)).toThrow(
-      /damaged/,
-    );
+    expect(readMessage(snapshot(world), ATLAS, PROGRAMS, MONSTERS.kinds).world).toEqual(world);
+    expect(() => restore(text, ATLAS, PROGRAMS, MONSTERS.kinds)).toThrow(/damaged/);
     // A message whose actors were changed after it was hashed is refused.
     const data = JSON.parse(text);
     data.state.actors[0].tokens = 0;
-    expect(() =>
-      readMessage(JSON.stringify(data), ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns),
-    ).toThrow(/damaged/);
+    expect(() => readMessage(JSON.stringify(data), ATLAS, PROGRAMS, MONSTERS.kinds)).toThrow(
+      /damaged/,
+    );
   });
 });
 
@@ -414,7 +426,7 @@ describe("names typed in !go", () => {
   const world = createWorld(
     map,
     1,
-    compileBots({ deckhand: botSources().deckhand as string }, placeConstants(map)),
+    compileBots({ deckhand: campBotSources().deckhand as string }, placeConstants(map)),
   );
   step(world, [join("1", "brax"), join("2", "Bryony"), join("3", "goofguy")]);
   const self = citizen(world, "goofguy");
@@ -458,7 +470,7 @@ describe("saving orders", () => {
       { type: "say", account: "1003", id: "m1", text: "hello" },
     ]);
     const saved = snapshot(world);
-    const resumed = restore(saved, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+    const resumed = restore(saved, ATLAS, PROGRAMS, MONSTERS.kinds);
     expect(resumed).toEqual(world);
     run(world, 500);
     run(resumed, 500);
@@ -469,7 +481,7 @@ describe("saving orders", () => {
     const world = newWorld(["goofguy", "brax_"]);
     run(world, 5, [go("1001", "@brax_")]);
     const text = snapshot(world);
-    const reload = (t: string) => restore(t, ATLAS, PROGRAMS, MONSTERS.kinds, MONSTERS.spawns);
+    const reload = (t: string) => restore(t, ATLAS, PROGRAMS, MONSTERS.kinds);
     // Each is changed on a world and saved again, so its hash matches and only
     // readState stands between it and a running world.
     const forged = (change: (tim: Actor, brax: Actor) => void): string => {
@@ -502,19 +514,13 @@ describe("saving orders", () => {
     step(world, [{ type: "spawn", name: "Ash", program: "homebody", x: camp.x, y: camp.y + 2 }]);
     run(world, 5, [go("1001", "ash"), go("1002", "@goofguy"), set("1002", "margin", "30")]);
     expect(citizen(world, "goofguy").flag).toBe(FLAG_CITIZEN);
-    const edited = (botSources().deckhand as string).replace("wait(20)", "wait(21)");
+    const edited = (campBotSources().deckhand as string).replace("wait(20)", "wait(21)");
     const { homebody: _, ...rest } = PROGRAMS;
     const programs = {
       ...rest,
       deckhand: compileBots({ deckhand: edited }, placeConstants(ATLAS)).deckhand as Program,
     };
-    const { world: kept, changes } = adopt(
-      snapshot(world),
-      ATLAS,
-      programs,
-      MONSTERS.kinds,
-      MONSTERS.spawns,
-    );
+    const { world: kept, changes } = adopt(snapshot(world), ATLAS, programs, MONSTERS.kinds);
     // Deckhand changed, so brax_'s margin is the default again; its flag on goofguy stands.
     expect(citizen(kept, "brax_")).toMatchObject({
       flag: FLAG_CITIZEN,

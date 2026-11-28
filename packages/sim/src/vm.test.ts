@@ -591,7 +591,8 @@ describe("hostile programs", () => {
         else if (op === OP.JMP || op === OP.JZ || op === OP.JNZ)
           ops[at + 1] = starts[nextInt(rng, starts.length)] as number;
         else if (op === OP.LOAD || op === OP.STORE) ops[at + 1] = nextInt(rng, MEMORY_SLOTS);
-        else if (op === OP.SENSE) ops[at + 1] = nextInt(rng, 6);
+        // The sensors among the first six, `hour` and `minute` being retired.
+        else if (op === OP.SENSE) ops[at + 1] = [0, 1, 4, 5][nextInt(rng, 4)] as number;
         else if (op === OP.ACT) ops[at + 1] = 6 + nextInt(rng, 4);
         else ops[at + 1] = nextInt(rng, 2);
       }

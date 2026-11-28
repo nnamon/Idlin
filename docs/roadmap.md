@@ -6,23 +6,22 @@ exists, what is being built now, and how to tell when it is finished.
 
 ## What exists
 
-The code is the camp prototype: a fixed camp with four regions round it. The
-team stopped widening it on
-[#361](https://github.com/nnamon/Idlin/issues/361), and the walking city
-([design.md](design.md)) is built from its parts.
+The code was the camp prototype, a fixed camp with four regions round it,
+until [#361](https://github.com/nnamon/Idlin/issues/361) turned the team to
+the walking city ([design.md](design.md)). The world is now the city's deck
+and its cycle, and the rest is built from the camp's parts.
 
-| Part                                             | State                                                                                | In the slice                                |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------- |
-| Simulation core: map, movement, clock, snapshots | done                                                                                 | kept                                        |
-| Bot VM, Tactics and its compiler                 | done                                                                                 | kept, with new sensors and `param`          |
-| Server: real time, snapshots, WebSocket          | done; a content change keeps the world                                               | kept, with an input log                     |
-| Capture tool, metrics and the watch rubric       | done: captures at 15 residents, judged from a player's seat                          | kept                                        |
-| Regions                                          | four maps joined by exits; only the camp's has monsters                              | replaced by the deck and generated landings |
-| Combat                                           | telegraphed blows, 1.2 s between them, numbers that never grow; wolves hunt in packs | rewritten at tempo, with ranks and levels   |
-| Skills, the bag and the bank                     | experience, gathering, cooking and eating work; levels change nothing in a fight     | rewritten as Arms, the haul and the stash   |
-| Items                                            | the item tables roll; nothing drops and nobody wears anything                        | extended and wired in                       |
-| Viewer: the map, the figures, day and night      | done for the camp; little of it meets [art.md](art.md)                               | redrawn to the look target                  |
-| The page and the spotlight                       | six large rows; the view follows one resident between regions                        | replaced by the four corners and the zoom   |
+| Part                                       | State                                                                                | In the slice                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------- |
+| Simulation core: map, movement, snapshots  | done                                                                                 | kept                                        |
+| Bot VM, Tactics and its compiler           | done                                                                                 | kept, with new sensors and `param`          |
+| Server: real time, snapshots, WebSocket    | done; a content change keeps the world                                               | kept, with an input log                     |
+| Capture tool, metrics and the watch rubric | a storyboard of the cycle's beats with 15 chatters; the camp's sheets are gone       | rebuilt with the viewer                     |
+| The deck and the cycle                     | the first city's deck, the beats on their ticks, a generated landing at legs-plant   | piece 2: drawn in 2b; the break waits on 31 |
+| Combat                                     | telegraphed blows, 1.2 s between them, numbers that never grow; wolves hunt in packs | rewritten at tempo, with ranks and levels   |
+| Skills, the bag and the bank               | experience, gathering, cooking and eating work; levels change nothing in a fight     | rewritten as Arms, the haul and the stash   |
+| Items                                      | the item tables roll; nothing drops and nobody wears anything                        | extended and wired in                       |
+| Viewer                                     | a plain view of the deck and the landing: flat tiles and dots                        | redrawn to the look target                  |
 
 ## The slice
 

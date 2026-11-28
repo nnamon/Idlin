@@ -1,8 +1,9 @@
 // Where a program meets the world: answers its sensors and carries out the one
 // action it commits. Called when an actor has nothing left to do.
 
-import { type Atlas, pointOf, type Region, regionAt, stepTile, tileAt, walkable } from "./atlas.ts";
+import { type Atlas, pointOf, stepTile, tileAt, walkable } from "./atlas.ts";
 import { atBank, BAG_SLOTS, banked, carrying, deposit, freeSlots, GOODS, withdraw } from "./bag.ts";
+import { PER_TILE } from "./deck.ts";
 import { type Field, fieldTo, nthTile, partOf, stepsTo, workOf } from "./field.ts";
 import {
   atFire,
@@ -16,17 +17,17 @@ import {
 } from "./gather.ts";
 import {
   addMark,
+  allAt,
   countWithin,
-  firstAt,
   gridOf,
-  inRegion,
   marksOn,
   nearest,
+  onGround,
   setPath,
   tallyOf,
   tileOf,
 } from "./grid.ts";
-import { NEIGHBOURS, type Point, place } from "./map.ts";
+import { NEIGHBOURS, type Point } from "./map.ts";
 import { FLAG_NONE, flagDown, flagPlace, HEARD_MOST, heedOf, liftEta, wayHome } from "./orders.ts";
 import { findPath, scratchFor } from "./path.ts";
 import { nextInt } from "./rng.ts";
@@ -41,14 +42,10 @@ import {
   blowTiles,
   blowTimesOf,
   canStep,
-  clock,
   enemies,
-  inFirelight,
   kindOf,
-  LIGHT_REACH,
   mending,
   reachOf,
-  sameRegion,
   type World,
   type WorldEvent,
 } from "./world.ts";
@@ -116,20 +113,19 @@ export function think(world: World, actor: Actor, events: WorldEvent[]): void {
 const steps = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
 /**
- * The nearest enemy in this actor's region, the one with the lowest id if
- * several are as near. A resident mending at camp is nobody's enemy.
+ * The nearest enemy, the one with the lowest id if several are as near. A
+ * citizen mending after a down is nobody's enemy.
  */
 function threat(world: World, actor: Actor): Actor | undefined {
   const grid = gridOf(world);
-  const region = regionAt(world.atlas, actor.x, actor.y);
-  // A resident's enemies are monsters, and a monster's residents.
-  if (inRegion(grid, region, actor.kind === ADVENTURER) === 0) return undefined;
+  // A citizen's enemies are monsters, and a monster's citizens.
+  if (onGround(grid, actor.kind === ADVENTURER) === 0) return undefined;
   return nearest(
     grid,
     actor.x,
     actor.y,
-    world.atlas.regions[region] as Region,
-    (other) => enemies(actor, other) && !mending(other) && sameRegion(world, actor, other),
+    world.atlas,
+    (other) => enemies(actor, other) && !mending(other),
   );
 }
 
@@ -138,7 +134,7 @@ export const FRIENDS_REACH = 4;
 
 /**
  * How many of `actor`'s own kind, itself and anyone mending left out, stand
- * within `reach` steps of it in its region. A reach below 0 finds nobody.
+ * within `reach` steps of it. A reach below 0 finds nobody.
  */
 const friendsWithin = (world: World, actor: Actor, reach: number): number =>
   countWithin(
@@ -146,12 +142,8 @@ const friendsWithin = (world: World, actor: Actor, reach: number): number =>
     actor.x,
     actor.y,
     reach,
-    world.atlas.regions[regionAt(world.atlas, actor.x, actor.y)] as Region,
-    (other) =>
-      other !== actor &&
-      other.kind === actor.kind &&
-      !mending(other) &&
-      sameRegion(world, actor, other),
+    world.atlas,
+    (other) => other !== actor && other.kind === actor.kind && !mending(other),
   );
 
 /** Ticks until an enemy's attack lands on a tile, or 0 if none is coming. */
@@ -293,29 +285,37 @@ export function wayTo(world: World, actor: Actor, to: Point, round = false, step
   // monster; a monster, for a resident.
   const barred = (tile: number): boolean =>
     actor.kind !== ADVENTURER ? others(tile) > 0 : (monsters[tile] as number) > 0;
-  // Someone else stands on it, or is already walking to it, so two do not make for one tile.
+  // A tile takes one, but a deck tile berths PER_TILE citizens (deck.ts).
+  const room = (tile: number): number =>
+    actor.kind === ADVENTURER && atlas.floor[tile] === 1 ? PER_TILE : 1;
+  // Others stand on it or are already walking to it, as many as it has room for.
   const taken = (tile: number): boolean =>
-    others(tile) > 0 || (ending[tile] as number) - (tile === ownEnd ? 1 : 0) > 0;
-  // Where someone else has stopped on this tile too, the one deciding walk_to moves
-  // off. The one that arrived later often decides again as soon as its walk ends,
-  // while the other is still resting, so it is usually the later one that makes way.
-  // Someone only passing through does not count.
+    others(tile) + (ending[tile] as number) - (tile === ownEnd ? 1 : 0) >= room(tile);
+  // Where as many others as it has room for have stopped on this tile too, the
+  // one deciding walk_to moves off. The one that arrived later often decides
+  // again as soon as its walk ends, while the other is still resting, so it is
+  // usually the later one that makes way. Someone only passing through does
+  // not count.
   const sharing =
-    firstAt(
+    allAt(
       grid,
       actor.x,
       actor.y,
       (other) => other !== actor && other.path.length === 0 && other.moveTicksLeft === 0,
-    ) !== undefined;
+    ).length >= room(start);
   const free = (tile: number): boolean => (tile === start ? !sharing : !taken(tile));
-  const within = actor.kind !== ADVENTURER;
   const field = fieldTo(world, tileAt(atlas, to.x, to.y));
   const away = stepsTo(world, field, start);
   if (away < 0) return [];
   // The free tile nearest `to` that this actor could walk to if nobody were
   // about, ring by ring outwards from `to`; in a ring, staying put comes
-  // first, then the ring's order.
-  const part = partOf(atlas, start, within);
+  // first, then the ring's order. A citizen sent to a deck tile goes to the
+  // nearest deck tile with room, however far round the deck that is: aboard
+  // is what counts, and the ground beside the hull is not aboard.
+  const part = partOf(atlas, start);
+  const target = tileAt(atlas, to.x, to.y);
+  const deck = actor.kind === ADVENTURER && atlas.floor[target] === 1;
+  const fits = (tile: number): boolean => !deck || atlas.floor[tile] === 1;
   const work = workOf(world);
   let goal = -1;
   let ring = -1;
@@ -326,9 +326,9 @@ export function wayTo(world: World, actor: Actor, to: Point, round = false, step
     const steps = field.steps[tile] as number;
     if (steps !== ring) {
       ring = steps;
-      if (ring === away && free(start)) goal = start;
+      if (ring === away && free(start) && fits(start)) goal = start;
     }
-    if (goal < 0 && free(tile) && partOf(atlas, tile, within) === part) goal = tile;
+    if (goal < 0 && free(tile) && fits(tile) && partOf(atlas, tile) === part) goal = tile;
   }
   if (goal === start) return [];
   const rung = field.steps[goal] as number;
@@ -336,9 +336,8 @@ export function wayTo(world: World, actor: Actor, to: Point, round = false, step
   // No way past people is longer than there are tiles. Where a way within
   // the cap gets to the goal, the search with no cap finds the same one.
   const way =
-    (round
-      ? searchRound(world, actor, field, start, goal, atlas.open.length, barred, true)
-      : null) ?? (searchRound(world, actor, field, start, goal, most, barred, false) as Point[]);
+    (round ? searchRound(world, field, start, goal, atlas.open.length, barred, true) : null) ??
+    (searchRound(world, field, start, goal, most, barred, false) as Point[]);
   if (!step || way.length === 0) return way;
   let steps = 1;
   for (; steps < way.length; steps++) {
@@ -375,7 +374,6 @@ const buckets: number[][] = [];
  */
 function searchRound(
   world: World,
-  actor: Actor,
   field: Field,
   start: number,
   goal: number,
@@ -384,7 +382,6 @@ function searchRound(
   sure: boolean,
 ): Point[] | null {
   const { atlas } = world;
-  const within = actor.kind !== ADVENTURER;
   const { stamp, reached: done, from: cameFrom, seen, cost, back, queue: out } = scratchFor(atlas);
   const work = workOf(world);
   const rung = field.steps[goal] as number;
@@ -433,7 +430,7 @@ function searchRound(
         const from = out[head++] as number;
         work.searchTiles++;
         for (let d = 0; d < 4; d++) {
-          const next = stepTile(atlas, from, d, within);
+          const next = stepTile(atlas, from, d);
           if (next < 0 || back[next] === stamp) continue;
           if (seen[next] === stamp) {
             meeting = false;
@@ -453,7 +450,7 @@ function searchRound(
       const steps = (cost[at] as number) + 1;
       // Pushed last, popped first: the first of NEIGHBOURS is tried first.
       for (let d = 3; d >= 0; d--) {
-        const next = stepTile(atlas, at, d, within);
+        const next = stepTile(atlas, at, d);
         if (next < 0 || done[next] === stamp || barred(next)) continue;
         if (seen[next] === stamp && (cost[next] as number) <= steps) continue;
         const through = steps + guess(next);
@@ -471,36 +468,25 @@ function searchRound(
   return path.reverse();
 }
 
-/**
- * A tile `actor` can stand on in the region it is in, chosen at random with the
- * world's generator. Wandering is a stroll about where one is; going to another
- * region is something a program decides to do.
- */
+/** A tile of the ground `actor` can stand on, chosen at random with the world's generator. */
 function randomWalkableTile(world: World, actor: Actor): Point {
-  const index = regionAt(world.atlas, actor.x, actor.y);
-  const region = world.atlas.regions[index];
-  if (!region) return actor;
-  const tiles = groundOf(world.atlas)[index] as Point[];
-  return tiles[nextInt(world.rng, tiles.length)] as Point;
+  const tiles = standable(world.atlas);
+  return tiles.length === 0 ? actor : (tiles[nextInt(world.rng, tiles.length)] as Point);
 }
 
-const grounds = new WeakMap<Atlas, Point[][]>();
+const grounds = new WeakMap<Atlas, Point[]>();
 
 /**
- * Per region, every tile in it anyone may stand on (see walkableFor), row by
- * row. Worked out once per atlas, as it never changes.
+ * Every tile anyone may stand on (see walkableFor), row by row. Worked out
+ * once per atlas, as it never changes.
  */
-function groundOf(atlas: Atlas): Point[][] {
+function standable(atlas: Atlas): Point[] {
   let ground = grounds.get(atlas);
   if (!ground) {
-    ground = atlas.regions.map((region) => {
-      const tiles: Point[] = [];
-      for (let y = region.y; y < region.y + region.map.height; y++) {
-        for (let x = region.x; x < region.x + region.map.width; x++)
-          if (walkable(atlas, x, y)) tiles.push({ x, y });
-      }
-      return tiles;
-    });
+    ground = [];
+    for (let y = atlas.top; y < atlas.top + atlas.height; y++)
+      for (let x = atlas.left; x < atlas.left + atlas.width; x++)
+        if (walkable(atlas, x, y)) ground.push({ x, y });
     grounds.set(atlas, ground);
   }
   return ground;
@@ -526,10 +512,6 @@ function sense(
       return actor.x;
     case "self_y":
       return actor.y;
-    case "hour":
-      return clock(world).hour;
-    case "minute":
-      return clock(world).minute;
     case "walkable":
       return walkable(world.atlas, a, b) ? 1 : 0;
     case "distance":
@@ -595,34 +577,9 @@ function sense(
     }
     case "friends_near":
       return friendsWithin(world, actor, a);
-    case "lit_here":
-      return inFirelight(world, actor.x, actor.y) ? 1 : 0;
-    case "threat_lit": {
-      const enemy = foe();
-      return enemy && inFirelight(world, enemy.x, enemy.y) ? 1 : 0;
-    }
     case "threat_moving": {
       const enemy = foe();
       return enemy && (enemy.moveTicksLeft > 0 || enemy.path.length > 0) ? 1 : 0;
-    }
-    case "lit_enemies":
-    case "lit_mending": {
-      // Enemies who can fight, or residents who can't yet.
-      const down = name === "lit_mending";
-      // The firelight is within LIGHT_REACH of camp in a straight line, so
-      // within twice that in steps.
-      const camp = place(world.atlas, "camp");
-      return countWithin(
-        gridOf(world),
-        camp.x,
-        camp.y,
-        2 * LIGHT_REACH,
-        world.atlas.regions[regionAt(world.atlas, camp.x, camp.y)] as Region,
-        (other) =>
-          (down ? mending(other) : enemies(actor, other) && !mending(other)) &&
-          sameRegion(world, actor, other) &&
-          inFirelight(world, other.x, other.y),
-      );
     }
     case "weapon_reach":
       return reachOf(world, actor);
@@ -693,7 +650,7 @@ function act(
       break;
     case "wander": {
       const to = randomWalkableTile(world, actor);
-      setPath(world, actor, findPath(world.atlas, actor, to, actor.kind !== ADVENTURER) ?? []);
+      setPath(world, actor, findPath(world.atlas, actor, to) ?? []);
       break;
     }
     case "attack": {

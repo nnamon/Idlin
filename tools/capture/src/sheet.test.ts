@@ -10,7 +10,6 @@ import {
   type Image,
   stack,
 } from "./sheet.ts";
-import { busiest, play } from "./simrun.ts";
 
 const flat = (width: number, height: number, grey: number): Image => {
   const data = new Uint8Array(width * height * 4).fill(grey);
@@ -88,33 +87,5 @@ describe("sheets", () => {
     expect(three.length).toBeGreaterThan(one.length);
     // 0x2C starts each frame's image descriptor; flat frames hold no other.
     expect([...three].filter((byte) => byte === 0x2c).length).toBeGreaterThanOrEqual(3);
-  });
-});
-
-describe("the recorded run", () => {
-  it("is the same every time for a seed and a cast, and differs for another seed", () => {
-    const a = play(1, 12, 400);
-    expect(play(1, 12, 400)).toEqual(a);
-    expect(play(2, 12, 400)).not.toEqual(a);
-    expect(a).toHaveLength(400);
-    expect(a[0]?.actors).toHaveLength(12);
-  });
-
-  it("finds the stretch in which the most actors moved", () => {
-    const still = { events: [], actors: [{ id: 1, name: "A", x: 0, y: 0 }] };
-    const run = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3].map((x) => ({
-      events: [],
-      actors: [{ id: 1, name: "A", x, y: 0 }],
-    }));
-    expect(busiest(run, 3)).toBe(4);
-    expect(busiest([still, still, still], 2)).toBe(0);
-    // In the real world, everyone leaves camp at dawn: the busiest stretch has people walking.
-    const day = play(1, 6, 1200);
-    const start = busiest(day, 20);
-    const first = day[start]?.actors ?? [];
-    const last = day[start + 19]?.actors ?? [];
-    expect(first.filter((a, i) => a.x !== last[i]?.x || a.y !== last[i]?.y).length).toBeGreaterThan(
-      2,
-    );
   });
 });

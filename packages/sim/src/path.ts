@@ -52,14 +52,12 @@ export function scratchFor(atlas: Atlas): Scratch {
 
 /**
  * The shortest walk from `from` to `to`, as the tiles to step onto in order
- * (ending with `to`, not including `from`), through exits into other regions
- * where that is the way. Returns an empty list when already there and null
+ * (ending with `to`, not including `from`). Returns an empty list when already there and null
  * when there is no way. Among equally short walks the result is always the
  * same one: breadth-first search with a fixed neighbour order. Other actors are
- * not obstacles here; they are handled when a step is taken. With `within`,
- * the walk keeps to the region it starts in, as monsters do.
+ * not obstacles here; they are handled when a step is taken.
  */
-export function findPath(atlas: Atlas, from: Point, to: Point, within = false): Point[] | null {
+export function findPath(atlas: Atlas, from: Point, to: Point): Point[] | null {
   if (!walkable(atlas, from.x, from.y) || !walkable(atlas, to.x, to.y)) return null;
   const start = tileAt(atlas, from.x, from.y);
   const goal = tileAt(atlas, to.x, to.y);
@@ -72,7 +70,7 @@ export function findPath(atlas: Atlas, from: Point, to: Point, within = false): 
     const at = queue[head] as number;
     if (at === goal) break;
     for (let d = 0; d < 4; d++) {
-      const next = stepTile(atlas, at, d, within);
+      const next = stepTile(atlas, at, d);
       if (next < 0 || reached[next] === stamp) continue;
       reached[next] = stamp;
       cameFrom[next] = at;
