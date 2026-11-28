@@ -271,6 +271,16 @@ describe("stagger, wind-ups and knockback (4.2)", () => {
     ]);
     expect(post.status.freeze).toBe(0);
   });
+
+  it("the maul blow that freezes a body loses its own knockback", () => {
+    const { world, ash } = withAsh(field(), 5, 4, "still", "maul");
+    const post = put(world, "post", 6, 4);
+    post.status.chill = 40;
+    const events = struckBy(world, ash, post, [cold(20)]);
+    expect(post.status.freeze).toBe(20);
+    expect(events.some((e) => e.type === "knock")).toBe(false);
+    expect(post.x).toBe(6);
+  });
 });
 
 describe("burn (4.2)", () => {
@@ -405,21 +415,24 @@ describe("chill and freeze (4.2)", () => {
     expect(far.status.chill).toBe(0);
   });
 
-  it("a shatter chills citizens within 2 tiles too, the one who downed it among them", () => {
-    const { world, ash } = withAsh(field(), 3, 4);
-    step(world, [{ type: "spawn", name: "Bo", program: "still", x: 2, y: 4 }]);
+  it("a shatter passes over citizens, the one who downed it among them", () => {
+    const { world, ash } = withAsh(field(), 4, 4);
+    step(world, [{ type: "spawn", name: "Bo", program: "still", x: 5, y: 5 }]);
     const bo = world.actors.find((a) => a.name === "Bo") as Actor;
     const frozen = put(world, "post", 5, 4);
+    const near = put(world, "post", 6, 4);
     frozen.status.chill = 40;
     frozen.status.freeze = 20;
     struckBy(world, ash, frozen, [{ kind: "added", type: "physical", amount: 10_000 }]);
     const after = run(world, 1);
-    expect(after).toContainEqual(
-      expect.objectContaining({ type: "status", actor: ash.id, by: frozen.id, status: "chill" }),
+    expect(after.find((e) => e.type === "shatter")).toMatchObject({ actor: frozen.id });
+    const chilled = after.flatMap((e) =>
+      e.type === "status" && e.status === "chill" ? [e.actor] : [],
     );
-    // A citizen's chill lasts 4 seconds, counted down from this tick on.
-    expect(ash.status.chill).toBe(40);
+    expect(chilled).toEqual([near.id]);
+    expect(ash.status.chill).toBe(0);
     expect(bo.status.chill).toBe(0);
+    expect(near.status.chill).toBe(40);
   });
 
   it("one that goes down unfrozen does not shatter", () => {
@@ -544,6 +557,25 @@ describe("statuses in snapshots and the viewer's message", () => {
     expect(hashWorld(resumed)).toBe(hashWorld(world));
   });
 
+  it("round-trips an elite the world froze, through the freeze, the thaw and the lockout", () => {
+    const { world, ash } = withAsh(field("cold"), 5, 4);
+    const elite = put(world, "elite", 6, 4);
+    struckBy(world, ash, elite, [cold(20)]);
+    struckBy(world, ash, elite, [cold(20)]);
+    expect(elite.status).toMatchObject({ chill: 10, freeze: 5 });
+    // A snapshot on every tick from frozen to the lockout's end loads as the
+    // world it was taken from.
+    const whileFrozen = reload(snapshot(world));
+    for (let t = 0; t < 30; t++) {
+      expect(reload(snapshot(world))).toEqual(world);
+      run(world, 1);
+    }
+    expect(elite.status).toMatchObject({ freeze: 0, freezeLock: 0 });
+    // And the one taken while frozen goes on the same.
+    run(whileFrozen, 30);
+    expect(hashWorld(whileFrozen)).toBe(hashWorld(world));
+  });
+
   it("are in the viewer's message", () => {
     const world = busy();
     const { world: seen } = readMessage(viewerMessage(world, []), field("cold"), PROGRAMS, KINDS);
@@ -616,5 +648,16 @@ describe("statuses in snapshots and the viewer's message", () => {
     );
     // Ash's and the elite's statuses are left as they were.
     expect(adopted.actors[0]?.status).toEqual(world.actors[0]?.status);
+  });
+
+  it("a count that is not a whole number is refused by adopt, not cut to fit", () => {
+    const data = JSON.parse(snapshot(busy()));
+    data.state.actors[1].status.burn = 37.5;
+    // The hash reads 37.5 as 37, so it matches, and the state's reader refuses.
+    data.hash = hashWorld({ ...reload(snapshot(busy())), ...data.state });
+    const text = JSON.stringify(data);
+    expect(() => reload(text)).toThrow(SnapshotError);
+    const kinds = { ...KINDS, post: { ...KINDS.post, rank: "elite" as const } };
+    expect(() => adopt(text, field("cold"), PROGRAMS, kinds)).toThrow(SnapshotError);
   });
 });

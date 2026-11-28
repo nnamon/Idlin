@@ -198,14 +198,14 @@ export function statusFits(status: Status, ticks: number, citizen: boolean): boo
 /**
  * `status` with each count cut to what lasts `ticks`, for a monster whose
  * kind's rank now gives it less time; the same object if nothing was over.
- * Counts that are not numbers are left for the snapshot reader to refuse.
+ * Counts that are not whole numbers are left for the snapshot reader to refuse.
  */
 export function cutStatus(status: Status, ticks: number): Status {
   const most = { burn: ticks, chill: ticks, shock: ticks, freeze: div(ticks, 2) };
   let cut: Status = status;
   for (const field of ["burn", "chill", "shock", "freeze"] as const) {
     const n = status[field];
-    if (typeof n === "number" && n > most[field]) cut = { ...cut, [field]: most[field] };
+    if (Number.isInteger(n) && n > most[field]) cut = { ...cut, [field]: most[field] };
   }
   return cut;
 }

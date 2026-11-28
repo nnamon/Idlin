@@ -1338,7 +1338,7 @@ function flyArrows(
  * Counts the statuses down and burns, flies the arrows, counts every wind-up
  * down but a frozen one, lands the blows that are due, and takes out whoever
  * has no hitpoints left. A frozen monster that goes down shatters and chills
- * everyone standing within 2 tiles, citizens too.
+ * every monster standing within 2 tiles.
  */
 function landAttacks(world: World, events: WorldEvent[]): void {
   // Who struck each target last, which is who downs it.
@@ -1437,9 +1437,10 @@ function landAttacks(world: World, events: WorldEvent[]): void {
   for (const actor of out) {
     if (actor.kind === ADVENTURER || actor.status.freeze === 0) continue;
     events.push({ type: "shatter", tick: world.tick, actor: actor.id, x: actor.x, y: actor.y });
+    // Citizens are passed over, so a kill never slows the one who made it.
     for (const other of world.actors) {
       const steps = Math.max(Math.abs(other.x - actor.x), Math.abs(other.y - actor.y));
-      if (other.hp <= 0 || steps > SHATTER_REACH || mending(other)) continue;
+      if (other.kind === ADVENTURER || other.hp <= 0 || steps > SHATTER_REACH) continue;
       if (!sameRegion(world, other, actor)) continue;
       other.status.chill = statusTicks(world, other);
       events.push({
