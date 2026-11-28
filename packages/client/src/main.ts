@@ -100,6 +100,13 @@ async function main(): Promise<void> {
 
   const frame = must("frame");
 
+  // `?lookdev=<scene>`: the look-development scenes, which have no world behind them.
+  if (params.has("lookdev")) {
+    const { runLookdev } = await import("./lookdev/index.ts");
+    await runLookdev(params, frame);
+    return;
+  }
+
   const maps = mapFiles();
   const atlas = parseWorld(worldJson, maps);
   const programs = compileBots(botSources(), placeConstants(atlas));

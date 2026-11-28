@@ -372,11 +372,14 @@ of value, and a thing changes plane when it wakes.
 - Things lower on the plate are in front. Everything that stands is sorted
   by its feet. The city's far legs are drawn before its hull and its near
   legs after everything aboard.
-- A citizen is never hidden. Where the hull, a leg, a tree, a mound or
-  another body covers more than half of one, the citizen is drawn again on
-  top as an outline at contour weight in its cloak colour, with its head in
-  paper. Monsters get no outline. A pack half behind a wood is how an ambush
-  reads.
+- A citizen is never hidden. Where the hull, a leg, a post, a tree, a mound
+  or another body is drawn over its head, or over more than a third of its
+  figure, the citizen is drawn again on top as an outline at contour weight
+  in its cloak colour, with its cloak and its head in paper and its hat in
+  its own colour. Monsters get no outline. A pack half behind a wood is how
+  an ambush reads.
+- A swarm is one drawing. Where a citizen stands among it, the swarm is
+  sorted at its rearmost body, so all of it is drawn behind that citizen.
 - In a press of the horde no body is drawn over a citizen's head, or over
   more than a third of its figure. A citizen fighting at the shield has
   half a tile of open ground on the side toward the viewer.
@@ -1041,10 +1044,16 @@ soft-edged particle, no drop shadow.
   least, so every fight has one number that is read at 640 (section 11). A
   number's paper halo is 5 px wide all round, so the halos of its digits
   join into one paper shape that knocks out what is under it. Over the
-  horde's black a number is in paper colour with no halo. A number rises
-  along its blow and never covers a citizen's head or a name tag. At most
-  24 are in frame; past that the smallest are left out first, and a crit
-  never is.
+  horde's black a number is in paper colour with no halo. A number starts
+  over what was struck and rises along its blow. It never lies over a
+  citizen's head, over more than a third of a figure, over a name tag or
+  over another number, and that comes before showing it. When its spot is
+  taken it steps on along the blow by half its own height, up to three
+  citizens away, and a 30 px number with nowhere free is left out. A crit,
+  a 36 px number and the 72 px one try the other directions too and reach
+  twice as far, and one of them is left out only when it still has no free
+  spot. At most 24 are in frame; past that the smallest are left out first,
+  and the count never takes a crit.
 - **Hitpoints.** On a body they are shown by the drawing where possible (a
   stoop, a torn hem, thinned hatching). Where a measure is needed it is an
   arc of ink strokes at the feet, never a filled bar.
@@ -1133,14 +1142,15 @@ log, laid out one fact a line in two columns, under the same rules.
     seventh waits at its usual size. This is how a viewer at 640 finds
     their citizen in a crowd.
   - It sits centred over the hat, 8 px above it. When that spot is taken by
-    another tag, a head, a number or a corner, it takes the nearest free
+    another tag, a head or a corner, it takes the nearest free
     spot of a fixed set, up to 150 px away, and a hair-line joins it to its
     owner once it is more than 14 px off.
   - It holds its spot. It moves with its owner, changes spot only when it
     must and at most once a second, and slides there at no more than 4 px a
     frame against its owner, so a move of 72 px takes 0.3 s and a longer one
     takes longer.
-  - It never lies over another tag, a citizen's head or a damage number.
+  - It never lies over another tag or over a citizen, its owner included.
+    A number gives way to it (section 10).
   - With 40 citizens or fewer out, every one is named. With more, at most
     24 tags are shown at once. They go first to a citizen in the log, one
     carrying a pennant, one who is down and one fighting a brute, an elite

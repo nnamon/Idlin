@@ -26,6 +26,7 @@ docker compose up server client                                # the world serve
 docker compose run --rm dev pnpm --filter @idlin/client build  # build the viewer for captures
 docker compose run --rm capture captures/now                   # frames at dawn, noon, dusk and midnight
 docker compose run --rm capture captures/review --review       # the watch-review set (docs/watch-rubric.md)
+docker compose run --rm capture captures/look --lookdev all    # the look-development scenes, and the renderer bench
 ```
 
 - `dev` is `node:24-slim` with pnpm baked in; the repo is bind-mounted, so
@@ -96,6 +97,27 @@ docker compose run --rm capture captures/review --review       # the watch-revie
   folder are `name:hour[:ticks[:width[:height]]]`, and `--chat crowd-15` opens
   the page with `?chat=crowd-15` for them; the `--review` set does not take a
   crowd yet. It also prints a flicker index.
+  With `--lookdev <scenes>` (`all`, or names separated by commas) it shoots the
+  look-development page instead: for each scene, stills at 1920 and the same
+  frames averaged down to 640, `<scene>.json` with who is out and aboard and
+  how many monsters are alive in each still, a sheet of twelve frames a
+  sixtieth of a second apart, a storyboard, and a short GIF; then, if
+  `expedition150` was among them, `bench.json`, the frame times of that scene
+  on WebGL and on Canvas 2D. `--stills` leaves out everything but the stills.
+- The look-development page is the viewer opened with `?lookdev=<scene>`
+  (`packages/client/src/lookdev/`). It has no world behind it: `deck` and
+  `deck150` (the city from above in transit), `reveal`, `expedition`,
+  `expedition-b`, `expedition150` (landings), `siege` and `siege150` (the
+  shield siege), `deckside` (#371's side-on deck, kept for comparison until
+  the look target is signed off), and the `shield-levels`, `beasts`,
+  `figures` and `scale` sheets. Each is a function of time,
+  drawn with WebGL 2 through one pen. The landings run on a scripted fight
+  (`fray.ts`) stepped once from a seed and read back by time. It is the target
+  the game's own drawing is to be rebuilt to (#362); the game itself still
+  draws with Canvas 2D.
+  [decisions/0038](decisions/0038-renderer-scale-and-the-siege.md) has the
+  renderer measurements, the sizes a citizen is drawn at, and how the siege
+  draws the shield.
 - Every service uses Docker's default bridge (`network_mode: bridge`), so the
   project creates no network of its own.
 

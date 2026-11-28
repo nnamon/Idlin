@@ -153,3 +153,24 @@ export function encodeGif(frames: readonly Image[], delayMs: number): Uint8Array
   gif.finish();
   return gif.bytes();
 }
+
+/** The image `k` times smaller, each pixel the mean of a k by k block. Odd edges are dropped. */
+export function shrink(image: Image, k: number): Image {
+  const width = Math.floor(image.width / k);
+  const height = Math.floor(image.height / k);
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let c = 0; c < 4; c++) {
+        let sum = 0;
+        for (let dy = 0; dy < k; dy++) {
+          for (let dx = 0; dx < k; dx++) {
+            sum += image.data[((y * k + dy) * image.width + x * k + dx) * 4 + c] as number;
+          }
+        }
+        data[(y * width + x) * 4 + c] = Math.round(sum / (k * k));
+      }
+    }
+  }
+  return { width, height, data };
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseArgs } from "./args.ts";
 
+const NONE = { chat: null, lookdev: null, stills: false };
+
 describe("the capture command's arguments", () => {
   it("takes a folder and the shots named after it", () => {
     expect(parseArgs(["captures/now", "dawn:6", "noon:12"])).toEqual({
@@ -8,7 +10,7 @@ describe("the capture command's arguments", () => {
       shots: ["dawn:6", "noon:12"],
       review: false,
       baseline: null,
-      chat: null,
+      ...NONE,
     });
     expect(parseArgs(["captures/now", "dawn:6"])).toMatchObject({ shots: ["dawn:6"] });
   });
@@ -30,14 +32,14 @@ describe("the capture command's arguments", () => {
       shots: [],
       review: true,
       baseline: null,
-      chat: null,
+      ...NONE,
     });
     expect(parseArgs(["--baseline", "before", "out", "--review", "extra:9"])).toEqual({
       outDir: "out",
       shots: ["extra:9"],
       review: true,
       baseline: "before",
-      chat: null,
+      ...NONE,
     });
   });
 
@@ -47,6 +49,7 @@ describe("the capture command's arguments", () => {
       shots: ["noon:12"],
       review: false,
       baseline: null,
+      ...NONE,
       chat: "crowd-15",
     });
     expect(parseArgs(["out", "--chat"])).toBe("--chat needs a crowd file's name");
@@ -54,6 +57,26 @@ describe("the capture command's arguments", () => {
     expect(parseArgs(["out", "--review", "--chat", "crowd-15"])).toBe(
       "--chat works with shots, not with --review",
     );
+  });
+
+  it("takes the look-development scenes to shoot, and adds no shots of the game to them", () => {
+    expect(parseArgs(["out", "--lookdev", "deck,expedition", "--stills"])).toEqual({
+      outDir: "out",
+      shots: [],
+      review: false,
+      baseline: null,
+      chat: null,
+      lookdev: ["deck", "expedition"],
+      stills: true,
+    });
+    expect(parseArgs(["out", "--lookdev"])).toBe("--lookdev needs scene names, or all");
+    expect(parseArgs(["out", "--lookdev", "all", "--review"])).toBe(
+      "--lookdev and --review are separate runs",
+    );
+    expect(parseArgs(["out", "--lookdev", "all", "--chat", "crowd-15"])).toBe(
+      "--lookdev draws its own crowd, not --chat",
+    );
+    expect(parseArgs(["out", "--stills"])).toBe("--stills only works with --lookdev");
   });
 
   it("says what is wrong instead of guessing", () => {
